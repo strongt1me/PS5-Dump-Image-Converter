@@ -79,7 +79,7 @@ class KnoepfeTests(unittest.TestCase):
 
     def test_acht_knoepfe_in_dieser_reihenfolge(self) -> None:
         self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
-                          "coolsyscent", "shadowmount", "smplusgui", "directstream"],
+                          "coolsyscent", "shadowmount", "smplusgui", "bfpilot"],
                          [k for _s, k in KLASSE._KONSOLE_KNOEPFE])
         for nummer, (schluessel, _kennung) in enumerate(KLASSE._KONSOLE_KNOEPFE, start=1):
             for sprache in ("de", "en"):
@@ -90,7 +90,7 @@ class KnoepfeTests(unittest.TestCase):
         erwartet = {"konsole.btn_coolsyscent": "5. CoolSysCent-Pro",
                     "konsole.btn_shadowmount": "6. ShadowMount+",
                     "konsole.btn_smplusgui": "7. SMPlusGui",
-                    "konsole.btn_directstream": "8. Direct Stream"}
+                    "konsole.btn_bfpilot": "8. BFpilot"}
         for schluessel, text in erwartet.items():
             for sprache in ("de", "en"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):
@@ -278,10 +278,10 @@ class AktionTests(unittest.TestCase):
                 else:
                     self.assertNotIn("http_port", text)
 
-    def test_waehrenddessen_sind_alle_vier_knoepfe_gesperrt(self) -> None:
+    def test_waehrenddessen_sind_alle_fuenf_knoepfe_gesperrt(self) -> None:
         app = self.app
         knoepfe = list(app._konsole_webdienst_knoepfe)
-        self.assertEqual(4, len(knoepfe))
+        self.assertEqual(5, len(knoepfe))
         stand: list = []
 
         def _beobachten() -> None:
@@ -290,8 +290,8 @@ class AktionTests(unittest.TestCase):
 
         self._lauf("coolsyscent", laeuft=False, beobachten=_beobachten)
         self.assertTrue(stand, "Die Aktion wurde nie beobachtet.")
-        self.assertIn(["disabled"] * 4, stand)
-        self.assertEqual(["normal"] * 4, [str(k.cget("state")) for k in knoepfe], "danach wieder frei")
+        self.assertIn(["disabled"] * 5, stand)
+        self.assertEqual(["normal"] * 5, [str(k.cget("state")) for k in knoepfe], "danach wieder frei")
 
     def test_eine_zweite_aktion_waehrend_der_ersten_wird_abgewiesen(self) -> None:
         app = self.app

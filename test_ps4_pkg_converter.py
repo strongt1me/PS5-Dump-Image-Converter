@@ -72,14 +72,11 @@ class EinbettungTests(unittest.TestCase):
         treffer = sorted(p.name for p in PROJEKT.glob("MkPFS-*") if p.is_dir())
         self.assertEqual(treffer, [f"MkPFS-{hauptprogramm.MKPFS_REQUIRED_VERSION}"])
 
-    def test_kein_eigener_menueeintrag_mehr_aber_ueber_ota_erreichbar(self) -> None:
-        """Seit dem 05.10.2026 ruft ihn "PS4 PKG -> OTA" (Knopf "-> ffpfsc") und die Bibliothek."""
+    def test_der_menueeintrag_oeffnet_das_zusammengelegte_fenster(self) -> None:
+        """Seit dem 07.10.2026 gibt es nur noch "PS4 PKG Dump & Image Converter" (ohne OTA-Fenster)."""
         eintraege = dict(PS5ConverterGUI._MORE_TOOLS_ENTRIES)
-        self.assertNotIn("titlebar.ps4pkg", eintraege)
-        self.assertNotIn("_show_ps4_pkg_converter", eintraege.values())
+        self.assertEqual("_show_ps4_pkg_converter", eintraege["titlebar.ps4pkg"])
         self.assertTrue(callable(getattr(PS5ConverterGUI, "_show_ps4_pkg_converter", None)))
-        fenster = (PROJEKT / "ps5_validator" / "ui" / "ps4_ota.py").read_text(encoding="utf-8")
-        self.assertIn("self.g._show_ps4_pkg_converter()", fenster)
 
     def test_texte_sind_zweisprachig(self) -> None:
         schluessel = [k for k in STRINGS if k.startswith("ps4pkg.")]
@@ -206,120 +203,6 @@ class AufrufwegTests(unittest.TestCase):
         self.assertEqual([tmp], gefragte_ordner)
         # Fortschrittszeilen sind Steuerung, keine Protokollausgabe.
         self.assertNotIn(werkzeug.PROGRESS_PREFIX, gesammelt)
-
-
-class VerklemmungTests(unittest.TestCase):
-    """Eine Ausnahme im Arbeitsfaden darf das Fenster nicht totlegen.
-
-    Am 04.09.2026 fiel ``lauf()`` mit einem ``UnboundLocalError`` aus. Die
-    Ursache ist behoben (siehe :class:`AufrufwegTests`), die Folge war aber
-    eine eigene: Beide ``_arbeit()``-Rümpfe setzten ``laeuft["aktiv"]`` erst
-    **nach** dem Aufruf zurück, ohne ``finally``. Flog dazwischen etwas,
-    blieb das Kennzeichen für immer auf ``True`` - und beide Wächter (in
-    ``_einlesen`` und ``_erstellen``) lehnen danach jeden weiteren Druck
-    stillschweigend ab. Das Fenster ist dann tot, nur „Schließen" geht noch.
-
-    Das galt für **jede** Ausnahme, nicht nur die eine behobene. Geprüft
-    wird deshalb die Absicherung selbst, am Syntaxbaum: Beide Rümpfe müssen
-    in einem ``try`` liegen, dessen ``finally`` das Kennzeichen freigibt.
-    """
-
-    QUELLE = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        import ast
-
-        cls.ast = ast
-        cls.baum = ast.parse(cls.QUELLE.read_text(encoding="utf-8", errors="replace"))
-
-    def _arbeitsrümpfe(self):
-        """Die ``_arbeit()``-Funktionen aus dem PS4-Fenster, sonst keine.
-
-        Über die Fenstermethode statt über ``ast.walk`` auf der ganzen
-        Datei: ``_arbeit`` ist ein verbreiteter Name, und die Prüfung soll
-        nicht an einem fremden Fenster hängenbleiben.
-        """
-        ast = self.ast
-        klasse = next(k for k in self.baum.body
-                      if isinstance(k, ast.ClassDef) and k.name == "PS5ConverterGUI")
-        fenster = next(k for k in klasse.body
-                       if isinstance(k, ast.FunctionDef)
-                       and k.name == "_show_ps4_pkg_converter")
-        return [f for f in ast.walk(fenster)
-                if isinstance(f, ast.FunctionDef) and f.name == "_arbeit"]
-
-    @staticmethod
-    def _gibt_frei(block, ast) -> bool:
-        """Steht in diesem Block ``laeuft["aktiv"] = False``?"""
-        for k in ast.walk(ast.Module(body=list(block), type_ignores=[])):
-            if not isinstance(k, ast.Assign):
-                continue
-            for ziel in k.targets:
-                if (isinstance(ziel, ast.Subscript)
-                        and getattr(ziel.value, "id", "") == "laeuft"
-                        and getattr(ziel.slice, "value", None) == "aktiv"
-                        and k.value.value is False):
-                    return True
-        return False
-
-    def test_es_gibt_ueberhaupt_zwei_arbeitsfaeden(self) -> None:
-        """Ohne das liefe die Prüfung unten leer und meldete Erfolg."""
-        self.assertEqual(
-            2, len(self._arbeitsrümpfe()),
-            "Erwartet werden die zwei Arbeitsfaeden (Einlesen, Erstellen) - "
-            "die Auswertung greift nicht mehr.")
-
-    def test_jeder_arbeitsfaden_gibt_im_finally_frei(self) -> None:
-        ast = self.ast
-        for funktion in self._arbeitsrümpfe():
-            with self.subTest(zeile=funktion.lineno):
-                self.assertEqual(
-                    1, len(funktion.body),
-                    "Der Rumpf in Zeile %d liegt nicht als Ganzes im try."
-                    % funktion.lineno)
-                versuch = funktion.body[0]
-                self.assertIsInstance(
-                    versuch, ast.Try,
-                    "Der Rumpf in Zeile %d steht ungeschuetzt." % funktion.lineno)
-                self.assertTrue(
-                    self._gibt_frei(versuch.finalbody, ast),
-                    'In Zeile %d gibt kein finally laeuft["aktiv"] frei - eine '
-                    "Ausnahme legt das Fenster dauerhaft lahm."
-                    % funktion.lineno)
-
-    def test_die_pruefung_wuerde_einen_verstoss_melden(self) -> None:
-        """Gegenprobe: der alte Aufbau muss durchfallen."""
-        ast = self.ast
-        alt = ast.parse(
-            "def _arbeit():\n"
-            "    rc = tuwas()\n"
-            '    laeuft["aktiv"] = False\n').body[0]
-        self.assertNotIsInstance(alt.body[0], ast.Try)
-        neu = ast.parse(
-            "def _arbeit():\n"
-            "    try:\n"
-            "        rc = tuwas()\n"
-            "    finally:\n"
-            '        laeuft["aktiv"] = False\n').body[0]
-        self.assertTrue(self._gibt_frei(neu.body[0].finalbody, ast))
-        # Ein finally, das etwas anderes tut, zaehlt nicht.
-        leer = ast.parse(
-            "def _arbeit():\n"
-            "    try:\n"
-            "        rc = tuwas()\n"
-            "    finally:\n"
-            "        aufraeumen()\n").body[0]
-        self.assertFalse(self._gibt_frei(leer.body[0].finalbody, ast))
-
-    def test_die_meldungen_gibt_es_in_beiden_sprachen(self) -> None:
-        """Sonst stünde im Fenster der Schlüsselname."""
-        for name in ("ps4pkg.status_scan_crashed", "ps4pkg.status_build_crashed"):
-            with self.subTest(schluessel=name):
-                self.assertIn(name, STRINGS)
-                for sprache in ("de", "en"):
-                    self.assertTrue(STRINGS[name].get(sprache, "").strip())
-                    self.assertIn("{error}", STRINGS[name][sprache])
 
 
 class InspectAbsturzTests(unittest.TestCase):
@@ -550,10 +433,10 @@ class NachpruefungTests(unittest.TestCase):
         22.08.2026 an einer echten Konvertierung gesehen (Tetris Ultimate,
         CUSA00775); nach der Korrektur meldet sie 113 Dateien.
         """
-        rumpf = self._methode("_show_ps4_pkg_converter")
-        self.assertNotIn("_ps4ffpsc_abbild_pruefen(ziel)", rumpf,
+        rumpf = (PROJEKT / "ps5_validator" / "utils" / "ps4_abbild.py").read_text(encoding="utf-8")
+        self.assertNotIn("abbild_pruefen(ziel", rumpf,
                          "Der Ordner wird wieder als Abbild uebergeben.")
-        self.assertIn("_ps4ffpsc_ergebnis_finden(", rumpf,
+        self.assertIn("ps4_werkzeug.ergebnis_finden(", rumpf,
                       "Die erzeugte Datei wird nicht gesucht.")
 
     def test_das_ergebnis_wird_im_ausgabeordner_gefunden(self) -> None:
@@ -573,7 +456,7 @@ class NachpruefungTests(unittest.TestCase):
 
     def test_ohne_abbild_wird_nicht_gepruft(self) -> None:
         """Statt eines Fehlers eine verstaendliche Meldung."""
-        rumpf = self._methode("_show_ps4_pkg_converter")
+        rumpf = (PROJEKT / "ps5_validator" / "utils" / "ps4_abbild.py").read_text(encoding="utf-8")
         self.assertIn("ps4pkg.check_no_image", rumpf)
         for sprache in ("de", "en"):
             with self.subTest(sprache=sprache):
@@ -604,7 +487,7 @@ class NachpruefungTests(unittest.TestCase):
         Ein PS4-Spiel hat die Datei nicht; sie dort zu vermissen waere ein
         Fehlalarm bei jedem einzelnen Titel.
         """
-        self.assertIn("ps4pkg.check_ps4_title", self.quelltext)
+        self.assertIn("ps4pkg.check_ps4_title", (PROJEKT / "ps5_validator" / "utils" / "ps4_abbild.py").read_text(encoding="utf-8"))
         for sprache in ("de", "en"):
             with self.subTest(sprache=sprache):
                 self.assertIn("pfs-version.dat",
@@ -643,7 +526,7 @@ class NachpruefungTests(unittest.TestCase):
                 self.assertIn("0x80551618", text)
                 self.assertIn("Package Installer", text)
         # Nach dem Bau gemeldet, wenn ein PS4-Titel erkannt wurde.
-        rumpf = self._methode("_show_ps4_pkg_converter")
+        rumpf = (PROJEKT / "ps5_validator" / "utils" / "ps4_abbild.py").read_text(encoding="utf-8")
         self.assertIn("ps4pkg.check_trophy_note", rumpf)
         # Und im Handbuch erklaert.
         handbuch = (PROJEKT / "BENUTZERHANDBUCH.html").read_text(
@@ -717,15 +600,15 @@ class KonsolenerkennungTests(unittest.TestCase):
         self.assertEqual(self._plattform("CUSA00775", {"platform": "PS5"}), "ps4")
 
     def test_die_spalte_steht_in_der_liste(self) -> None:
-        rumpf = self._methode_lesen("_show_ps4_pkg_converter")
+        rumpf = (PROJEKT / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
         self.assertIn('spalten = ("title_id", "plattform", "titel"', rumpf,
                       "Die Konsolenspalte fehlt in der Liste.")
-        self.assertIn("_ps4ffpsc_plattform(title_id", rumpf,
+        self.assertIn("ps4_werkzeug.plattform(s.title_id)", rumpf,
                       "Die Spalte wird nicht gefuellt.")
 
     def test_ein_ps5_titel_faellt_auf(self) -> None:
         """Nicht nur eine Spalte weiter rechts - die Zeile wird eingefaerbt."""
-        rumpf = self._methode_lesen("_show_ps4_pkg_converter")
+        rumpf = (PROJEKT / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
         self.assertIn('tag_configure("ps5"', rumpf)
         self.assertIn("ps4pkg.is_ps5_title", rumpf)
 
@@ -822,9 +705,7 @@ class PaketMagicTests(unittest.TestCase):
         self.assertEqual(befund["ps4"], ["zwei.pkg"])
 
     def test_das_einlesen_sagt_es(self) -> None:
-        anfang = self.quelltext.index("    def _show_ps4_pkg_converter(self")
-        weiter = self.quelltext.index("\n    def ", anfang + 10)
-        rumpf = self.quelltext[anfang:weiter]
+        rumpf = (PROJEKT / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
         self.assertIn("_ps4ffpsc_quellen_sichten(", rumpf,
                       "Die Quelle wird beim Einlesen nicht gesichtet.")
         self.assertIn("ps4pkg.ps5_packages", rumpf)

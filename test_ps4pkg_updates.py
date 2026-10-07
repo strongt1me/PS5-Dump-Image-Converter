@@ -78,6 +78,15 @@ class AdresseTests(unittest.TestCase):
     def test_ps5_form_ist_formal_gueltig_der_server_kennt_sie_nicht(self) -> None:
         self.assertTrue(upd.title_id_gueltig("PPSA01234"))
 
+    def test_ps5_kennungen_werden_erkannt(self) -> None:
+        """07.10.2026: Fuer PS5-Titel gibt es keine Online-Abfrage (16 PPSA-Titel -> alle 404)."""
+        for ps5 in ("PPSA01234", "PPSS12345", "PPSA99005"):
+            with self.subTest(wert=ps5):
+                self.assertTrue(upd.ist_ps5(ps5))
+        for kein in ("CUSA03877", "PCSA00001", "", "PPSA0123", "PPSA012345", "ppsa01234", None):
+            with self.subTest(wert=kein):
+                self.assertFalse(upd.ist_ps5(kein))   # type: ignore[arg-type]
+
 
 class AuswertenTests(unittest.TestCase):
 

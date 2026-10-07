@@ -133,7 +133,7 @@ from ps5_validator.utils import payload_versand
 from ps5_validator.utils import app_install
 from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
-from ps5_validator.ui import ps4_ota
+from ps5_validator.ui import ps4_dump_image
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
 from ps5_validator.utils import einstellungen
@@ -162,7 +162,6 @@ from ps5_validator.utils import param_check
 from ps5_validator.utils import shadowmount_generation as sm_gen
 from ps5_validator.utils import ampr_assetpakete
 from ps5_validator.utils import wee_tools
-from ps5_validator.utils import direct_stream
 from ps5_validator.utils import credits_daten
 from ps5_validator.utils import bildecken
 from ps5_validator.utils import ordnerwahl
@@ -703,7 +702,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.64"
+APP_VERSION = "v1.9.65"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -4278,11 +4277,11 @@ class PS5ConverterGUI:
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.elf_eboot", "_show_elf_zu_eboot"),
         ("titlebar.dump_rename", "_show_dump_rename"),
-        # Seit dem 05.10.2026 der EINE Knopf fuer PS4-Pakete (Nutzerwunsch): Er ersetzt
-        # "PS4 PKG -> ffpfsc", "PS4 PKG -> Dump Ordner" und "PS4 & PS5 PKG lesen". Die
-        # alten Fenster bleiben ueber das Fenster erreichbar (-> ffpfsc, Entpacken ohne
-        # OrbisPkgTool, "Paketkopf lesen" im Mehr-Menue), nur der Eintrag hier ist weg.
-        ("titlebar.ps4_ota", "_show_ps4_pkg_ota"),
+        # Seit dem 07.10.2026 der EINE Knopf fuer PS4-Pakete (Nutzerwunsch): "PS4 PKG Dump &
+        # Image Converter" - Dump-Ordner, ffpfsc/exFAT, zusammengefuehrtes Paket, Updates laden
+        # und an die Konsole senden. Das fruehere "PS4 PKG -> OTA" ist darin aufgegangen; der
+        # Paketkopf-Leser und der bisherige Entpacker (ohne OrbisPkgTool) liegen im Mehr-Menue.
+        ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.unjail", "_show_unjail_sender"),
@@ -4318,11 +4317,10 @@ class PS5ConverterGUI:
     #: Payload vorher, falls noetig (_KONSOLE_WEBDIENSTE). Knopf 5 ist seit dem
     #: 05.10.2026 das PS5 Cooling & System Center des Projektinhabers (Port 8086).
     #:
-    #: Am selben Tag acht: "8. Direct Stream" - der Nutzer wollte "einen Knopf 7"
-    #: fuer diese Funktion; die 7 gehoert seit dem 04.10.2026 SMPlusGui, deshalb
-    #: steht der neue Knopf hinten. Er schickt nichts an die Konsole, sondern startet
-    #: einen kleinen Server auf diesem Rechner und zeigt seine Seite rechts
-    #: (_konsole_directstream_oeffnen, Modul ``direct_stream``).
+    #: Knopf 8 ist seit dem 07.10.2026 BFpilot (Weboberflaeche auf Port 5905, wie Knopf 4);
+    #: der fruehere "8. Direct Stream" ist auf Wunsch des Nutzers ausgebaut.
+    #:
+    #: Der Knopf schickt nur das Payload, wenn es noch nicht laeuft, und zeigt dann seine Seite rechts.
     _KONSOLE_KNOEPFE: tuple[tuple[str, str], ...] = (
         ("konsole.btn_dienste", "dienste"),
         ("konsole.btn_webkit", "webkit"),
@@ -4331,7 +4329,7 @@ class PS5ConverterGUI:
         ("konsole.btn_coolsyscent", "coolsyscent"),
         ("konsole.btn_shadowmount", "shadowmount"),
         ("konsole.btn_smplusgui", "smplusgui"),
-        ("konsole.btn_directstream", "directstream"),
+        ("konsole.btn_bfpilot", "bfpilot"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -10203,14 +10201,12 @@ class PS5ConverterGUI:
         Klick her - noch darauf stand.
         """
         c = self._COLORS
+        aktiv = ""
         if seite == "web":
+            aktiv = getattr(self, "_konsole_aktiver_knopf", "")
             seite = getattr(self, "_webseite_herkunft", "uebersicht")
-        hervor = self._KONSOLE_SEITENBAU.get(seite, ("", "", ""))[2]
-        seitenknoepfe = {knopf for _a, _b, knopf in self._KONSOLE_SEITENBAU.values()
-                         if knopf}
+        hervor = aktiv or self._KONSOLE_SEITENBAU.get(seite, ("", "", ""))[2]
         for knopf, schluessel in getattr(self, "_konsole_knoepfe", []):
-            if schluessel not in seitenknoepfe:
-                continue
             try:
                 if schluessel == hervor:
                     knopf.config(bg=c["fg_accent"], fg=c["bg_main"],
@@ -10982,14 +10978,13 @@ class PS5ConverterGUI:
     def _konsole_bibliothek_umschalten(self) -> None:
         """Knopf "3. Bibliothek": rechts die Bibliothek zeigen.
 
-        Ein zweiter Druck fuehrt zu "Konsole & Payloads" zurueck. Die
-        Bibliothek bleibt dabei gebaut - Suchlauf, Auswahl und Titelbilder
-        sind beim naechsten Mal noch da.
+        Ein zweiter Druck auf denselben Knopf aendert nichts: Bis zum 07.10.2026
+        fuehrte er zu "Konsole & Payloads" zurueck - der Nutzer: die Auswahl
+        "springt" dann auf den zuvor gewaehlten Knopf. Zurueck geht man mit dem
+        Knopf der anderen Seite. Die Bibliothek bleibt gebaut - Suchlauf,
+        Auswahl und Titelbilder sind beim naechsten Mal noch da.
         """
-        self._konsole_seite_setzen(
-            "uebersicht"
-            if getattr(self, "_konsole_seite", "uebersicht") == "bibliothek"
-            else "bibliothek")
+        self._konsole_seite_setzen("bibliothek")
 
     # -- Weboberflaeche als Seite (seit 26.09.2026) --------------------------
 
@@ -11084,18 +11079,6 @@ class PS5ConverterGUI:
                                    ("webseite.neu_laden", self._webseite_neu_laden)):
             knopf = self._seitenpille(kopf, schluessel, befehl, klein=True)
             knopf.pack(side="right", padx=(8, 0))
-        # Zielwahl fuer Direct Stream (Nutzer 06.10.2026): interner Speicher oder ein
-        # USB-Datentraeger der Konsole. Selbst gebaut statt _seitenpille - die
-        # Beschriftung nennt den gewaehlten Ordner; gezeigt nur bei Knopf 8.
-        ziel = RoundedButton(kopf, text="", command=self._direct_stream_ziel_waehlen,
-                             font=(UI_SCHRIFT, pt(9), "bold"), height=32, pille=True,
-                             breite_nach_text=True, polster_x=14)
-        self._seitenpille_faerben(ziel, False)
-        pillen = getattr(self, "_seitenpillen", None)
-        if pillen is None:
-            pillen = self._seitenpillen = []
-        pillen.append((ziel, False))
-        self._webseite_ziel_knopf = ziel
         self._webseite_status = tk.StringVar(master=seite, value="")
         tk.Label(kopf, textvariable=self._webseite_status, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(
@@ -11206,126 +11189,13 @@ class PS5ConverterGUI:
                                  if getattr(self, "_webseite_name_schluessel", "") else "")
         self._webseite_adresse.set(self._adresse_ohne_marke(getattr(self, "_webseite_url", "")))
         self._webseite_urheber_zeigen()
-        self._direct_stream_ziel_zeigen()
         self._webseite_melden()
-
-    def _direct_stream_ziel_text(self, ordner: str) -> str:
-        """Der Zielordner lesbar: interner Speicher, USB-Datentraeger oder der Pfad."""
-        ordner = str(ordner or "").rstrip("/") or "/"
-        if ordner == direct_stream.ZIELORDNER:
-            return self._t("directstream.ziel_intern")
-        teile = ordner.split("/")
-        if len(teile) >= 3 and teile[1] == "mnt" and teile[2]:
-            return self._t("directstream.ziel_usb", name=teile[2],
-                           unter=("/" + "/".join(teile[3:])) if len(teile) > 3 else "")
-        return ordner
-
-    def _direct_stream_ziel_zeigen(self) -> None:
-        """Der Zielknopf im Kopf der Seite - nur bei Direct Stream und laufender Sitzung."""
-        knopf = getattr(self, "_webseite_ziel_knopf", None)
-        if knopf is None:
-            return
-        sitzung = self._direct_stream_sitzung
-        try:
-            if (getattr(self, "_webseite_name_schluessel", "") == "directstream.titel"
-                    and sitzung is not None and sitzung.laeuft):
-                knopf.configure(text=self._t("directstream.ziel_knopf",
-                                             ziel=self._direct_stream_ziel_text(sitzung.zielordner)))
-                if not knopf.winfo_manager():
-                    knopf.pack(side="right", padx=(8, 0))
-            elif knopf.winfo_manager():
-                knopf.pack_forget()
-        except tk.TclError as exc:
-            logger.debug("Zielknopf nicht aktualisierbar: %s", exc)
-
-    def _direct_stream_ziel_waehlen(self) -> None:
-        """Knopf "Ziel: …": sucht die USB-Datentraeger der Konsole und bietet sie zur Wahl an.
-
-        Die Suche (FTP, ``_ps5_usb_datentraeger``) laeuft im Faden; die Liste
-        geht danach als Menue am Knopf auf. Ohne Adresse oder ohne FTP gibt es
-        nur den internen Speicher - mit Hinweis, warum.
-        """
-        sitzung = self._direct_stream_sitzung
-        if sitzung is None or not sitzung.laeuft:
-            return
-        ip = self._direct_stream_adresse()
-        self._set_status_fluechtig(self._t("directstream.ziel_suche"))
-
-        def _suchen() -> None:
-            datentraeger: list[str] = []
-            grund = ""
-            if not ip:
-                grund = self._t("directstream.ziel_ohne_adresse")
-            else:
-                ftp = None
-                try:
-                    ftp = self._ampr_ftp_connect(ip, self._ps5_ftp_port(), timeout=8)
-                    datentraeger = list(self._ps5_usb_datentraeger(ftp))
-                except Exception as exc:  # noqa: BLE001 - ohne FTP bleibt der interne Speicher
-                    grund = self._t("directstream.ziel_ftp_fehler", fehler=exc)
-                finally:
-                    if ftp is not None:
-                        try:
-                            ftp.quit()
-                        except Exception:  # noqa: BLE001
-                            pass
-            self._hauptfaden_planen(self._direct_stream_ziel_menue, datentraeger, grund)
-
-        threading.Thread(target=_suchen, daemon=True, name="directstream-usb").start()
-
-    def _direct_stream_ziel_menue(self, datentraeger: list, grund: str = "") -> None:
-        """Das Auswahlmenue am Zielknopf - nur Hauptfaden."""
-        knopf = getattr(self, "_webseite_ziel_knopf", None)
-        if knopf is None or not knopf.winfo_exists():
-            return
-        c = self._COLORS
-        menue = tk.Menu(self.root, tearoff=0, bg=c["bg_card"], fg=c["fg_primary"],
-                        activebackground=c["fg_accent"], activeforeground=c["bg_main"],
-                        font=(UI_SCHRIFT, pt(10)))
-        menue.add_command(label=self._t("directstream.ziel_eintrag_intern",
-                                        ordner=direct_stream.ZIELORDNER),
-                          command=lambda: self._direct_stream_ziel_setzen(direct_stream.ZIELORDNER))
-        for pfad in datentraeger:
-            menue.add_command(label=self._t("directstream.ziel_eintrag_usb",
-                                            name=os.path.basename(str(pfad).rstrip("/")), ordner=pfad),
-                              command=lambda p=pfad: self._direct_stream_ziel_setzen(p))
-        if not datentraeger:
-            menue.add_command(label=grund or self._t("directstream.ziel_kein_usb"), state="disabled")
-        try:
-            menue.tk_popup(knopf.winfo_rootx(), knopf.winfo_rooty() + knopf.winfo_height())
-        finally:
-            menue.grab_release()
-
-    def _direct_stream_ziel_setzen(self, ordner: str) -> None:
-        """Stellt den Zielordner von Direct Stream um und meldet es - nur Hauptfaden."""
-        sitzung = self._direct_stream_sitzung
-        if sitzung is None or not sitzung.laeuft:
-            return
-        try:
-            sitzung.zielordner_setzen(ordner)
-        except Exception as exc:  # noqa: BLE001 - z. B. "erst Uebertragungen anhalten"
-            messagebox.showerror(self._t("directstream.titel"),
-                                 self._t("directstream.ziel_fehler", fehler=exc), parent=self.root)
-            return
-        if ordner == direct_stream.ZIELORDNER:
-            zeile = self._t("directstream.log_ziel_intern", ziel=ordner, pakete=direct_stream.PAKET_ORDNER)
-        else:
-            zeile = self._t("directstream.log_ziel_anderes", ziel=ordner)
-        self._append_to_log(zeile)
-        self._direct_stream_ziel_zeigen()
-        engine = getattr(self, "_webseite_engine", None)
-        if engine is not None:
-            # Die Seite zeigt den neuen Ordner in ihren Einstellungen nach dem Neuladen
-            engine.neu_laden()
 
     #: Mitgelieferte Weboberflaechen, deren Entwickler die Seite nennt:
     #: Textschluessel des Titels -> (Name, GitHub-Seite, Profilbild relativ zum
     #: Programmordner oder leer). Wunsch des Nutzers vom 06.10.2026: "beim neuen
     #: Knopf 8 fehlt mir der Entwickler-Name im Fenster inkl. GitHub-Link".
-    _WEBSEITE_URHEBER: dict[str, tuple[str, str, str]] = {
-        "directstream.titel": ("ChillQuant", "https://github.com/ChillQuant/direct-stream-ps5",
-                               "entwickler_chillquant.png"),
-    }
+    _WEBSEITE_URHEBER: dict[str, tuple[str, str, str]] = {}
 
     def _webseite_urheber_zeigen(self) -> None:
         """Zeile mit Profilbild, Name und GitHub-Link unter dem Kopf - oder keine."""
@@ -11350,8 +11220,7 @@ class PS5ConverterGUI:
         if bild in fotos:
             return fotos[bild]
         foto = None
-        wurzel = _direct_stream_wurzel()
-        pfad = os.path.join(wurzel, bild) if (bild and wurzel) else ""
+        pfad = self._mitgeliefert_finden(bild) if bild else ""
         if pfad and os.path.isfile(pfad):
             try:
                 with Image.open(pfad) as roh:
@@ -11442,6 +11311,8 @@ class PS5ConverterGUI:
         if seite not in self._KONSOLE_SEITENBAU:
             return
         self._konsole_seite = seite
+        if seite != "web":
+            self._konsole_aktiver_knopf = ""
         if self._ansicht_ist_konsole():
             self._konsole_tafel_zeigen()
         self._konsole_knopf_hervorheben(seite)
@@ -11494,19 +11365,19 @@ class PS5ConverterGUI:
         "coolsyscent": ("coolsyscent", ""),
         "shadowmount": ("shadowmount", "shadowmountplus_v*.elf"),
         "smplusgui": ("smplusgui", ""),
+        "bfpilot": ("bfpilot", ""),
     }
 
     #: Kennungen, die weder eine Seite noch ein Fenster oeffnen, sondern eine
     #: Direktaktion ausfuehren (z. B. Payload sicherstellen + Weboberflaeche
     #: oeffnen) - ohne den aktiven Knopf/die Seite zu wechseln. Die Knoepfe 4 bis
-    #: 7 laufen alle ueber :meth:`_konsole_webdienst_oeffnen`; Knopf 8 startet
-    #: den lokalen Direct Stream (:meth:`_konsole_directstream_oeffnen`).
+    #: 8 laufen alle ueber :meth:`_konsole_webdienst_oeffnen`.
     _KONSOLE_AKTIONEN: dict[str, str] = {
         "prosperomgr": "_konsole_prosperomgr_oeffnen",
         "coolsyscent": "_konsole_coolsyscent_oeffnen",
         "shadowmount": "_konsole_shadowmount_oeffnen",
         "smplusgui": "_konsole_smplusgui_oeffnen",
-        "directstream": "_konsole_directstream_oeffnen",
+        "bfpilot": "_konsole_bfpilot_oeffnen",
     }
 
     def _konsole_knopf_gedrueckt(self, kennung: str, schluessel: str) -> None:
@@ -11517,6 +11388,10 @@ class PS5ConverterGUI:
             return
         aktion = self._KONSOLE_AKTIONEN.get(kennung, "")
         if aktion:
+            # Zeigt die Aktion eine Weboberflaeche, ist dieser Knopf der hervorgehobene
+            # (nicht der der Seite, von der man kam) - siehe _konsole_knopf_hervorheben.
+            if kennung in self._KONSOLE_WEBDIENSTE:
+                self._konsole_aktiver_knopf = schluessel
             getattr(self, aktion)()
             return
         befehl = self._KONSOLE_FENSTER.get(kennung, "")
@@ -11727,88 +11602,9 @@ class PS5ConverterGUI:
         """Knopf "7. SMPlusGui" (Weboberflaeche auf Port 7777)."""
         self._konsole_webdienst_oeffnen("smplusgui")
 
-    #: Der laufende Direct-Stream-Server (:class:`direct_stream.Sitzung`) - ``None``,
-    #: solange der Knopf nie gedrueckt wurde oder das Programm ihn beendet hat.
-    _direct_stream_sitzung: "direct_stream.Sitzung | None" = None
-
-    def _konsole_directstream_oeffnen(self) -> None:
-        """Knopf "8. Direct Stream": den mitgelieferten Streamer starten, seine Seite rechts zeigen.
-
-        Wunsch des Nutzers vom 05.10.2026 (Archive im Anhang): "einen Knopf ... mit
-        dieser Funktion". Anders als bei den Knoepfen 4 bis 7 laeuft hier nichts auf
-        der Konsole. Direct Stream ist ein kleiner Webserver auf diesem Rechner (nur
-        127.0.0.1, siehe :mod:`direct_stream`), der Downloads oder lokale Dateien
-        ueber FTP in den Speicher der PS5 schickt - es gibt weder ELF-Loader noch
-        Port 9021 zu pruefen. Der Knopf startet den Server beim ersten Druck, traegt
-        Adresse und FTP-Port der PS5 ein, wo noch keine stehen, und zeigt die Seite
-        ueber :meth:`_webansicht_oeffnen` (unter Windows rechts im Programm, sonst im
-        Browser).
-
-        Der Server laeuft weiter, wenn man die Seite verlaesst: Eine Uebertragung
-        soll nicht abreissen, weil man kurz in die Bibliothek schaut. Ein zweiter
-        Druck zeigt dieselbe Sitzung wieder. Beendet wird er mit dem Programm
-        (:meth:`_direct_stream_beenden`) oder von der Seite selbst ("Quit app") -
-        dann startet der naechste Druck eine neue Sitzung.
-        """
-        titel = self._t("directstream.titel")
-        wurzel = _direct_stream_wurzel()
-        if not wurzel:
-            messagebox.showerror(titel, self._t("directstream.fehlt", ordner=direct_stream.ORDNER),
-                                 parent=self.root)
-            return
-        sitzung = self._direct_stream_sitzung
-        if sitzung is None or not sitzung.laeuft:
-            adresse = self._direct_stream_adresse()
-            port = self._ps5_ftp_port()
-            try:
-                sitzung = direct_stream.starten(wurzel, _direct_stream_datenordner(),
-                                                host=adresse, ftp_port=port,
-                                                sprache=self._current_language)
-            except Exception as exc:  # noqa: BLE001 - der Grund gehoert in die Meldung
-                logger.exception("Direct Stream nicht gestartet")
-                self._append_to_log(self._t("directstream.log_fehler", fehler=exc) + "\n")
-                messagebox.showerror(titel, self._t("directstream.start_fehler", fehler=exc),
-                                     parent=self.root)
-                return
-            self._direct_stream_sitzung = sitzung
-            self._append_to_log(self._t("directstream.log_gestartet", port=sitzung.port) + "\n")
-            if sitzung.vorbelegt:
-                self._append_to_log(self._t("directstream.log_vorbelegt",
-                                            adresse=adresse, port=port) + "\n")
-        # Die Seite folgt der Sprache des Programms (deutsch, sonst englisch ohne Mac-Bezug)
-        sitzung.sprache = self._current_language
-        self._webansicht_oeffnen(sitzung.url, "directstream.titel", "uebersicht")
-
-    def _direct_stream_adresse(self) -> str:
-        """Die Adresse der PS5, soweit das Programm sie kennt - ohne Rueckfrage und ohne Hinweisfenster.
-
-        Das Feld der Ansicht KONSOLE gilt zuerst (dort steht, was die Suche beim
-        Programmstart gefunden hat), danach die gemerkte Adresse aus den
-        Einstellungen. Fehlt beides, bleibt Direct Stream ohne Adresse: Sie laesst
-        sich auf seiner Seite eintragen, der Knopf soll deshalb nie an ihr scheitern.
-        """
-        feld = getattr(self, "_konsole_tafel_ip", None)
-        wert = feld.get().strip() if feld is not None else ""
-        if not self._ist_plausible_ps5_adresse(wert):
-            wert = self._ps5_ip()
-        return wert if self._ist_plausible_ps5_adresse(wert) else ""
-
-    def _direct_stream_uebertraegt(self) -> bool:
-        """Laeuft gerade eine Uebertragung in Direct Stream? Dann unterbricht das Beenden sie."""
-        sitzung = self._direct_stream_sitzung
-        return bool(sitzung is not None and sitzung.laeuft and sitzung.uebertraegt())
-
-    def _direct_stream_beenden(self) -> None:
-        """Haelt Direct Stream an (mit dem Programm) - ohne Wirkung, wenn es nicht lief.
-
-        Ein laufender Auftrag wird abgebrochen; seine unvollstaendige Datei bleibt
-        auf der Konsole, der Stand in der Warteschlange (das Werkzeug setzt ihn
-        beim naechsten Start auf "pausiert"). Laeuft im Abbau-Faden des Beendens.
-        """
-        sitzung = self._direct_stream_sitzung
-        self._direct_stream_sitzung = None
-        if sitzung is not None and not sitzung.beenden():
-            logger.warning("Direct Stream liess sich nicht innerhalb der Frist anhalten.")
+    def _konsole_bfpilot_oeffnen(self) -> None:
+        """Knopf "8. BFpilot" (Weboberflaeche auf Port 5905) - Dateimanager, Archive, PKG-Installer."""
+        self._konsole_webdienst_oeffnen("bfpilot")
 
     def _konsole_webdienst_protokoll(self, schluessel: str, werte: dict) -> None:
         """Uebersetzt eine Meldung von :meth:`_konsole_webdienst_oeffnen` und
@@ -12118,14 +11914,12 @@ class PS5ConverterGUI:
     def _konsole_webkit_zeigen(self) -> None:
         """Knopf "2. WebKit Autoloader": rechts die Seite zeigen.
 
-        Ein zweiter Druck fuehrt zu "Konsole & Payloads" zurueck. Das Zeigen
-        schickt nichts ins Netz und startet nichts; gearbeitet wird erst auf
-        Knopfdruck.
+        Ein zweiter Druck auf denselben Knopf aendert nichts (vorher fuehrte er
+        zu "Konsole & Payloads" zurueck und liess die Auswahl "springen").
+        Das Zeigen schickt nichts ins Netz und startet nichts; gearbeitet wird
+        erst auf Knopfdruck.
         """
-        self._konsole_seite_setzen(
-            "uebersicht"
-            if getattr(self, "_konsole_seite", "uebersicht") == "webkit"
-            else "webkit")
+        self._konsole_seite_setzen("webkit")
 
     def _webkit_seite_bauen(self) -> None:
         """Baut die Seite: Fassung waehlen, Host starten, Installer senden.
@@ -13030,17 +12824,6 @@ class PS5ConverterGUI:
             # Benutzer hat "Nein" gewählt -> Fenster bleibt offen
             return
 
-        # Direct Stream laeuft im Programm (seit 05.10.2026): Mit dem Fenster endet
-        # auch der Server, und eine laufende Uebertragung bricht ab. Die unvollstaendige
-        # Datei bleibt auf der Konsole, die Warteschlange merkt sich den Stand - das
-        # Werkzeug setzt den Auftrag beim naechsten Start fort. Gefragt wird nur, wenn
-        # wirklich gerade ein Auftrag laeuft; ein Server ohne Arbeit schliesst still.
-        if self._direct_stream_uebertraegt() and not messagebox.askyesno(
-                self._t("dialog.title.quit"),
-                self._t("directstream.quit_confirm"),
-                default="no", parent=self.root):
-            return
-
         # Der AMPR-Mitschnitt-Assistent hat an der Konsole umgestellt
         # (ShadowMount+-Schluessel, Aufnahme-Bibliothek); zurueck stellt sein
         # Faden im finally. Endete das Programm vorher, bliebe die Konsole
@@ -13119,9 +12902,6 @@ class PS5ConverterGUI:
             # Ein beim Schliessen abgebrochener PKG-Merge raeumt seine .tmp
             # noch weg - erst danach darf der Prozess enden.
             self._auf_pkg_merge_warten()
-            # Direct Stream anhalten (speichert die Warteschlange) - vor dem Abbau
-            # der Fenster, aber nach den Aufgaben, die noch auf die Konsole warten.
-            self._direct_stream_beenden()
             self._force_dismount_all()
             self._cleanup_exit_temp_targets(
                 checkpoint_mode=shutdown_mode,
@@ -55171,6 +54951,8 @@ class PS5ConverterGUI:
     #: Fensters dahinter durch und machte den Hinweis unruhig. Das
     #: Blenden ist der Effekt, nicht die Durchsichtigkeit.
     _PS4_HINWEIS_DECKKRAFT = 1.0
+    #: Stand des laufenden Hinweises; setzt das Fenster ``ps4_dump_image`` (``self.g._ps4_hinweis_stand``).
+    _ps4_hinweis_stand: "dict | None" = None
 
     def _ps4_hinweis_faellig(self, wert: float) -> bool:
         """Ob bei diesem Fortschritt eine Einblendung ansteht."""
@@ -55389,671 +55171,18 @@ class PS5ConverterGUI:
             except Exception:
                 pass
 
-    def _show_ps4_pkg_ota(self) -> None:
-        """Öffnet „PS4 PKG → OTA“ - oder holt das offene Fenster nach vorn.
-
-        Der eine Knopf fuer PS4-Pakete: Sammlung mit Tabelle und Filtern,
-        Einzelheiten, entpacken, pruefen, zusammenfuehren, neu packen, bauen,
-        umbenennen und ordnen, Updates holen und per Netzwerk an die Konsole
-        senden (``ps5_validator/ui/ps4_ota.py``).
-        """
-        ps4_ota.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
-
     def _show_ps4_pkg_converter(self) -> None:
-        """Öffnet das Fenster „PS4 PKG → ffpfsc".
+        """Öffnet „PS4 PKG Dump & Image Converter“ - oder holt das offene Fenster nach vorn.
 
-        Wandelt PS4-PKG (Basis, Patch, optional DLC) oder ein bereits
-        entpacktes PS4-Spiel in ein ShadowMountPlus-Abbild um. Die Arbeit
-        macht das eingebettete PS4-FFPFSC 0.2.8; dieses Fenster wählt aus,
-        zeigt den Fortschritt und schreibt das Protokoll mit.
+        Der eine Knopf fuer PS4-Pakete (seit 07.10.2026, ersetzt „PS4 PKG -> OTA“ und „PS4 PKG -> ffpfsc“):
+        Dump-Ordner entpacken, ffpfsc/exFAT bauen, Basis und Update zu einem Paket zusammenfuehren, Updates
+        online laden, Pakete an die Konsole senden (``ps5_validator/ui/ps4_dump_image.py``). Die Bibliothek
+        reicht ihre Pakete ueber ``_ps4pkg_vorgabe`` herein (``os.pathsep``-getrennt) - einmalig: Wer das
+        Fenster danach selbst oeffnet, soll es nicht schon gefuellt vorfinden.
         """
-        c = self._COLORS
-        if not _ps4ffpsc_wurzel():
-            messagebox.showerror(
-                self._t("ps4pkg.window_title"),
-                self._t("ps4pkg.missing_tool"),
-                parent=self.root,
-            )
-            return
-        if not _ps4ffpsc_entpacker():
-            messagebox.showerror(
-                self._t("ps4pkg.window_title"),
-                self._t("ps4pkg.no_extractor", system=_systemname()),
-                parent=self.root,
-            )
-            return
-
-        win = self._build_modern_toplevel(
-            self._t("ps4pkg.window_title"), 980, 760, min_width=860, min_height=640)
-        self._build_modern_header(
-            win, self._t("ps4pkg.window_title"), self._t("ps4pkg.subtitle"))
-
-        körper = tk.Frame(win, bg=c["bg_main"], padx=18)
-        körper.pack(fill="both", expand=True)
-
-        quelle_art = tk.StringVar(value="pkg_dir")
-        quelle_var = tk.StringVar()
-        # Die Bibliothek ("Konvertieren" auf der Karte eines .pkg) reicht ihre Datei ueber
-        # ``_ps4pkg_vorgabe`` herein - einmalig: Wer das Fenster danach selbst oeffnet,
-        # soll es nicht schon gefuellt vorfinden.
         vorgabe = str(getattr(self, "_ps4pkg_vorgabe", "") or "")
         self._ps4pkg_vorgabe = ""
-        if vorgabe:
-            # Mehrere Pakete (aus "PS4 PKG -> OTA") kommen mit ``os.pathsep`` getrennt -
-            # wie sie auch der Auswahldialog eintraegt; jedes einzeln glaetten.
-            quelle_art.set("pkg_file")
-            quelle_var.set(os.pathsep.join(os.path.normpath(p) for p in vorgabe.split(os.pathsep) if p.strip()))
-        ziel_var = tk.StringVar(value=self.dest_path.get().strip() if hasattr(self, "dest_path") else "")
-        format_var = tk.StringVar(value="ffpfsc")
-        stufe_var = tk.IntVar(value=7)
-        worker_var = tk.IntVar(value=max(1, (os.cpu_count() or 4) // 2))
-        dlc_var = tk.BooleanVar(value=False)
-        status_var = tk.StringVar(value=self._t("ps4pkg.status_idle"))
-        laeuft = {"aktiv": False, "abbruch": False, "prozess": None}
-        gefunden: dict[str, dict] = {}
-
-        # ── Quelle ──────────────────────────────────────────────────────
-        tk.Label(körper, text=self._t("ps4pkg.source_label"), font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        art_reihe = tk.Frame(körper, bg=c["bg_main"])
-        art_reihe.pack(fill="x")
-        for wert, schluessel in (
-            ("pkg_dir", "ps4pkg.source_kind_dir"),
-            ("pkg_file", "ps4pkg.source_kind_files"),
-            ("dump_dir", "ps4pkg.source_kind_dump"),
-        ):
-            self._pw.Radiobutton(
-                art_reihe, text=self._t(schluessel), value=wert, variable=quelle_art,
-                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
-                selectcolor=c["bg_card"], activebackground=c["bg_main"],
-                activeforeground=c["fg_primary"], highlightthickness=0, bd=0,
-            ).pack(side="left", padx=(0, 14))
-
-        pfad_reihe = tk.Frame(körper, bg=c["bg_main"])
-        pfad_reihe.pack(fill="x", pady=(6, 0))
-        self._pw.Entry(pfad_reihe, textvariable=quelle_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                 relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
-
-        def _quelle_waehlen() -> None:
-            """Öffnet den zur gewählten Art passenden Auswahldialog."""
-            art = quelle_art.get()
-            if art == "pkg_file":
-                pfade = filedialog.askopenfilenames(
-                    title=self._t("ps4pkg.choose_files"),
-                    filetypes=[(self._t("ps4pkg.filetype_pkg"), "*.pkg")], parent=win)
-                if pfade:
-                    quelle_var.set(os.pathsep.join(os.path.normpath(p) for p in pfade))
-                return
-            ordner = filedialog.askdirectory(
-                title=self._t("ps4pkg.choose_dir"),
-                initialdir=self._get_source_dialog_initial_dir() or None, parent=win)
-            if ordner:
-                quelle_var.set(os.path.normpath(ordner))
-
-        self._pw.Button(pfad_reihe, text="…", width=3, command=_quelle_waehlen).pack(side="left", padx=(6, 0))
-
-        # ── Gefundene Spiele ────────────────────────────────────────────
-        tk.Label(körper, text=self._t("ps4pkg.games_label"), font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        liste_rahmen = tk.Frame(körper, bg=c["bg_main"])
-        liste_rahmen.pack(fill="both", expand=True)
-        spalten = ("title_id", "plattform", "titel", "version", "teile")
-        liste = self._pw.Treeview(liste_rahmen, columns=spalten, show="headings", height=4)
-        for spalte, breite in zip(spalten, (110, 80, 350, 100, 190)):
-            # anchor auch in der Kopfzeile: column(anchor=...) stellt nur die
-            # Werte links, die Ueberschrift zentriert Tk sonst weiter.
-            liste.heading(spalte, text=self._t(f"ps4pkg.col_{spalte}"), anchor="w")
-            liste.column(spalte, width=breite, anchor="w")
-        # Ein PS5-Titel gehoert nicht in dieses Fenster - er soll auffallen,
-        # nicht nur in einer Spalte stehen.
-        liste.tag_configure("ps5", foreground=c["fg_warning"])
-        liste.tag_configure("unbekannt", foreground=c["fg_secondary"])
-        liste.pack(side="left", fill="both", expand=True)
-        liste_scroll = self._pw.Scrollbar(liste_rahmen, orient="vertical", command=liste.yview)
-        liste_scroll.pack(side="right", fill="y")
-        liste.configure(yscrollcommand=liste_scroll.set)
-
-        # ── Ziel und Einstellungen ──────────────────────────────────────
-        tk.Label(körper, text=self._t("ps4pkg.output_label"), font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        ziel_reihe = tk.Frame(körper, bg=c["bg_main"])
-        ziel_reihe.pack(fill="x")
-        self._pw.Entry(ziel_reihe, textvariable=ziel_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                 relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
-
-        def _ziel_waehlen() -> None:
-            ordner = filedialog.askdirectory(title=self._t("ps4pkg.choose_output"), parent=win)
-            if ordner:
-                ziel_var.set(os.path.normpath(ordner))
-
-        self._pw.Button(ziel_reihe, text="…", width=3, command=_ziel_waehlen).pack(side="left", padx=(6, 0))
-
-        einstell = tk.Frame(körper, bg=c["bg_main"])
-        einstell.pack(fill="x", pady=(8, 0))
-        tk.Label(einstell, text=self._t("ps4pkg.format_label"), font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        self._pw.Combobox(einstell, textvariable=format_var, state="readonly", width=10,
-                     values=("ffpfsc", "exfat"), font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
-        tk.Label(einstell, text=self._t("ps4pkg.level_label"), font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        self._pw.Spinbox(einstell, from_=0, to=9, textvariable=stufe_var, width=4,
-                    font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
-        tk.Label(einstell, text=self._t("ps4pkg.workers_label"), font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        self._pw.Spinbox(einstell, from_=1, to=max(1, os.cpu_count() or 4), textvariable=worker_var,
-                    width=4, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
-        dlc_kasten = self._pw.Checkbutton(
-            einstell, text=self._t("ps4pkg.dlc_label"), variable=dlc_var,
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
-            selectcolor=c["bg_card"], activebackground=c["bg_main"],
-            activeforeground=c["fg_warning"], highlightthickness=0, bd=0,
-        )
-        dlc_kasten.pack(side="left")
-        DelayedTooltip(dlc_kasten, self._t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
-
-        # Der Ablageort steht nicht mehr dauerhaft im Fenster, sondern in
-        # der Einblendung waehrend der Umwandlung: Dort erreicht er den
-        # Nutzer im richtigen Moment - er wartet ohnehin auf den Balken -,
-        # und das Fenster wird um rund 190 px kuerzer. Siehe
-        # _ps4_hinweis_zeigen.
-
-        # ── Fortschritt und Protokoll ───────────────────────────────────
-        balken = self._pw.Progressbar(körper, mode="determinate", maximum=100.0)
-        balken.pack(fill="x", pady=(10, 3))
-        tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
-                 wraplength=920, justify="left").pack(fill="x")
-
-        # wrap="word" statt "none": Hier landet der Abbruchgrund des
-        # eingebetteten Werkzeugs, und der ist eine einzige lange Zeile
-        # ("...extraction failed for X: ... Extractor output: ..."). Ohne
-        # Umbruch stand davon nur der Anfang im Bild, der Rest lag hinter
-        # einem waagerechten Rollbalken - genau die Auskunft, die der
-        # Anwender braucht, wenn ein Paket nicht durchgeht. Mit Umbruch
-        # entfaellt der Rollbalken; sechs Zeilen Grundhoehe, weil eine solche
-        # Meldung umgebrochen selten in vier passt.
-        protokoll = self._pw.Text(körper, height=6, font=("Consolas", pt(9)),
-                            bg=c["console_bg"], fg=c["console_fg"], relief="flat",
-                            insertbackground=c["console_fg"], wrap="word")
-        protokoll.pack(fill="both", expand=True, pady=(6, 0))
-
-        def _protokoll(text: str) -> None:
-            """Hängt eine Zeile an das Protokollfeld des Fensters an."""
-            def _setzen() -> None:
-                if not protokoll.winfo_exists():
-                    return
-                protokoll.insert("end", text.rstrip("\n") + "\n")
-                protokoll.see("end")
-            self._spaeter_im_fenster(win, _setzen)
-
-        def _status(text: str) -> None:
-            self._spaeter_im_fenster(win, lambda: status_var.set(text))
-
-        def _balken(wert: float) -> None:
-            begrenzt = max(0.0, min(100.0, wert))
-
-            def _setzen() -> None:
-                balken.configure(value=begrenzt)
-                # Waehrend der Nutzer auf den Balken schaut, steht die eine
-                # Sache da, die ueber Laufen und Nicht-Laufen entscheidet.
-                if self._ps4_hinweis_faellig(begrenzt):
-                    self._ps4_hinweis_zeigen(win)
-
-            self._spaeter_im_fenster(win, _setzen)
-
-        # ── Quellenangaben in CLI-Schalter übersetzen ───────────────────
-        def _quellen_argumente() -> list[str] | None:
-            """Baut die Quellschalter; None bei ungültiger Eingabe."""
-            eingabe = quelle_var.get().strip()
-            if not eingabe:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_source"), parent=win)
-                return None
-            art = quelle_art.get()
-            if art == "pkg_file":
-                argumente: list[str] = []
-                for teil in eingabe.split(os.pathsep):
-                    pfad = teil.strip()
-                    if pfad:
-                        argumente += ["--pkg-file", pfad]
-                if not argumente:
-                    messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                           self._t("ps4pkg.no_source"), parent=win)
-                    return None
-                return argumente
-            if not os.path.isdir(eingabe):
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_source"), parent=win)
-                return None
-            return ["--dump-dir" if art == "dump_dir" else "--pkg-dir", eingabe]
-
-        def _arbeitsbasis() -> str:
-            """Wo der Arbeitsordner hin soll - im **Fensterfaden** zu lesen.
-
-            Bis v1.9.24 las ``_arbeitsordner`` Ziel- und Temp-Feld selbst, und
-            zwar aus den Arbeitsfaeden von Einlesen und Erstellen.
-            """
-            return (ziel_var.get().strip()
-                    or (str(self.temp_path.get()).strip() if hasattr(self, "temp_path") else "")
-                    or tempfile.gettempdir())
-
-        def _arbeitsordner(basis: str) -> str:
-            """Legt den Arbeitsordner für Zwischenstände an.
-
-            Unter Windows wird dabei auf die Pfadlänge geachtet: Der
-            mitgelieferte PKG-Entpacker bricht bei tiefen Zielen mit
-            „Failed to write extracted PKG entry" ab. Nachgemessen an einem
-            Arbeitsordner von 150 Zeichen – das Spiel selbst legt darunter
-            noch ``unpacked/<Title-ID>/…/sce_sys/…`` an und sprengt damit die
-            260-Zeichen-Grenze. In dem Fall weicht der Arbeitsordner auf einen
-            kurzen Pfad im Stammverzeichnis aus; das fertige Abbild landet
-            trotzdem im gewählten Zielordner.
-
-            Args:
-                basis: Aus :func:`_arbeitsbasis`, im Fensterfaden gelesen.
-            """
-            ordner = os.path.join(basis, "ps4ffpsc_arbeit")
-            if IST_WINDOWS and len(ordner) > _PS4FFPSC_MAX_ARBEITSPFAD:
-                ausweich = _ps4ffpsc_kurzer_arbeitsordner(basis)
-                _protokoll(self._t("ps4pkg.short_workdir", laenge=len(ordner), pfad=ausweich))
-                ordner = ausweich
-            os.makedirs(ordner, exist_ok=True)
-            return ordner
-
-        # ── Einlesen ────────────────────────────────────────────────────
-        def _einlesen() -> None:
-            """Liest die Quelle ein und füllt die Spieleliste."""
-            if laeuft["aktiv"]:
-                return
-            argumente = _quellen_argumente()
-            if argumente is None:
-                return
-            liste.delete(*liste.get_children())
-            gefunden.clear()
-            laeuft["aktiv"] = True
-            _status(self._t("ps4pkg.status_scanning"))
-            _balken(0.0)
-            # Felder im Fensterfaden lesen, nicht im Arbeitsfaden.
-            basis = _arbeitsbasis()
-            quelle_text = quelle_var.get().strip()
-            quelle_typ = quelle_art.get()
-
-            def _arbeit() -> None:
-                try:
-                    arbeit = _arbeitsordner(basis)
-                    rc, ausgabe = self._ps4ffpsc_lauf(
-                        ["list", "--json", *argumente, "--work-dir", arbeit, "--unpacked-dir",
-                         os.path.join(arbeit, "unpacked")],
-                        arbeitsordner=arbeit,
-                        zeile_callback=_protokoll,
-                        prozess_ablage=laeuft,
-                        json_modus=True,
-                    )
-                    laeuft["aktiv"] = False
-                    # Rueckgabewert 2 ist KEIN Fehlschlag. Das Werkzeug gibt
-                    # EXIT_CONFLICT zurueck, sobald irgendein Titel einen
-                    # Konflikt hat (cli.py:260) - das vollstaendige
-                    # Verzeichnis steht zu diesem Zeitpunkt aber laengst auf
-                    # der Ausgabe, denn _print_list laeuft eine Zeile davor.
-                    # Bis v1.9.7 verwarf ein einziger Titel mit zwei Fassungen
-                    # desselben Pakets die gesamte, bereits gelieferte Liste;
-                    # der Anwender sah nur "Einlesen fehlgeschlagen (2)".
-                    if rc not in (ps4_werkzeug.RC_OK, ps4_werkzeug.RC_KONFLIKT):
-                        _status(self._t("ps4pkg.status_scan_failed", code=rc))
-                        return
-                    try:
-                        daten = json.loads(ausgabe.strip())
-                    except ValueError:
-                        _status(self._t("ps4pkg.status_scan_unreadable"))
-                        return
-                    # Das Werkzeug antwortet mit einem Verzeichnis Title-ID -> Spiel,
-                    # nicht mit einer Liste.
-                    spiele = list(daten.values()) if isinstance(daten, dict) else list(daten)
-                    # Wer PS5-Pakete hierher legt, bekam bisher nur
-                    # "0 Spiel(e) gefunden" - ohne einen Grund dafuer.
-                    sicht = self._ps4ffpsc_quellen_sichten(quelle_text, quelle_typ)
-                    if sicht["ps5"]:
-                        _protokoll(self._t("ps4pkg.ps5_packages",
-                                           anzahl=len(sicht["ps5"])))
-                        for name in sicht["ps5"][:12]:
-                            _protokoll("    %s" % name)
-                        if len(sicht["ps5"]) > 12:
-                            _protokoll(self._t("ps4pkg.and_more",
-                                               anzahl=len(sicht["ps5"]) - 12))
-
-                    # Konflikte nennen, statt sie im Rueckgabewert zu
-                    # verstecken. Ohne diese Zeile bleibt unerklaert, warum
-                    # ein Titel in der Liste steht, sich aber nicht bauen
-                    # laesst.
-                    konflikt_titel = [
-                        str(t) for t, s in (daten.items()
-                                            if isinstance(daten, dict) else [])
-                        if isinstance(s, dict) and s.get("conflicts")]
-                    if konflikt_titel:
-                        _protokoll(self._t("ps4pkg.scan_conflicts",
-                                           anzahl=len(konflikt_titel)))
-                        for kennung in konflikt_titel[:12]:
-                            _protokoll("    %s" % kennung)
-
-                    # Was das Werkzeug abgelehnt hat, steht nur in seiner
-                    # Inventardatei - die Ausgabe von "list --json" enthaelt
-                    # allein die brauchbaren Spiele. Bis v1.9.7 verschwand ein
-                    # abgelehntes Paket deshalb spurlos samt Begruendung.
-                    abgelehnt = ps4_werkzeug.abgelehnte_pakete(
-                        os.path.join(arbeit, "unpacked"))
-                    if abgelehnt is None:
-                        # Nicht lesbar ist nicht dasselbe wie "nichts
-                        # abgelehnt" - das gehoert gesagt, sonst haelt der
-                        # Anwender eine unvollstaendige Liste fuer vollstaendig.
-                        _protokoll(self._t("ps4pkg.rejected_unknown"))
-                    elif abgelehnt:
-                        _protokoll(self._t("ps4pkg.rejected_header",
-                                           anzahl=len(abgelehnt)))
-                        for eintrag in abgelehnt[:12]:
-                            _protokoll(self._t(
-                                "ps4pkg.rejected_entry",
-                                name=os.path.basename(str(eintrag.get("path", "?"))),
-                                grund=str(eintrag.get("reason")
-                                          or eintrag.get("error") or "?")))
-                        if len(abgelehnt) > 12:
-                            _protokoll(self._t("ps4pkg.and_more",
-                                               anzahl=len(abgelehnt) - 12))
-
-                    def _fuellen() -> None:
-                        for spiel in spiele:
-                            if not isinstance(spiel, dict):
-                                continue
-                            title_id = str(spiel.get("title_id", "?"))
-                            gefunden[title_id] = spiel
-                            patches = spiel.get("patches") or []
-                            basis = spiel.get("base") or []
-                            neueste = patches or basis
-                            version = "-"
-                            if neueste and isinstance(neueste[-1], dict):
-                                version = str(neueste[-1].get("version")
-                                              or neueste[-1].get("app_version") or "-")
-                            teile = self._t(
-                                "ps4pkg.parts",
-                                patches=len(patches),
-                                dlc=len(spiel.get("dlc") or []),
-                            )
-                            if not spiel.get("buildable", True):
-                                teile = self._t("ps4pkg.not_buildable") + " - " + teile
-                            # Zu welcher Konsole gehoert der Titel? Das steht
-                            # bisher erst nach dem Bau im Protokoll - wer eine
-                            # PS5-PKG hierher legt, merkte es also viel zu spaet.
-                            plattform = self._ps4ffpsc_plattform(title_id, spiel)
-                            anzeige = {"ps4": "PS4", "ps5": "PS5"}.get(
-                                plattform, self._t("ps4pkg.platform_unknown"))
-                            liste.insert("", "end", iid=title_id,
-                                         tags=(plattform or "unbekannt",), values=(
-                                title_id, anzeige, str(spiel.get("title", "-")),
-                                version, teile,
-                            ))
-                            if plattform == "ps5":
-                                _protokoll(self._t("ps4pkg.is_ps5_title",
-                                                   title_id=title_id))
-                            elif not plattform:
-                                _protokoll(self._t("ps4pkg.platform_unclear",
-                                                   title_id=title_id))
-                            for hinweis in list(spiel.get("warnings") or [])[:5]:
-                                _protokoll(f"[{title_id}] {hinweis}")
-                            for konflikt in list(spiel.get("conflicts") or [])[:5]:
-                                _protokoll(f"[{title_id}] {konflikt}")
-                        if gefunden:
-                            liste.selection_set(next(iter(gefunden)))
-                        _status(self._t("ps4pkg.status_found", count=len(gefunden)))
-
-                    self._spaeter_im_fenster(win, _fuellen)
-                except Exception as exc:  # noqa: BLE001
-                    # Ohne dieses Netz bliebe laeuft["aktiv"] auf True
-                    # stehen: Beide Knoepfe lehnen danach stillschweigend
-                    # jeden weiteren Druck ab, das Fenster ist tot und nur
-                    # noch zu schliessen. Am 04.09.2026 genau so passiert,
-                    # als lauf() mit einem UnboundLocalError ausfiel.
-                    logger.exception("PS4-Einlesen fehlgeschlagen")
-                    meldung = self._t("ps4pkg.status_scan_crashed", error=exc)
-                    _protokoll(meldung)
-                    _status(meldung)
-                finally:
-                    # Doppelt gesetzt schadet nicht: Im Normalfall steht
-                    # das Kennzeichen schon auf False, und der Abbruch-
-                    # knopf verhaelt sich unveraendert.
-                    laeuft["aktiv"] = False
-
-            threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-list").start()
-
-        # ── Erstellen ───────────────────────────────────────────────────
-        def _fortschritt(daten: dict) -> None:
-            """Übersetzt eine Fortschrittsmeldung des Werkzeugs in den Balken."""
-            bereich = str(daten.get("scope", ""))
-            aktuell = float(daten.get("current", 0) or 0)
-            gesamt = float(daten.get("total", 0) or 0)
-            if gesamt > 0:
-                _balken(aktuell / gesamt * 100.0)
-            _status(self._t("ps4pkg.status_stage", stage=bereich,
-                            current=int(aktuell), total=int(gesamt)))
-
-        def _erstellen() -> None:
-            """Baut das Abbild für das ausgewählte Spiel."""
-            if laeuft["aktiv"]:
-                return
-            auswahl = liste.selection()
-            if not auswahl:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_game"), parent=win)
-                return
-            ziel = ziel_var.get().strip()
-            if not ziel or not os.path.isdir(ziel):
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_output"), parent=win)
-                return
-            argumente = _quellen_argumente()
-            if argumente is None:
-                return
-            # Alle Einstellungen hier festhalten, im Fensterfaden. Bis v1.9.24
-            # las der Arbeitsfaden Format, Stufe, Worker und DLC-Haken selbst.
-            try:
-                stufe = int(stufe_var.get())
-                worker = int(worker_var.get())
-            except (tk.TclError, ValueError):
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.bad_number"), parent=win)
-                return
-            ausgabeformat = format_var.get()
-            dlc = bool(dlc_var.get())
-            basis = _arbeitsbasis()
-            if dlc and not messagebox.askyesno(
-                    self._t("ps4pkg.window_title"), self._t("ps4pkg.dlc_confirm"), parent=win):
-                return
-
-            title_id = auswahl[0]
-            laeuft["aktiv"] = True
-            laeuft["abbruch"] = False
-            # Je Lauf zweimal, danach nicht mehr - wer zweimal konvertiert,
-            # bekommt den Hinweis auch beim zweiten Mal.
-            self._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
-                                       "fenster": None, "fertig": False,
-                                       "uhr": None}
-            # Dieser Lauf raeumt nur seinen eigenen Hinweis ab (H10-10).
-            hinweis_dieses_laufs = self._ps4_hinweis_stand
-            _balken(0.0)
-            # Die erste haengt an der Uhr, die zweite am Balken.
-            self._ps4_hinweis_zeit_starten(win)
-            _status(self._t("ps4pkg.status_building", title=title_id))
-
-            def _arbeit() -> None:
-                try:
-                    arbeit = _arbeitsordner(basis)
-                    befehl = [
-                        "build", title_id, *argumente,
-                        "--output-dir", ziel,
-                        "--work-dir", arbeit,
-                        "--unpacked-dir", os.path.join(arbeit, "unpacked"),
-                        "--output-format", ausgabeformat,
-                        "--compression-level", str(stufe),
-                        "--compression-workers", str(worker),
-                        "--dlc-mode", "single-experimental" if dlc else "off",
-                        "--verbose",
-                        # Das Werkzeug haengt seinen Protokollschreiber nur an,
-                        # wenn dieser Schalter kommt (dort pipeline.py:220).
-                        # "--verbose" allein setzt nur die Stufe, nicht den
-                        # Ausgabeweg - ohne "--console-log" lief das gesamte
-                        # Laufprotokoll ins Leere, und im Fehlerfall stand bei
-                        # uns nur die Schlusszeile. Der Schalter ist in der
-                        # Hilfe des Werkzeugs ausgeblendet (argparse.SUPPRESS),
-                        # aber vorhanden und wirksam.
-                        "--console-log",
-                    ]
-                    # Die letzten Zeilen mitschneiden. Der ausfuehrliche
-                    # Abbruchgrund des Werkzeugs geht bisher nur ins
-                    # Protokollfeld dieses Fensters - beim Schliessen ist er
-                    # weg und im Diagnosebericht stand er nie. Genau danach
-                    # fragt aber jeder, dem "es geht bei manchen Spielen
-                    # nicht" gemeldet wird.
-                    letzte_zeilen: list[str] = []
-
-                    def _protokoll_und_merken(text: str) -> None:
-                        sauber = str(text).rstrip("\n")
-                        if sauber.strip():
-                            letzte_zeilen.append(sauber)
-                            if len(letzte_zeilen) > 20:
-                                del letzte_zeilen[0]
-                        _protokoll(text)
-
-                    rc, _ausgabe = self._ps4ffpsc_lauf(
-                        befehl,
-                        arbeitsordner=arbeit,
-                        zeile_callback=_protokoll_und_merken,
-                        fortschritt_callback=_fortschritt,
-                        prozess_ablage=laeuft,
-                    )
-                    laeuft["aktiv"] = False
-                    self._spaeter_im_fenster(win, self._ps4_hinweis_aufraeumen,
-                                             hinweis_dieses_laufs)
-                    if laeuft["abbruch"]:
-                        _status(self._t("ps4pkg.status_cancelled"))
-                        return
-                    if rc == 0:
-                        _balken(100.0)
-                        _status(self._t("ps4pkg.status_done", path=ziel))
-                        self._append_to_log(self._t("ps4pkg.log_done", title=title_id, path=ziel))
-                        # Gleich nachsehen, was wirklich im Abbild steht. Wer erst
-                        # Aufgabe 8 bemuehen muss, erfaehrt es Stunden spaeter -
-                        # oder gar nicht.
-                        _protokoll(self._t("ps4pkg.check_running"))
-                        # Die Datei suchen, nicht den Ordner uebergeben: Das war
-                        # bis v1.8.77 der Grund, warum die Pruefung jedes Mal mit
-                        # "Permission denied" auf dem Ordnerpfad endete.
-                        abbild = self._ps4ffpsc_ergebnis_finden(
-                            ziel, title_id, ausgabeformat)
-                        if not abbild:
-                            _protokoll(self._t("ps4pkg.check_no_image"))
-                            return
-                        befund = self._ps4ffpsc_abbild_pruefen(abbild)
-                        if befund["fehler"]:
-                            _protokoll(self._t("ps4pkg.check_failed",
-                                               error=befund["fehler"]))
-                        else:
-                            _protokoll(self._t("ps4pkg.check_files",
-                                               count=befund["dateien"]))
-                            if befund["ps4"]:
-                                # Bei einem PS4-Titel gehoeren die PS5-Marker gar
-                                # nicht hinein - sie dort zu vermissen waere ein
-                                # Fehlalarm bei jedem einzelnen Spiel.
-                                _protokoll(self._t("ps4pkg.check_ps4_title"))
-                                # Direkt danach die Trophaeengrenze: Genau
-                                # jetzt hat der Nutzer ein fertiges PS4-Abbild
-                                # vor sich und wuerde sonst erst an der
-                                # Konsole darueber stolpern.
-                                _protokoll(self._t("ps4pkg.check_trophy_note"))
-                            else:
-                                for fehlt in befund["fehlend"]:
-                                    _protokoll(self._t("ps4pkg.check_missing", file=fehlt))
-                                    self._append_to_log(
-                                        self._t("ps4pkg.check_missing", file=fehlt) + "\n")
-                                if not befund["fehlend"]:
-                                    _protokoll(self._t("ps4pkg.check_complete"))
-                    else:
-                        _status(self._t("ps4pkg.status_failed", code=rc))
-                        # Den Grund mitschreiben, nicht nur die Zahl. Ohne
-                        # diesen Block stand im Programmprotokoll allein
-                        # "Erstellen fehlgeschlagen (Rueckgabewert 1)" - eine
-                        # Auskunft, mit der niemand etwas anfangen kann.
-                        self._append_to_log(
-                            self._t("ps4pkg.log_failed",
-                                    title=title_id, code=rc) + "\n")
-                        for zeile in letzte_zeilen:
-                            self._append_to_log("    %s\n" % zeile)
-                except Exception as exc:  # noqa: BLE001
-                    # Ohne dieses Netz bliebe laeuft["aktiv"] auf True
-                    # stehen: Beide Knoepfe lehnen danach stillschweigend
-                    # jeden weiteren Druck ab, das Fenster ist tot und nur
-                    # noch zu schliessen. Am 04.09.2026 genau so passiert,
-                    # als lauf() mit einem UnboundLocalError ausfiel.
-                    logger.exception("PS4-Erstellen fehlgeschlagen")
-                    meldung = self._t("ps4pkg.status_build_crashed", error=exc)
-                    _protokoll(meldung)
-                    _status(meldung)
-                finally:
-                    # Doppelt gesetzt schadet nicht: Im Normalfall steht
-                    # das Kennzeichen schon auf False, und der Abbruch-
-                    # knopf verhaelt sich unveraendert.
-                    laeuft["aktiv"] = False
-                    self._spaeter_im_fenster(win, self._ps4_hinweis_aufraeumen,
-                                             hinweis_dieses_laufs)
-
-            threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-build").start()
-
-        def _abbrechen() -> None:
-            """Beendet einen laufenden Vorgang."""
-            prozess = laeuft.get("prozess")
-            if not laeuft["aktiv"] or prozess is None:
-                return
-            laeuft["abbruch"] = True
-            _status(self._t("ps4pkg.status_cancelling"))
-            try:
-                prozess.terminate()
-            except OSError as exc:
-                logger.debug("PS4-Vorgang nicht beendbar: %s", exc)
-
-        # "before=körper" dreht die Packreihenfolge um, ohne den Aufbau
-        # umzustellen: Der Koerper hat fill="both", expand=True und nimmt
-        # sich sonst den ganzen Raum - die Knopfreihe bekaeme nur den Rest
-        # und waere auf einem kurzen Bildschirm nicht mehr zu sehen.
-        # Dieselbe Falle traf schon BACKPORT und DOWNLOADS (v1.8.37).
-        def _beim_schliessen() -> None:
-            """Schliesst das Fenster – und beendet einen laufenden Vorgang.
-
-            Bis v1.9.6 stand hier ``command=lambda: _beim_schliessen()``,
-            ohne dass es diese Funktion gab. Jeder Druck auf SCHLIESSEN warf
-            einen ``NameError`` ins Protokoll, das Fenster blieb stehen, und
-            nur das X der Fensterleiste half weiter. Derselbe Fehler steckte
-            im Debug-.pkg-Bauer und im Umbenennen-Fenster.
-            """
-            if laeuft.get("aktiv"):
-                if not messagebox.askyesno(
-                        self._t("ps4pkg.window_title"),
-                        self._t("ps4pkg.abort_confirm"),
-                        parent=win, default="no"):
-                    return
-                _abbrechen()
-            self._ps4_hinweis_aufraeumen()
-            win.destroy()
-
-        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
-
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x", before=körper)
-        self._pw.Button(knopfreihe, text=self._t("action.close"),
-                   command=_beim_schliessen).pack(side="right")
-        self._pw.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
-        self._pw.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
-                   command=_einlesen).pack(side="left")
-        self._pw.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
-                   command=_erstellen).pack(side="left", padx=(8, 0))
+        ps4_dump_image.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt, vorgabe)
 
     # ==================================================================
     # Klog – Live-Streaming des PS5-Kernel-Logs über einen einfachen
@@ -62794,30 +61923,6 @@ def _wee_tools_arbeitsordner() -> str:
     return os.path.join(wurzel, wee_tools.ARBEITSORDNER_NAME)
 
 
-def _direct_stream_wurzel() -> str:
-    """Der mitgelieferte Direct-Stream-Ordner, sonst leer.
-
-    Gesucht wird wie bei jedem mitgelieferten Ordner (``_mitgeliefert_finden``,
-    auch ``Contents/Resources`` unter macOS). Ein Ordner ohne Einstieg oder ohne
-    Kern zaehlt nicht - ohne beide laesst sich das Werkzeug nicht laden.
-    """
-    pfad = PS5ConverterGUI._mitgeliefert_finden(direct_stream.ORDNER)
-    if os.path.isabs(pfad) and all(os.path.isfile(os.path.join(pfad, datei))
-                                   for datei in (direct_stream.EINSTIEG, direct_stream.KERN)):
-        return pfad
-    return ""
-
-
-def _direct_stream_datenordner() -> str:
-    """Wohin Direct Stream schreibt: ``DirectStream`` im Einstellungsordner des Programms.
-
-    Im Einstellungsordner, nicht neben dem Programm: Dort liegt auch die Zustandsdatei
-    des Programms, und unter macOS darf nichts ins Buendel (Signatur). Angelegt
-    wird hier nichts - das tut :func:`direct_stream.starten`.
-    """
-    return direct_stream.datenordner(_system_konfigurationsordner())
-
-
 def _run_wee_tools(argumente: list[str]) -> int:
     """Interner Modus ``--ps5-wee-tools``: fuehrt das mitgelieferte Werkzeug aus.
 
@@ -63156,11 +62261,14 @@ def _set_windows_app_user_model_id() -> None:
         logger.debug("SetCurrentProcessExplicitAppUserModelID fehlgeschlagen: %s", exc)
 
 
-def _register_mit_license_runtime() -> tuple[bool, str]:
-    """Registriert die MIT-Lizenz in HKCU beim Programmstart.
+def _register_license_runtime() -> tuple[bool, str]:
+    """Registriert die Lizenz des Programms (GPL-3.0-or-later) in HKCU beim Start.
 
     Wird vor dem GUI-Start ausgefuehrt, damit die Lizenzmetadaten bei jedem
-    EXE-Start nachvollziehbar in der Windows-Registry vorhanden sind.
+    EXE-Start nachvollziehbar in der Windows-Registry vorhanden sind. Bis zum
+    07.10.2026 hiess die Funktion ``_register_mit_license_runtime`` und trug
+    den MIT-Text ein; seitdem stehen dort Name, Kennung und der GPL-Hinweis
+    ("Version 3 oder spaeter"), der volle Lizenztext liegt als Datei bei.
 
     Returns:
         ``(ok, angabe)`` - ``angabe`` ist sprachfrei: der Registry-Pfad, der
@@ -63171,7 +62279,7 @@ def _register_mit_license_runtime() -> tuple[bool, str]:
     if not IST_WINDOWS:
         # Kein Mangel, sondern der Normalfall: Ausserhalb von Windows gibt es
         # keine Registry. Die Lizenz liegt der Anwendung als Datei bei.
-        logger.info("%s: Registry-Registrierung entfaellt (MIT-Lizenz liegt bei)",
+        logger.info("%s: Registry-Registrierung entfaellt (Lizenztext liegt bei)",
                     _systemname())
         return (False, _systemname())
 
@@ -63179,12 +62287,12 @@ def _register_mit_license_runtime() -> tuple[bool, str]:
         import winreg  # type: ignore[import]
 
         reg_path = r"Software\PS5DumpImageConverter\License"
-        # Derselbe Text wie in der Datei LICENSE (test_eigene_lizenz.py).
-        # Bis v1.9.28 stand er hier ein zweites Mal - mit anderem Inhaber
-        # und einem Jahr, das mit der Uhr mitlief.
-        mit_text = eigene_lizenz.TEXT
-
-        hash_hex = hashlib.sha256(mit_text.encode("utf-8")).hexdigest()
+        # Der Hinweis aus eigene_lizenz (test_eigene_lizenz.py) - der volle
+        # GPL-Text (35 KB) gehoert nicht in einen Registry-Wert, er liegt als
+        # Datei LICENSE bei; dessen Pruefsumme steht daneben. Bis v1.9.28 stand
+        # der Text hier ein zweites Mal - mit anderem Inhaber und einem Jahr,
+        # das mit der Uhr mitlief.
+        hinweis = eigene_lizenz.HINWEIS
         try:
             registered_at = datetime.datetime.now(datetime.UTC).isoformat()
         except Exception:
@@ -63192,10 +62300,10 @@ def _register_mit_license_runtime() -> tuple[bool, str]:
 
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
         try:
-            winreg.SetValueEx(key, "LicenseName", 0, winreg.REG_SZ, "MIT")
+            winreg.SetValueEx(key, "LicenseName", 0, winreg.REG_SZ, eigene_lizenz.NAME)
             winreg.SetValueEx(key, "SPDX", 0, winreg.REG_SZ, eigene_lizenz.SPDX)
-            winreg.SetValueEx(key, "LicenseText", 0, winreg.REG_SZ, mit_text)
-            winreg.SetValueEx(key, "LicenseHashSHA256", 0, winreg.REG_SZ, hash_hex)
+            winreg.SetValueEx(key, "LicenseText", 0, winreg.REG_SZ, hinweis)
+            winreg.SetValueEx(key, "LicenseHashSHA256", 0, winreg.REG_SZ, eigene_lizenz.TEXT_SHA256)
             winreg.SetValueEx(key, "RegisteredAtUTC", 0, winreg.REG_SZ, registered_at)
             winreg.SetValueEx(key, "RegisteredBy", 0, winreg.REG_SZ, os.environ.get("USERNAME", "unknown"))
             winreg.SetValueEx(key, "BuildVersion", 0, winreg.REG_SZ, APP_VERSION)
@@ -63204,10 +62312,10 @@ def _register_mit_license_runtime() -> tuple[bool, str]:
             winreg.CloseKey(key)
 
         pfad = "HKCU\\" + reg_path
-        logger.info("MIT-Lizenz in %s registriert", pfad)
+        logger.info("Lizenz (%s) in %s registriert", eigene_lizenz.SPDX, pfad)
         return (True, pfad)
     except Exception as exc:
-        logger.warning("MIT-Registry-Registrierung fehlgeschlagen: %s", exc)
+        logger.warning("Lizenz-Registrierung in der Registry fehlgeschlagen: %s", exc)
         return (False, str(exc))
 
 def _build_cli_parser() -> argparse.ArgumentParser:
@@ -63989,8 +63097,8 @@ if __name__ == "__main__":
             print(_z)
         sys.exit(1 if any(z.startswith(DOKTOR_FEHLER) for z in _zeilen) else 0)
 
-    # MIT-Lizenz zuerst registrieren (vor UAC-Logik und vor GUI-Start).
-    _mit_ok, _mit_msg = _register_mit_license_runtime()
+    # Lizenz zuerst registrieren (vor UAC-Logik und vor GUI-Start).
+    _lizenz_ok, _lizenz_msg = _register_license_runtime()
 
     # Administratorrechte prüfen – automatisch als Admin neu starten
     if sys.platform == "win32" and not _is_admin():
@@ -64062,16 +63170,16 @@ if __name__ == "__main__":
     # Testreihe behalten die Systemdialoge bzw. ihre Sperre.
     meldungen.einrichten(app)
 
-    # Sichtbare Startmeldung zur MIT-Registry-Registrierung - uebersetzt
-    # (Durchsicht H12-13); _mit_msg ist die sprachfreie Angabe dazu.
-    if _mit_ok:
-        app._append_to_log(app._t("lizenz.registriert", pfad=_mit_msg) + "\n")
+    # Sichtbare Startmeldung zur Lizenz-Registrierung - uebersetzt
+    # (Durchsicht H12-13); _lizenz_msg ist die sprachfreie Angabe dazu.
+    if _lizenz_ok:
+        app._append_to_log(app._t("lizenz.registriert", pfad=_lizenz_msg) + "\n")
     elif not IST_WINDOWS:
         # Auf Nicht-Windows-Systemen ist das Ausbleiben der Registrierung
         # erwartet - als [WARN] sah es im Protokoll wie ein Fehler aus.
-        app._append_to_log(app._t("lizenz.ohne_registry", system=_mit_msg) + "\n")
+        app._append_to_log(app._t("lizenz.ohne_registry", system=_lizenz_msg) + "\n")
     else:
-        app._append_to_log(app._t("lizenz.fehlgeschlagen", fehler=_mit_msg) + "\n")
+        app._append_to_log(app._t("lizenz.fehlgeschlagen", fehler=_lizenz_msg) + "\n")
 
     # --- schließen-Handler ---
     root.protocol("WM_DELETE_WINDOW", app.on_closing)

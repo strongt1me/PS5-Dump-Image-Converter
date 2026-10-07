@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.64</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.65</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.64</span>
-      <span class="marke">As of 6 October 2026</span>
+      <span class="marke">Version v1.9.65</span>
+      <span class="marke">As of 7 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -229,7 +229,7 @@ footer{
 
   <div class="frage">
     <h3>What does the program cost, and which license applies?</h3>
-    <p>The program is free and released under the <strong>MIT license</strong> (file <code>LICENSE</code>). It does not cover the bundled third-party components: their licenses are listed in <code>THIRD_PARTY_LICENSES.md</code> and can be reached via <strong>CREDITS</strong>. Almost everything the program does builds on the work of others – for example MkPFS (PFS processing), UFS2Tool, LibProsperoPkg, PS4 FFPFSC and dozens of payloads from the homebrew community.</p>
+    <p>The program is free and, since 7 October 2026, released under the <strong>GNU General Public License, version 3 or later</strong> (GPL-3.0-or-later, file <code>LICENSE</code>); versions up to and including v1.9.64 were published under the MIT license. The bundled third-party components keep their own licenses: they are listed in <code>THIRD_PARTY_LICENSES.md</code> and can be reached via <strong>CREDITS</strong>. Almost everything the program does builds on the work of others – for example MkPFS (PFS processing), UFS2Tool, LibProsperoPkg, PS4 FFPFSC and dozens of payloads from the homebrew community.</p>
   </div>
 </section>
 
@@ -412,7 +412,7 @@ footer{
       <thead><tr><th>Code</th><th>Cause and remedy</th></tr></thead>
       <tbody>
         <tr><td><code>CE-108255-1</code></td><td>An incomplete <code>.ffpkg</code> – or starting from internal storage instead of the USB stick. Try the backup from the stick.</td></tr>
-        <tr><td><code>CE-107891-6</code></td><td>An update package does not match the installed base package (even a rebuild of the same game counts as a different package). Install the matching base package or rebuild both together. Whether a <code>.pkg</code> is an update is shown by <strong>PS4 PKG → OTA</strong> in the <em>Type</em> column.</td></tr>
+        <tr><td><code>CE-107891-6</code></td><td>An update package does not match the installed base package (even a rebuild of the same game counts as a different package). Install the matching base package or rebuild both together. Which updates exist for a game is shown by <strong>PS4 PKG Dump &amp; Image Converter</strong> in the <em>Parts</em> column.</td></tr>
         <tr><td><code>CE-100096-6</code></td><td>The console rejects a self-built package. For game backups the way via image and ShadowMount+ is the right one; for your own homebrew use <strong>Install app directly</strong>.</td></tr>
       </tbody>
     </table>
@@ -456,13 +456,13 @@ footer{
 
   <div class="frage">
     <h3>Can I use PS4 games too?</h3>
-    <p>Yes. <strong>PS4 PKG → OTA</strong> (MORE TOOLS) collects your PS4 packages in a table. From there you unpack a package into a normal game folder (<strong>Extract …</strong>) or turn packages – base, patch, optionally DLC – into an image for ShadowMount+ (<strong>→ ffpfsc …</strong>). PS5 packages cannot be unpacked; <strong>More → Read package header</strong> shows their structure.</p>
+    <p>Yes. <strong>PS4 PKG Dump &amp; Image Converter</strong> (MORE TOOLS) reads your PS4 packages and turns base, update and optionally DLC into a normal game folder (format <strong>Dump folder</strong>), an image for ShadowMount+ (<strong>ffpfsc</strong> or <strong>exFAT</strong>) or a merged package. <strong>ONLINE UPDATES</strong> downloads missing updates for PS4 games from Sony. PS5 packages cannot be unpacked; <strong>More → Read package header</strong> shows their structure.</p>
     <p class="hinweis"><strong>Trophies:</strong> a PS4 game that starts from an image does not register its trophies (<em>Trophy registration failed, 0x80551618</em>). This is by design and not caused by the image. If you need the trophies, install the game with the Package Installer. PS5 titles are not affected.</p>
   </div>
 
   <div class="frage">
     <h3>Can I send a package to the console over the network?</h3>
-    <p>Yes, with <strong>PS4 PKG → OTA</strong> (MORE TOOLS): load packages into the table, choose one, enter the console's address on the <em>OTA</em> tab and press <strong>Send via OTA</strong>. There are two ways: on a PS5 the OnionHEN package manager (called <em>DPI v2</em> in <em>Console &amp; payloads</em>) receives the package and installs it; a PS4 fetches it from the PC through the Remote Package Installer. <strong>Detect</strong> asks which service answers at the address.</p>
+    <p>Yes, with <strong>PS4 PKG Dump &amp; Image Converter</strong> (MORE TOOLS): read in the packages, choose a game, press <strong>SEND TO CONSOLE</strong> and enter the console's address. There are two ways: on a PS5 the OnionHEN package manager (called <em>DPI v2</em> in <em>Console &amp; payloads</em>) receives the package and installs it; a PS4 fetches it from the PC through the Remote Package Installer. <strong>Detect</strong> asks which service answers at the address.</p>
     <p class="hinweis"><strong>Untested:</strong> sending has not yet been tried on a console – both ways are tested against stand-ins for the services. Whether a particular package starts afterwards can only be told by trying.</p>
   </div>
 
@@ -478,10 +478,9 @@ footer{
 
   <div class="frage">
     <h3>What does the CONSOLE view show?</h3>
-    <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with eight tools: <em>Console &amp; payloads</em>, <em>WebKit Autoloader</em>, <em>Library</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em> and <em>Direct Stream</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
+    <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with eight tools: <em>Console &amp; payloads</em>, <em>WebKit Autoloader</em>, <em>Library</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em> and <em>BFpilot</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
     <p><strong>Console &amp; payloads</strong> already finds the PS5 by itself when the program starts – you do not have to enter an address. The page queries all known ports, shows state, version and purpose for every service, starts missing services from the bundled <code>helloworld</code> folder and opens web interfaces. On Windows these appear directly in the program, otherwise in the browser.</p>
-    <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (the PS5 Cooling &amp; System Center, port 8086), <strong>ShadowMount+</strong> and <strong>SMPlusGui</strong> have no page of their own: one press checks whether the payload is already running on the console, sends it by itself if needed – together with the ELF loader if port 9021 is still closed – and then opens its web interface.</p>
-    <p><strong>Direct Stream</strong> sends nothing to the console: it is a small server on this computer only (<code>127.0.0.1</code>) that transfers a download or a local file straight into the PS5 storage over FTP. The button starts it and shows its page on the right – in the program's language, with developer and GitHub link; the program fills in the PS5 address and FTP port the first time. The target is <code>/data/homebrew</code>, packages (<code>.pkg</code>) go to <code>/data/pkg</code> by themselves; the <em>Target: … ▾</em> button switches to a USB drive on the PS5. The file selection also offers <code>.ffpkg</code>, <code>.ffpfsc</code>, <code>.ffpfs</code> and <code>.exfat</code>; Direct Stream does not transfer dump folders. It keeps running when you leave the page and ends with the program – if a transfer is running then, the program asks first. Try it with a small file first.</p>
+    <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (the PS5 Cooling &amp; System Center, port 8086), <strong>ShadowMount+</strong>, <strong>SMPlusGui</strong> and <strong>BFpilot</strong> (a second file manager, port 5905) have no page of their own: one press checks whether the payload is already running on the console, sends it by itself if needed – together with the ELF loader if port 9021 is still closed – and then opens its web interface.</p>
   </div>
 
   <div class="frage">
@@ -529,13 +528,14 @@ footer{
 
   <div class="frage">
     <h3>How do I use other controllers on the PS5 (AnyPad PS5)?</h3>
-    <p>Since v1.9.60 the payload <strong>AnyPad PS5</strong> is bundled. It makes Bluetooth controllers such as the DualShock&nbsp;4, Xbox, Switch Pro or 8BitDo usable on the PS5. On <em>Console &amp; payloads</em> you start it with <strong>Start selected</strong> and open its pairing page (port 8095) with <strong>Open web interface</strong>.</p>
+    <p>Since v1.9.60 the payload <strong>AnyPad PS5</strong> is bundled (now version 0.6.0-beta). It makes Bluetooth controllers usable on the PS5; games see them as a DualSense. According to its author, the DualShock&nbsp;4&nbsp;v2, 8BitDo SF30 Pro (Switch mode) and GameSir G7 SE are verified; Xbox and Switch Pro controllers among others are supported but not yet verified. On <em>Console &amp; payloads</em> you start it with <strong>Start selected</strong> and open its pairing page (port 8095) with <strong>Open web interface</strong>.</p>
     <ul>
-      <li>According to its author, the controller must belong to a <strong>second console user</strong> – otherwise games do not see it.</li>
-      <li>Stop AnyPad via its web interface before starting it again.</li>
+      <li>When the console asks who uses the controller, the author advises choosing <strong>Quick play / Guest</strong> (a temporary user).</li>
+      <li>A DualShock&nbsp;4 has to be paired again each time you switch it on; other controllers reconnect by themselves.</li>
+      <li>Always stop AnyPad with the button on its web interface, also before starting it again.</li>
       <li>The page asks for no PIN: anyone on the same network can use it.</li>
     </ul>
-    <p class="hinweis">The author marks AnyPad as a pre-release; port and page come from the author's information.</p>
+    <p class="hinweis">Since October 2026 the project lives on Codeberg; port, page and usage notes come from the author's information.</p>
   </div>
 
   <div class="frage">
@@ -609,8 +609,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.64</strong></span>
-  <span>As of 6 October 2026 · Only for content you own and acquired legally</span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.65</strong></span>
+  <span>As of 7 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 
 </body>

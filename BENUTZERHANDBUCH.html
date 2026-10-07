@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.64</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.65</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.64</span>
-      <span class="marke">Stand 6. Oktober 2026</span>
+      <span class="marke">Version v1.9.65</span>
+      <span class="marke">Stand 7. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -438,13 +438,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <em>2.&nbsp;WebKit Autoloader</em>, <em>3.&nbsp;Bibliothek</em>,
   <em>4.&nbsp;Prospero Manager</em>, <em>5.&nbsp;CoolSysCent-Pro</em>,
   <em>6.&nbsp;ShadowMount+</em>, <em>7.&nbsp;SMPlusGui</em> und
-  <em>8.&nbsp;Direct Stream</em>. Titelbild,
+  <em>8.&nbsp;BFpilot</em>. Titelbild,
   „Spiel Info“ und „Was man sonst ev. noch braucht“ gibt es dort nicht. Rechts
   steht die Seite <strong>Konsole &amp; Payloads</strong> (siehe unten);
   <em>2.&nbsp;WebKit Autoloader</em> und <em>3.&nbsp;Bibliothek</em> zeigen an
   dieser Stelle ihre eigene Seite &ndash; keines der ersten drei Werkzeuge öffnet
-  ein eigenes Fenster. Ein zweiter Druck auf denselben Knopf oder
-  <em>‹&nbsp;Konsole &amp; Payloads</em> führt zurück. Das Kernel-Protokoll liegt als <strong>KLOG</strong> oben in
+  ein eigenes Fenster. Ein zweiter Druck auf denselben Knopf ändert nichts;
+  <em>1.&nbsp;Konsole &amp; Payloads</em> führt zurück. Das Kernel-Protokoll liegt als <strong>KLOG</strong> oben in
   der Titelleiste. <strong>‹&nbsp;UMWANDELN</strong> führt zurück &ndash;
   gewählte Quelle, Einstellungen und ein laufender Auftrag bleiben dabei
   erhalten. Das Programm startet immer in der Ansicht UMWANDELN &ndash; auch
@@ -463,9 +463,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   gesendet werden, zeigt ein kleines Hinweisfenster, was gerade geschieht – ohne
   Knopf, Sie müssen nichts bestätigen; es schließt sich von selbst, sobald alles
   geladen ist. Läuft das Payload schon, erscheint es nicht. Solange eine dieser
-  Aktionen läuft, sind die vier Knöpfe gesperrt: Sie teilen sich den
-  ELF-Loader. <em>8.&nbsp;Direct Stream</em> gehört nicht dazu: Es schickt nichts an
-  die Konsole (siehe unten).</p>
+  Aktionen läuft, sind die fünf Knöpfe gesperrt: Sie teilen sich den
+  ELF-Loader.</p>
   <p><strong>Bei ShadowMount+ gilt eine Besonderheit.</strong> Seine
   Weboberfläche lauscht ab Werk nur auf der PS5 selbst
   (<code>api_bind_address=127.0.0.1</code>); von diesem PC aus ist Port&nbsp;10101
@@ -486,41 +485,24 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Konsole kommen. In der Tabelle von „Konsole &amp; Payloads“ steht die App wie die
   anderen Payloads, mit ihrer laufenden Version (die App nennt sie selbst) und
   dem Knopf <em>Weboberfläche öffnen</em>.</p>
-  <p><strong>8.&nbsp;Direct Stream</strong> lädt eine Datei <em>direkt</em> auf die
-  Konsole: Es holt einen HTTP/HTTPS-Download mit mehreren Strömen gleichzeitig und
-  schickt ihn per FTP in den Speicher der PS5, ohne ihn vorher auf der Platte
-  abzulegen &ndash; oder lädt eine lokale Datei hoch. Dazu kommen eine Warteschlange
-  mit Pause und Fortsetzen, ein Geschwindigkeitstest und ein Dateibrowser für den
-  Speicher der Konsole. Anders als die Knöpfe 4 bis 7 läuft hier nichts auf der
-  PS5: Das mitgelieferte Werkzeug (<code>DirectStream-2.8.5</code>, MIT-Lizenz) ist
-  ein kleiner Server, der nur auf diesem Rechner lauscht (Adresse
-  <code>127.0.0.1</code>, eigener Port, Zugriff nur mit einer Sitzungsmarke). Ein
-  Druck startet ihn beim ersten Mal und zeigt seine Seite rechts (unter Windows
-  im Programm, sonst im Browser); die Adresse der PS5 und den FTP-Port aus den
-  Einstellungen trägt das Programm beim ersten Start selbst ein, ändern lässt sich
-  beides auf der Seite unter <em>Einstellungen</em>. Als Zielordner auf der PS5 trägt es
-  <code>/data/homebrew</code> ein &ndash; dort sucht ShadowMount+ immer, ein
-  übertragenes Abbild ist also gleich sichtbar. <strong>Pakete</strong>
-  (<code>.pkg</code>) gehen dabei von selbst nach <code>/data/pkg</code>. Der Knopf
-  <em>Ziel: …&nbsp;▾</em> im Kopf der Seite wechselt mit einem Klick zwischen dem
-  internen Speicher und den USB-Datenträgern, die an der PS5 stecken (gefunden per
-  FTP); steht dort ein USB-Datenträger, gehen alle Dateien dorthin, auch Pakete.
-  Während einer Übertragung lässt sich das Ziel nicht umstellen. Was Sie
-  auf der Seite einmal gespeichert haben, überschreibt das Programm nie. Die
-  Dateiauswahl der Seite bietet neben <code>.pkg</code> auch die Abbilder
-  <code>.ffpkg</code>, <code>.ffpfsc</code>, <code>.ffpfs</code> und
-  <code>.exfat</code> an, „Ordner hinzufügen“ sammelt sie mit ein; Dump-Ordner
-  überträgt Direct Stream nicht (es kennt keine Unterordner). Die Seite folgt der
-  Sprache des Programms (in Englisch ohne Bezug auf den Mac), und unter dem Kopf
-  stehen Entwickler (ChillQuant), Lizenz und GitHub-Link. Der Server läuft weiter, wenn Sie die Seite verlassen
-  (<em>‹&nbsp;Zurück</em>): Eine Übertragung reißt nicht ab, weil Sie kurz in die
-  Bibliothek schauen. Beim Beenden des Programms wird er angehalten; läuft dann
-  gerade eine Übertragung, fragt das Programm vorher. Die unvollständige Datei
-  (<code>….ps5part</code>) bleibt auf der PS5, der Auftrag in der Warteschlange und
-  lässt sich später fortsetzen. Ein Druck auf <em>Quit app</em> auf der Seite
-  beendet den Server ebenfalls; der nächste Druck auf den Knopf startet ihn neu.
-  Warteschlange und Einstellungen liegen im Ordner <code>DirectStream</code> im
-  Einstellungsordner des Programms, das FTP-Kennwort bleibt im Arbeitsspeicher.</p>
+  <p><strong>8.&nbsp;BFpilot</strong> ist ein zweiter Dateimanager für die PS5 mit
+  Weboberfläche auf Port 5905. Er läuft wie <em>Prospero Manager</em>: Ein Druck
+  prüft, ob das Payload (<code>bfpilot_v0.4.4-multilang.elf</code> aus dem Ordner
+  <code>helloworld</code>) schon auf der Konsole läuft, schickt es bei Bedarf selbst &ndash;
+  samt ELF-Loader, falls Port 9021 noch zu ist &ndash; und öffnet dann seine Seite
+  rechts im Programm (unter Windows) oder im Browser. Laut den Texten in der
+  Oberfläche selbst kann sie Dateien und Ordner durchsuchen, hoch- und herunterladen,
+  umbenennen, kopieren und löschen, Archive entpacken (<code>rar</code>, <code>7z</code>,
+  <code>zip</code>), Textdateien bearbeiten, Pakete installieren, per SSD-Index suchen und
+  Payloads über den ELF-Loader laden; ihr Protokoll liegt unter
+  <code>/data/BFpilot/log.txt</code>. Die Seite ist mehrsprachig (Deutsch, Englisch,
+  Spanisch, Französisch, Italienisch) und richtet sich nach der Systemsprache der
+  Konsole. Wer BFpilot geschrieben hat und unter welcher Lizenz es steht, ist in der
+  Datei nicht belegt. <strong>An der Konsole ist dieser Weg ungeprüft:</strong>
+  Der Ablauf (Payload senden, Seite öffnen) entspricht dem der anderen Knöpfe und ist
+  nur gegen Nachbildungen getestet. Hinweis der Seite selbst: Wer direkt in einen
+  von ShadowMount+ durchsuchten Ordner schreibt, während ShadowMount+ läuft, kann
+  einen Kernel-Panic auslösen.</p>
   <p>Erproben Sie die Übertragung zuerst mit einer kleinen Datei: Wie sich der
   FTP-Server der Konsole bei Fortsetzen, Umbenennen und freiem Speicher verhält,
   ist nicht allgemein geprüft.</p>
@@ -544,11 +526,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   selbst ein und drücken <em>Konsole prüfen</em>.</p>
   <p>Oben nennt die Seite Name, Zustand und Firmware der Konsole &ndash; die
   Firmware so, wie die Konsole sie selbst schreibt (12.00, 12.02, 12.70 &hellip;).
-  Darunter fragt sie alle vierundzwanzig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
+  Darunter fragt sie alle fünfundzwanzig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
   und 9020), Payload-Manager, FTP-Server, Kernel-Protokoll, PKG Manager,
   Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver, ShadowMount+,
   Prospero Manager, ps5upload, CheatRunner, App Dumper, Game Compressor,
-  SMPlusGui, aria2, zftpd, gdbsrv, ps5debug-NG, AnyPad PS5, DPI&nbsp;v2 und das
+  SMPlusGui, aria2, zftpd, gdbsrv, ps5debug-NG, AnyPad PS5, DPI&nbsp;v2, den
+  WK Autoloader (Port&nbsp;1022) und das
   PS5 Cooling &amp; System Center (Port&nbsp;8086) &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
   mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Die
   Version ist die der mitgelieferten Datei, die das Programm startet.
@@ -558,17 +541,26 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Version nicht. Ports und Weboberflächen der acht am 2. Oktober 2026
   hinzugekommenen Dienste (CheatRunner bis ps5debug-NG), von AnyPad PS5 und von DPI&nbsp;v2
   stammen aus den Beschreibungen ihrer Autoren und sind an der Konsole noch
-  nicht nachgemessen. AnyPad PS5 macht Bluetooth-Controller
-  (DualShock&nbsp;4, Xbox, Switch Pro, 8BitDo &hellip;) an der PS5 nutzbar;
-  gekoppelt wird auf seiner Weboberfläche, die ohne PIN jedem im selben Netz
-  offensteht. Laut Autor muss der Controller einem zweiten Konsolenbenutzer
-  gehören, sonst sehen Spiele ihn nicht; beenden Sie AnyPad über seine
-  Weboberfläche, bevor Sie es erneut starten. DPI&nbsp;v2 installiert
+  nicht nachgemessen. AnyPad PS5 (mitgeliefert: 0.6.0-beta) macht Bluetooth-Controller
+  an der PS5 nutzbar; Spiele sehen sie als DualSense. Laut Autor an einer echten
+  PS5 bestätigt sind DualShock&nbsp;4&nbsp;v2, 8BitDo SF30 Pro (Switch-Modus) und
+  GameSir G7 SE; Xbox-, Switch-Pro- und weitere Controller werden unterstützt,
+  sind aber noch nicht bestätigt. Gekoppelt wird auf seiner Weboberfläche, die
+  ohne PIN jedem im selben Netz offensteht (auf der Konsole auch in der Reihe
+  <em>Medien</em>). Fragt die Konsole, wer den Controller benutzt, wählen Sie laut
+  Autor <em>Schnellspiel/Gast</em> (einen vorübergehenden Benutzer); einen
+  DualShock&nbsp;4 müssen Sie nach jedem Einschalten neu koppeln. Beenden Sie
+  AnyPad immer über den Knopf auf seiner Weboberfläche, auch bevor Sie es
+  erneut starten. DPI&nbsp;v2 installiert
   PKG-Dateien über seine Weboberfläche (Port&nbsp;12800 laut Autor, einstellbar;
   ohne Anmeldung, also nicht im fremden Netz). Es ist ein Plugin für OnionHEN,
   liegt auf der Konsole im Ordner <code>/data/OnionHEN/plugins</code> und wird von
   OnionHEN gestartet &ndash; <em>Ausgewähltes starten</em> schickt es deshalb
-  nicht. Was
+  nicht. Der WK Autoloader (X-F1REBALL-X) ist ein Jailbreak-Host: Nach dem
+  Senden richtet er sich ein, danach wählen Sie auf seiner Weboberfläche
+  (Port&nbsp;1022 laut Autor) Payload Manager oder Elf Launcher und starten den
+  Jailbreak; auf der Konsole erscheint er als App in der Reihe <em>Medien</em>.
+  Was
   nicht läuft, starten Sie mit <em>Ausgewähltes starten</em> oder
   <em>Grundausstattung starten</em> direkt aus dem mitgelieferten Ordner
   <code>helloworld</code>; Dienste mit eigener Weboberfläche öffnet
@@ -677,8 +669,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   bei Paketen gesperrt: Ein Paket wird auf der Konsole installiert, nicht
   eingehängt, und die Ablagen, in die <em>Kopieren</em> sendet, sind für
   Abbilder und Dump-Ordner da. <em>Konvertieren</em> geht nur bei einer
-  <code>.pkg</code> eines PS4-Titels: Es öffnet das Fenster <em>PS4 PKG →
-  ffpfsc</em> mit der Datei schon eingetragen. Eine <code>.fpkg</code> und ein
+  <code>.pkg</code> eines PS4-Titels: Es öffnet das Fenster <em>PS4 PKG Dump &amp;
+  Image Converter</em> mit der Datei schon eingetragen. Eine <code>.fpkg</code> und ein
   PS5-Paket wandelt das Programm nicht um. Einbauten trägt ein Paket nicht;
   auf seiner Karte stehen deshalb weder Marken noch eine Zeile dazu.</p>
   <p>Die Kopfkarte fasst zusammen, was gerade zu sehen ist. Quelle und Ansicht
@@ -761,7 +753,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <thead><tr><th>Knopf</th><th>Rechner</th><th>PS5</th></tr></thead>
     <tbody>
       <tr><td><strong>Kopieren</strong></td><td><em>Auf PS5 senden</em> (per FTP, das Ziel auf der Konsole wählen Sie vorher; bei Paketen gesperrt).</td><td><em>Herunterladen</em> (nur Sicherungen; nennt vorher Dateizahl, Größe und die ungefähre Dauer &ndash; gerechnet mit der gemessenen Leitung, rund 3,4&nbsp;MB/s beim Holen und 2,5&nbsp;MB/s beim Senden). Ein installiertes Spiel ist gesperrt: Es ist keine Datei; den Weg auf den Rechner zeigt <em>App-Dumper starten</em>.</td></tr>
-      <tr><td><strong>Konvertieren</strong></td><td><em>Als Quelle übernehmen</em>: Der Eintrag wird die Quelle für die Umwandlung. Bei einer PS4-<code>.pkg</code> öffnet es stattdessen das Fenster <em>PS4 PKG → ffpfsc</em> mit der Datei; bei einer <code>.fpkg</code> und einem PS5-Paket ist es gesperrt.</td><td>Gesperrt &ndash; kopieren Sie den Titel zuerst auf den Rechner.</td></tr>
+      <tr><td><strong>Konvertieren</strong></td><td><em>Als Quelle übernehmen</em>: Der Eintrag wird die Quelle für die Umwandlung. Bei einer PS4-<code>.pkg</code> öffnet es stattdessen das Fenster <em>PS4 PKG Dump &amp; Image Converter</em> mit der Datei; bei einer <code>.fpkg</code> und einem PS5-Paket ist es gesperrt.</td><td>Gesperrt &ndash; kopieren Sie den Titel zuerst auf den Rechner.</td></tr>
     </tbody>
   </table>
   </div>
@@ -822,7 +814,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <span class="titel">Wem dieses Programm zu verdanken ist</span>
     <p>Hinter <strong>CREDITS</strong> steht die vollständige Danksagung. Fast alles, was dieses Programm tut, beruht auf Arbeit anderer: Die PFS-Verarbeitung leistet <strong>MkPFS</strong> von PSBrew und Renan Barreto, die UFS2-Struktur erledigt <strong>UFS2Tool</strong> (hier für Dateien über 2&nbsp;GB gepatcht), PS5-Pakete liest <strong>LibProsperoPkg</strong> von SvenGDK, PS4-Pakete wandelt <strong>PS4 FFPFSC</strong> um. Dazu kommen Dutzende Payloads und Werkzeuge aus der Homebrew-Gemeinschaft. Das Fenster zeigt die Entwicklerinnen und Entwickler als Karten mit GitHub-Profilbild, Namen, ihren Werken als anklickbaren Links und einem Dank &ndash; in drei Gruppen: das Programm, die Werkzeuge und Arbeiten darin, und bekannte Köpfe der Community. Die Bilder liegen dem Programm bei (Ordner <code>credits</code>), geladen wird dafür nichts aus dem Netz.</p>
     <p>Rund fünf Minuten nach dem Start und danach etwa stündlich blendet das Programm oben rechts unter der Werkzeugleiste für zehn Sekunden ein Banner der Community <strong>psxtools.de</strong> ein; ein Klick darauf öffnet die Seite im Browser. Es nimmt keinen Fokus und erscheint nicht, solange das Programm minimiert ist.</p>
-    <p>Das Programm selbst steht unter der MIT-Lizenz (Datei <code>LICENSE</code>); für die mitgelieferten Fremdkomponenten gilt sie nicht. Deren Lizenzen stehen in <code>THIRD_PARTY_LICENSES.md</code> und sind aus dem CREDITS-Fenster aufrufbar. Wer das Programm weitergibt, sollte dort hineinsehen – einige Bestandteile haben eigene Bedingungen.</p>
+    <p>Das Programm selbst steht seit dem 07.10.2026 unter der GNU General Public License, Version 3 oder neuer (GPL-3.0-or-later, Datei <code>LICENSE</code>); Fassungen bis einschließlich v1.9.64 wurden unter der MIT-Lizenz veröffentlicht. Für die mitgelieferten Fremdkomponenten gelten deren eigene Lizenzen. Deren Lizenzen stehen in <code>THIRD_PARTY_LICENSES.md</code> und sind aus dem CREDITS-Fenster aufrufbar. Wer das Programm weitergibt, sollte dort hineinsehen – einige Bestandteile haben eigene Bedingungen.</p>
   </div>
 </section>
 
@@ -1562,7 +1554,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>AMPR-Mitschnitt-Assistent</strong> (führt Schritt für Schritt durch das Aufnehmen echter Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode), <strong>SELF-Inspektor</strong> (13.1), <strong>ELF &rarr; EBOOT.BIN</strong> (13.15), <strong>Dump umbenennen</strong> (13.2), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; OTA</strong> (13.16: PS4-Pakete sammeln, ansehen, entpacken, zusammenführen, prüfen, umbenennen und über das Netzwerk an die Konsole senden &ndash; der einzige Eintrag für PS4-Pakete; er ersetzt <em>PS4 PKG &rarr; ffpfsc</em> (13.10), <em>PS4 &amp; PS5 PKG lesen</em> und <em>PS4 PKG &rarr; Dump Ordner</em> (13.14)) und <strong>unjail senden</strong> (13.12).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>AMPR-Mitschnitt-Assistent</strong> (führt Schritt für Schritt durch das Aufnehmen echter Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode), <strong>SELF-Inspektor</strong> (13.1), <strong>ELF &rarr; EBOOT.BIN</strong> (13.15), <strong>Dump umbenennen</strong> (13.2), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG Dump &amp; Image Converter</strong> (13.10: PS4-Pakete einlesen, zum Dump-Ordner entpacken, zu ffpfsc- oder exFAT-Abbild bauen, Basis und Update zusammenführen, Updates bei Sony laden und Pakete über das Netzwerk an die Konsole senden &ndash; der einzige Eintrag für PS4-Pakete; er ersetzt <em>PS4 PKG &rarr; OTA</em>, <em>PS4 PKG &rarr; ffpfsc</em>, <em>PS4 &amp; PS5 PKG lesen</em> und <em>PS4 PKG &rarr; Dump Ordner</em>) und <strong>unjail senden</strong> (13.12).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -1647,8 +1639,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Für Spiel-Backups ist der Weg über <code>/data/homebrew</code> und
   ShadowMount+ der richtige, für eigene Homebrew
   <strong>App direkt installieren</strong> (13.4). Die Eckdaten eines
-  vorhandenen PS4-Pakets zeigt und entpackt <strong>PS4 PKG &rarr; OTA</strong>
-  (13.16), die eines PS5-Pakets <em>Mehr &rarr; Paketkopf lesen</em> in
+  vorhandenen PS4-Pakets zeigt und entpackt <strong>PS4 PKG Dump &amp; Image Converter</strong>
+  (13.10), die eines PS5-Pakets <em>Mehr &rarr; Paketkopf lesen</em> in
   demselben Fenster.</p>
 
   <h4>Eigene Bibliothek benutzen – der Ordner <code>libs</code></h4>
@@ -1656,8 +1648,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <strong>selbst gebaute</strong> <code>LibProsperoPkg.dll</code> hat, legt
   sie dort hinein – mehr ist nicht zu tun. Seit dem Ausbau von
   „PKG bauen“ wirkt sie nur noch beim <strong>Lesen</strong> eines Pakets
-  (<em>Mehr &rarr; Paketkopf lesen</em> im Fenster <strong>PS4 PKG &rarr; OTA</strong>,
-  13.16). Nehmen Sie die Datei wieder
+  (<em>Mehr &rarr; Paketkopf lesen</em> im Fenster <strong>PS4 PKG Dump &amp; Image Converter</strong>,
+  13.10). Nehmen Sie die Datei wieder
   heraus, ist alles wie vorher. Eine Datei mit 0&nbsp;Byte wird
   ignoriert.</p>
   <p>Überschrieben wird dabei <strong>nichts</strong>: Das Programm spiegelt
@@ -1982,16 +1974,45 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   solange beide ShadowMount+-Fassungen im Umlauf sind.</p>
 
 
-  <h3>13.10 PS4 PKG &rarr; ffpfsc &ndash; und wohin das Abbild geh&ouml;rt</h3>
-  <p>Dieses Fenster macht aus PS4-PKG-Dateien (Basis, Patch, wahlweise DLC)
-  oder einem bereits entpackten PS4-Spiel ein Abbild, das ShadowMount+ auf der
-  PS5 einh&auml;ngen kann. Quelle w&auml;hlen, <strong>EINLESEN</strong>,
-  gefundenes Spiel markieren, <strong>ABBILD ERSTELLEN</strong>.</p>
-  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PS4 PKG &rarr; OTA, Knopf
-  <strong>&rarr; ffpfsc &hellip;</strong> (13.16): Er &ouml;ffnet dieses Fenster mit den
-  gew&auml;hlten Paketen. In der Bibliothek tut es <em>Konvertieren</em> bei einem
-  PS4-Paket. Einen eigenen Men&uuml;eintrag hat das Fenster seit Oktober 2026 nicht
-  mehr.</p>
+  <h3>13.10 PS4 PKG Dump &amp; Image Converter &ndash; und wohin das Abbild geh&ouml;rt</h3>
+  <p>Dieses Fenster macht aus PS4-Spielen alles, was Sie f&uuml;r die PS5 brauchen: einen
+  <strong>Dump-Ordner</strong> (entpacktes Spiel), ein <strong>ffpfsc-</strong> oder
+  <strong>exFAT-Abbild</strong> f&uuml;r ShadowMount+ oder ein einziges <strong>Paket</strong> aus Basis und
+  Update. Quelle w&auml;hlen, <strong>EINLESEN</strong>, Spiel markieren, Zielordner und Format w&auml;hlen,
+  <strong>ERSTELLEN</strong>. Dazu kommen <strong>UPDATES ONLINE</strong> und
+  <strong>AN KONSOLE SENDEN</strong> (siehe unten).</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PS4 PKG Dump &amp; Image Converter. In der
+  Bibliothek &ouml;ffnet <em>Konvertieren</em> bei einem PS4-Paket dasselbe Fenster mit der Datei. Es gibt nur
+  ein Fenster; ein zweiter Aufruf holt das offene nach vorn.</p>
+  <p><strong>So arbeitet es.</strong> Die Pakete werden mit <strong>OrbisPkgTool</strong> (MIT-Lizenz,
+  Ordner <code>OrbisPkgTool-1.0.0</code>) entpackt; Basis und Updates werden in der Reihenfolge der
+  Fassungen zu einem Dump-Ordner zusammengespielt (ein sp&auml;teres Update &uuml;berschreibt die Dateien des
+  fr&uuml;heren). Daraus baut <strong>PS4 FFPFSC</strong> das Abbild samt <code>param.json</code> f&uuml;r
+  ShadowMount+, Trophy-Datei-Reparatur und Nachpr&uuml;fung. Der Balken zeigt den <em>Gesamtstand</em>
+  &uuml;ber alle Schritte, daneben die vergangene Zeit und die gesch&auml;tzte Restzeit.
+  Mit <strong>Abbrechen</strong> halten Sie den Lauf an; der Arbeitsordner wird dabei aufger&auml;umt.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Format</th><th>Ergebnis</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Dump-Ordner</strong></td><td>Ein gew&ouml;hnlicher Spielordner mit <code>eboot.bin</code>
+      und <code>sce_sys</code>, Updates schon eingespielt; mit dem Haken <em>DLC</em> auch Zusatzinhalte im
+      Dumper-Aufbau (<code>app/</code> und <code>addcont/&hellip;</code>). Ben&ouml;tigt OrbisPkgTool.</td></tr>
+      <tr><td><strong>ffpfsc-Abbild</strong></td><td>Komprimiertes Abbild f&uuml;r ShadowMount+
+      (<em>Stufe</em> und <em>Worker</em> bestimmen Kompression und Tempo).</td></tr>
+      <tr><td><strong>exFAT-Abbild</strong></td><td>Unkomprimiertes exFAT-Abbild.</td></tr>
+      <tr><td><strong>Paket (Basis + Update)</strong></td><td>Ein eigenst&auml;ndiges Fake-Paket mit der Fassung
+      des Updates. Ben&ouml;tigt OrbisPkgTool und ein vorhandenes Update (liegt keines vor, sucht
+      <em>UPDATES ONLINE</em> eines).</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Als Quelle gehen einzelne <code>.pkg</code>-Dateien, ein Ordner voller Pakete (samt Unterordnern) oder ein
+  bereits entpacktes Spiel (dann nur zu einem Abbild). Zu jedem Titel baut das Programm Basis, Updates und DLC
+  zusammen; liegt nur ein Update vor, steht im Protokoll, dass das Basisspiel fehlt. Der Platzbedarf wird vor
+  dem Start gesch&auml;tzt und gepr&uuml;ft. Beim Bauen eines Abbilds wird das zwischengespeicherte Spiel
+  <em>verbraucht</em> statt kopiert &ndash; das spart auf exFAT-Datentr&auml;gern (ohne Verkn&uuml;pfungen)
+  die doppelte Zeit und den doppelten Platz; Ihr eigener Dump-Ordner bleibt dabei unber&uuml;hrt.</p>
 
   <p>Sie k&ouml;nnen nacheinander beliebig viele Quellen einlesen: einfach eine
   andere w&auml;hlen und erneut auf <strong>EINLESEN</strong> dr&uuml;cken. Bis
@@ -2075,8 +2096,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   wird.</p>
   <p><strong>Zu finden unter:</strong> der Ansicht <strong>KONSOLE</strong>,
   Knopf <strong>2.&nbsp;WebKit Autoloader</strong>. Die Seite steht rechts in
-  der Ansicht &ndash; kein eigenes Fenster; ein zweiter Druck auf den Knopf oder
-  <em>&lsaquo;&nbsp;Konsole &amp; Payloads</em> f&uuml;hrt zur&uuml;ck. Oben
+  der Ansicht &ndash; kein eigenes Fenster; ein zweiter Druck auf den Knopf &auml;ndert nichts,
+  <em>1.&nbsp;Konsole &amp; Payloads</em> f&uuml;hrt zur&uuml;ck. Oben
   stehen das Bild und der Dank an den Autor, darunter die Adresse der Konsole
   (dieselbe wie auf den anderen Seiten &ndash; sie wird nur f&uuml;r den
   Installer gebraucht), die Wahl der Fassung, die drei Wege und ein Protokoll
@@ -2217,13 +2238,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   &bdquo;PKG entpacken&ldquo;) macht aus einer PS4-Paketdatei
   (<code>.pkg</code>, Fake-PKG: Spiel, Patch oder DLC) einen gew&ouml;hnlichen
   Spielordner mit <code>eboot.bin</code> und <code>sce_sys</code>. Entpackt
-  wird mit demselben Entpacker, den das Fenster <em>PS4 PKG &rarr; ffpfsc</em>
+  wird mit demselben Entpacker, den das Fenster <em>PS4 PKG Dump &amp; Image Converter</em>
   (13.10) mitbringt.</p>
-  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PS4 PKG &rarr; OTA, Knopf
-  <strong>Entpacken &hellip;</strong> (13.16). Unter Windows entpackt dort seit
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PS4 PKG Dump &amp; Image Converter, Format
+  <strong>Dump-Ordner</strong> (13.10). Unter Windows entpackt dort seit
   Oktober 2026 das Werkzeug OrbisPkgTool, mit denselben Schutzregeln wie unten
   beschrieben; dieses Kapitel gilt f&uuml;r das bisherige Fenster, das unter Linux
-  und macOS &uuml;ber denselben Knopf aufgeht. Einen eigenen Men&uuml;eintrag hat es
+  und macOS &uuml;ber <em>Mehr &rarr; Entpacken mit dem bisherigen Entpacker</em> aufgeht. Einen eigenen Men&uuml;eintrag hat es
   nicht mehr.</p>
   <p>W&auml;hlen Sie die <code>.pkg</code> und einen Zielordner und dr&uuml;cken
   Sie <strong>Entpacken</strong>. Im Zielordner entsteht ein Unterordner mit
@@ -2261,7 +2282,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     das dieselbe Bibliothek selbst gebaut hatte. Retail-Pakete sind ohnehin an
     die Konsole gebunden. Den Aufbau eines PS5-Pakets (Typ, Content-ID,
     Eintr&auml;ge) zeigt <em>Mehr &rarr; Paketkopf lesen</em> im Fenster
-    <strong>PS4 PKG &rarr; OTA</strong> (13.16). Retail-PS4-Pakete ohne
+    <strong>PS4 PKG Dump &amp; Image Converter</strong> (13.10). Retail-PS4-Pakete ohne
     Fake-Signatur lehnt der Entpacker ebenfalls ab.</p>
   </div>
 
@@ -2291,149 +2312,58 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </ul>
   <p>Den Aufbau des Ergebnisses zeigt der SELF-Inspektor (13.1).</p>
 
-  <h3>13.16 PS4 PKG &rarr; OTA &ndash; alle PS4-Pakete an einem Ort</h3>
-  <p><strong>PS4 PKG &rarr; OTA</strong> ist seit Oktober 2026 der <em>einzige</em> Eintrag
-  f&uuml;r PS4-Pakete unter WEITERE TOOLS. Er ersetzt <em>PS4 PKG &rarr; ffpfsc</em>,
-  <em>PS4 PKG &rarr; Dump Ordner</em> und <em>PS4 &amp; PS5 PKG lesen</em>; was diese
-  konnten, ist jetzt hier zu erreichen (siehe unten). Das Fenster sammelt Ihre PS4-Pakete
-  (<code>.pkg</code>) in einer Tabelle, zeigt zu jedem die Einzelheiten und f&uuml;hrt die
-  Arbeiten als Aufgaben im Hintergrund aus &ndash; eine Liste, ein Protokoll, ein Fenster.
-  Die Anregung dazu gab das <em>PS4 PKG Tool</em> von pearlxcore; aus seinem Code ist nichts
-  &uuml;bernommen. Die eigentliche Paketarbeit macht <strong>OrbisPkgTool</strong>
-  (MIT-Lizenz, Ordner <code>OrbisPkgTool-1.0.0</code>), das als eigenes Programm im
-  Hintergrund l&auml;uft.</p>
-  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PS4 PKG &rarr; OTA. Es gibt
-  nur ein Fenster; ein zweiter Aufruf holt das offene nach vorn.</p>
+  <h3>13.16 Updates online, Senden an die Konsole und Paketwerkzeuge</h3>
+  <p>Diese Funktionen geh&ouml;ren zum Fenster <strong>PS4 PKG Dump &amp; Image Converter</strong> (13.10).
+  Bis Oktober 2026 hatten sie ein eigenes Fenster <em>PS4 PKG &rarr; OTA</em>; dessen Paketsammlung mit
+  Umbenennen, Verschieben und den Reitern <em>Info</em>, <em>Dateien</em>, <em>Bilder</em> und
+  <em>Interna</em> ist mit der Zusammenlegung entfallen, ebenso <em>Neu packen</em>, <em>PKG aus Ordner
+  bauen</em>, die Tiefenpr&uuml;fung und die Verwaltung installierter Pakete.</p>
 
-  <p><strong>Sammlung.</strong> <strong>Ordner laden &hellip;</strong> liest alle <code>.pkg</code>
-  in einem Ordner und seinen Unterordnern ein, <strong>Dateien hinzuf&uuml;gen &hellip;</strong>
-  einzelne Pakete, <strong>Neu einlesen</strong> die gemerkten Quellen noch einmal,
-  <strong>Liste leeren</strong> vergisst sie. Das Einlesen l&auml;uft im Hintergrund: Die
-  Statuszeile zeigt erst, wie viele Pakete die Suche gefunden hat, dann, welches gerade
-  gelesen wird; <strong>Einlesen abbrechen</strong> h&auml;lt beides an. Beim &Ouml;ffnen
-  liest das Fenster die gemerkten Quellen von selbst wieder ein; Pakete, die sich nicht
-  ge&auml;ndert haben, kommen dabei aus einem Zwischenspeicher, ein ge&auml;ndertes wird neu
-  gelesen. Was sich nicht lesen l&auml;sst, steht mit dem Grund in der Liste.</p>
-  <p>Die Tabelle zeigt Datei, Titel, Title-ID, Typ (Spiel, Update, Zusatzinhalt, App),
-  Version, Region, die verlangte Firmware, Gr&ouml;&szlig;e, Echtheit (Fake oder Offiziell),
-  das Ergebnis der Online-Abfrage und den Ordner. Ein Klick auf eine Kopfzeile sortiert;
-  <strong>Suche</strong>, <strong>Typ</strong>, <strong>Region</strong> und
-  <strong>Echtheit</strong> filtern, <strong>Gruppieren</strong> fasst nach Title-ID, Titel,
-  Kategorie, Firmware oder Typ zusammen. Mehrere Zeilen w&auml;hlen Sie mit Strg und
-  Umschalt.</p>
+  <p><strong>UPDATES ONLINE.</strong> Fragt bei Sonys Update-Server nach, ob es zum markierten
+  offiziellen PS4-Titel (Title-ID <code>CUSA&hellip;</code>) ein neueres Update gibt, und l&auml;dt es auf
+  Wunsch (jedes Teil mit Pr&uuml;fsumme). Gesendet wird nur die Title-ID; Eigenbauten und Homebrew haben dort
+  kein Update. Das geladene Update wird in die Liste aufgenommen und beim n&auml;chsten Bauen
+  mit eingespielt. <strong>PS5-Titel</strong> (<code>PPSA&hellip;</code>) fragt das Programm
+  <em>nicht</em>: Sonys Adresse antwortete f&uuml;r 16 gepr&uuml;fte PS5-Titel mit 404 (ein
+  PS4-Titel zur Gegenprobe mit 200), und ein Verfahren f&uuml;r die PS5 ist &ouml;ffentlich nicht
+  belegt. Statt zu raten, erscheint ein Hinweis.</p>
 
-  <p><strong>Einzelheiten.</strong> Unter der Tabelle zeigen die Reiter, was zum gew&auml;hlten
-  Paket geh&ouml;rt:</p>
-  <ul>
-    <li><strong>Info</strong> &ndash; alle Angaben aus <code>param.sfo</code> samt Titelbild; ein
-    Rechtsklick auf eine Zeile bietet an, den Wert zu kopieren.</li>
-    <li><strong>Dateien</strong> &ndash; der Inhalt des Pakets als Baum. Einzelne Dateien oder
-    ganze Ordner lassen sich entpacken, die Liste l&auml;sst sich als Textdatei speichern
-    (braucht OrbisPkgTool).</li>
-    <li><strong>Bilder</strong> &ndash; <code>icon0</code>, <code>pic0</code> und
-    <code>pic1</code> ansehen und speichern.</li>
-    <li><strong>Interna</strong> &ndash; die Eintr&auml;ge im Kopf der Paketdatei mit Kennung,
-    Name, Gr&ouml;&szlig;e und Lage.</li>
-    <li><strong>Updates</strong> &ndash; fragt bei Sonys Update-Server nach, ob es zu einem
-    offiziellen PS4-Titel (Title-ID <code>CUSA&hellip;</code>) ein neueres Update gibt, und
-    l&auml;dt es auf Wunsch (jedes Teil mit Pr&uuml;fsumme). Gesendet wird nur die Title-ID;
-    Eigenbauten und Homebrew haben dort kein Update.</li>
-    <li><strong>OTA</strong>, <strong>Aufgaben</strong> und <strong>Protokoll</strong> &ndash;
-    siehe unten.</li>
-  </ul>
-
-  <p><strong>Aktionen.</strong> Die Kn&ouml;pfe unter der Tabelle wirken auf die gew&auml;hlten
-  Pakete:</p>
-  <div class="tabelle">
-  <table>
-    <thead><tr><th>Knopf</th><th>Was er tut</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Entpacken &hellip;</strong></td><td>Entpackt jedes gew&auml;hlte Paket in einen
-      eigenen Unterordner. Mit dem Haken <em>Als Dump-Ordner</em> entsteht ein
-      gew&ouml;hnlicher Spielordner (Spieldateien in der Wurzel, Systemdateien in
-      <code>sce_sys</code>), sonst bleiben <code>Image0</code> und <code>Sc0</code>. Zuerst
-      entsteht ein Ordner mit der Endung <code>.partial</code>, erst ein vollst&auml;ndiger Lauf
-      bekommt den richtigen Namen; der Platz wird vorher gepr&uuml;ft; ein vorhandener Ordner
-      wird nicht &uuml;berschrieben.</td></tr>
-      <tr><td><strong>&rarr; ffpfsc &hellip;</strong></td><td>&Ouml;ffnet das bisherige Fenster
-      <em>PS4 PKG &rarr; ffpfsc</em> (13.10) mit den gew&auml;hlten Paketen &ndash; daraus
-      entsteht ein Abbild f&uuml;r ShadowMount+.</td></tr>
-      <tr><td><strong>Zusammenf&uuml;hren &hellip;</strong></td><td>Macht aus einem Spiel und seinem
-      Update ein einziges, eigenst&auml;ndiges Paket mit der Fassung des Updates. W&auml;hlen Sie das
-      Update (das Spiel dazu sucht das Programm in der Sammlung) oder das Spiel (dann nimmt es das
-      neueste Update aus der Sammlung); beide m&uuml;ssen dieselbe Title-ID tragen.</td></tr>
-      <tr><td><strong>Neu packen &hellip;</strong></td><td>Entpackt ein Paket und baut es neu.</td></tr>
-      <tr><td><strong>Pr&uuml;fen</strong></td><td>Pr&uuml;ft ein Paket (<code>verify</code>); die
-      Tiefenpr&uuml;fung mit acht Stufen steht unter <em>Mehr</em>.</td></tr>
-      <tr><td><strong>Umbenennen &hellip;</strong></td><td>Benennt Pakete nach einem der zehn
-      Namensmuster, einem eigenen Muster oder in Installationsreihenfolge um. Eine Vorschau zeigt
-      jedes <em>Jetzt</em> und <em>Danach</em>; ausgef&uuml;hrt wird erst auf Knopfdruck. Nichts
-      wird &uuml;berschrieben &ndash; gleiche Namen bekommen eine Nummer.</td></tr>
-      <tr><td><strong>Verschieben &hellip;</strong></td><td>Sortiert Pakete in Unterordner eines
-      Zielordners &ndash; nach Titel, Title-ID, Art (Spiel, Update, Zusatzinhalt), Echtheit oder
-      Region, oder alle in einen Ordner &ndash; ebenfalls mit Vorschau. Es wird nur umgeh&auml;ngt,
-      nie kopiert oder &uuml;berschrieben; auf einen anderen Datentr&auml;ger l&auml;sst sich so
-      nicht verschieben.</td></tr>
-      <tr><td><strong>Per OTA senden</strong></td><td>Schickt die gew&auml;hlten Pakete &uuml;ber das
-      Netzwerk an die Konsole (siehe unten).</td></tr>
-      <tr><td><strong>Mehr</strong></td><td>PKG aus Ordner bauen &hellip;, Tiefenpr&uuml;fung, doppelte
-      Pakete suchen, Updates ohne Spiel suchen, Liste als CSV speichern, im Ordner zeigen, aus der
-      Liste entfernen, <em>Paketkopf lesen (PS4 &amp; PS5) &hellip;</em> (das bisherige Fenster
-      <em>PS4 &amp; PS5 PKG lesen</em>, auch f&uuml;r PS5-Pakete) und <em>Kopieren</em> (Title-ID,
-      Content-ID, Titel oder Dateiname der gew&auml;hlten Zeilen in die Zwischenablage).</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <p><strong>Aufgaben.</strong> Jede Arbeit wird eine Aufgabe, und der Reiter
-  <strong>Aufgaben</strong> &ouml;ffnet sich von selbst. Die Liste zeigt Art, Titel, Status,
-  Prozent und die letzte Meldung, ein Balken den Gesamtstand. <strong>Abbrechen</strong>,
-  <strong>Wiederholen</strong>, <strong>Entfernen</strong>, <strong>Erledigte leeren</strong> und
-  <strong>Ergebnis &ouml;ffnen</strong> wirken auf die gew&auml;hlte Aufgabe. Ein Fehler steht mit
-  seinem Grund in der Liste und im <strong>Protokoll</strong>. Beim Schlie&szlig;en des Fensters
-  fragt das Programm nach, wenn noch etwas l&auml;uft, und bricht es dann sauber ab.</p>
-
-  <p><strong>OTA &ndash; senden an die Konsole.</strong> Der Reiter <strong>OTA</strong> kennt zwei
-  Wege:</p>
+  <p><strong>AN KONSOLE SENDEN.</strong> Der Dialog kennt zwei Wege:</p>
   <ul>
     <li><strong>PS5 &ndash; OnionHEN-Paketmanager (DPI v2).</strong> Der Dienst l&auml;uft auf der PS5
     (in <em>Konsole &amp; Payloads</em> als <em>DPI v2</em>) und nimmt <code>.pkg</code>-Dateien bis
     50&nbsp;GB in Bl&ouml;cken entgegen und installiert sie. DPI&nbsp;v2 ist keine
     eigenst&auml;ndige ELF, sondern ein <strong>Plugin f&uuml;r OnionHEN</strong>: OnionHEN muss
     auf der PS5 installiert sein (in einer Fassung mit Plugin-Unterst&uuml;tzung) und startet es
-    selbst. Ist <em>DPI v2</em> in der Tabelle markiert, ist <em>Ausgew&auml;hltes starten</em>
-    deshalb gesperrt; der Knopf <em>Plugin auf die PS5 legen</em> l&auml;dt es per FTP nach
-    <code>/data/OnionHEN/plugins/DPIV00001.elf</code> (erst unter tempor&auml;rem Namen, nach der
-    Gr&ouml;&szlig;enpr&uuml;fung umbenannt). Fehlt <code>/data/OnionHEN</code> auf der Konsole, wird
-    nichts hochgeladen.</li>
+    selbst.</li>
     <li><strong>PS4 &ndash; Remote Package Installer.</strong> Die Konsole holt das Paket vom PC: Das
     Programm stellt es f&uuml;r diese eine Konsole &uuml;ber einen kleinen Webserver bereit (nur das
     gew&auml;hlte Paket, mit zuf&auml;lligem Pfad, und nur an die Adresse der Konsole).
-    <em>Adresse dieses PCs</em> steht auf <em>automatisch</em>; das Men&uuml; <em>W&auml;hlen</em> bietet
-    die Adressen des Rechners an. <em>Ist installiert?</em> und <em>Deinstallieren</em> gibt es nur
-    hier. Die Windows-Firewall fragt beim ersten Mal nach &ndash; erlauben Sie den Zugriff im privaten
-    Netz.</li>
+    <em>Adresse dieses PCs</em> steht auf <em>automatisch</em>; die Windows-Firewall fragt beim ersten Mal
+    nach &ndash; erlauben Sie den Zugriff im privaten Netz.</li>
   </ul>
   <p>Tragen Sie die Adresse der Konsole und den Port ein (Vorgabe 12800); <strong>Erkennen</strong>
-  fragt nach, welcher Dienst dort antwortet. <strong>Ausgew&auml;hlte senden</strong> fragt vor dem
-  Senden nach. Pakete werden unver&auml;ndert &uuml;bertragen.</p>
+  fragt nach, welcher Dienst dort antwortet. Gesendet werden <code>.pkg</code>-Dateien &ndash; ein
+  entpacktes Spiel oder ein Abbild l&auml;sst sich so nicht schicken. Pakete werden unver&auml;ndert
+  &uuml;bertragen.</p>
+
+  <p><strong>MEHR.</strong> <em>Pakete pr&uuml;fen (Pr&uuml;fsummen)</em> pr&uuml;ft die gew&auml;hlten Pakete;
+  <em>Paketkopf lesen &hellip;</em> &ouml;ffnet das Fenster <em>PS4 &amp; PS5 PKG lesen</em> (auch f&uuml;r
+  PS5-Pakete); <em>Entpacken mit dem bisherigen Entpacker</em> erscheint nur dort, wo OrbisPkgTool fehlt
+  (Linux, macOS; 13.14).</p>
 
   <div class="kasten warnung">
     <span class="titel">Grenzen &ndash; was gepr&uuml;ft ist und was nicht</span>
     <ul>
-      <li><strong>OTA ist an der Konsole nicht gepr&uuml;ft.</strong> Beide Wege sind gegen
+      <li><strong>Senden ist an der Konsole nicht gepr&uuml;ft.</strong> Beide Wege sind gegen
       Nachbildungen der Dienste getestet, der DPI-Weg aus der Weboberfl&auml;che des Plugins
       abgeleitet. Ob ein bestimmtes Paket auf Ihrer Konsole startet, zeigt nur der Versuch.</li>
-      <li><strong>Zusammenf&uuml;hren, Neu packen und Bauen erzeugen Fake-Pakete</strong> (Passcode aus
-      Nullen) und sind an selbst gebauten Minipaketen gepr&uuml;ft, nicht an einer PS4. Behandeln Sie
-      das Ergebnis als Versuch und behalten Sie das Original.</li>
-      <li><strong>Die Tiefenpr&uuml;fung ist ein Hinweis, kein Urteil.</strong> Sie lehnte ein
-      einwandfrei entpackbares Paket an Stufe 3 ab; die einfache Pr&uuml;fung bestand.</li>
-      <li><strong>Nur Windows.</strong> OrbisPkgTool gibt es nur als Windows-Programm. Unter Linux und
-      macOS &ouml;ffnet <strong>Entpacken &hellip;</strong> das bisherige Fenster (13.14); Pr&uuml;fen,
-      Zusammenf&uuml;hren, Neu packen, Bauen und das Auslesen der <em>Dateien</em> brauchen das Werkzeug
-      und sagen, dass es fehlt. Sammlung, Einzelheiten, Umbenennen, Verschieben, die Update-Abfrage und
-      das Senden gehen auch dort.</li>
+      <li><strong>Paket (Basis + Update) erzeugt Fake-Pakete</strong> (Passcode aus Nullen) und ist an
+      selbst gebauten Minipaketen gepr&uuml;ft, nicht an einer PS4. Behandeln Sie das Ergebnis als
+      Versuch und behalten Sie das Original.</li>
+      <li><strong>Nur Windows f&uuml;r Dump-Ordner und Paket.</strong> OrbisPkgTool gibt es nur als
+      Windows-Programm. Unter Linux und macOS bleiben ffpfsc- und exFAT-Abbild (PS4 FFPFSC liest dort die Pakete
+      selbst), das Einlesen, die Update-Abfrage und das Senden.</li>
       <li><strong>PS5-Pakete</strong> lassen sich nicht entpacken (13.14); ihren &auml;u&szlig;eren Aufbau
       zeigt <em>Mehr &rarr; Paketkopf lesen</em>.</li>
       <li>Dateinamen mit Umlauten werden im Paket zu <code>?</code> &ndash; das Werkzeug legt sie so
@@ -2616,14 +2546,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>Der Vorgang wurde abgebrochen</td><td>Warten Sie auf die Abbruchbestätigung. Löschen Sie unvollständige Ergebnisse und starten Sie mit geprüften Pfaden erneut.</td></tr>
       <tr><td>Eine Warnung erscheint</td><td>Lesen Sie die vollständige Meldung im Protokoll. Ändern Sie nicht mehrere Dinge gleichzeitig, sondern beheben Sie zuerst die genannte Ursache.</td></tr>
       <tr><td>Spiel startet nicht (<code>CE-108255-1</code>)</td><td>Zwei bekannte Ursachen: ein unvollständiges <code>.ffpkg</code> – oder der Start aus dem internen Speicher statt vom USB-Stick. Probieren Sie das Backup vom Stick.</td></tr>
-      <tr><td>Update-Paket lässt sich nicht installieren (<code>CE-107891-6</code>)</td><td>Ein Update-Paket (Delta) enthält nur die Änderungen und gehört zu genau <em>einem</em> Grundpaket. Installiert ist ein anderes – schon ein Neubau desselben Spiels zählt als anderes Paket. Installieren Sie das Grundpaket, gegen das das Update gebaut wurde, oder bauen Sie Grundpaket und Update zusammen neu und installieren Sie beide. Ob eine <code>.pkg</code> ein Update-Paket ist, zeigt <strong>PS4 PKG &rarr; OTA</strong> in der Spalte <em>Typ</em>.</td></tr>
+      <tr><td>Update-Paket lässt sich nicht installieren (<code>CE-107891-6</code>)</td><td>Ein Update-Paket (Delta) enthält nur die Änderungen und gehört zu genau <em>einem</em> Grundpaket. Installiert ist ein anderes – schon ein Neubau desselben Spiels zählt als anderes Paket. Installieren Sie das Grundpaket, gegen das das Update gebaut wurde, oder bauen Sie Grundpaket und Update zusammen neu und installieren Sie beide. Ob eine <code>.pkg</code> ein Update-Paket ist, zeigt <strong>PS4 PKG Dump &amp; Image Converter</strong> in der Spalte <em>Bestandteile</em> (Zahl der Updates je Spiel).</td></tr>
       <tr><td>FTP-, KLog- oder JS-Loader-Werkzeug verbindet nicht</td><td>Prüfen Sie IP-Adresse und Port sowie, ob die PS5 per Jailbreak vorbereitet und im selben Netzwerk erreichbar ist. Auf der Konsole muss ein FTP-Payload laufen – über <strong>JS LOADER</strong> lässt sich einer starten.</td></tr>
     </tbody>
   </table>
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.64), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.65), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2823,8 +2753,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.64</strong></span>
-    <span>Stand 6. Oktober 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.65</strong></span>
+    <span>Stand 7. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

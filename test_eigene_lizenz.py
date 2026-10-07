@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Die Lizenz des Programms selbst (MIT) - Datei, Programm und Bau im Gleichklang.
+"""Die Lizenz des Programms selbst - Datei, Programm, Bau und Doku im Gleichklang.
 
-Gemessen am 19.09.2026: Das Repo wurde am 25.06.2026 mit einer ``LICENSE``
-angelegt (MIT, strongt1me). Am 06.07.2026 fiel sie beim Aufraeumen von
-"Diverses" mit aus dem Repo - danach bezeichnete sich das Programm als
-MIT-lizenziert, ohne dass das oeffentliche Repo den Text trug. Der Text, den
-das Programm unter Windows in die Registry schreibt, nannte einen anderen
-Inhaber und ein Jahr, das mit der Uhr mitlief; unter Linux und macOS meldete
-es "MIT-Lizenz liegt bei", obwohl kein Bau sie enthielt.
+Seit dem 07.10.2026 GPL-3.0-or-later (Nutzerentscheid; bis v1.9.64 MIT). Die
+Datei ``LICENSE`` ist der unveraenderte Text der FSF, der Hinweis "Version 3
+oder spaeter" steht in ``eigene_lizenz.HINWEIS``, in der README und in der
+Registry.
+
+Gemessen am 19.09.2026 (damals noch MIT): Das Repo wurde am 25.06.2026 mit
+einer ``LICENSE`` angelegt. Am 06.07.2026 fiel sie beim Aufraeumen von
+"Diverses" mit aus dem Repo - danach nannte das Programm eine Lizenz, ohne dass
+das oeffentliche Repo den Text trug. Der Text, den das Programm unter Windows
+in die Registry schreibt, nannte einen anderen Inhaber und ein Jahr, das mit
+der Uhr mitlief; unter Linux und macOS meldete es "Lizenz liegt bei", obwohl
+kein Bau sie enthielt.
 """
 from __future__ import annotations
 
@@ -32,6 +37,8 @@ import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 from ps5_validator.utils import eigene_lizenz               # noqa: E402
 
 DATEI = PROJEKT / eigene_lizenz.DATEINAME
+#: Dieselbe FSF-Datei liegt seit Langem bei den GPL-3.0-Payloads.
+GPL_KOPIE = PROJEKT / "helloworld" / "LICENSE-GPL-3.0.txt"
 SPECS = ("PS5ImageConverter_Pro.spec", "PS5ImageConverter_Pro_linux.spec",
          "PS5ImageConverter_Pro_macos.spec")
 
@@ -47,16 +54,26 @@ class DateiTests(unittest.TestCase):
     def test_die_datei_liegt_im_projektordner(self) -> None:
         self.assertTrue(DATEI.is_file(), "LICENSE fehlt im Projektordner")
 
-    def test_das_programm_traegt_denselben_text(self) -> None:
-        self.assertEqual(_datei_text(), eigene_lizenz.TEXT)
+    def test_es_ist_der_unveraenderte_gpl_text(self) -> None:
+        """Der Text der FSF darf nicht veraendert werden - auch nicht um einen Satz."""
+        text = _datei_text()
+        self.assertTrue(text.lstrip().startswith("GNU GENERAL PUBLIC LICENSE"), text[:80])
+        self.assertIn("Version 3, 29 June 2007", text[:200])
+        self.assertEqual(eigene_lizenz.TEXT_SHA256,
+                         hashlib.sha256(text.encode("utf-8")).hexdigest())
 
-    def test_es_ist_die_mit_lizenz(self) -> None:
-        text = eigene_lizenz.TEXT
-        self.assertTrue(text.startswith("MIT License\n\n"))
-        self.assertIn(f"\n{eigene_lizenz.COPYRIGHT}\n", text)
-        self.assertIn("Permission is hereby granted, free of charge", text)
-        self.assertIn('THE SOFTWARE IS PROVIDED "AS IS"', text)
-        self.assertEqual("MIT", eigene_lizenz.SPDX)
+    def test_die_datei_gleicht_der_mitgelieferten_gpl_kopie(self) -> None:
+        self.assertEqual(GPL_KOPIE.read_bytes().decode("utf-8").replace("\r\n", "\n"),
+                         _datei_text())
+
+    def test_kennung_und_hinweis_sagen_version_3_oder_neuer(self) -> None:
+        self.assertEqual("GPL-3.0-or-later", eigene_lizenz.SPDX)
+        hinweis = eigene_lizenz.HINWEIS
+        self.assertIn(f"\n{eigene_lizenz.COPYRIGHT}\n", hinweis)
+        self.assertIn("either version 3 of the License, or", hinweis)
+        self.assertIn("(at your option) any later version.", hinweis)
+        self.assertIn("WITHOUT ANY WARRANTY", hinweis)
+        self.assertNotIn("MIT", hinweis)
 
     @unittest.skipUnless(shutil.which("git") and (PROJEKT / ".git").exists(),
                          "keine Git-Arbeitskopie")
@@ -88,16 +105,22 @@ class RegistryTests(unittest.TestCase):
             CloseKey=lambda _key: None)
         with mock.patch.dict(sys.modules, {"winreg": winreg}), \
                 mock.patch.object(APP, "IST_WINDOWS", True):
-            ok, _meldung = APP._register_mit_license_runtime()
+            ok, _meldung = APP._register_license_runtime()
         return ok, geschrieben
 
-    def test_eingetragen_wird_der_text_der_datei(self) -> None:
+    def test_eingetragen_werden_hinweis_und_pruefsumme_der_datei(self) -> None:
+        """Der volle Text (35 KB) gehoert nicht in einen Registry-Wert - Hinweis und Pruefsumme schon."""
         ok, werte = self._ausfuehren()
         self.assertTrue(ok)
-        self.assertEqual(_datei_text(), werte["LicenseText"])
-        self.assertEqual("MIT", werte["SPDX"])
+        self.assertEqual(eigene_lizenz.HINWEIS, werte["LicenseText"])
+        self.assertEqual("GPL-3.0-or-later", werte["SPDX"])
+        self.assertEqual(eigene_lizenz.NAME, werte["LicenseName"])
         self.assertEqual(hashlib.sha256(_datei_text().encode("utf-8")).hexdigest(),
                          werte["LicenseHashSHA256"])
+
+    def test_die_alte_funktion_gibt_es_nicht_mehr(self) -> None:
+        """Ihr Name sagte MIT - wer sie noch aufruft, soll scheitern statt Falsches zu lesen."""
+        self.assertFalse(hasattr(APP, "_register_mit_license_runtime"))
 
     def test_das_jahr_laeuft_nicht_mit_der_uhr_mit(self) -> None:
         """Bis v1.9.28 stand dort das laufende Jahr statt 2026."""
@@ -127,7 +150,8 @@ class BauTests(unittest.TestCase):
         assert treffer is not None
         self.assertTrue(treffer.group(1).startswith(eigene_lizenz.COPYRIGHT),
                         treffer.group(1))
-        self.assertIn("MIT", treffer.group(1))
+        self.assertIn(eigene_lizenz.SPDX, treffer.group(1))
+        self.assertNotIn("MIT", treffer.group(1))
 
     def test_das_auslieferungsbuendel_nimmt_die_lizenzen_mit(self) -> None:
         text = (PROJEKT / "Build_EXE.ps1").read_text(encoding="utf-8-sig")
@@ -140,11 +164,35 @@ class DokuTests(unittest.TestCase):
 
     def test_die_readme_verlinkt_die_datei(self) -> None:
         text = (PROJEKT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("[MIT-Lizenz](LICENSE)", text)
+        self.assertIn("(GPL-3.0-or-later)](LICENSE)", text)
+        # Der Hinweis selbst, denn die Datei LICENSE sagt "oder spaeter" nicht.
+        self.assertIn(eigene_lizenz.COPYRIGHT, text)
+        self.assertIn("(at your option) any later version.", text)
+        self.assertNotIn("[MIT-Lizenz](LICENSE)", text)
 
     def test_die_fremdlizenzen_grenzen_sich_ab(self) -> None:
         text = (PROJEKT / "THIRD_PARTY_LICENSES.md").read_text(encoding="utf-8")
         self.assertIn("[LICENSE](LICENSE)", text)
+        self.assertIn("(GPL-3.0-or-later)", text)
+        self.assertNotIn("Das Programm selbst steht unter der MIT-Lizenz", text)
+
+    def test_handbuch_und_faq_nennen_die_gpl(self) -> None:
+        for name, alt in (("BENUTZERHANDBUCH.html", "steht unter der MIT-Lizenz"),
+                          ("FAQ.html", "steht unter der <strong>MIT-Lizenz</strong>"),
+                          ("FAQ_EN.html", "released under the <strong>MIT license</strong>")):
+            with self.subTest(datei=name):
+                text = (PROJEKT / name).read_text(encoding="utf-8")
+                self.assertIn("GPL-3.0-or-later", text)
+                self.assertNotIn(alt, text)
+
+    def test_die_startmeldungen_nennen_nicht_mehr_mit(self) -> None:
+        from ps5_validator.utils import i18n
+        for schluessel in ("lizenz.registriert", "lizenz.ohne_registry", "lizenz.fehlgeschlagen"):
+            for sprache in ("de", "en"):
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    text = i18n.STRINGS[schluessel][sprache]
+                    self.assertNotIn("MIT", text)
+                    self.assertIn("GPL-3.0", text)
 
 
 if __name__ == "__main__":

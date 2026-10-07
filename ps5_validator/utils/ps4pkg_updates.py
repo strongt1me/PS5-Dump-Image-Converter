@@ -100,6 +100,19 @@ def title_id_gueltig(title_id: str) -> bool:
     return bool(_TITLE_ID.match(title_id or ""))
 
 
+_PS5_KENNUNG = re.compile(r"^PP[A-Z]{2}\d{5}$")
+
+
+def ist_ps5(title_id: str) -> bool:
+    """Eine PS5-Title-ID (``PPSA01234``, ``PPSS…``). Fuer sie gibt es hier **keine** Online-Updates.
+
+    Gemessen am 07.10.2026: Sonys Update-Adresse mit dem PS4-Verfahren liefert fuer 16 PPSA-Titel
+    durchgehend 404 (die Gegenprobe mit einem PS4-Titel antwortet), und der PS5-Verfahren-Schluessel
+    steht in keiner oeffentlichen Quelle. Deshalb fragt das Programm bei PS5-Titeln gar nicht erst.
+    """
+    return bool(_PS5_KENNUNG.match(title_id or ""))
+
+
 def update_url(title_id: str) -> str:
     """Die Adresse der Update-XML eines Titels.
 

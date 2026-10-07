@@ -44,7 +44,7 @@ except Exception:  # noqa: BLE001
 
 KLASSE = APP.PS5ConverterGUI
 #: Die vier Fassungen, die der Nutzer am 04.10.2026 verlangt hat (neueste zuerst).
-FASSUNGEN = ["0.5.2", "0.5.1", "0.5.0", "0.4.0"]
+FASSUNGEN = ["0.5.2", "0.5.1", "0.4.0"]   # 0.5.0 entfernt am 07.10.2026 (Dateien defekt)
 DATEINAMEN = {"exe": "webkit-autoloader-host_v%s.exe",
               "py": "webkit-autoloader-host_v%s.py",
               "elf": "webkit-autoloader-installer_v%s.elf"}
@@ -344,12 +344,13 @@ class SeitenTests(unittest.TestCase):
         self.assertEqual(("konsole.btn_webkit", "webkit"), KLASSE._KONSOLE_KNOEPFE[1])
         self.assertEqual("2. WebKit Autoloader", self._knopf_der_leiste("konsole.btn_webkit")._text)
 
-    def test_zweiter_druck_fuehrt_zurueck(self) -> None:
+    def test_zweiter_druck_bleibt_auf_der_seite(self) -> None:
+        """Seit 07.10.2026: kein Zurueckspringen auf den zuvor gewaehlten Knopf."""
         self.app._konsole_knopf_gedrueckt("webkit", "konsole.btn_webkit")
         _WURZEL.update()
-        self.assertEqual("uebersicht", self.app._konsole_seite)
-        self.assertFalse(_gezeigt(self.app._webkit_seite))
-        self.assertTrue(_gezeigt(self.app._konsole_tafel))
+        self.assertEqual("webkit", self.app._konsole_seite)
+        self.assertTrue(_gezeigt(self.app._webkit_seite))
+        self.assertFalse(_gezeigt(self.app._konsole_tafel))
 
     def test_zurueck_knopf_der_seite(self) -> None:
         self.knopf[self.app._t("konsole.btn_uebersicht")].invoke()
@@ -381,9 +382,9 @@ class SeitenTests(unittest.TestCase):
         self.assertEqual("v0.5.2 (neueste)", self.app._webkit_fassung_var.get())
 
     def test_waehlen_merkt_die_fassung_und_beschreibt_sie(self) -> None:
-        self._waehlen("0.5.0")
-        self.assertEqual([("webkit_fassung", "0.5.0")], self.gespeichert)
-        self.assertEqual("0.5.0", self.app._webkit_gewaehlt())
+        self._waehlen("0.5.1")
+        self.assertEqual([("webkit_fassung", "0.5.1")], self.gespeichert)
+        self.assertEqual("0.5.1", self.app._webkit_gewaehlt())
         self.assertEqual(STRINGS["webkit.fassung_vollstaendig"]["de"],
                          self.app._webkit_info_var.get())
 
@@ -394,16 +395,16 @@ class SeitenTests(unittest.TestCase):
         self.assertEqual("v0.4.0", self.app._webkit_fassung_var.get())
 
     def test_die_wege_nehmen_die_gewaehlte_fassung(self) -> None:
-        self._waehlen("0.5.0")
+        self._waehlen("0.5.1")
         self.app._konsole_ip_var().set("192.168.1.50")
         with mock.patch.object(self.app, "_webkit_host_starten") as host, \
                 mock.patch.object(self.app, "_webkit_installer_senden") as installer:
             self.knopf[self.app._t("webkit.host_exe")].invoke()
             self.knopf[self.app._t("webkit.host_py")].invoke()
             self.knopf[self.app._t("webkit.installer")].invoke()
-        self.assertEqual([mock.call("exe", fassung="0.5.0"), mock.call("py", fassung="0.5.0")],
+        self.assertEqual([mock.call("exe", fassung="0.5.1"), mock.call("py", fassung="0.5.1")],
                          host.call_args_list)
-        installer.assert_called_once_with(fassung="0.5.0")
+        installer.assert_called_once_with(fassung="0.5.1")
         self.assertIn(("ps5_ip", "192.168.1.50"), self.gespeichert,
                       "Die Adresse im Feld der Seite gilt und wird gemerkt.")
 

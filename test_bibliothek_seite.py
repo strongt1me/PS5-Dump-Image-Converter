@@ -345,11 +345,11 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         30.09.2026 vier ("4. Prospero Manager" dazu), seit dem 04.10.2026
         sieben (Knopf 2 ist der WebKit Autoloader statt der Spielstaende, dazu
         CoolSysCent-Pro, ShadowMount+ und SMPlusGui) und seit dem 05.10.2026
-        acht: "8. Direct Stream"."""
+        acht: "8. Direct Stream", seit dem 07.10.2026 "8. BFpilot"."""
         kennungen = [k for _s, k in APP.PS5ConverterGUI._KONSOLE_KNOEPFE]
         self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
                           "coolsyscent", "shadowmount", "smplusgui",
-                          "directstream"], kennungen)
+                          "bfpilot"], kennungen)
         for weg in ("konsole.btn_actremotelink", "konsole.btn_remoteplay",
                     "konsole.btn_prosperolight"):
             self.assertNotIn(weg, STRINGS)
@@ -669,12 +669,46 @@ class SeiteTests(unittest.TestCase):
         neu = {t.name for t in threading.enumerate()} - vorher
         self.assertFalse({n for n in neu if n.startswith("bibliothek")},
                          "Ohne Suchordner startet der Aufbau keinen Suchlauf.")
+        # Ein zweiter Druck auf denselben Knopf bleibt auf der Seite (07.10.2026: vorher sprang
+        # die Auswahl auf den zuvor gewaehlten Knopf zurueck).
         app._konsole_bibliothek_umschalten()
+        _WURZEL.update()
+        self.assertTrue(self._gezeigt(seite))
+        self.assertFalse(self._gezeigt(app._konsole_tafel))
+        self.assertEqual(app._COLORS["fg_accent"], self._knopf("konsole.btn_bibliothek")._bg)
+        # Zurueck geht es mit dem Knopf der anderen Seite; abgewaehlt ist die dunkle Pillenflaeche.
+        app._konsole_seite_setzen("uebersicht")
         _WURZEL.update()
         self.assertFalse(self._gezeigt(seite))
         self.assertTrue(self._gezeigt(app._konsole_tafel))
-        # Abgewaehlt die dunkle Pillenflaeche (seit v1.9.62; vorher bg_card).
         self.assertEqual(app._COLORS["seitenknopf_bg"], self._knopf("konsole.btn_bibliothek")._bg)
+
+    def test_zweiter_druck_springt_nicht_auf_den_vorigen_knopf(self) -> None:
+        """Meldung 07.10.2026: Knopf A, Knopf B, nochmals B - die Auswahl sprang auf A zurueck."""
+        app = self.app
+        app._ansicht_setzen("konsole")
+        app._konsole_seite_setzen("uebersicht")
+        for _ in range(3):
+            app._konsole_webkit_zeigen()
+            self.assertEqual("webkit", app._konsole_seite)
+        for _ in range(3):
+            app._konsole_bibliothek_umschalten()
+            self.assertEqual("bibliothek", app._konsole_seite)
+        self.assertEqual(app._COLORS["fg_accent"], self._knopf("konsole.btn_bibliothek")._bg)
+        self.assertEqual(app._COLORS["seitenknopf_bg"], self._knopf("konsole.btn_webkit")._bg)
+
+    def test_der_gedrueckte_webdienst_knopf_ist_hervorgehoben(self) -> None:
+        app = self.app
+        app._ansicht_setzen("konsole")
+        app._konsole_seite_setzen("bibliothek")
+        app._konsole_aktiver_knopf = "konsole.btn_bfpilot"
+        app._konsole_seite_setzen("web")
+        self.assertEqual(app._COLORS["fg_accent"], self._knopf("konsole.btn_bfpilot")._bg)
+        self.assertEqual(app._COLORS["seitenknopf_bg"], self._knopf("konsole.btn_bibliothek")._bg)
+        self.assertEqual(app._COLORS["seitenknopf_bg"], self._knopf("konsole.btn_dienste")._bg)
+        app._konsole_seite_setzen("webkit")
+        self.assertEqual(app._COLORS["seitenknopf_bg"], self._knopf("konsole.btn_bfpilot")._bg)
+        self.assertEqual("", app._konsole_aktiver_knopf)
 
     def test_die_seiten_verdraengen_einander(self) -> None:
         self._seite()
@@ -703,7 +737,7 @@ class SeiteTests(unittest.TestCase):
         # Die Maus steht vom Klick her noch auf dem Knopf - RoundedButton
         # setzt das sonst erst beim naechsten <Leave>.
         bibliothek_knopf._hovering = True
-        app._konsole_bibliothek_umschalten()
+        app._konsole_seite_setzen("uebersicht")  # seit 07.10.2026 waehlt man so ab
         _WURZEL.update()
 
         def effektive_farbe(knopf):

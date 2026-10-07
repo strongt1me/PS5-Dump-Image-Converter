@@ -113,17 +113,17 @@ class MenueVerdrahtungTests(unittest.TestCase):
         """
         from ps5_validator.utils.i18n import STRINGS
         paare = dict(APP.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
-        self.assertEqual("_show_ps4_pkg_ota", paare["titlebar.ps4_ota"])
-        self.assertEqual("PS4 PKG → OTA", STRINGS["titlebar.ps4_ota"]["de"])
-        self.assertEqual("PS4 PKG → OTA", STRINGS["titlebar.ps4_ota"]["en"])
-        for weg in ("titlebar.ps4pkg", "titlebar.pkg_entpacken", "titlebar.pkg_reader"):
+        self.assertEqual("_show_ps4_pkg_converter", paare["titlebar.ps4pkg"])
+        self.assertEqual("PS4 PKG Dump & Image Converter", STRINGS["titlebar.ps4pkg"]["de"])
+        self.assertEqual("PS4 PKG Dump & Image Converter", STRINGS["titlebar.ps4pkg"]["en"])
+        for weg in ("titlebar.ps4_ota", "titlebar.pkg_entpacken", "titlebar.pkg_reader"):
             with self.subTest(eintrag=weg):
                 self.assertNotIn(weg, paare)
                 self.assertNotIn(weg, STRINGS, "Ein Text ohne Eintrag waere ein toter Schluessel.")
         for sprache in ("de", "en"):
             with self.subTest(sprache=sprache):
                 nennen_ps4_pakete = [k for k in paare if "PS4 PKG" in STRINGS[k][sprache]]
-                self.assertEqual(["titlebar.ps4_ota"], nennen_ps4_pakete)
+                self.assertEqual(["titlebar.ps4pkg"], nennen_ps4_pakete)
         for methode in ("_show_ps4_pkg_converter", "_show_pkg_entpacken", "_show_pkg_reader"):
             with self.subTest(methode=methode):
                 self.assertTrue(callable(getattr(APP.PS5ConverterGUI, methode, None)),

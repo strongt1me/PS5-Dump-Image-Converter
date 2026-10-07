@@ -66,43 +66,6 @@ RC_NICHT_UNTERSTUETZT = 3
 RC_PRUEFUNG = 4
 RC_KEIN_PLATZ = 5
 
-#: Name der Datei, in der das Werkzeug sein vollstaendiges Inventar ablegt -
-#: einschliesslich der Pakete, die es abgelehnt hat. Die Ausgabe von
-#: ``list --json`` enthaelt nur ``games``; die Ablehnungen mit ihrem Grund
-#: stehen ausschliesslich hier (dort inventory.py, Schluessel ``unsupported``).
-INVENTAR_DATEI = "package_inventory.json"
-
-
-def abgelehnte_pakete(entpackordner: str) -> list[dict] | None:
-    """Die Pakete, die das Werkzeug abgelehnt hat - mit ihrem Grund.
-
-    ``list --json`` gibt ausschliesslich ``games`` aus. Was das Werkzeug nicht
-    oeffnen konnte, steht mit ``path``, ``error`` und einem lesbaren ``reason``
-    allein in der Inventardatei. Ohne diesen Weg verschwindet ein abgelehntes
-    Paket spurlos: Der Anwender sieht nur, dass sein Spiel nicht in der Liste
-    steht, und erfaehrt nie, warum.
-
-    Returns:
-        Die Ablehnungen, oder ``None``, wenn sich die Datei nicht lesen liess.
-
-    **``None`` ist nicht dasselbe wie eine leere Liste.** Eine leere Liste
-    heisst "nichts abgelehnt", ``None`` heisst "konnte nicht nachsehen" - wer
-    beides gleich behandelt, meldet dem Anwender guten Gewissens, es sei alles
-    in Ordnung, obwohl er gar nicht nachgesehen hat.
-    """
-    pfad = os.path.join(str(entpackordner or ""), INVENTAR_DATEI)
-    try:
-        with open(pfad, "r", encoding="utf-8") as datei:
-            inventar = json.load(datei)
-    except (OSError, ValueError):
-        return None
-    if not isinstance(inventar, dict):
-        return None
-    roh = inventar.get("unsupported")
-    if not isinstance(roh, list):
-        return None
-    return [eintrag for eintrag in roh if isinstance(eintrag, dict)]
-
 
 def quellen_sichten(eingabe: str, art: str,
                     konsole_erkennen: Callable[[str], str]) -> dict:
@@ -223,6 +186,15 @@ def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
     except (KeyError, IndexError, ValueError):
         return MELDUNGEN[kennung].format(**werte)
 
+def _mkpfs_bereitstellen() -> None:
+    """Sorgt dafuer, dass ``mkpfs`` importierbar ist (im Programm meist schon; aus Tests oder Skripten nicht)."""
+    try:
+        from ps5_validator.modules import ffpfs_validator
+        ffpfs_validator._ensure_mkpfs_importable()
+    except Exception:  # noqa: BLE001 - fehlt es, meldet der Import danach den Grund
+        pass
+
+
 def abbild_pruefen(pfad: str,
                    texte: "dict[str, str] | None" = None) -> dict:
     """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
@@ -239,6 +211,7 @@ def abbild_pruefen(pfad: str,
     ergebnis = {"dateien": 0, "fehlend": [], "ps4": False, "fehler": ""}
     griff = None
     try:
+        _mkpfs_bereitstellen()
         from mkpfs.exfat import ExfatReader
 
         with open(pfad, "rb") as datei:

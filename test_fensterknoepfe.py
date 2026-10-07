@@ -26,6 +26,7 @@ gesehen und hier nachgerechnet:
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 import io
 import os
 import sys
@@ -87,7 +88,7 @@ class SchliessenFunktioniertTests(unittest.TestCase):
     #:
     #: "PKG bauen" stand hier bis zu seinem Ausbau am 02.10.2026; an seine
     #: Stelle rueckte "PS4 PKG -> Dump Ordner", das ebenso einen Lauf hat.
-    MIT_KNOPF = ("_show_ps4_pkg_converter", "_show_pkg_entpacken",
+    MIT_KNOPF = ("_show_pkg_entpacken",
                  "_render_dump_rename_window", "_show_js_loader",
                  "_show_ampr_index_builder")
 
@@ -102,6 +103,11 @@ class SchliessenFunktioniertTests(unittest.TestCase):
         self.assertEqual([], ohne,
                          "Diese Fenster lassen sich nur ueber das X der "
                          "Fensterleiste schliessen: %s" % ohne)
+
+    def test_das_ps4_fenster_hat_einen_schliessen_knopf(self):
+        """Seit 07.10.2026 steht "PS4 PKG Dump & Image Converter" in ``ui/ps4_dump_image.py``."""
+        quelle = (Path(__file__).resolve().parent / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
+        self.assertIn('text=t("action.close"), command=self._schliessen', quelle)
 
     def test_die_rueckfragen_gibt_es_in_beiden_sprachen(self):
         from ps5_validator.utils.i18n import STRINGS

@@ -257,11 +257,15 @@ class TempOrdnerTests(_MitProgramm):
 
 
 class LizenzTests(unittest.TestCase):
-    """H12-13: Die Startmeldung zur MIT-Lizenz stand fest deutsch im Protokoll."""
+    """H12-13: Die Startmeldung zur Lizenz stand fest deutsch im Protokoll.
+
+    Damals MIT; seit dem 07.10.2026 GPL-3.0-or-later, die Funktion heisst seitdem
+    ``_register_license_runtime``.
+    """
 
     def test_ohne_windows_nennt_sie_nur_das_system(self) -> None:
         with mock.patch.object(APP, "IST_WINDOWS", False):
-            ok, angabe = APP._register_mit_license_runtime()
+            ok, angabe = APP._register_license_runtime()
         self.assertFalse(ok)
         self.assertEqual(APP._systemname(), angabe)
 
@@ -272,7 +276,7 @@ class LizenzTests(unittest.TestCase):
             SetValueEx=lambda *_a: None, CloseKey=lambda _k: None)
         with mock.patch.dict(sys.modules, {"winreg": winreg}), \
                 mock.patch.object(APP, "IST_WINDOWS", True):
-            ok, angabe = APP._register_mit_license_runtime()
+            ok, angabe = APP._register_license_runtime()
         self.assertTrue(ok)
         self.assertEqual("HKCU\\Software\\PS5DumpImageConverter\\License", angabe)
 
@@ -283,8 +287,8 @@ class LizenzTests(unittest.TestCase):
                            "lizenz.fehlgeschlagen"):
             with self.subTest(schluessel=schluessel):
                 self.assertIn('app._t("%s"' % schluessel, block)
-        self.assertNotIn('f"[INFO] {_mit_msg}', block)
-        self.assertNotIn('f"[WARN] {_mit_msg}', block)
+        self.assertNotIn('f"[INFO] {_lizenz_msg}', block)
+        self.assertNotIn('f"[WARN] {_lizenz_msg}', block)
 
 
 class TexteTests(unittest.TestCase):

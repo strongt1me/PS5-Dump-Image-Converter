@@ -63,6 +63,20 @@ Betroffen sind fünf: `pipeline.py`, `inventory.py`, `util.py`, `cli.py` und
 `dlc_embed.py`. Alles andere ist Original 0.2.8 – nachprüfbar gegen den
 Quellauszug unter `PS5 SDK usw/PS4 PKG to ffpfsc/`.
 
+### `--consume-dump` (`cli.py`, `pipeline.py`) – seit 07.10.2026
+
+Ein ausgewählter Dump-Ordner (`--dump-dir`) wird beim Zusammenführen nie angefasst: Seine Dateien werden
+verlinkt oder **kopiert**. Das Fenster „PS4 PKG Dump & Image Converter“ entpackt die Pakete aber selbst in
+einen Wegwerf-Ordner (OrbisPkgTool) und gibt ihn dann an dieses Werkzeug. Auf einem exFAT-Laufwerk (die
+meisten externen Platten; dort gibt es keine Hardlinks) hieß das: ein zweites Mal 12 GB kopieren, bei einer
+USB-Festplatte rund 7 Minuten und das doppelte an Platz – gemessen an Offroad Racing mit Update.
+
+Mit `--consume-dump` wird die Quelle wie bei einem eigenen Entpackbestand behandelt: erst verlinken, sonst
+**verschieben** (`os.replace`, auf demselben Laufwerk ohne Kopie), erst dann kopieren. Der Schalter ist
+nur für einen Ordner gedacht, den der Aufrufer selbst angelegt hat und danach wegwirft; ohne ihn bleibt das
+Verhalten der Vorlage unverändert. Geändert sind `cli.py` (der Schalter), `Settings.consume_dump`,
+`_copy_overlay(…, consume_dump=False)` und sein einziger Aufruf in `merge_game`.
+
 ### `ps4ffpsc/pipeline.py` → `mkpfs_command()`
 
 Die Vorlage sucht eine **installierte** MkPFS-Fassung (`import mkpfs`) und

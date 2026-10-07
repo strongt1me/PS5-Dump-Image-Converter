@@ -1,46 +1,56 @@
 # -*- coding: utf-8 -*-
-"""Die Lizenz dieses Programms selbst: MIT.
+"""Die Lizenz dieses Programms selbst: GPL-3.0-or-later.
 
-Der Text ist wortgleich mit der Datei ``LICENSE`` im Projektordner - der
-Datei, mit der das Repo am 25.06.2026 angelegt wurde. ``test_eigene_lizenz.py``
-haelt beide gegeneinander.
+Seit dem 07.10.2026 (Nutzerentscheid) steht das Programm unter der GNU General
+Public License, Version 3 oder (nach Wahl) jeder spaeteren Fassung. Vorher galt
+MIT - alles, was bis einschliesslich v1.9.64 veroeffentlicht wurde, bleibt fuer
+seine Empfaenger unter MIT. Grund des Wechsels: Das Programm bindet GPL-Werke
+direkt ein (MkPFS im eigenen Prozess, PS4 FFPFSC, LibProsperoPkg), und Code aus
+GPL-Projekten darf jetzt uebernommen werden statt nur deren Ideen.
 
-Bis v1.9.28 liefen sie auseinander: Die ``LICENSE`` fiel am 06.07.2026 beim
-Aufraeumen von "Diverses" mit aus dem Repo, und der Text, den das Programm
-unter Windows beim Start in die Registry schreibt, nannte einen anderen
-Inhaber ("PS5 Dump & Image Converter Contributors") und ein Jahr, das mit der
-Uhr mitlief. Das Jahr hier ist das der Erstveroeffentlichung und bleibt stehen.
+Die Datei ``LICENSE`` im Projektordner ist der **unveraenderte** Lizenztext der
+Free Software Foundation (er darf nicht geaendert werden, deshalb steht der
+Hinweis "oder spaeter" nicht dort, sondern hier, in der README und in der
+Registry). ``test_eigene_lizenz.py`` haelt die Datei ueber :data:`TEXT_SHA256`
+gegen das Original und den Hinweis gegen Bauplaene und Doku.
+
+Bis v1.9.28 liefen Datei und Programm auseinander: Die ``LICENSE`` fiel am
+06.07.2026 beim Aufraeumen von "Diverses" mit aus dem Repo, und der Text, den
+das Programm unter Windows beim Start in die Registry schreibt, nannte einen
+anderen Inhaber und ein Jahr, das mit der Uhr mitlief. Das Jahr hier ist das
+der Erstveroeffentlichung und bleibt stehen.
 """
 from __future__ import annotations
 
 #: Name der Datei im Projektordner und in den gebauten Fassungen.
 DATEINAME = "LICENSE"
-SPDX = "MIT"
+SPDX = "GPL-3.0-or-later"
+#: Der Name der Lizenz, wie ihn die Registry und die Doku nennen.
+NAME = "GNU General Public License v3.0 or later"
 INHABER = "strongt1me"
 #: Jahr der Erstveroeffentlichung - laeuft bewusst nicht mit der Uhr mit.
 JAHR = 2026
-COPYRIGHT = f"Copyright (c) {JAHR} {INHABER}"
+COPYRIGHT = f"Copyright (C) {JAHR} {INHABER}"
+#: SHA-256 des unveraenderten GPL-3.0-Textes der FSF (gpl-3.0.txt, 35.149 Bytes,
+#: Zeilenenden LF) - derselbe Text wie ``helloworld/LICENSE-GPL-3.0.txt``.
+TEXT_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
 
-TEXT = (
-    "MIT License\n"
-    "\n"
+#: Der Hinweis, den die GPL fuer ein Programm unter ihr vorsieht ("How to Apply
+#: These Terms to Your New Programs") - mit "or (at your option) any later version".
+HINWEIS = (
+    "PS5 Dump & Image Converter\n"
     f"{COPYRIGHT}\n"
     "\n"
-    "Permission is hereby granted, free of charge, to any person obtaining a copy\n"
-    "of this software and associated documentation files (the \"Software\"), to deal\n"
-    "in the Software without restriction, including without limitation the rights\n"
-    "to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n"
-    "copies of the Software, and to permit persons to whom the Software is\n"
-    "furnished to do so, subject to the following conditions:\n"
+    "This program is free software: you can redistribute it and/or modify\n"
+    "it under the terms of the GNU General Public License as published by\n"
+    "the Free Software Foundation, either version 3 of the License, or\n"
+    "(at your option) any later version.\n"
     "\n"
-    "The above copyright notice and this permission notice shall be included in all\n"
-    "copies or substantial portions of the Software.\n"
+    "This program is distributed in the hope that it will be useful,\n"
+    "but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
+    "GNU General Public License for more details.\n"
     "\n"
-    "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n"
-    "IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
-    "FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n"
-    "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n"
-    "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n"
-    "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n"
-    "SOFTWARE.\n"
+    "You should have received a copy of the GNU General Public License\n"
+    "along with this program.  If not, see <https://www.gnu.org/licenses/>.\n"
 )

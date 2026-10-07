@@ -314,16 +314,10 @@ class Ps4HinweisTests(unittest.TestCase):
         self.assertEqual([], abgestellt)
 
     def test_der_faden_reicht_seinen_stand_mit(self) -> None:
-        aufrufe = [k for k in ast.walk(_baum())
-                   if isinstance(k, ast.Call)
-                   and getattr(k.func, "attr", "") == "_spaeter_im_fenster"
-                   and len(k.args) >= 2
-                   and getattr(k.args[1], "attr", "") == "_ps4_hinweis_aufraeumen"]
-        self.assertEqual(2, len(aufrufe))
-        for aufruf in aufrufe:
-            with self.subTest(zeile=aufruf.lineno):
-                self.assertEqual(3, len(aufruf.args),
-                                 "Der Faden raeumt den aktuellen statt seinen Hinweis ab.")
+        """Seit 07.10.2026 raeumt ``ps4_dump_image`` den Hinweis seines Stapels ab (nicht den aktuellen)."""
+        quelle = (Path(__file__).resolve().parent / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
+        self.assertIn("self.g._ps4_hinweis_aufraeumen(self._batch_hinweis)", quelle,
+                      "Der Lauf raeumt den aktuellen statt seinen Hinweis ab.")
 
 
 # ---------------------------------------------------------------- H7-4

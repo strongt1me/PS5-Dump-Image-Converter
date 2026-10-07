@@ -185,8 +185,10 @@ KATALOG: tuple[Dienst, ...] = (
     # --- AnyPad PS5 (seit 04.10.2026) -----------------------------------------
     # Bluetooth-Controller (DualShock 4, Xbox, Switch Pro, 8BitDo ...) an der
     # PS5. Port und Weboberflaeche (koppeln, vergessen, Protokoll, beenden) aus
-    # dem README des Autors (v0.5.5-beta) und aus dem ELF selbst ("deeplinkUri":
-    # "http://127.0.0.1:8095/"); an der Konsole noch NICHT nachgemessen. Die
+    # dem README des Autors (v0.5.5-beta, unveraendert in v0.6.0-beta vom
+    # 06.10.2026 - das Projekt liegt seitdem auf Codeberg) und aus dem ELF
+    # selbst ("deeplinkUri": "http://127.0.0.1:8095/"); an der Konsole noch
+    # NICHT nachgemessen. Die
     # Seite fragt keine PIN ab. Eine zweite Instanz verhindert das Payload
     # selbst (Sperrdatei); gestartet wird hier ohnehin nur, wenn der Port zu
     # ist. Anlaufzeit geschaetzt (Bluetooth kommt mit hoch), nicht gemessen.
@@ -203,6 +205,15 @@ KATALOG: tuple[Dienst, ...] = (
     # Datei kommt nur die Version der Spalte.
     Dienst("dpiv2", 12800, web="/", datei_muster="dpiv2-*.elf",
            plugin_pfad="/data/OnionHEN/plugins/DPIV00001.elf", plugin_wirt="OnionHEN"),
+    # --- WK Autoloader (seit 07.10.2026 mit Zeile) -----------------------------
+    # Jailbreak-Host von X-F1REBALL-X (umtx2 bis 5.50, Relapse 7.00-13.60), bisher ohne Zeile
+    # mitgeliefert; seit v1.0.16 mit eigener Seite. Port 1022 laut README des Autors ("Send the WK
+    # Autoloader ELF; wait for install/cache. Open http://PS5_IP:1022") und aus dem ELF selbst
+    # ("deeplinkUri": "http://127.0.0.1:1022/app/index.html" - die Medien-App der Konsole). Gestartet
+    # wird er wie beschrieben ueber den ELF-Loader (payload_muster); danach waehlt man auf der Seite
+    # Payload Manager (8084) oder Elf Launcher (1000). An der Konsole noch NICHT nachgemessen;
+    # Anlaufzeit geschaetzt (er richtet beim ersten Start seinen Zwischenspeicher ein).
+    Dienst("wkautoloader", 1022, "WK-AutoLoader_v*.elf", web="/", anlaufzeit=4.0),
     # --- PS5 Cooling & System Center - Pro (seit 05.10.2026) -------------------
     # Die eigene App des Projektinhabers (helloworld/PS5_Cooling_System_Center_v1.48.0.elf):
     # Luefter- und Temperatursteuerung, Systeminfo, Spielebibliothek, Pakete installieren ... im

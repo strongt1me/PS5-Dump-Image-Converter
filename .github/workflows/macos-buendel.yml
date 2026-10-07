@@ -82,7 +82,6 @@ on:
       - 'ProsperoPkg-2.5/**'
       - 'PS4FFPFSC-0.2.9/**'
       - 'PS5-Wee-Tools-0.1.8/**'
-      - 'DirectStream-2.8.5/**'
       - 'credits/**'
       - 'UFS2Tool-4.1/**'
       - 'helloworld/**'

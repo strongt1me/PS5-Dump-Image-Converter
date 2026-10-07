@@ -69,8 +69,6 @@ class StellenTests(unittest.TestCase):
             with self.subTest(stelle=methode):
                 start = haupt.index(methode)
                 self.assertIn("bildecken.runde_ecken(", haupt[start:start + 2500])
-        ota = (PROJEKT / "ps5_validator" / "ui" / "ps4_ota.py").read_text(encoding="utf-8")
-        self.assertIn("bildecken.runde_ecken(", ota)
 
     def test_das_cover_der_leiste_zieht_die_ecken_nach(self) -> None:
         haupt = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")

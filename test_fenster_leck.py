@@ -11,10 +11,10 @@ Prozess erlaubt. Gemessen an einem Fenster, das auf- und wieder zugeht, kamen dr
    Symbole werden jetzt einmal geladen und geteilt.
 3. Eine ``trace_add``-Spur, die das Fenster oder ein Widget haelt: Ihr Tcl-Befehl steht im Befehlsverzeichnis
    des Interpreters und haelt den Rueckruf - und damit Widget, Bilder und Zeichner - fuer immer am Leben
-   (``Ps4OtaFenster``, ``ChipGruppe``, ``SuchFeld``, ``RunderHaken``, ``Drehknopf``). Dazu hatte jedes
-   OTA-Fenster seinen eigenen Zeichner mit bis zu 600 Tk-Bildern.
+   (``Ps4DumpImageFenster``, ``ChipGruppe``, ``SuchFeld``, ``RunderHaken``, ``Drehknopf``). Dazu hatte jedes
+   PS4-Fenster seinen eigenen Zeichner mit bis zu 600 Tk-Bildern.
 
-Gemessen vorher je Fenster: 93 GDI, 8 USER, 69 Tk-Bilder (OTA-Fenster) bzw. 24 GDI, 8 USER (jedes Toplevel
+Gemessen vorher je Fenster: 93 GDI, 8 USER, 69 Tk-Bilder (PS4-Fenster) bzw. 24 GDI, 8 USER (jedes Toplevel
 des Programms); nachher 0.
 """
 from __future__ import annotations
@@ -139,15 +139,15 @@ class FensterLeckTests(unittest.TestCase):
         self.assertLess(gdi, 2.0, "Je Fenster bleiben %.1f GDI-Objekte stehen" % gdi)
         self.assertLess(user, 1.0, "Je Fenster bleiben %.1f USER-Objekte stehen" % user)
 
-    def test_das_ota_fenster_gibt_alles_wieder_her(self) -> None:
-        from ps5_validator.ui import ps4_ota
+    def test_das_dump_image_fenster_gibt_alles_wieder_her(self) -> None:
+        from ps5_validator.ui import ps4_dump_image
         bilder0 = len(_WURZEL.tk.call("image", "names"))
         # Was andere Tests dieses Prozesses offen liessen, zaehlt hier nicht: nur die Fenster dieses Tests.
-        schon_da = [weakref.ref(o) for o in gc.get_objects() if isinstance(o, ps4_ota.Ps4OtaFenster)]
+        schon_da = [weakref.ref(o) for o in gc.get_objects() if isinstance(o, ps4_dump_image.Ps4DumpImageFenster)]
 
         def oeffnen():
-            fenster = ps4_ota.Ps4OtaFenster(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT,
-                                            self.haupt.pt, autoladen=False)
+            fenster = ps4_dump_image.Ps4DumpImageFenster(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT,
+                                            self.haupt.pt)
             fenster._schliesst = True
             win = fenster.win
             try:
@@ -157,13 +157,13 @@ class FensterLeckTests(unittest.TestCase):
             return win
 
         gdi, user = self._messen(oeffnen, anzahl=8)
-        self.assertLess(gdi, 4.0, "Je OTA-Fenster bleiben %.1f GDI-Objekte stehen (vorher 93)" % gdi)
-        self.assertLess(user, 2.0, "Je OTA-Fenster bleiben %.1f USER-Objekte stehen" % user)
+        self.assertLess(gdi, 4.0, "Je PS4-Fenster bleiben %.1f GDI-Objekte stehen (vorher 93)" % gdi)
+        self.assertLess(user, 2.0, "Je PS4-Fenster bleiben %.1f USER-Objekte stehen" % user)
         gc.collect()
         alt = [r() for r in schon_da]
         neu = [o for o in gc.get_objects()
-               if isinstance(o, ps4_ota.Ps4OtaFenster) and not any(o is a for a in alt)]
-        self.assertEqual([], neu, "Geschlossene OTA-Fenster leben noch.")
+               if isinstance(o, ps4_dump_image.Ps4DumpImageFenster) and not any(o is a for a in alt)]
+        self.assertEqual([], neu, "Geschlossene PS4-Fenster leben noch.")
         self.assertLess(len(_WURZEL.tk.call("image", "names")) - bilder0, 150,
                         "Die Tk-Bilder wachsen mit jedem Fenster.")
 
@@ -226,7 +226,7 @@ class QuelltextTests(unittest.TestCase):
 
 @unittest.skipUnless(TK_DA, "Keine Anzeige verfuegbar")
 class OtaZerstoerungTests(unittest.TestCase):
-    """Wird das OTA-Fenster von aussen zerstoert, haengt das Programm nicht am toten Objekt."""
+    """Wird das PS4-Fenster von aussen zerstoert, haengt das Programm nicht am toten Objekt."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -236,26 +236,24 @@ class OtaZerstoerungTests(unittest.TestCase):
         cls.app._current_language = "de"
 
     def test_destroy_von_aussen_raeumt_das_programm_auf(self) -> None:
-        from ps5_validator.ui import ps4_ota
-        fenster = ps4_ota.oeffnen(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT, self.haupt.pt,
-                                  autoladen=False)
-        self.assertIs(fenster, getattr(self.app, ps4_ota.FENSTER_ATTRIBUT))
+        from ps5_validator.ui import ps4_dump_image
+        fenster = ps4_dump_image.oeffnen(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT, self.haupt.pt)
+        self.assertIs(fenster, getattr(self.app, ps4_dump_image.FENSTER_ATTRIBUT))
         fenster.win.destroy()
-        self.assertIsNone(getattr(self.app, ps4_ota.FENSTER_ATTRIBUT, None),
+        self.assertIsNone(getattr(self.app, ps4_dump_image.FENSTER_ATTRIBUT, None),
                           "Das Programm haelt das zerstoerte Fenster weiter fest")
         self.assertTrue(fenster._schliesst)
         self.assertTrue(fenster._z["scan_abbruch"], "Ein laufender Scan erfaehrt nicht, dass das Fenster weg ist")
 
     def test_ein_anderes_fenster_bleibt_unberuehrt(self) -> None:
         """Zerstoert wird ein alter Fensterrahmen - das aktuelle Objekt des Programms bleibt stehen."""
-        from ps5_validator.ui import ps4_ota
-        erstes = ps4_ota.oeffnen(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT, self.haupt.pt,
-                                 autoladen=False)
-        zweites = ps4_ota.Ps4OtaFenster(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT,
-                                        self.haupt.pt, autoladen=False)
+        from ps5_validator.ui import ps4_dump_image
+        erstes = ps4_dump_image.oeffnen(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT, self.haupt.pt)
+        zweites = ps4_dump_image.Ps4DumpImageFenster(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT,
+                                        self.haupt.pt)
         self.addCleanup(self._wegraeumen, erstes, zweites)
         zweites.win.destroy()
-        self.assertIs(erstes, getattr(self.app, ps4_ota.FENSTER_ATTRIBUT),
+        self.assertIs(erstes, getattr(self.app, ps4_dump_image.FENSTER_ATTRIBUT),
                       "Das Zerstoeren eines fremden Fensters nahm dem Programm sein aktuelles")
 
     @staticmethod

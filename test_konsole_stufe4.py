@@ -153,11 +153,11 @@ class EntferntTests(unittest.TestCase):
         Autoloader, dazu 5 CoolSysCent-Pro, 6 ShadowMount+ und 7 SMPlusGui. Knopf 5
         sagte bis zum 05.10.2026 "kommt noch"; seither oeffnet er die Weboberflaeche
         des PS5 Cooling & System Center (Direktaktion wie Prospero Manager). Am
-        selben Tag kam "8. Direct Stream" dazu (startet einen Server auf diesem
-        Rechner) - jede Kennung hat ein Fenster, eine Seite oder eine Aktion."""
+        selben Tag kam "8. Direct Stream" dazu, seit dem 07.10.2026 "8. BFpilot"
+        (Weboberflaeche auf Port 5905) - jede Kennung hat ein Fenster, eine Seite oder eine Aktion."""
         klasse = APP.PS5ConverterGUI
         self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
-                          "coolsyscent", "shadowmount", "smplusgui", "directstream"],
+                          "coolsyscent", "shadowmount", "smplusgui", "bfpilot"],
                          [k for _s, k in klasse._KONSOLE_KNOEPFE])
         for _schluessel, kennung in klasse._KONSOLE_KNOEPFE:
             with self.subTest(kennung=kennung):

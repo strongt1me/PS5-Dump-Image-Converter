@@ -49,10 +49,12 @@ class DatenTests(unittest.TestCase):
         self.assertEqual("strongt1me", cd.gruppe(cd.PROJEKT)[0].login)
 
     def test_jede_adresse_zeigt_auf_github(self) -> None:
+        """GitHub - oder Codeberg, wohin AnyPad PS5 im Oktober 2026 umgezogen ist."""
         for e in cd.ENTWICKLER:
             for titel, adresse in e.werke:
                 with self.subTest(wer=e.name, werk=titel):
-                    self.assertRegex(adresse, r"^https://github\.com/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)?$")
+                    self.assertRegex(adresse, r"^https://(github\.com|codeberg\.org)/[A-Za-z0-9_.-]+"
+                                              r"(/[A-Za-z0-9_.-]+)?$")
 
     def test_jeder_dank_ist_zweisprachig(self) -> None:
         for e in cd.ENTWICKLER:
@@ -248,10 +250,9 @@ class BannerTests(_MitFenster):
 
 
 class UrheberZeileTests(unittest.TestCase):
-    def test_knopf_8_nennt_chillquant(self) -> None:
-        name, adresse, bild = APP.PS5ConverterGUI._WEBSEITE_URHEBER["directstream.titel"]
-        self.assertEqual(("ChillQuant", "https://github.com/ChillQuant/direct-stream-ps5"), (name, adresse))
-        self.assertTrue((PROJEKT / "DirectStream-2.8.5" / bild).is_file())
+    def test_ohne_eintrag_keine_urheberzeile(self) -> None:
+        """Seit dem 07.10.2026 traegt kein Knopf mehr einen Entwickler (Direct Stream ist ausgebaut)."""
+        self.assertEqual({}, APP.PS5ConverterGUI._WEBSEITE_URHEBER)
         self.assertIn("{name}", STRINGS["webseite.entwickler"]["de"])
 
 

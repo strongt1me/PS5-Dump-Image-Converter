@@ -86,6 +86,9 @@ class Settings:
     pkg_files: tuple[Path, ...] = ()
     dump_dirs: tuple[Path, ...] = ()
     console_log: bool = False
+    #: Dateien eines ausgewaehlten Dump-Ordners beim Einspielen verschieben statt kopieren
+    #: (nur fuer einen Wegwerf-Ordner; Zusatz von PS5 Dump & Image Converter, siehe UPSTREAM.md).
+    consume_dump: bool = False
     resource_root: Path | None = None
 
     @classmethod
@@ -208,6 +211,7 @@ class Settings:
             pkg_files=pkg_files,
             dump_dirs=dump_dirs,
             console_log=bool(getattr(args, "console_log", False)),
+            consume_dump=bool(getattr(args, "consume_dump", False)),
             resource_root=resources,
         )
 
@@ -1006,6 +1010,7 @@ def _copy_overlay(
     package: dict[str, Any],
     changes: list[dict[str, Any]],
     case_map: dict[str, tuple[str, str]],
+    consume_dump: bool = False,
 ) -> dict[str, int]:
     linked = 0
     moved = 0
@@ -1050,7 +1055,7 @@ def _copy_overlay(
         staging_mode = stage_file_atomic(
             source_file,
             target,
-            consume_source=package.get("source_kind") != "dump_tree",
+            consume_source=package.get("source_kind") != "dump_tree" or consume_dump,
         )
         if staging_mode == "linked":
             linked += 1
@@ -1131,7 +1136,8 @@ def merge_game(
     ) -> None:
         nonlocal overlay_index
         stats = _copy_overlay(
-            source, target, package, target_changes, target_case_map
+            source, target, package, target_changes, target_case_map,
+            consume_dump=settings.consume_dump,
         )
         copy_stats["linked"] += stats["linked"]
         copy_stats["moved"] += stats["moved"]

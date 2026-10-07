@@ -325,7 +325,6 @@ class NennungTests(unittest.TestCase):
     FREMD = {
         "AMPR_PackTools-4.0": "AMPR PackTools",
         "Backport_Fakelibs": "Backport_Fakelibs",
-        "DirectStream-2.8.5": "Direct Stream",
         "MkPFS-1.1.0": "MkPFS 1.1.0",
         "OrbisPkgTool-1.0.0": "OrbisPkgTool",
         "PS4FFPFSC-0.2.9": "PS4 FFPFSC",
@@ -335,6 +334,10 @@ class NennungTests(unittest.TestCase):
         "PlayGo & AMPR_EMU": "libScePlayGo-Stub",
         "ProsperoPkg-2.5": "LibProsperoPkg",
         "UFS2Tool-4.1": "UFS2Tool",
+        # Seit v1.9.64: oeffentliche GitHub-Profilbilder fuer das Credits-Fenster. Fiel erst nach dem
+        # Release-Commit auf - die Pruefung liest nur verfolgte Dateien, und im Volllauf davor war der
+        # Ordner noch unverfolgt.
+        "credits": "Profilbilder im Fenster CREDITS",
         "helloworld": "helloworld",
     }
     #: Eigener Bestand - hier gibt es nichts zu nennen.

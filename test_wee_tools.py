@@ -365,7 +365,7 @@ class HauptmodulTests(unittest.TestCase):
         quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
         block = quelle[quelle.index('if __name__ == "__main__":'):]
         self.assertLess(block.index("wee_tools.SELBSTAUFRUF"),
-                        block.index("_register_mit_license_runtime()"))
+                        block.index("_register_license_runtime()"))
 
     def test_der_ordner_wird_gefunden(self) -> None:
         self.assertEqual(os.path.normcase(str(ORDNER)),

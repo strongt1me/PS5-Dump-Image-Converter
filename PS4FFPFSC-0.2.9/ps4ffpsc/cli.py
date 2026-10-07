@@ -78,6 +78,14 @@ def _common(parser: argparse.ArgumentParser) -> None:
         choices=["ffpfsc", "exfat"],
         help="output image format (default: ffpfsc; exfat is uncompressed)",
     )
+    parser.add_argument(
+        "--consume-dump",
+        action="store_true",
+        help=(
+            "move files out of the selected unpacked game tree instead of copying them "
+            "(only for a disposable staging tree; added by PS5 Dump & Image Converter)"
+        ),
+    )
     parser.add_argument("--keep-inner-image", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--no-resume", action="store_true")

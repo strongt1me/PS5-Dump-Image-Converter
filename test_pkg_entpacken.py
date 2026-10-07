@@ -313,7 +313,7 @@ class FensterTests(unittest.TestCase):
         self.assertNotIn(("titlebar.pkg_entpacken", "_show_pkg_entpacken"),
                          self.haupt.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
         self.assertTrue(callable(getattr(self.haupt.PS5ConverterGUI, "_show_pkg_entpacken", None)))
-        fenster = os.path.join(os.path.dirname(HAUPTDATEI), "ps5_validator", "ui", "ps4_ota.py")
+        fenster = os.path.join(os.path.dirname(HAUPTDATEI), "ps5_validator", "ui", "ps4_dump_image.py")
         with open(fenster, encoding="utf-8") as datei:
             self.assertIn('getattr(self.g, "_show_pkg_entpacken", None)', datei.read())
 

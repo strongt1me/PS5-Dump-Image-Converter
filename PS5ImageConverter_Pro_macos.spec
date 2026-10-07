@@ -138,10 +138,11 @@ _third_party = os.path.join(_here, 'THIRD_PARTY_LICENSES.md')
 if os.path.isfile(_third_party):
     _datas.append((_third_party, '.'))
 
-# Die Lizenz des Programms selbst (MIT, Text auch in
+# Die Lizenz des Programms selbst (seit 07.10.2026 GPL-3.0-or-later; der
+# unveraenderte GPL-Text, Hinweis und Kennung in
 # ps5_validator/utils/eigene_lizenz.py). Auch sie verlangt, jeder Kopie
 # beizuliegen - bis v1.9.28 fehlte sie im Repo und damit in jedem Bau. Die
-# Startmeldung "MIT-Lizenz liegt bei" stimmt erst seitdem.
+# Startmeldung "liegt als Datei bei" stimmt erst seitdem.
 _eigene_lizenz = os.path.join(_here, 'LICENSE')
 if os.path.isfile(_eigene_lizenz):
     _datas.append((_eigene_lizenz, '.'))
@@ -220,15 +221,6 @@ if os.path.isdir(_ps4ffpsc):
 _wee_tools = os.path.join(_here, 'PS5-Wee-Tools-0.1.8')
 if os.path.isdir(_wee_tools):
     _datas.extend(_dateien_ohne_pycache(_wee_tools, 'PS5-Wee-Tools-0.1.8'))
-
-# Mitgeliefertes Direct Stream (Fassung 2.8.5, MIT-Lizenz; HTTP/HTTPS-Downloads
-# per FTP direkt in den Speicher der Konsole, siehe dort UPSTREAM.md). Laeuft im
-# Programm selbst (ps5_validator/utils/direct_stream.py): Python-Teil und
-# Oberflaeche liegen als Datenordner bei und werden zur Laufzeit aus der Datei
-# geladen.
-_direct_stream = os.path.join(_here, 'DirectStream-2.8.5')
-if os.path.isdir(_direct_stream):
-    _datas.extend(_dateien_ohne_pycache(_direct_stream, 'DirectStream-2.8.5'))
 
 # Profilbilder der Entwickler im Fenster "Credits & Community" (credits_daten).
 _credits_bilder = os.path.join(_here, 'credits')
@@ -310,20 +302,6 @@ a = Analysis(
         'threading',
         'time',
         'tomllib',
-        # Direct Stream (DirectStream-2.8.5) liegt als Datenordner bei und wird zur
-        # Laufzeit aus der Datei geladen - PyInstaller sieht seine Importe nicht.
-        # Der Waechter test_direct_stream haelt diese Liste gegen den Quelltext des
-        # Werkzeugs (ohne fcntl und msvcrt: die braucht nur die Einzelinstanz-Sperre
-        # von main(), die im Programm nie laeuft).
-        'copy',
-        'ftplib',
-        'http.client',
-        'http.server',
-        'mimetypes',
-        'secrets',
-        'signal',
-        'ssl',
-        'urllib.error',
         # LZ4 fuer das eingebettete AMPR-Packwerkzeug
         # (AMPR_PackTools-4.0/ampr_pack_format.py:987 importiert
         # lz4.block erst zur Laufzeit). Der Quelltext dieses Programms
@@ -587,7 +565,7 @@ app = BUNDLE(
         'NSRequiresAquaSystemAppearance': False,
         'LSMinimumSystemVersion': '11.0',
         # Beginnt mit der Copyright-Zeile aus LICENSE (test_eigene_lizenz.py).
-        'NSHumanReadableCopyright': 'Copyright (c) 2026 strongt1me - MIT License',
+        'NSHumanReadableCopyright': 'Copyright (C) 2026 strongt1me - GPL-3.0-or-later',
         # Kein CFBundleDocumentTypes: Ohne argv_emulation (siehe oben) bekommt
         # das Programm das Apple-Event zum Oeffnen einer Datei gar nicht zu
         # sehen. Eine Dateizuordnung anzumelden, die dann nichts tut, waere

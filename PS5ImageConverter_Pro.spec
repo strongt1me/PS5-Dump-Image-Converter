@@ -74,7 +74,8 @@ _third_party = os.path.join(_here, 'THIRD_PARTY_LICENSES.md')
 if os.path.isfile(_third_party):
     _datas.append((_third_party, '.'))
 
-# Die Lizenz des Programms selbst (MIT, Text auch in
+# Die Lizenz des Programms selbst (seit 07.10.2026 GPL-3.0-or-later; der
+# unveraenderte GPL-Text, Hinweis und Kennung in
 # ps5_validator/utils/eigene_lizenz.py). Auch sie verlangt, jeder Kopie
 # beizuliegen - bis v1.9.28 fehlte sie im Repo und damit in jedem Bau.
 _eigene_lizenz = os.path.join(_here, 'LICENSE')
@@ -169,15 +170,6 @@ if os.path.isdir(_ps4ffpsc):
 _wee_tools = os.path.join(_here, 'PS5-Wee-Tools-0.1.8')
 if os.path.isdir(_wee_tools):
     _datas.extend(_dateien_ohne_pycache(_wee_tools, 'PS5-Wee-Tools-0.1.8'))
-
-# Mitgeliefertes Direct Stream (Fassung 2.8.5, MIT-Lizenz; HTTP/HTTPS-Downloads
-# per FTP direkt in den Speicher der Konsole, siehe dort UPSTREAM.md). Laeuft im
-# Programm selbst (ps5_validator/utils/direct_stream.py): Python-Teil und
-# Oberflaeche liegen als Datenordner bei und werden zur Laufzeit aus der Datei
-# geladen.
-_direct_stream = os.path.join(_here, 'DirectStream-2.8.5')
-if os.path.isdir(_direct_stream):
-    _datas.extend(_dateien_ohne_pycache(_direct_stream, 'DirectStream-2.8.5'))
 
 # Profilbilder der Entwickler im Fenster "Credits & Community" (credits_daten).
 _credits_bilder = os.path.join(_here, 'credits')
@@ -289,20 +281,6 @@ a = Analysis(
         'threading',
         'time',
         'winsound',
-        # Direct Stream (DirectStream-2.8.5) liegt als Datenordner bei und wird zur
-        # Laufzeit aus der Datei geladen - PyInstaller sieht seine Importe nicht.
-        # Der Waechter test_direct_stream haelt diese Liste gegen den Quelltext des
-        # Werkzeugs (ohne fcntl und msvcrt: die braucht nur die Einzelinstanz-Sperre
-        # von main(), die im Programm nie laeuft).
-        'copy',
-        'ftplib',
-        'http.client',
-        'http.server',
-        'mimetypes',
-        'secrets',
-        'signal',
-        'ssl',
-        'urllib.error',
         # Module, die das eingebettete PS4-Werkzeug (PS4FFPFSC-0.2.9) braucht.
         # Es liegt als Datenordner bei und wird erst zur Laufzeit ueber
         # sys.path geladen - PyInstaller sieht seine Importe deshalb nicht.
@@ -510,7 +488,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.64',
+    name='PS5_Dump_Image_Converter_v1.9.65',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

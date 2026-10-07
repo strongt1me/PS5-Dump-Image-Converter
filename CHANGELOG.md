@@ -2,22 +2,28 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.64):** Lange Schritte zeigen Fortschritt und Restzeit auch im Statusprotokoll, Meldungen erscheinen in der Optik des Programms, und Direct Stream ist deutsch, wählt das Ziel (intern oder USB) und legt Pakete nach /data/pkg.
+> **Kurz zum aktuellen Stand (v1.9.65):** Ein einziges Fenster „PS4 PKG Dump & Image Converter“ macht aus PS4-Paketen Dump-Ordner, Abbilder oder zusammengeführte Pakete, lädt Updates und sendet an die Konsole; Knopf 8 der Ansicht KONSOLE ist BFpilot.
 
 ---
+
+## v1.9.65 – 07.10.2026
+
+- **Neu:** WEITERE TOOLS → „PS4 PKG Dump & Image Converter“ vereint Entpacken zum Dump-Ordner, ffpfsc- und exFAT-Abbild, Paket aus Basis und Update, Updates bei Sony (PS4) und Senden an die Konsole, mit Gesamtfortschritt und Restzeit; „PS4 PKG → OTA“ und „PS4 PKG → ffpfsc“ gehen darin auf.
+- **Neu:** Ansicht KONSOLE, Knopf 8: BFpilot, ein zweiter Dateimanager mit Weboberfläche (wird bei Bedarf selbst gesendet); Direct Stream entfällt. Das Programm steht jetzt unter GPL-3.0-or-later; AnyPad, Web File Manager, ps5upload, aria2, WK-AutoLoader und kstuff sind aktualisiert, der WebKit Autoloader v0.5.0 entfällt.
+- **Behoben:** Die Auswahl der Knöpfe in der Ansicht KONSOLE springt nicht mehr auf den zuvor gewählten Knopf zurück; ein gedrückter Webdienst-Knopf bleibt hervorgehoben.
 
 ## v1.9.64 – 06.10.2026
 
 - **Neu:** Lange Schritte (Prüfen, Prüfsummen, Übertragen, Arbeitskopie) zeigen Prozent und Restzeit in Statuszeile und Statusprotokoll; die Sammelkonvertierung zeigt Cover und Namen des jeweiligen Spiels; beim Wählen einer Quelle steht im Protokoll, was schon eingebaut ist und ob PlayGo nötig wäre; neues Kästchen „Dump-Ordner: Arbeitskopie vorher anlegen“.
-- **Neu:** Direct Stream (Knopf 8) auf Deutsch mit Entwickler-Zeile, Zielwahl intern oder USB, Pakete automatisch nach /data/pkg und Abbildformate in der Auswahl; DPI v2 wird als OnionHEN-Plugin auf die PS5 gelegt; der WebKit Autoloader zeigt jeden Sendeschritt; Credits mit Bildern und Links der Entwickler.
+- **Neu:** DPI v2 wird als OnionHEN-Plugin auf die PS5 gelegt; der WebKit Autoloader zeigt jeden Sendeschritt; Credits mit Bildern und Links der Entwickler.
 - **Geändert/Behoben:** Meldungen und Rückfragen in der Optik des Programms, blaugraue Seitenleisten-Knöpfe, größeres Cover mit runden Ecken; die Sammelkonvertierung räumt Arbeitskopien nach jedem Spiel weg und bricht klar ab, wenn ein Quellordner während des Baus geleert wird.
 
 ---
 
 ## v1.9.63 – 06.10.2026
 
-- **Neu:** Ansicht KONSOLE mit acht Knöpfen: „2. WebKit Autoloader“ ist eine Seite mit Fassungswahl, „5. CoolSysCent-Pro“ öffnet das PS5 Cooling & System Center, „6. ShadowMount+“ und „7. SMPlusGui“ öffnen ihre Weboberflächen (Payload wird bei Bedarf selbst gesendet), und „8. Direct Stream“ überträgt Downloads und lokale Dateien per FTP direkt in den Speicher der PS5.
-- **Neu:** Die Sammelkonvertierung nimmt Dump-Ordner als Quelle – mehrere in einem Dialog markieren oder einen Ordner voller Dumps wählen; WEITERE TOOLS → „PS4 PKG → OTA“ fasst Lesen, Entpacken, Prüfen, Zusammenführen und Bauen von PS4-Paketen in einem Fenster zusammen, MicroMount ist entfernt.
+- **Neu:** Ansicht KONSOLE mit acht Knöpfen: „2. WebKit Autoloader“ ist eine Seite mit Fassungswahl, „5. CoolSysCent-Pro“ öffnet das PS5 Cooling & System Center, „6. ShadowMount+“ und „7. SMPlusGui“ öffnen ihre Weboberflächen (Payload wird bei Bedarf selbst gesendet) (Payload wird bei Bedarf selbst gesendet).
+- **Neu:** Die Sammelkonvertierung nimmt Dump-Ordner als Quelle – mehrere in einem Dialog markieren oder einen Ordner voller Dumps wählen; WEITERE TOOLS → „PS4 PKG Dump & Image Converter“ fasst Lesen, Entpacken, Prüfen, Zusammenführen und Bauen von PS4-Paketen in einem Fenster zusammen, MicroMount ist entfernt.
 - **Geändert:** Alle Fenster in runder Pillenoptik; das Hauptbild füllt nur noch den Bereich rechts der Seitenleiste (beide Bilder getrennt, Maße in den Einstellungen), die Seitenleiste ist wieder eckig mit mittigen Knopftexten; „Konsole & Payloads“ zeigt OnionHEN 0.9.0-beta1 und DPI v2 sowie die Versionen von ShadowMount+ und dem zweiten ELF-Loader.
 
 ---

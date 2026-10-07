@@ -101,10 +101,8 @@ BEKANNT_STUMM: set[tuple[str, str, str]] = {
     # Gemessen am 06.10.2026 an Dirt 5 (67 226 Dateien, HDD, warmer Zwischenspeicher):
     # 0,32-0,34 s je Durchlauf (drei Laeufe). _dateien_zaehlen laeuft nur, wenn die
     # Dateizahl-Pruefung eines .ffpkg schon durchgefallen ist; der Aufrufer meldet den
-    # Teilschritt vorher. ordner_durchsuchen laeuft im Server von Direct Stream direkt
-    # nach dem Ordnerdialog des Anwenders - wie die Suche des Werkzeugs selbst.
+    # Teilschritt vorher.
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_dateien_zaehlen", "os.walk"),
-    ("direct_stream.py", "ordner_durchsuchen", "os.walk"),
     ("ampr_assetpakete.py", "bestand_aufraeumen", "shutil.rmtree"),
     ("ampr_assetpakete.py", "direktleser_merkmale", "os.walk"),
     ("ampr_assetpakete.py", "filmordner_muster", "os.walk"),

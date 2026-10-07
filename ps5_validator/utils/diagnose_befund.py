@@ -570,7 +570,7 @@ class Diagnosebericht:
         except Exception as exc:
             logger.debug("ProsperoPkg-Fassung nicht lesbar: %s", exc)
 
-        # OrbisPkgTool steckt hinter "PS4 PKG -> OTA" (seit 05.10.2026). Nur der
+        # OrbisPkgTool steckt hinter "PS4 PKG Dump & Image Converter" (seit 05.10.2026). Nur der
         # Windows-Bau liegt bei - anderswo fehlt der Ordner, und es gibt keinen
         # Eintrag. Die Fassung steht in ``pruefsummen.json`` (die Zahl im
         # Ordnernamen ist dieselbe). Auf GitHub gibt es dazu eine Freigabe (v1.0.0),
@@ -583,7 +583,7 @@ class Diagnosebericht:
             with io.open(angaben_pfad, encoding="utf-8") as datei:
                 angaben = json.load(datei)
             teile.append(ak.Bestandteil(
-                "OrbisPkgTool (PS4 PKG → OTA)",
+                "OrbisPkgTool (PS4 PKG Dump & Image Converter)",
                 str(angaben.get("fassung") or "unbekannt"),
                 ak.GITHUB, "pearlxcore/OrbisPkgTool"))
         except Exception as exc:
@@ -602,20 +602,6 @@ class Diagnosebericht:
                                             wee_tools.QUELLE))
         except Exception as exc:
             logger.debug("PS5-Wee-Tools-Fassung nicht lesbar: %s", exc)
-
-        # Direct Stream liegt seit dem 05.10.2026 bei (Knopf 8 der Ansicht KONSOLE).
-        # Die Fassung steht als VERSION in ps5_streamer.py - gelesen, nicht
-        # importiert (ein Import fuehrte das Werkzeug aus). Eine oeffentliche Quelle
-        # ist nicht bekannt, deshalb kein Abgleich: "keine abfragbare Quelle".
-        try:
-            from ps5_validator.utils import direct_stream
-
-            fassung = direct_stream.fassung_lesen(
-                self._mitgeliefert_finden(direct_stream.ORDNER))
-            if fassung:
-                teile.append(ak.Bestandteil("Direct Stream", fassung))
-        except Exception as exc:
-            logger.debug("Direct-Stream-Fassung nicht lesbar: %s", exc)
 
         for name, schluessel in (("FileZilla", "filezilla_path"),
                                  ("OSFMount", "osfmount_path")):

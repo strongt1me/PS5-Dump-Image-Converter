@@ -54,9 +54,9 @@ class PkgReaderWaechter(unittest.TestCase):
         self.assertNotIn(('titlebar.pkg_reader', '_show_pkg_reader'), self.gui._MORE_TOOLS_ENTRIES)
         self.assertTrue(callable(getattr(self.gui, "_show_pkg_reader", None)),
                         "_show_pkg_reader fehlt")
-        fenster = open(os.path.join(HIER, "ps5_validator", "ui", "ps4_ota.py"), encoding="utf-8").read()
-        self.assertIn("self.g._show_pkg_reader()", fenster)
-        self.assertIn("ps4ota.mehr_container_lesen", fenster)
+        fenster = open(os.path.join(HIER, "ps5_validator", "ui", "ps4_dump_image.py"), encoding="utf-8").read()
+        self.assertIn('getattr(self.g, "_show_pkg_reader", None)', fenster)
+        self.assertIn("ps4dib.mehr_kopf", fenster)
 
     def test_magic_nach_ascii(self):
         self.assertEqual(self.gui._pkg_magic_ascii("7F-43-4E-54"), ".CNT")
