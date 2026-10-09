@@ -53,6 +53,7 @@ import sys
 import tempfile
 import threading
 import time
+import gc
 import urllib.parse
 import urllib.request
 import uuid
@@ -152,6 +153,7 @@ from ps5_validator.utils import ps4_werkzeug
 from ps5_validator.utils import pkg_entpacken
 from ps5_validator.utils import pkg_reader
 from ps5_validator.utils import konsole_dienste
+from ps5_validator.utils import archiv_quelle
 from ps5_validator.utils import qr_klein
 from ps5_validator.utils import konsole_ftp
 from ps5_validator.utils import titelstart
@@ -540,9 +542,16 @@ class _QueueWriter:
     des Zeilentrenners (Befund T26).
     """
 
+    #: Texte, an denen ein Packlauf als "Arbeitsspeicher erschoepft" erkennbar ist.
+    #: ``MemoryError`` traegt in der Ausnahme keinen Text, steht aber im Rueckverfolgungs-
+    #: protokoll, das die Engine ausgibt; ``BrokenProcessPool`` meldet ein Arbeiterprozess,
+    #: den das Betriebssystem beendet hat.
+    SPEICHER_MARKEN = ("MemoryError", "BrokenProcessPool")
+
     def __init__(self, q: queue.Queue) -> None:
         self._q = q
         self._buf = ""
+        self.speicher = False
 
     def write(self, text: str) -> int:
         """Schreibt Text in den Puffer und leert ihn zeilenweise.
@@ -554,6 +563,8 @@ class _QueueWriter:
         Protokollfeld klebten dann zwei Fortschrittsbalken
         aneinander ("... ETA 1s[####] 48% compress ...").
         """
+        if not self.speicher and any(m in text for m in self.SPEICHER_MARKEN):
+            self.speicher = True
         self._buf += text
         while True:
             stellen = [i for i in (self._buf.find("\n"), self._buf.find("\r"))
@@ -704,7 +715,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.69"
+APP_VERSION = "v1.9.70"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -17384,6 +17395,9 @@ class PS5ConverterGUI:
             return
 
         path = paths[0]
+        if mode == "pack_folder" and archiv_quelle.ist_archiv(path):
+            self._archiv_als_quelle(os.path.normpath(path))
+            return
         error_msg = self._validate_source_path(path, mode)
         if error_msg:
             messagebox.showerror(self._t("dialog.title.invalid_source"), error_msg, parent=self.root)
@@ -17565,7 +17579,30 @@ class PS5ConverterGUI:
         initial_dir = self._get_source_dialog_initial_dir()
 
         if mode == "pack_folder":
-            # Aufgabe 1: nur Ordner
+            # Aufgabe 1: Ordner - oder ein Archiv mit einem Spielordner (seit v1.9.70)
+            ordner_text = self._t("quelle.art_ordner")
+            archiv_text = self._t("quelle.art_archiv")
+            zuletzt = str(self._load_setting("aufgabe1_quellart", "ordner") or "")
+            eintraege = ([archiv_text, ordner_text] if zuletzt == "archiv"
+                         else [ordner_text, archiv_text])
+            art = self._auswahl_dialog(self._t("dialog.title.choose_source_type"),
+                                       self._t("quelle.frage_ordner_oder_archiv"),
+                                       eintraege, parent=self.root)
+            if not art:
+                return
+            self._save_setting("aufgabe1_quellart", "archiv" if art == archiv_text else "ordner")
+            if art == archiv_text:
+                archiv = filedialog.askopenfilename(
+                    title=self._t("dialog.title.choose_archive"),
+                    initialdir=initial_dir,
+                    filetypes=[
+                        (self._t("filetype.archive"), "*.zip *.7z *.rar"),
+                        (self._t("filetype.all_files"), "*.*"),
+                    ],
+                )
+                if archiv:
+                    self._archiv_als_quelle(os.path.normpath(archiv))
+                return
             path = filedialog.askdirectory(
                 title=self._t("filedialog.choose_dump_folder"),
                 initialdir=initial_dir,
@@ -17728,6 +17765,97 @@ class PS5ConverterGUI:
         self._batch_sources = []
         self._remember_source_dialog_path(path)
         self.source_path.set(path)
+
+    def _archiv_als_quelle(self, archiv: str) -> None:
+        """Entpackt ein Archiv in den Arbeitsordner; der Spielordner darin wird die Quelle (Aufgabe 1).
+
+        Seit v1.9.70. ``.zip`` geht ueber die Standardbibliothek, ``.7z`` und ``.rar`` ueber 7-Zip
+        (:mod:`archiv_quelle`). Das Entpacken laeuft im Hintergrund, Fortschritt und Ergebnis stehen im
+        Protokoll und in der Statuszeile. Der Entpackordner heisst ``ps5conv_archiv_*`` - ein Rest davon
+        wird nach zwoelf Stunden wie jeder andere Arbeitsordner abgeraeumt - und wird beim naechsten Archiv
+        ersetzt.
+        """
+        if getattr(self, "_archiv_laeuft", False):
+            return
+        name = os.path.basename(archiv)
+        endung = os.path.splitext(archiv)[1].lower()
+        wurzeln = [os.path.dirname(os.path.abspath(__file__))]
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            wurzeln.insert(0, str(meipass))
+        if endung != ".zip" and not archiv_quelle.siebenzip_suchen(wurzeln):
+            messagebox.showerror(self._t("dialog.title.invalid_source"),
+                                 self._t("quelle.siebenzip_fehlt"), parent=self.root)
+            return
+        basis = self._get_runtime_temp_dir()
+        try:
+            frei = shutil.disk_usage(basis).free
+            groesse = os.path.getsize(archiv)
+        except OSError:
+            frei, groesse = 1 << 62, 0
+        if frei < groesse:
+            messagebox.showerror(self._t("dialog.title.invalid_source"),
+                                 self._t("quelle.archiv_platz", frei=self._fmt_bytes(int(frei)),
+                                         groesse=self._fmt_bytes(int(groesse))), parent=self.root)
+            return
+        alt = getattr(self, "_archiv_ordner", "")
+        if alt and os.path.isdir(alt):
+            _rmtree_force(alt, ignore_errors=True)
+        try:
+            ziel = tempfile.mkdtemp(prefix="ps5conv_archiv_", dir=basis)
+        except OSError as exc:
+            messagebox.showerror(self._t("dialog.title.invalid_source"),
+                                 self._t("quelle.archiv_fehler", grund=str(exc)), parent=self.root)
+            return
+        self._archiv_ordner = ziel
+        self._archiv_laeuft = True
+        self._append_to_log(self._t("quelle.archiv_start", name=name, ziel=ziel))
+        if hasattr(self, "status_label"):
+            self.status_label.config(text=self._t("quelle.archiv_status", name=name, prozent="0%"))
+        popen_extra = ({"creationflags": _NO_WIN_FLAGS, "startupinfo": _silent_startupinfo()}
+                       if sys.platform == "win32" else {})
+
+        def fortschritt(prozent: str) -> None:
+            self._hauptfaden_planen(lambda: self.status_label.config(
+                text=self._t("quelle.archiv_status", name=name, prozent=prozent))
+                if hasattr(self, "status_label") else None)
+
+        def arbeit() -> None:
+            try:
+                wurzel = archiv_quelle.entpacken(archiv, ziel, wurzeln=wurzeln, melden=fortschritt,
+                                                 popen_extra=popen_extra)
+                fehler = ""
+            except archiv_quelle.ArchivFehler as exc:
+                wurzel, fehler = "", str(exc) or "?"
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Archiv entpacken")
+                wurzel, fehler = "", "%s: %s" % (type(exc).__name__, exc)
+            self._hauptfaden_planen(lambda: self._archiv_fertig(archiv, wurzel, fehler))
+
+        threading.Thread(target=arbeit, daemon=True, name="archiv-entpacken").start()
+
+    def _archiv_fertig(self, archiv: str, wurzel: str, fehler: str) -> None:
+        """Hauptfaden: Ergebnis des Entpackens uebernehmen oder melden."""
+        self._archiv_laeuft = False
+        if hasattr(self, "status_label"):
+            self.status_label.config(text="")
+        if fehler:
+            self._append_to_log(self._t("quelle.archiv_fehler", grund=fehler))
+            messagebox.showerror(self._t("dialog.title.invalid_source"),
+                                 self._t("quelle.archiv_fehler", grund=fehler), parent=self.root)
+            return
+        meldung = self._validate_source_path(wurzel, "pack_folder")
+        if not meldung and not archiv_quelle.hat_spiel(wurzel):
+            meldung = "sce_sys/param.json"
+        if meldung:
+            self._append_to_log(self._t("quelle.archiv_kein_spiel", grund=meldung))
+            messagebox.showerror(self._t("dialog.title.invalid_source"),
+                                 self._t("quelle.archiv_kein_spiel", grund=meldung), parent=self.root)
+            return
+        self._batch_sources = []
+        self._remember_source_dialog_path(archiv)
+        self.source_path.set(wurzel)
+        self._append_to_log(self._t("quelle.archiv_fertig", ordner=wurzel))
 
     def _validate_source_path(self, path: str, mode: str) -> str:
         """Prueft eine Quelle. Siehe abbild_pruefen.
@@ -27726,7 +27854,77 @@ class PS5ConverterGUI:
             self._keepalive_log_last_ts = now
         self._set_status(self._format_phase_status(message))
 
+    #: Wie oft ein Packlauf nach erschoepftem Arbeitsspeicher mit weniger Kernen neu startet.
+    _SPEICHER_NEUVERSUCHE = 3
+    #: Ob der letzte Engine-Lauf wegen erschoepften Arbeitsspeichers endete (nur gemessen,
+    #: wenn die Engine ``MemoryError`` bzw. ``BrokenProcessPool`` selbst ausgab).
+    _letzter_mkpfs_speicher = False
+
+    @staticmethod
+    def _kerne_im_aufruf(args: list[str]) -> int | None:
+        """Die Zahl hinter ``--cpu-count`` im Packaufruf, sonst ``None``."""
+        if len(args) < 2 or args[0] != "pack" or "--cpu-count" not in args:
+            return None
+        stelle = args.index("--cpu-count")
+        try:
+            return int(args[stelle + 1])
+        except (IndexError, ValueError):
+            return None
+
+    @staticmethod
+    def _aufruf_mit_kernen(args: list[str], kerne: int) -> list[str]:
+        neu = list(args)
+        neu[neu.index("--cpu-count") + 1] = str(kerne)
+        return neu
+
     def _execute_mkpfs(
+        self,
+        args: list[str],
+        monitor_target_path: str | None = None,
+        monitor_source_file: str | None = None,
+        enable_file_monitor: bool = True,
+        advance_step: bool = True,
+        endziel: str | None = None,
+    ) -> bool:
+        """Fuehrt mkpfs aus - und startet nach erschoepftem Arbeitsspeicher neu.
+
+        Endet ein Packlauf, weil der Arbeitsspeicher ausging (die Engine gibt
+        ``MemoryError`` aus, oder ein Arbeiterprozess wurde beendet), halbiert das
+        Programm die Zahl der Kerne (``--cpu-count``), raeumt das halbe Ergebnis weg
+        und startet den Lauf neu - hoechstens ``_SPEICHER_NEUVERSUCHE`` mal und nur,
+        solange mehr als ein Kern uebrig ist. Jeder Kern haelt einen eigenen Puffer;
+        weniger Kerne brauchen weniger Speicher auf einmal. Andere Fehler, ein
+        Abbruch und Aufrufe ohne ``--cpu-count`` gehen unveraendert durch.
+
+        Die Idee stammt aus PS5 FFPFSC PRO 1.3.0 ("Automatic retry on memory errors");
+        der Code ist hier neu geschrieben.
+        """
+        aufruf = list(args)
+        versuch = 0
+        while True:
+            self._letzter_mkpfs_speicher = False
+            ok = self._execute_mkpfs_einmal(
+                aufruf, monitor_target_path=monitor_target_path,
+                monitor_source_file=monitor_source_file,
+                enable_file_monitor=enable_file_monitor,
+                advance_step=advance_step, endziel=endziel)
+            if ok or not self.is_running or not self._letzter_mkpfs_speicher:
+                return ok
+            kerne = self._kerne_im_aufruf(aufruf)
+            if kerne is None or kerne <= 1 or versuch >= self._SPEICHER_NEUVERSUCHE:
+                return ok
+            versuch += 1
+            neu = max(1, kerne // 2)
+            self._append_to_log(self._t(
+                "mkpfs.speicher_neuversuch", alt=kerne, neu=neu,
+                nr=versuch, max=self._SPEICHER_NEUVERSUCHE))
+            if not self._cleanup_stale_mkpfs_output(aufruf[-1]):
+                return False
+            gc.collect()
+            time.sleep(2.0)
+            aufruf = self._aufruf_mit_kernen(aufruf, neu)
+
+    def _execute_mkpfs_einmal(
         self,
         args: list[str],
         monitor_target_path: str | None = None,
@@ -27971,6 +28169,7 @@ class PS5ConverterGUI:
             if error_msg:
                 logger.error("mkpfs fehlgeschlagen: %s", error_msg)
 
+            result["speicher"] = bool(writer.speicher)
             result["exit_code"] = exit_code
             engine_done.set()
 
@@ -28192,6 +28391,7 @@ class PS5ConverterGUI:
         # monitor_active bleibt True – kein Stop zwischen Schritten
 
         exit_code = result.get("exit_code", -1)
+        self._letzter_mkpfs_speicher = bool(result.get("speicher")) and exit_code != 0
         # Fuer die Fehlermeldung am Ende der Aufgabe aufheben. Sie nannte bis
         # zum 10.09.2026 "z. B. mkpfs Exit-Code oder Disk-Full-Meldung" - zwei
         # Vermutungen, von denen keine geprueft war. Der Anwender las das als

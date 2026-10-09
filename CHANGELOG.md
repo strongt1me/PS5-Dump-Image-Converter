@@ -2,9 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.69):** Weboberflächen der Konsole öffnen sich am Handy per QR-Code, und ps5upload, OnionHEN und der WebKit Autoloader liegen in neueren Fassungen bei.
+> **Kurz zum aktuellen Stand (v1.9.70):** Aufgabe 1 nimmt auch Archive (.zip, .7z, .rar) als Quelle, und ein Packlauf startet bei knappem Arbeitsspeicher selbst mit weniger Kernen neu.
 
 ---
+
+## v1.9.70 – 08.10.2026
+
+- **Neu:** Aufgabe 1 nimmt auch ein Archiv (.zip, .7z oder .rar) mit dem Spielordner als Quelle; es wird in den Arbeitsordner entpackt, 7-Zip für .7z und .rar liegt bei.
+- **Neu:** Geht beim Packen der Arbeitsspeicher aus, startet das Programm den Lauf selbst mit halb so vielen Kernen neu, bis zu dreimal.
 
 ## v1.9.69 – 08.10.2026
 

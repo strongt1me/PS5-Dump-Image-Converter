@@ -67,6 +67,13 @@ _helloworld = os.path.join(_here, 'helloworld')
 if os.path.isdir(_helloworld):
     _datas.append((_helloworld, 'helloworld'))
 
+# 7-Zip fuer .7z und .rar als Quelle von Aufgabe 1 (seit v1.9.70; LGPL, Lizenztext liegt bei).
+# Nur die Fassung dieser Plattform - siehe ps5_validator/utils/archiv_quelle.py.
+_siebenzip = os.path.join(_here, '7-Zip-26.00')
+if os.path.isdir(os.path.join(_siebenzip, 'windows')):
+    _datas.append((os.path.join(_siebenzip, 'windows'), '7-Zip-26.00/windows'))
+    _datas.append((os.path.join(_siebenzip, 'License.txt'), '7-Zip-26.00'))
+
 # Lizenzen der mitgelieferten Fremdkomponenten einbetten. Die EXE enthaelt die
 # Payloads aus helloworld/ - darunter zftpd unter MIT-Lizenz, die verlangt, dass
 # der Lizenztext jeder Kopie beiliegt. Im Fenster CREDITS ist die Datei aufrufbar.
@@ -488,7 +495,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.69',
+    name='PS5_Dump_Image_Converter_v1.9.70',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

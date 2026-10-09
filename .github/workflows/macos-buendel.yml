@@ -85,6 +85,7 @@ on:
       - 'credits/**'
       - 'UFS2Tool-4.1/**'
       - 'helloworld/**'
+      - '7-Zip-26.00/**'
       - 'Backport_Fakelibs/**'
       - 'PS5 WebKit Autoloader/**'
       - 'PS5-AppInstall/**'

@@ -103,6 +103,10 @@ BEKANNT_STUMM: set[tuple[str, str, str]] = {
     # Dateizahl-Pruefung eines .ffpkg schon durchgefallen ist; der Aufrufer meldet den
     # Teilschritt vorher.
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_dateien_zaehlen", "os.walk"),
+    # Gemessen am 08.10.2026: spielwurzel sucht den Spielordner im entpackten Archiv, hoechstens drei
+    # Ebenen tief und erst, nachdem das Entpacken (mit Fortschritt) fertig ist; an 6690 Dateien
+    # 0,15-0,18 s (drei Laeufe), auch wenn sich nichts findet.
+    ("archiv_quelle.py", "spielwurzel", "os.walk"),
     ("ampr_assetpakete.py", "bestand_aufraeumen", "shutil.rmtree"),
     ("ampr_assetpakete.py", "direktleser_merkmale", "os.walk"),
     ("ampr_assetpakete.py", "filmordner_muster", "os.walk"),

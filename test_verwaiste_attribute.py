@@ -128,7 +128,7 @@ class VerwaisteAttributeTests(unittest.TestCase):
         der Abbruchzweig lief nie, und ein Neustart geriet an den noch
         schreibenden alten Lauf.
         """
-        methode = self._methode("_execute_mkpfs")
+        methode = self._methode("_execute_mkpfs_einmal")
 
         veroeffentlicht = [
             k.value.id for k in ast.walk(methode)

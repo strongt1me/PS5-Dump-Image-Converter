@@ -331,7 +331,7 @@ class MkpfsWartenTests(unittest.TestCase):
     """H6-3: Der Abbruch merkt sich das Endziel, nicht den Zwischenpfad."""
 
     def test_der_abbruch_merkt_sich_das_endziel(self) -> None:
-        text = ast.unparse(_methode("_execute_mkpfs"))
+        text = ast.unparse(_methode("_execute_mkpfs_einmal"))
         self.assertIn("self._pending_mkpfs_target_path = str(endziel or "
                       "monitor_target_path or '')", text)
 

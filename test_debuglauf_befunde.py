@@ -3521,7 +3521,7 @@ class MkpfsIndexNeubauTests(_TempTest):
     def test_execute_mkpfs_setzt_schalter_und_entscheidet_vorher(self) -> None:
         """Im Syntaxbaum: Index-Entscheidung und Schalter vor dem Protokoll des Aufrufs."""
         text = ast.unparse(_methode(_klasse(ast.parse(HAUPTDATEI.read_text(
-            encoding="utf-8"))), "_execute_mkpfs"))
+            encoding="utf-8"))), "_execute_mkpfs_einmal"))
         entscheidung = text.index("_ampr_index_vor_dem_packen(")
         schalter = text.index("mkpfs_argumente_ohne_ampr_index(")
         aufruf = text.index("'log.auto.0071'")
