@@ -167,6 +167,28 @@ class FensterLeckTests(unittest.TestCase):
         self.assertLess(len(_WURZEL.tk.call("image", "names")) - bilder0, 150,
                         "Die Tk-Bilder wachsen mit jedem Fenster.")
 
+    def test_das_ps5_pkg_fenster_gibt_alles_wieder_her(self) -> None:
+        from ps5_validator.ui import ps5_pkg_fenster
+        bilder0 = len(_WURZEL.tk.call("image", "names"))
+        schon_da = [weakref.ref(o) for o in gc.get_objects() if isinstance(o, ps5_pkg_fenster.Ps5PkgFenster)]
+
+        def oeffnen():
+            fenster = ps5_pkg_fenster.Ps5PkgFenster(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT,
+                                                    self.haupt.pt)
+            fenster._schliesst = True
+            return fenster.win
+
+        gdi, user = self._messen(oeffnen, anzahl=8)
+        self.assertLess(gdi, 4.0, "Je PS5-PKG-Fenster bleiben %.1f GDI-Objekte stehen" % gdi)
+        self.assertLess(user, 2.0, "Je PS5-PKG-Fenster bleiben %.1f USER-Objekte stehen" % user)
+        gc.collect()
+        alt = [r() for r in schon_da]
+        neu = [o for o in gc.get_objects()
+               if isinstance(o, ps5_pkg_fenster.Ps5PkgFenster) and not any(o is a for a in alt)]
+        self.assertEqual([], neu, "Geschlossene PS5-PKG-Fenster leben noch.")
+        self.assertLess(len(_WURZEL.tk.call("image", "names")) - bilder0, 150,
+                        "Die Tk-Bilder wachsen mit jedem Fenster.")
+
     def test_haken_und_drehknopf_geben_ihre_spur_frei(self) -> None:
         var = tk.BooleanVar(master=_WURZEL)
         zahl = tk.IntVar(master=_WURZEL, value=3)

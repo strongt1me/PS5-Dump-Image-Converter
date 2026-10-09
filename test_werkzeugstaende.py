@@ -323,12 +323,16 @@ class NennungTests(unittest.TestCase):
 
     #: Fremdbestand: Ordner -> ein Text, der dafuer in der Lizenzdatei steht.
     FREMD = {
+        # Seit v1.9.70: 7-Zip fuer Archive als Quelle (Zip, 7z, RAR). Fiel erst im Volllauf von v1.9.71 auf.
+        "7-Zip-26.00": "7-Zip",
         "AMPR_PackTools-4.0": "AMPR PackTools",
         "Backport_Fakelibs": "Backport_Fakelibs",
         "MkPFS-1.1.0": "MkPFS 1.1.0",
         "OrbisPkgTool-1.0.0": "OrbisPkgTool",
         "PS4FFPFSC-0.2.9": "PS4 FFPFSC",
         "PS5-AppInstall": "PS5-AppInstall",
+        # Seit v1.9.71: das Werkzeug hinter "PS5 PKG Dump & Image Converter" (net10.0, je Plattform ein Ordner).
+        "PS5-PKG-Tool": "PS5-PKG-Tool",
         "PS5-Wee-Tools-0.1.8": "PS5 Wee Tools",
         "PS5 WebKit Autoloader": "PS5 WebKit Autoloader",
         "PlayGo & AMPR_EMU": "libScePlayGo-Stub",

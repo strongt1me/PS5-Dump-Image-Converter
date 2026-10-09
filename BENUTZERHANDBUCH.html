@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.70</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.71</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.70</span>
-      <span class="marke">Stand 8. Oktober 2026</span>
+      <span class="marke">Version v1.9.71</span>
+      <span class="marke">Stand 9. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -542,7 +542,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Version nicht. Ports und Weboberflächen der acht am 2. Oktober 2026
   hinzugekommenen Dienste (CheatRunner bis ps5debug-NG), von AnyPad PS5 und von DPI&nbsp;v2
   stammen aus den Beschreibungen ihrer Autoren und sind an der Konsole noch
-  nicht nachgemessen. AnyPad PS5 (mitgeliefert: 0.6.0-beta) macht Bluetooth-Controller
+  nicht nachgemessen. AnyPad PS5 (mitgeliefert: 0.8.1-beta) macht Bluetooth-Controller
   an der PS5 nutzbar; Spiele sehen sie als DualSense. Laut Autor an einer echten
   PS5 bestätigt sind DualShock&nbsp;4&nbsp;v2, 8BitDo SF30 Pro (Switch-Modus) und
   GameSir G7 SE; Xbox-, Switch-Pro- und weitere Controller werden unterstützt,
@@ -1632,7 +1632,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
   <p>Der gewählte Vorschlag landet im Eingabefeld darunter und kann dort frei geändert werden; unter Windows unzulässige Zeichen werden automatisch entfernt. <strong>Umbenennen</strong> benennt ausschließlich den Ordner um – der Inhalt bleibt unangetastet. Existiert daneben bereits ein Ordner dieses Namens, bricht das Programm ab, statt etwas zu überschreiben.</p>
 
-  <h3>13.3 PKG bauen &ndash; entfallen</h3>
+  <h3>13.3 PKG bauen &ndash; der alte Weg ist entfallen</h3>
   <p>Bis Anfang Oktober 2026 baute das Programm unter WEITERE TOOLS &rarr;
   PKG BAUEN Debug-Pakete (<code>.pkg</code>) aus einem Dump-Ordner oder einem
   Abbild. Diese Funktion ist <strong>ausgebaut</strong>: An der Konsole
@@ -1640,6 +1640,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   CE-100096-6 &ndash; sie konnte die Schlüssel nicht ableiten. Mit ihr
   entfielen der zweite Bauweg über das Sony SDK und die Vorabprüfung eines
   Dump-Ordners.</p>
+  <p><strong>Neu seit v1.9.71:</strong> Debug-Pakete baut das Fenster
+  <strong>PS5 PKG Dump &amp; Image Converter</strong> (13.17) &ndash; mit einem
+  anderen Werkzeug (<code>ffpfsc-pkg-tool</code>), dessen Autor den Start an
+  Konsolen bis Firmware 11.60 belegt hat. Der alte Weg kehrt nicht zur&uuml;ck.</p>
   <p>Für Spiel-Backups ist der Weg über <code>/data/homebrew</code> und
   ShadowMount+ der richtige, für eigene Homebrew
   <strong>App direkt installieren</strong> (13.4). Die Eckdaten eines
@@ -1993,7 +1997,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   fr&uuml;heren). Daraus baut <strong>PS4 FFPFSC</strong> das Abbild samt <code>param.json</code> f&uuml;r
   ShadowMount+, Trophy-Datei-Reparatur und Nachpr&uuml;fung. Der Balken zeigt den <em>Gesamtstand</em>
   &uuml;ber alle Schritte, daneben die vergangene Zeit und die gesch&auml;tzte Restzeit.
-  Mit <strong>Abbrechen</strong> halten Sie den Lauf an; der Arbeitsordner wird dabei aufger&auml;umt.</p>
+  Mit <strong>Abbrechen</strong> halten Sie den Lauf sofort an, auch alle Hilfsprozesse darunter. Der
+  Arbeitsordner wird im Hintergrund entfernt, das Fenster ist gleich wieder frei; was beim Schlie&szlig;en
+  des Programms noch &uuml;brig bleibt, r&auml;umt der n&auml;chste Lauf weg.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Format</th><th>Ergebnis</th></tr></thead>
@@ -2106,7 +2112,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Installer gebraucht), die Wahl der Fassung, die drei Wege und ein Protokoll
   mit Statuszeile. Das Zeigen der Seite schickt nichts ins Netz.</p>
   <p>Bei <strong>Fassung</strong> w&auml;hlen Sie, mit welcher Fassung die drei
-  Wege arbeiten. Es liegen mehrere bei &ndash; von v0.4.0 bis v0.6.0 &ndash;,
+  Wege arbeiten. Es liegen mehrere bei &ndash; von v0.4.0 bis v0.6.1 &ndash;,
   vorgegeben ist die neueste, bezeichnet als <em>(neueste)</em>. Ihre Wahl merkt
   sich das Programm. Darunter steht, was von der gew&auml;hlten Fassung
   vorliegt: Windows-Programm, Python-Skript und Installer, oder was fehlt. Die
@@ -2278,15 +2284,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Intel-Macs sagt das Fenster, dass keiner beiliegt.</li>
   </ul>
   <div class="kasten achtung">
-    <span class="titel">PS5-Pakete lassen sich nicht entpacken</span>
-    <p>Ein PS5-Paket erkennt das Fenster an seiner Kennung und weist es ab.
-    Die eingebettete PKG-Bibliothek bringt zwar einen Entpacker mit, er
-    scheiterte aber an allen gepr&uuml;ften PS5-Paketen &ndash; auch an einem,
-    das dieselbe Bibliothek selbst gebaut hatte. Retail-Pakete sind ohnehin an
-    die Konsole gebunden. Den Aufbau eines PS5-Pakets (Typ, Content-ID,
-    Eintr&auml;ge) zeigt <em>Mehr &rarr; Paketkopf lesen</em> im Fenster
-    <strong>PS4 PKG Dump &amp; Image Converter</strong> (13.10). Retail-PS4-Pakete ohne
-    Fake-Signatur lehnt der Entpacker ebenfalls ab.</p>
+    <span class="titel">PS5-Pakete entpackt ein anderes Fenster</span>
+    <p>Ein PS5-Paket erkennt das Fenster an seiner Kennung und weist es ab: Der
+    Entpacker dieses PS4-Fensters kann sie nicht lesen. PS5-Pakete entpackt und
+    wandelt <strong>PS5 PKG Dump &amp; Image Converter</strong> (13.17) um; ihren
+    Aufbau (Typ, Content-ID, Eintr&auml;ge) zeigt auch <em>Mehr &rarr; Paketkopf
+    lesen</em> im Fenster <strong>PS4 PKG Dump &amp; Image Converter</strong>
+    (13.10). Retail-PS4-Pakete ohne Fake-Signatur lehnt der Entpacker ebenfalls ab.</p>
   </div>
 
   <h3>13.15 ELF &rarr; EBOOT.BIN &ndash; ein ELF als eboot.bin verpacken</h3>
@@ -2367,10 +2371,113 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <li><strong>Nur Windows f&uuml;r Dump-Ordner und Paket.</strong> OrbisPkgTool gibt es nur als
       Windows-Programm. Unter Linux und macOS bleiben ffpfsc- und exFAT-Abbild (PS4 FFPFSC liest dort die Pakete
       selbst), das Einlesen, die Update-Abfrage und das Senden.</li>
-      <li><strong>PS5-Pakete</strong> lassen sich nicht entpacken (13.14); ihren &auml;u&szlig;eren Aufbau
-      zeigt <em>Mehr &rarr; Paketkopf lesen</em>.</li>
+      <li><strong>PS5-Pakete</strong> entpackt dieses Fenster nicht &ndash; daf&uuml;r gibt es
+      <strong>PS5 PKG Dump &amp; Image Converter</strong> (13.17); ihren &auml;u&szlig;eren Aufbau zeigt auch
+      <em>Mehr &rarr; Paketkopf lesen</em>.</li>
       <li>Dateinamen mit Umlauten werden im Paket zu <code>?</code> &ndash; das Werkzeug legt sie so
       ab.</li>
+    </ul>
+  </div>
+
+  <h3>13.17 PS5 PKG Dump &amp; Image Converter &ndash; PS5-Pakete entpacken, umwandeln und bauen</h3>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PS5 PKG Dump &amp; Image Converter. Das Fenster
+  &ouml;ffnet PS5-Pakete (<code>.pkg</code>) und macht daraus einen Dump-Ordner oder ein Abbild; aus einem
+  Spielordner baut es ein Debug-Paket. Es ist mit
+  <strong>Debug-Paketen (FPKG)</strong> getestet &ndash; so nennt es auch das Abzeichen neben dem Paket.
+  Retail-Pakete sind an die Konsole gebunden; ihren Typ zeigt das Fenster an, ein Entpacken ist daf&uuml;r nicht
+  belegt.</p>
+  <p>Links stehen zwei Seiten: <strong>Umwandeln</strong> und <strong>Bibliothek</strong>.</p>
+
+  <h4>Umwandeln</h4>
+  <ol class="schritte">
+    <li>Ziehen Sie ein Paket, einen Spielordner (mit <code>sce_sys/param.json</code>) oder einen Ordner mit
+    Paketen und Spielordnern auf die gestrichelte Fl&auml;che oder klicken Sie
+    auf <em>Datei w&auml;hlen</em> bzw. <em>Ordner w&auml;hlen</em>. Titel, Titel-ID, Gr&ouml;&szlig;e und Typ
+    erscheinen sofort.</li>
+    <li>W&auml;hlen Sie die <strong>Aktion</strong> (siehe unten) und den <strong>Zielordner</strong>.</li>
+    <li>Bei <em>Erstellen / Umwandeln</em> klicken Sie ein <strong>Zielformat</strong> an: FFPKG, FFPFSC, FFPFS oder
+    exFAT &ndash; bei einem Spielordner auch <strong>Paket</strong> (siehe &bdquo;Ein Paket bauen&ldquo;).</li>
+    <li><em>Umwandlung starten</em>. Fortschritt und Meldungen stehen in der Karte <em>Auftrag</em>, rechts in
+    <em>Ergebnis</em> der Name der Ausgabe, die Title-ID, die Content-ID, die gesch&auml;tzte Gr&ouml;&szlig;e und
+    der freie Platz im Zielordner.</li>
+  </ol>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Aktion</th><th>Was sie tut</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Erstellen / Umwandeln</strong></td><td>Bei einem <strong>Spielordner</strong> mit der Kachel
+      <em>Paket</em> baut sie ein Debug-Paket (unten); mit einer anderen Kachel &uuml;bergibt sie den Ordner
+      gleich an Aufgabe 1. Bei einem <strong>Paket</strong>: Entpackt das Spiel in einen Arbeitsordner (<code>ps5conv_ps5pkg_&hellip;</code>)
+      und &uuml;bergibt ihn an <strong>Aufgabe 1</strong> des Hauptfensters mit dem gew&auml;hlten Zielformat. Damit gelten
+      dort dieselben Pr&uuml;fungen und R&uuml;ckfragen wie bei jedem Dump-Ordner &ndash; zum Beispiel die Frage, ob eine
+      beanstandete <code>param.json</code> repariert werden soll &ndash; und dieselben H&auml;kchen (AMPR EMU, BACKPORT).
+      Der Arbeitsordner wird danach aufger&auml;umt. W&auml;hrenddessen darf im Hauptfenster keine andere Aufgabe laufen.</td></tr>
+      <tr><td><strong>Extrahieren</strong></td><td>Schreibt den Dump-Ordner <code>Titel [PPSA&hellip;]</code> direkt in den
+      Zielordner. Existiert er schon und ist nicht leer, ersetzt ihn das Programm nur, wenn
+      <em>Vorhandenes &uuml;berschreiben</em> angekreuzt ist.</td></tr>
+      <tr><td><strong>Pr&uuml;fen</strong></td><td>Liest das Paket an Ort und Stelle und listet, was die Pr&uuml;fliste des Werkzeugs
+      beanstandet (Kopf, Pr&uuml;fsumme der Umh&uuml;llung, <code>sce_sys</code>-Eintr&auml;ge, Lizenzdateien,
+      Programmkennung von <code>eboot.bin</code>). Ein Befund hei&szlig;t nicht, dass das Paket unbrauchbar ist &ndash; er
+      sagt, was an einer Konsole auff&auml;llig w&uuml;rde (zum Beispiel ein fehlendes <code>license.dat</code> bei einem
+      Paket mit <code>applicationDrmType: upgradable</code>).</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Ein Paket bauen</h4>
+  <p>W&auml;hlen Sie einen <strong>Spielordner</strong> (<code>eboot.bin</code> und <code>sce_sys/param.json</code>
+  liegen darin), den Zielordner und die Kachel <strong>Paket</strong>. Das Programm baut daraus ein
+  <strong>Debug-Paket (FPKG)</strong> mit dem Werkzeug <code>ffpfsc-pkg-tool</code> und pr&uuml;ft es danach mit
+  derselben Pr&uuml;fliste wie die Aktion <em>Pr&uuml;fen</em>. Die Ausgabe tr&auml;gt den Namen
+  <code>&lt;Content-ID&gt;-A&hellip;-V&hellip;.pkg</code>; den Namen legt das Werkzeug fest.</p>
+  <ul>
+    <li><strong>Vorher gepr&uuml;ft</strong> werden Content-ID und Title-ID (aus der <code>param.json</code>) und die
+    <code>param.json</code> selbst, mit derselben Pr&uuml;fung wie in Aufgabe 1. Hat sie Beanstandungen, bietet das
+    Programm die <strong>Reparatur</strong> an (die alte Datei wird danebengelegt). Das ist keine Kleinigkeit: Ein
+    Paket mit <code>applicationDrmType: upgradable</code> bekommt kein <code>license.dat</code> und zeigt an der
+    Konsole ein Schloss; mit der Reparatur auf <code>standard</code> bestand das gebaute Testpaket die Pr&uuml;fung
+    ohne Befund (38 von 38, ohne Reparatur 2 Befunde).</li>
+    <li><strong>Voreinstellungen</strong> sind die, die der Autor des Werkzeugs an einer Konsole belegt hat: Kraken
+    &uuml;ber dem inneren Abbild mit dem eingebauten Kodierer (gespeicherte Bl&ouml;cke installieren sich, starten
+    aber nicht), Fake-Signatur der ausf&uuml;hrbaren Dateien und neuer AMPR-Index, falls AMPR EMU im Spiel liegt.</li>
+    <li><strong>Platz:</strong> Der Arbeitsordner liegt im Zielordner (dort entsteht auch das Paket) und wird danach
+    entfernt. Auf Laufwerken ohne feste Verkn&uuml;pfungen (zum Beispiel exFAT) legt das Werkzeug erst eine Kopie
+    des Spiels an. Das Programm fragt nach, wenn weniger als das Doppelte der Spielgr&ouml;&szlig;e frei ist, und
+    sagt ab, wenn es weniger als die H&auml;lfte ist.</li>
+    <li>Liegt im Zielordner schon ein Paket desselben Namens, ersetzt es das Programm nur mit dem Haken
+    <em>Vorhandenes &uuml;berschreiben</em>. Ein gescheiterter oder abgebrochener Bau l&auml;sst nichts Unfertiges im
+    Zielordner zur&uuml;ck.</li>
+  </ul>
+  <div class="kasten warnung">
+    <span class="titel">Ob das Paket an Ihrer Konsole startet, ist hier nicht gepr&uuml;ft</span>
+    <p>Das Werkzeug nennt als belegten Stand: Pakete dieser Art starten bis Firmware 11.60 mit kstuff-lite 1.13
+    oder neuer. Auf neueren Firmwares (zum Beispiel 12.00) installiert sich ein solches Paket, startet aber nicht &ndash;
+    die Sperre liegt an der Konsole, nicht am Paket. Dieses Programm hat nur den Bau und die Pr&uuml;fliste
+    gemessen; der Start an einer Konsole bleibt Ihr Versuch.</p>
+  </div>
+
+  <h4>Bibliothek</h4>
+  <p>Sammelt Ihre Pakete und Spielordner (das Programm merkt sie sich). <em>+ Datei</em> und <em>+ Ordner</em> f&uuml;gen hinzu,
+  <em>Aktualisieren</em> liest alles neu. Die Suche versteht W&ouml;rter (alle m&uuml;ssen passen),
+  <code>-wort</code> zum Ausschlie&szlig;en, <code>titel:</code>, <code>id:</code> und <code>gr&ouml;&szlig;e:&gt;50GB</code>
+  (auch <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code>). Rechts stehen das Cover (<code>icon0.png</code> aus dem Paket)
+  und die <em>Technische &Uuml;bersicht</em> aus der <code>param.json</code> &ndash; Titel, Content-ID, Versionen,
+  erforderliche Systemsoftware, SDK, Kategorie, DRM-Typ &ndash;, die <em>Alles kopieren</em> in die Zwischenablage legt.
+  Doppelklick oder <em>Umwandeln</em> nimmt das Paket auf die Seite <em>Umwandeln</em> mit.</p>
+
+  <div class="kasten">
+    <span class="titel">Gemessen und Grenzen</span>
+    <ul>
+      <li><strong>Gemessen</strong> (09.10.2026, Debug-Pakete von 528&nbsp;MB und 939&nbsp;MB): Entpacken 17&nbsp;s bzw.
+      53&nbsp;s mit allen Dateien in der richtigen Gr&ouml;&szlig;e (beim zweiten Paket alle 118 Dateien auch mit
+      gleicher Pr&uuml;fsumme wie der volle Entpack); Umwandeln des kleineren zu <code>.ffpfsc</code> &uuml;ber Aufgabe 1
+      in 52&nbsp;s (416,8&nbsp;MB). Ob die Konsole das Ergebnis startet, zeigt nur ein Versuch dort.</li>
+      <li><strong>.NET 10</strong> muss installiert sein (das Programm braucht es auch sonst). Das Werkzeug
+      <code>ffpfsc-pkg-tool</code> liegt im Ordner <code>PS5-PKG-Tool</code>, je Plattform gebaut; unter Windows
+      ist es gepr&uuml;ft, unter Linux und macOS nur gebaut.</li>
+      <li><strong>Platz:</strong> Ein entpacktes Spiel ist gr&ouml;&szlig;er als das Paket (gemessen: 939&nbsp;MB &rarr;
+      1,55&nbsp;GB). <em>Umwandeln</em> braucht den Platz f&uuml;r den Arbeitsordner und das Abbild.</li>
+      <li>Es wird nichts aus dem Netz geladen.</li>
     </ul>
   </div>
 
@@ -2393,6 +2500,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Die Wahl wird pro Benutzer gespeichert. Nach Klick auf <strong>ANWENDEN</strong> startet das Programm automatisch neu, damit die Oberfläche vollständig im neuen Design erscheint. Läuft gerade eine Aufgabe, wird der Neustart zurückgestellt – bitte danach von Hand neu starten.</p>
   <p>Knöpfe, Eingabefelder und Klapplisten sind in allen Designs abgerundet (Pillenform) – in beiden Ansichten, UMWANDELN und KONSOLE. Die Knöpfe der Seitenleiste sind gleich breit und richten sich nach dem längsten Text; ihr Text steht mittig im Knopf.</p>
   <p>Überschriften, Beschriftungen und Hinweistexte stehen direkt auf dem Hintergrundbild, ohne Fläche dahinter. Der Drehknopf für die Worker liegt ebenfalls frei auf dem Bild.</p>
+  <p><strong>Titelleisten.</strong> Unter Windows 11 sind die Titelleisten aller Fenster des Programms dunkel graublau, mit heller Schrift und hellen Fensterknöpfen; im Design <strong>Hell</strong> bleibt die Leiste hell. Beim Wechsel des Designs färben sich offene Fenster sofort um. Unter Windows 10, Linux und macOS gibt es diese Möglichkeit nicht, dort bleibt die Leiste des Systems. Die Standarddialoge von Windows (Datei oder Ordner wählen) gehören dem System und bleiben hell.</p>
 
   <div class="kasten">
     <span class="titel">Gro&szlig;e Bildschirme und hohe Anzeigeskalierung</span>
@@ -2556,7 +2664,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.70), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.71), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2756,8 +2864,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.70</strong></span>
-    <span>Stand 8. Oktober 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.71</strong></span>
+    <span>Stand 9. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

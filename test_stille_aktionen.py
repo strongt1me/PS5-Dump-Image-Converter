@@ -75,6 +75,9 @@ AUSGENOMMEN = {
     "_temp_reste_nach_aufgabe_abraeumen",
     "_cleanup_stale_osfmounts",
     "_run_startup_temp_cleanup_scan",
+    # Seit v1.9.71: Faden fuer das Loeschen eines Arbeitsordners nach einem Abbruch. Der Aufrufer meldet es im
+    # Protokoll ("wird im Hintergrund entfernt"), bevor der Faden startet; Reste raeumt der naechste Lauf weg.
+    "_loesch_arbeit",
 }
 
 #: Bestandsaufnahme vom 20.09.2026 (v1.9.33). Jeder Eintrag ist angesehen:

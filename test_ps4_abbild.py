@@ -11,6 +11,7 @@ import os
 import struct
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -261,6 +262,48 @@ class DumpTests(unittest.TestCase):
         self.assertFalse(ziel.exists())
         self.assertFalse(Path(str(ziel) + ".partial").exists())
 
+    def test_abbruch_in_arbeit_dump_raeumt_im_hintergrund_auf(self) -> None:
+        """Das Loeschen eines halb entpackten Spiels dauerte auf einem USB-Laufwerk Minuten (09.10.2026)."""
+        a = _aufgabe()
+
+        def entpacken_und_abbrechen(paket, ziel, **_):
+            (Path(ziel) / "Image0").mkdir(parents=True, exist_ok=True)
+            (Path(ziel) / "Image0" / "gross.bin").write_bytes(b"x" * 100)
+            a.abbruch.set()                         # der Anwender drueckt ABBRECHEN, waehrend entpackt wird
+            return orbispkg.EntpackErgebnis(ok=True, dateien_ok=1)
+
+        ziel = self.tmp / "ausgabe" / "CUSA00001"
+        with mock.patch.object(orbispkg, "entpacken", entpacken_und_abbrechen):
+            with self.assertRaises(au.AufgabeAbgebrochen):
+                ab.arbeit_dump(a, self.spiel, str(ziel), _t)
+        self.assertFalse(Path(str(ziel) + ".partial").exists(), "sofort umbenannt")
+        self.assertFalse(ziel.exists())
+        ende = time.monotonic() + 10
+        while time.monotonic() < ende and [n for n in os.listdir(ziel.parent) if n.startswith(au.WEG_VORSATZ)]:
+            time.sleep(0.02)
+        self.assertEqual([], os.listdir(ziel.parent), "und gleich darauf im Hintergrund geloescht")
+        self.assertTrue(any("im Hintergrund entfernt" in z for z in a.protokoll), a.protokoll)
+
+    def test_arbeit_dump_raeumt_reste_eines_frueheren_abbruchs_weg(self) -> None:
+        rest = self.tmp / "ausgabe" / (au.WEG_VORSATZ + "CUSA00001.partial_deadbeef")
+        (rest / "Image0").mkdir(parents=True)
+        ab.arbeit_dump(_aufgabe(), self.spiel, str(self.tmp / "ausgabe" / "CUSA00001"), _t)
+        ende = time.monotonic() + 10
+        while time.monotonic() < ende and rest.exists():
+            time.sleep(0.02)
+        self.assertFalse(rest.exists())
+
+    def test_der_aufrufer_kann_das_aufraeumen_uebernehmen(self) -> None:
+        """``arbeit_abbild`` raeumt den ganzen Ordner weg (im Hintergrund) - das Teilstueck darin nicht vorher einzeln."""
+        def kaputt(paket, ziel, **_):
+            os.makedirs(ziel, exist_ok=True)
+            return orbispkg.EntpackErgebnis(ok=False, meldung="Paket beschaedigt")
+        ziel = self.tmp / "ausgabe" / "dump"
+        with mock.patch.object(orbispkg, "entpacken", kaputt):
+            with self.assertRaises(au.AufgabeFehler):
+                ab.dump_bereitstellen(_aufgabe(), self.spiel, str(ziel), _t, aufraeumen_dem_aufrufer=True)
+        self.assertTrue(Path(str(ziel) + ".partial").exists())
+
     def test_ein_fehlschlag_des_werkzeugs_raeumt_auf(self) -> None:
         def kaputt(paket, ziel, **_):
             os.makedirs(ziel, exist_ok=True)
@@ -498,7 +541,25 @@ class AbbildTests(unittest.TestCase):
         with self.assertRaises(au.AufgabeAbgebrochen):
             ab.arbeit_abbild(a, self.spiel, str(self.tmp / "ziel"), "ffpfsc", _t,
                              arbeitsordner=str(self.tmp / "arbeit"), lauf=lauf, engine_orbis=True)
-        self.assertEqual([], [n for n in os.listdir(self.tmp / "arbeit") if n.startswith("lauf_")])
+        arbeit = self.tmp / "arbeit"
+        self.assertEqual([], [n for n in os.listdir(arbeit) if n.startswith(("lauf_", "quelle_"))])
+        # Nach einem Abbruch wird nicht abgewartet (09.10.2026: eine Viertelstunde auf einem USB-Laufwerk): Die Ordner
+        # sind sofort umbenannt und verschwinden gleich darauf im Hintergrund.
+        ende = time.monotonic() + 10
+        while time.monotonic() < ende and [n for n in os.listdir(arbeit) if n.startswith(au.WEG_VORSATZ)]:
+            time.sleep(0.02)
+        self.assertEqual([], [n for n in os.listdir(arbeit) if n.startswith(au.WEG_VORSATZ)])
+        self.assertTrue(any("im Hintergrund entfernt" in z for z in a.protokoll), a.protokoll)
+
+    def test_der_naechste_lauf_raeumt_liegengebliebene_reste_weg(self) -> None:
+        arbeit = self.tmp / "arbeit"
+        rest = arbeit / (au.WEG_VORSATZ + "lauf_7_deadbeef")
+        (rest / "unpacked").mkdir(parents=True)
+        self._abbild()
+        ende = time.monotonic() + 10
+        while time.monotonic() < ende and rest.exists():
+            time.sleep(0.02)
+        self.assertFalse(rest.exists())
 
     def test_der_balken_nutzt_die_ganze_skala(self) -> None:
         a, _ziel, _arbeit = self._abbild()

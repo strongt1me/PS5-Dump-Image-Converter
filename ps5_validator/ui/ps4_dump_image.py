@@ -803,7 +803,11 @@ class Ps4DumpImageFenster:
         self._balken_setzen(prozent)
         if self._batch_hinweis is not None and self.g._ps4_hinweis_faellig(prozent):
             self.g._ps4_hinweis_zeigen(self.win)
-        if laeuft is not None:
+        if laeuft is not None and laeuft.abbruch_verlangt:
+            # Der Abbruch ist angenommen, die Aufgabe raeumt noch auf: Das zu zeigen ist die ganze Rueckmeldung -
+            # ein Fortschritt mit "Rest 12 min" liesse den Knopf wirkungslos aussehen.
+            self._status(t("ps4dib.status_abbruch", titel=laeuft.titel, text=laeuft.text or "…"))
+        elif laeuft is not None:
             verstrichen = time.monotonic() - self._batch_beginn
             rest = ps4_fortschritt.rest_sekunden(verstrichen, prozent)
             self._status(t("ps4dib.status_gesamt", titel=laeuft.titel, text=laeuft.text or "…", prozent=int(prozent),
@@ -949,7 +953,10 @@ class Ps4DumpImageFenster:
     def _kurz_laeuft(self, a: au.Aufgabe) -> None:
         """Eine Aufgabe ausserhalb des Stapels (Update laden, senden, pruefen) zeigt ihren Stand."""
         self._balken_setzen(a.prozent)
-        self._status("%s – %s" % (a.titel, a.text or "…"))
+        if a.abbruch_verlangt:
+            self._status(self.t("ps4dib.status_abbruch", titel=a.titel, text=a.text or "…"))
+        else:
+            self._status("%s – %s" % (a.titel, a.text or "…"))
         gesehen = self._gelesen.get(a.kennung, 0)
         if len(a.protokoll) > gesehen:
             for zeile in a.protokoll[gesehen:]:

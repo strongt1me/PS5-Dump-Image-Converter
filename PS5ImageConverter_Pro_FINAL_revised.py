@@ -136,6 +136,7 @@ from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
 from ps5_validator.ui import ampr_seite
 from ps5_validator.ui import ps4_dump_image
+from ps5_validator.ui import ps5_pkg_fenster
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
 from ps5_validator.utils import einstellungen
@@ -154,6 +155,7 @@ from ps5_validator.utils import pkg_entpacken
 from ps5_validator.utils import pkg_reader
 from ps5_validator.utils import konsole_dienste
 from ps5_validator.utils import archiv_quelle
+from ps5_validator.utils import fenster_titelfarbe
 from ps5_validator.utils import qr_klein
 from ps5_validator.utils import konsole_ftp
 from ps5_validator.utils import titelstart
@@ -715,7 +717,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.70"
+APP_VERSION = "v1.9.71"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -4093,8 +4095,9 @@ class PS5ConverterGUI:
             "error_btn":        "#FF5C74",
             "error_btn_hover":  "#E23E58",
             "console_bg":       "#020D14",
-            # Fuellung der Knoepfe der Seitenleiste (Nutzer 06.10.2026: blaugrau statt schwarz)
-            "seitenknopf_bg":   "#2C4656",
+            # Fuellung der Knoepfe der Seitenleiste: seit 09.10.2026 wie die Knoepfe im rechten Bereich
+            # (Nutzer: "so farbig machen wie die Knoepfe im rechten Bereich") - das ist console_bg
+            "seitenknopf_bg":   "#020D14",
             "console_fg":       "#CFF6FB",
             "progress_bg":      "#0A2831",
             "progress_fill":    "#2BE7E7",
@@ -4124,7 +4127,7 @@ class PS5ConverterGUI:
             "error_btn":        "#D65B57",
             "error_btn_hover":  "#B94541",
             "console_bg":       "#121216",
-            "seitenknopf_bg":   "#343C48",
+            "seitenknopf_bg":   "#121216",
             "console_fg":       "#E6E8EE",
             "progress_bg":      "#17171C",
             "progress_fill":    "#5B9BFF",
@@ -4154,7 +4157,7 @@ class PS5ConverterGUI:
             "error_btn":        "#C0392B",
             "error_btn_hover":  "#A93226",
             "console_bg":       "#F4F2EC",
-            "seitenknopf_bg":   "#D3DCE5",
+            "seitenknopf_bg":   "#F4F2EC",
             "console_fg":       "#1E2024",
             "progress_bg":      "#E2DFD6",
             "progress_fill":    "#0F6FB8",
@@ -4184,7 +4187,7 @@ class PS5ConverterGUI:
             "error_btn":        "#D66A62",
             "error_btn_hover":  "#B5504A",
             "console_bg":       "#25282E",
-            "seitenknopf_bg":   "#4A5666",
+            "seitenknopf_bg":   "#25282E",
             "console_fg":       "#E5E8EC",
             "progress_bg":      "#30343B",
             "progress_fill":    "#AAC1D9",
@@ -4303,6 +4306,9 @@ class PS5ConverterGUI:
         # und an die Konsole senden. Das fruehere "PS4 PKG -> OTA" ist darin aufgegangen; der
         # Paketkopf-Leser und der bisherige Entpacker (ohne OrbisPkgTool) liegen im Mehr-Menue.
         ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
+        # Seit v1.9.71 das Gegenstueck fuer PS5-Pakete: Dump-Ordner entpacken, Abbild bauen (ueber
+        # Aufgabe 1), Paket pruefen, mit Bibliothek (ps5_validator/ui/ps5_pkg_fenster.py).
+        ("titlebar.ps5pkg", "_show_ps5_pkg_converter"),
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.unjail", "_show_unjail_sender"),
@@ -4993,6 +4999,7 @@ class PS5ConverterGUI:
         self.root.bind("<Button-3>", self._show_context_menu)
         self.root.bind("<Configure>", self._on_root_configure)
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self._fenster_titelfarben_einrichten()
 
         # 10. Kontextmenü
         self.context_menu = tk.Menu(
@@ -55186,6 +55193,10 @@ class PS5ConverterGUI:
         self._ps4pkg_vorgabe = ""
         ps4_dump_image.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt, vorgabe)
 
+    def _show_ps5_pkg_converter(self) -> None:
+        """Oeffnet „PS5 PKG Dump & Image Converter“ - oder holt das offene Fenster nach vorn."""
+        ps5_pkg_fenster.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
+
     # ==================================================================
     # Klog – Live-Streaming des PS5-Kernel-Logs über einen einfachen
     # TCP-Rohsocket (Standardport 3232, zeilenbasiertes Textprotokoll,
@@ -60835,6 +60846,20 @@ class PS5ConverterGUI:
         """
         return getattr(self, "_current_theme", "dunkel") != "hell"
 
+    def _fenster_titelfarben_einrichten(self) -> None:
+        """Die Titelleisten aller Fenster dunkel graublau (Windows 11) - im Design Hell bleiben sie hell.
+
+        Seit v1.9.71 (Nutzerwunsch 09.10.2026, Farbe ``#2A3441``). Ein Haken am Hauptfenster faerbt jedes
+        Fenster beim Oeffnen (``ps5_validator/utils/fenster_titelfarbe.py``); die Standarddialoge von
+        Windows gehoeren dem System und bleiben hell. Nicht zu verwechseln mit ``_main_titlebar``, der
+        Werkzeugleiste im Fenster.
+        """
+        fenster_titelfarbe.einrichten(self.root, self._design_ist_dunkel)
+
+    def _fenster_titelfarben_aktualisieren(self) -> None:
+        """Faerbt die offenen Fenster nach einem Designwechsel neu."""
+        fenster_titelfarbe.aktualisieren(self.root)
+
     def _helles_bild_im_dunklen_design(self, pfad: str, bereich: str = "") -> bool:
         """Steht auf diesem Bild helle Schrift, die darauf schlecht zu lesen ist?
 
@@ -61188,6 +61213,7 @@ class PS5ConverterGUI:
             return
         self._current_theme = theme_key
         self._COLORS = self._palette_bauen(theme_key)
+        self._fenster_titelfarben_aktualisieren()
         # Hintergrundbild(er) neu mit der Hintergrundfarbe des NEUEN Designs
         # blenden. Ohne das blieben die Caches dauerhaft auf die Toenung des
         # beim Programmstart aktiven Designs eingefroren - Content-Bereich/

@@ -1,0 +1,128 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0/win-x64",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {},
+    ".NETCoreApp,Version=v10.0/win-x64": {
+      "ffpfsc-pkg-tool/1.0.0": {
+        "dependencies": {
+          "BCnEncoder.Net": "2.3.0",
+          "CommunityToolkit.HighPerformance": "8.4.0",
+          "LibOrbisPkg": "1.0.0",
+          "Magick.NET-Q8-AnyCPU": "14.15.0",
+          "LibProsperoPkg": "1.2.0.0"
+        },
+        "runtime": {
+          "ffpfsc-pkg-tool.dll": {}
+        }
+      },
+      "BCnEncoder.Net/2.3.0": {
+        "dependencies": {
+          "CommunityToolkit.HighPerformance": "8.4.0"
+        },
+        "runtime": {
+          "lib/netstandard2.1/BCnEncoder.dll": {
+            "assemblyVersion": "2.3.0.0",
+            "fileVersion": "2.3.0.0"
+          }
+        }
+      },
+      "CommunityToolkit.HighPerformance/8.4.0": {
+        "runtime": {
+          "lib/net8.0/CommunityToolkit.HighPerformance.dll": {
+            "assemblyVersion": "8.4.0.0",
+            "fileVersion": "8.4.0.1"
+          }
+        }
+      },
+      "Magick.NET-Q8-AnyCPU/14.15.0": {
+        "dependencies": {
+          "Magick.NET.Core": "14.15.0"
+        },
+        "runtime": {
+          "lib/net8.0/Magick.NET-Q8-AnyCPU.dll": {
+            "assemblyVersion": "14.15.0.0",
+            "fileVersion": "14.15.0.0"
+          }
+        },
+        "native": {
+          "runtimes/win-x64/native/Magick.Native-Q8-x64.dll": {
+            "fileVersion": "10.3.0.0"
+          }
+        }
+      },
+      "Magick.NET.Core/14.15.0": {
+        "runtime": {
+          "lib/net8.0/Magick.NET.Core.dll": {
+            "assemblyVersion": "14.15.0.0",
+            "fileVersion": "14.15.0.0"
+          }
+        }
+      },
+      "LibOrbisPkg/1.0.0": {
+        "runtime": {
+          "LibOrbisPkg.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "LibProsperoPkg/1.2.0.0": {
+        "runtime": {
+          "LibProsperoPkg.dll": {
+            "assemblyVersion": "1.2.0.0",
+            "fileVersion": "1.2.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ffpfsc-pkg-tool/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "BCnEncoder.Net/2.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DJhHJiBJKXUXxlkkrv74ckzJb3wYxqIAZHjXD9G76kpsD0YyJOmqtNufHWEuJe0eH0tB1tCZn80/3JV2UVP7yQ==",
+      "path": "bcnencoder.net/2.3.0",
+      "hashPath": "bcnencoder.net.2.3.0.nupkg.sha512"
+    },
+    "CommunityToolkit.HighPerformance/8.4.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-flxspiBs0G/0GMp7IK2J2ijV9bTG6hEwFc/z6ekHqB6nwRJ4Ry2yLdx+TkbCUYFCl4XhABkAwomeKbT6zM2Zlg==",
+      "path": "communitytoolkit.highperformance/8.4.0",
+      "hashPath": "communitytoolkit.highperformance.8.4.0.nupkg.sha512"
+    },
+    "Magick.NET-Q8-AnyCPU/14.15.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GYcT4dC2Dxgq/FN/PwVY+PHJEuZc5ZfQm0bj0BmvmSRXPjPPJzdOV8tbcMyNUQtHcRnsp6E/mJ5Tf62I8in3bg==",
+      "path": "magick.net-q8-anycpu/14.15.0",
+      "hashPath": "magick.net-q8-anycpu.14.15.0.nupkg.sha512"
+    },
+    "Magick.NET.Core/14.15.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-xgD1zqb4KQ1gMQcd3eIRp8hFMHBxzW9fOpLLDR7BWN0oCwZ0i6NW7rIUiCdsEi/NuZi1UlCLWBHh3v7Y2E3LIw==",
+      "path": "magick.net.core/14.15.0",
+      "hashPath": "magick.net.core.14.15.0.nupkg.sha512"
+    },
+    "LibOrbisPkg/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "LibProsperoPkg/1.2.0.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

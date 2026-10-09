@@ -147,7 +147,62 @@ class WarteschlangeTests(unittest.TestCase):
         self.assertTrue(gestartet.wait(5))
         self.schlange.abbrechen(aufgabe.kennung)
         self._warte_auf_ende()
+        # Beendet wird in einem eigenen Faden (seit v1.9.71), damit der Hauptfaden des Fensters nicht wartet.
+        self.assertTrue(_bis(lambda: beendet, 5), "terminate() wurde nicht gerufen")
         self.assertEqual([True], beendet)
+
+    def test_die_ablage_kennt_den_abbruch_der_aufgabe(self) -> None:
+        """``ps4_werkzeug.lauf`` fragt dort nach, ob der Abbruch vor der Anmeldung des Prozesses kam."""
+        a = au.Aufgabe(kennung=1, art="test", titel="x")
+        self.assertIs(a.abbruch, a.prozess_ablage["abbruch"])
+        a.abbruch.set()
+        self.assertTrue(a.prozess_ablage["abbruch"].is_set())
+
+    def test_der_schnappschuss_traegt_den_verlangten_abbruch(self) -> None:
+        """Das Fenster zeigt damit "wird abgebrochen", solange die Aufgabe noch aufraeumt."""
+        gestartet = threading.Event()
+        weiter = threading.Event()
+
+        def a(aufgabe: au.Aufgabe) -> None:
+            gestartet.set()
+            weiter.wait(5)
+
+        aufgabe = self.schlange.hinzufuegen("test", "x", a)
+        self.assertTrue(gestartet.wait(5))
+        self.assertFalse(self.schlange.schnappschuss()[0].abbruch_verlangt)
+        self.schlange.abbrechen(aufgabe.kennung)
+        self.assertTrue(self.schlange.schnappschuss()[0].abbruch_verlangt)
+        weiter.set()
+        self._warte_auf_ende()
+
+    def test_beendet_wird_nicht_der_alte_prozess_der_vorigen_stufe(self) -> None:
+        """Die Ablage haelt den Prozess der vorigen Stufe, bis die naechste einen anmeldet - der ist schon tot."""
+        gestartet = threading.Event()
+        aufrufe: list[object] = []
+
+        class Tot:
+            pid = 4242
+
+            def poll(self) -> int:
+                return 0                     # schon beendet und abgeholt
+
+            def terminate(self) -> None:
+                aufrufe.append("terminate")
+
+        def a(aufgabe: au.Aufgabe) -> None:
+            aufgabe.prozess_ablage["prozess"] = Tot()
+            gestartet.set()
+            _bis(lambda: aufgabe.abbruch_verlangt, 5)
+            aufgabe.pruefen_abbruch()
+
+        aufgabe = self.schlange.hinzufuegen("test", "x", a)
+        self.assertTrue(gestartet.wait(5))
+        with mock.patch.object(au.prozess_beenden, "_psutil") as psutil_ersatz:
+            self.schlange.abbrechen(aufgabe.kennung)
+            self._warte_auf_ende()
+            time.sleep(0.2)
+        psutil_ersatz.assert_not_called()
+        self.assertEqual([], aufrufe)
 
     def test_beendete_aufgaben_lassen_sich_nicht_mehr_abbrechen(self) -> None:
         aufgabe = self.schlange.hinzufuegen("test", "x", lambda a: None)
@@ -865,6 +920,104 @@ class EndeZuEndeTests(unittest.TestCase):
         stand = {a.kennung: a.status for a in schlange.schnappschuss()}
         self.assertEqual({e1.kennung: au.FERTIG, e2.kennung: au.FERTIG}, stand)
         self.assertTrue((ziel / "eboot.bin").is_file())
+
+
+class OrdnenAbbruchTests(unittest.TestCase):
+    """Das Ordnen eines entpackten Spiels (tausende Dateien) bricht beim Abbrechen mitten drin ab."""
+
+    def test_der_abbruch_stoppt_das_verschieben_mitten_drin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            roh = Path(tmp) / "roh"
+            (roh / "Image0").mkdir(parents=True)
+            for i in range(10):
+                (roh / "Image0" / ("d%d.bin" % i)).write_bytes(b"x")
+            aufrufe: list[int] = []
+
+            def pruefen() -> None:
+                aufrufe.append(1)
+                if len(aufrufe) > 3:
+                    raise au.AufgabeAbgebrochen()
+
+            with self.assertRaises(au.AufgabeAbgebrochen):
+                au.dump_ordner_machen(str(roh), pruefen=pruefen)
+            verschoben = [p for p in roh.iterdir() if p.is_file()]
+            uebrig = [p for p in (roh / "Image0").iterdir()]
+            self.assertEqual(3, len(verschoben))
+            self.assertEqual(7, len(uebrig))
+
+    def test_ohne_pruefung_laeuft_alles_wie_bisher(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            roh = Path(tmp) / "roh"
+            (roh / "Image0").mkdir(parents=True)
+            (roh / "Image0" / "a.bin").write_bytes(b"x")
+            self.assertEqual({"dateien": 1, "systemdateien": 0}, au.dump_ordner_machen(str(roh)))
+
+
+class AufraeumenNachAbbruchTests(unittest.TestCase):
+    """Nach einem Abbruch wird der Arbeitsordner im Hintergrund geloescht (09.10.2026).
+
+    Gemessen: Das Loeschen des entpackten Spiels (rund 10 GB, viele Dateien) dauerte auf einem exFAT-USB-Laufwerk gut
+    15 Minuten - so lange hing das Fenster nach dem Abbrechen fest.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.arbeit = Path(self._tmp.name) / "ps4dib_arbeit"
+        self.arbeit.mkdir()
+        self.ordner = self.arbeit / "lauf_1"
+        (self.ordner / "unpacked" / "tief").mkdir(parents=True)
+        (self.ordner / "unpacked" / "tief" / "datei.bin").write_bytes(b"x" * 1024)
+        self.a = au.Aufgabe(kennung=1, art="abbild", titel="x")
+
+    def _wegordner(self) -> list[str]:
+        return sorted(n for n in os.listdir(self.arbeit) if n.startswith(au.WEG_VORSATZ))
+
+    def test_nach_einem_abbruch_wird_umbenannt_und_im_hintergrund_geloescht(self) -> None:
+        self.a.abbruch.set()
+        with mock.patch.object(au, "_loesch_faden") as faden:
+            au._aufraeumer(self.a, t)(str(self.ordner), im_hintergrund=True)
+        self.assertFalse(self.ordner.exists(), "Der Ordner muss sofort aus dem Weg sein")
+        weg = self._wegordner()
+        self.assertEqual(1, len(weg))
+        self.assertTrue(weg[0].startswith(au.WEG_VORSATZ + "lauf_1_"))
+        faden.assert_called_once_with(str(self.arbeit / weg[0]))
+        self.assertTrue(any("ps4dib.log_raeumt_spaeter" in z for z in self.a.protokoll), self.a.protokoll)
+
+    def test_der_hintergrundfaden_loescht_den_umbenannten_ordner_wirklich(self) -> None:
+        self.a.abbruch.set()
+        au._aufraeumer(self.a, t)(str(self.ordner), im_hintergrund=True)
+        self.assertTrue(_bis(lambda: not self._wegordner(), 10), self._wegordner())
+
+    def test_ohne_abbruch_wird_wie_bisher_gleich_geloescht(self) -> None:
+        au._aufraeumer(self.a, t)(str(self.ordner), im_hintergrund=True)
+        self.assertFalse(self.ordner.exists())
+        self.assertEqual([], self._wegordner(), "Ohne Abbruch bleibt nichts zum Loeschen im Hintergrund liegen")
+        self.assertEqual("ps4ota.status_raeume_auf", self.a.text)
+
+    def test_ohne_die_bitte_um_den_hintergrund_wird_auch_nach_abbruch_gleich_geloescht(self) -> None:
+        """Die uebrigen Arbeiten (Entpacken, Zusammenfuehren) behalten ihr Verhalten."""
+        self.a.abbruch.set()
+        au._aufraeumer(self.a, t)(str(self.ordner))
+        self.assertFalse(self.ordner.exists())
+        self.assertEqual([], self._wegordner())
+
+    def test_scheitert_das_umbenennen_wird_gleich_geloescht(self) -> None:
+        self.a.abbruch.set()
+        with mock.patch.object(au.os, "rename", side_effect=PermissionError("in Gebrauch")), \
+                mock.patch.object(au.time, "sleep"):
+            au._aufraeumer(self.a, t)(str(self.ordner), im_hintergrund=True)
+        self.assertFalse(self.ordner.exists(), "Dann bleibt es beim bisherigen Weg: gleich loeschen")
+
+    def test_reste_eines_frueheren_abbruchs_raeumt_der_naechste_lauf_weg(self) -> None:
+        rest = self.arbeit / (au.WEG_VORSATZ + "lauf_9_abcd1234")
+        (rest / "x").mkdir(parents=True)
+        fremd = self.arbeit / "lauf_2"
+        fremd.mkdir()
+        self.assertEqual(1, au.reste_wegraeumen(str(self.arbeit)))
+        self.assertTrue(_bis(lambda: not rest.exists(), 10))
+        self.assertTrue(fremd.is_dir(), "Andere Ordner bleiben unberuehrt")
+        self.assertEqual(0, au.reste_wegraeumen(str(self.arbeit / "gibt_es_nicht")))
 
 
 if __name__ == "__main__":

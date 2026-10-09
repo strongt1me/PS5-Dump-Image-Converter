@@ -48,16 +48,26 @@ def _app_version() -> str:
     return treffer.group(1)
 
 
-def _flach(text: str) -> str:
-    """Ohne Tags, Entitaeten und Leerraum; Ligaturen aufgeloest (NFKC), ohne Gross/klein.
+def _normal(text: str) -> str:
+    """Ohne Leerraum; Ligaturen aufgeloest (NFKC), ohne Gross/klein.
 
     Gross/klein faellt weg, weil die PDF zeigt, was das CSS daraus macht: Das
     Inhaltsverzeichnis steht mit ``text-transform:uppercase`` als "CONTENTS" in
     der PDF, im HTML als "Contents" (am 04.10.2026 so aufgefallen).
     """
-    text = re.sub(r"<[^>]+>", "", text)
-    text = unicodedata.normalize("NFKC", html.unescape(text))
+    text = unicodedata.normalize("NFKC", text)
     return re.sub(r"\s+", "", text).casefold()
+
+
+def _flach(text: str) -> str:
+    """HTML-Text: ohne Tags und Entitaeten, dann wie ``_normal``.
+
+    Nur fuer HTML. Der Text einer PDF ist kein HTML - dort ist ``<`` ein Zeichen
+    wie jedes andere (am 09.10.2026 verschluckte ein einzelnes ``<`` aus der
+    Suchsyntax der Bibliothek, "groesse:>50GB (auch <, >=, <=)", fuenf Kapitel).
+    """
+    text = re.sub(r"<[^>]+>", "", text)
+    return _normal(html.unescape(text))
 
 
 def _ueberschriften(html_text: str, tags: tuple[str, ...]) -> list[str]:
@@ -77,6 +87,18 @@ class VersionTests(unittest.TestCase):
                 self.assertIn("<strong>%s</strong>" % version, text, "Fusszeile ohne %s" % version)
 
 
+class VergleichstextTests(unittest.TestCase):
+    """Wie HTML- und PDF-Text fuer den Vergleich vorbereitet werden."""
+
+    def test_ein_einzelnes_kleiner_zeichen_im_pdf_text_verschluckt_nichts(self):
+        pdf = "größe:>50GB (auch <, >=, <=). 14 Design und Hintergrundbild 15 Häufige Probleme <Title-ID>"
+        self.assertIn("14designundhintergrundbild", _normal(pdf))
+        self.assertIn("15häufigeprobleme", _normal(pdf))
+
+    def test_im_html_fallen_tags_und_entitaeten_weg(self):
+        self.assertEqual("14design&hintergrund", _flach('<h2><span class="nr">14</span> Design &amp; Hintergrund</h2>'))
+
+
 @unittest.skipIf(PdfReader is None, "pypdf fehlt")
 class PdfTests(unittest.TestCase):
 
@@ -86,7 +108,7 @@ class PdfTests(unittest.TestCase):
         for _html, pdf_name, _tags in DOKUMENTE:
             leser = PdfReader(str(PROJEKT / pdf_name))
             roh = "".join(seite.extract_text() or "" for seite in leser.pages)
-            cls.texte[pdf_name] = (_flach(roh), len(leser.pages), (PROJEKT / pdf_name).read_bytes())
+            cls.texte[pdf_name] = (_normal(roh), len(leser.pages), (PROJEKT / pdf_name).read_bytes())
 
     def test_jede_pdf_traegt_die_programmversion(self):
         version = _app_version()

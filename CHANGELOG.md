@@ -2,9 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.70):** Aufgabe 1 nimmt auch Archive (.zip, .7z, .rar) als Quelle, und ein Packlauf startet bei knappem Arbeitsspeicher selbst mit weniger Kernen neu.
+> **Kurz zum aktuellen Stand (v1.9.71):** PS5-Pakete lassen sich jetzt entpacken, umwandeln und bauen, und die Titelleisten sind unter Windows 11 dunkel graublau.
 
 ---
+
+## v1.9.71 – 09.10.2026
+
+- **Neu:** Unter WEITERE TOOLS gibt es „PS5 PKG Dump & Image Converter“: PS5-Pakete (Debug-Pakete) prüfen, entpacken und zu .ffpfsc, .ffpfs, exFAT oder .ffpkg umwandeln, mit Bibliothek, Cover und technischer Übersicht – und aus einem Spielordner ein Debug-Paket bauen.
+- **Neu:** Die Titelleisten aller Fenster sind unter Windows 11 dunkel graublau; im Design Hell bleiben sie hell. Die Knöpfe der Seitenleiste haben jetzt die Farbe der Knöpfe im rechten Bereich.
+- **Aktualisiert:** PKG Manager 1.5.0 (Installationswarteschlange, klarere Meldung bei zu wenig Speicher), WebKit Autoloader 0.6.1 (zur Auswahl neben den älteren), PS5Upload 6.7.3 und AnyPad PS5 0.8.1-beta.
+- **Behoben:** Das Abbrechen im PS4 PKG Dump & Image Converter hing fest, weil nur der äußere Prozess beendet wurde. Jetzt endet alles sofort, der Abbruch wird angezeigt und der Arbeitsordner im Hintergrund entfernt.
 
 ## v1.9.70 – 08.10.2026
 

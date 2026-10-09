@@ -290,11 +290,13 @@ def _teil_entpacken(a: au.Aufgabe, paket: str, ziel: str, t, von: float, bis: fl
         text = erg.meldung or "; ".join(erg.fehler[:3])
         raise au.AufgabeFehler("werkzeug", text, grund=text)
     a.melden(t("ps4ota.status_ordnen"), von + (bis - von) * 0.92)
-    au.dump_ordner_machen(ziel, lambda n: a.melden(t("ps4ota.status_ordnen_n", anzahl=n), von + (bis - von) * 0.95))
+    au.dump_ordner_machen(ziel, lambda n: a.melden(t("ps4ota.status_ordnen_n", anzahl=n), von + (bis - von) * 0.95),
+                          pruefen=a.pruefen_abbruch)
 
 
 def dump_bereitstellen(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, von: float = 0.0, bis: float = 100.0,
-                       passcode: "str | None" = None, mit_dlc: bool = False, dumper_aufbau: bool = False) -> str:
+                       passcode: "str | None" = None, mit_dlc: bool = False, dumper_aufbau: bool = False,
+                       aufraeumen_dem_aufrufer: bool = False, im_hintergrund: bool = False) -> str:
     """Macht aus Basis und Updates (auf Wunsch DLC) einen Dump-Ordner in ``ziel``.
 
     Es wird nach ``<ziel>.partial`` gearbeitet; erst ein vollstaendiger Lauf bekommt den Namen. Die Updates
@@ -304,6 +306,10 @@ def dump_bereitstellen(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, von: float 
     Args:
         dumper_aufbau: ``True`` legt ``app/`` und ``addcont/<Kennung>/`` an (so liest PS4 FFPFSC DLC aus einem
             Ordner); sonst steht das Spiel flach in der Wurzel.
+        aufraeumen_dem_aufrufer: ``True`` laesst nach einem Fehler oder Abbruch die halbfertigen Ordner stehen -
+            der Aufrufer raeumt den Ordner, in dem ``ziel`` liegt, ohnehin ganz weg (``arbeit_abbild``).
+        im_hintergrund: Nach einem Abbruch werden die halbfertigen Ordner nicht abgewartet, sondern im Hintergrund
+            geloescht (siehe ``ps4pkg_aufgaben._im_hintergrund_loeschen``).
 
     Returns:
         ``ziel``.
@@ -346,7 +352,8 @@ def dump_bereitstellen(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, von: float 
             a.melden(t("ps4dib.status_einspielen", version=u.app_ver or "-"), ende)
             a.schreiben(t("ps4dib.log_einspielen", version=u.app_ver or "-", datei=u.datei))
             au._verschmelzen(zwischen, app,
-                             lambda n: a.melden(t("ps4dib.status_einspielen_n", anzahl=n, version=u.app_ver or "-"), ende))
+                             lambda n: a.melden(t("ps4dib.status_einspielen_n", anzahl=n, version=u.app_ver or "-"), ende),
+                             a.pruefen_abbruch)
             aufraeumen(zwischen)
         for z in zusaetze:
             a.pruefen_abbruch()
@@ -354,8 +361,9 @@ def dump_bereitstellen(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, von: float 
             _teil_entpacken(a, z.pfad, os.path.join(teil, "addcont", zusatz_kennung(z)), t, anfang, ende, passcode)
         os.replace(au._lang(teil), au._lang(ziel))
     except BaseException:
-        aufraeumen(teil)
-        aufraeumen(teil + "_update")
+        if not aufraeumen_dem_aufrufer:
+            aufraeumen(teil, im_hintergrund=im_hintergrund)
+            aufraeumen(teil + "_update", im_hintergrund=im_hintergrund)
         raise
     return ziel
 
@@ -366,7 +374,9 @@ def arbeit_dump(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, passcode: "str | N
     a.schreiben(t("ps4dib.log_dump", titel=spiel.titel, ziel=ziel))
     noetig_arbeit, noetig_ziel = platz_noetig(spiel, FORMAT_DUMP, mit_dlc)
     _platz_pruefen(os.path.dirname(os.path.abspath(ziel)) or ".", noetig_ziel)
-    dump_bereitstellen(a, spiel, ziel, t, passcode=passcode, mit_dlc=mit_dlc, dumper_aufbau=mit_dlc and bool(spiel.zusaetze))
+    au.reste_wegraeumen(os.path.dirname(os.path.abspath(ziel)) or ".")    # Reste eines frueheren Abbruchs
+    dump_bereitstellen(a, spiel, ziel, t, passcode=passcode, mit_dlc=mit_dlc,
+                       dumper_aufbau=mit_dlc and bool(spiel.zusaetze), im_hintergrund=True)
     a.ergebnis = ziel
     a.melden(t("ps4dib.status_dump_fertig", ziel=ziel), 100)
     a.schreiben(t("ps4ota.log_entpackt", ziel=ziel))
@@ -420,6 +430,7 @@ def arbeit_abbild(a: au.Aufgabe, spiel: Spiel, ziel: str, format_: str, t, *, la
     ziel = os.path.abspath(ziel)
     os.makedirs(ziel, exist_ok=True)
     arbeitsordner = os.path.abspath(arbeitsordner)
+    au.reste_wegraeumen(arbeitsordner)       # was ein frueherer Abbruch zum Loeschen im Hintergrund liegen liess
     lauf_ordner = os.path.join(arbeitsordner, "lauf_%d" % a.kennung)
     # Die Quelle liegt NEBEN dem Arbeitsordner des Werkzeugs, nicht darin: PS4 FFPFSC lehnt einen Dump-Ordner ab,
     # der sich mit seinem Arbeits- oder Entpackordner ueberschneidet.
@@ -442,7 +453,7 @@ def arbeit_abbild(a: au.Aufgabe, spiel: Spiel, ziel: str, format_: str, t, *, la
             dumper = mit_dlc and bool(spiel.zusaetze)
             wurzel = dump_bereitstellen(a, spiel, os.path.join(quell_ordner, spiel.title_id), t,
                                         von=0.0, bis=anteil, passcode=passcode, mit_dlc=mit_dlc,
-                                        dumper_aufbau=dumper)
+                                        dumper_aufbau=dumper, aufraeumen_dem_aufrufer=True)
             dump = wurzel
         a.pruefen_abbruch()
         befehl = ["build", spiel.title_id, *_quell_argumente(spiel, mit_dlc=mit_dlc, dump=dump),
@@ -489,7 +500,9 @@ def arbeit_abbild(a: au.Aufgabe, spiel: Spiel, ziel: str, format_: str, t, *, la
     finally:
         for ordner in (lauf_ordner, quell_ordner):
             if os.path.isdir(ordner):
-                aufraeumen(ordner)
+                # Nach einem Abbruch nicht abwarten: Auf einem USB-Laufwerk dauert das Loeschen eines entpackten
+                # Spiels eine Viertelstunde (gemessen 09.10.2026), und das Fenster haengt solange fest.
+                aufraeumen(ordner, im_hintergrund=True)
     a.melden(t("ps4dib.status_pruefe_abbild"), 99.0)
     abbild = ps4_werkzeug.ergebnis_finden(ziel, spiel.title_id, format_)
     if not abbild:

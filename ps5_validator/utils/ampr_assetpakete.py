@@ -41,6 +41,7 @@ from typing import Any, Callable
 
 from ps5_validator.utils.nahtstellen import (Melder, Textquelle,
                                              schluessel_zeigen, stumm)
+from ps5_validator.utils.prozess_beenden import baum_beenden
 from ps5_validator.utils.werkzeuge_bereitstellen import suchwurzeln
 
 logger = logging.getLogger("PS5Converter.utils.ampr_assetpakete")
@@ -718,7 +719,7 @@ def _lauf(argumente: list[str], melden: Melder,
             if abbruch is not None and abbruch():
                 abgebrochen.set()
                 try:
-                    prozess.terminate()
+                    baum_beenden(prozess)      # samt Nachkommen: Die EXE ruft sich selbst auf (Starter + Programm)
                 except OSError as exc:
                     logger.debug("Packwerkzeug nicht beendbar: %s", exc)
                 return
@@ -749,7 +750,7 @@ def _lauf(argumente: list[str], melden: Melder,
             else:
                 melden("[AMPR-PACK] %s" % zeile)
             if abbruch is not None and abbruch():
-                prozess.terminate()
+                baum_beenden(prozess)
                 raise PackFehler("ampr_pack.abgebrochen")
     finally:
         prozess.wait()

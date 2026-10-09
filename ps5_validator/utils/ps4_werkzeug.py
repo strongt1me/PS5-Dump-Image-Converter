@@ -28,8 +28,12 @@ import sys
 from typing import Callable
 
 from ps5_validator.utils.plattform import prozess_flags
+from ps5_validator.utils.prozess_beenden import baum_beenden
 
 logger = logging.getLogger("PS5Converter.utils.ps4_werkzeug")
+
+#: Rueckgabewert, wenn der Lauf wegen eines Abbruchs gar nicht erst gestartet wurde (wie ein Abbruch per Strg+C).
+RC_ABGEBROCHEN = 130
 
 #: Womit die Title-IDs der jeweiligen Konsole anfangen.
 PS4_KENNUNGEN: tuple[str, ...] = ("CUSA", "PUSA")
@@ -284,7 +288,13 @@ def lauf(
         zeile_callback:       Bekommt jede Protokollzeile.
         fortschritt_callback: Bekommt die entschlüsselten Fortschrittsdaten.
         prozess_ablage:       Nimmt den laufenden Prozess auf, damit ein
-                              Abbruch ihn beenden kann.
+                              Abbruch ihn beenden kann (samt allen
+                              Nachkommen, siehe ``prozess_beenden``). Steht
+                              unter ``"abbruch"`` ein Ereignis mit
+                              ``is_set()`` und ist es gesetzt, bevor oder
+                              kurz nachdem der Prozess angemeldet ist, wird
+                              er sofort beendet - sonst liefe ein Lauf, den
+                              niemand mehr abbricht, bis zum Ende.
         json_modus:           Haelt stderr getrennt, damit auf stdout reines
                               JSON steht. Fuer --json-Abfragen noetig.
 
@@ -297,6 +307,9 @@ def lauf(
     # eigene, noch unbelegte Variable - UnboundLocalError, 04.09.2026.
     befehlsliste = [*befehl(hauptdatei), *argumente]
     gesammelt: list[str] = []
+    stopp = (prozess_ablage or {}).get("abbruch")
+    if stopp is not None and stopp.is_set():
+        return RC_ABGEBROCHEN, ""
     prozess = subprocess.Popen(
         befehlsliste,
         stdout=subprocess.PIPE,
@@ -310,6 +323,9 @@ def lauf(
     )
     if prozess_ablage is not None:
         prozess_ablage["prozess"] = prozess
+        # Kam der Abbruch zwischen der Frage oben und dem Eintrag hier, fand er keinen Prozess zum Beenden.
+        if stopp is not None and stopp.is_set():
+            baum_beenden(prozess)
     if json_modus:
         # stdout bleibt unangetastet, damit die Antwort als Ganzes lesbar
         # ist; das Protokoll kommt getrennt ueber stderr.

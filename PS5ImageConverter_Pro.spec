@@ -74,6 +74,14 @@ if os.path.isdir(os.path.join(_siebenzip, 'windows')):
     _datas.append((os.path.join(_siebenzip, 'windows'), '7-Zip-26.00/windows'))
     _datas.append((os.path.join(_siebenzip, 'License.txt'), '7-Zip-26.00'))
 
+# ffpfsc-pkg-tool fuer „PS5 PKG Dump & Image Converter“ (seit v1.9.71; GPL-3.0-or-later, Quelle und
+# Lizenz liegen in PS5-PKG-Tool/). Nur der Bau dieser Plattform.
+_pkgtool = os.path.join(_here, 'PS5-PKG-Tool')
+if os.path.isdir(os.path.join(_pkgtool, 'win-x64')):
+    _datas.append((os.path.join(_pkgtool, 'win-x64'), 'PS5-PKG-Tool/win-x64'))
+    _datas.append((os.path.join(_pkgtool, 'LICENSE'), 'PS5-PKG-Tool'))
+    _datas.append((os.path.join(_pkgtool, 'NOTICE_Magick.NET.txt'), 'PS5-PKG-Tool'))
+
 # Lizenzen der mitgelieferten Fremdkomponenten einbetten. Die EXE enthaelt die
 # Payloads aus helloworld/ - darunter zftpd unter MIT-Lizenz, die verlangt, dass
 # der Lizenztext jeder Kopie beiliegt. Im Fenster CREDITS ist die Datei aufrufbar.
@@ -495,7 +503,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.70',
+    name='PS5_Dump_Image_Converter_v1.9.71',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -43,8 +43,9 @@ except Exception:  # noqa: BLE001
     _TK_DA = False
 
 KLASSE = APP.PS5ConverterGUI
-#: Die vier Fassungen, die der Nutzer am 04.10.2026 verlangt hat (neueste zuerst).
-FASSUNGEN = ["0.6.0", "0.5.2", "0.5.1", "0.4.0"]   # 0.5.0 entfernt am 07.10.2026 (Dateien defekt)
+#: Die Fassungen im Ordner (neueste zuerst). Am 04.10.2026 hat der Nutzer mehrere nebeneinander verlangt; 0.5.0 ist
+#: seit 07.10.2026 heraus (Dateien defekt), 0.6.0 ist die Vorabfassung 4488577, 0.6.1 kam am 09.10.2026 dazu.
+FASSUNGEN = ["0.6.1", "0.6.0", "0.5.2", "0.5.1", "0.4.0"]
 DATEINAMEN = {"exe": "webkit-autoloader-host_v%s.exe",
               "py": "webkit-autoloader-host_v%s.py",
               "elf": "webkit-autoloader-installer_v%s.elf"}
@@ -219,7 +220,7 @@ class MitgelieferteFassungenTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.objekt = KLASSE.__new__(KLASSE)
 
-    def test_alle_vier_fassungen_stehen_in_der_liste(self) -> None:
+    def test_alle_mitgelieferten_fassungen_stehen_in_der_liste(self) -> None:
         liste = self.objekt._webkit_fassungen_liste()
         for fassung in FASSUNGEN:
             self.assertIn(fassung, liste, "Fassung %s fehlt im Ordner" % fassung)
@@ -378,8 +379,8 @@ class SeitenTests(unittest.TestCase):
         werte = list(self.app._webkit_fassung_box.cget("values"))
         self.assertEqual(["v%s" % n for n in FASSUNGEN],
                          [w.replace(" (neueste)", "") for w in werte])
-        self.assertEqual("v0.6.0 (neueste)", werte[0])
-        self.assertEqual("v0.6.0 (neueste)", self.app._webkit_fassung_var.get())
+        self.assertEqual("v0.6.1 (neueste)", werte[0])
+        self.assertEqual("v0.6.1 (neueste)", self.app._webkit_fassung_var.get())
 
     def test_waehlen_merkt_die_fassung_und_beschreibt_sie(self) -> None:
         self._waehlen("0.5.1")
@@ -452,8 +453,8 @@ class SeitenTests(unittest.TestCase):
 
     def test_ohne_wahl_nehmen_die_wege_weiter_die_neueste(self) -> None:
         """Wie vor der Auswahl: ohne ``fassung`` die hoechste Nummer."""
-        self.assertTrue(self.app._webkit_installer_pfad().endswith("installer_v0.6.0.elf"))
-        self.assertTrue(self.app._webkit_host_pfad("exe").endswith("host_v0.6.0.exe"))
+        self.assertTrue(self.app._webkit_installer_pfad().endswith("installer_v0.6.1.elf"))
+        self.assertTrue(self.app._webkit_host_pfad("exe").endswith("host_v0.6.1.exe"))
 
     # -- Protokoll, Status, Sprache ------------------------------------------
 
@@ -478,9 +479,9 @@ class SeitenTests(unittest.TestCase):
         self.addCleanup(self.app._toggle_language)
         _WURZEL.update()
         werte = list(self.app._webkit_fassung_box.cget("values"))
-        self.assertEqual("v0.6.0 (latest)", werte[0])
-        self.assertEqual("v0.6.0 (latest)", self.app._webkit_fassung_var.get())
-        self.assertEqual("0.6.0", self.app._webkit_gewaehlt(), "die Wahl bleibt beim Umschalten")
+        self.assertEqual("v0.6.1 (latest)", werte[0])
+        self.assertEqual("v0.6.1 (latest)", self.app._webkit_fassung_var.get())
+        self.assertEqual("0.6.1", self.app._webkit_gewaehlt(), "die Wahl bleibt beim Umschalten")
         texte = {_text(w) for w in _alle(self.app._webkit_seite)}
         for schluessel in ("webkit.host_exe", "webkit.host_py", "webkit.installer",
                            "webkit.fassung_label", "webkit.title"):

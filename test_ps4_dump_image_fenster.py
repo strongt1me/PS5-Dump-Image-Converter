@@ -242,6 +242,35 @@ class FensterTests(unittest.TestCase):
             self.assertIn("CUSA00001-patch-v01.02.pkg", f.status_var.get())
             box.assert_called_once()
 
+    def test_nach_dem_abbrechen_zeigt_die_statuszeile_den_abbruch_statt_des_fortschritts(self) -> None:
+        """Meldung 09.10.2026: Nach dem Abbrechen lief die Anzeige weiter, als haette der Knopf nichts getan."""
+        import time
+        from ps5_validator.utils import ps4pkg_aufgaben as au
+        f = self._fenster()
+        a = au.Aufgabe(kennung=3, art="abbild", titel="Testspiel", status=au.LAEUFT, text="Räume auf …")
+        f._batch_beginn = time.monotonic()
+        f._stapel_anzeigen([a.kopie()])
+        self.assertIn("Rest", f.status_var.get(), "Ohne Abbruch zeigt die Zeile den gewohnten Fortschritt")
+        a.abbruch.set()
+        f._stapel_anzeigen([a.kopie()])
+        text = f.status_var.get()
+        self.assertEqual(STRINGS["ps4dib.status_abbruch"]["de"].format(titel="Testspiel", text="Räume auf …"), text)
+        self.assertNotIn("Rest", text)
+
+    def test_ausserhalb_des_stapels_gilt_dasselbe(self) -> None:
+        from ps5_validator.utils import ps4pkg_aufgaben as au
+        f = self._fenster()
+        a = au.Aufgabe(kennung=4, art="update", titel="Update", status=au.LAEUFT, text="lade")
+        a.abbruch.set()
+        f._kurz_laeuft(a.kopie())
+        self.assertEqual(STRINGS["ps4dib.status_abbruch"]["de"].format(titel="Update", text="lade"),
+                         f.status_var.get())
+
+    def test_die_texte_zum_abbruch_sind_zweisprachig(self) -> None:
+        for schluessel in ("ps4dib.status_abbruch", "ps4dib.log_raeumt_spaeter"):
+            with self.subTest(schluessel=schluessel):
+                self.assertNotEqual(STRINGS[schluessel]["de"], STRINGS[schluessel]["en"])
+
     def test_die_quellknoepfe_rufen_die_wahl_auf(self) -> None:
         quelle = (PROJEKT / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
         self.assertIn("command=self._quelle_gewaehlt", quelle)

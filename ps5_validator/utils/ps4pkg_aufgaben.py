@@ -25,10 +25,11 @@ import shutil
 import sys
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
-from ps5_validator.utils import orbispkg, ps4pkg_ota, ps4pkg_updates
+from ps5_validator.utils import orbispkg, ps4pkg_ota, ps4pkg_updates, prozess_beenden
 from ps5_validator.utils.ps4pkg_bibliothek import PkgEintrag, TYP_UPDATE, TYP_ZUSATZ, dateiname_bereinigen
 
 logger = logging.getLogger("PS5Converter.ps4pkg_aufgaben")
@@ -77,6 +78,11 @@ class Aufgabe:
     abbruch: threading.Event = field(default_factory=threading.Event, repr=False)
     prozess_ablage: dict = field(default_factory=dict, repr=False)
 
+    def __post_init__(self) -> None:
+        # Die Ablage kennt den Abbruch: Wer seinen Prozess erst nach dem Abbruch anmeldet (``ps4_werkzeug.lauf``),
+        # sieht ihn dort und beendet ihn sofort, statt einen Lauf zu starten, den niemand mehr abbricht.
+        self.prozess_ablage.setdefault("abbruch", self.abbruch)
+
     @property
     def abbruch_verlangt(self) -> bool:
         return self.abbruch.is_set()
@@ -97,11 +103,18 @@ class Aufgabe:
             raise AufgabeAbgebrochen()
 
     def kopie(self) -> "Aufgabe":
-        """Eine Momentaufnahme fuer das Fenster (ohne Faden-Objekte)."""
-        return Aufgabe(kennung=self.kennung, art=self.art, titel=self.titel, quelle=self.quelle,
-                       ziel=self.ziel, status=self.status, prozent=self.prozent, text=self.text,
-                       ergebnis=self.ergebnis, fehler=self.fehler, beginn=self.beginn, ende=self.ende,
-                       protokoll=list(self.protokoll))
+        """Eine Momentaufnahme fuer das Fenster (ohne Faden-Objekte).
+
+        Ein verlangter Abbruch bleibt sichtbar (``abbruch_verlangt``): Solange die Aufgabe noch aufraeumt, zeigt das
+        Fenster damit "wird abgebrochen" statt des gewohnten Fortschritts.
+        """
+        k = Aufgabe(kennung=self.kennung, art=self.art, titel=self.titel, quelle=self.quelle,
+                    ziel=self.ziel, status=self.status, prozent=self.prozent, text=self.text,
+                    ergebnis=self.ergebnis, fehler=self.fehler, beginn=self.beginn, ende=self.ende,
+                    protokoll=list(self.protokoll))
+        if self.abbruch.is_set():
+            k.abbruch.set()
+        return k
 
 
 class Warteschlange:
@@ -168,7 +181,13 @@ class Warteschlange:
             return sum(1 for a in self._aufgaben if a.status in (WARTET, LAEUFT))
 
     def abbrechen(self, kennung: int) -> bool:
-        """Bricht eine Aufgabe ab: eine wartende wird sofort gestrichen, eine laufende beendet."""
+        """Bricht eine Aufgabe ab: eine wartende wird sofort gestrichen, eine laufende beendet.
+
+        Beendet wird der Prozess **samt Nachkommen** (``prozess_beenden.baum_beenden``): Ein Selbstaufruf der
+        gebauten EXE besteht aus Starter und Programm, und die Arbeiter darunter halten die Ausgabeleitung offen -
+        ``terminate()`` allein liess den Lauf weiterlaufen und das Fenster ewig auf sein Ende warten (09.10.2026).
+        """
+        prozess = None
         with self._schloss:
             a = next((x for x in self._aufgaben if x.kennung == kennung), None)
             if a is None or a.status in ENDZUSTAENDE:
@@ -179,13 +198,21 @@ class Warteschlange:
                 a.ende = time.time()
             else:
                 prozess = a.prozess_ablage.get("prozess")
-                if prozess is not None:
-                    try:
-                        prozess.terminate()
-                    except OSError:
-                        pass
+        if prozess is not None:
+            self._prozess_beenden(prozess)
         self._geaendert()
         return True
+
+    @staticmethod
+    def _prozess_beenden(prozess) -> None:
+        """In einem eigenen Faden: Die Prozessliste zu lesen kann dauern, und der Aufruf kommt aus dem Hauptfaden."""
+        def _los() -> None:
+            try:
+                prozess_beenden.baum_beenden(prozess)
+            except Exception:  # noqa: BLE001
+                logger.exception("Der Prozessbaum liess sich nicht beenden")
+
+        threading.Thread(target=_los, name="ps4ota-abbruch", daemon=True).start()
 
     def alle_abbrechen(self) -> None:
         for a in self.schnappschuss():
@@ -348,11 +375,14 @@ def zielordner_name(e: PkgEintrag) -> str:
 ORDNEN_SCHRITT = 250
 
 
-def _verschmelzen(quelle: str, ziel: str, melden: "Callable[[int], None] | None" = None) -> int:
+def _verschmelzen(quelle: str, ziel: str, melden: "Callable[[int], None] | None" = None,
+                  pruefen: "Callable[[], None] | None" = None) -> int:
     """Verschiebt den Inhalt von ``quelle`` nach ``ziel`` - bestehende Dateien werden ersetzt.
 
     Ein Spiel hat tausende Dateien; deshalb meldet sich die Funktion alle
     :data:`ORDNEN_SCHRITT` Dateien (``melden(bisher)``), statt still zu bleiben.
+    ``pruefen`` wird vor jeder Datei gerufen und darf mit ``AufgabeAbgebrochen`` abbrechen: Auf einem
+    USB-Laufwerk dauert das Ordnen eines grossen Spiels Minuten, und der Abbruch soll nicht darauf warten.
 
     Returns:
         Die Zahl der verschobenen Dateien.
@@ -368,6 +398,8 @@ def _verschmelzen(quelle: str, ziel: str, melden: "Callable[[int], None] | None"
     def lauf(q: str, z: str) -> None:
         os.makedirs(_lang(z), exist_ok=True)
         for name in os.listdir(_lang(q)):
+            if pruefen is not None:
+                pruefen()
             von = os.path.join(q, name)
             nach = os.path.join(z, name)
             if os.path.isdir(_lang(von)) and not os.path.islink(_lang(von)):
@@ -390,7 +422,8 @@ def _verschmelzen(quelle: str, ziel: str, melden: "Callable[[int], None] | None"
     return zaehler[0]
 
 
-def dump_ordner_machen(roh: str, melden: "Callable[[int], None] | None" = None) -> dict:
+def dump_ordner_machen(roh: str, melden: "Callable[[int], None] | None" = None,
+                       pruefen: "Callable[[], None] | None" = None) -> dict:
     """Macht aus ``Image0/`` und ``Sc0/`` einen Dump-Ordner: Spieldateien in die Wurzel, Systemdateien nach ``sce_sys/``.
 
     So sieht ein entpacktes PS4-Spiel ueberall aus - auch das Ergebnis von
@@ -399,6 +432,7 @@ def dump_ordner_machen(roh: str, melden: "Callable[[int], None] | None" = None) 
 
     Args:
         melden: ``(bisher)`` - wie viele Dateien schon umgeordnet sind (siehe :func:`_verschmelzen`).
+        pruefen: Wird vor jeder Datei gerufen und darf abbrechen (``AufgabeAbgebrochen``).
 
     Returns:
         ``{"dateien": n, "systemdateien": m}``.
@@ -411,13 +445,13 @@ def dump_ordner_machen(roh: str, melden: "Callable[[int], None] | None" = None) 
     if not os.path.isdir(_lang(image0)):
         raise AufgabeFehler("ohne_image0", "Image0 fehlt im entpackten Paket")
     erg = {"dateien": 0, "systemdateien": 0}
-    erg["dateien"] = _verschmelzen(image0, roh, melden)
+    erg["dateien"] = _verschmelzen(image0, roh, melden, pruefen)
     try:
         os.rmdir(_lang(image0))
     except OSError:
         pass
     if os.path.isdir(_lang(sc0)):
-        erg["systemdateien"] = _verschmelzen(sc0, os.path.join(roh, "sce_sys"), melden)
+        erg["systemdateien"] = _verschmelzen(sc0, os.path.join(roh, "sce_sys"), melden, pruefen)
         try:
             os.rmdir(_lang(sc0))
         except OSError:
@@ -432,6 +466,70 @@ def _aufraeumen(ordner: str, melden: "Callable[[], None] | None" = None) -> None
     shutil.rmtree(_lang(ordner), ignore_errors=True)
 
 
+#: Ein Arbeitsordner, der nach einem Abbruch im Hintergrund geloescht wird, bekommt vorher diesen Vorsatz.
+WEG_VORSATZ = ".weg_"
+_loeschen_sperre = threading.Lock()
+_loeschen_laeuft: "set[str]" = set()
+
+
+def _loesch_arbeit(pfad: str, schluessel: str) -> None:
+    """Der Faden von :func:`_loesch_faden`: loescht still - das Protokoll hat es beim Start gemeldet."""
+    try:
+        shutil.rmtree(_lang(pfad), ignore_errors=True)
+    finally:
+        with _loeschen_sperre:
+            _loeschen_laeuft.discard(schluessel)
+
+
+def _loesch_faden(pfad: str) -> None:
+    """Loescht ``pfad`` in einem eigenen Faden - hoechstens einmal zugleich je Ordner."""
+    schluessel = os.path.normcase(os.path.abspath(pfad))
+    with _loeschen_sperre:
+        if schluessel in _loeschen_laeuft:
+            return
+        _loeschen_laeuft.add(schluessel)
+    threading.Thread(target=_loesch_arbeit, args=(pfad, schluessel), name="ps4ota-aufraeumen", daemon=True).start()
+
+
+def _im_hintergrund_loeschen(ordner: str) -> bool:
+    """Benennt ``ordner`` sofort um und loescht ihn dann in einem Faden. ``False``: Das Umbenennen ging nicht.
+
+    Gemessen am 09.10.2026: Das Loeschen des entpackten Spiels (rund 10 GB, viele Dateien) dauerte auf einem
+    exFAT-USB-Laufwerk gut 15 Minuten. Nach einem Abbruch soll das Fenster nicht so lange festhaengen.
+    Umbenannt wird nur innerhalb des Ordners, in dem es ohnehin liegt (eine Umbenennung ist auf demselben
+    Laufwerk sofort fertig).
+    """
+    eltern, name = os.path.split(os.path.abspath(ordner))
+    ziel = os.path.join(eltern, "%s%s_%s" % (WEG_VORSATZ, name, uuid.uuid4().hex[:8]))
+    for versuch in (1, 2):
+        try:
+            os.rename(_lang(ordner), _lang(ziel))
+            break
+        except OSError as fehler:
+            if versuch == 1:
+                time.sleep(1.0)              # ein eben beendeter Prozess haelt manchmal noch kurz eine Datei
+                continue
+            logger.debug("Umbenennen zum Loeschen im Hintergrund gescheitert: %s", fehler)
+            return False
+    _loesch_faden(ziel)
+    return True
+
+
+def reste_wegraeumen(basis: str) -> int:
+    """Loescht im Hintergrund, was ein frueherer Abbruch in ``basis`` liegen liess (``.weg_*``). Gibt die Zahl zurueck."""
+    try:
+        namen = os.listdir(_lang(basis))
+    except OSError:
+        return 0
+    zahl = 0
+    for name in namen:
+        pfad = os.path.join(basis, name)
+        if name.startswith(WEG_VORSATZ) and os.path.isdir(_lang(pfad)):
+            _loesch_faden(pfad)
+            zahl += 1
+    return zahl
+
+
 # ---------------------------------------------------------------------------
 # Die Arbeiten
 # ---------------------------------------------------------------------------
@@ -439,9 +537,17 @@ def _aufraeumen(ordner: str, melden: "Callable[[], None] | None" = None) -> None
 Uebersetzer = Callable[..., str]
 
 
-def _aufraeumer(a: "Aufgabe", t: Uebersetzer) -> Callable[[str], None]:
-    """Ein ``_aufraeumen``, das vorher in den Status der Aufgabe schreibt, dass aufgeraeumt wird."""
-    def weg(ordner: str) -> None:
+def _aufraeumer(a: "Aufgabe", t: Uebersetzer) -> Callable[..., None]:
+    """Ein ``_aufraeumen``, das vorher in den Status der Aufgabe schreibt, dass aufgeraeumt wird.
+
+    ``weg(ordner, im_hintergrund=True)``: Ist die Aufgabe abgebrochen, wird der Ordner nicht abgewartet, sondern im
+    Hintergrund geloescht (siehe :func:`_im_hintergrund_loeschen`); sonst - und wenn das Umbenennen scheitert - wie bisher.
+    """
+    def weg(ordner: str, im_hintergrund: bool = False) -> None:
+        if im_hintergrund and a.abbruch_verlangt and os.path.isdir(_lang(ordner)):
+            if _im_hintergrund_loeschen(ordner):
+                a.schreiben(t("ps4dib.log_raeumt_spaeter", ordner=ordner))
+                return
         _aufraeumen(ordner, lambda: a.melden(t("ps4ota.status_raeume_auf")))
     return weg
 

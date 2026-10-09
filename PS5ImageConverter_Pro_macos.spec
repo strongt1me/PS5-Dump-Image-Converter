@@ -136,6 +136,16 @@ if os.path.isdir(os.path.join(_siebenzip, 'macos')):
     _datas.append((os.path.join(_siebenzip, 'macos'), '7-Zip-26.00/macos'))
     _datas.append((os.path.join(_siebenzip, 'License.txt'), '7-Zip-26.00'))
 
+# ffpfsc-pkg-tool fuer „PS5 PKG Dump & Image Converter“ (seit v1.9.71; GPL-3.0-or-later, Quelle und
+# Lizenz liegen in PS5-PKG-Tool/). Nur der Bau dieser Plattform.
+_pkgtool = os.path.join(_here, 'PS5-PKG-Tool')
+import platform as _platform
+_rid_mac = 'osx-arm64' if _platform.machine().lower() in ('arm64', 'aarch64') else 'osx-x64'
+if os.path.isdir(os.path.join(_pkgtool, _rid_mac)):
+    _datas.append((os.path.join(_pkgtool, _rid_mac), 'PS5-PKG-Tool/' + _rid_mac))
+    _datas.append((os.path.join(_pkgtool, 'LICENSE'), 'PS5-PKG-Tool'))
+    _datas.append((os.path.join(_pkgtool, 'NOTICE_Magick.NET.txt'), 'PS5-PKG-Tool'))
+
 # Lizenzen der mitgelieferten Fremdkomponenten einbetten. Das Programm enthaelt
 # die Payloads aus helloworld/ - darunter zftpd unter MIT-Lizenz, die verlangt,
 # dass der Lizenztext jeder Kopie beiliegt. Im Fenster CREDITS ist die Datei

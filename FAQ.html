@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.70</title>
+<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.71</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Häufige Fragen (FAQ)</span></h1>
     <p class="unter">Kurze Antworten auf die Fragen, die bei der Arbeit mit dem Programm am häufigsten auftauchen – vom ersten Start über das Umwandeln bis zur PS5. Ausführlich steht alles im Benutzerhandbuch.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.70</span>
-      <span class="marke">Stand 8. Oktober 2026</span>
+      <span class="marke">Version v1.9.71</span>
+      <span class="marke">Stand 9. Oktober 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -456,7 +456,7 @@ footer{
 
   <div class="frage">
     <h3>Kann ich auch PS4-Spiele verwenden?</h3>
-    <p>Ja. <strong>PS4 PKG Dump &amp; Image Converter</strong> (WEITERE TOOLS) liest Ihre PS4-Pakete ein und macht aus Basis, Update und wahlweise DLC einen normalen Spielordner (Format <strong>Dump-Ordner</strong>), ein Abbild für ShadowMount+ (<strong>ffpfsc</strong> oder <strong>exFAT</strong>) oder ein zusammengeführtes Paket. <strong>UPDATES ONLINE</strong> lädt fehlende Updates für PS4-Spiele bei Sony. PS5-Pakete lassen sich nicht entpacken; ihren Aufbau zeigt <strong>Mehr → Paketkopf lesen</strong>.</p>
+    <p>Ja. <strong>PS4 PKG Dump &amp; Image Converter</strong> (WEITERE TOOLS) liest Ihre PS4-Pakete ein und macht aus Basis, Update und wahlweise DLC einen normalen Spielordner (Format <strong>Dump-Ordner</strong>), ein Abbild für ShadowMount+ (<strong>ffpfsc</strong> oder <strong>exFAT</strong>) oder ein zusammengeführtes Paket. <strong>UPDATES ONLINE</strong> lädt fehlende Updates für PS4-Spiele bei Sony. PS5-Pakete (Debug-Pakete, FPKG) entpackt und wandelt <strong>PS5 PKG Dump &amp; Image Converter</strong> (WEITERE TOOLS) um.</p>
     <p class="hinweis"><strong>Trophäen:</strong> Ein PS4-Spiel, das aus einem Abbild startet, registriert seine Trophäen nicht (<em>Trophy registration failed, 0x80551618</em>). Das ist so vorgesehen und liegt nicht am Abbild. Wer die Trophäen braucht, installiert das Spiel über den Package Installer. PS5-Titel sind nicht betroffen.</p>
   </div>
 
@@ -514,7 +514,7 @@ footer{
     <h3>Was macht der WebKit Autoloader, und welche Fassung soll ich nehmen?</h3>
     <p>Er legt auf der Konsole die Kachel <strong>WebKit Autoload</strong> an (Startbildschirm, unter <em>Medien</em>), damit sich der Einstieg mit einem Druck wiederholen lässt. Dazu gehören ein <strong>Host</strong> auf Ihrem Rechner – als Windows-Programm oder als Python-Skript – und ein <strong>Installer</strong>, der einmal auf der Konsole läuft. Beides steht unter <strong>KONSOLE › WebKit Autoloader</strong>.</p>
     <ul>
-      <li><strong>Fassung:</strong> Es liegen mehrere bei, von v0.4.0 bis v0.6.0. Vorgegeben ist die neueste; Ihre Wahl merkt sich das Programm, und sie gilt für alle drei Wege (Host als Windows-Programm, Host als Python-Skript, Installer senden). Läuft die neueste bei Ihnen nicht, probieren Sie eine ältere.</li>
+      <li><strong>Fassung:</strong> Es liegen mehrere bei, von v0.4.0 bis v0.6.1. Vorgegeben ist die neueste; Ihre Wahl merkt sich das Programm, und sie gilt für alle drei Wege (Host als Windows-Programm, Host als Python-Skript, Installer senden). Läuft die neueste bei Ihnen nicht, probieren Sie eine ältere.</li>
       <li><strong>Host:</strong> Er belegt DNS (UDP 53) und HTTPS (TCP 443) und braucht deshalb Administratorrechte.</li>
       <li><strong>Installer:</strong> Er geht über Port 9021 an die Konsole. Ist der Port zu, geht er per FTP in die Wurzel eines USB-Datenträgers; dort holen Sie ihn mit dem Payload Manager ab.</li>
     </ul>
@@ -528,7 +528,7 @@ footer{
 
   <div class="frage">
     <h3>Wie nutze ich andere Controller an der PS5 (AnyPad PS5)?</h3>
-    <p>Seit v1.9.60 liegt der Payload <strong>AnyPad PS5</strong> bei (inzwischen Fassung 0.6.0-beta). Er macht Bluetooth-Controller an der PS5 nutzbar; Spiele sehen sie als DualSense. Laut Autor bestätigt sind DualShock&nbsp;4&nbsp;v2, 8BitDo SF30 Pro (Switch-Modus) und GameSir G7 SE, unterstützt (noch unbestätigt) unter anderem Xbox- und Switch-Pro-Controller. Auf <em>Konsole &amp; Payloads</em> starten Sie ihn mit <strong>Ausgewähltes starten</strong> und öffnen mit <strong>Weboberfläche öffnen</strong> seine Kopplungsseite (Port 8095).</p>
+    <p>Seit v1.9.60 liegt der Payload <strong>AnyPad PS5</strong> bei (inzwischen Fassung 0.8.1-beta). Er macht Bluetooth-Controller an der PS5 nutzbar; Spiele sehen sie als DualSense. Laut Autor bestätigt sind DualShock&nbsp;4&nbsp;v2, 8BitDo SF30 Pro (Switch-Modus) und GameSir G7 SE, unterstützt (noch unbestätigt) unter anderem Xbox- und Switch-Pro-Controller. Auf <em>Konsole &amp; Payloads</em> starten Sie ihn mit <strong>Ausgewähltes starten</strong> und öffnen mit <strong>Weboberfläche öffnen</strong> seine Kopplungsseite (Port 8095).</p>
     <ul>
       <li>Fragt die Konsole, wer den Controller benutzt, wählen Sie laut Autor <strong>Schnellspiel/Gast</strong> (einen vorübergehenden Benutzer).</li>
       <li>Einen DualShock&nbsp;4 müssen Sie nach jedem Einschalten neu koppeln; andere Controller verbinden sich selbst wieder.</li>
@@ -609,8 +609,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.70</strong></span>
-  <span>Stand 8. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
+  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.71</strong></span>
+  <span>Stand 9. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
 </footer>
 
 </body>
