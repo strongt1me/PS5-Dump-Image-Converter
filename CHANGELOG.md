@@ -2,21 +2,19 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.71):** PS5-Pakete lassen sich jetzt entpacken, umwandeln und bauen, und die Titelleisten sind unter Windows 11 dunkel graublau.
+> **Kurz zum aktuellen Stand (v1.9.72):** Die PS5-Paket-Werkzeuge sitzen jetzt als Knopf „7. PKG / FPKG“ in der Ansicht KONSOLE, und sieben mitgelieferte Payloads sind auf neueren Fassungen.
 
 ---
 
-## v1.9.71 – 09.10.2026
+## v1.9.72 – 12.10.2026
 
-- **Neu:** Unter WEITERE TOOLS gibt es „PS5 PKG Dump & Image Converter“: PS5-Pakete (Debug-Pakete) prüfen, entpacken und zu .ffpfsc, .ffpfs, exFAT oder .ffpkg umwandeln, mit Bibliothek, Cover und technischer Übersicht – und aus einem Spielordner ein Debug-Paket bauen.
 - **Neu:** Der Knopf „Updates“ auf „Konsole & Payloads“ prüft alle mitgelieferten Werkzeuge auf neuere Fassungen und bietet sie zum Herunterladen an.
 - **Neu:** Auf „Konsole & Payloads“ legst du per Stern Favoriten fest, die das Programm beim Start und mit „Favoriten senden“ an die PS5 schickt (Port 9021 wird bei Bedarf zuerst geöffnet); ersetzt „Grundausstattung starten“.
-- **Neu:** Die Titelleisten aller Fenster sind unter Windows 11 dunkel graublau; im Design Hell bleiben sie hell. Die Knöpfe der Seitenleiste haben jetzt die Farbe der Knöpfe im rechten Bereich.
 - **Neu:** Im PS5 PKG Dump & Image Converter schickt die Aktion „Auf die PS5 entpacken“ ein Paket beim Lesen gleich per FTP an die Konsole – ohne entpackte Kopie auf dem PC und mit Fortsetzen nach einem Abbruch.
 - **Neu:** Im PS5 PKG Dump & Image Converter gibt es einen Bereich „Optionen“ (Bibliotheksordner, Darstellung, Vorgaben für Ausgabe und Zielformat, Debug-Passcode, Export/Import/Zurücksetzen der Einstellungen).
 - **Neu:** Im PS5 PKG Dump & Image Converter lässt sich das Cover des gewählten Pakets groß als Vorschau öffnen.
 - **Neu:** Im PS5 PKG Dump & Image Converter steht in den Optionen ein zweiter Paketersteller zur Wahl (ProsperoPkgTool, neben dem bisherigen LibProsperoPkg) – nur für „Paket bauen“.
-- **Geändert:** Der Knopf „AMPR EMU Manager“ ist aus dem Bereich UMWANDELN in den Bereich KONSOLE gewandert (letzter Knopf); an seiner Stelle steht jetzt „7. PKG / FPKG“ mit den Knöpfen „PKG“ und „FPKG“ – sie zeigen das, was bisher unter WEITERE TOOLS als eigenes Fenster lief („PS4 PKG Dump & Image Converter“ bzw. „PS5 PKG Dump & Image Converter“), jetzt eingebettet im rechten Bereich statt in einem eigenen Fenster; die beiden Einträge unter WEITERE TOOLS sind entfallen. „Validator“ ist jetzt „8.“.
+- **Geändert:** Der „AMPR EMU Manager“ ist in den Bereich KONSOLE gewandert (Knopf 9), und an seiner Stelle zeigt „7. PKG / FPKG“ die beiden PKG-Werkzeuge mit den Knöpfen „PKG“ und „FPKG“ eingebettet im rechten Bereich; die zwei Einträge unter WEITERE TOOLS sind entfallen.
 - **Geändert:** Beim Öffnen des Programms ist im Bereich UMWANDELN nichts angekreuzt (AMPR EMU, PlayGo, BACKPORT), AMPR EMU steht auf Normal mit der neuesten Fassung ohne Pack, und Quelle, Ziel- und Temp-Ordner sind leer; ein leerer Temp-Ordner heißt Windows-Temp.
 - **Geändert:** Die Live-Anzeige während eines Laufs nennt jetzt den freien Arbeitsspeicher und warnt unter 1 GB.
 - **Geändert:** Beim Senden eines Ordners an die Konsole fragt das Programm bei einem vorhandenen Ziel, ob es fortsetzen soll, und baut eine abgerissene Verbindung neu auf.
@@ -31,6 +29,12 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Behoben:** PS5Upload wird an seinem Port 9120 erkannt (bisher war 9113 eingetragen).
 - **Behoben:** In der Ansicht KONSOLE leuchten die Seitenknöpfe beim Darüberfahren wieder auf, wie in der Ansicht UMWANDELN.
 - **Behoben:** Der Strich unter „OK“ erscheint in Meldungsfenstern nicht mehr beim Öffnen, sondern nur noch bei Bedienung mit der Tab-Taste.
+
+## v1.9.71 – 09.10.2026
+
+- **Neu:** Unter WEITERE TOOLS gibt es „PS5 PKG Dump & Image Converter“: PS5-Pakete (Debug-Pakete) prüfen, entpacken und zu .ffpfsc, .ffpfs, exFAT oder .ffpkg umwandeln, mit Bibliothek, Cover und technischer Übersicht – und aus einem Spielordner ein Debug-Paket bauen.
+- **Neu:** Die Titelleisten aller Fenster sind unter Windows 11 dunkel graublau; im Design Hell bleiben sie hell. Die Knöpfe der Seitenleiste haben jetzt die Farbe der Knöpfe im rechten Bereich.
+- **Aktualisiert:** PKG Manager 1.5.0 (Installationswarteschlange, klarere Meldung bei zu wenig Speicher), WebKit Autoloader 0.6.1 (zur Auswahl neben den älteren), PS5Upload 6.7.3 und AnyPad PS5 0.8.1-beta.
 - **Behoben:** Das Abbrechen im PS4 PKG Dump & Image Converter hing fest, weil nur der äußere Prozess beendet wurde. Jetzt endet alles sofort, der Abbruch wird angezeigt und der Arbeitsordner im Hintergrund entfernt.
 
 ## v1.9.70 – 08.10.2026
