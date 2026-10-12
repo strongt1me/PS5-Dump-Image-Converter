@@ -194,7 +194,7 @@ class ZweiteAnsichtTests(unittest.TestCase):
         self.assertEqual("grid", app.content_scroll.winfo_manager())
 
     def test_jeder_konsolenknopf_oeffnet_sein_fenster(self):
-        """Seit Stufe 4 ist jeder der sieben Knoepfe verdrahtet.
+        """Seit Stufe 4 ist jeder der (inzwischen neun) Knoepfe verdrahtet.
 
         "5. CoolSysCent-Pro" sagte vom 04. bis zum 05.10.2026 "kommt noch"; seither ist es
         eine Direktaktion wie Prospero Manager (Weboberflaeche des PS5 Cooling & System

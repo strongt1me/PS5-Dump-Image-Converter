@@ -104,11 +104,6 @@ class SchliessenFunktioniertTests(unittest.TestCase):
                          "Diese Fenster lassen sich nur ueber das X der "
                          "Fensterleiste schliessen: %s" % ohne)
 
-    def test_das_ps4_fenster_hat_einen_schliessen_knopf(self):
-        """Seit 07.10.2026 steht "PS4 PKG Dump & Image Converter" in ``ui/ps4_dump_image.py``."""
-        quelle = (Path(__file__).resolve().parent / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
-        self.assertIn('text=t("action.close"), command=self._schliessen', quelle)
-
     def test_die_rueckfragen_gibt_es_in_beiden_sprachen(self):
         from ps5_validator.utils.i18n import STRINGS
         for schluessel in ("ps4pkg.abort_confirm",
@@ -121,26 +116,32 @@ class SchliessenFunktioniertTests(unittest.TestCase):
 
 
 class AufgabeSiebenTests(unittest.TestCase):
-    """Ihr Fenster geht zu, wenn eine andere Aufgabe drankommt."""
+    """Aufgabe 7 (PKG / FPKG) oeffnet kein Fenster, sondern eine Seite - und
+    diese Seite laesst sich wieder stehen, wenn man eine andere Aufgabe waehlt.
 
-    def test_der_aufgabenwechsel_raeumt_das_fenster_weg(self):
+    (Bis zum 12.10.2026 hiess diese Klasse so wegen des AMPR EMU Manager, der
+    damals noch Aufgabe 7 der Seitenleiste UMWANDELN war. Er ist seitdem Knopf
+    "9." der Ansicht KONSOLE und hat mit der Seitenleiste nichts mehr zu tun,
+    siehe test_ampr_seite.py.)"""
+
+    def test_der_aufgabenwechsel_raeumt_die_seite_weg(self):
         baum = _baum()
         knoten = next(k for k in ast.walk(baum)
                       if isinstance(k, ast.FunctionDef)
                       and k.name == "_set_mode_from_sidebar")
         text = ast.unparse(knoten)
-        self.assertIn("self._ampr_seite_verbergen()", text,
+        self.assertIn("self._pkg_fpkg_seite_verbergen()", text,
                       "Aufgabe 7 laesst ihre Seite wieder stehen, wenn man "
                       "eine andere Aufgabe waehlt.")
 
     def test_es_wird_nur_bei_einem_wechsel_geschlossen(self):
-        """Wer Aufgabe 7 erneut waehlt, soll sein Fenster behalten."""
+        """Wer Aufgabe 7 erneut waehlt, soll ihre Seite behalten."""
         baum = _baum()
         knoten = next(k for k in ast.walk(baum)
                       if isinstance(k, ast.FunctionDef)
                       and k.name == "_set_mode_from_sidebar")
         text = ast.unparse(knoten)
-        self.assertIn("if mode != 'ampr_manager'", text)
+        self.assertIn("if mode != 'pkg_fpkg'", text)
 
     def test_der_schliesser_oeffnet_nichts(self):
         """Sonst ginge beim Aufgabenwechsel ein Fenster auf statt zu."""

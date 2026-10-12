@@ -114,6 +114,7 @@ from ps5_validator.utils.self_reader import (
     read_self,
 )
 from ps5_validator.utils import ampr_updates
+from ps5_validator.utils import werkzeug_updates
 from ps5_validator.utils.dump_rename import (
     CONFIDENCE_FAILED as dump_rename_fehlgeschlagen,
     CONFIDENCE_NEEDS_REVIEW as dump_rename_nachsehen,
@@ -135,8 +136,10 @@ from ps5_validator.utils import app_install
 from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
 from ps5_validator.ui import ampr_seite
+from ps5_validator.ui import pkg_fpkg_seite
 from ps5_validator.ui import ps4_dump_image
 from ps5_validator.ui import ps5_pkg_fenster
+from ps5_validator.ui import updates_fenster
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
 from ps5_validator.utils import einstellungen
@@ -3035,6 +3038,9 @@ class RoundedButton(tk.Canvas):
         self._hintergrund = hintergrund
         self._akzent = bool(akzent)
         self._grund_merker: "tuple | None" = None
+        #: Der Stand, mit dem das Bild zuletzt gezeichnet wurde (``_zeichen_stand``); ``nachziehen`` spart sich das
+        #: Neuzeichnen, wenn er gleich geblieben ist.
+        self._gezeichnet: "tuple | None" = None
         self._foto = None
         self._schrift_obj = None
         # Gerufen, wenn der Knopf gesperrt oder freigegeben wird (STARTEN:
@@ -3156,6 +3162,7 @@ class RoundedButton(tk.Canvas):
         self._foto = ImageTk.PhotoImage(bild, master=self)
         self.create_image(0, 0, image=self._foto, anchor="nw")
         self.create_text(w / 2, h / 2, text=self._text, fill=text_color, font=self._font)
+        self._gezeichnet = self._zeichen_stand(w, h)
 
     def _grund_holen(self, w: int, h: int) -> "Image.Image":
         """Was hinter dem Knopf liegt - gemerkt, bis ``nachziehen`` es verwirft.
@@ -3206,9 +3213,38 @@ class RoundedButton(tk.Canvas):
         except tk.TclError as exc:
             logger.debug("Knopfbreite nicht setzbar: %s", exc)
 
+    def _zeichen_stand(self, w: int, h: int) -> tuple:
+        """Alles, wovon das Bild einer Pille abhaengt - gleicher Stand, gleiches Bild.
+
+        Der Ausschnitt dahinter geht als kurze Pruefsumme ein: Zieht ein Knopf um oder wechselt das Hintergrundbild,
+        aendert sich der Ausschnitt, und der Stand ist ein anderer.
+        """
+        gesperrt = self._state == tk.DISABLED
+        if gesperrt:
+            fuellung, schrift = self._disabledbackground, self._disabledforeground
+        else:
+            fuellung = self._activebackground if self._hovering else self._bg
+            schrift = self._activeforeground if self._hovering else self._fg
+        try:
+            skalierung = float(self.tk.call("tk", "scaling"))
+        except (tk.TclError, ValueError):
+            skalierung = 0.0
+        grund = hashlib.blake2b(self._grund_holen(w, h).tobytes(), digest_size=8).digest()
+        return (w, h, str(fuellung), str(schrift), str(self._outline), str(self._disabledoutline), bool(self._akzent),
+                gesperrt, str(self._text), str(self._font), skalierung, grund)
+
     def nachziehen(self) -> None:
-        """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel."""
+        """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel.
+
+        Seit 11.10.2026 nur noch, wenn sich etwas geaendert hat: Jede Umschaltung der Ansicht oder der Aufgabe zieht
+        alle Pillen nach (40 Stueck, gemessen 0,2 s), obwohl sich bei fast allen weder Lage noch Farbe noch Text
+        geaendert haben.
+        """
         self._grund_merker = None
+        if self._pille and self._gezeichnet is not None:
+            w, h = self.winfo_width(), self.winfo_height()
+            if w > 1 and h > 1 and self.find_all() and self._zeichen_stand(w, h) == self._gezeichnet:
+                return
         self._redraw()
 
     def invoke(self) -> None:
@@ -4217,7 +4253,7 @@ class PS5ConverterGUI:
         ("4. ffpkg konvertieren",        "ffpkg_to_ffpfsc"),
         ("5. Sammelkonvertierung",       "batch_convert"),
         ("6. AIO Konvertierung",         "universal_convert"),
-        ("7. AMPR EMU Manager",          "ampr_manager"),
+        ("7. PKG / FPKG",                "pkg_fpkg"),
         ("8. Validator",                 "dump_validator"),
     ]
 
@@ -4301,14 +4337,10 @@ class PS5ConverterGUI:
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.elf_eboot", "_show_elf_zu_eboot"),
         ("titlebar.dump_rename", "_show_dump_rename"),
-        # Seit dem 07.10.2026 der EINE Knopf fuer PS4-Pakete (Nutzerwunsch): "PS4 PKG Dump &
-        # Image Converter" - Dump-Ordner, ffpfsc/exFAT, zusammengefuehrtes Paket, Updates laden
-        # und an die Konsole senden. Das fruehere "PS4 PKG -> OTA" ist darin aufgegangen; der
-        # Paketkopf-Leser und der bisherige Entpacker (ohne OrbisPkgTool) liegen im Mehr-Menue.
-        ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
-        # Seit v1.9.71 das Gegenstueck fuer PS5-Pakete: Dump-Ordner entpacken, Abbild bauen (ueber
-        # Aufgabe 1), Paket pruefen, mit Bibliothek (ps5_validator/ui/ps5_pkg_fenster.py).
-        ("titlebar.ps5pkg", "_show_ps5_pkg_converter"),
+        # "PS4 PKG Dump & Image Converter" (seit 07.10.2026) und "PS5 PKG Dump & Image Converter" (seit v1.9.71)
+        # standen hier als eigene Knoepfe; seit dem 12.10.2026 (Nutzerwunsch) liegen beide Oberflaechen als "PKG"
+        # und "FPKG" in Aufgabe 7 "PKG / FPKG" der Seitenleiste UMWANDELN (siehe ui/pkg_fpkg_seite.py) und wurden
+        # hier entfernt.
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.unjail", "_show_unjail_sender"),
@@ -4357,6 +4389,9 @@ class PS5ConverterGUI:
         ("konsole.btn_shadowmount", "shadowmount"),
         ("konsole.btn_smplusgui", "smplusgui"),
         ("konsole.btn_bfpilot", "bfpilot"),
+        # Verlegt aus der Seitenleiste UMWANDELN (Nutzerwunsch 12.10.2026): zeigt dieselbe Seite wie zuvor
+        # Aufgabe 7 (ampr_seite.py), nur ueber einen anderen Knopf erreicht - siehe _KONSOLE_SEITEN unten.
+        ("konsole.btn_amprmgr", "amprmgr"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -4381,6 +4416,10 @@ class PS5ConverterGUI:
         "universal_convert": ("folder", "ffpfsc", "exfat", "ffpkg"),
         "ampr_manager": ("folder", "ffpfsc", "exfat", "ffpkg"),
         "dump_validator": ("folder", "ffpfsc", "exfat", "ffpkg"),
+        # Platzhalter (Nutzerwunsch 12.10.2026, Funktionen folgen): die Aufgabe zeigt nur eine Seite ohne
+        # QUELLE-Feld (pkg_fpkg_seite.py, wie Aufgabe 7 vor ihrem Ausbau) - dieser Eintrag ist unbenutzt, aber
+        # noetig, weil ein Waechtertest jede Aufgabe aus _MODE_OPTIONS hier verlangt (test_qualitaetslauf).
+        "pkg_fpkg": ("folder", "ffpfsc", "exfat", "ffpkg"),
     }
 
     _MODE_TARGET_OPTIONS: dict[str, tuple[str, ...]] = {
@@ -4438,8 +4477,16 @@ class PS5ConverterGUI:
             logger.debug("Konfigurationsdatei konnte nicht gelesen werden: %s", exc)
         return default
 
-    def __init__(self, root: tk.Tk) -> None:
-        """Initialisiert die Anwendung und baut die GUI auf."""
+    def __init__(self, root: tk.Tk, start_leer: bool = False) -> None:
+        """Initialisiert die Anwendung und baut die GUI auf.
+
+        Args:
+            start_leer: Der echte Programmstart (Nutzerwunsch 11.10.2026): Im Bereich UMWANDELN ist nichts angekreuzt
+                (AMPR EMU, PlayGo, BACKPORT), AMPR EMU steht auf "Normal" (ohne Pack) mit der neuesten Fassung ohne Pack,
+                und QUELLE, ZIELORDNER und TEMP-ORDNER sind leer. Kommandozeile, Diagnose und Testreihe lassen es bei
+                False: Dort gelten die gespeicherten Einstellungen weiter.
+        """
+        self._start_leer = bool(start_leer)
         self.root = root
         self.root.title(APP_TITLE)
         self.root.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -4523,15 +4570,19 @@ class PS5ConverterGUI:
         # im zuletzt benutzten Ordner (last_source_dir, eigene Einstellung),
         # es ist also nur ein Klick mehr statt einer Navigation von vorn.
         #
-        # Das ZIEL bleibt stehen: Dorthin geht ueblicherweise wieder alles,
-        # und ein falsches Ziel faellt sofort auf - es entsteht nur eine
-        # Datei am falschen Ort, nichts wird verwechselt.
-        last_dst = self._load_paths()[1]
+        # Das ZIEL blieb bis 10.10.2026 stehen (dorthin geht ueblicherweise wieder alles). Seit 11.10.2026 starten im
+        # echten Programm auch ZIEL und TEMP-ORDNER leer (Nutzerwunsch: beim Oeffnen von Hand waehlen). Der Durchsuchen-
+        # Dialog beginnt weiter im zuletzt benutzten Ordner (``dst``), ein leerer TEMP-ORDNER heisst: System-Temp.
+        # Zuerst werden die gespeicherten Gegenstuecke geleert, damit Arbeitsfaeden - sie lesen die Einstellung, nicht
+        # die Tk-Variable - denselben Stand sehen wie die Oberflaeche.
+        if self._start_leer:
+            self._start_zustand_zuruecksetzen()
+        last_dst = "" if self._start_leer else self._load_paths()[1]
         self.current_mode = tk.StringVar(value="pack_folder")
         self.source_path = tk.StringVar(value="")
         self.dest_path = tk.StringVar(value=last_dst)
         self.target_format = tk.StringVar(value=self._t("format.ffpfsc"))
-        self.temp_path = tk.StringVar(value=self._load_runtime_temp_dir())
+        self.temp_path = tk.StringVar(value="" if self._start_leer else self._load_runtime_temp_dir())
         self._batch_sources: list[str] = []
         #: Die Groesse jedes Ordners der Sammelkonvertierung (Schluessel: normalisierter
         #: Pfad), im Hintergrund ermittelt - siehe _sammel_groessen_ermitteln. Dateien
@@ -7219,7 +7270,7 @@ class PS5ConverterGUI:
     #: Aufgaben ohne eigenes Ergebnis. Sie schreiben nichts Grosses und
     #: brauchen die Pruefung nicht.
     _PLATZ_OHNE_ZIEL: frozenset = frozenset({
-        "inspect", "ampr_manager", "dump_validator",
+        "inspect", "ampr_manager", "dump_validator", "pkg_fpkg",
     })
 
     def _quellgroesse_merken(self, src: str, groesse: int) -> None:
@@ -8960,12 +9011,11 @@ class PS5ConverterGUI:
         # Startlinie vom 04.10. sah schlechter aus).
         self.mode_buttons = []
         for text, mode in self._MODE_OPTIONS:
-            # Aufgabe 7 fuehrt nicht in den Hauptbereich, sondern oeffnet die
-            # Wahl zwischen den beiden AMPR-Methoden. Ueber
-            # _werkzeugfenster_umschalten, damit ein zweiter Druck sie wieder
-            # schliesst - wie bei jedem anderen Fensterknopf.
-            if mode == "ampr_manager":
-                befehl = self._show_ampr_auswahl
+            # Aufgabe 7 "PKG / FPKG" (Nutzerwunsch 12.10.2026) fuehrt ebenfalls nicht in den normalen
+            # Hauptbereich, sondern zeigt ihre eigene Seite - wie zuvor der AMPR EMU Manager, bis zu seiner
+            # Verlegung in die Ansicht KONSOLE (siehe _KONSOLE_SEITEN, Knopf "amprmgr").
+            if mode == "pkg_fpkg":
+                befehl = self._show_pkg_fpkg_seite
             else:
                 befehl = (lambda m=mode: self._set_mode_from_sidebar(m))
             btn = RoundedButton(
@@ -10147,7 +10197,7 @@ class PS5ConverterGUI:
                         widget.pack_forget()
                 for knopf, _schluessel in self._konsole_knoepfe:
                     knopf.pack(pady=3)
-                self._ampr_seite_verbergen()
+                self._pkg_fpkg_seite_verbergen()
                 self.content_scroll.grid_remove()
                 self.content_scrollbar.grid_remove()
                 self._hide_info_box()
@@ -10245,13 +10295,16 @@ class PS5ConverterGUI:
     def _konsole_knopf_hervorheben(self, seite: str) -> None:
         """Hebt den Knopf der gezeigten Seite hervor - die anderen Seitenknoepfe nicht.
 
-        Setzt ``activebackground``/``activeforeground`` immer mit, nicht nur
-        ``bg``/``fg``: ``RoundedButton._redraw`` zeichnet waehrend die Maus
-        auf dem Knopf steht mit ``activebackground`` statt ``bg``. Blieb das
-        unveraendert auf der Hervorhebungsfarbe aus dem Aufbau stehen, zeigte
-        ein per zweitem Druck abgewaehlter Umschalter (WebKit Autoloader,
-        Bibliothek) sich weiter hervorgehoben, solange die Maus - vom
-        Klick her - noch darauf stand.
+        ``RoundedButton._redraw`` zeichnet waehrend die Maus auf dem Knopf steht
+        mit ``activebackground`` statt ``bg``. Die nicht gewaehlten Knoepfe
+        leuchten beim Ueberfahren wie in der Ansicht UMWANDELN auf
+        (``activebackground`` = Akzentfarbe); bis zum 10.10.2026 stand es hier auf
+        der Grundfarbe, damit ein per zweitem Druck abgewaehlter Umschalter
+        (WebKit Autoloader, Bibliothek) nicht hervorgehoben blieb, solange die
+        Maus - vom Klick her - noch darauf stand - und der Nutzer sah in dieser
+        Ansicht gar kein Aufleuchten mehr. Jetzt wird stattdessen der Hover-Zustand
+        der nicht gewaehlten Knoepfe beim Seitenwechsel zurueckgesetzt: Nach dem
+        Abwaehlen leuchtet der Knopf erst wieder, wenn die Maus ihn neu betritt.
         """
         c = self._COLORS
         aktiv = ""
@@ -10267,9 +10320,10 @@ class PS5ConverterGUI:
                                  activeforeground=c["bg_main"],
                                  outline=c["border"])
                 else:
+                    knopf._hovering = False       # vor config, damit dessen Neuzeichnen schon stimmt
                     knopf.config(bg=c["seitenknopf_bg"], fg=c["fg_primary"],
-                                 activebackground=c["seitenknopf_bg"],
-                                 activeforeground=c["fg_primary"],
+                                 activebackground=c["fg_accent"],
+                                 activeforeground=c["bg_main"],
                                  outline=c["border"])
             except tk.TclError:
                 pass
@@ -10287,14 +10341,20 @@ class PS5ConverterGUI:
                 pass
         self._webseite_sichtbarkeit(False)
 
-    #: Spalten der Dienstetabelle: (Spalte, Textschluessel, Breite, dehnbar).
+    #: Spalten der Dienstetabelle: (Spalte, Textschluessel, Breite, dehnbar). Die erste ist der Favoriten-Stern
+    #: (seit 10.10.2026): ein Klick darauf waehlt den Dienst als Favorit - siehe :meth:`_konsole_favorit_umschalten`.
     _KONSOLE_TAFEL_SPALTEN: tuple[tuple[str, str, int, bool], ...] = (
+        ("fav", "dienste.col_fav", 46, False),
         ("dienst", "dienste.col_dienst", 190, False),
         ("port", "dienste.col_port", 70, False),
         ("zustand", "dienste.col_zustand", 90, False),
         ("version", "dienste.col_version", 150, False),
         ("zweck", "dienste.col_zweck", 320, True),
     )
+
+    #: Unter dieser Seitenhoehe (bei 100 % Skalierung, sonst mit der Anzeige gewachsen) zeigt "Konsole & Payloads"
+    #: die kompakte Fassung - siehe ``_kompakt_pruefen`` in :meth:`_konsole_tafel_bauen`.
+    _KONSOLE_TAFEL_NIEDRIG = 560
 
     class _Uebersetzbar(str):
         """Ein Textschluessel als Wert einer Meldung der Seite "Konsole & Payloads".
@@ -10368,6 +10428,15 @@ class PS5ConverterGUI:
         pruef_btn = self._seitenpille(kopf, "tafel.check",
                                       lambda: self._konsole_tafel_pruefen(), akzent=True)
         pruef_btn.pack(side="left")
+        # "Updates" (Nutzer 10.10.2026) steht rechts oben im Kopf der Seite, getrennt von den Knoepfen, die etwas auf
+        # der Konsole tun: Er betrifft die Werkzeuge des Programms, nicht die PS5 - und bleibt bedienbar, waehrend ein
+        # Dienst laeuft (deshalb nicht in ``knoepfe`` unten). In der Knopfreihe unter der Tabelle wurde es zu eng:
+        # Dort brauchen die vier Knoepfe 785 px und haben bei der Mindestbreite 1245 px nur 704 (Messung 10.10.2026).
+        updates_btn = self._seitenpille(kopf, "dienste.updates_button",
+                                        lambda: self._werkzeugfenster_umschalten("_updates_oeffnen"), klein=True)
+        updates_btn.pack(side="right")
+        self._konsole_tafel_updates_knopf = updates_btn
+        self._konsole_tafel_kopf = kopf
 
         zustand_var = tk.StringVar(value=self._t("tafel.unbekannt"))
         self._konsole_tafel_zustand = zustand_var
@@ -10392,6 +10461,35 @@ class PS5ConverterGUI:
 
         hinweis.bind("<Configure>", _hinweis_umbruch)
 
+        # Favoriten (Nutzer 10.10.2026, "im Konsole & Payload Bereich"): Welche Payloads das Programm von selbst
+        # schickt - beim Programmstart und auf "Favoriten senden". Gewaehlt wird mit dem Stern in der ersten
+        # Spalte der Tabelle; der ELF-Loader (Port 9021) wird dafuer bei Bedarf immer zuerst geoeffnet. Eine
+        # Fluss-Zeile: Reicht die Breite nicht (Mindestfenster, grosse Schrift), rutschen Haken und "Standard" in
+        # eine zweite Zeile - statt dass der Text auf drei, vier Zeilen schrumpft und der Tabelle den Platz nimmt
+        # (Messung 10.10.2026: bei 1245 px war die Zeile 106 px hoch, die Tabelle zeigte keine Zeile mehr).
+        fav_reihe = bibliothek_raster.FlussZeile(tafel, self._bibliothek_zeichner(), grund="bg_main",
+                                                 abstand=(8, 4))
+        fav_reihe.pack(fill="x", pady=(0, 8))
+        fav_text = tk.Label(fav_reihe, text="", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
+                            anchor="w", justify="left", wraplength=400)
+        fav_reihe.hinzufuegen(fav_text, flex=True, min_breite=160)
+        fav_text.bind("<Configure>", lambda e: fav_text.configure(wraplength=max(200, e.width - 8)))
+        # Wie es geht, steht im Hinweis zur Zeile - sie selbst bleibt kurz (eine Zeile statt vier).
+        self._tooltip(fav_text, "dienste.fav_hilfe", delay_ms=600, wraplength=460)
+        self._konsole_fav_auto = tk.BooleanVar(
+            master=tafel, value=bool(self._load_setting("konsole_favoriten_auto", True)))
+        fav_auto = self._runder_haken(fav_reihe, self._t("dienste.fav_auto"), self._konsole_fav_auto,
+                                      command=self._konsole_fav_auto_geaendert)
+        self._register_translatable(fav_auto, "dienste.fav_auto")
+        fav_reihe.hinzufuegen(fav_auto, rechts=True)
+        fav_standard = self._seitenpille(fav_reihe, "dienste.fav_standard",
+                                         lambda: self._konsole_favoriten_standard(), klein=True)
+        fav_reihe.hinzufuegen(fav_standard, rechts=True)
+        self._konsole_fav_reihe = fav_reihe
+        self._konsole_fav_text = fav_text
+        self._konsole_fav_standard_knopf = fav_standard
+        self._konsole_fav_auto_haken = fav_auto
+
         # Von unten nach oben: Statuszeile, Protokoll, Knoepfe - die Tabelle
         # nimmt den Rest und gibt als Erste nach, wenn der Platz knapp wird.
         status_var = tk.StringVar(value=self._t("tafel.status_idle"))
@@ -10413,16 +10511,20 @@ class PS5ConverterGUI:
         protokoll.pack(fill="both", expand=True)
         self._konsole_tafel_protokoll = protokoll
 
-        knopfreihe = tk.Frame(tafel, bg=c["bg_main"])
+        # Die Knoepfe unter der Tabelle stehen in einer Fluss-Zeile: Sie bricht um, wenn die Breite nicht reicht
+        # (Fenstergroesse, Skalierung, Sprache). Mit ``pack`` quetschte das Fenster die letzten, bis ihr Text
+        # abgeschnitten war - oder schob sie ganz aus dem Fenster (``QR-Code`` bei 1245 px, schon vor dem 10.10.2026).
+        knopfreihe = bibliothek_raster.FlussZeile(tafel, self._bibliothek_zeichner(), grund="bg_main",
+                                                  abstand=(4, 6))
         knopfreihe.pack(side="bottom", fill="x", pady=(10, 0))
         knoepfe = [pruef_btn]
         for schluessel, befehl in (
                 ("dienste.start_button", lambda: self._konsole_tafel_starten()),
-                ("dienste.base_button", lambda: self._konsole_tafel_grundausstattung()),
+                ("dienste.fav_button", lambda: self._konsole_tafel_favoriten()),
                 ("dienste.web_button", lambda: self._konsole_tafel_web()),
                 ("dienste.qr_button", lambda: self._konsole_tafel_qr())):
             knopf = self._seitenpille(knopfreihe, schluessel, befehl)
-            knopf.pack(side="left", padx=(0 if len(knoepfe) == 1 else 4, 0))
+            knopfreihe.hinzufuegen(knopf)
             knoepfe.append(knopf)
         self._konsole_tafel_start_knopf = knoepfe[1]
         self._konsole_tafel_knopfreihe = knopfreihe
@@ -10452,8 +10554,9 @@ class PS5ConverterGUI:
         tabelle = ttk.Treeview(rahmen, columns=[s[0] for s in self._KONSOLE_TAFEL_SPALTEN],
                                show="headings", height=11, selectmode="browse")
         for spalte, schluessel, breite, dehnen in self._KONSOLE_TAFEL_SPALTEN:
-            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
-            tabelle.column(spalte, width=breite, anchor="w", stretch=dehnen)
+            ausrichtung = "center" if spalte == "fav" else "w"
+            tabelle.heading(spalte, text=self._t(schluessel), anchor=ausrichtung)
+            tabelle.column(spalte, width=breite, anchor=ausrichtung, stretch=dehnen)
         leiste = ttk.Scrollbar(rahmen, orient="vertical", command=tabelle.yview,
                                style="Karte.Vertical.TScrollbar")
         tabelle.configure(yscrollcommand=leiste.set)
@@ -10463,7 +10566,37 @@ class PS5ConverterGUI:
         rahmen.grid_rowconfigure(0, weight=1)
         self._konsole_tafel_tabelle = tabelle
         tabelle.bind("<<TreeviewSelect>>", lambda _e: self._konsole_tafel_auswahl_pruefen(), add="+")
+        # Der Stern in der ersten Spalte (Klick) und die Leertaste waehlen den Favoriten.
+        tabelle.bind("<Button-1>", self._konsole_tafel_klick, add="+")
+        tabelle.bind("<space>", self._konsole_tafel_leertaste)
         self._konsole_tafel_fuellen(konsole_dienste.pruefen(""))
+        self._konsole_favoriten_anzeigen()
+
+        # Die Tabelle ist der Inhalt dieser Seite. Wird das Fenster niedrig, gibt die Seite zuerst her, was beim
+        # Arbeiten nicht fehlt: die Unterzeile, zwei Protokollzeilen (es rollt ohnehin) und ein Teil des Randes.
+        # Gemessen am 10.10.2026: Bei 1245x700 blieben der Tabelle sonst 38 px - kein Zeilenbild mehr -, bei
+        # 1366x768 sechs Zeilen.
+        self._konsole_tafel_kompakt = False
+
+        def _kompakt_pruefen(_ereignis=None) -> None:
+            try:
+                hoehe = tafel.winfo_height()
+            except tk.TclError:
+                return
+            if hoehe <= 1:
+                return
+            klein = hoehe < self._bibliothek_zeichner().px(self._KONSOLE_TAFEL_NIEDRIG)
+            if klein == self._konsole_tafel_kompakt:
+                return
+            self._konsole_tafel_kompakt = klein
+            if klein:
+                untertitel.pack_forget()
+            else:
+                untertitel.pack(fill="x", pady=(2, 12), after=titel)
+            protokoll.configure(height=3 if klein else 5)
+            tafel.configure(pady=6 if klein else 18)
+
+        tafel.bind("<Configure>", _kompakt_pruefen, add="+")
 
     def _konsole_tafel_plugin(self):
         """Der markierte Eintrag, wenn er ein Plugin ist (:attr:`Dienst.ist_plugin`), sonst ``None``."""
@@ -10589,8 +10722,11 @@ class PS5ConverterGUI:
         tabelle = getattr(self, "_konsole_tafel_tabelle", None)
         if tabelle is None or not tabelle.winfo_exists():
             return
+        # Gemerkt fuer _updates_geholt: Nach dem Holen neuer Dateien zeigt die Spalte "Version" die neue Datei.
+        self._konsole_tafel_letzte = uebersicht
         gewaehlt = tabelle.selection()
         tabelle.delete(*tabelle.get_children())
+        favoriten = self._konsole_favoriten()
         for stand in uebersicht:
             if stand.laeuft:
                 zustand = "dienste.zustand_laeuft"
@@ -10599,7 +10735,8 @@ class PS5ConverterGUI:
             else:
                 zustand = "dienste.zustand_aus"
             tabelle.insert("", "end", iid=stand.dienst.schluessel,
-                           values=(self._t(stand.dienst.name_schluessel),
+                           values=(self._konsole_favorit_zeichen(stand.dienst, favoriten),
+                                   self._t(stand.dienst.name_schluessel),
                                    stand.dienst.port,
                                    self._t(zustand),
                                    self._konsole_versionstext(stand),
@@ -10701,7 +10838,7 @@ class PS5ConverterGUI:
         self._save_setting("ps5_ip", ip)
         return ip
 
-    def _konsole_tafel_suchen(self, grundausstattung: bool = False) -> None:
+    def _konsole_tafel_suchen(self, favoriten: bool = False) -> None:
         """Die PS5 selbst finden und pruefen - Knopf 1, oder "Konsole pruefen" ohne Adresse.
 
         Wunsch des Nutzers vom 26.09.2026: "damit der Nutzer nicht extra noch
@@ -10711,9 +10848,13 @@ class PS5ConverterGUI:
         falls Port 9021 zu ist (:meth:`_konsole_elfldr_sicherstellen`).
 
         Args:
-            grundausstattung: Danach auch ftpsrv und klogsrv starten, soweit
-                sie fehlen - fuer das Verbinden beim Programmstart
-                (:meth:`_konsole_beim_start_verbinden`).
+            favoriten: Danach auch die Favoriten senden, soweit sie fehlen -
+                fuer das Verbinden beim Programmstart
+                (:meth:`_konsole_beim_start_verbinden`) und nur, wenn der
+                Nutzer das automatische Senden nicht abgeschaltet hat
+                (Einstellung ``konsole_favoriten_auto``). Bis zum 10.10.2026
+                waren das fest ftpsrv und klogsrv (die Grundausstattung, heute
+                die Standard-Favoriten).
         """
         if self._konsole_tafel_beschaeftigt():
             return
@@ -10743,8 +10884,8 @@ class PS5ConverterGUI:
                              geprueft=True)
                 stand["uebersicht"] = self._konsole_elfldr_sicherstellen(
                     host, uebersicht, texte)
-                if grundausstattung:
-                    stand["uebersicht"] = self._konsole_grundausstattung_nachstarten(
+                if favoriten and self._konsole_favoriten_automatisch():
+                    stand["uebersicht"] = self._konsole_favoriten_nachstarten(
                         host, stand["uebersicht"])
             except Exception as exc:  # noqa: BLE001
                 logger.exception("PS5-Suche gescheitert")
@@ -10836,13 +10977,22 @@ class PS5ConverterGUI:
 
         threading.Thread(target=_arbeit, daemon=True, name="konsole-payload").start()
 
-    def _konsole_tafel_grundausstattung(self) -> None:
-        """"Grundausstattung starten": was davon nicht laeuft, der Reihe nach starten."""
+    def _konsole_tafel_favoriten(self) -> None:
+        """"Favoriten senden": zuerst Port 9021 sicherstellen, dann die Favoriten, die nicht laufen, der Reihe nach.
+
+        Seit dem 10.10.2026 statt "Grundausstattung starten" (das waren fest elfldr, ftpsrv und klogsrv - heute die
+        Standard-Favoriten). Der ELF-Loader gehoert zu jedem Senden und wird bei Bedarf immer zuerst geoeffnet
+        (:meth:`_konsole_elfldr_sicherstellen`, ueber den Payload Manager); laeuft er schon, steht das im Protokoll.
+        Ein Favorit, der laeuft, wird uebersprungen, ein haengender (``stumm``) nicht noch einmal geschickt
+        (:meth:`_konsole_favoriten_nachstarten`).
+        """
         if self._konsole_tafel_beschaeftigt():
             return
         ip = self._konsole_tafel_adresse()
         if not ip:
             return
+        texte = self._modul_texte(payload_versand.MELDUNGEN, "payloadmod.")
+        favoriten = self._konsole_favoriten()
         stand = self._konsole_tafel_beginnen("dienste.status_starting")
         if stand is None:
             return
@@ -10850,26 +11000,125 @@ class PS5ConverterGUI:
         def _arbeit() -> None:
             try:
                 uebersicht = konsole_dienste.pruefen(ip)
-                for schluessel in konsole_dienste.GRUNDAUSSTATTUNG:
-                    eintrag = konsole_dienste.dienst(schluessel)
-                    if eintrag is None:
-                        continue
-                    if uebersicht.laeuft(schluessel):
-                        self._konsole_tafel_melden(
-                            "dienste.log_laeuft_schon",
-                            name=self._Uebersetzbar(eintrag.name_schluessel))
-                        continue
-                    self._konsole_dienst_starten(schluessel, ip)
-                stand.update(uebersicht=konsole_dienste.pruefen(ip), geprueft=True)
+                if uebersicht.laeuft("elfldr9021"):
+                    self._konsole_tafel_melden(
+                        "dienste.log_laeuft_schon",
+                        name=self._Uebersetzbar(konsole_dienste.dienst("elfldr9021").name_schluessel))
+                else:
+                    uebersicht = self._konsole_elfldr_sicherstellen(ip, uebersicht, texte)
+                if not favoriten:
+                    self._konsole_tafel_melden("dienste.log_keine_favoriten")
+                elif not uebersicht.laeuft("elfldr9021"):
+                    self._konsole_tafel_melden("dienste.log_fav_ohne_loader")
+                else:
+                    uebersicht = self._konsole_favoriten_nachstarten(
+                        ip, uebersicht, favoriten=favoriten, laeuft_melden=True)
+                stand.update(uebersicht=uebersicht, geprueft=True)
             except Exception as exc:  # noqa: BLE001
-                logger.exception("Grundausstattung gescheitert")
+                logger.exception("Favoriten gescheitert")
                 self._konsole_tafel_melden("log.fehler_zeile", text=str(exc))
                 stand["hinweis"] = "dienste.status_failed"
             finally:
                 self._konsole_tafel_laeuft["aktiv"] = False
 
-        threading.Thread(target=_arbeit, daemon=True,
-                         name="konsole-grundausstattung").start()
+        threading.Thread(target=_arbeit, daemon=True, name="konsole-favoriten").start()
+
+    # -- Favoriten (seit 10.10.2026) ------------------------------------------------
+
+    #: Die Zeichen der Sternspalte: Favorit, moeglicher Favorit.
+    _FAV_AN = "★"
+    _FAV_AUS = "☆"
+
+    def _konsole_favoriten(self) -> list[str]:
+        """Die gewaehlten Favoriten in der Reihenfolge der Tabelle.
+
+        Aus der Einstellung ``konsole_favoriten``; wo der Nutzer nie gewaehlt hat, gilt der Standard (die bisherige
+        Grundausstattung ohne den Loader: ftpsrv und klogsrv, :data:`konsole_dienste.FAVORITEN_STANDARD`).
+        """
+        return konsole_dienste.favoriten_lesen(self._load_setting("konsole_favoriten", None))
+
+    def _konsole_favoriten_automatisch(self) -> bool:
+        """Sollen die Favoriten beim Programmstart von selbst gesendet werden? Vorgabe ja - wie die Grundausstattung."""
+        return bool(self._load_setting("konsole_favoriten_auto", True))
+
+    def _konsole_favorit_zeichen(self, eintrag, favoriten) -> str:
+        """Der Inhalt der Sternspalte: ein Stern, ein leerer Stern - oder nichts, wo kein Favorit moeglich ist."""
+        if not konsole_dienste.favorit_moeglich(eintrag):
+            return ""
+        return self._FAV_AN if eintrag.schluessel in favoriten else self._FAV_AUS
+
+    def _konsole_favoriten_setzen(self, liste) -> None:
+        """Speichert die Favoriten (in Tabellenreihenfolge, nur Zulaessiges) und zeigt sie an."""
+        gewaehlt = konsole_dienste.favoriten_lesen(list(liste))
+        self._save_setting("konsole_favoriten", gewaehlt)
+        tabelle = getattr(self, "_konsole_tafel_tabelle", None)
+        if tabelle is not None:
+            try:
+                for schluessel in tabelle.get_children():
+                    tabelle.set(schluessel, "fav", self._konsole_favorit_zeichen(
+                        konsole_dienste.dienst(schluessel), gewaehlt))
+            except tk.TclError as exc:
+                logger.debug("Sterne nicht auffrischbar: %s", exc)
+        self._konsole_favoriten_anzeigen()
+
+    def _konsole_favoriten_anzeigen(self) -> None:
+        """Die Zeile ueber der Tabelle: wer Favorit ist - in der aktuellen Sprache."""
+        text = getattr(self, "_konsole_fav_text", None)
+        if text is None:
+            return
+        namen = [self._t(konsole_dienste.dienst(s).name_schluessel) for s in self._konsole_favoriten()]
+        try:
+            text.configure(text=self._t("dienste.fav_zeile",
+                                        liste=", ".join(namen) if namen else self._t("dienste.fav_keine")))
+        except tk.TclError as exc:
+            logger.debug("Favoritenzeile nicht setzbar: %s", exc)
+
+    def _konsole_favorit_umschalten(self, schluessel: str) -> None:
+        """Wechselt einen Dienst zwischen Favorit und Nicht-Favorit. Wo das nicht geht, sagt das Protokoll warum."""
+        eintrag = konsole_dienste.dienst(schluessel)
+        if eintrag is None:
+            return
+        if not konsole_dienste.favorit_moeglich(eintrag):
+            self._konsole_tafel_melden(
+                "dienste.log_fav_loader" if eintrag.gruppe == "elfldr" else "dienste.log_fav_nicht",
+                name=self._Uebersetzbar(eintrag.name_schluessel))
+            self._konsole_tafel_protokoll_nachtragen()
+            return
+        favoriten = self._konsole_favoriten()
+        if schluessel in favoriten:
+            favoriten.remove(schluessel)
+        else:
+            favoriten.append(schluessel)
+        self._konsole_favoriten_setzen(favoriten)
+
+    def _konsole_favoriten_standard(self) -> None:
+        """"Standard": die Favoriten zuruecksetzen (ftpsrv und klogsrv, die bisherige Grundausstattung)."""
+        self._konsole_favoriten_setzen(konsole_dienste.FAVORITEN_STANDARD)
+
+    def _konsole_fav_auto_geaendert(self) -> None:
+        """Der Haken "Beim Programmstart automatisch senden" wurde bedient."""
+        self._save_setting("konsole_favoriten_auto", bool(self._konsole_fav_auto.get()))
+
+    def _konsole_tafel_klick(self, ereignis) -> None:
+        """Ein Klick in die Sternspalte waehlt den Dienst der Zeile als Favorit - jede andere Spalte nur die Zeile."""
+        tabelle = self._konsole_tafel_tabelle
+        try:
+            if tabelle.identify_region(ereignis.x, ereignis.y) != "cell":
+                return
+            if tabelle.identify_column(ereignis.x) != "#1":
+                return
+            zeile = tabelle.identify_row(ereignis.y)
+        except tk.TclError:
+            return
+        if zeile:
+            self._konsole_favorit_umschalten(zeile)
+
+    def _konsole_tafel_leertaste(self, _ereignis=None) -> str:
+        """Die Leertaste waehlt den markierten Dienst als Favorit."""
+        auswahl = self._konsole_tafel_tabelle.selection()
+        if auswahl:
+            self._konsole_favorit_umschalten(auswahl[0])
+        return "break"
 
     def _konsole_tafel_web(self) -> None:
         """"Weboberflaeche oeffnen": die des markierten Dienstes - rechts im Programm
@@ -10986,7 +11235,9 @@ class PS5ConverterGUI:
         if tabelle is None or not tabelle.winfo_exists():
             return
         for spalte, schluessel, _breite, _dehnen in self._KONSOLE_TAFEL_SPALTEN:
-            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
+            tabelle.heading(spalte, text=self._t(schluessel),
+                            anchor="center" if spalte == "fav" else "w")
+        self._konsole_favoriten_anzeigen()
         stand = getattr(self, "_konsole_tafel_stand", None) or {}
         uebersicht = stand.get("uebersicht")
         self._konsole_tafel_fuellen(uebersicht if uebersicht is not None
@@ -11435,11 +11686,14 @@ class PS5ConverterGUI:
     #: 26.09.2026 auch "Konsole & Payloads" und "Spielstaende" (Remote Play
     #: stand am 25.09. abends kurz ebenfalls hier und ging dann ganz heraus).
     #: Seit dem 04.10.2026 steht an der Stelle der Spielstaende der WebKit
-    #: Autoloader.
+    #: Autoloader. Seit dem 12.10.2026 steht hier auch "amprmgr" - die Seite, die
+    #: bis dahin Aufgabe 7 der Seitenleiste UMWANDELN war (Nutzerwunsch: sie soll
+    #: in KONSOLE rechts erscheinen, nicht die Ansicht wechseln).
     _KONSOLE_SEITEN: dict[str, str] = {
         "dienste": "_konsole_dienste_zeigen",
         "webkit": "_konsole_webkit_zeigen",
         "bibliothek": "_konsole_bibliothek_umschalten",
+        "amprmgr": "_konsole_amprmgr_zeigen",
     }
 
     #: Die Seiten rechts in der Ansicht KONSOLE: je Seite das Attribut, unter
@@ -11451,6 +11705,9 @@ class PS5ConverterGUI:
         "webkit": ("_webkit_seite", "_webkit_seite_bauen", "konsole.btn_webkit"),
         "bibliothek": ("_bibliothek_seite", "_bibliothek_seite_bauen",
                        "konsole.btn_bibliothek"),
+        # Seit dem 12.10.2026: die Seite des AMPR EMU Manager (bis dahin Aufgabe 7
+        # der Seitenleiste UMWANDELN, siehe ps5_validator/ui/ampr_seite.py).
+        "amprmgr": ("_konsole_amprmgr", "_konsole_amprmgr_bauen", "konsole.btn_amprmgr"),
         # Eine Weboberflaeche der Konsole (seit 26.09.2026) - ohne eigenen
         # Knopf: Sie kommt von einer der drei Seiten und fuehrt dorthin
         # zurueck; hervorgehoben bleibt deren Knopf (_webseite_herkunft).
@@ -11511,20 +11768,70 @@ class PS5ConverterGUI:
                             parent=self.root)
 
     def _konsole_payload_datei(self, muster: str) -> str:
-        """Die neueste mitgelieferte ELF-Datei zu einem Muster (aus helloworld).
+        """Die neueste ELF-Datei zu einem Muster: die mitgelieferte aus helloworld oder eine geholte.
 
-        Sortiert wird ueber die Zahlen im Namen (``_webkit_versionsschluessel``),
+        Sortiert wird ueber die Fassung im Namen (``werkzeug_updates.datei_schluessel``),
         damit ``v1.16`` hinter ``v1.6`` steht und nicht davor - der uebliche
-        Fehler bei reiner Textsortierung.
+        Fehler bei reiner Textsortierung. Seit dem Knopf "Updates" liegen
+        neben den mitgelieferten auch geholte Dateien im Einstellungsordner
+        (``Werkzeug-Updates/helloworld``); es gewinnt die hoechste Fassung,
+        bei gleichem Namen die mitgelieferte. **Ausnahme** elfldr, ftpsrv und
+        klogsrv (``werkzeug_updates.ist_fest``): Hier bleibt das Programm bei
+        der mitgelieferten, geprueften Datei - wie in seinen festen Ablaeufen
+        (elfldr nachladen, FTP-Angebot, KLOG-Fenster) -, damit Tabelle, Start
+        und diese Ablaeufe nie auseinanderlaufen.
         """
         if not muster:
             return ""
+        return werkzeug_updates.beste_datei(
+            muster, self._payload_ordner(mit_geholten=not werkzeug_updates.ist_fest(muster)))
+
+    def _payload_ordner(self, mit_geholten: bool = True) -> list[str]:
+        """Wo Payloads liegen koennen: der mitgelieferte Ordner helloworld, dann der der geholten Dateien."""
         ordner = self._mitgeliefert_finden("helloworld")
-        if not ordner or not os.path.isdir(ordner):
-            return ""
-        treffer = sorted(Path(ordner).glob(muster),
-                         key=lambda p: self._webkit_versionsschluessel(p.name))
-        return str(treffer[-1]) if treffer else ""
+        erg = [ordner] if ordner and os.path.isdir(ordner) else []
+        if mit_geholten:
+            erg.append(self._updates_payload_ordner())
+        return erg
+
+    def _updates_payload_ordner(self) -> str:
+        """Der Ordner der ueber "Updates" geholten Payloads (``Werkzeug-Updates/helloworld``); legt nichts an."""
+        return os.path.join(werkzeug_updates.update_ordner(self._updates_basis()), werkzeug_updates.ORT_PAYLOADS)
+
+    def _updates_basis(self) -> str:
+        """Der Einstellungsordner, unter dem ``Werkzeug-Updates`` liegt (folgt ``PS5CONV_KONFIGORDNER``)."""
+        return _system_konfigurationsordner()
+
+    def _updates_ampr_vorhanden(self) -> list:
+        """Die AMPR-Fassungen im Bestand als Paare (Fassung, Variante) - wie ``_ampr_updates_arbeiten`` sie braucht."""
+        try:
+            return [(e["version"], self._ampr_variantenklasse(e["variant"]))
+                    for e in self._ampr_alle_fassungen() if e.get("lib") == self._AMPR_SPRX_NAME]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("AMPR-Bestand nicht lesbar: %s", exc)
+            return []
+
+    def _updates_ampr_ordner(self) -> str:
+        """Der Ordner "AMPR EMU updates" neben dem Programm."""
+        return self._ampr_updates_ordner()
+
+    def _updates_oeffnen(self) -> None:
+        """Oeffnet das Fenster „Updates“ (prueft sofort) - oder holt das offene nach vorn."""
+        updates_fenster.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
+
+    def _updates_geholt(self) -> None:
+        """Nach dem Holen neuer Dateien: die Dienstetabelle der Konsolenseite neu fuellen (Spalte "Version").
+
+        Nur Hauptfaden (das Fenster ruft es aus seinem Takt). Die letzte Uebersicht bleibt, wie sie war -
+        es wird nichts neu gemessen, nur die Version der Datei neu gelesen.
+        """
+        letzte = getattr(self, "_konsole_tafel_letzte", None)
+        if letzte is None:
+            return
+        try:
+            self._konsole_tafel_fuellen(letzte)
+        except tk.TclError as exc:
+            logger.debug("Dienstetabelle nach dem Holen nicht auffrischbar: %s", exc)
 
     def _konsole_ps5_finden(self, fenster, vorgabe: str, melden):
         """Findet die PS5 fuer "Konsole & Payloads" - ohne FTP vorauszusetzen.
@@ -11867,24 +12174,41 @@ class PS5ConverterGUI:
 
         threading.Thread(target=_arbeit, daemon=True, name="konsole-" + kennung).start()
 
-    def _konsole_grundausstattung_nachstarten(self, ip: str, uebersicht):
-        """Startet, was von der Grundausstattung fehlt - nur ueber den ELF-Loader.
+    def _konsole_favoriten_nachstarten(self, ip: str, uebersicht, favoriten=None, laeuft_melden: bool = False):
+        """Sendet, was von den Favoriten fehlt - nur ueber den ELF-Loader.
 
         Fuer das Verbinden beim Programmstart ("FTP, 9021 usw., wenn
-        moeglich"). Laeuft der ELF-Loader nicht, wird nichts versucht - dann
-        ist schon :meth:`_konsole_elfldr_sicherstellen` gescheitert oder kein
-        Payload Manager da, und das Protokoll sagt es. Ein **haengender**
-        Dienst wird nicht noch einmal geschickt: Das hilft laut Messung vom
-        17.08.2026 nicht, nur ein Neustart der Konsole (``dienste.log_stumm``).
+        moeglich") und fuer "Favoriten senden". Laeuft der ELF-Loader nicht,
+        wird nichts versucht - dann ist schon
+        :meth:`_konsole_elfldr_sicherstellen` gescheitert oder kein Payload
+        Manager da, und das Protokoll sagt es. Ein **haengender** Dienst wird
+        nicht noch einmal geschickt: Das hilft laut Messung vom 17.08.2026
+        nicht, nur ein Neustart der Konsole (``dienste.log_stumm``). Die
+        Reihenfolge ist die der Tabelle.
         Laeuft im Arbeitsfaden; gibt die Uebersicht danach zurueck.
+
+        Args:
+            favoriten: Die zu sendenden Dienste; ohne Angabe die gewaehlten
+                (:meth:`_konsole_favoriten`).
+            laeuft_melden: Fuer jeden Favoriten, der schon laeuft, eine Zeile
+                ins Protokoll ("Favoriten senden"); beim stillen Verbinden
+                zum Programmstart nicht.
         """
         if not uebersicht.laeuft("elfldr9021"):
             return uebersicht
+        if favoriten is None:
+            favoriten = self._konsole_favoriten()
         staende = {s.dienst.schluessel: s for s in uebersicht}
         gestartet = False
-        for schluessel in konsole_dienste.GRUNDAUSSTATTUNG:
+        for schluessel in favoriten:
             stand = staende.get(schluessel)
-            if stand is None or stand.laeuft or stand.stumm:
+            if stand is None or stand.stumm:
+                continue
+            if stand.laeuft:
+                if laeuft_melden:
+                    self._konsole_tafel_melden(
+                        "dienste.log_laeuft_schon",
+                        name=self._Uebersetzbar(stand.dienst.name_schluessel))
                 continue
             self._konsole_dienst_starten(schluessel, ip)
             gestartet = True
@@ -11903,8 +12227,9 @@ class PS5ConverterGUI:
         moeglich). Somit muss der Nutzer nicht manuell seine PS5 IP eingeben."
         Dieselbe Suche wie Knopf 1 - die Seite "Konsole & Payloads" wird dafuer
         gebaut, auch wenn gerade die Ansicht UMWANDELN offen ist -, danach die
-        Grundausstattung (ftpsrv, klogsrv), soweit sie fehlt. Anfang und
-        Ergebnis stehen zusaetzlich im Hauptprotokoll.
+        Favoriten (Vorgabe ftpsrv und klogsrv), soweit sie fehlen und das
+        automatische Senden nicht abgeschaltet ist. Anfang und Ergebnis
+        stehen zusaetzlich im Hauptprotokoll.
 
         Aufgerufen nur vom normalen Programmstart (vor ``mainloop``), nie aus
         dem Konstruktor: Tests, Diagnose und Kommandozeile bauen das Programm
@@ -11916,7 +12241,7 @@ class PS5ConverterGUI:
             return
         self._append_to_log(self._t("konsole.start_suche") + "\n")
         self._konsole_start_melden = True
-        self._konsole_tafel_suchen(grundausstattung=True)
+        self._konsole_tafel_suchen(favoriten=True)
 
     # ------------------------------------------------------------------
     # KONSOLE: Bausteine der Seiten rechts (Adresszeile, Hinweisabsatz) und die
@@ -12106,24 +12431,40 @@ class PS5ConverterGUI:
         info.bind("<Configure>",
                   lambda e: info.configure(wraplength=max(100, e.width - 8)))
 
-        # Die drei Wege. Host und Skript nebeneinander (zwei Pillen passen auch
-        # bei Mindestbreite in eine Zeile), der Installer darunter im Akzentstil.
-        host_reihe = tk.Frame(seite, bg=c["bg_main"])
-        host_reihe.pack(fill="x", pady=(14, 0))
-        installer_reihe = tk.Frame(seite, bg=c["bg_main"])
-        installer_reihe.pack(fill="x", pady=(8, 0))
-        knoepfe = []
-        for eltern, schluessel, befehl, akzent in (
-                (host_reihe, "webkit.host_exe",
+        # Die drei Wege in einer Reihe, rechtsbuendig (Entwurf des Nutzers vom 10.10.2026): links der Installer
+        # (Konsole mit Jailbreak, ELF), daneben die beiden Host-Wege (ohne Jailbreak). Ueber jedem Knopf sitzt sein
+        # Symbol; es folgt dem Sprachwechsel (_webkit_symbole_setzen). Die Reihe bricht um, wenn die Breite nicht reicht.
+        wege = bibliothek_raster.FlussZeile(seite, self._bibliothek_zeichner(), grund="bg_main", abstand=(8, 8))
+        wege.pack(fill="x", pady=(10, 0))
+        self._webkit_wege = wege
+        self._webkit_symbolschilder: dict[str, tk.Label] = {}
+        self._webkit_spalten: list[tk.Frame] = []
+        self._webkit_symbole_sichtbar = False        # erst zeigen, wenn Breite und Hoehe es erlauben
+        knoepfe: dict[str, object] = {}
+        for art, schluessel, befehl, akzent in (
+                ("installer", "webkit.installer",
+                 lambda: self._webkit_installer_von_seite(), True),
+                ("host_exe", "webkit.host_exe",
                  lambda: self._webkit_host_starten("exe", fassung=self._webkit_gewaehlt()), False),
-                (host_reihe, "webkit.host_py",
-                 lambda: self._webkit_host_starten("py", fassung=self._webkit_gewaehlt()), False),
-                (installer_reihe, "webkit.installer",
-                 lambda: self._webkit_installer_von_seite(), True)):
-            knopf = self._seitenpille(eltern, schluessel, befehl, akzent=akzent)
-            knopf.pack(side="left", padx=(8 if eltern is host_reihe and knoepfe else 0, 0))
-            knoepfe.append(knopf)
-        self._webkit_knoepfe = tuple(knoepfe)
+                ("host_py", "webkit.host_py",
+                 lambda: self._webkit_host_starten("py", fassung=self._webkit_gewaehlt()), False)):
+            spalte = tk.Frame(wege, bg=c["bg_main"])
+            schild = tk.Label(spalte, bg=c["bg_main"], bd=0)      # nicht "_bild": das ist das Bild von itsPLK im Kopf
+            self._webkit_symbolschilder[art] = schild
+            knopf = self._seitenpille(spalte, schluessel, befehl, akzent=akzent)
+            knopf.pack()
+            knoepfe[art] = knopf
+            self._webkit_spalten.append(spalte)
+            wege.hinzufuegen(spalte, rechts=True)
+            if art == "installer":
+                # Der Installer ist ein einmaliger Schritt, die Hosts startet man jedes Mal: etwas mehr Luft dazwischen.
+                self._webkit_luft = tk.Frame(wege, width=knopfmass(56), height=1, bg=c["bg_main"])
+                wege.hinzufuegen(self._webkit_luft, rechts=True)
+        self._webkit_wegknoepfe = knoepfe
+        self._webkit_knoepfe = (knoepfe["host_exe"], knoepfe["host_py"], knoepfe["installer"])
+        self._webkit_symbole_setzen()
+        wege.bind("<Configure>", self._webkit_symbole_anpassen, add="+")
+        seite.bind("<Configure>", self._webkit_symbole_anpassen, add="+")
 
         protokoll_karte = self._runde_seitenkarte(seite, "console_bg", polster=(6, 6))
         protokoll_karte.pack(fill="both", expand=True, pady=(14, 8))
@@ -12207,6 +12548,7 @@ class PS5ConverterGUI:
     def _webkit_seite_beschriften(self) -> None:
         """Texte der Seite, die nicht ueber ``_register_translatable`` laufen - beim Sprachwechsel."""
         self._webkit_fassungen_anzeigen()
+        self._webkit_symbole_setzen()
         var = getattr(self, "_webkit_status_var", None)
         if var is not None and getattr(self, "_webkit_status_ruhe", True):
             var.set(self._t("webkit.status_idle"))
@@ -12258,14 +12600,13 @@ class PS5ConverterGUI:
 
     def _set_mode_from_sidebar(self, mode: str) -> None:
         """Aktualisiert das UI basierend auf dem in der Sidebar gewählten Modus."""
-        # Aufgabe 7 ist die einzige Aufgabe der Seitenleiste, die ein Fenster
-        # öffnet (die Wahl zwischen den beiden ShadowMount+-Fassungen). Wer
-        # danach eine andere Aufgabe anklickt, will es nicht mehr sehen – bis
-        # v1.9.6 blieb es offen stehen und musste von Hand geschlossen
-        # werden. Die übrigen Aufgabenknöpfe stellen nur den Hauptbereich um
-        # und lassen deshalb nichts zurück.
-        if mode != "ampr_manager":
-            self._ampr_seite_verbergen()
+        # Aufgabe 8 "PKG / FPKG" zeigt keinen umgestellten Hauptbereich, sondern
+        # eine eigene Seite. Wer danach eine andere Aufgabe anklickt, will sie
+        # nicht mehr sehen. Aufgabe 7 (AMPR EMU Manager) ist seit dem 12.10.2026
+        # keine Aufgabe der Seitenleiste mehr, sondern Knopf "9." der Ansicht
+        # KONSOLE - sie hat hier nichts mehr zu verbergen.
+        if mode != "pkg_fpkg":
+            self._pkg_fpkg_seite_verbergen()
         self.current_mode.set(mode)
         full_text = self._t(f"mode.{mode}")
         if hasattr(self, "header_label"):
@@ -16482,10 +16823,18 @@ class PS5ConverterGUI:
         stil = info["stil"]
         schrift_an = style.lookup(stil, "foreground", ["readonly"]) or c["fg_primary"]
         schrift_aus = style.lookup(stil, "foreground", ["disabled"]) or c["fg_secondary"]
+        # Seit 11.10.2026 nur neu zeichnen, wenn sich etwas geaendert hat: Jede Umschaltung der Ansicht oder der Aufgabe
+        # ruft das fuer alle zehn Felder (gemessen 0,13 s je Umschaltung), obwohl Groesse, Ausschnitt dahinter, Farben und
+        # Schrift fast immer dieselben sind. Der Ausschnitt geht als kurze Pruefsumme ein.
+        stand = (breite, hoehe, faktor, bool(info["pfeil"]), str(schrift_an), str(schrift_aus), tuple(c.items()),
+                 hashlib.blake2b(grund.tobytes(), digest_size=8).digest())
+        if info.get("gezeichnet") == stand:
+            return
         normal = bibliothek_zeichnen.knopf_farben(c, "auswahl", "normal")
         hover = bibliothek_zeichnen.knopf_farben(c, "auswahl", "hover")
         # Gesperrt behaelt die Flaeche, nur Schrift und Pfeil werden gedaempft -
         # so sah es im gewaehlten Beispielbild aus.
+        gelungen = True
         for zustand, farben, schrift in (("normal", normal, schrift_an),
                                          ("hover", hover, schrift_an),
                                          ("aus", normal, schrift_aus)):
@@ -16505,11 +16854,13 @@ class PS5ConverterGUI:
                 foto.configure(width=breite, height=hoehe)
                 foto.configure(data=self._png64(bild.convert("RGB")))
             except tk.TclError as exc:
+                gelungen = False                  # beim naechsten Mal noch einmal versuchen
                 logger.debug("Pillenfeld-Bild nicht setzbar: %s", exc)
         # Die Markierung einer schreibgeschuetzten Klappliste im Fokus faerbt
         # sonst ein Rechteck in bg_card hinter den Text.
         style.map(stil, selectbackground=[("readonly", normal["fuellung"])],
                   selectforeground=[("readonly", schrift_an)])
+        info["gezeichnet"] = stand if gelungen else None
 
     def _farbe_als_hex(self, farbe: str) -> str:
         """Eine beliebige Tk-Farbe als #rrggbb."""
@@ -17883,10 +18234,31 @@ class PS5ConverterGUI:
     def _browse_dest(self) -> None:
         """Öffnet einen Verzeichnis-Dialog für den Zielpfad."""
         current = self.dest_path.get()
-        initial_dir = current if os.path.isdir(current) else os.getcwd()
+        # Das Feld startet leer; der Dialog beginnt dann im zuletzt benutzten Zielordner (Einstellung ``dst``), nicht im
+        # Arbeitsverzeichnis des Programms.
+        gemerkt = self._load_paths()[1]
+        initial_dir = (current if os.path.isdir(current)
+                       else gemerkt if gemerkt and os.path.isdir(gemerkt) else os.getcwd())
         path = filedialog.askdirectory(initialdir=initial_dir)
         if path:
             self.dest_path.set(os.path.normpath(path))
+
+    def _start_zustand_zuruecksetzen(self) -> None:
+        """Beim echten Programmstart: gespeicherte Wahl des Bereichs UMWANDELN auf "nichts gewaehlt".
+
+        AMPR EMU, PlayGo und BACKPORT aus, AMPR EMU auf die Methode Normal (ohne Pack) und ohne gemerkte Fassung - dann
+        steht die neueste Fassung ohne Pack in der Liste -, der Temp-Ordner leer (leer heisst: System-Temp). Nur wo
+        etwas abweicht, wird geschrieben: Jeder Schreibzugriff kostet ein ``fsync``. Die Firmware fuer BACKPORT bleibt
+        gemerkt - sie ist keine Aktivierung.
+        """
+        for schluessel, wert in (("temp_dir", ""), ("integrate_ampr", False), ("integrate_playgo", False),
+                                 ("integrate_backport", False), ("integrate_ampr_version", ""),
+                                 ("integrate_ampr_methode", AMPR_METHODE_NORMAL)):
+            try:
+                if self._load_setting(schluessel, None) != wert:
+                    self._save_setting(schluessel, wert)
+            except Exception as exc:  # noqa: BLE001 - ein Startzustand darf den Start nie verhindern
+                logger.debug("Startzustand: %s nicht zuruecksetzbar: %s", schluessel, exc)
 
     def _load_runtime_temp_dir(self) -> str:
         """Lädt den benutzerkonfigurierten Temp-Ordner mit Fallback auf System-Temp."""
@@ -17943,6 +18315,10 @@ class PS5ConverterGUI:
                 candidate = ""
         if not candidate:
             candidate = str(self._load_setting("temp_dir", "")).strip()
+        # Ein leeres Feld (Programmstart seit 11.10.2026) heisst: System-Temp. Der Ordner wird dann benutzt, aber
+        # NICHT in das Feld oder die Einstellung geschrieben - sonst fuellte der erste Aufruf (Telemetrie, Vorabpruefung)
+        # das Feld, das der Nutzer leer sehen wollte, und Arbeitsfaeden saehen einen Ordner, den die Oberflaeche nie nannte.
+        vom_nutzer = bool(candidate)
         if not candidate:
             candidate = tempfile.gettempdir()
 
@@ -17959,13 +18335,14 @@ class PS5ConverterGUI:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write("ok")
             norm = os.path.normpath(candidate)
-            if hasattr(self, "temp_path") and \
-                    threading.current_thread() is threading.main_thread():
-                self.temp_path.set(norm)
-            # Nur schreiben, wenn sich wirklich etwas geaendert hat. Dieselbe
-            # Zeichenkette erneut abzulegen kostet ein fsync und bringt nichts.
-            if str(self._load_setting("temp_dir", "")).strip() != norm:
-                self._save_setting("temp_dir", norm)
+            if vom_nutzer:
+                if hasattr(self, "temp_path") and \
+                        threading.current_thread() is threading.main_thread():
+                    self.temp_path.set(norm)
+                # Nur schreiben, wenn sich wirklich etwas geaendert hat. Dieselbe
+                # Zeichenkette erneut abzulegen kostet ein fsync und bringt nichts.
+                if str(self._load_setting("temp_dir", "")).strip() != norm:
+                    self._save_setting("temp_dir", norm)
             self._temp_pruefung = (candidate, norm, jetzt)
             return norm
         except Exception as exc:
@@ -17975,11 +18352,13 @@ class PS5ConverterGUI:
                 logger.warning("Temp-Ordner nicht nutzbar (%s), nutze System-Temp.", exc)
                 self._temp_warn_last_ts = _now
             fallback = os.path.normpath(tempfile.gettempdir())
-            if hasattr(self, "temp_path") and \
-                    threading.current_thread() is threading.main_thread():
-                self.temp_path.set(fallback)
-            if str(self._load_setting("temp_dir", "")).strip() != fallback:
-                self._save_setting("temp_dir", fallback)
+            if vom_nutzer:
+                # Ein gewaehlter Ordner, der nicht taugt, wird im Feld durch den Ersatz ersetzt - so sieht man, was gilt.
+                if hasattr(self, "temp_path") and \
+                        threading.current_thread() is threading.main_thread():
+                    self.temp_path.set(fallback)
+                if str(self._load_setting("temp_dir", "")).strip() != fallback:
+                    self._save_setting("temp_dir", fallback)
             self._temp_pruefung = (candidate, fallback, jetzt)
             return fallback
         finally:
@@ -18509,6 +18888,7 @@ class PS5ConverterGUI:
                 vm = psutil.virtual_memory()
                 t["ram_used"] = vm.total - vm.available
                 t["ram_total"] = vm.total
+                t["ram_free"] = vm.available
             except Exception:
                 pass
         tmp = str(self._load_setting("temp_dir", "") or "").strip() or self._get_runtime_temp_dir()
@@ -18541,7 +18921,14 @@ class PS5ConverterGUI:
         if "cpu_percent" in t:
             parts.append(f"CPU: {t['cpu_percent']:.0f}%")
         if "ram_used" in t and "ram_total" in t:
-            parts.append(f"RAM: {self._fmt_bytes(t['ram_used'])} / {self._fmt_bytes(t['ram_total'])}")
+            # Seit 11.10.2026 steht der FREIE Arbeitsspeicher vorn (Wunsch des Nutzers: Live-Anzeige waehrend des Laufs);
+            # belegt/gesamt bleibt dahinter. Unter der Schwelle der Vorabpruefung (_RAM_VERDACHT_BYTES, 1 GB, am
+            # 20.09.2026 gemessen: MemoryError bei 0,8 GB frei) heisst es "nur noch ... frei".
+            frei = int(t.get("ram_free", t["ram_total"] - t["ram_used"]))
+            parts.append(self._t(
+                "telemetrie.ram_knapp" if frei < self._RAM_VERDACHT_BYTES else "telemetrie.ram",
+                frei=self._fmt_bytes(frei), belegt=self._fmt_bytes(t["ram_used"]),
+                gesamt=self._fmt_bytes(t["ram_total"])))
         if "temp_used" in t:
             parts.append(self._t(
                 "telemetrie.temp",
@@ -22569,7 +22956,7 @@ class PS5ConverterGUI:
 
     def _save_meta_cache(self, title_id: str, data: dict) -> None:
         """Speichert Metadaten im lokalen Cache."""
-        import os, json
+        import json
         try:
             cache_file = self._meta_cache_datei(title_id)
             if not cache_file:
@@ -39353,17 +39740,21 @@ class PS5ConverterGUI:
         win.lift()
         win.focus_force()
 
-    #: Das Banner von psxtools.de (Wunsch des Nutzers vom 06.10.2026): rund fuenf
-    #: Minuten nach dem Start oben rechts unter der Knopfreihe langsam einblenden,
-    #: etwa zehn Sekunden zeigen, langsam ausblenden; ein Klick oeffnet die Seite.
-    #: Danach etwa alle 60 Minuten wieder (Nutzer 06.10.2026: "so wie besprochen
-    #: etwa alle 60 Minuten") - gerechnet vom Ende der letzten Einblendung.
+    #: Das Banner von psxtools.de (Wunsch des Nutzers vom 06.10.2026, Zeiten geaendert am
+    #: 10.10.2026): zwei Minuten nach dem Start oben rechts unter der Knopfreihe langsam
+    #: einblenden, fuenf Minuten zeigen, langsam ausblenden; ein Klick oeffnet die Seite,
+    #: ein Rechtsklick schliesst es nur. Danach alle 30 Minuten wieder - vom Beginn einer
+    #: Einblendung bis zum Beginn der naechsten gerechnet. Bis 10.10.2026 waren es fuenf
+    #: Minuten bis zum ersten Mal, zehn Sekunden Dauer und 60 Minuten nach dem Ende; der
+    #: Nutzer hatte es in der Zeit nie gesehen.
     _BANNER_DATEI = "psxtools_de_banner.png"
     _BANNER_ADRESSE = "https://psxtools.de/"
-    _BANNER_NACH_MS = 300_000
-    _BANNER_ABSTAND_MS = 3_600_000
-    _BANNER_ZEIGEN_MS = 10_000
+    _BANNER_NACH_MS = 120_000
+    _BANNER_ABSTAND_MS = 1_800_000
+    _BANNER_ZEIGEN_MS = 300_000
     _BANNER_BLENDE_MS = 1_500
+    #: So selten wird die Lage des Banners an das Fenster angepasst (der Nutzer darf es waehrend der fuenf Minuten ziehen).
+    _BANNER_FOLGEN_MS = 250
     #: Steht das Fenster gerade nicht (minimiert), so oft im Abstand von einer Minute erneut versuchen.
     _BANNER_VERSUCHE = 30
 
@@ -39384,8 +39775,8 @@ class PS5ConverterGUI:
         Ein eigenes, randloses Fenster ueber dem Programm, aber nicht ueber anderen
         Programmen (``transient``, kein ``-topmost``) und ohne den Fokus zu nehmen.
         Ist das Hauptfenster minimiert, wird es eine Minute spaeter erneut versucht
-        (hoechstens ``versuche`` Mal, dann erst wieder zur naechsten Stunde). Nach
-        jeder Einblendung ist die naechste in :data:`_BANNER_ABSTAND_MS` geplant.
+        (hoechstens ``versuche`` Mal, dann erst wieder zum naechsten Abstand). Die
+        naechste Einblendung folgt :data:`_BANNER_ABSTAND_MS` nach dem Beginn dieser.
         """
         try:
             if not self.root.winfo_exists():
@@ -39434,7 +39825,22 @@ class PS5ConverterGUI:
             self._banner_naechstes()
             return
         schritte = max(1, self._BANNER_BLENDE_MS // 40)
-        zustand = {"aus": False}
+        zustand = {"aus": False, "x": x, "y": y}
+        beginn = time.monotonic()
+
+        def _folgen() -> None:
+            """Zieht der Nutzer das Fenster, waehrend das Banner steht, bleibt es unter der Knopfreihe."""
+            try:
+                if zustand["aus"] or not fenster.winfo_exists():
+                    return
+                neu_x = leiste.winfo_rootx() + leiste.winfo_width() - breite - 12
+                neu_y = leiste.winfo_rooty() + leiste.winfo_height() + 8
+                if (neu_x, neu_y) != (zustand["x"], zustand["y"]):
+                    zustand["x"], zustand["y"] = neu_x, neu_y
+                    fenster.geometry("+%d+%d" % (neu_x, neu_y))
+                fenster.after(self._BANNER_FOLGEN_MS, _folgen)
+            except tk.TclError:
+                pass
 
         def _alpha(wert: float) -> None:
             if blenden:
@@ -39469,21 +39875,28 @@ class PS5ConverterGUI:
                 fenster.after(40, _aus, schritt + 1)
             else:
                 fenster.destroy()
-                self._banner_naechstes()
+                self._banner_naechstes(int((time.monotonic() - beginn) * 1000))
 
         def _klick(_e=None) -> None:
             webbrowser.open(self._BANNER_ADRESSE)
             _aus()
 
         bild.bind("<Button-1>", _klick)
+        bild.bind("<Button-3>", lambda _e=None: _aus())     # nur schliessen, ohne die Seite zu oeffnen
         _ein()
+        fenster.after(self._BANNER_FOLGEN_MS, _folgen)
 
-    def _banner_naechstes(self) -> None:
-        """Plant die naechste Einblendung in :data:`_BANNER_ABSTAND_MS` - nie in der Testreihe."""
+    def _banner_naechstes(self, schon_ms: int = 0) -> None:
+        """Plant die naechste Einblendung so, dass sie :data:`_BANNER_ABSTAND_MS` nach dem Beginn der letzten kommt.
+
+        ``schon_ms``: wie lange die letzte Einblendung seit ihrem Beginn lief (0, wenn gar keine stattfand - dann gilt
+        der ganze Abstand). Nie weniger als eine Minute, nie in der Testreihe.
+        """
         if "pytest" in sys.modules:
             return
         try:
-            self.root.after(self._BANNER_ABSTAND_MS, self._banner_zeigen, self._BANNER_VERSUCHE)
+            self.root.after(max(60_000, self._BANNER_ABSTAND_MS - max(0, int(schon_ms))), self._banner_zeigen,
+                            self._BANNER_VERSUCHE)
         except tk.TclError:
             pass
 
@@ -41558,15 +41971,23 @@ class PS5ConverterGUI:
             # Ein gleichnamiger Ordner auf der Konsole wuerde sonst Datei fuer
             # Datei ueberschrieben - etwa der Original-Dump des App-Dumpers
             # (Durchsicht H3-10, aus "Zurueckspielen" mitgenommen).
-            if konsole_ftp.vorhanden(host, entfernt, port) and not _fragen(
-                    "zurueck.ask_overwrite", ziel=entfernt):
-                self._append_to_log(self._t("zurueck.log_kept", ziel=entfernt) + "\n")
-                lauf["nichts"] = True
-                return
+            # Seit 10.10.2026 mit Fortsetzen: Ja = was dort schon in voller Groesse liegt ueberspringen und Angefangenes
+            # weiterschreiben, Nein = alles neu schreiben (wie bisher bei "Ja, ueberschreiben"), Abbrechen = nichts tun.
+            fortsetzen = False
+            if konsole_ftp.vorhanden(host, entfernt, port):
+                antwort = self._im_hauptfaden(
+                    messagebox.askyesnocancel, titel, self._t("zurueck.ask_fortsetzen", ziel=entfernt),
+                    default="cancel", parent=fenster)
+                if antwort is None:
+                    self._append_to_log(self._t("zurueck.log_kept", ziel=entfernt) + "\n")
+                    lauf["nichts"] = True
+                    return
+                fortsetzen = bool(antwort)
             self._append_to_log(self._t("zurueck.log_start", quelle=oertlich,
                                         ziel=entfernt) + "\n")
             ergebnis = konsole_ftp.ordner_senden(
-                host, oertlich, entfernt, port, auf_fortschritt=_fort, abbruch=_abbruch)
+                host, oertlich, entfernt, port, auf_fortschritt=_fort, abbruch=_abbruch,
+                fortsetzen=fortsetzen)
             if ergebnis.abgebrochen:
                 self._append_to_log(self._t("zurueck.log_cancelled",
                                             dateien=ergebnis.dateien) + "\n")
@@ -41576,6 +41997,10 @@ class PS5ConverterGUI:
             menge = konsole_ftp.menge_lesbar(ergebnis.bytes)
             self._append_to_log(self._t("zurueck.log_done", dateien=ergebnis.dateien,
                                         menge=menge, ziel=entfernt) + "\n")
+            if ergebnis.uebersprungen or ergebnis.fortgesetzt or ergebnis.wiederholt:
+                self._append_to_log(self._t("zurueck.log_stats", uebersprungen=ergebnis.uebersprungen,
+                                            fortgesetzt=ergebnis.fortgesetzt,
+                                            wiederholt=ergebnis.wiederholt) + "\n")
             lauf["ergebnis"] = self._t("library.ordner_gesendet",
                                        dateien=ergebnis.dateien, menge=menge,
                                        ziel=entfernt)
@@ -45911,10 +46336,11 @@ class PS5ConverterGUI:
         "global_fakelib": "1",
         "global_fakelib_path": "/data/shadowmount/fakelib",
         "global_fakelib_priority": "game",
-        "kstuff_game_auto_toggle": "1",
-        "kstuff_crash_detection": "1",
-        "kstuff_pause_delay_image_seconds": "25",
-        "kstuff_pause_delay_direct_seconds": "15",
+        # Die vier kstuff-Schluessel (``kstuff_game_auto_toggle``, ``kstuff_crash_detection``,
+        # ``kstuff_pause_delay_image_seconds``/``_direct_seconds``) standen hier bis 12.10.2026:
+        # ShadowMount+ 1.7beta5 hat die kstuff-Autopause samt Verzoegerungs-Autotuning entfernt
+        # (Release-Notes; ``config.ini.example`` beta4 -> beta5fix1 gegengelesen). Aeltere Fassungen
+        # nehmen bei fehlendem Schluessel dieselben Vorgaben (1/1/25/15), es aendert sich dort nichts.
         "lvd_exfat_sector_size": "512",
         "lvd_ufs_sector_size": "4096",
         # Zwei Werte standen bis v1.9.5 anders, als die Anleitung sie nennt -
@@ -47356,8 +47782,9 @@ class PS5ConverterGUI:
             _quellen = PS5ConverterGUI._MODE_SOURCE_TYPES
             _ziele = PS5ConverterGUI._MODE_TARGET_OPTIONS
             _formate = set(PS5ConverterGUI._FORMAT_LABELS)
-            # Diese beiden wandeln nichts um - sie haben zu Recht kein Ziel.
-            _ohne_ziel = {"ampr_manager", "dump_validator"}
+            # Diese wandeln nichts um - sie haben zu Recht kein Ziel. "pkg_fpkg" ist der Platzhalter vom 12.10.2026
+            # (Funktionen folgen) - seine Seite zeigt keine Zielformat-Auswahl, siehe pkg_fpkg_seite.py.
+            _ohne_ziel = {"ampr_manager", "dump_validator", "pkg_fpkg"}
 
             geprueft += 1
             if len(_modi) != 8:
@@ -49503,7 +49930,8 @@ class PS5ConverterGUI:
           wirkt, solange kein ``fakelib2`` daneben liegt;
         * alpha8 bis alpha13fix1 lesen im Spielordner ausschliesslich
           ``fakelib``;
-        * ab 1.7beta1 (auch die beiliegende 1.7beta4) wieder wie bis alpha6.
+        * ab 1.7beta1 (gemessen bis 1.7beta4; die beiliegende 1.7beta5fix1 seit
+          dem 12.10.2026 nicht erneut gegen den Quelltext geprueft) wieder wie bis alpha6.
 
         Nur ``fakelib`` wirkt also in allen Fassungen. Die frueher waehlbare
         Einstellung ``fakelib_variante`` entschied das noch von Hand; stand sie
@@ -49882,20 +50310,71 @@ class PS5ConverterGUI:
     #: AMPR-Auswahlfenster und fiel mit ihm weg, obwohl die Einblendung sie weiter braucht (Volllauf 07.10.2026).
     _AUSWAHL_DURCHSICHTIG = "#FF00FE"
 
-    def _show_ampr_auswahl(self) -> None:
-        """Aufgabe 7: zeigt die Seite "AMPR EMU Manager" im rechten Bereich der Ansicht UMWANDELN.
+    def _konsole_amprmgr_zeigen(self) -> None:
+        """Knopf "9. AMPR EMU Manager" der Ansicht KONSOLE: rechts die Seite zeigen.
 
-        Bis v1.9.65 war das ein rahmenloses Auswahlfenster mit runden Ecken und danach ein zweites Fenster
-        fuer den Lauf. Jetzt gibt es keine eigenen Fenster mehr: Ablageweg, Methode, Ablauf und Protokoll
-        stehen in der Seite (``ui/ampr_seite.py``). Ein zweiter Druck aendert nichts. Der Knopf "7." der
-        Seitenleiste wird dabei der gewaehlte (``_set_mode_from_sidebar`` laesst die Seite stehen).
+        Bis zum 12.10.2026 abends war das Aufgabe 7 der Seitenleiste UMWANDELN (bis v1.9.65 davor ein
+        rahmenloses Auswahlfenster, danach ein zweites Fenster fuer den Lauf). Jetzt liegt die Seite
+        (``ui/ampr_seite.py``: Ablageweg, Methode, Ablauf, Protokoll) in derselben Zelle wie die uebrigen
+        drei Seiten der Ansicht KONSOLE (``_konsole_seite_setzen``/``_KONSOLE_SEITENBAU``). ``current_mode``
+        bleibt auf ``"ampr_manager"``, weil die Seite selbst beim Uebernehmen darueber dispatcht
+        (``_mode_ampr_manager``) - unabhaengig davon, ob die Ansicht UMWANDELN je offen war.
         """
         if self.current_mode.get() != "ampr_manager":
-            self._set_mode_from_sidebar("ampr_manager")
+            self.current_mode.set("ampr_manager")
+        self._konsole_seite_setzen("amprmgr")
         ampr_seite.zeigen(self)
 
-    def _ampr_seite_einblenden(self, rahmen: "tk.Frame") -> None:
-        """Legt die Seite in die Zelle der Rollflaeche (1, 1) und blendet diese aus."""
+    def _konsole_amprmgr_bauen(self) -> None:
+        """Baut die Seite einmal (wie die uebrigen drei Seiten der Ansicht KONSOLE)."""
+        self._konsole_amprmgr = ampr_seite.seite(self).rahmen
+
+    def _show_pkg_fpkg_seite(self) -> None:
+        """Aufgabe 7 "PKG / FPKG" (Nutzerwunsch 12.10.2026): zeigt die Seite mit den Knoepfen PKG und FPKG.
+
+        Ein zweiter Druck aendert nichts, der Knopf "7." bleibt der gewaehlte - die Seite selbst merkt sich,
+        welche der beiden Unterseiten zuletzt gewaehlt war (:meth:`ui.pkg_fpkg_seite.zeigen`).
+        """
+        if self.current_mode.get() != "pkg_fpkg":
+            self._set_mode_from_sidebar("pkg_fpkg")
+        pkg_fpkg_seite.zeigen(self)
+
+    def _show_ps4_pkg_converter(self) -> None:
+        """Zeigt "PKG" der Seite "7. PKG / FPKG" (``ps5_validator/ui/ps4_dump_image.py``) - mit einer Vorgabe
+        (aus der Bibliothek), falls eine gesetzt ist.
+
+        Bis zum 12.10.2026 abends oeffnete das ein eigenes Popup-Fenster ("PS4 PKG Dump & Image Converter",
+        unter WEITERE TOOLS); seitdem liegt dieselbe Oberflaeche eingebettet in dieser Seite (Nutzerwunsch).
+        Die Vorgabe reicht die Bibliothek weiterhin ueber ``_ps4pkg_vorgabe`` herein (einmalig, dann geleert).
+
+        Ruft bewusst NICHT ``_show_pkg_fpkg_seite`` (das waehlte beim allerersten Mal "PKG" ohne Vorgabe vor -
+        beim unmittelbar folgenden ``pkg_zeigen(vorgabe)`` laege die Seite dann schon, und deren Vorgabe liefe
+        ueber den Wiederverwendungs-Zweig von ``ps4_dump_image.oeffnen`` statt ueber den Aufbau, der das Einlesen
+        richtig per ``after`` verzoegert - am 12.10.2026 an genau dieser Doppelkonstruktion gemessen).
+        """
+        vorgabe = str(getattr(self, "_ps4pkg_vorgabe", "") or "")
+        self._ps4pkg_vorgabe = ""
+        if self.current_mode.get() != "pkg_fpkg":
+            self._set_mode_from_sidebar("pkg_fpkg")
+        s = pkg_fpkg_seite.seite(self)
+        self._pkg_fpkg_seite_einblenden(s.rahmen)
+        s.pkg_zeigen(vorgabe)
+
+    def _show_ps5_pkg_converter(self) -> None:
+        """Zeigt "FPKG" der Seite "7. PKG / FPKG" (``ps5_validator/ui/ps5_pkg_fenster.py``).
+
+        Bis zum 12.10.2026 abends oeffnete das ein eigenes Popup-Fenster ("PS5 PKG Dump & Image Converter",
+        unter WEITERE TOOLS); seitdem liegt dieselbe Oberflaeche eingebettet in dieser Seite (Nutzerwunsch).
+        Ruft ``_show_pkg_fpkg_seite`` aus demselben Grund nicht auf wie :meth:`_show_ps4_pkg_converter`.
+        """
+        if self.current_mode.get() != "pkg_fpkg":
+            self._set_mode_from_sidebar("pkg_fpkg")
+        s = pkg_fpkg_seite.seite(self)
+        self._pkg_fpkg_seite_einblenden(s.rahmen)
+        s.fpkg_zeigen()
+
+    def _pkg_fpkg_seite_einblenden(self, rahmen: "tk.Frame") -> None:
+        """Legt die Seite "PKG / FPKG" in die Zelle der Rollflaeche (1, 1) und blendet diese aus."""
         if getattr(self, "_ansicht", "umwandeln") != "umwandeln":
             self._ansicht_setzen("umwandeln")
         try:
@@ -49906,15 +50385,15 @@ class PS5ConverterGUI:
             rahmen.lift()
             self._titelleiste_nach_vorn()
         except tk.TclError as exc:
-            logger.debug("AMPR-Seite nicht einblendbar: %s", exc)
-        self._ampr_seite_sichtbar = True
+            logger.debug("PKG/FPKG-Seite nicht einblendbar: %s", exc)
+        self._pkg_fpkg_seite_sichtbar = True
 
-    def _ampr_seite_verbergen(self) -> None:
-        """Nimmt die AMPR-Seite weg und stellt die Rollflaeche wieder her - ohne Wirkung, wenn sie nicht steht."""
-        if not getattr(self, "_ampr_seite_sichtbar", False):
+    def _pkg_fpkg_seite_verbergen(self) -> None:
+        """Nimmt die Seite "PKG / FPKG" weg und stellt die Rollflaeche wieder her - ohne Wirkung, wenn sie nicht steht."""
+        if not getattr(self, "_pkg_fpkg_seite_sichtbar", False):
             return
-        self._ampr_seite_sichtbar = False
-        s = getattr(self, ampr_seite.SEITE_ATTRIBUT, None)
+        self._pkg_fpkg_seite_sichtbar = False
+        s = getattr(self, pkg_fpkg_seite.SEITE_ATTRIBUT, None)
         try:
             if s is not None:
                 s.rahmen.grid_remove()
@@ -49923,7 +50402,7 @@ class PS5ConverterGUI:
                 if getattr(self, "_inhalt_rollt", False):
                     self.content_scrollbar.grid(row=1, column=2, sticky="ns")
         except tk.TclError as exc:
-            logger.debug("AMPR-Seite nicht entfernbar: %s", exc)
+            logger.debug("PKG/FPKG-Seite nicht entfernbar: %s", exc)
 
     #: Die Anleitungen zu den beiden Fassungen. Sie liegen im Ordner
     #: ``Anleitungen`` neben dem Programm und werden mit eingebettet.
@@ -51251,15 +51730,21 @@ class PS5ConverterGUI:
             melde(self._t("amprgen.target", path=ziel["pfad"]))
             melde("   " + ziel["hinweis"])
 
-            # Ab ShadowMount+ 1.7beta4 schaltet "fakelib_exclude=<ID>" fuer den
-            # Titel jede fakelib ab - abgelegt wuerde, geladen nicht.
-            if (not lokal and not fester_weg and title_id
-                    and self._ampr_titel_ohne_fakelib(config_text, title_id,
-                                                      erkannt or generation)):
-                melde("!! " + self._t("amprgen.excluded", title_id=title_id))
+            # Ab ShadowMount+ 1.7beta4 schaltet "fakelib_exclude=<ID>" (ab
+            # 1.7beta5 auch fakelib_mode=<ID>:disabled / fakelib_default_mode=
+            # disabled) fuer den Titel jede fakelib ab - abgelegt wuerde,
+            # geladen nicht.
+            sperr_eintrag = (
+                self._ampr_titel_fakelib_eintrag(config_text, title_id,
+                                                 erkannt or generation)
+                if (not lokal and not fester_weg and title_id) else "")
+            if sperr_eintrag:
+                melde("!! " + self._t("amprgen.excluded", title_id=title_id,
+                                      eintrag=sperr_eintrag))
                 wahl = self._ampr_gen_frage(
                     fenster, self._t("amprgen.q_excluded"),
-                    self._t("amprgen.q_excluded_why", title_id=title_id),
+                    self._t("amprgen.q_excluded_why", title_id=title_id,
+                            eintrag=sperr_eintrag),
                     [("stop", self._t("amprgen.q_excluded_stop"),
                       self._t("amprgen.q_excluded_stop_why")),
                      ("weiter", self._t("amprgen.q_excluded_go"),
@@ -51910,11 +52395,15 @@ class PS5ConverterGUI:
         # Ab 1.7beta4 haengt ShadowMount+ fuer einen Titel unter
         # fakelib_exclude gar keine fakelib ein - auch die Aufnahme-Bibliothek
         # nicht. Umgestellt wird das hier nicht; der Anwender entscheidet.
-        if self._ampr_titel_ohne_fakelib(config_text, title_id, generation):
-            melde("!! " + self._t("amprmitschnitt.sm_excluded", title_id=title_id))
+        sperr_eintrag = self._ampr_titel_fakelib_eintrag(config_text, title_id,
+                                                         generation)
+        if sperr_eintrag:
+            melde("!! " + self._t("amprmitschnitt.sm_excluded", title_id=title_id,
+                                  eintrag=sperr_eintrag))
             wahl = self._ampr_gen_frage(
                 win, self._t("amprmitschnitt.q_excluded"),
-                self._t("amprmitschnitt.q_excluded_why", title_id=title_id),
+                self._t("amprmitschnitt.q_excluded_why", title_id=title_id,
+                        eintrag=sperr_eintrag),
                 [("stop", self._t("amprmitschnitt.q_excluded_stop"),
                   self._t("amprmitschnitt.q_excluded_stop_why")),
                  ("weiter", self._t("amprmitschnitt.q_excluded_go"),
@@ -52057,20 +52546,28 @@ class PS5ConverterGUI:
         return title_id.strip().upper() in kennungen
 
     @classmethod
-    def _ampr_titel_ohne_fakelib(cls, config_text: str, title_id: str,
-                                 generation: str = "") -> bool:
-        """Haengt ShadowMount+ fuer diesen Titel gar keine fakelib ein?
+    def _ampr_titel_fakelib_eintrag(cls, config_text: str, title_id: str,
+                                    generation: str = "") -> str:
+        """Welcher config.ini-Eintrag schaltet fuer den Titel jede fakelib ab?
 
         Ab 1.7beta4 schaltet ``fakelib_exclude=<ID>`` fuer den Titel jede
-        fakelib ab (``sm_gen.FAKELIB_AUSSCHLUSS``) - dort abgelegte
-        Bibliotheken wirkten dann still nicht. Deshalb fragen Aufgabe 7 und
-        der Mitschnitt-Assistent nach (Nutzerentscheid 04.10.2026: warnen).
-        Die alte Fassung (bis alpha13fix1) kennt den Schluessel nicht.
+        fakelib ab, ab 1.7beta5 ebenso ``fakelib_mode=<ID>:disabled`` und
+        ``fakelib_default_mode=disabled`` (``sm_gen.fakelib_aus_eintrag``) -
+        dort abgelegte Bibliotheken wirkten dann still nicht. Deshalb fragen
+        Aufgabe 7 und der Mitschnitt-Assistent nach (Nutzerentscheid
+        04.10.2026: warnen). Die alte Fassung (bis alpha13fix1) kennt keinen
+        dieser Schluessel. Leer = nichts schaltet die fakelib ab.
         """
         if generation == sm_gen.ALT:
-            return False
-        return cls._ampr_mitschnitt_titel_ausgenommen(
-            config_text, title_id, sm_gen.FAKELIB_AUSSCHLUSS)
+            return ""
+        return sm_gen.fakelib_aus_eintrag(config_text, title_id)
+
+    @classmethod
+    def _ampr_titel_ohne_fakelib(cls, config_text: str, title_id: str,
+                                 generation: str = "") -> bool:
+        """Haengt ShadowMount+ fuer diesen Titel gar keine fakelib ein?"""
+        return bool(cls._ampr_titel_fakelib_eintrag(config_text, title_id,
+                                                    generation))
 
     def _ampr_mitschnitt_config_umstellen(self, ftp, config_text: str,
                                           gefahren: "list[dict[str, str]]",
@@ -55180,23 +55677,6 @@ class PS5ConverterGUI:
             except Exception:
                 pass
 
-    def _show_ps4_pkg_converter(self) -> None:
-        """Öffnet „PS4 PKG Dump & Image Converter“ - oder holt das offene Fenster nach vorn.
-
-        Der eine Knopf fuer PS4-Pakete (seit 07.10.2026, ersetzt „PS4 PKG -> OTA“ und „PS4 PKG -> ffpfsc“):
-        Dump-Ordner entpacken, ffpfsc/exFAT bauen, Basis und Update zu einem Paket zusammenfuehren, Updates
-        online laden, Pakete an die Konsole senden (``ps5_validator/ui/ps4_dump_image.py``). Die Bibliothek
-        reicht ihre Pakete ueber ``_ps4pkg_vorgabe`` herein (``os.pathsep``-getrennt) - einmalig: Wer das
-        Fenster danach selbst oeffnet, soll es nicht schon gefuellt vorfinden.
-        """
-        vorgabe = str(getattr(self, "_ps4pkg_vorgabe", "") or "")
-        self._ps4pkg_vorgabe = ""
-        ps4_dump_image.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt, vorgabe)
-
-    def _show_ps5_pkg_converter(self) -> None:
-        """Oeffnet „PS5 PKG Dump & Image Converter“ - oder holt das offene Fenster nach vorn."""
-        ps5_pkg_fenster.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
-
     # ==================================================================
     # Klog – Live-Streaming des PS5-Kernel-Logs über einen einfachen
     # TCP-Rohsocket (Standardport 3232, zeilenbasiertes Textprotokoll,
@@ -55742,10 +56222,11 @@ class PS5ConverterGUI:
         wird nach den Zahlen, nicht nach dem Text (``0.10.0`` kommt nach
         ``0.9.0``).
         """
-        ordner = self._webkit_ordner()
-        if not ordner or not os.path.isdir(ordner):
+        ordner_liste = self._webkit_ordner_liste()
+        if not ordner_liste:
             return []
         nummern = {self._webkit_fassung_aus_name(datei.name)
+                   for ordner in ordner_liste
                    for muster in self._WEBKIT_MUSTER.values()
                    for datei in Path(ordner).glob(muster)}
         nummern.discard("")
@@ -55760,6 +56241,20 @@ class PS5ConverterGUI:
         """Der mitgelieferte Ordner (leer, wenn er fehlt)."""
         return _bundled_resource(self._WEBKIT_ORDNER)
 
+    def _webkit_ordner_liste(self) -> list[str]:
+        """Alle Ordner mit WebKit-Dateien: der mitgelieferte, dazu der der ueber "Updates" geholten.
+
+        Nur Ordner, die es gibt. Der mitgelieferte steht vorn: Bei gleichem Dateinamen gilt seine Datei.
+        """
+        erg: list[str] = []
+        ordner = self._webkit_ordner()
+        if ordner and os.path.isdir(ordner):
+            erg.append(ordner)
+        geholt = os.path.join(werkzeug_updates.update_ordner(self._updates_basis()), werkzeug_updates.ORT_WEBKIT)
+        if os.path.isdir(geholt):
+            erg.append(geholt)
+        return erg
+
     def _webkit_datei(self, art: str, fassung: str = "") -> str:
         """Die Datei dieser Art im Ordner (leer, wenn keine da ist).
 
@@ -55768,14 +56263,17 @@ class PS5ConverterGUI:
             fassung: Eine Nummer wie ``"0.5.1"`` - dann genau die Datei dieser
                 Fassung. Leer: die neueste.
         """
-        ordner = self._webkit_ordner()
+        ordner_liste = self._webkit_ordner_liste()
         muster = self._webkit_dateimuster(art, fassung)
-        if not ordner or not muster or not os.path.isdir(ordner):
+        if not ordner_liste or not muster:
             return ""
         if fassung and not self._WEBKIT_FASSUNG_MUSTER.fullmatch(fassung):
             return ""
-        treffer = sorted(Path(ordner).glob(muster),
-                         key=lambda p: self._webkit_versionsschluessel(p.name))
+        gefunden: dict[str, Path] = {}
+        for ordner in ordner_liste:
+            for datei in Path(ordner).glob(muster):
+                gefunden.setdefault(datei.name, datei)
+        treffer = sorted(gefunden.values(), key=lambda p: self._webkit_versionsschluessel(p.name))
         return str(treffer[-1]) if treffer else ""
 
     def _webkit_host_pfad(self, art: str, fassung: str = "") -> str:
@@ -56195,6 +56693,14 @@ class PS5ConverterGUI:
     #: Dank, nicht über den Knöpfen.
     _WEBKIT_BILD = "itsplk.png"
     _WEBKIT_BILD_KANTE = 64
+    #: Die Symbole ueber den drei Knoepfen der Seite (Entwurf des Nutzers vom 10.10.2026): Kante vor der Skalierung und
+    #: Dateiname je Weg. Jedes gibt es zweimal, deutsch (``<name>.png``) und englisch (``<name>_en.png``) - der Text im
+    #: Bild ist Teil der Zeichnung. Quadratisch, mit durchsichtigen Ecken, im Ordner des WebKit Autoloaders.
+    _WEBKIT_SYMBOL_KANTE = 96
+    _WEBKIT_SYMBOLE = {"installer": "symbol_installer", "host_exe": "symbol_host_exe", "host_py": "symbol_host_py"}
+    #: Erst ab dieser Seitenhoehe (vor der Skalierung) stehen die Symbole da - darunter braeuchte die Zeile gut 90 px
+    #: mehr, und das Protokoll darunter wuerde zu klein. Gemessen an 1245x700 und 1366x768 (10.10.2026).
+    _WEBKIT_SYMBOL_MIN_HOEHE = 690
 
     def _webkit_bild_pfad(self) -> str:
         """Pfad zum Autoloader-Bild, ohne es zu laden.
@@ -56232,6 +56738,78 @@ class PS5ConverterGUI:
         except Exception as exc:            # noqa: BLE001
             logger.debug("Autoloader-Bild nicht ladbar (%s): %s", pfad, exc)
             return None
+
+    def _webkit_symbol_pfad(self, art: str, sprache: str) -> str:
+        """Pfad zum Symbol eines Weges in der Sprache - gibt es das englische nicht, das deutsche; sonst ``""``."""
+        name = self._WEBKIT_SYMBOLE[art]
+        for endung in (("_en", "") if sprache == "en" else ("",)):
+            pfad = _bundled_resource(self._WEBKIT_ORDNER, name + endung + ".png")
+            if pfad and os.path.isfile(pfad):
+                return pfad
+        return ""
+
+    def _webkit_symbol_laden(self, art: str, sprache: str):
+        """Das Symbol eines Weges als ``PhotoImage`` in der Groesse der Seite, oder ``None`` (fehlt: die Seite steht auch so).
+
+        Gemerkt je Weg, Sprache und Kantenlaenge: Ein Sprachwechsel soll nicht jedes Mal von der Platte lesen, und das
+        Bild muss am Leben bleiben, solange ein Label es zeigt.
+        """
+        merker = self.__dict__.setdefault("_webkit_symbol_merker", {})
+        kante = knopfmass(self._WEBKIT_SYMBOL_KANTE)
+        schluessel = (art, sprache, kante)
+        if schluessel in merker:
+            return merker[schluessel]
+        pfad = self._webkit_symbol_pfad(art, sprache)
+        foto = None
+        if pfad:
+            try:
+                with Image.open(pfad) as roh:
+                    foto = ImageTk.PhotoImage(roh.convert("RGBA").resize((kante, kante), _LANCZOS), master=self.root)
+            except Exception as exc:        # noqa: BLE001 - ohne Symbol geht die Seite auch
+                logger.debug("WebKit-Symbol nicht ladbar (%s): %s", pfad, exc)
+        merker[schluessel] = foto
+        return foto
+
+    def _webkit_symbole_anpassen(self, _ereignis=None) -> None:
+        """Zeigt die Symbole nur, wenn die drei Wege nebeneinander passen und die Seite hoch genug ist.
+
+        Sonst bleibt es bei den Knoepfen (die Reihe bricht um, wie vor den Symbolen): Drei Symbole untereinander
+        wuerden das Protokoll erdruecken. Die Entscheidung haengt weder an den Symbolen selbst (die Spalten sind durch
+        ihre Knoepfe breiter als ein Symbol) noch an der Hoehe des Protokolls, also kippt sie nicht hin und her.
+        """
+        wege = getattr(self, "_webkit_wege", None)
+        seite = getattr(self, "_webkit_seite", None)
+        spalten = getattr(self, "_webkit_spalten", None)
+        if wege is None or seite is None or not spalten:
+            return
+        try:
+            breite, hoehe = int(wege.winfo_width()), int(seite.winfo_height())
+            if breite <= 1 or hoehe <= 1:
+                return                              # noch nicht gelegt (Seite verborgen)
+            noetig = (sum(s.winfo_reqwidth() for s in spalten) + self._webkit_luft.winfo_reqwidth()
+                      + knopfmass(8) * len(spalten))
+            zeigen = breite >= noetig and hoehe >= knopfmass(self._WEBKIT_SYMBOL_MIN_HOEHE)
+            if zeigen == self._webkit_symbole_sichtbar:
+                return
+            self._webkit_symbole_sichtbar = zeigen
+            for art, schild in self._webkit_symbolschilder.items():
+                if zeigen:
+                    schild.pack(before=self._webkit_wegknoepfe[art], pady=(0, 6))
+                else:
+                    schild.pack_forget()
+        except tk.TclError as exc:
+            logger.debug("WebKit-Symbole nicht anpassbar: %s", exc)
+
+    def _webkit_symbole_setzen(self) -> None:
+        """Setzt die drei Symbole der Seite in der aktuellen Sprache (beim Bau und nach jedem Sprachwechsel)."""
+        sprache = "en" if getattr(self, "_current_language", "de") == "en" else "de"
+        for art, schild in getattr(self, "_webkit_symbolschilder", {}).items():
+            foto = self._webkit_symbol_laden(art, sprache)
+            try:
+                schild.configure(image=foto if foto is not None else "")
+                schild._symbol = foto       # Referenz am Label, wie beim Bild im Kopf
+            except tk.TclError as exc:
+                logger.debug("WebKit-Symbol nicht setzbar: %s", exc)
 
     # ==================================================================
     # Generischer Remote-INI-Editor – bearbeitet die flache config.ini
@@ -56969,12 +57547,15 @@ class PS5ConverterGUI:
         # gebauten EXE ausschließlich im entpackten Bündel suchen – selbst
         # abgelegte .elf-Dateien blieben dann unsichtbar.
         _helloworld_dir = _bundled_resource("helloworld")
-        _helloworld_elfs = []
-        if _os.path.isdir(_helloworld_dir):
-            _helloworld_elfs = sorted(
-                [f for f in _os.listdir(_helloworld_dir) if f.lower().endswith(".elf")],
-                key=str.lower,
-            )
+        # Dazu die ueber "Updates" geholten ELF-Dateien (Einstellungsordner); bei gleichem Namen gewinnt die
+        # mitgelieferte. Name -> voller Pfad, damit das Senden die richtige Datei findet.
+        _helloworld_pfade = {}
+        for _ordner in (_helloworld_dir, self._updates_payload_ordner()):
+            if _os.path.isdir(_ordner):
+                for _name in _os.listdir(_ordner):
+                    if _name.lower().endswith(".elf") and _name not in _helloworld_pfade:
+                        _helloworld_pfade[_name] = _os.path.join(_ordner, _name)
+        _helloworld_elfs = sorted(_helloworld_pfade, key=str.lower)
 
         quick_elf_var = tk.StringVar(value=_helloworld_elfs[0] if _helloworld_elfs else "")
         quick_elf_combo = self._pw.Combobox(
@@ -57087,7 +57668,7 @@ class PS5ConverterGUI:
             if not selected:
                 _log(self._t('log.console.0042'))
                 return
-            path = _os.path.join(_helloworld_dir, selected)
+            path = _helloworld_pfade.get(selected) or _os.path.join(_helloworld_dir, selected)
             file_var.set(path)
             _send_path(path, elf_port_var, "ELF")
 
@@ -61349,7 +61930,6 @@ class PS5ConverterGUI:
                     activebackground=c["accent_btn_hover"], activeforeground="white",
                     outline=c["border"],
                 )
-
         # Pillen und runde Flaechen der Seiten der Ansicht KONSOLE (seit v1.9.62)
         for _pille, _akzent in getattr(self, "_seitenpillen", []):
             try:
@@ -62723,6 +63303,13 @@ def _run_cli(args: argparse.Namespace) -> int:
     if mode not in valid_modes:
         print(f"[FEHLER] Unbekannter Modus: {mode}", file=sys.stderr)
         return 2
+    if mode == "pkg_fpkg":
+        # Aufgabe 7 zeigt seit dem 12.10.2026 die Oberflaechen von ps4_dump_image/ps5_pkg_fenster (PKG/FPKG) -
+        # beide mit eigenen Quelle-, Ziel- und Aktionsfeldern, die sich nicht auf --source/--target/--format
+        # abbilden lassen; eine eigene Kommandozeile dafuer gibt es (noch) nicht.
+        print("[FEHLER] Aufgabe 7 (PKG / FPKG) hat keine eigene Kommandozeile - nur im Programm selbst nutzbar.",
+              file=sys.stderr)
+        return 2
 
     # Der FTP-Index arbeitet direkt auf der Konsole und braucht keine lokale
     # Quelle – er läuft deshalb vor der --source-Prüfung als eigener Weg.
@@ -63192,7 +63779,9 @@ if __name__ == "__main__":
 
     # --- GUI aufbauen ---
     # Das App-Icon wird in PS5ConverterGUI.__init__ via _apply_window_icon() gesetzt.
-    app = PS5ConverterGUI(root)
+    # start_leer: Im echten Programmstart ist nichts angekreuzt und sind QUELLE, ZIEL und TEMP-ORDNER leer
+    # (Nutzerwunsch 11.10.2026); Kommandozeile und Testreihe behalten die gespeicherten Einstellungen.
+    app = PS5ConverterGUI(root, start_leer=True)
     # Meldungen und Rueckfragen in der Optik des Programms statt als Systemdialog
     # (Nutzer 06.10.2026) - nur hier, im echten Programmstart; Kommandozeile und
     # Testreihe behalten die Systemdialoge bzw. ihre Sperre.

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Das Fenster „PS5 PKG Dump & Image Converter“ (seit v1.9.71), unter WEITERE TOOLS.
+"""Die Seite „FPKG“ unter Aufgabe 7 „PKG / FPKG“ (seit v1.9.71 bis 12.10.2026 abends ein eigenes Fenster unter
+WEITERE TOOLS: „PS5 PKG Dump & Image Converter“).
 
 Eine Oberflaeche in Karten nach dem Vorbild von PS5-PKG-IMAGE-CONVERTER 1.5.3 (Nutzerwunsch 08.10.2026):
 
@@ -16,6 +17,11 @@ Spielordner ein Debug-Paket (FPKG) und prueft es danach.
 
 **Faeden:** Arbeitsfaeden fassen nie ein Widget oder eine Tk-Variable an; sie schreiben unter ``self._sperre`` in
 ``self._z``, ein Takt im Fensterfaden (:meth:`_takt`) liest das (siehe ``project_tk_faden_variablen``).
+
+Seit dem 12.10.2026 (Nutzerwunsch) baut :meth:`Ps5PkgFenster._bauen` ``self.win`` als ``tk.Frame`` statt als
+eigenes Popup-Fenster - eingebettet in die Seite ``ui/pkg_fpkg_seite.py`` (Knopf "FPKG"). Name, Attribut
+(``FENSTER_ATTRIBUT``) und ``oeffnen()`` blieben bewusst stehen (siehe ``ui/ps4_dump_image.py`` fuer die
+ausfuehrlichere Begruendung) - nur ohne SCHLIESSEN mehr: die Seite bleibt wie die anderen Seiten stehen.
 """
 from __future__ import annotations
 
@@ -27,11 +33,16 @@ import sys
 import tempfile
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
 from typing import Callable
 
 from ps5_validator.utils import bibliothek_raster as raster
+from ps5_validator.utils import konsole_ftp as ftp
+from ps5_validator.utils import pkg_direkt
+from ps5_validator.utils import ps5_pkg_optionen as opt
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
+from ps5_validator.utils import prospero_pkg_tool as ppt
+from ps5_validator.ui import ps5_pkg_optionen as optionen_ui
 
 logger = logging.getLogger("PS5Converter.ui.ps5_pkg_fenster")
 
@@ -42,11 +53,14 @@ EINST_ZIEL = "ps5pkg_ziel"
 EINST_FORMAT = "ps5pkg_format"
 EINST_BIBLIOTHEK = "ps5pkg_bibliothek"
 EINST_AKTION = "ps5pkg_aktion"
+EINST_FERN = "ps5pkg_fern"
 
 AKTION_UMWANDELN = "umwandeln"
 AKTION_EXTRAHIEREN = "extrahieren"
 AKTION_PRUEFEN = "pruefen"
-AKTIONEN = (AKTION_UMWANDELN, AKTION_EXTRAHIEREN, AKTION_PRUEFEN)
+#: Das Paket gleich auf die PS5 entpacken, ohne Kopie auf dem PC (:mod:`pkg_direkt`, seit v1.9.72).
+AKTION_KONSOLE = "konsole"
+AKTIONEN = (AKTION_UMWANDELN, AKTION_EXTRAHIEREN, AKTION_PRUEFEN, AKTION_KONSOLE)
 
 #: Zielformate: (Schluessel des Hauptprogramms, Kachelname, Endung). ``pkg`` ist kein Format von Aufgabe 1, sondern der
 #: Bau eines Debug-Pakets aus einem Spielordner (nur dort waehlbar).
@@ -152,21 +166,23 @@ def uebersicht(info: "wz.PaketInfo", t: Callable[..., str], fmt: Callable[[int],
 
 
 class Ps5PkgFenster:
-    """Das Fenster. Eine Instanz je geoeffnetem Fenster."""
+    """Die Seite. Eine Instanz je Programmlauf (Singleton, siehe :func:`oeffnen`)."""
 
-    def __init__(self, gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "") -> None:
+    def __init__(self, gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",
+                 *, master: "tk.Misc | None" = None) -> None:
         self.g = gui
         self.t = gui._t
         self.c = gui._COLORS
         self.F = schrift
         self.M = mono
         self.pt = pt
+        self._master = master
         self.pakete: list[wz.PaketInfo] = []
         self.aktuell: "wz.PaketInfo | None" = None
         self.format_schluessel = "ffpfsc"
         self._sperre = threading.Lock()
         self._z: dict = {"zeilen": [], "prozent": None, "schritt_text": None, "schritt": None, "fertig": None,
-                         "gelesen": [], "lesen_laeuft": 0}
+                         "gelesen": [], "lesen_laeuft": 0, "scan": []}
         self._abbruch = False
         self._schliesst = False
         self._takt_id = None
@@ -178,6 +194,7 @@ class Ps5PkgFenster:
         self._kacheln: dict[str, tuple] = {}
         self._bau: dict = {}                       # Arbeitsordner und Vorher-Stand des laufenden Baus
         self._werkzeug_pfad = ""
+        self._werkzeug_ppt_pfad = ""
         self._bauen(vorgabe)
         self._takt()
 
@@ -207,6 +224,12 @@ class Ps5PkgFenster:
         if not self._werkzeug_pfad or not os.path.isfile(self._werkzeug_pfad):
             self._werkzeug_pfad = wz.werkzeug_suchen(self._wurzeln())
         return self._werkzeug_pfad
+
+    def _werkzeug_ppt(self) -> str:
+        """Pfad zu ProsperoPkgTool - dem zweiten, waehlbaren Paketersteller (nur fuer "Paket bauen")."""
+        if not self._werkzeug_ppt_pfad or not os.path.isfile(self._werkzeug_ppt_pfad):
+            self._werkzeug_ppt_pfad = ppt.werkzeug_suchen(self._wurzeln())
+        return self._werkzeug_ppt_pfad
 
     def _popen_extra(self) -> dict:
         haupt = _haupt(self.g)
@@ -270,9 +293,12 @@ class Ps5PkgFenster:
     def _bauen(self, vorgabe: str) -> None:
         g, t, c = self.g, self.t, self.c
         F, pt = self.F, self.pt
-        titel = t("ps5pkg.window_title")
-        self.win = g._build_modern_toplevel(titel, 1240, 840, min_width=1060, min_height=700)
-        self.win.configure(bg=c["bg_main"])
+        self.win = tk.Frame(self._master if self._master is not None else g.root, bg=c["bg_main"])
+        if self._master is None:
+            # Ohne eine Seite, die sie eingebettet reicht (z. B. direkt im Test erzeugt): eine feste Groesse wie
+            # das fruehere Popup-Fenster (1240x840), sonst bleibt der Rahmen 1x1 px - Kinder, die auf ein echtes
+            # Groessenereignis warten (etwa die FlussZeile der Aktions-Kacheln), bekommen dann nie eines.
+            self.win.place(x=0, y=0, width=1240, height=840)
         self.status_var = tk.StringVar(value=t("ps5pkg.status_idle"))
         self.ziel_var = tk.StringVar(value=str(self._einstellung(EINST_ZIEL, "") or ""))
         if not self.ziel_var.get() and hasattr(g, "dest_path"):
@@ -283,6 +309,11 @@ class Ps5PkgFenster:
         gespeichert = str(self._einstellung(EINST_FORMAT, "ffpfsc"))
         self.format_schluessel = gespeichert if gespeichert in [f[0] for f in FORMATE] else "ffpfsc"
         self.ueberschreiben_var = tk.BooleanVar(value=False)
+        # Auf die PS5 entpacken: die Adresse ist die der Ansicht KONSOLE (ein Feld fuer alle Seiten), der Ordner gemerkt.
+        self.adresse_var = g._konsole_ip_var()
+        self.fern_var = tk.StringVar(value=str(self._einstellung(EINST_FERN, "/mnt/usb0") or "/mnt/usb0"))
+        self._konsole_ansicht = False
+        self._konsole_ziel = ("", "")              # (Adresse, Ordner) fuer den Arbeitsfaden - er liest keine Tk-Variable
         self.schritt_var = tk.StringVar(value="0 %")
         self.auftrag_var = tk.StringVar(value=t("ps5pkg.job_ready"))
 
@@ -318,7 +349,6 @@ class Ps5PkgFenster:
         self._seite_bibliothek(self.seiten["bibliothek"])
         self._seite_zeigen("umwandeln")
 
-        self.win.protocol("WM_DELETE_WINDOW", self._schliessen)
         self.win.bind("<Destroy>", self._bei_zerstoerung, add="+")
         self._aktion_anwenden()
         self._bibliothek_laden()
@@ -331,15 +361,18 @@ class Ps5PkgFenster:
         leiste.grid(row=0, column=0, sticky="ns", padx=(10, 12), pady=10)
         leiste.grid_propagate(False)
         self._nav: dict[str, tuple[tk.Frame, tk.Label, tk.Label]] = {}
-        for schluessel, zeichen, text in (("umwandeln", "⇄", "ps5pkg.nav_convert"), ("bibliothek", "▥", "ps5pkg.nav_library")):
+        for schluessel, zeichen, text in (("umwandeln", "⇄", "ps5pkg.nav_convert"), ("bibliothek", "▥", "ps5pkg.nav_library"),
+                                          ("optionen", "⚙", "ps5pkg.nav_options")):
             rahmen = tk.Frame(leiste, bg=c["bg_main"], cursor="hand2", pady=8)
             rahmen.pack(fill="x", pady=(0, 6))
             symbol = tk.Label(rahmen, text=zeichen, font=(F, pt(18)), bg=c["bg_main"], fg=c["fg_secondary"])
             symbol.pack()
             name = tk.Label(rahmen, text=self.t(text), font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"])
             name.pack()
+            # "Optionen" ist keine Seite, sondern ein Dialog: Der Eintrag bleibt nie als gewaehlte Seite stehen.
+            befehl = self._optionen_oeffnen if schluessel == "optionen" else (lambda s=schluessel: self._seite_zeigen(s))
             for w in (rahmen, symbol, name):
-                w.bind("<Button-1>", lambda _e, s=schluessel: self._seite_zeigen(s))
+                w.bind("<Button-1>", lambda _e, b=befehl: b())
             self._nav[schluessel] = (rahmen, symbol, name)
 
     def _seite_zeigen(self, schluessel: str) -> None:
@@ -361,20 +394,17 @@ class Ps5PkgFenster:
         F, pt = self.F, self.pt
         pw = g._pw
         seite.columnconfigure(0, weight=1)
-        seite.rowconfigure(1, weight=1)
-        kopf = tk.Frame(seite, bg=c["bg_main"])
-        kopf.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(8, 8))
-        tk.Label(kopf, text=t("ps5pkg.page_title"), font=(F, pt(20), "bold"), bg=c["bg_main"], fg=c["fg_primary"],
-                 anchor="w").pack(fill="x")
-        tk.Label(kopf, text=t("ps5pkg.page_subtitle"), font=(F, pt(10)), bg=c["bg_main"], fg=c["fg_secondary"],
-                 anchor="w").pack(fill="x")
+        seite.rowconfigure(0, weight=1)
 
+        # Seit dem 12.10.2026 (Nutzerwunsch) kein eigener Seitentitel mehr: Die Seite liegt eingebettet unter
+        # "7. PKG / FPKG" (Knopf "FPKG"), die schon eine Ueberschrift traegt - und der Platz fehlte sonst der
+        # Karte AUFTRAG (Schrittfortschritt/Auftragsschritte waren bei kleiner Fensterhoehe kaum noch zu sehen).
         links = tk.Frame(seite, bg=c["bg_main"])
-        links.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
+        links.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         links.columnconfigure(0, weight=1)
         links.rowconfigure(2, weight=1)
         rechts = tk.Frame(seite, bg=c["bg_main"], width=380)
-        rechts.grid(row=1, column=1, sticky="ns")
+        rechts.grid(row=0, column=1, sticky="ns")
         rechts.grid_propagate(False)
 
         # QUELLE
@@ -400,30 +430,41 @@ class Ps5PkgFenster:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Ablegen nicht verfuegbar: %s", exc)
 
-        self.paket_titel = tk.Label(quelle, text=t("ps5pkg.no_source"), font=(F, pt(12), "bold"),
+        # Das gewaehlte Paket steht fuer sich: Trennlinie, kleine Ueberschrift, Titel, Pfad - und erst darunter, wieder
+        # durch eine Linie getrennt, die Aktionen (Nutzer 11.10.2026: "viel zu nah beim Erstellen-Knopf, unuebersichtlich").
+        tk.Frame(quelle, height=1, bg=c["border"]).pack(fill="x", pady=(14, 0))
+        self.paket_kopf = tk.Label(quelle, text=t("ps5pkg.selected_caption"), font=(F, pt(8), "bold"),
+                                   bg=c["bg_card"], fg=c["fg_secondary"], anchor="w")
+        self.paket_kopf.pack(fill="x", pady=(10, 0))
+        self.paket_titel = tk.Label(quelle, text=t("ps5pkg.no_source"), font=(F, pt(13), "bold"),
                                     bg=c["bg_card"], fg=c["fg_primary"], anchor="w")
-        self.paket_titel.pack(fill="x", pady=(12, 0))
+        self.paket_titel.pack(fill="x", pady=(2, 0))
         zeile = tk.Frame(quelle, bg=c["bg_card"])
-        zeile.pack(fill="x")
+        zeile.pack(fill="x", pady=(2, 0))
         self.paket_pfad = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"], anchor="w")
         self.paket_pfad.pack(side="left", fill="x", expand=True)
         self.paket_typ = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_accent"], padx=10)
         self.paket_typ.pack(side="right")
-        aktion = tk.Frame(quelle, bg=c["bg_card"])
-        aktion.pack(fill="x", pady=(10, 0))
-        tk.Label(aktion, text=t("ps5pkg.action_label"), font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"]).pack(
-            side="left", padx=(0, 12))
+        tk.Frame(quelle, height=1, bg=c["border"]).pack(fill="x", pady=(14, 0))
+        # Vier Aktionen passen bei der Mindestbreite nicht mehr in eine Zeile: Die Zeile bricht um, statt abzuschneiden.
+        aktion = raster.FlussZeile(quelle, g._bibliothek_zeichner(), grund="bg_card", abstand=(14, 4))
+        aktion.pack(fill="x", pady=(12, 0))
+        self.aktion_reihe = aktion
+        beschriftung = tk.Label(aktion, text=t("ps5pkg.action_label"), font=(F, pt(10)), bg=c["bg_card"],
+                                fg=c["fg_secondary"])
+        aktion.hinzufuegen(beschriftung)
         self._aktion_knoepfe = {}
         for wert, schluessel in ((AKTION_UMWANDELN, "ps5pkg.action_convert"), (AKTION_EXTRAHIEREN, "ps5pkg.action_extract"),
-                                 (AKTION_PRUEFEN, "ps5pkg.action_check")):
+                                 (AKTION_PRUEFEN, "ps5pkg.action_check"), (AKTION_KONSOLE, "ps5pkg.action_console")):
             knopf = pw.Radiobutton(aktion, text=t(schluessel), value=wert, variable=self.aktion_var, font=(F, pt(10)),
                                    command=self._aktion_geaendert, bg=c["bg_card"], fg=c["fg_primary"],
                                    selectcolor=c["bg_card"], activebackground=c["bg_card"],
                                    activeforeground=c["fg_primary"], highlightthickness=0, bd=0)
-            knopf.pack(side="left", padx=(0, 14))
+            aktion.hinzufuegen(knopf)
             self._aktion_knoepfe[wert] = knopf
         ziel = tk.Frame(quelle, bg=c["bg_card"])
         ziel.pack(fill="x", pady=(10, 0))
+        self.ziel_reihe = ziel
         ziel.columnconfigure(1, weight=1)
         tk.Label(ziel, text=t("ps5pkg.target_folder"), font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"]).grid(
             row=0, column=0, sticky="w", padx=(0, 12))
@@ -434,6 +475,26 @@ class Ps5PkgFenster:
         self.ueberschreiben = pw.Checkbutton(quelle, text=t("ps5pkg.overwrite"), variable=self.ueberschreiben_var,
                                              font=(F, pt(10)))
         self.ueberschreiben.pack(anchor="w", pady=(6, 0))
+        # Auf die PS5 entpacken: statt des Zielordners auf dem PC die Adresse und der Ordner auf der Konsole. Erst
+        # sichtbar, wenn diese Aktion gewaehlt ist (:meth:`_aktion_anwenden`).
+        fern = tk.Frame(quelle, bg=c["bg_card"])
+        self.fern_reihe = fern
+        fern.columnconfigure(1, weight=1)
+        optionen = dict(font=(F, pt(10)), bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
+                        relief="flat")
+        tk.Label(fern, text=t("ps5pkg.console_address"), font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"]).grid(
+            row=0, column=0, sticky="w", padx=(0, 12))
+        self.adresse_feld = pw.Entry(fern, textvariable=self.adresse_var, **optionen)
+        self.adresse_feld.grid(row=0, column=1, sticky="ew", ipady=3)
+        tk.Label(fern, text=t("ps5pkg.console_folder"), font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"]).grid(
+            row=1, column=0, sticky="w", padx=(0, 12), pady=(6, 0))
+        self.fern_feld = pw.Entry(fern, textvariable=self.fern_var, **optionen)
+        self.fern_feld.grid(row=1, column=1, sticky="ew", ipady=3, pady=(6, 0))
+        self.fern_feld.bind("<KeyRelease>", lambda _e: self._ergebnis_fuellen(), add="+")
+        hinweis = tk.Label(fern, text=t("ps5pkg.console_hint"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+                           anchor="w", justify="left", wraplength=520)
+        hinweis.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        hinweis.bind("<Configure>", lambda e: hinweis.configure(wraplength=max(120, e.width - 6)))
 
         # ZIELFORMAT
         formate = self._karte(links, "ps5pkg.card_format")
@@ -486,6 +547,12 @@ class Ps5PkgFenster:
             self.ergebnis_var[schluessel] = var
             tk.Label(zeile, textvariable=var, font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_primary"], anchor="e",
                      wraplength=210, justify="right").pack(side="right", fill="x", expand=True)
+        # Das Cover des gewaehlten Pakets: unter dem Ergebnis, mit abgerundeten Ecken; "Vorschau oeffnen" zeigt es gross.
+        self.vorschau_knopf = self._pille(ergebnis, "ps5pkg.preview_open", self._vorschau_oeffnen, klein=True)
+        self.vorschau_knopf.pack(anchor="e", pady=(6, 0))
+        self.cover_vorschau = tk.Label(rechts, bg=c["bg_main"], fg=c["fg_secondary"], font=(F, pt(9)),
+                                       text=t("ps5pkg.no_cover"))
+        self.cover_vorschau.pack(pady=(16, 0))
 
     def _kachel(self, eltern, spalte: int, schluessel: str, name: str, endung: str) -> None:
         g, c, F, pt = self.g, self.c, self.F, self.pt
@@ -708,7 +775,7 @@ class Ps5PkgFenster:
                     if os.path.isdir(pfad):
                         info = wz.ordner_lesen(pfad, arbeit, melden=self._melden)
                     else:
-                        info = wz.lesen(werkzeug, pfad, arbeit, popen_extra=popen_extra)
+                        info = wz.lesen(werkzeug, pfad, arbeit, passcode=self._passcode(), popen_extra=popen_extra)
                     fertig.append(info)
                 except wz.Fehler as exc:
                     self._melden(self.t("ps5pkg.log_read_failed", name=os.path.basename(pfad), grund=str(exc)))
@@ -750,6 +817,103 @@ class Ps5PkgFenster:
             vorhanden = [p for p in pfade if isinstance(p, str) and os.path.exists(p)]
             if vorhanden and self._werkzeug():
                 self._lesen_starten(vorhanden)
+        # Option "Bibliothek beim Start aktualisieren": die Bibliotheksordner neu durchsuchen
+        if self._einstellung(opt.START_SCAN, False) is True:
+            ordner = self._einstellung(opt.ORDNER, [])
+            if isinstance(ordner, list) and ordner:
+                self._ordner_scan_starten([o for o in ordner if isinstance(o, str)],
+                                          self._einstellung(opt.REKURSIV, False) is True)
+
+    # ------------------------------------------------------------------
+    # Optionen (Dialog: ps5_pkg_optionen)
+    # ------------------------------------------------------------------
+    def _optionen_oeffnen(self) -> None:
+        optionen_ui.oeffnen(self)
+
+    def _cover_an(self) -> bool:
+        return self._einstellung(opt.COVER, True) is not False
+
+    def _passcode(self) -> str:
+        wert = self._einstellung(opt.PASSCODE, "")
+        return wert if isinstance(wert, str) and wz.passcode_gueltig(wert) else ""
+
+    def _builder(self) -> str:
+        """Welches Werkzeug "Paket bauen" verwendet - nur "lpp" oder "ppt" (siehe opt.BUILDER)."""
+        wert = self._einstellung(opt.BUILDER, "lpp")
+        return wert if wert in opt.BUILDER_WERTE else "lpp"
+
+    def _ordner_scan_starten(self, ordner: list[str], rekursiv: bool) -> None:
+        """Durchsucht die Bibliotheksordner im Hintergrund; neue Quellen traegt der Takt danach ein."""
+        ordner = [o for o in ordner if os.path.isdir(o)]
+        if not ordner:
+            return
+
+        def lauf() -> None:
+            gefunden: list[str] = []
+            for o in ordner:
+                try:
+                    gefunden.extend(opt.ordner_durchsuchen(o, wz.ordner_ist_spiel) if rekursiv else self._quellen_in(o))
+                except Exception:  # noqa: BLE001 - ein unlesbarer Ordner darf die anderen nicht aufhalten
+                    logger.exception("Bibliotheksordner %s", o)
+            with self._sperre:
+                self._z["scan"].append(gefunden)
+
+        threading.Thread(target=lauf, daemon=True, name="ps5pkg-scan").start()
+
+    def _scan_uebernehmen(self, ergebnisse: list[list[str]]) -> None:
+        bekannt = {i.pfad for i in self.pakete}
+        neu: list[str] = []
+        for liste in ergebnisse:
+            for pfad in liste:
+                if pfad not in bekannt and pfad not in neu:
+                    neu.append(pfad)
+        if neu and self._werkzeug():
+            self._lesen_starten(neu)
+            self._protokoll(self.t("ps5pkg.opt_scan_found", count=len(neu)))
+        else:
+            self._status(self.t("ps5pkg.opt_scan_none"))
+
+    def optionen_anwenden(self, werte: dict, alt: dict, entfernt: list[str], neue_quellen: list[str]) -> None:
+        """Speichert die Optionen und setzt sie gleich um (vom Dialog beim Speichern gerufen)."""
+        for schluessel in (opt.ORDNER, *opt.STANDARD):
+            self._merken(schluessel, werte[schluessel])
+        if entfernt:
+            self.pakete = [i for i in self.pakete if i.pfad not in entfernt]
+            self._bibliothek_speichern()
+            if self.aktuell is not None and self.aktuell.pfad in entfernt:
+                self.aktuell = None
+                self.paket_titel.configure(text=self.t("ps5pkg.no_source"))
+                self.paket_pfad.configure(text="")
+                self.paket_typ.configure(text="")
+                self._cover = None
+                self.cover_label.configure(image="", text=self.t("ps5pkg.no_cover"))
+                self.cover_vorschau.configure(image="", text=self.t("ps5pkg.no_cover"))
+                if self.pakete:
+                    self._paket_waehlen(gewaehlen_info=self.pakete[0])
+        laeuft = self._job is not None or self._uebergabe is not None
+        if not laeuft:
+            if werte[opt.ZIEL] != alt[opt.ZIEL]:
+                self.ziel_var.set(werte[opt.ZIEL])
+            if werte[opt.AKTION] != alt[opt.AKTION] and self._aktion_moeglich(werte[opt.AKTION]):
+                self.aktion_var.set(werte[opt.AKTION])
+                self._aktion_geaendert()
+            if werte[opt.FORMAT] != alt[opt.FORMAT] and self._format_moeglich(werte[opt.FORMAT]):
+                self.format_schluessel = werte[opt.FORMAT]
+                self._kacheln_faerben()
+        if self.aktuell is not None:
+            self._cover_zeigen(self.aktuell)
+        self._liste_fuellen(auswaehlen=self.aktuell.pfad if self.aktuell is not None else "")
+        self._knoepfe_pruefen()
+        if werte[opt.ORDNER] and (werte[opt.ORDNER] != alt[opt.ORDNER] or werte[opt.REKURSIV] != alt[opt.REKURSIV]):
+            self._ordner_scan_starten(werte[opt.ORDNER], werte[opt.REKURSIV])
+        if neue_quellen and self._werkzeug():
+            self._pakete_hinzufuegen(neue_quellen)
+        self._status(self.t("ps5pkg.opt_saved"))
+
+    def _ausgabe_nach_erfolg(self) -> None:
+        """Option "Ausgabeordner nach erfolgreichem Auftrag oeffnen"."""
+        if self._einstellung(opt.OEFFNEN, False) is True:
+            self._ausgabe_oeffnen()
 
     def _bibliothek_aktualisieren(self) -> None:
         pfade = [i.pfad for i in self.pakete if os.path.exists(i.pfad)]
@@ -784,7 +948,14 @@ class Ps5PkgFenster:
         suche = self._suche_text()
         self.liste.delete(*self.liste.get_children())
         gezeigt = 0
-        for info in sorted(self.pakete, key=lambda i: (i.titel or i.pfad).lower()):
+        sortierung = self._einstellung(opt.SORTIERUNG, "titel")
+        if sortierung == "titel_id":
+            reihenfolge = lambda i: (i.title_id or "~", (i.titel or i.pfad).lower())          # noqa: E731
+        elif sortierung == "groesse":
+            reihenfolge = lambda i: (-int(i.groesse or 0), (i.titel or i.pfad).lower())       # noqa: E731
+        else:
+            reihenfolge = lambda i: (i.titel or i.pfad).lower()                               # noqa: E731
+        for info in sorted(self.pakete, key=reihenfolge):
             if suche and not suche_passt(info, suche):
                 continue
             quelle = (self.t("ps5pkg.src_folder_short") if info.ist_ordner
@@ -828,19 +999,55 @@ class Ps5PkgFenster:
 
     def _cover_zeigen(self, info: "wz.PaketInfo") -> None:
         self._cover = None
-        if info.icon and os.path.isfile(info.icon):
+        an = self._cover_an()
+        if an and info.icon and os.path.isfile(info.icon):
             try:
-                from PIL import Image, ImageTk
+                from PIL import Image, ImageDraw, ImageTk
                 bild = Image.open(info.icon).convert("RGBA")
-                bild.thumbnail((300, 300))
+                bild.thumbnail((330, 330))
+                # Abgerundete Ecken: ausserhalb der Rundung ist das Bild durchsichtig, dahinter steht der Kartengrund.
+                maske = Image.new("L", bild.size, 0)
+                ImageDraw.Draw(maske).rounded_rectangle((0, 0, bild.width - 1, bild.height - 1), radius=16, fill=255)
+                bild.putalpha(maske)
                 self._cover = ImageTk.PhotoImage(bild, master=self.win)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Cover nicht lesbar: %s", exc)
         if self._cover is not None:
             self.cover_label.configure(image=self._cover, text="", compound="center")
             self.cover_label.configure(height=300)
+            self.cover_vorschau.configure(image=self._cover, text="")
         else:
-            self.cover_label.configure(image="", text=self.t("ps5pkg.no_cover"))
+            text = self.t("ps5pkg.no_cover") if an else ""        # ausgeschaltet: nichts anzeigen, auch keinen Hinweis
+            self.cover_label.configure(image="", text=text)
+            self.cover_vorschau.configure(image="", text=text)
+
+    def _vorschau_oeffnen(self) -> None:
+        """Zeigt das Cover des gewaehlten Pakets gross in einem eigenen Fenster (Klick oder Esc schliesst es)."""
+        info = self.aktuell
+        if info is None or not info.icon or not os.path.isfile(info.icon):
+            self._status(self.t("ps5pkg.no_cover"))
+            return
+        try:
+            from PIL import Image, ImageTk
+            bild = Image.open(info.icon).convert("RGBA")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Vorschau nicht lesbar: %s", exc)
+            self._status(self.t("ps5pkg.no_cover"))
+            return
+        grenze = max(300, min(900, int(self.win.winfo_screenheight() * 0.8)))
+        bild.thumbnail((grenze, grenze))
+        fenster = tk.Toplevel(self.win)
+        fenster.title(self.t("ps5pkg.preview_title", name=info.titel or os.path.basename(info.pfad)))
+        fenster.configure(bg=self.c["bg_main"])
+        fenster.transient(self.win.winfo_toplevel())
+        foto = ImageTk.PhotoImage(bild, master=fenster)
+        etikett = tk.Label(fenster, image=foto, bg=self.c["bg_main"], bd=0, cursor="hand2")
+        etikett.image = foto                                  # das Fenster haelt das Bild, nichts bleibt danach stehen
+        etikett.pack(padx=12, pady=12)
+        for ziel in (etikett, fenster):
+            ziel.bind("<Button-1>", lambda _e: fenster.destroy())
+        fenster.bind("<Escape>", lambda _e: fenster.destroy())
+        fenster.focus_set()
 
     def _ziel_name(self) -> str:
         """Name des Ergebnisses: Ordner oder Datei mit Endung."""
@@ -861,8 +1068,11 @@ class Ps5PkgFenster:
             for var in v.values():
                 var.set("")
             return
-        if self.aktion_var.get() == AKTION_PRUEFEN:
+        aktion = self.aktion_var.get()
+        if aktion == AKTION_PRUEFEN:
             v["output"].set("-")
+        elif aktion == AKTION_KONSOLE:
+            v["output"].set("%s:%s" % (self.adresse_var.get().strip() or "?", "/" + self.fern_var.get().strip().strip("/")))
         else:
             v["output"].set(self._ziel_name())
         v["title_id"].set(info.title_id)
@@ -871,7 +1081,7 @@ class Ps5PkgFenster:
         ziel = self.ziel_var.get().strip()
         frei = ""
         try:
-            if ziel and os.path.isdir(ziel):
+            if ziel and os.path.isdir(ziel) and aktion != AKTION_KONSOLE:
                 frei = self._fmt(shutil.disk_usage(ziel).free)
         except OSError:
             frei = ""
@@ -882,6 +1092,24 @@ class Ps5PkgFenster:
         self._merken(EINST_AKTION, self.aktion_var.get())
         self._aktion_anwenden()
 
+    def _konsole_zeilen_zeigen(self) -> None:
+        """Bei der Aktion "Auf die PS5 entpacken" stehen Adresse und Ordner der Konsole statt des Zielordners auf dem PC."""
+        konsole = self.aktion_var.get() == AKTION_KONSOLE
+        if konsole == self._konsole_ansicht or not hasattr(self, "fern_reihe"):
+            return
+        self._konsole_ansicht = konsole
+        try:
+            if konsole:
+                self.ziel_reihe.pack_forget()
+                self.ueberschreiben.pack_forget()
+                self.fern_reihe.pack(fill="x", pady=(10, 0), after=self.aktion_reihe)
+            else:
+                self.fern_reihe.pack_forget()
+                self.ziel_reihe.pack(fill="x", pady=(10, 0), after=self.aktion_reihe)
+                self.ueberschreiben.pack(anchor="w", pady=(6, 0), after=self.ziel_reihe)
+        except tk.TclError as exc:
+            logger.debug("Zeilen der Aktion nicht umschaltbar: %s", exc)
+
     def _aktion_anwenden(self) -> None:
         """Kacheln, Ergebnis und Knoepfe zur Aktion nachziehen - ohne zu speichern (auch beim Oeffnen)."""
         for aktion, knopf in getattr(self, "_aktion_knoepfe", {}).items():
@@ -889,6 +1117,7 @@ class Ps5PkgFenster:
                 knopf.configure(state="normal" if self._aktion_moeglich(aktion) else "disabled")
             except tk.TclError:
                 pass
+        self._konsole_zeilen_zeigen()
         self._kacheln_faerben()
         self._ergebnis_fuellen()
         self._knoepfe_pruefen()
@@ -899,6 +1128,9 @@ class Ps5PkgFenster:
             self.start_knopf.configure(state="disabled" if (laeuft or self.aktuell is None) else "normal")
             self.abbrechen_knopf.configure(state="normal" if laeuft else "disabled")
             self.cover_knopf.configure(state="normal" if self.aktuell is not None else "disabled")
+            hat_cover = (self.aktuell is not None and self._cover_an() and bool(self.aktuell.icon)
+                         and os.path.isfile(self.aktuell.icon))
+            self.vorschau_knopf.configure(state="normal" if hat_cover else "disabled")
         except tk.TclError:
             pass
 
@@ -962,6 +1194,9 @@ class Ps5PkgFenster:
         if aktion == AKTION_PRUEFEN:
             self._job_starten("pruefen", self._lauf_pruefen, info, "")
             return
+        if aktion == AKTION_KONSOLE:
+            self._konsole_starten(info)
+            return
         ziel = self.ziel_var.get().strip()
         if not ziel or not os.path.isdir(ziel):
             self._fehler(self.t("ps5pkg.err_no_target"))
@@ -1002,6 +1237,21 @@ class Ps5PkgFenster:
         staging = os.path.join(tempfile.mkdtemp(prefix="ps5conv_ps5pkg_", dir=arbeit), anzeigename(info))
         self._staging.append(os.path.dirname(staging))
         self._job_starten("umwandeln", self._lauf_extrahieren, info, staging)
+
+    def _konsole_starten(self, info: "wz.PaketInfo") -> None:
+        """Prueft Adresse und Ordner und startet das Entpacken auf die PS5 (der Arbeitsfaden fragt und sendet)."""
+        adresse = self.adresse_var.get().strip()
+        fern = "/" + self.fern_var.get().strip().strip("/")
+        if not adresse:
+            self._fehler(self.t("ps5pkg.err_no_address"))
+            return
+        if fern == "/":                         # die Wurzel der Konsole ist kein Ziel fuer ein Spiel
+            self._fehler(self.t("ps5pkg.err_no_remote"))
+            return
+        self._merken(EINST_FERN, fern)
+        self.fern_var.set(fern)
+        self._konsole_ziel = (adresse, fern)
+        self._job_starten("konsole", self._lauf_konsole, info, fern)
 
     def _platz_reicht(self, ordner: str, noetig: int, nachfragen: bool = False) -> bool:
         """Genug freier Platz in ``ordner``? Knapp: Rueckfrage (``nachfragen``); weniger als gebraucht: Absage."""
@@ -1050,6 +1300,9 @@ class Ps5PkgFenster:
 
     def _bauen_starten(self, info: "wz.PaketInfo", ziel: str) -> None:
         """Baut aus einem Spielordner ein Debug-Paket: Kennungen und ``param.json`` pruefen, Platz pruefen, los."""
+        if self._builder() == "ppt" and not self._werkzeug_ppt():
+            self._fehler(self.t("ps5pkg.err_no_tool_ppt"))
+            return
         if not (wz.CONTENT_ID.match(info.content_id) and wz.TITLE_ID.match(info.title_id)):
             self._fehler(self.t("ps5pkg.err_content_id", cid=info.content_id or "-", tid=info.title_id or "-"))
             return
@@ -1105,7 +1358,8 @@ class Ps5PkgFenster:
         self.balken_gesamt["value"] = 0
         self.schritt_var.set("0 %")
         text = {"pruefen": "ps5pkg.job_checking", "extrahieren": "ps5pkg.job_extracting",
-                "umwandeln": "ps5pkg.job_extracting_for", "bauen": "ps5pkg.job_building"}[art]
+                "umwandeln": "ps5pkg.job_extracting_for", "bauen": "ps5pkg.job_building",
+                "konsole": "ps5pkg.job_console"}[art]
         self.auftrag_var.set(self.t(text, name=anzeigename(info)))
         self._protokoll(self.t("ps5pkg.log_start_" + art, name=os.path.basename(info.pfad)))
         self._knoepfe_pruefen()
@@ -1113,7 +1367,7 @@ class Ps5PkgFenster:
 
     def _lauf_pruefen(self, info: "wz.PaketInfo", _ziel: str, _art: str) -> None:
         try:
-            ergebnis = wz.pruefen(self._werkzeug(), info.pfad, abbruch=lambda: self._abbruch,
+            ergebnis = wz.pruefen(self._werkzeug(), info.pfad, passcode=self._passcode(), abbruch=lambda: self._abbruch,
                                   popen_extra=self._popen_extra())
             for r in ergebnis.get("results", []):
                 stufe = str(r.get("Level", ""))
@@ -1138,13 +1392,72 @@ class Ps5PkgFenster:
                 self._z["schritt_text"] = datei
 
         try:
-            schluss = wz.extrahieren(self._werkzeug(), info.pfad, ziel, zeile=self._melden, fortschritt=fortschritt,
-                                     abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
+            schluss = wz.extrahieren(self._werkzeug(), info.pfad, ziel, passcode=self._passcode(), zeile=self._melden,
+                                     fortschritt=fortschritt, abbruch=lambda: self._abbruch,
+                                     popen_extra=self._popen_extra())
             ende = {"ok": True, "text": schluss, "ausgabe": ziel}
         except wz.Fehler as exc:
             ende = {"ok": False, "text": str(exc)}
         except Exception as exc:  # noqa: BLE001
             logger.exception("Paket entpacken")
+            ende = {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
+        with self._sperre:
+            self._z["fertig"] = ende
+
+    def _lauf_konsole(self, info: "wz.PaketInfo", fern: str, art: str) -> None:
+        """Arbeitsfaden: das Paket direkt auf die PS5 entpacken (:func:`pkg_direkt.direkt_entpacken`).
+
+        Die Rueckfragen laufen ueber den Fensterfaden (``_im_hauptfaden``), der Faden selbst fasst kein Widget an.
+        Liegt das Ziel schon auf der Konsole, entscheidet der Anwender zwischen Fortsetzen (fertige Dateien
+        ueberspringen, angefangene weiterschreiben), alles neu schreiben und Abbrechen; sonst bestaetigt er Groesse und
+        Dauer. Abgebrochen wird nach der laufenden Datei.
+        """
+        adresse = self._konsole_ziel[0]
+        titel = self.t("ps5pkg.window_title")
+
+        def fortschritt(stand) -> None:
+            with self._sperre:
+                self._z["prozent"] = stand.anteil * 100.0
+                self._z["schritt_text"] = self.t(
+                    "ps5pkg.console_status", datei=stand.aktuell, dateien=min(stand.dateien + 1, stand.dateien_gesamt),
+                    gesamt=stand.dateien_gesamt, menge=ftp.menge_lesbar(stand.bytes))
+
+        try:
+            if ftp.vorhanden(adresse, fern):
+                antwort = self.g._im_hauptfaden(messagebox.askyesnocancel, titel,
+                                                self.t("ps5pkg.ask_console_exists", ziel=fern), default="cancel",
+                                                parent=self.win)
+                if antwort is None:
+                    with self._sperre:
+                        self._z["fertig"] = {"ok": True, "nichts": True, "text": self.t("ps5pkg.console_nothing")}
+                    return
+                fortsetzen = bool(antwort)
+            else:
+                minuten = max(1, int(ftp.dauer_schaetzen(info.groesse, ftp.TEMPO_HOCH) / 60))
+                if not self.g._im_hauptfaden(
+                        messagebox.askyesno, titel,
+                        self.t("ps5pkg.ask_console", name=anzeigename(info), ziel="%s:%s" % (adresse, fern),
+                               menge=self._fmt(info.groesse), tempo=ftp.tempo_lesbar(ftp.TEMPO_HOCH), minuten=minuten),
+                        default="no", parent=self.win):
+                    with self._sperre:
+                        self._z["fertig"] = {"ok": True, "nichts": True, "text": self.t("ps5pkg.console_nothing")}
+                    return
+                fortsetzen = False
+            stand = pkg_direkt.direkt_entpacken(
+                self._werkzeug(), info.pfad, adresse, fern, fortsetzen=fortsetzen, passcode=self._passcode(),
+                auf_fortschritt=fortschritt, abbruch=lambda: self._abbruch, zeile=self._melden,
+                popen_extra=self._popen_extra(), arbeitsordner=self._arbeitsordner())
+            if stand.abgebrochen:
+                ende = {"ok": True, "abgebrochen": True,
+                        "text": self.t("ps5pkg.log_console_cancelled", dateien=stand.dateien, ziel=fern)}
+            else:
+                ende = {"ok": True, "text": self.t(
+                    "ps5pkg.log_console_done", dateien=stand.dateien, menge=ftp.menge_lesbar(stand.bytes), ziel=fern,
+                    uebersprungen=stand.uebersprungen, fortgesetzt=stand.fortgesetzt, wiederholt=stand.wiederholt)}
+        except (ftp.FtpFehler, wz.Fehler) as exc:
+            ende = {"ok": False, "text": str(exc)}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Paket auf die PS5 entpacken")
             ende = {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
         with self._sperre:
             self._z["fertig"] = ende
@@ -1161,10 +1474,19 @@ class Ps5PkgFenster:
                 self._z["schritt_text"] = text
 
         try:
-            pfad = wz.bauen(self._werkzeug(), info.pfad, ziel, content_id=info.content_id, title_id=info.title_id,
-                            titel=info.titel, version=str(param.get("contentVersion", "") or "01.000.000"),
-                            temp=bau.get("temp"), zeile=self._melden, fortschritt=fortschritt,
-                            abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
+            passcode = self._passcode()
+            if self._builder() == "ppt":
+                werkzeug_ppt = self._werkzeug_ppt()
+                if not werkzeug_ppt:
+                    raise wz.Fehler(self.t("ps5pkg.err_no_tool_ppt"))
+                pfad = ppt.bauen(werkzeug_ppt, info.pfad, ziel, content_id=info.content_id, title_id=info.title_id,
+                                 passcode=passcode, zeile=self._melden, fortschritt=fortschritt,
+                                 abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
+            else:
+                pfad = wz.bauen(self._werkzeug(), info.pfad, ziel, content_id=info.content_id, title_id=info.title_id,
+                                titel=info.titel, version=str(param.get("contentVersion", "") or "01.000.000"),
+                                passcode=passcode, temp=bau.get("temp"), zeile=self._melden, fortschritt=fortschritt,
+                                abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
         except wz.Fehler as exc:
             self._unfertiges_wegraeumen(ziel, bau)
             ende = {"ok": False, "text": str(exc)}
@@ -1179,7 +1501,8 @@ class Ps5PkgFenster:
                 self._z["schritt_text"] = self.t("ps5pkg.job_validating")
             self._melden(self.t("ps5pkg.job_validating"))
             try:
-                erg = wz.pruefen(self._werkzeug(), pfad, abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
+                erg = wz.pruefen(self._werkzeug(), pfad, passcode=passcode, abbruch=lambda: self._abbruch,
+                                popen_extra=self._popen_extra())
                 for r in erg.get("results", []):
                     if str(r.get("Level", "")) != "pass":
                         self._melden("[%s] %s: %s" % (str(r.get("Level", "")).upper(), r.get("Check", ""), r.get("Message", "")))
@@ -1263,8 +1586,11 @@ class Ps5PkgFenster:
             gelesen, self._z["gelesen"] = self._z["gelesen"], []
             liest = self._z["lesen_laeuft"]
             gesamt = self._z.get("gesamt")
+            scan, self._z["scan"] = self._z["scan"], []
         for z in zeilen:
             self._protokoll(z)
+        if scan:
+            self._scan_uebernehmen(scan)
         for paket_liste, waehlen in gelesen:
             self._gelesen_uebernehmen(paket_liste, waehlen)
         if gelesen and not liest:
@@ -1284,6 +1610,15 @@ class Ps5PkgFenster:
     def _job_beendet(self, ende: dict) -> None:
         job, self._job = self._job, None
         art = job["art"]
+        if ende.get("nichts") or ende.get("abgebrochen"):
+            # Der Anwender hat bei der Rueckfrage verzichtet oder nach einer Datei abgebrochen: kein Fehlschlag.
+            self.auftrag_var.set(ende["text"])
+            self._protokoll(ende["text"])
+            if ende.get("nichts"):
+                self.balken["value"] = 0
+                self.balken_gesamt["value"] = 0
+            self._knoepfe_pruefen()
+            return
         if not ende["ok"]:
             self.auftrag_var.set(self.t("ps5pkg.job_failed"))
             self._protokoll(self.t("ps5pkg.log_failed", grund=ende["text"]))
@@ -1311,6 +1646,13 @@ class Ps5PkgFenster:
             self.balken_gesamt["value"] = 100
             self._knoepfe_pruefen()
             return
+        if art == "konsole":
+            self.auftrag_var.set(self.t("ps5pkg.job_done_console", ziel=job["ziel"]))
+            self._protokoll(ende["text"])
+            self.balken["value"] = 100
+            self.balken_gesamt["value"] = 100
+            self._knoepfe_pruefen()
+            return
         if art == "extrahieren":
             self.auftrag_var.set(self.t("ps5pkg.job_done_extract", ordner=job["ziel"]))
             self._protokoll(ende["text"])
@@ -1319,6 +1661,7 @@ class Ps5PkgFenster:
             self.balken["value"] = 100
             self.balken_gesamt["value"] = 100
             self._knoepfe_pruefen()
+            self._ausgabe_nach_erfolg()
             return
         # umwandeln: entpackt - nun Aufgabe 1
         self._protokoll(ende["text"])
@@ -1348,6 +1691,7 @@ class Ps5PkgFenster:
             self.balken["value"] = 100
             self.balken_gesamt["value"] = 100
             self._protokoll(self.t("ps5pkg.log_done_convert", name=self._ziel_name()))
+            self._ausgabe_nach_erfolg()
         else:
             self.auftrag_var.set(self.t("ps5pkg.job_failed"))
             self._protokoll(self.t("ps5pkg.log_convert_not_done"))
@@ -1386,6 +1730,9 @@ class Ps5PkgFenster:
                 pass
         if self._uebergabe is None:
             self._staging_raeumen()
+        dialog = getattr(self, optionen_ui.DIALOG_ATTRIBUT, None)
+        if dialog is not None:
+            dialog.schliessen()
         self._cover = None
         for ordner in self._cover_ordner:
             try:
@@ -1396,19 +1743,21 @@ class Ps5PkgFenster:
             setattr(self.g, FENSTER_ATTRIBUT, None)
 
 
-def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "") -> Ps5PkgFenster:
-    """Oeffnet das Fenster - oder holt das offene nach vorn."""
+def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",
+            *, master: "tk.Misc | None" = None) -> Ps5PkgFenster:
+    """Gibt die Seite zurueck - einmalig gebaut, danach immer dieselbe (mit der neuen Vorgabe, falls es eine gibt).
+
+    ``master``: wohin die Seite (einmalig) gebaut wird, siehe :func:`ps5_validator.ui.ps4_dump_image.oeffnen`.
+    """
     vorhanden = getattr(gui, FENSTER_ATTRIBUT, None)
     if vorhanden is not None:
         try:
             if vorhanden.win.winfo_exists():
-                vorhanden.win.deiconify()
-                vorhanden.win.lift()
                 if vorgabe:
                     vorhanden._pakete_hinzufuegen([p for p in vorgabe.split(os.pathsep) if p.strip()], waehlen=True)
                 return vorhanden
         except tk.TclError:
             pass
-    fenster = Ps5PkgFenster(gui, schrift, mono, pt, vorgabe)
+    fenster = Ps5PkgFenster(gui, schrift, mono, pt, vorgabe, master=master)
     setattr(gui, FENSTER_ATTRIBUT, fenster)
     return fenster

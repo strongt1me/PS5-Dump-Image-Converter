@@ -685,6 +685,16 @@ class SuchlaufSeiteTests(unittest.TestCase):
             self.assertIn(os.path.normpath(pfad), _eintraege(), "Die Datei steht nicht in der Quelle.")
             self.assertEqual("", self.app._ps4pkg_vorgabe, "Die Vorgabe gilt nur fuer ein Oeffnen.")
         finally:
+            # Seit 12.10.2026 liegt die Oberflaeche nicht mehr in einem eigenen Fenster, sondern eingebettet
+            # in der Seite "7. PKG / FPKG" (ein Frame, kein Toplevel) - die Schleife unten faende sie nicht.
+            self.app._pkg_fpkg_seite_verbergen()
+            seite = getattr(self.app, "_pkg_fpkg_seite", None)
+            if seite is not None:
+                try:
+                    seite.rahmen.destroy()
+                except tk.TclError:
+                    pass
+                delattr(self.app, "_pkg_fpkg_seite")
             for w in list(self.app.root.winfo_children()):
                 if w not in vorher and isinstance(w, tk.Toplevel):
                     w.destroy()

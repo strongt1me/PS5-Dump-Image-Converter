@@ -22,11 +22,15 @@ WIEDERHOLBARE_SCHLUESSEL: tuple[str, ...] = (
     "image_ro",
     "image_rw",
     "image_sector",
+    # Beide entfallen ab ShadowMount+ 1.7beta5 (kstuff-Autopause ausgebaut); aeltere Fassungen
+    # kennen sie noch, deshalb bleiben sie fuer die Anzeige stehen.
     "kstuff_delay",
     "kstuff_no_pause",
     "global_fakelib_exclude",
     # Ab ShadowMount+ 1.7beta4: schaltet fuer einen Titel jede fakelib ab.
     "fakelib_exclude",
+    # Ab ShadowMount+ 1.7beta5: ``fakelib_mode=<TITLE_ID>:<default|full|emulators|disabled>``.
+    "fakelib_mode",
 )
 
 #: Womit mehrere Werte in **einer** Editorzeile getrennt werden.

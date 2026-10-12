@@ -9,8 +9,28 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 ## v1.9.71 – 09.10.2026
 
 - **Neu:** Unter WEITERE TOOLS gibt es „PS5 PKG Dump & Image Converter“: PS5-Pakete (Debug-Pakete) prüfen, entpacken und zu .ffpfsc, .ffpfs, exFAT oder .ffpkg umwandeln, mit Bibliothek, Cover und technischer Übersicht – und aus einem Spielordner ein Debug-Paket bauen.
+- **Neu:** Der Knopf „Updates“ auf „Konsole & Payloads“ prüft alle mitgelieferten Werkzeuge auf neuere Fassungen und bietet sie zum Herunterladen an.
+- **Neu:** Auf „Konsole & Payloads“ legst du per Stern Favoriten fest, die das Programm beim Start und mit „Favoriten senden“ an die PS5 schickt (Port 9021 wird bei Bedarf zuerst geöffnet); ersetzt „Grundausstattung starten“.
 - **Neu:** Die Titelleisten aller Fenster sind unter Windows 11 dunkel graublau; im Design Hell bleiben sie hell. Die Knöpfe der Seitenleiste haben jetzt die Farbe der Knöpfe im rechten Bereich.
-- **Aktualisiert:** PKG Manager 1.5.0 (Installationswarteschlange, klarere Meldung bei zu wenig Speicher), WebKit Autoloader 0.6.1 (zur Auswahl neben den älteren), PS5Upload 6.7.3 und AnyPad PS5 0.8.1-beta.
+- **Neu:** Im PS5 PKG Dump & Image Converter schickt die Aktion „Auf die PS5 entpacken“ ein Paket beim Lesen gleich per FTP an die Konsole – ohne entpackte Kopie auf dem PC und mit Fortsetzen nach einem Abbruch.
+- **Neu:** Im PS5 PKG Dump & Image Converter gibt es einen Bereich „Optionen“ (Bibliotheksordner, Darstellung, Vorgaben für Ausgabe und Zielformat, Debug-Passcode, Export/Import/Zurücksetzen der Einstellungen).
+- **Neu:** Im PS5 PKG Dump & Image Converter lässt sich das Cover des gewählten Pakets groß als Vorschau öffnen.
+- **Neu:** Im PS5 PKG Dump & Image Converter steht in den Optionen ein zweiter Paketersteller zur Wahl (ProsperoPkgTool, neben dem bisherigen LibProsperoPkg) – nur für „Paket bauen“.
+- **Geändert:** Der Knopf „AMPR EMU Manager“ ist aus dem Bereich UMWANDELN in den Bereich KONSOLE gewandert (letzter Knopf); an seiner Stelle steht jetzt „7. PKG / FPKG“ mit den Knöpfen „PKG“ und „FPKG“ – sie zeigen das, was bisher unter WEITERE TOOLS als eigenes Fenster lief („PS4 PKG Dump & Image Converter“ bzw. „PS5 PKG Dump & Image Converter“), jetzt eingebettet im rechten Bereich statt in einem eigenen Fenster; die beiden Einträge unter WEITERE TOOLS sind entfallen. „Validator“ ist jetzt „8.“.
+- **Geändert:** Beim Öffnen des Programms ist im Bereich UMWANDELN nichts angekreuzt (AMPR EMU, PlayGo, BACKPORT), AMPR EMU steht auf Normal mit der neuesten Fassung ohne Pack, und Quelle, Ziel- und Temp-Ordner sind leer; ein leerer Temp-Ordner heißt Windows-Temp.
+- **Geändert:** Die Live-Anzeige während eines Laufs nennt jetzt den freien Arbeitsspeicher und warnt unter 1 GB.
+- **Geändert:** Beim Senden eines Ordners an die Konsole fragt das Programm bei einem vorhandenen Ziel, ob es fortsetzen soll, und baut eine abgerissene Verbindung neu auf.
+- **Geändert:** Auf der Seite „WebKit Autoloader“ stehen die drei Wege in einer Reihe, über jedem Knopf sein Symbol (deutsch und englisch).
+- **Geändert:** Das Banner von psxtools.de erscheint jetzt zwei Minuten nach dem Start, steht fünf Minuten und kommt danach alle 30 Minuten wieder; es folgt dem Fenster, ein Rechtsklick schließt es.
+- **Geändert:** Das Umschalten zwischen den Ansichten und Aufgaben geht spürbar schneller, weil unveränderte runde Flächen nicht mehr neu gezeichnet werden.
+- **Geändert:** Im PS5 PKG Dump & Image Converter steht das gewählte Paket jetzt in einem eigenen, klar abgesetzten Bereich statt dicht über den Aktions-Knöpfen.
+- **Geändert:** Beim Lesen eines großen Pakets auf einer Festplatte zeigt das Programm jetzt ein Lebenszeichen, statt scheinbar stehenzubleiben.
+- **Aktualisiert:** Das Fenster CREDITS dankt jetzt auch nexgen999, matem6 und Phoenixx.
+- **Aktualisiert:** PKG Manager 1.5.1, WebKit Autoloader 0.6.1 (zur Auswahl neben den älteren), PS5Upload 7.0.22, AnyPad PS5 0.9.1-beta, PS5 Cooling & System Center 1.61.0, CheatRunner 0.18, WK-AutoLoader 1.1.1 und ShadowMount+ 1.7beta5fix1.
+- **Aktualisiert:** Die Warnung vor Titeln ohne fakelib erkennt jetzt auch die neuen Einträge „fakelib_mode“ und „fakelib_default_mode“ von ShadowMount+ 1.7beta5 und nennt den auslösenden Eintrag.
+- **Behoben:** PS5Upload wird an seinem Port 9120 erkannt (bisher war 9113 eingetragen).
+- **Behoben:** In der Ansicht KONSOLE leuchten die Seitenknöpfe beim Darüberfahren wieder auf, wie in der Ansicht UMWANDELN.
+- **Behoben:** Der Strich unter „OK“ erscheint in Meldungsfenstern nicht mehr beim Öffnen, sondern nur noch bei Bedienung mit der Tab-Taste.
 - **Behoben:** Das Abbrechen im PS4 PKG Dump & Image Converter hing fest, weil nur der äußere Prozess beendet wurde. Jetzt endet alles sofort, der Abbruch wird angezeigt und der Arbeitsordner im Hintergrund entfernt.
 
 ## v1.9.70 – 08.10.2026

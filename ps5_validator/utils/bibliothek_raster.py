@@ -388,6 +388,59 @@ def knopf_umfaerben(flaeche: tk.Canvas, zeichner: Zeichner, knopf: GezeichneterK
 # Ein Knopf als Widget (Kopfleiste, Streifen unter der Liste)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Der Fokusstrich nur bei Tastaturbedienung (seit 10.10.2026)
+#
+# Der Strich unter einem gezeichneten Knopf zeigt, wo die Tastatur steht. Wie bei Windows-Programmen erscheint er erst,
+# wenn jemand Tab drueckt, und verschwindet beim ersten Mausklick. Ein Fokus, den das Programm selbst setzt, zeigt ihn
+# nicht: Ein Meldungsfenster stellt den Fokus beim Oeffnen auf "OK" - bis zum 10.10.2026 stand der Strich dort bei jeder
+# Meldung, und ein Klick irgendwo liess ihn wieder verschwinden (Meldung des Nutzers).
+# ---------------------------------------------------------------------------------------------------------------------
+_TASTATUR = {"bedient": False}
+
+
+def tastatur_bedient() -> bool:
+    """Hat zuletzt die Tastatur (Tab) bedient - dann zeigen die Knoepfe, wo der Fokus steht."""
+    return bool(_TASTATUR["bedient"])
+
+
+def tastaturbedienung_setzen(an: bool) -> None:
+    """Setzt den Zustand von Hand (Tests; sonst entscheiden Tab und Mausklick)."""
+    _TASTATUR["bedient"] = bool(an)
+
+
+def _bedienung_geaendert(fenster: tk.Misc, an: bool) -> None:
+    """Tab oder Mausklick im Fenster: Zustand merken und den Knopf mit dem Fokus neu malen."""
+    if _TASTATUR["bedient"] == an:
+        return
+    _TASTATUR["bedient"] = an
+    try:
+        ziel = fenster.focus_get()
+    except (tk.TclError, KeyError):
+        return
+    if isinstance(ziel, KartenKnopf):
+        ziel._zeichnen()
+
+
+def _tastatur_beobachten(widget: tk.Misc) -> None:
+    """Haengt an das Fenster des Knopfes (einmal je Fenster), was Tab und Mausklick sehen.
+
+    Die Bindung liegt am Fenster, nicht am Knopf: Der Tab, der den Fokus auf den Knopf bringt, gilt noch dem vorigen
+    Widget. Sie laeuft vor der Standardbindung ``all <Tab>``, die den Fokus weitersetzt - das ``FocusIn`` des Knopfes
+    findet den Zustand also schon gesetzt vor.
+    """
+    try:
+        oben = widget.winfo_toplevel()
+    except tk.TclError:
+        return
+    if getattr(oben, "_pillen_tastatur", False):
+        return
+    oben._pillen_tastatur = True        # type: ignore[attr-defined]
+    for folge in ("<KeyPress-Tab>", "<ISO_Left_Tab>"):
+        oben.bind(folge, lambda _e, w=oben: _bedienung_geaendert(w, True), add="+")
+    oben.bind("<ButtonPress>", lambda _e, w=oben: _bedienung_geaendert(w, False), add="+")
+
+
 class KartenKnopf(tk.Canvas):
     """Ein gezeichneter Knopf als eigenes Widget - dieselbe Zeichnung wie auf den Karten.
 
@@ -437,6 +490,7 @@ class KartenKnopf(tk.Canvas):
         self.bind("<FocusOut>", self._fokus_aus, add="+")
         self.bind("<space>", self._taste, add="+")
         self.bind("<Return>", self._taste, add="+")
+        _tastatur_beobachten(self)
         self._zeichnen()
 
     # --- Masse -----------------------------------------------------------------------------------------
@@ -480,7 +534,7 @@ class KartenKnopf(tk.Canvas):
         try:
             self._knopf = knopf_zeichnen(self, self._z, spec, links, oben, self._b, self._h,
                                          zustand=self._zustand())
-            if self._fokus and self._state != "disabled":
+            if self._fokus_strich():
                 ring = self._z.palette.get("fg_accent", "#7fb2ff")
                 self.create_line(links + 3, oben + self._h - 2, links + self._b - 3, oben + self._h - 2,
                                  fill=ring, width=max(1, int(self._z.faktor)))
@@ -531,6 +585,10 @@ class KartenKnopf(tk.Canvas):
             return
         if self._innen(e):
             self.invoke()
+
+    def _fokus_strich(self) -> bool:
+        """Soll der Strich unter dem Knopf stehen? Nur mit Fokus, nicht gesperrt und nur nach Tastaturbedienung."""
+        return self._fokus and self._state != "disabled" and tastatur_bedient()
 
     def _fokus_ein(self, _e: Any = None) -> None:
         self._fokus = True

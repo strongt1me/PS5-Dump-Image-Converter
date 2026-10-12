@@ -339,17 +339,19 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         self.assertNotIn("self._btn_library_title =",
                          HAUPTDATEI.read_text(encoding="utf-8"))
 
-    def test_die_ansicht_konsole_hat_acht_knoepfe(self) -> None:
+    def test_die_ansicht_konsole_hat_neun_knoepfe(self) -> None:
         """Sechs am 25.09.2026, am Abend kurz fuenf, dann drei (Remote Play
         samt ActRemoteLink und ProsperoLight ganz heraus), seit dem
         30.09.2026 vier ("4. Prospero Manager" dazu), seit dem 04.10.2026
         sieben (Knopf 2 ist der WebKit Autoloader statt der Spielstaende, dazu
-        CoolSysCent-Pro, ShadowMount+ und SMPlusGui) und seit dem 05.10.2026
-        acht: "8. Direct Stream", seit dem 07.10.2026 "8. BFpilot"."""
+        CoolSysCent-Pro, ShadowMount+ und SMPlusGui), seit dem 05.10.2026
+        acht: "8. Direct Stream", seit dem 07.10.2026 "8. BFpilot", seit dem
+        12.10.2026 neun: "9. AMPR EMU Manager" (zuvor Aufgabe 7 der Seitenleiste
+        UMWANDELN, siehe test_pkg_fpkg_seite.py)."""
         kennungen = [k for _s, k in APP.PS5ConverterGUI._KONSOLE_KNOEPFE]
         self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
                           "coolsyscent", "shadowmount", "smplusgui",
-                          "bfpilot"], kennungen)
+                          "bfpilot", "amprmgr"], kennungen)
         for weg in ("konsole.btn_actremotelink", "konsole.btn_remoteplay",
                     "konsole.btn_prosperolight"):
             self.assertNotIn(weg, STRINGS)
@@ -369,13 +371,14 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
             with self.subTest(methode=methode):
                 self.assertFalse(hasattr(klasse, methode))
 
-    def test_drei_seiten_mit_bauplan(self) -> None:
+    def test_vier_seiten_mit_bauplan(self) -> None:
         klasse = APP.PS5ConverterGUI
         # Seit dem 26.09.2026 zeigen alle drei Knoepfe eine Seite: "Konsole &
         # Payloads" ist die Uebersicht, und auch der WebKit Autoloader (damals
-        # noch die Spielstaende) ist kein eigenes Fenster mehr.
+        # noch die Spielstaende) ist kein eigenes Fenster mehr. Seit dem
+        # 12.10.2026 kommt "amprmgr" dazu (AMPR EMU Manager, Knopf 9).
         # Dazu seit dem 26.09.2026 die Seite einer Weboberflaeche - ohne Knopf.
-        self.assertEqual({"uebersicht", "webkit", "bibliothek", "web"},
+        self.assertEqual({"uebersicht", "webkit", "bibliothek", "amprmgr", "web"},
                          set(klasse._KONSOLE_SEITENBAU))
         self.assertEqual("", klasse._KONSOLE_SEITENBAU["web"][2])
         for seite, (_attr, bauen, _knopf) in klasse._KONSOLE_SEITENBAU.items():
@@ -383,7 +386,8 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
                 self.assertTrue(callable(getattr(klasse, bauen, None)))
         self.assertEqual({"dienste": "_konsole_dienste_zeigen",
                           "webkit": "_konsole_webkit_zeigen",
-                          "bibliothek": "_konsole_bibliothek_umschalten"},
+                          "bibliothek": "_konsole_bibliothek_umschalten",
+                          "amprmgr": "_konsole_amprmgr_zeigen"},
                          klasse._KONSOLE_SEITEN)
         self.assertEqual({}, klasse._KONSOLE_FENSTER)
         self.assertFalse(hasattr(klasse, "_show_konsole_remoteplay"))
@@ -749,6 +753,35 @@ class SeiteTests(unittest.TestCase):
             "zeichnen, nur weil die Maus noch darauf steht.")
         self.assertEqual(self.app._COLORS["fg_accent"],
                          effektive_farbe(self._knopf("konsole.btn_dienste")))
+
+    def test_die_knoepfe_der_ansicht_konsole_leuchten_beim_ueberfahren_auf(self) -> None:
+        """Meldung vom 10.10.2026: In UMWANDELN leuchten die Seitenknoepfe unter der Maus auf, in KONSOLE nicht.
+
+        Grund: ``_konsole_knopf_hervorheben`` setzte ``activebackground`` der nicht gewaehlten Knoepfe auf die
+        Grundfarbe (Notloesung zur Meldung vom 01.10.2026, siehe oben). Jetzt steht dort die Akzentfarbe wie in
+        UMWANDELN - und der Hover-Zustand wird beim Seitenwechsel zurueckgesetzt."""
+        app = self.app
+        app._ansicht_setzen("konsole")
+        app._konsole_seite_setzen("uebersicht")
+        _WURZEL.update()
+        c = app._COLORS
+        waehlbar = self._knopf("konsole.btn_bibliothek")
+        gewaehlt = self._knopf("konsole.btn_dienste")
+        self.assertEqual(c["fg_accent"], waehlbar._activebackground, "beim Ueberfahren muss der Knopf aufleuchten")
+        self.assertEqual(c["bg_main"], waehlbar._activeforeground)
+        self.assertEqual(c["seitenknopf_bg"], waehlbar._bg, "im Ruhezustand bleibt er dunkel")
+        waehlbar._on_enter()
+        self.assertTrue(waehlbar._hovering)
+        # Gegenprobe zu UMWANDELN: dort steht es genauso
+        umwandeln = app.mode_buttons[0][0]
+        self.assertEqual(umwandeln._activebackground, waehlbar._activebackground)
+        # Ein Seitenwechsel setzt den Hover der nicht gewaehlten Knoepfe zurueck (Meldung vom 01.10.2026)
+        app._konsole_seite_setzen("uebersicht")
+        _WURZEL.update()
+        self.assertFalse(waehlbar._hovering)
+        self.assertEqual(c["fg_accent"], gewaehlt._bg, "der gewaehlte bleibt hervorgehoben")
+        waehlbar._on_enter()                    # die Maus betritt ihn neu: er leuchtet wieder
+        self.assertTrue(waehlbar._hovering)
 
     def test_die_knopfreihen_gehoeren_zur_quelle(self) -> None:
         zustand = self._seite()

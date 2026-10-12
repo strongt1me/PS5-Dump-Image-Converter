@@ -738,7 +738,7 @@ class TexteTests(unittest.TestCase):
         "holen.status_file", "holen.status_failed", "holen.size_running",
         "holen.ziel_vorhanden", "holen.log_dumper", "holen.log_start",
         "holen.log_done", "holen.log_cancelled",
-        "zurueck.ask_overwrite", "zurueck.log_kept", "zurueck.no_webfm",
+        "zurueck.ask_fortsetzen", "zurueck.log_stats", "zurueck.log_kept", "zurueck.no_webfm",
         "zurueck.log_start", "zurueck.log_done", "zurueck.log_cancelled",
         "zurueck.log_webfm", "zurueck.log_webfm_port", "zurueck.log_webfm_kein_port",
         "konsoleftp.log_ftp_aus", "konsoleftp.log_ftp_stumm",

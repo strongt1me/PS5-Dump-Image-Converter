@@ -674,10 +674,21 @@ class AblaufTests(_KonsolenTest):
         self.assertEqual(_text("amprmitschnitt.q_excluded"), frage[1])
         self.assertIn("fakelib_exclude=%s" % TITEL, frage[2])
         self.assertEqual(["stop", "weiter"], [o[0] for o in frage[3]])
-        self.assertIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL), self.zeilen)
+        self.assertIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL,
+                                    eintrag="fakelib_exclude=%s" % TITEL), self.zeilen)
         self.assertIn(_text("amprmitschnitt.cancelled"), self.zeilen)
         self.assertEqual(vorher, self._lesen(CONFIG))
         self.assertIsNone(self.rueckweg["config"])
+
+    def test_modus_eintraege_ab_beta5_warnen_ebenso(self) -> None:
+        for eintrag in ("fakelib_mode=%s:disabled" % TITEL,
+                        "fakelib_default_mode=disabled"):
+            with self.subTest(eintrag=eintrag):
+                self._ablegen(CONFIG, VORLAGE + eintrag + "\r\n")
+                self.app._ampr_gen_frage.reset_mock()
+                self.assertIsNone(self._pruefen("stop"))
+                frage = self.app._ampr_gen_frage.call_args.args
+                self.assertIn(eintrag, frage[2])
 
     def test_ausgenommener_titel_trotzdem_aufnehmen(self) -> None:
         self._ablegen(CONFIG, VORLAGE + "fakelib_exclude=%s\r\n" % TITEL.lower())
@@ -690,7 +701,8 @@ class AblaufTests(_KonsolenTest):
                       "global_fakelib_exclude=%s\r\n"
                       "# fakelib_exclude=%s\r\n" % (TITEL, TITEL))
         self.assertEqual([SPIEL + "/fakelib"], self._pruefen())
-        self.assertNotIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL), self.zeilen)
+        self.assertNotIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL,
+                                       eintrag="fakelib_exclude=%s" % TITEL), self.zeilen)
 
     def test_hauptschalter_aus(self) -> None:
         self._ablegen(CONFIG, VORLAGE + "backport_fakelib=0\r\n")

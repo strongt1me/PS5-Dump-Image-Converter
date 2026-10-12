@@ -617,7 +617,7 @@ class FruehesFenstersymbolTests(unittest.TestCase):
     def _gui_start(self) -> str:
         """Nur der Abschnitt des GUI-Starts.
 
-        'app = PS5ConverterGUI(root)' steht auch im Kommandozeilenzweig, und der
+        'app = PS5ConverterGUI(root ...' steht auch im Kommandozeilenzweig, und der
         kommt im Quelltext frueher - eine Suche ueber die ganze Datei misst
         deshalb die falsche Stelle.
         """
@@ -628,7 +628,7 @@ class FruehesFenstersymbolTests(unittest.TestCase):
         # Die Reihenfolge ist der ganze Punkt: erst Symbol, dann Oberflaeche.
         abschnitt = self._gui_start()
         symbol = abschnitt.index("_fenstersymbol_sofort_setzen(root)")
-        aufbau = abschnitt.index("app = PS5ConverterGUI(root)")
+        aufbau = abschnitt.index("app = PS5ConverterGUI(root, start_leer=True)")
         self.assertLess(symbol, aufbau,
                         "Das Symbol wird erst nach dem Aufbau der Oberflaeche gesetzt")
 

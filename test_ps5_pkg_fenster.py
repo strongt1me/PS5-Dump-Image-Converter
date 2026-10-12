@@ -53,6 +53,30 @@ def _warten(bedingung, grenze: float = 15.0) -> bool:
     return bool(bedingung())
 
 
+def _schleife(grenze: float, bis=None) -> None:
+    """Eine echte Hauptschleife fuer hoechstens ``grenze`` Sekunden.
+
+    Rueckrufe aus Arbeitsfaeden (``root.after``, etwa ``_im_hauptfaden`` fuer Rueckfragen) kommen nur an, solange
+    wirklich eine Hauptschleife laeuft - ``update()`` allein genuegt nicht (siehe test_webkit_seite).
+    """
+    ende = time.monotonic() + grenze
+
+    def _takt() -> None:
+        if (bis is not None and bis()) or time.monotonic() > ende:
+            _WURZEL.quit()
+        else:
+            _WURZEL.after(10, _takt)
+
+    _WURZEL.after(0, _takt)
+    _WURZEL.mainloop()
+
+
+def _ende(f, grenze: float = 20.0) -> bool:
+    """Wartet in einer echten Hauptschleife, bis der Auftrag des Fensters zu Ende ist."""
+    _schleife(grenze, bis=lambda: f._job is None)
+    return f._job is None
+
+
 def _info(name: str, titel: str, title_id: str, groesse: int = 2 * 1024 ** 3, pfad: str = "") -> "wz.PaketInfo":
     return wz.PaketInfo(pfad=pfad or name, groesse=groesse, typ="FullDebug", content_id="EP0000-%s_00-TESTTESTTESTTEST" % title_id,
                         title_id=title_id, titel=titel,
@@ -116,7 +140,6 @@ class FensterTests(unittest.TestCase):
     # ---------------- Aufbau ----------------
     def test_das_fenster_hat_beide_seiten_und_fuenf_kacheln(self) -> None:
         f = self.f
-        self.assertEqual("PS5 PKG Dump & Image Converter", f.win.title())
         self.assertEqual({"umwandeln", "bibliothek"}, set(f.seiten))
         self.assertEqual(["ffpkg", "ffpfsc", "ffpfs", "exfat", "pkg"], list(f._kacheln))
         self.assertEqual("ffpfsc", f.format_schluessel)
@@ -126,11 +149,12 @@ class FensterTests(unittest.TestCase):
         zweites = fz.oeffnen(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)
         self.assertIs(self.f, zweites)
 
-    def test_der_menueeintrag_steht_unter_weitere_tools(self) -> None:
+    def test_kein_menueeintrag_mehr_unter_weitere_tools(self) -> None:
+        """Bis zum 12.10.2026 abends stand hier ein eigener Knopf; seitdem ist "FPKG" eine Unterseite von
+        Aufgabe 7 "PKG / FPKG" in der Seitenleiste UMWANDELN (``ui/pkg_fpkg_seite.py``, Nutzerwunsch)."""
         paare = dict(self.app._MORE_TOOLS_ENTRIES)
-        self.assertEqual("_show_ps5_pkg_converter", paare["titlebar.ps5pkg"])
-        self.assertEqual("PS5 PKG Dump & Image Converter", STRINGS["titlebar.ps5pkg"]["de"])
-        self.assertEqual("PS5 PKG Dump & Image Converter", STRINGS["titlebar.ps5pkg"]["en"])
+        self.assertNotIn("titlebar.ps5pkg", paare)
+        self.assertNotIn("titlebar.ps5pkg", STRINGS)
         self.assertTrue(callable(getattr(self.app, "_show_ps5_pkg_converter")))
         with mock.patch.object(fz, "oeffnen") as oeffnen:
             self.app._show_ps5_pkg_converter()
@@ -803,6 +827,162 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(self.f.win.winfo_exists())
         self.f._job = None
 
+    # ---------------- Auf die PS5 entpacken (seit v1.9.72) ----------------
+    def _konsole(self, **einstellung):
+        """Fenster mit geladenem Paket, Aktion "Auf die PS5 entpacken" und eingetragener Adresse samt Ordner."""
+        self._laden("alpha.pkg")
+        f = self.f
+        alt = f.adresse_var.get()
+        self.addCleanup(f.adresse_var.set, alt)               # dieselbe Variable wie in der Ansicht KONSOLE
+        f.adresse_var.set(einstellung.get("adresse", "10.0.0.5"))
+        f.fern_var.set(einstellung.get("fern", "/mnt/usb0/Alpha"))
+        f.aktion_var.set(fz.AKTION_KONSOLE)
+        f._aktion_geaendert()
+        return f
+
+    def _direkt(self, ergebnis=None, fehler=None, vorhanden=False, ja_nein_abbrechen=None, bestaetigt=True):
+        """Ersetzt FTP und pkg_direkt: gibt die Aufrufe zurueck. ``ja_nein_abbrechen`` ist die Antwort der Dreifachfrage."""
+        aufrufe: list = []
+        fragen: list = []
+
+        def direkt(werkzeug, paket, adresse, fern, **kw):
+            aufrufe.append({"werkzeug": werkzeug, "paket": paket, "adresse": adresse, "fern": fern,
+                            "fortsetzen": kw.get("fortsetzen")})
+            if fehler is not None:
+                raise fehler
+            stand = ergebnis or fz.ftp.Fortschritt(dateien=3, dateien_gesamt=3, bytes=3 * 1024 ** 2, bytes_gesamt=3 * 1024 ** 2)
+            kw["auf_fortschritt"](stand)
+            return stand
+
+        stuetzen = (
+            mock.patch.object(fz.pkg_direkt, "direkt_entpacken", side_effect=direkt),
+            mock.patch.object(fz.ftp, "vorhanden", return_value=vorhanden),
+            mock.patch.object(fz.messagebox, "askyesnocancel",
+                              side_effect=lambda *a, **k: (fragen.append(a), ja_nein_abbrechen)[1]),
+            mock.patch.object(fz.messagebox, "askyesno",
+                              side_effect=lambda *a, **k: (fragen.append(a), bestaetigt)[1]),
+        )
+        for s in stuetzen:
+            s.start()
+            self.addCleanup(s.stop)
+        return aufrufe, fragen
+
+    def test_die_aktion_zeigt_adresse_und_ordner_statt_des_zielordners(self) -> None:
+        f = self._konsole()
+        self.assertEqual("pack", f.fern_reihe.winfo_manager())
+        self.assertEqual("", f.ziel_reihe.winfo_manager(), "der Zielordner auf dem PC passt hier nicht")
+        self.assertEqual("", f.ueberschreiben.winfo_manager())
+        self.assertEqual("10.0.0.5:/mnt/usb0/Alpha", f.ergebnis_var["output"].get())
+        self.assertTrue(all(k._rollen[0] == "bg_main" for k, _a, _b in f._kacheln.values()), "keine Kachel gewaehlt")
+        f.aktion_var.set("extrahieren")
+        f._aktion_geaendert()
+        self.assertEqual("", f.fern_reihe.winfo_manager())
+        self.assertEqual("pack", f.ziel_reihe.winfo_manager())
+        self.assertEqual("pack", f.ueberschreiben.winfo_manager())
+
+    def test_ein_spielordner_kennt_die_aktion_nicht(self) -> None:
+        self._laden("alpha.pkg")
+        self.f.aktuell.pfad = self.ordner
+        self.f.aktuell.typ = wz.TYP_ORDNER
+        self.assertFalse(self.f._aktion_moeglich(fz.AKTION_KONSOLE))
+        self.assertTrue(self.f._aktion_moeglich(fz.AKTION_UMWANDELN))
+
+    def test_die_vier_aktionen_stehen_in_einer_umbrechenden_zeile(self) -> None:
+        self.assertEqual({"umwandeln", "extrahieren", "pruefen", "konsole"}, set(self.f._aktion_knoepfe))
+        _pumpen(0.5)                    # die Zeile legt ihre Kinder erst nach dem ersten Groessenereignis
+        for knopf in self.f._aktion_knoepfe.values():
+            self.assertEqual("place", knopf.winfo_manager(), "FlussZeile setzt mit place - sie bricht um statt abzuschneiden")
+
+    def test_ohne_adresse_wird_nicht_gestartet(self) -> None:
+        f = self._konsole(adresse="  ")
+        aufrufe, _fragen = self._direkt()
+        f._starten()
+        self.assertIsNone(f._job)
+        self.assertEqual([], aufrufe)
+        self.assertIn(STRINGS["ps5pkg.err_no_address"]["de"], [d[1] for d in self.dialoge["fehler"]])
+
+    def test_die_wurzel_der_konsole_ist_kein_ziel(self) -> None:
+        f = self._konsole(fern=" / ")
+        aufrufe, _fragen = self._direkt()
+        f._starten()
+        self.assertIsNone(f._job)
+        self.assertEqual([], aufrufe)
+        self.assertIn(STRINGS["ps5pkg.err_no_remote"]["de"], [d[1] for d in self.dialoge["fehler"]])
+
+    def test_entpacken_auf_die_ps5_ruft_pkg_direkt_und_meldet_fertig(self) -> None:
+        f = self._konsole(fern="mnt/usb0/Alpha/")
+        aufrufe, fragen = self._direkt()
+        f._starten()
+        self.assertTrue(_ende(f))
+        self.assertEqual(1, len(aufrufe))
+        self.assertEqual(("10.0.0.5", "/mnt/usb0/Alpha", False), (aufrufe[0]["adresse"], aufrufe[0]["fern"], aufrufe[0]["fortsetzen"]))
+        self.assertEqual(next(iter(self.pakete)), aufrufe[0]["paket"])
+        self.assertEqual(1, len(fragen), "eine Bestaetigung mit Groesse und Dauer")
+        self.assertIn("/mnt/usb0/Alpha", fragen[0][1])
+        self.assertTrue(f.auftrag_var.get().startswith("Fertig. Auf die PS5 entpackt: /mnt/usb0/Alpha"), f.auftrag_var.get())
+        self.assertEqual(100.0, float(f.balken["value"]))
+        log = f.protokoll.get("1.0", "end")
+        self.assertIn("Fertig: 3 Dateien", log)
+        self.assertEqual("/mnt/usb0/Alpha", f.fern_var.get(), "der Ordner steht danach normalisiert da")
+        self.assertEqual("/mnt/usb0/Alpha", self.app._load_setting(fz.EINST_FERN, ""), "und ist gemerkt")
+
+    def test_ein_vorhandenes_ziel_fragt_dreifach_und_gibt_fortsetzen_weiter(self) -> None:
+        f = self._konsole()
+        for antwort, fortsetzen in ((True, True), (False, False)):
+            with self.subTest(antwort=antwort):
+                aufrufe, fragen = self._direkt(vorhanden=True, ja_nein_abbrechen=antwort)
+                f._starten()
+                self.assertTrue(_ende(f))
+                self.assertEqual(1, len(fragen), "nur die Dreifachfrage, keine zweite Bestaetigung")
+                self.assertEqual([fortsetzen], [a["fortsetzen"] for a in aufrufe])
+
+    def test_abbrechen_bei_der_dreifachfrage_sendet_nichts(self) -> None:
+        f = self._konsole()
+        aufrufe, fragen = self._direkt(vorhanden=True, ja_nein_abbrechen=None)
+        f._starten()
+        self.assertTrue(_ende(f))
+        self.assertEqual([], aufrufe)
+        self.assertEqual(STRINGS["ps5pkg.console_nothing"]["de"], f.auftrag_var.get())
+        self.assertNotIn("Fehlgeschlagen", f.auftrag_var.get())
+        self.assertEqual(0.0, float(f.balken_gesamt["value"]))
+
+    def test_ohne_bestaetigung_wird_nichts_gesendet(self) -> None:
+        f = self._konsole()
+        aufrufe, _fragen = self._direkt(bestaetigt=False)
+        f._starten()
+        self.assertTrue(_ende(f))
+        self.assertEqual([], aufrufe)
+        self.assertEqual(STRINGS["ps5pkg.console_nothing"]["de"], f.auftrag_var.get())
+
+    def test_ein_abbruch_nach_einer_datei_ist_kein_fehlschlag(self) -> None:
+        f = self._konsole()
+        stand = fz.ftp.Fortschritt(dateien=2, dateien_gesamt=9, bytes=1024, bytes_gesamt=9 * 1024, abgebrochen=True)
+        self._direkt(ergebnis=stand)
+        f._starten()
+        self.assertTrue(_ende(f))
+        self.assertIn("Abgebrochen nach 2 Dateien", f.auftrag_var.get())
+        self.assertIn("/mnt/usb0/Alpha", f.auftrag_var.get())
+        self.assertNotIn("Fehlgeschlagen", f.auftrag_var.get())
+
+    def test_ein_fehler_beim_entpacken_auf_die_ps5_wird_gemeldet(self) -> None:
+        f = self._konsole()
+        self._direkt(fehler=fz.ftp.FtpFehler("10.0.0.5:2121 nicht erreichbar"))
+        f._starten()
+        self.assertTrue(_ende(f))
+        self.assertIn("Fehlgeschlagen", f.auftrag_var.get())
+        self.assertIn("[FEHLER] 10.0.0.5:2121 nicht erreichbar", f.protokoll.get("1.0", "end"))
+
+    def test_der_fortschritt_zeigt_datei_und_menge(self) -> None:
+        f = self._konsole()
+        stand = fz.ftp.Fortschritt(dateien=1, dateien_gesamt=4, bytes=5 * 1024 ** 2, bytes_gesamt=20 * 1024 ** 2,
+                                   aktuell="Media/big.dat")
+        self._direkt(ergebnis=stand)
+        f._starten()
+        self.assertTrue(_ende(f))
+        self.assertEqual(25.0, f._z["prozent"])
+        for stueck in ("Media/big.dat", "2 von 4", "5.0 MB"):
+            self.assertIn(stueck, f._z["schritt_text"])
+
 
 class TexteTests(unittest.TestCase):
 
@@ -814,11 +994,10 @@ class TexteTests(unittest.TestCase):
         schluessel |= {"ps5pkg.res_" + s for s in ("output", "title_id", "content", "size", "free")}
         schluessel |= {"ps5pkg.prop_" + s for s in ("title", "source", "size", "title_id", "content_id", "concept", "version",
                                                       "master", "firmware", "sdk", "category", "drm", "badge", "language")}
-        schluessel |= {"ps5pkg.log_start_" + s for s in ("pruefen", "extrahieren", "umwandeln", "bauen")}
-        schluessel.add("titlebar.ps5pkg")
+        schluessel |= {"ps5pkg.log_start_" + s for s in ("pruefen", "extrahieren", "umwandeln", "bauen", "konsole")}
         fehlend = sorted(s for s in schluessel if s not in STRINGS)
         self.assertEqual([], fehlend)
-        gleich_erlaubt = {"ps5pkg.window_title", "titlebar.ps5pkg", "ps5pkg.src_debug_short", "ps5pkg.lib_title",
+        gleich_erlaubt = {"ps5pkg.window_title", "ps5pkg.src_debug_short", "ps5pkg.lib_title",
                           "ps5pkg.card_cover", "ps5pkg.col_version", "ps5pkg.prop_title_id", "ps5pkg.start_button"}
         for s in sorted(schluessel):
             with self.subTest(schluessel=s):

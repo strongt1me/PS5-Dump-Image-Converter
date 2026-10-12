@@ -37,7 +37,7 @@ import logging
 import os
 import posixpath
 import shutil
-import socket
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator
@@ -46,6 +46,15 @@ logger = logging.getLogger("PS5Converter.konsole.ftp")
 
 #: Der Port, auf dem ftpsrv auf der PS5 horcht (nicht 21).
 FTP_PORT = 2121
+
+#: Wie oft eine Datei nach einem abgerissenen Zugriff noch einmal versucht wird (Wartezeit je Versuch wachsend:
+#: ``PAUSE``, 2 x ``PAUSE`` ...). Idee von fpkg2ftp (kvaps, GPL-3.0-or-later): Ein Spielordner von 50 GB ist Stunden
+#: unterwegs, und die Leitung zur Konsole reisst gelegentlich ab.
+VERSUCHE = 5
+PAUSE = 3.0
+
+#: Blockgroesse beim Senden. ``ftplib`` nimmt 8 KB - bei Spielordnern von vielen GB unnoetig klein.
+SENDE_BLOCK = 256 * 1024
 
 #: Uebliche Ablageorte auf der Konsole - fuer die Schnellauswahl im Fenster.
 #: Der USB-Datentraeger steht oben: Dorthin schreibt der App-Dumper, und nur
@@ -98,6 +107,10 @@ class FtpAbgebrochen(FtpFehler):
     """Der Anwender hat abgebrochen - zwischen zwei Schritten, nie mittendrin."""
 
 
+class LeseFehler(FtpFehler):
+    """Die Quelle (Platte, Rohr) liess sich nicht lesen - kein Netzfehler, also nie wiederholen."""
+
+
 class ErsetzenUnvollstaendig(FtpFehler):
     """Die bisherige Datei liegt noch beiseite, die neue unter dem Zwischennamen.
 
@@ -142,6 +155,12 @@ class Fortschritt:
     #: True, wenn der Anwender abgebrochen hat. Dann ist das Ziel
     #: unvollstaendig - das muss die Oberflaeche sagen duerfen.
     abgebrochen: bool = False
+    #: Beim Fortsetzen: Dateien, die schon vollstaendig auf der Konsole lagen (nicht noch einmal gesendet), und
+    #: Dateien, die dort angefangen lagen und von der Stelle an weitergeschrieben wurden.
+    uebersprungen: int = 0
+    fortgesetzt: int = 0
+    #: Wie oft nach einem abgerissenen Zugriff neu verbunden wurde.
+    wiederholt: int = 0
 
     @property
     def anteil(self) -> float:
@@ -405,14 +424,198 @@ def ordner_holen(adresse: str, fern: str, lokal: "str | Path",
         schliessen(verbindung)
 
 
+# ---------------------------------------------------------------------------
+# Senden mit Fortsetzen und Wiederverbinden (seit 10.10.2026)
+#
+# Vorbild: fpkg2ftp (kvaps, GPL-3.0-or-later) - eine angefangene Datei wird von der Stelle an weitergeschrieben,
+# an der die Konsole sie hat (SIZE, APPE), eine vollstaendige uebersprungen, ein abgerissener Zugriff mit frischer
+# Verbindung wiederholt. Hier neu geschrieben, nicht uebernommen. Die Regel des Moduls bleibt: abgebrochen wird nur
+# ZWISCHEN zwei Dateien, auch beim Senden.
+# ---------------------------------------------------------------------------
+class GroesseFalsch(FtpFehler):
+    """Nach dem Senden hat die Datei auf der Konsole eine andere Groesse - ein neuer Versuch klaert, was dort liegt."""
+
+
+def ist_netzfehler(fehler: BaseException) -> bool:
+    """Lohnt nach diesem Fehler ein neuer Versuch mit frischer Verbindung?
+
+    Ja bei allem, was nach Leitung aussieht: Zeitgrenze, abgerissene oder verweigerte Verbindung, vorzeitiges Ende der
+    Steuerverbindung, ein "4xx" des Servers (vorlaeufig) und eine falsche Groesse nach dem Senden. Nein bei einem
+    "5xx" (der Server lehnt ab - ein zweiter Versuch bringt dasselbe) und bei einer Quelle, die sich nicht lesen
+    laesst (:class:`LeseFehler`).
+    """
+    if isinstance(fehler, (LeseFehler, ftplib.error_perm)):
+        return False
+    return isinstance(fehler, (OSError, EOFError, GroesseFalsch, ftplib.error_temp, ftplib.error_proto))
+
+
+def groesse_fern(verbindung: ftplib.FTP, pfad: str) -> "int | None":
+    """Die Groesse einer Datei auf der Konsole (``SIZE``); ``None``, wenn es sie nicht gibt oder der Server es nicht kann.
+
+    Netzfehler kommen als Ausnahme an: "gibt es nicht" und "Leitung weg" sind zweierlei.
+    """
+    try:
+        wert = verbindung.size(pfad)
+    except ftplib.error_perm:
+        return None
+    return None if wert is None else int(wert)
+
+
+def fern_baum(verbindung: ftplib.FTP, wurzel: str,
+              abbruch: "Callable[[], bool] | None" = None) -> dict[str, int]:
+    """Alle Dateien unter ``wurzel`` auf der Konsole: Pfad (relativ, mit ``/``) -> Groesse. Fehlt ``wurzel``: leer.
+
+    Ein Durchlauf mit ``MLSD`` je Ordner kostet weit weniger Anfragen als ``SIZE`` je Datei (ein Spiel hat Zehntausende
+    Dateien, aber nur Hunderte Ordner).
+    """
+    ziel = "/" + str(wurzel or "").strip().strip("/")
+    try:
+        verbindung.cwd(ziel)
+    except ftplib.error_perm:
+        return {}
+    ergebnis: dict[str, int] = {}
+    for voll, eintrag in _durchlaufen(verbindung, ziel, abbruch):
+        ergebnis[posixpath.relpath(voll, ziel)] = eintrag.groesse
+    return ergebnis
+
+
+def fortsetzen_ab(lokal: int, fern: "int | None") -> tuple[str, int]:
+    """Was mit einer Datei geschieht, wenn auf der Konsole schon etwas von ihr liegt.
+
+    Returns:
+        ``("ueberspringen", Groesse)`` - gleich gross, nichts zu senden; ``("fortsetzen", fern)`` - angefangen,
+        von dieser Stelle an anhaengen; sonst ``("neu", 0)`` (fehlt, ist groesser, oder die Quelle ist leer: Eine leere
+        Datei kostet nichts und wird immer neu angelegt).
+    """
+    if fern is None or lokal <= 0:
+        return "neu", 0
+    if fern == lokal:
+        return "ueberspringen", lokal
+    if 0 < fern < lokal:
+        return "fortsetzen", fern
+    return "neu", 0
+
+
+class _Begrenzt:
+    """Liest hoechstens ``anzahl`` Byte aus ``quelle`` - ``storbinary`` liest sonst bis zum Ende der Quelle.
+
+    Endet die Quelle vorher, ist das kein Dateiende, sondern ein Fehler (:class:`LeseFehler`): Ein abgeschnittenes
+    Rohr darf nicht als fertige Datei gelten.
+    """
+
+    def __init__(self, quelle, anzahl: int) -> None:
+        self._quelle = quelle
+        self.noch = int(anzahl)
+
+    def read(self, n: int = -1) -> bytes:
+        if self.noch <= 0:
+            return b""
+        wunsch = self.noch if n is None or n < 0 else min(int(n), self.noch)
+        try:
+            daten = self._quelle.read(wunsch)
+        except OSError as fehler:
+            raise LeseFehler("die Quelle liess sich nicht lesen: %s" % fehler) from fehler
+        if not daten:
+            raise LeseFehler("die Quelle endete %d Byte zu frueh" % self.noch)
+        self.noch -= len(daten)
+        return daten
+
+
+def ordner_sichern(verbindung: ftplib.FTP, pfad: str, angelegt: "set[str]") -> None:
+    """Legt den Pfad an, Ebene fuer Ebene - nur die Ebenen, die ``angelegt`` noch nicht kennt.
+
+    Ein Spielordner hat Hunderte Ordner und Zehntausende Dateien; ``MKD`` je Datei und je Ebene waere eine
+    Anfrage pro Datei. Netzfehler kommen als Ausnahme an (der Aufrufer wiederholt), ein "gibt es schon" nicht.
+    """
+    teil = ""
+    for stueck in str(pfad or "").strip("/").split("/"):
+        if not stueck:
+            continue
+        teil = "%s/%s" % (teil, stueck)
+        if teil in angelegt:
+            continue
+        try:
+            verbindung.mkd(teil)
+        except ftplib.error_perm:
+            pass                            # gibt es schon (oder darf nicht - dann scheitert das Schreiben sagend)
+        angelegt.add(teil)
+
+
+def datei_senden(verbindung: ftplib.FTP, eingabe, groesse: int, ziel: str, start: int = 0,
+                 callback: "Callable[[bytes], None] | None" = None, pruefen: bool = True) -> None:
+    """Schickt ``groesse - start`` Byte aus ``eingabe`` an ``ziel``: ab ``start`` angehaengt (``APPE``), sonst neu (``STOR``).
+
+    ``eingabe`` liefert die Daten ab ``start`` (eine geoeffnete, dorthin gesetzte Datei oder ein Rohr); gelesen wird
+    nicht ueber ``groesse`` hinaus. Danach fragt die Funktion die Groesse auf der Konsole (``SIZE``) und wirft
+    :class:`GroesseFalsch`, wenn sie nicht stimmt - ein Server, der still abgeschnitten hat, soll nicht als Erfolg
+    gelten. Netzfehler und ``error_perm`` kommen unveraendert an (:func:`ist_netzfehler`), eine nicht lesbare Quelle
+    als :class:`LeseFehler`.
+    """
+    befehl = "APPE" if start > 0 else "STOR"
+    quelle = _Begrenzt(eingabe, max(0, int(groesse) - max(0, int(start))))
+    verbindung.storbinary("%s %s" % (befehl, ziel), quelle, blocksize=SENDE_BLOCK, callback=callback)
+    if pruefen:
+        tatsaechlich = groesse_fern(verbindung, ziel)
+        if tatsaechlich is not None and tatsaechlich != groesse:
+            raise GroesseFalsch("%s hat auf der Konsole %d statt %d Byte" % (ziel, tatsaechlich, groesse))
+
+
+def warten(sekunden: float, abbruch: "Callable[[], bool] | None" = None) -> bool:
+    """Wartet in kurzen Schritten und fragt dabei den Abbruch; ``True``, wenn abgebrochen wurde."""
+    ende = time.monotonic() + max(0.0, sekunden)
+    while True:
+        if abbruch is not None and abbruch():
+            return True
+        rest = ende - time.monotonic()
+        if rest <= 0:
+            return False
+        time.sleep(min(0.25, rest))
+
+
+def wiederverbinden(adresse: str, port: int, versuch: int, versuche: int, pause: float,
+                    abbruch: "Callable[[], bool] | None" = None) -> "tuple[ftplib.FTP | None, int]":
+    """Baut die Verbindung nach einem Abriss neu auf - nach ``pause * versuch`` Sekunden, so oft es noetig und erlaubt ist.
+
+    Returns:
+        ``(Verbindung, Versuch)``; ``(None, Versuch)``, wenn waehrend des Wartens abgebrochen wurde.
+
+    Raises:
+        FtpFehler: auch der letzte Versuch kam nicht durch.
+    """
+    while True:
+        versuch += 1
+        if warten(pause * versuch, abbruch):
+            return None, versuch
+        try:
+            verbindung = verbinden(adresse, port)
+        except FtpFehler:
+            if versuch >= versuche:
+                raise
+            continue
+        verbindung.timeout = DATEN_ZEIT
+        return verbindung, versuch
+
+
 def ordner_senden(adresse: str, lokal: "str | Path", fern: str,
                   port: int = FTP_PORT,
                   auf_fortschritt: "Callable[[Fortschritt], None] | None" = None,
-                  abbruch: "Callable[[], bool] | None" = None) -> Fortschritt:
+                  abbruch: "Callable[[], bool] | None" = None, *,
+                  fortsetzen: bool = False, versuche: int = VERSUCHE,
+                  pause: float = PAUSE) -> Fortschritt:
     """Schiebt einen Ordner vom PC auf die Konsole.
 
     Die Gesamtmenge steht hier vorher fest - der Ordner liegt ja auf diesem
     Rechner. Abgebrochen wird auch hier nur zwischen zwei Dateien.
+
+    Args:
+        fortsetzen: Eine Datei, die auf der Konsole schon in voller Groesse liegt, wird uebersprungen, eine
+            angefangene von der Stelle an weitergeschrieben (``APPE``), alles andere neu gesendet - wie bei
+            FileZilla "Fortsetzen". Nur richtig, wenn dort dieselbe Fassung liegt: Gleich grosse Dateien mit anderem
+            Inhalt blieben stehen. Ohne ``fortsetzen`` wird jede Datei neu geschrieben.
+        versuche, pause: Reisst der Zugriff mitten in einer Datei ab, wird bis zu ``versuche``-mal neu verbunden
+            (nach ``pause``, ``2 x pause`` ... Sekunden) und die Datei dort fortgesetzt, wo die Konsole sie hat. Das
+            gilt auch ohne ``fortsetzen``: Was dort liegt, hat dieser Lauf selbst geschrieben. Lehnt der Server
+            ``APPE`` ab, wird die Datei neu gesendet.
     """
     quelle = Path(lokal)
     if not quelle.is_dir():
@@ -424,7 +627,10 @@ def ordner_senden(adresse: str, lokal: "str | Path", fern: str,
 
     verbindung = verbinden(adresse, port)
     verbindung.timeout = DATEN_ZEIT
+    angelegt: set[str] = set()
+    appe_geht = True
     try:
+        vorhanden = fern_baum(verbindung, fern, abbruch) if fortsetzen else {}
         for datei in dateien:
             if abbruch is not None and abbruch():
                 stand.abgebrochen = True
@@ -432,24 +638,70 @@ def ordner_senden(adresse: str, lokal: "str | Path", fern: str,
 
             relativ = datei.relative_to(quelle).as_posix()
             zielpfad = posixpath.join(fern, relativ)
-            ordner_anlegen(verbindung, posixpath.dirname(zielpfad))
-
             stand.aktuell = relativ
             if auf_fortschritt is not None:
                 auf_fortschritt(stand)
 
-            try:
-                with open(datei, "rb") as eingabe:
-                    def gelesen(block: bytes) -> None:
-                        stand.bytes += len(block)
-                        if auf_fortschritt is not None:
-                            auf_fortschritt(stand)
+            groesse = datei.stat().st_size
+            vor = stand.bytes                  # der Stand vor dieser Datei: Jeder Versuch rechnet von hier aus
+            bekannt = vorhanden.get(relativ) if fortsetzen else None
+            erlaubt = fortsetzen               # darf anhand der Groesse auf der Konsole entschieden werden?
+            begonnen = False                   # hat DIESER Lauf schon etwas an diese Datei geschickt?
+            nachfragen = False                 # nach einem Abriss: erst fragen, was jetzt von der Datei dort liegt
+            versuch = 0
 
-                    verbindung.storbinary("STOR %s" % zielpfad, eingabe,
-                                          callback=gelesen)
-            except Exception as fehler:  # noqa: BLE001
-                raise FtpFehler("%s nicht schreibbar: %s"
-                                % (relativ, fehler)) from fehler
+            def gelesen(block: bytes) -> None:
+                stand.bytes += len(block)
+                if auf_fortschritt is not None:
+                    auf_fortschritt(stand)
+
+            while True:
+                start = 0
+                try:
+                    ordner_sichern(verbindung, posixpath.dirname(zielpfad), angelegt)
+                    if nachfragen:
+                        # Was dort liegt, hat dieser Lauf selbst geschrieben (STOR schneidet ab, APPE haengt an): ein
+                        # Anfang der Datei, von dem aus es weitergehen darf - auch ohne ``fortsetzen``.
+                        bekannt, erlaubt = groesse_fern(verbindung, zielpfad), True
+                        nachfragen = False
+                    aktion, start = fortsetzen_ab(groesse, bekannt) if erlaubt else ("neu", 0)
+                    if aktion == "fortsetzen" and not appe_geht:
+                        aktion, start = "neu", 0
+                    if aktion == "ueberspringen":
+                        stand.bytes = vor + groesse
+                        stand.uebersprungen += 1
+                        break
+                    try:
+                        eingabe = open(datei, "rb")
+                        eingabe.seek(start)
+                    except OSError as fehler:
+                        raise LeseFehler(str(fehler)) from fehler
+                    stand.bytes = vor + start
+                    begonnen = True            # ab hier gehoert die Datei diesem Lauf
+                    with eingabe:
+                        datei_senden(verbindung, eingabe, groesse, zielpfad, start, callback=gelesen)
+                    if aktion == "fortsetzen":
+                        stand.fortgesetzt += 1
+                    break
+                except LeseFehler as fehler:
+                    raise FtpFehler("%s nicht lesbar: %s" % (relativ, fehler)) from fehler
+                except ftplib.error_perm as fehler:
+                    if start > 0 and appe_geht:
+                        # Der Server nimmt kein APPE (oder lehnt es hier ab): Die Datei geht neu, ab jetzt alle so.
+                        logger.info("APPE abgelehnt (%s) - %s wird neu gesendet", fehler, relativ)
+                        appe_geht = False
+                        continue
+                    raise FtpFehler("%s nicht schreibbar: %s" % (relativ, fehler)) from fehler
+                except Exception as fehler:  # noqa: BLE001 - ftplib wirft breit
+                    if not ist_netzfehler(fehler):
+                        raise FtpFehler("%s nicht schreibbar: %s" % (relativ, fehler)) from fehler
+                    verbindung, versuch, ende = _nach_abriss(
+                        fehler, relativ, adresse, port, versuch, versuche, pause, abbruch, verbindung, stand)
+                    if ende:
+                        break
+                    nachfragen = begonnen
+            if stand.abgebrochen:
+                break
 
             stand.dateien += 1
             if auf_fortschritt is not None:
@@ -458,6 +710,26 @@ def ordner_senden(adresse: str, lokal: "str | Path", fern: str,
         return stand
     finally:
         schliessen(verbindung)
+
+
+def _nach_abriss(fehler: BaseException, relativ: str, adresse: str, port: int, versuch: int, versuche: int,
+                 pause: float, abbruch: "Callable[[], bool] | None", verbindung: ftplib.FTP,
+                 stand: Fortschritt) -> "tuple[ftplib.FTP, int, bool]":
+    """Ein Zugriff ist abgerissen: alte Verbindung weg, neu verbinden. ``(Verbindung, Versuch, abgebrochen)``.
+
+    Raises:
+        FtpFehler: die Versuche sind aufgebraucht oder die Konsole ist nicht mehr zu erreichen.
+    """
+    schliessen(verbindung)
+    if versuch >= versuche:
+        raise FtpFehler("%s nicht schreibbar: %s (nach %d Versuchen)" % (relativ, fehler, versuch + 1)) from fehler
+    logger.warning("%s: %s - verbinde neu (%d/%d)", relativ, fehler, versuch + 1, versuche)
+    stand.wiederholt += 1
+    neu, versuch = wiederverbinden(adresse, port, versuch, versuche, pause, abbruch)
+    if neu is None:
+        stand.abgebrochen = True
+        return verbindung, versuch, True
+    return neu, versuch, False
 
 
 def vorhanden(adresse: str, pfad: str, port: int = FTP_PORT) -> bool:

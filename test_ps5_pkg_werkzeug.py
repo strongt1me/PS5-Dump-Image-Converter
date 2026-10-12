@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -193,9 +194,95 @@ class HuelleTests(unittest.TestCase):
             self.assertEqual(1, len(aufrufe))
             self.assertEqual(["Media", "Media/a.dat", "eboot.bin"], inhalt["liste"])
             self.assertEqual([(50, "Media/a.dat"), (100, "")], fortschritt)
-            self.assertEqual(["[info] sonst"], zeilen)
+            self.assertEqual(["[info] sonst"], [z for z in zeilen if "Paketinhalt" not in z])
+            self.assertEqual(2, len([z for z in zeilen if "Paketinhalt" in z]), "Hinweis vor und nach dem Lesen des Inhalts")
             self.assertTrue(schluss.startswith("OK"))
             self.assertEqual([], [n for n in os.listdir(t) if n.startswith("ps5conv_teile_")], "die Liste wird entfernt")
+
+    # ---- Lebenszeichen waehrend das Werkzeug schweigt (12.10.2026: list-inner 80 s ohne Meldung, Fenster auf 0 %) ----
+    @staticmethod
+    def _herzschlaege() -> list:
+        return [t for t in threading.enumerate() if t.name == "ps5pkg-herzschlag"]
+
+    def _extrahieren_mit(self, laufen, fortschritt, baum_wert=None, **kw):
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "_HERZSCHLAG", 0.05), \
+                mock.patch.object(wz, "baum", **({"return_value": baum_wert} if baum_wert is not None else {"side_effect": kw.pop("baum")})), \
+                mock.patch.object(wz, "laufen", side_effect=laufen):
+            return wz.extrahieren("werkzeug", "x.pkg", os.path.join(t, "ziel"), fortschritt=fortschritt, arbeitsordner=t, **kw)
+
+    def test_schweigt_das_werkzeug_kommt_ein_lebenszeichen_mit_dem_letzten_stand(self) -> None:
+        def laufen(werkzeug, argumente, zeile=None, **_kw):
+            zeile("[####] 30% extract (Media/gross.dat)")
+            time.sleep(0.5)
+            return 0, "OK - extracted 1 file(s) to X\n"
+
+        meldungen: list = []
+        self._extrahieren_mit(laufen, lambda p, d: meldungen.append((p, d)), [{"path": "a", "type": "file", "size": 1}])
+        herz = [(p, d) for p, d in meldungen if "·" in d]
+        self.assertGreaterEqual(len(herz), 2, meldungen)
+        for p, d in herz:
+            self.assertEqual(30, p, "der Prozentwert bleibt der des Werkzeugs - nichts wird erfunden")
+            self.assertTrue(d.startswith("Media/gross.dat · 0:0"), d)
+
+    def test_das_lebenszeichen_laeuft_schon_beim_lesen_des_inhalts(self) -> None:
+        def baum(*_a, **_k):
+            time.sleep(0.4)
+            return [{"path": "a", "type": "file", "size": 1}]
+
+        meldungen: list = []
+        self._extrahieren_mit(lambda *a, **k: (0, "OK - extracted 1 file(s)\n"), lambda p, d: meldungen.append((p, d)),
+                              baum=baum)
+        herz = [(p, d) for p, d in meldungen if "·" in d]
+        self.assertGreaterEqual(len(herz), 2, "waehrend list-inner kommt schon etwas")
+        self.assertTrue(all(p == 0 and d.startswith("… · ") for p, d in herz), herz)
+
+    def test_meldet_das_werkzeug_regelmaessig_gibt_es_kein_lebenszeichen(self) -> None:
+        def laufen(werkzeug, argumente, zeile=None, **_kw):
+            for i in range(8):
+                zeile("[####] %d%% extract (a)" % (i * 10))
+                time.sleep(0.02)
+            return 0, "OK - extracted 1 file(s)\n"
+
+        meldungen: list = []
+        self._extrahieren_mit(laufen, lambda p, d: meldungen.append((p, d)), [{"path": "a", "type": "file", "size": 1}])
+        self.assertEqual([], [m for m in meldungen if "·" in m[1]])
+
+    def test_der_herzschlag_endet_mit_dem_aufruf_auch_bei_fehlern(self) -> None:
+        def laufen(*_a, **_k):
+            return 1, "[error] kaputt"
+
+        with self.assertRaises(wz.Fehler):
+            self._extrahieren_mit(laufen, lambda p, d: None, [{"path": "a", "type": "file", "size": 1}])
+        ende = time.time() + 2
+        while self._herzschlaege() and time.time() < ende:
+            time.sleep(0.02)
+        self.assertEqual([], self._herzschlaege())
+
+    def test_der_herzschlag_endet_auch_wenn_das_lesen_des_inhalts_unerwartet_scheitert(self) -> None:
+        def baum(*_a, **_k):
+            raise RuntimeError("unerwartet")
+
+        with self.assertRaises(RuntimeError):
+            self._extrahieren_mit(lambda *a, **k: (0, "OK"), lambda p, d: None, baum=baum)
+        ende = time.time() + 2
+        while self._herzschlaege() and time.time() < ende:
+            time.sleep(0.02)
+        self.assertEqual([], self._herzschlaege())
+
+    def test_ohne_rueckruf_startet_kein_herzschlag(self) -> None:
+        gesehen: list = []
+
+        def laufen(*_a, **_k):
+            gesehen.append(len(self._herzschlaege()))
+            return 0, "OK - extracted 1 file(s)\n"
+
+        ende = time.time() + 2                           # Nachzuegler der Tests davor (schlafen noch) abwarten
+        while self._herzschlaege() and time.time() < ende:
+            time.sleep(0.02)
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "baum", return_value=[
+                {"path": "a", "type": "file", "size": 1}]), mock.patch.object(wz, "laufen", side_effect=laufen):
+            wz.extrahieren("werkzeug", "x.pkg", os.path.join(t, "ziel"), arbeitsordner=t)
+        self.assertEqual([0], gesehen)
 
     def test_scheitert_members_folgt_der_volle_entpack(self) -> None:
         aufrufe: list[list[str]] = []

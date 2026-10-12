@@ -737,8 +737,9 @@ def rueckgaengig(protokoll: str,
 #: dann dieselben beiden im Spiel. ``fakelib2`` wird dort exklusiv
 #: eingehaengt - liegt es neben ``fakelib``, wird ``fakelib`` gar nicht
 #: gelesen. 1.7alpha8 bis alpha13fix1 lasen im Spielordner nur ``fakelib``;
-#: die Fassung, die dem Programm beiliegt, ist 1.7beta4 (dort unveraendert -
-#: am Diff 1.7beta3 -> 1.7beta4 nachgesehen, 04.10.2026).
+#: zwischen 1.7beta3 und 1.7beta4 unveraendert (am Diff nachgesehen, 04.10.2026);
+#: die Fassung, die dem Programm beiliegt, ist seit dem 12.10.2026 1.7beta5fix1 -
+#: das Verhalten dort nicht erneut gegen den Quelltext geprueft.
 #:
 #: Seit 28.09.2026 aus ``shadowmount_generation`` statt als eigene Zeile:
 #: Anzeige und Warnungen beim Einbau lesen dieselbe Regel und koennen nicht

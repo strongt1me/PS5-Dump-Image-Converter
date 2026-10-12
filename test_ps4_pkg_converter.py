@@ -72,10 +72,12 @@ class EinbettungTests(unittest.TestCase):
         treffer = sorted(p.name for p in PROJEKT.glob("MkPFS-*") if p.is_dir())
         self.assertEqual(treffer, [f"MkPFS-{hauptprogramm.MKPFS_REQUIRED_VERSION}"])
 
-    def test_der_menueeintrag_oeffnet_das_zusammengelegte_fenster(self) -> None:
-        """Seit dem 07.10.2026 gibt es nur noch "PS4 PKG Dump & Image Converter" (ohne OTA-Fenster)."""
+    def test_der_aufruf_oeffnet_die_zusammengelegte_oberflaeche(self) -> None:
+        """Seit dem 07.10.2026 gibt es nur noch "PS4 PKG Dump & Image Converter" (ohne OTA-Fenster); seit dem
+        12.10.2026 abends ist das kein eigener Menueeintrag unter WEITERE TOOLS mehr, sondern "PKG" der Seite
+        "7. PKG / FPKG" (``ui/pkg_fpkg_seite.py``)."""
         eintraege = dict(PS5ConverterGUI._MORE_TOOLS_ENTRIES)
-        self.assertEqual("_show_ps4_pkg_converter", eintraege["titlebar.ps4pkg"])
+        self.assertNotIn("titlebar.ps4pkg", eintraege)
         self.assertTrue(callable(getattr(PS5ConverterGUI, "_show_ps4_pkg_converter", None)))
 
     def test_texte_sind_zweisprachig(self) -> None:

@@ -134,9 +134,12 @@ ENTWICKLER: tuple[Entwickler, ...] = (
                {"de": "Danke für SelfUtil – sein Entpackverfahren ist hier für BACKPORT nachgebaut.",
                 "en": "Thank you for SelfUtil – its unpacking method is rebuilt here for BACKPORT."}),
     Entwickler("pearlxcore", "pearlxcore", WERKZEUGE,
-               (("OrbisPkgTool", _gh("pearlxcore/OrbisPkgTool")),),
-               {"de": "Danke für OrbisPkgTool – die Engine hinter „PS4 PKG Dump & Image Converter“.",
-                "en": "Thank you for OrbisPkgTool – the engine behind “PS4 PKG Dump & Image Converter”."}),
+               (("OrbisPkgTool", _gh("pearlxcore/OrbisPkgTool")),
+                ("ProsperoPkgTool", _gh("pearlxcore/ProsperoPkgTool"))),
+               {"de": "Danke für OrbisPkgTool – die Engine hinter „PS4 PKG Dump & Image Converter“ – und für "
+                      "ProsperoPkgTool, den zweiten Paketersteller im PS5-PKG-Fenster.",
+                "en": "Thank you for OrbisPkgTool – the engine behind “PS4 PKG Dump & Image Converter” – and for "
+                      "ProsperoPkgTool, the second package builder in the PS5 PKG window."}),
     Entwickler("andy-man", "andy-man", WERKZEUGE,
                (("PS5 Wee Tools", _gh("andy-man/ps5-wee-tools")),),
                {"de": "Danke für PS5 Wee Tools – das Werkzeug für den NOR-Flash der Konsole.",
@@ -252,6 +255,28 @@ ENTWICKLER: tuple[Entwickler, ...] = (
                (("ps5-versions", _gh("SiSTR0/ps5-versions")), ("ps4ren", _gh("SiSTR0/ps4ren"))),
                {"de": "Danke für ps5-versions, ps4ren und deine Beiträge zur Szene.",
                 "en": "Thank you for ps5-versions, ps4ren and your contributions to the scene."}),
+    # Katalog-Pfleger, kein Autor eines mitgelieferten Werkzeugs (11.10.2026, Wunsch des Nutzers): evoX-CoreOS sammelt
+    # Payloads, PKG, FFPFSC und Apps der Szene, die PS5 Repository List indexiert die PS5-Repos (beides laut README).
+    Entwickler("nexgen999", "nexgen999", COMMUNITY,
+               (("evoX-CoreOS", _gh("nexgen999/evoX-CoreOS")),
+                ("PS5 Repository List", _gh("nexgen999/PS5-Repository-List"))),
+               {"de": "Danke für evoX-CoreOS und die PS5 Repository List – sie halten die Releases der Szene an "
+                      "einem Ort zusammen.",
+                "en": "Thank you for evoX-CoreOS and the PS5 Repository List – they keep the scene's releases in "
+                      "one place."}),
+    # Beide 11.10.2026 auf Wunsch des Nutzers; die Werke stehen so in den READMEs (p2jb-Portierungen auf Y2JB und yarpe;
+    # FPKG-Bauer, Spectrum Library, LegacyJB). Der FPKG-Bauer nennt Drakmor und SvenGDK als Grundlage - beide stehen oben.
+    Entwickler("matem6", "matem6", COMMUNITY,
+               (("P2JB-Y2JB-Porting", _gh("matem6/P2JB-Y2JB-Porting")),
+                ("YarP2JB", _gh("matem6/YarP2JB"))),
+               {"de": "Danke für p2jb-y2jb und YarP2JB – die Portierungen des p2jb-Exploits auf Y2JB und yarpe.",
+                "en": "Thank you for p2jb-y2jb and YarP2JB – the ports of the p2jb exploit to Y2JB and yarpe."}),
+    Entwickler("Phoenixx1202", "Phoenixx", COMMUNITY,
+               (("PS5 FPKG Builder", _gh("Phoenixx1202/PS5-FPKG-Builder")),
+                ("Spectrum Library", _gh("Phoenixx1202/Spectrum-Library")),
+                ("LegacyJB", _gh("Phoenixx1202/LegacyJB"))),
+               {"de": "Danke für den PS5 FPKG Builder, die Spectrum Library und LegacyJB.",
+                "en": "Thank you for the PS5 FPKG Builder, the Spectrum Library and LegacyJB."}),
 )
 
 

@@ -698,7 +698,7 @@ class QuelltextTests(unittest.TestCase):
         self.assertEqual(sorted(set(self.ROHER_ZUGRIFF_ERLAUBT) - self._roher_zugriff()), [])
 
     def test_init_wendet_die_wahl_vor_dem_ersten_bedienelement_an(self):
-        beginn = QUELLE.index("    def __init__(self, root: tk.Tk) -> None:")
+        beginn = QUELLE.index("    def __init__(self, root: tk.Tk, start_leer: bool = False) -> None:")
         rumpf = QUELLE[beginn:beginn + 6000]
         mac = rumpf.index("self._macos_schrift_skalieren()")
         wahl = rumpf.index("self._anzeige_einstellungen_anwenden()")

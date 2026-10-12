@@ -194,13 +194,20 @@ class BannerTests(_MitFenster):
             self.app._banner_planen()
         nach.assert_not_called()
 
-    def test_ausserhalb_der_testreihe_nach_fuenf_minuten(self) -> None:
+    def test_die_zeiten(self) -> None:
+        """Nutzerwunsch 10.10.2026: nach 2 Minuten, 5 Minuten lang, alle 30 Minuten (vom Beginn zu Beginn)."""
+        self.assertEqual(120_000, self.app._BANNER_NACH_MS)
+        self.assertEqual(300_000, self.app._BANNER_ZEIGEN_MS)
+        self.assertEqual(1_800_000, self.app._BANNER_ABSTAND_MS)
+        self.assertLess(self.app._BANNER_ZEIGEN_MS + 2 * self.app._BANNER_BLENDE_MS, self.app._BANNER_ABSTAND_MS)
+
+    def test_ausserhalb_der_testreihe_nach_zwei_minuten(self) -> None:
         module = dict(sys.modules)
         module.pop("pytest", None)
         with mock.patch.dict(sys.modules, module, clear=True), mock.patch.object(self.root, "after") as nach:
             self.app._banner_planen()
         nach.assert_called_once()
-        self.assertEqual(300_000, nach.call_args[0][0])
+        self.assertEqual(120_000, nach.call_args[0][0])
 
     def test_minimiert_kein_fenster_und_neuer_versuch(self) -> None:
         with mock.patch.object(self.root, "state", return_value="iconic"), \
@@ -210,18 +217,28 @@ class BannerTests(_MitFenster):
         fenster.assert_not_called()
         self.assertEqual((60_000, self.app._banner_zeigen, 2), nach.call_args[0])
 
-    def test_nach_dem_letzten_versuch_wieder_zur_naechsten_stunde(self) -> None:
+    def test_nach_dem_letzten_versuch_wieder_zum_naechsten_abstand(self) -> None:
         with mock.patch.object(self.root, "state", return_value="iconic"), \
                 mock.patch.object(self.app, "_banner_naechstes") as naechstes:
             self.app._banner_zeigen(1)
         naechstes.assert_called_once_with()
 
-    def test_die_naechste_einblendung_kommt_nach_60_minuten(self) -> None:
+    def test_die_naechste_einblendung_kommt_nach_30_minuten(self) -> None:
         module = dict(sys.modules)
         module.pop("pytest", None)
         with mock.patch.dict(sys.modules, module, clear=True), mock.patch.object(self.root, "after") as nach:
             self.app._banner_naechstes()
-        self.assertEqual((3_600_000, self.app._banner_zeigen, self.app._BANNER_VERSUCHE), nach.call_args[0])
+        self.assertEqual((1_800_000, self.app._banner_zeigen, self.app._BANNER_VERSUCHE), nach.call_args[0])
+
+    def test_die_30_minuten_zaehlen_vom_beginn_der_einblendung(self) -> None:
+        """Lief die Einblendung schon 5 Minuten, kommt die naechste 25 Minuten nach ihrem Ende - nie unter einer Minute."""
+        module = dict(sys.modules)
+        module.pop("pytest", None)
+        with mock.patch.dict(sys.modules, module, clear=True), mock.patch.object(self.root, "after") as nach:
+            self.app._banner_naechstes(303_000)
+            self.assertEqual(1_800_000 - 303_000, nach.call_args[0][0])
+            self.app._banner_naechstes(10_000_000)
+            self.assertEqual(60_000, nach.call_args[0][0])
 
     def test_in_der_testreihe_keine_naechste_einblendung(self) -> None:
         with mock.patch.object(self.root, "after") as nach:
@@ -246,7 +263,41 @@ class BannerTests(_MitFenster):
             self.ruhen(2.5)
         offen.assert_called_once_with("https://psxtools.de/")
         self.assertFalse(neu[0].winfo_exists())
-        naechstes.assert_called_once_with()
+        naechstes.assert_called_once()
+        self.assertGreater(naechstes.call_args[0][0], 400)       # die Dauer seit dem Beginn geht mit
+
+    def _banner_zeigen_ausserhalb(self):
+        self.root.geometry("800x600+-4000+100")
+        self.root.deiconify()
+        self.addCleanup(self.root.withdraw)
+        self.ruhen(0.3)
+        vorher = set(self.root.winfo_children())
+        self.app._banner_zeigen()
+        neu = [w for w in self.root.winfo_children() if w not in vorher and isinstance(w, tk.Toplevel)]
+        self.assertEqual(1, len(neu))
+        return neu[0]
+
+    def test_rechtsklick_schliesst_nur(self) -> None:
+        """Bei fuenf Minuten Standzeit muss man es loswerden koennen, ohne die Seite zu oeffnen."""
+        with mock.patch("webbrowser.open") as offen, mock.patch.object(self.app, "_banner_naechstes") as naechstes:
+            banner = self._banner_zeigen_ausserhalb()
+            self.ruhen(0.3)
+            banner.winfo_children()[0].event_generate("<Button-3>")
+            self.ruhen(2.5)
+        offen.assert_not_called()
+        self.assertFalse(banner.winfo_exists())
+        naechstes.assert_called_once()
+
+    def test_das_banner_folgt_dem_fenster(self) -> None:
+        """Zieht der Nutzer das Fenster, waehrend das Banner steht, bleibt es unter der Knopfreihe."""
+        with mock.patch.object(self.app, "_BANNER_ZEIGEN_MS", 6000), mock.patch.object(self.app, "_banner_naechstes"):
+            banner = self._banner_zeigen_ausserhalb()
+            self.ruhen(0.5)
+            x0, y0 = banner.winfo_rootx(), banner.winfo_rooty()
+            self.root.geometry("800x600+-3500+250")
+            self.ruhen(1.0)
+            self.assertEqual((x0 + 500, y0 + 150), (banner.winfo_rootx(), banner.winfo_rooty()))
+            banner.destroy()
 
 
 class UrheberZeileTests(unittest.TestCase):

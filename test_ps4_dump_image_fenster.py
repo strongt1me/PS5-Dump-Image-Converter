@@ -108,9 +108,8 @@ class FensterTests(unittest.TestCase):
         _WURZEL.update()
         return f
 
-    def test_titel_und_ein_einziges_fenster(self) -> None:
+    def test_ein_einziges_fenster(self) -> None:
         f = self._fenster()
-        self.assertEqual("PS4 PKG Dump & Image Converter", f.win.title())
         self.assertIs(f, fenster_modul.oeffnen(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT,
                                                self.haupt.pt))
 

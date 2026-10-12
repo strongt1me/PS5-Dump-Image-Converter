@@ -795,7 +795,7 @@ class AufgabenbestandTests(unittest.TestCase):
 
     ERWARTET = (
         "pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
-        "batch_convert", "universal_convert", "ampr_manager", "dump_validator",
+        "batch_convert", "universal_convert", "pkg_fpkg", "dump_validator",
     )
 
     def test_es_sind_genau_diese_acht(self) -> None:

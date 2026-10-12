@@ -103,31 +103,35 @@ class MenueVerdrahtungTests(unittest.TestCase):
         self.assertTrue(callable(getattr(gui, "_show_shadowmount_editor", None)),
                         "Der Editor bleibt - er gehoert zu ShadowMount+.")
 
-    def test_unter_weitere_tools_steht_nur_ein_knopf_fuer_ps4_pakete(self) -> None:
-        """Nutzerwunsch 05.10.2026: "Nicht dass mehrere PS4 PKG ... Knoepfe in der Liste zu sehen sind."
+    def test_unter_weitere_tools_steht_kein_knopf_mehr_fuer_ps4_oder_ps5_pakete(self) -> None:
+        """Nutzerwunsch 05.10.2026 (PS4): nur ein Knopf statt mehrerer. Nutzerwunsch 12.10.2026: auch dieser
+        eine (und sein PS5-Gegenstueck) ist unter WEITERE TOOLS ganz entfallen - "PKG" und "FPKG" liegen jetzt
+        als Unterseiten von Aufgabe 7 "PKG / FPKG" in der Seitenleiste UMWANDELN (``ui/pkg_fpkg_seite.py``).
 
-        Der eine Knopf heisst "PS4 PKG -> OTA". "PS4 PKG -> ffpfsc", "PS4 PKG -> Dump
-        Ordner" und "PS4 & PS5 PKG lesen" sind als Eintraege weg - ihre Fenster bleiben
-        ueber "PS4 PKG -> OTA" erreichbar (-> ffpfsc, Entpacken ohne OrbisPkgTool, Paketkopf
-        lesen im Mehr-Menue); der Leser ist der einzige Weg, ein **PS5**-Paket zu lesen.
+        "PS4 PKG -> ffpfsc", "PS4 PKG -> Dump Ordner" und "PS4 & PS5 PKG lesen" waren als eigene Eintraege
+        schon vorher weg; der Paketkopf-Leser und der alte Entpacker bleiben im Mehr-Menue der Seite "PKG"
+        erreichbar.
         """
         from ps5_validator.utils.i18n import STRINGS
         paare = dict(APP.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
-        self.assertEqual("_show_ps4_pkg_converter", paare["titlebar.ps4pkg"])
-        self.assertEqual("PS4 PKG Dump & Image Converter", STRINGS["titlebar.ps4pkg"]["de"])
-        self.assertEqual("PS4 PKG Dump & Image Converter", STRINGS["titlebar.ps4pkg"]["en"])
-        for weg in ("titlebar.ps4_ota", "titlebar.pkg_entpacken", "titlebar.pkg_reader"):
-            with self.subTest(eintrag=weg):
-                self.assertNotIn(weg, paare)
-                self.assertNotIn(weg, STRINGS, "Ein Text ohne Eintrag waere ein toter Schluessel.")
+        for schluessel in ("titlebar.ps4pkg", "titlebar.ps5pkg", "titlebar.ps4_ota",
+                           "titlebar.pkg_entpacken", "titlebar.pkg_reader"):
+            with self.subTest(eintrag=schluessel):
+                self.assertNotIn(schluessel, paare)
+                self.assertNotIn(schluessel, STRINGS, "Ein Text ohne Eintrag waere ein toter Schluessel.")
         for sprache in ("de", "en"):
             with self.subTest(sprache=sprache):
-                nennen_ps4_pakete = [k for k in paare if "PS4 PKG" in STRINGS[k][sprache]]
-                self.assertEqual(["titlebar.ps4pkg"], nennen_ps4_pakete)
-        for methode in ("_show_ps4_pkg_converter", "_show_pkg_entpacken", "_show_pkg_reader"):
+                # Nur PS4/PS5 PKG Dump & Image Converter zaehlen - "PKG Merger" (titlebar.pkg_merger) ist ein
+                # eigenstaendiges, bleibendes Werkzeug und soll den Fund nicht verfaelschen.
+                nennen_pakete = [k for k in paare
+                                 if "PS4 PKG" in STRINGS[k][sprache].upper()
+                                 or "PS5 PKG" in STRINGS[k][sprache].upper()]
+                self.assertEqual([], nennen_pakete)
+        for methode in ("_show_ps4_pkg_converter", "_show_ps5_pkg_converter", "_show_pkg_entpacken",
+                        "_show_pkg_reader"):
             with self.subTest(methode=methode):
                 self.assertTrue(callable(getattr(APP.PS5ConverterGUI, methode, None)),
-                                "Das alte Fenster ist ueber das neue noch erreichbar.")
+                                "Die Oberflaeche bleibt erreichbar - jetzt ueber die Seite 'PKG / FPKG'.")
 
 
 class ErreichbarkeitTests(unittest.TestCase):

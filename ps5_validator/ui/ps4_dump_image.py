@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Das Fenster „PS4 PKG Dump & Image Converter“ (seit 07.10.2026, ersetzt „PS4 PKG -> OTA“ und „PS4 PKG -> ffpfsc“).
+"""Die Seite „PKG“ unter Aufgabe 7 „PKG / FPKG“ (bis 12.10.2026 abends ein eigenes Fenster unter WEITERE TOOLS,
+seit 07.10.2026 bis dahin „PS4 PKG Dump & Image Converter“, ersetzte „PS4 PKG -> OTA“ und „PS4 PKG -> ffpfsc“).
 
 Eine schlichte Oberflaeche fuer alles, was man mit PS4-Paketen am PC macht:
 
@@ -13,6 +14,14 @@ Die Arbeit machen die Aufgaben aus ``ps5_validator.utils.ps4_abbild`` und ``ps4p
 Warteschlange; dieses Modul zeigt nur an. **Faeden:** Arbeitsfaeden fassen nie ein Widget oder eine Tk-Variable
 an; sie schreiben in die ``Aufgabe`` bzw. in ``self._z``, ein Takt im Fensterfaden (:meth:`_takt`) liest das
 (wie in den anderen Fenstern, siehe ``project_tk_faden_variablen``). Texte kommen ueber ``gui._t``.
+
+Seit dem 12.10.2026 (Nutzerwunsch) baut :meth:`Ps4DumpImageFenster._bauen` ``self.win`` als ``tk.Frame`` statt als
+eigenes Popup-Fenster - eingebettet in die Seite ``ui/pkg_fpkg_seite.py`` (Knopf "PKG"), die Platz dafuer gibt
+(``master``). Name, Attribut (``FENSTER_ATTRIBUT``) und ``oeffnen()`` blieben bewusst stehen: Die allermeisten
+Tests und Aufrufer (u. a. die Bibliothek, die ein Paket zum Umwandeln hineingibt) kennen nur diese Schnittstelle,
+nicht ob dahinter ein Fenster oder eine Seite steckt. Es gibt dadurch kein SCHLIESSEN mehr (die Seite bleibt, wie
+die anderen Seiten des Programms, bis zum Beenden stehen) - ``_schliessen``/``_bei_zerstoerung`` blieben trotzdem
+(von Tests direkt aufgerufen; beim echten Beenden des Programms zerstoert Tk jeden Rahmen ohnehin mit).
 """
 from __future__ import annotations
 
@@ -73,15 +82,17 @@ def _haupt(gui):
 
 
 class Ps4DumpImageFenster:
-    """Das Fenster. Eine Instanz je geoeffnetem Fenster."""
+    """Die Seite. Eine Instanz je Programmlauf (Singleton, siehe :func:`oeffnen`)."""
 
-    def __init__(self, gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "") -> None:
+    def __init__(self, gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",
+                 *, master: "tk.Misc | None" = None) -> None:
         self.g = gui
         self.t = gui._t
         self.c = gui._COLORS
         self.F = schrift
         self.M = mono
         self.pt = pt
+        self._master = master
         self.pakete: list[bib.PkgEintrag] = []
         self.spiele: dict[str, ab.Spiel] = {}
         self._basis_wahl: dict[str, str] = {}      # Title-ID -> Pfad des gewaehlten Basispakets
@@ -164,7 +175,12 @@ class Ps4DumpImageFenster:
         pw = g._pw
         F, pt = self.F, self.pt
         titel = t("ps4pkg.window_title")
-        self.win = g._build_modern_toplevel(titel, 1000, 820, min_width=880, min_height=680)
+        self.win = tk.Frame(self._master if self._master is not None else g.root, bg=c["bg_main"])
+        if self._master is None:
+            # Ohne eine Seite, die sie eingebettet reicht (z. B. direkt im Test erzeugt): eine feste Groesse wie
+            # das fruehere Popup-Fenster (1000x820), sonst bleibt der Rahmen 1x1 px - Kinder, die auf ein echtes
+            # Groessenereignis warten (etwa eine FlussZeile), bekommen dann nie eines.
+            self.win.place(x=0, y=0, width=1000, height=820)
         g._build_modern_header(self.win, titel, t("ps4pkg.subtitle"))
         koerper = tk.Frame(self.win, bg=c["bg_main"], padx=18)
         koerper.pack(fill="both", expand=True)
@@ -270,11 +286,11 @@ class Ps4DumpImageFenster:
         self.protokoll.pack(fill="both", expand=True, pady=(6, 0))
 
         # ── Knopfleiste (zuerst unten gepackt, vor dem Koerper - sonst quetscht ihn die Mindesthoehe) ─────
+        # Kein SCHLIESSEN mehr (seit 12.10.2026): die Seite bleibt wie die uebrigen Seiten des Programms stehen.
         leiste = tk.Frame(self.win, bg=c["bg_main"], padx=16, pady=12)
         leiste.pack(side="bottom", fill="x", before=koerper)
-        pw.Button(leiste, text=t("action.close"), command=self._schliessen).pack(side="right")
         self.abbrechen_knopf = pw.Button(leiste, text=t("action.cancel"), command=self._abbrechen)
-        self.abbrechen_knopf.pack(side="right", padx=(0, 8))
+        self.abbrechen_knopf.pack(side="right")
         self.einlesen_knopf = pw.Button(leiste, text=t("ps4pkg.scan_button"), command=self._einlesen)
         self.einlesen_knopf.pack(side="left")
         self.start_knopf = pw.Button(leiste, text=t("ps4dib.start_button"), style="Accent.TButton", command=self._starten)
@@ -286,7 +302,6 @@ class Ps4DumpImageFenster:
         self.mehr_knopf = pw.Button(leiste, text=t("ps4dib.btn_mehr"), command=self._mehr_menue)
         self.mehr_knopf.pack(side="left", padx=(8, 0))
 
-        self.win.protocol("WM_DELETE_WINDOW", self._schliessen)
         self.win.bind("<Destroy>", self._bei_zerstoerung, add="+")
         raster.spur_bis_zerstoert(self.win, self.format_var, self._format_geaendert)
         raster.spur_bis_zerstoert(self.win, self.art_var, self._formate_anpassen)
@@ -518,7 +533,7 @@ class Ps4DumpImageFenster:
         knoepfe.pack(fill="x", pady=(14, 0))
         pw.Button(knoepfe, text=t("ps4dib.basis_nehmen"), style="Accent.TButton", command=uebernehmen).pack(side="left")
         pw.Button(knoepfe, text=t("action.cancel"), command=dlg.destroy).pack(side="right")
-        dlg.transient(self.win)
+        dlg.transient(self.win.winfo_toplevel())
         dlg.grab_set()
         self.win.wait_window(dlg)
         return ergebnis["ok"]
@@ -1208,14 +1223,18 @@ class Ps4DumpImageFenster:
             oeffnen()
 
 
-def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "") -> Ps4DumpImageFenster:
-    """Oeffnet das Fenster - oder holt das offene nach vorn (dann mit der neuen Vorgabe, falls es eine gibt)."""
+def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",
+            *, master: "tk.Misc | None" = None) -> Ps4DumpImageFenster:
+    """Gibt die Seite zurueck - einmalig gebaut, danach immer dieselbe (mit der neuen Vorgabe, falls es eine gibt).
+
+    ``master``: wohin die Seite (einmalig) gebaut wird - die Seite ``ui/pkg_fpkg_seite.py`` reicht dafuer ihren
+    Inhaltsrahmen herein. Sichtbar machen (einblenden) ist nicht Aufgabe dieser Funktion, sondern die der
+    Aufrufer (wie bei ``ui/ampr_seite.py``).
+    """
     vorhanden = getattr(gui, FENSTER_ATTRIBUT, None)
     if vorhanden is not None:
         try:
             if vorhanden.win.winfo_exists():
-                vorhanden.win.deiconify()
-                vorhanden.win.lift()
                 if vorgabe:
                     vorhanden.art_var.set(QUELLE_DATEIEN)
                     vorhanden.quelle_var.set(vorgabe)
@@ -1223,6 +1242,6 @@ def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str
                 return vorhanden
         except tk.TclError:
             pass
-    fenster = Ps4DumpImageFenster(gui, schrift, mono, pt, vorgabe)
+    fenster = Ps4DumpImageFenster(gui, schrift, mono, pt, vorgabe, master=master)
     setattr(gui, FENSTER_ATTRIBUT, fenster)
     return fenster

@@ -27,9 +27,11 @@ Drei Gruppen:
 """
 from __future__ import annotations
 
+import collections
 import colorsys
 import functools
 import math
+import threading
 from dataclasses import dataclass
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
@@ -292,18 +294,9 @@ def _gestrichelt_zeichnen(bild: "Image.Image", breite: int, hoehe: int, radius: 
         zeichner.line(aktuell, fill=farbe, width=max(1, int(round(staerke * ueber))), joint="curve")
 
 
-def rund_rechteck(breite: int, hoehe: int, radius: float, fuellung: str = "", rand: str = "",
-                  randbreite: float = 1.0, *, gestrichelt: bool = False, alpha: int = 255,
-                  ueber: int = UEBERABTASTUNG) -> "Image.Image":
-    """Ein abgerundetes Rechteck als RGBA-Bild: Fuellung, Rand innen.
-
-    Leere ``fuellung`` heisst durchsichtig (nur der Rand), leerer ``rand`` kein
-    Rand. ``gestrichelt`` zeichnet den Rand als Strichfolge (Chip
-    "Anpassungen unbekannt"). Die vier Ecken sind weich geglaettet; ausserhalb
-    der Rundung ist das Bild durchsichtig - Tk legt es mit dem eigenen
-    Alphakanal auf die Flaeche dahinter, ohne dass die Ecken wissen muessen,
-    was dort liegt.
-    """
+def _rund_rechteck_rechnen(breite: int, hoehe: int, radius: float, fuellung: str, rand: str,
+                           randbreite: float, gestrichelt: bool, alpha: int, ueber: int) -> "Image.Image":
+    """Die Rechnung hinter :func:`rund_rechteck` - vierfach gross zeichnen, dann verkleinern."""
     breite, hoehe = max(2, int(breite)), max(2, int(hoehe))
     gross = Image.new("RGBA", (breite * ueber, hoehe * ueber), (0, 0, 0, 0))
     zeichner = ImageDraw.Draw(gross)
@@ -319,6 +312,64 @@ def rund_rechteck(breite: int, hoehe: int, radius: float, fuellung: str = "", ra
             zeichner.rounded_rectangle(box, radius=r, outline=_rgba(rand, alpha),
                                        width=max(1, int(round(randbreite * ueber))))
     return gross.resize((breite, hoehe), _LANCZOS)
+
+
+#: Gemerkte Rundungsbilder (Schluessel: alle Argumente) und ihre Obergrenze in Byte. Gemessen am 11.10.2026: Jede
+#: Umschaltung zwischen Ansichten und Aufgaben zeichnet alle runden Flaechen neu - 80 bis 120 Mal dieselbe Rundung, je
+#: vierfach gross gezeichnet und mit LANCZOS verkleinert, zusammen 0,4 bis 0,6 s der 1,0 bis 1,6 s einer Umschaltung.
+#: Dieselben Argumente ergeben dasselbe Bild, also wird es gemerkt. Grosse Bilder (Kartenflaechen) bleiben draussen:
+#: Sie kommen selten wieder und wuerden den Speicher fuellen.
+_RUND_MERKER: "collections.OrderedDict[tuple, Image.Image]" = collections.OrderedDict()
+_RUND_MERKER_BYTES = 0
+_RUND_MERKER_GRENZE = 32 * 1024 * 1024
+_RUND_MERKER_EINZEL = 2 * 1024 * 1024
+_RUND_MERKER_SCHLOSS = threading.Lock()
+
+
+def rund_rechteck(breite: int, hoehe: int, radius: float, fuellung: str = "", rand: str = "",
+                  randbreite: float = 1.0, *, gestrichelt: bool = False, alpha: int = 255,
+                  ueber: int = UEBERABTASTUNG) -> "Image.Image":
+    """Ein abgerundetes Rechteck als RGBA-Bild: Fuellung, Rand innen.
+
+    Leere ``fuellung`` heisst durchsichtig (nur der Rand), leerer ``rand`` kein
+    Rand. ``gestrichelt`` zeichnet den Rand als Strichfolge (Chip
+    "Anpassungen unbekannt"). Die vier Ecken sind weich geglaettet; ausserhalb
+    der Rundung ist das Bild durchsichtig - Tk legt es mit dem eigenen
+    Alphakanal auf die Flaeche dahinter, ohne dass die Ecken wissen muessen,
+    was dort liegt.
+
+    Kleine Bilder werden gemerkt (siehe ``_RUND_MERKER``); der Aufrufer bekommt
+    immer eine **eigene Kopie** und darf sie verandern (``alpha_composite`` auf
+    das Ergebnis tun mehrere).
+    """
+    global _RUND_MERKER_BYTES
+    schluessel = (int(breite), int(hoehe), float(radius), str(fuellung or ""), str(rand or ""), float(randbreite),
+                  bool(gestrichelt), int(alpha), int(ueber))
+    with _RUND_MERKER_SCHLOSS:
+        gemerkt = _RUND_MERKER.get(schluessel)
+        if gemerkt is not None:
+            _RUND_MERKER.move_to_end(schluessel)
+            return gemerkt.copy()
+    bild = _rund_rechteck_rechnen(*schluessel[:2], schluessel[2], schluessel[3], schluessel[4], schluessel[5],
+                                  schluessel[6], schluessel[7], schluessel[8])
+    groesse = bild.width * bild.height * 4
+    if groesse <= _RUND_MERKER_EINZEL:
+        with _RUND_MERKER_SCHLOSS:
+            if schluessel not in _RUND_MERKER:
+                _RUND_MERKER[schluessel] = bild.copy()
+                _RUND_MERKER_BYTES += groesse
+            while _RUND_MERKER_BYTES > _RUND_MERKER_GRENZE and _RUND_MERKER:
+                _schluessel, aelteste = _RUND_MERKER.popitem(last=False)
+                _RUND_MERKER_BYTES -= aelteste.width * aelteste.height * 4
+    return bild
+
+
+def rund_rechteck_merker_leeren() -> None:
+    """Leert die gemerkten Rundungsbilder (Tests; bei einem Designwechsel aendern sich die Schluessel von selbst)."""
+    global _RUND_MERKER_BYTES
+    with _RUND_MERKER_SCHLOSS:
+        _RUND_MERKER.clear()
+        _RUND_MERKER_BYTES = 0
 
 
 def verlauf_rechteck(breite: int, hoehe: int, radius: float, links: str, rechts: str,

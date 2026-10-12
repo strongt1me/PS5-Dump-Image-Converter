@@ -3,7 +3,7 @@
 `backend/native/ffpfsc-pkg-tool` is a self-contained, single-file .NET 9 executable
 (macOS arm64), with its one native library `Magick.Native-Q8-arm64.dll.dylib` beside it,
 that the app calls for everything fPKG: `build`, `extract-inner`,
-`extract-outer`, `list-inner`, `inspect`, `validate`, `version`. This folder holds the part
+`extract-outer`, `list-inner`, `stream-inner`, `inspect`, `validate`, `version`. This folder holds the part
 we wrote:
 
 - `Program.cs` — the command-line wrapper around drakmor's LibProsperoPkg 1.2.0: argument
@@ -120,6 +120,31 @@ decodes them with the library's own span decoder (its private `DecodeSpan`, boun
 reflection; if a future library version renames it, the code falls back to
 `DecompressRange` unchanged). Byte identity with the full extract is covered by the
 harness's selective-extract tests.
+
+## Streaming a package: `stream-inner`
+
+`stream-inner <pkg> --plan <file> [--passcode P]` writes the listed files of the `/app0` tree to **stdout as binary
+frames** — nothing is unpacked to disk. The app pipes them straight to a console over FTP (unpack to the PS5 without a
+copy on the PC). `StreamInner.cs`; the idea (read the package, push the files, resume a half-sent file) is
+fpkg2ftp's (kvaps, GPL-3.0-or-later), the code is written here.
+
+The plan is UTF-8, one line per file: `<start> TAB <path>` (path relative to /app0, `/`-separated); `<start>` is the
+offset to carry on from (the part the receiver already has), 0 = the whole file. Frames, little-endian, nothing else
+on stdout (every message goes to stderr, a bad call prints its usage there too):
+
+    file   "PKF1"  u32 pathLen  path (UTF-8)  i64 size  i64 start   then exactly (size - start) data bytes
+    end    "PKE1"  u32 fileCount
+
+The frame carries the offset the file *really* starts at. Only a plain, contiguous file can start in the middle
+(`InnerImage.IsContiguous`, `CopyFileFrom`); a compressed or non-contiguous file, a CNT file's start outside 1..size-1
+and any start at or past the end send the whole file and say `start = 0`. A receiver must therefore append (`APPE`)
+only when the frame says `start > 0`, and overwrite (`STOR`) otherwise. A run that ends without the end frame, or
+with an exit code other than 0, failed (reason on stderr). Every path is checked before the first byte goes out
+(exit 1, empty stdout); a bad plan line or no plan is exit 2.
+
+Checked on 2026-10-11 against `extract-inner --members` on a small package built with `build`: 15 files including
+the CNT-lifted `sce_sys` entries, byte-identical (SHA-256), starts inside a 40 MiB file past the first 32 MiB chunk,
+an empty file, unknown paths, a directory as path, a bad plan line and no plan.
 
 ## Why not NativeAOT
 

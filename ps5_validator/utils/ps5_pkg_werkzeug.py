@@ -20,6 +20,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -32,6 +34,12 @@ _Abbruch = Callable[[], bool]
 
 #: ``PaketInfo.typ`` eines Spielordners.
 TYP_ORDNER = "Ordner"
+
+#: So oft (Sekunden) zeigt :func:`extrahieren` ein Lebenszeichen, wenn das Werkzeug nichts meldet. Gemessen am 12.10.2026
+#: an einem 31-GB-Paket auf einer Festplatte: Das Lesen des Inhalts (``list-inner``) dauerte mit kaltem Zwischenspeicher
+#: 80 s (das Werkzeug liest dabei nur ~1,5 MB/s, viele kleine Stuecke verstreut), mit warmem 0,5 s - und das Fenster
+#: stand die ganze Zeit auf "0 %", sodass es wie ein Absturz aussah.
+_HERZSCHLAG = 3.0
 
 #: ``[####] 42% extract (pfad)`` - so meldet das Werkzeug seinen Fortschritt.
 _FORTSCHRITT = re.compile(r"\[#{2,}\]\s*(\d{1,3})%\s*(.*)")
@@ -176,18 +184,37 @@ def _fehlertext(ausgabe: str) -> str:
     return (zeilen[-1] if zeilen else ausgabe.strip().splitlines()[-1] if ausgabe.strip() else "kein Text")[:300]
 
 
+#: Ein Debug-Passcode des Werkzeugs: genau 32 druckbare ASCII-Zeichen (0x20-0x7e). Leer heisst "der Standard des
+#: Werkzeugs" (32 Nullen) - dann wird ``--passcode`` gar nicht erst mitgegeben.
+PASSCODE_LAENGE = 32
+PASSCODE_MUSTER = re.compile(r"^[\x20-\x7e]{32}$")
+
+
+def passcode_gueltig(passcode: str) -> bool:
+    return passcode == "" or bool(PASSCODE_MUSTER.match(passcode))
+
+
+def _passcode_args(passcode: str) -> list[str]:
+    return ["--passcode", passcode] if passcode else []
+
+
 def inspect(werkzeug: str, paket: str, popen_extra: dict | None = None) -> dict:
-    """Kopfdaten eines Pakets (``inspect --json``): Typ, Content-ID, Title-ID, Eintraege."""
+    """Kopfdaten eines Pakets (``inspect --json``): Typ, Content-ID, Title-ID, Eintraege.
+
+    Liest nur den aeusseren Kopf (unverschluesselt) - kennt deshalb keinen Passcode, anders als die Befehle unten,
+    die das innere Abbild lesen.
+    """
     rc, aus = laufen(werkzeug, ["inspect", paket, "--json"], popen_extra=popen_extra)
     if rc != 0:
         raise Fehler(_fehlertext(aus))
     return _json_aus(aus)
 
 
-def pruefen(werkzeug: str, paket: str, *, zeile: _Zeile | None = None, abbruch: _Abbruch | None = None,
-            popen_extra: dict | None = None) -> dict:
+def pruefen(werkzeug: str, paket: str, *, passcode: str = "", zeile: _Zeile | None = None,
+            abbruch: _Abbruch | None = None, popen_extra: dict | None = None) -> dict:
     """Die Pruefliste des Werkzeugs (``validate --json``): ``{"pass": n, "warn": n, "fail": n, "results": [...]}``."""
-    rc, aus = laufen(werkzeug, ["validate", paket, "--json"], zeile=zeile, abbruch=abbruch, popen_extra=popen_extra)
+    rc, aus = laufen(werkzeug, ["validate", paket, "--json"] + _passcode_args(passcode), zeile=zeile, abbruch=abbruch,
+                     popen_extra=popen_extra)
     if rc == -1:
         raise Fehler("abgebrochen")
     try:
@@ -237,13 +264,14 @@ def titel_aus_param(param: dict) -> str:
     return ""
 
 
-def lesen(werkzeug: str, paket: str, arbeitsordner: str | None = None, *, popen_extra: dict | None = None) -> PaketInfo:
+def lesen(werkzeug: str, paket: str, arbeitsordner: str | None = None, *, passcode: str = "",
+         popen_extra: dict | None = None) -> PaketInfo:
     """Liest ein Paket fuer die Anzeige: Kopfdaten, ``param.json`` und das Cover ``icon0.png``.
 
     ``param.json`` und ``icon0.png`` werden einzeln in einen kleinen Ordner herausgeholt (0,3 s gemessen an einem
     939-MB-Paket); das Paket selbst wird nicht entpackt. ``arbeitsordner`` ist die Ablage fuer das Cover, sonst ein
     eigener Ordner unter dem Temp-Ordner (``ps5conv_pkgcover_*``); das Cover bleibt dort liegen, bis es nicht mehr
-    gebraucht wird.
+    gebraucht wird. Ein falscher ``passcode`` liest den aeusseren Kopf trotzdem, aber weder param.json noch Cover.
     """
     kopf = inspect(werkzeug, paket, popen_extra)
     info = PaketInfo(pfad=paket, groesse=int(kopf.get("size_bytes", 0) or 0), typ=str(kopf.get("package_type", "") or ""),
@@ -259,8 +287,8 @@ def lesen(werkzeug: str, paket: str, arbeitsordner: str | None = None, *, popen_
         Path(liste).write_text("sce_sys/param.json\nsce_sys/icon0.png\n", encoding="utf-8")
     except OSError:
         return info
-    rc, _aus = laufen(werkzeug, ["extract-inner", paket, os.path.join(ordner, "teile"), "--members", liste],
-                      popen_extra=popen_extra)
+    rc, _aus = laufen(werkzeug, ["extract-inner", paket, os.path.join(ordner, "teile"), "--members", liste]
+                      + _passcode_args(passcode), popen_extra=popen_extra)
     teile = os.path.join(ordner, "teile", "sce_sys")
     param_pfad = os.path.join(teile, "param.json")
     if os.path.isfile(param_pfad):
@@ -354,7 +382,7 @@ TITLE_ID = re.compile(r"^[A-Z]{4}\d{5}$")
 
 def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: str, titel: str = "",
           version: str = "01.000.000", stufe: int = 0, kerne: int = 0, fake_signieren: bool = True,
-          ampr_index: bool = True, temp: str | None = None, zeile: _Zeile | None = None,
+          ampr_index: bool = True, passcode: str = "", temp: str | None = None, zeile: _Zeile | None = None,
           fortschritt: Callable[[int, str], None] | None = None, abbruch: _Abbruch | None = None,
           popen_extra: dict | None = None) -> str:
     """Baut aus einem Spielordner ein Debug-Paket (``build``) und gibt den Pfad der ``.pkg`` zurueck.
@@ -373,8 +401,9 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: s
     if not TITLE_ID.match(title_id):
         raise Fehler("Ungueltige Title-ID: %r" % title_id)
     Path(ziel).mkdir(parents=True, exist_ok=True)
-    argumente = ["build", quelle, ziel, "--content-id", content_id, "--title-id", title_id, "--version", version,
+    argumente = (["build", quelle, ziel, "--content-id", content_id, "--title-id", title_id, "--version", version,
                  "--mode", "kraken", "--kraken-backend", "builtin", "--level", str(int(stufe))]
+                + _passcode_args(passcode))
     if titel:
         argumente += ["--title", titel]
     if temp:
@@ -403,16 +432,16 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: s
     return treffer.group(1) if treffer else ok[-1]
 
 
-def baum(werkzeug: str, paket: str, popen_extra: dict | None = None) -> list[dict]:
+def baum(werkzeug: str, paket: str, popen_extra: dict | None = None, *, passcode: str = "") -> list[dict]:
     """Der Inhalt des Spiels (``list-inner``): ``[{"path": ..., "type": "file"|"dir", "size": ...}, ...]``."""
-    rc, aus = laufen(werkzeug, ["list-inner", paket], popen_extra=popen_extra)
+    rc, aus = laufen(werkzeug, ["list-inner", paket] + _passcode_args(passcode), popen_extra=popen_extra)
     if rc != 0:
         raise Fehler(_fehlertext(aus))
     eintraege = _json_aus(aus).get("entries", [])
     return [e for e in eintraege if isinstance(e, dict) and e.get("path")]
 
 
-def extrahieren(werkzeug: str, paket: str, ziel: str, *, zeile: _Zeile | None = None,
+def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zeile: _Zeile | None = None,
                 fortschritt: Callable[[int, str], None] | None = None, abbruch: _Abbruch | None = None,
                 popen_extra: dict | None = None, arbeitsordner: str | None = None) -> str:
     """Entpackt das ganze Spiel (``/app0`` samt ``sce_sys``) nach ``ziel``.
@@ -429,29 +458,56 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, zeile: _Zeile | None = 
         Fehler: das Werkzeug meldet einen Fehler oder bricht ohne ``OK`` ab; ``abgebrochen`` beim Abbruch.
     """
     Path(ziel).mkdir(parents=True, exist_ok=True)
+    beginn = time.monotonic()
+    stand = {"p": 0, "datei": "", "zuletzt": beginn}
+    ende = threading.Event()                          # weckt den Herzschlag sofort, wenn der Aufruf endet
 
     def jede(text: str) -> None:
         treffer = _FORTSCHRITT.match(text)
         if treffer and fortschritt:
             # "[####] 42% extract (Media/a.dat)" - der Dateiname steht in Klammern
             datei = re.search(r"\((.*)\)\s*$", treffer.group(2))
-            fortschritt(min(100, int(treffer.group(1))), datei.group(1) if datei else "")
+            stand["p"] = min(100, int(treffer.group(1)))
+            stand["datei"] = datei.group(1) if datei else ""
+            stand["zuletzt"] = time.monotonic()
+            fortschritt(stand["p"], stand["datei"])
         elif zeile:
             zeile(text)
 
+    def herzschlag() -> None:
+        """Meldet sich, solange das Werkzeug schweigt: ``<Datei> · m:ss`` - damit ein langes Lesen nicht wie ein Absturz wirkt."""
+        while not ende.wait(_HERZSCHLAG):
+            if time.monotonic() - stand["zuletzt"] >= _HERZSCHLAG:
+                dauer = int(time.monotonic() - beginn)
+                try:
+                    fortschritt(stand["p"], "%s · %d:%02d" % (stand["datei"] or "…", dauer // 60, dauer % 60))
+                except Exception:  # noqa: BLE001 - ein Rueckruf darf das Entpacken nie beenden
+                    return
+
+    if fortschritt is not None:
+        threading.Thread(target=herzschlag, daemon=True, name="ps5pkg-herzschlag").start()
     liste = ""
-    argumente = ["extract-inner", paket, ziel]
+    passcode_args = _passcode_args(passcode)
+    argumente = ["extract-inner", paket, ziel] + passcode_args
     try:
-        eintraege = baum(werkzeug, paket, popen_extra)
+        if zeile:
+            zeile("[info] Paketinhalt wird gelesen - bei einem grossen Paket auf einer Festplatte kann das eine Minute "
+                  "dauern ...")
+        eintraege = baum(werkzeug, paket, popen_extra, passcode=passcode)
+        if zeile:
+            zeile("[info] Paketinhalt gelesen: %d Eintraege in %d s" % (len(eintraege), int(time.monotonic() - beginn)))
         if eintraege:
             handle, liste = tempfile.mkstemp(prefix="ps5conv_teile_", suffix=".txt", dir=arbeitsordner or None)
             with os.fdopen(handle, "w", encoding="utf-8") as f:
                 f.write("\n".join(e["path"] for e in eintraege) + "\n")
-            argumente = ["extract-inner", paket, ziel, "--members", liste]
+            argumente = ["extract-inner", paket, ziel, "--members", liste] + passcode_args
     except (Fehler, OSError) as exc:
         if zeile:
             zeile("[info] kein Fortschritt je Datei moeglich (%s) - voller Entpack" % exc)
         liste = ""
+    except BaseException:
+        ende.set()                                    # der Herzschlag darf nie ueber den Aufruf hinaus weiterlaufen
+        raise
     try:
         rc, aus = laufen(werkzeug, argumente, zeile=jede, abbruch=abbruch, popen_extra=popen_extra)
         if rc == -1:
@@ -460,7 +516,7 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, zeile: _Zeile | None = 
         if (rc != 0 or not ok) and liste:
             if zeile:
                 zeile("[info] Entpacken je Datei gescheitert (%s) - voller Entpack" % _fehlertext(aus))
-            rc, aus = laufen(werkzeug, ["extract-inner", paket, ziel], zeile=jede, abbruch=abbruch,
+            rc, aus = laufen(werkzeug, ["extract-inner", paket, ziel] + passcode_args, zeile=jede, abbruch=abbruch,
                              popen_extra=popen_extra)
             if rc == -1:
                 raise Fehler("abgebrochen")
@@ -469,6 +525,7 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, zeile: _Zeile | None = 
             raise Fehler(_fehlertext(aus))
         return ok[-1]
     finally:
+        ende.set()
         if liste:
             try:
                 os.remove(liste)

@@ -75,11 +75,11 @@ def _uebersicht(dienst: str, laeuft: bool):
 
 
 class KnoepfeTests(unittest.TestCase):
-    """Die acht Knoepfe und ihre Ziele - ohne Fenster."""
+    """Die neun Knoepfe und ihre Ziele - ohne Fenster."""
 
-    def test_acht_knoepfe_in_dieser_reihenfolge(self) -> None:
+    def test_neun_knoepfe_in_dieser_reihenfolge(self) -> None:
         self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
-                          "coolsyscent", "shadowmount", "smplusgui", "bfpilot"],
+                          "coolsyscent", "shadowmount", "smplusgui", "bfpilot", "amprmgr"],
                          [k for _s, k in KLASSE._KONSOLE_KNOEPFE])
         for nummer, (schluessel, _kennung) in enumerate(KLASSE._KONSOLE_KNOEPFE, start=1):
             for sprache in ("de", "en"):

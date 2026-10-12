@@ -67,6 +67,28 @@ class I18nTests(unittest.TestCase):
                             f"Kein englischer Text für {key} hinterlegt")
 
 
+class SchluesselTests(unittest.TestCase):
+    """Kein Schluessel steht zweimal im Woerterbuch.
+
+    Ein Woerterbuch-Literal verschluckt doppelte Schluessel still: Der spaetere Eintrag ersetzt den
+    frueheren, und das Programm zeigt dann an einer der beiden Stellen den Text der anderen. Gefunden am
+    10.10.2026 beim Fenster „Updates“: ``updates.status_geholt`` war der Text der Zeile („Aktuell
+    (geholt)“) und der der Statuszeile („Fertig: {anzahl} Datei(en) geholt.“) - die Zeile zeigte die
+    Vorlage mit Klammern. Der Syntaxbaum sieht beide, das geladene Woerterbuch nur einen.
+    """
+
+    def test_kein_schluessel_steht_doppelt(self) -> None:
+        import collections
+        baum = ast.parse((PROJEKT / "ps5_validator" / "utils" / "i18n.py").read_text(encoding="utf-8"))
+        zaehler: collections.Counter = collections.Counter()
+        for knoten in ast.walk(baum):
+            if isinstance(knoten, ast.AnnAssign) and getattr(knoten.target, "id", "") == "STRINGS":
+                zaehler.update(k.value for k in knoten.value.keys if isinstance(k, ast.Constant))
+        self.assertGreater(len(zaehler), 2000, "Das Woerterbuch wurde nicht gefunden - die Pruefung misst nichts")
+        doppelt = sorted(k for k, n in zaehler.items() if n > 1)
+        self.assertEqual([], doppelt, "Doppelte Schluessel in STRINGS: " + ", ".join(doppelt))
+
+
 class AnfuehrungszeichenTests(unittest.TestCase):
     """Anfuehrungszeichen muessen paarweise und sprachrichtig sein.
 

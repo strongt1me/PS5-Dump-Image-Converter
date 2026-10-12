@@ -438,17 +438,22 @@ class SeitenTests(unittest.TestCase):
 
     def test_der_installer_geht_in_der_gewaehlten_fassung_raus(self) -> None:
         gesendet: list = []
+        gemeldet: list = []
         with mock.patch.object(self.app, "_ps5_ip", lambda: "192.168.1.50"), \
                 mock.patch.object(self.app, "_ps5_port_open", lambda _ip, _port, timeout=1.5: True), \
                 mock.patch.object(self.app, "_send_payload_to_ps5",
                                   lambda ip, pfad, **_k: gesendet.append((ip, pfad)) or (True, "1 B")), \
                 mock.patch.object(APP.messagebox, "askyesno", lambda *a, **k: True), \
-                mock.patch.object(APP.messagebox, "showinfo", lambda *a, **k: None), \
+                mock.patch.object(APP.messagebox, "showinfo", lambda *a, **k: gemeldet.append(a)), \
                 mock.patch.object(APP.messagebox, "showerror", lambda *a, **k: None), \
                 mock.patch.object(self.app, "_append_to_log", lambda _t: None):
             self.app._webkit_installer_senden(fassung="0.4.0")
-            _schleife(8.0, bis=lambda: bool(gesendet))
+            # Auch auf die "Gesendet"-Meldung warten: Sie kommt aus dem Hauptfaden NACH dem Senden. Endete die
+            # Schleife schon beim Senden, waere die Attrappe beim Eintreffen der Meldung weg und conftest meldete einen
+            # echten Dialog (in der Testgruppe vom 11.10.2026 unter Last einmal so geschehen).
+            _schleife(8.0, bis=lambda: bool(gesendet) and bool(gemeldet))
         self.assertTrue(gesendet, "Der Installer wurde nicht geschickt.")
+        self.assertTrue(gemeldet, "Die Meldung nach dem Senden kam nicht an.")
         self.assertTrue(gesendet[0][1].endswith("webkit-autoloader-installer_v0.4.0.elf"), gesendet)
 
     def test_ohne_wahl_nehmen_die_wege_weiter_die_neueste(self) -> None:

@@ -84,7 +84,8 @@ class KonsoleSeitenBeiKleinemFensterTests(unittest.TestCase):
             cls.root.update()
             time.sleep(0.01)
 
-    def _maengel(self, breite: int, hoehe: int, seite: str) -> list[str]:
+    def _einstellen(self, breite: int, hoehe: int, seite: str) -> None:
+        """Fenstergroesse und Seite einstellen und zur Ruhe kommen lassen."""
         try:
             self.root.state("normal")        # der Aufbau maximiert das Fenster
         except Exception:  # noqa: BLE001
@@ -93,6 +94,9 @@ class KonsoleSeitenBeiKleinemFensterTests(unittest.TestCase):
         self._ruhen(1.0)
         self.app._konsole_seite_setzen(seite)
         self._ruhen(1.5)
+
+    def _maengel(self, breite: int, hoehe: int, seite: str) -> list[str]:
+        self._einstellen(breite, hoehe, seite)
         fenster = ad.Fensterlage(
             breite=self.root.winfo_width(), hoehe=self.root.winfo_height(),
             x=self.root.winfo_rootx(), y=self.root.winfo_rooty(),
@@ -115,6 +119,79 @@ class KonsoleSeitenBeiKleinemFensterTests(unittest.TestCase):
             for seite in SEITEN:
                 with self.subTest(breite=breite, hoehe=hoehe, seite=seite):
                     self.assertEqual([], self._maengel(breite, hoehe, seite))
+
+    def test_die_knoepfe_unter_der_tabelle_liegen_ganz_in_ihrer_reihe(self) -> None:
+        """Jeder der vier Knoepfe ist sichtbar und liegt ganz in der Reihe - bei jeder Groesse.
+
+        Ein Knopf, der aus dem Fenster geschoben ist, schneidet keinen Text ab und bleibt der Pruefung oben
+        verborgen: ``QR-Code`` lag bei 1245 px Fensterbreite schon vor dem 10.10.2026 ausserhalb der Reihe
+        (Reihe 704 px, die vier Knoepfe brauchen 785). Seitdem bricht die Reihe um.
+        """
+        gemessen = 0
+        for breite, hoehe in GROESSEN:
+            if self.root.winfo_screenwidth() < breite or self.root.winfo_screenheight() < hoehe:
+                continue
+            self._einstellen(breite, hoehe, "uebersicht")
+            reihe = self.app._konsole_tafel_knopfreihe
+            kinder = reihe.winfo_children()
+            with self.subTest(breite=breite, hoehe=hoehe):
+                self.assertEqual(4, len(kinder))
+                for knopf in kinder:
+                    name = knopf.cget("text")
+                    self.assertTrue(knopf.winfo_ismapped(), name)
+                    self.assertGreaterEqual(knopf.winfo_x(), 0, name)
+                    self.assertLessEqual(knopf.winfo_x() + knopf.winfo_width(), reihe.winfo_width(), name)
+                    self.assertGreaterEqual(knopf.winfo_width(), knopf.winfo_reqwidth(), name)
+                unten = max(k.winfo_y() + k.winfo_height() for k in kinder)
+                self.assertLessEqual(unten, reihe.winfo_height(), "Die Reihe waechst mit ihren Zeilen mit")
+            gemessen += 1
+        self.assertGreater(gemessen, 0, "Der Bildschirm gab keine der Groessen her")
+
+    def test_die_tabelle_bleibt_bei_jeder_groesse_lesbar(self) -> None:
+        """Mindestens vier Zeilenhoehen (Kopf und etwa drei Zeilen) - und die Seite wird bei niedrigem Fenster kompakt.
+
+        Gemessen am 10.10.2026: Mit Favoritenzeile und zweiter Knopfzeile blieben der Tabelle bei 1245x700 nur 38 px.
+        Seitdem gibt die Seite bei niedrigem Fenster zuerst die Unterzeile, zwei Protokollzeilen und Rand her.
+        """
+        from tkinter import ttk
+        zeile = int(ttk.Style(self.root).lookup("Treeview", "rowheight") or 20)
+        unterzeile = self.app._t("tafel.subtitle")
+        gemessen = 0
+        for breite, hoehe in GROESSEN:
+            if self.root.winfo_screenwidth() < breite or self.root.winfo_screenheight() < hoehe:
+                continue
+            self._einstellen(breite, hoehe, "uebersicht")
+            tabelle = self.app._konsole_tafel_tabelle
+            sichtbar = tabelle.master.winfo_height()
+            with self.subTest(breite=breite, hoehe=hoehe):
+                self.assertGreaterEqual(sichtbar, 4 * zeile, "Tabelle %d px, eine Zeile %d px" % (sichtbar, zeile))
+                titel = [w for w in self.app._konsole_tafel.winfo_children()
+                         if w.winfo_class() == "Label" and str(w.cget("text")) == unterzeile]
+                self.assertEqual(1, len(titel))
+                # Kompakt heisst: Unterzeile weg und drei Protokollzeilen - und nur dann.
+                kompakt = bool(self.app._konsole_tafel_kompakt)
+                self.assertEqual(not kompakt, bool(titel[0].winfo_ismapped()))
+                self.assertEqual(3 if kompakt else 5, int(self.app._konsole_tafel_protokoll.cget("height")))
+            gemessen += 1
+        self.assertGreater(gemessen, 0, "Der Bildschirm gab keine der Groessen her")
+
+    def test_updates_sitzt_rechts_oben_neben_konsole_pruefen(self) -> None:
+        """Der Knopf "Updates" liegt im Kopf der Seite rechts von "Konsole pruefen" und ganz im Kopf."""
+        gemessen = 0
+        for breite, hoehe in GROESSEN:
+            if self.root.winfo_screenwidth() < breite or self.root.winfo_screenheight() < hoehe:
+                continue
+            self._einstellen(breite, hoehe, "uebersicht")
+            updates = self.app._konsole_tafel_updates_knopf
+            kopf = self.app._konsole_tafel_kopf
+            pruefen = self.app._konsole_tafel_knoepfe[0]
+            with self.subTest(breite=breite, hoehe=hoehe):
+                self.assertTrue(updates.winfo_ismapped())
+                self.assertGreaterEqual(updates.winfo_x(), pruefen.winfo_x() + pruefen.winfo_width())
+                self.assertLessEqual(updates.winfo_x() + updates.winfo_width(), kopf.winfo_width())
+                self.assertGreaterEqual(updates.winfo_width(), updates.winfo_reqwidth())
+            gemessen += 1
+        self.assertGreater(gemessen, 0, "Der Bildschirm gab keine der Groessen her")
 
 
 if __name__ == "__main__":

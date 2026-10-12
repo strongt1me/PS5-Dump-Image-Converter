@@ -311,7 +311,14 @@ class KartenKnopfTests(unittest.TestCase):
         self.assertEqual([1], aufrufe)
         self.assertEqual("1", str(knopf.cget("takefocus")))
 
+    def _tastatur(self, an: bool) -> None:
+        alt = raster.tastatur_bedient()
+        raster.tastaturbedienung_setzen(an)
+        self.addCleanup(raster.tastaturbedienung_setzen, alt)
+
     def test_der_fokus_ist_zu_sehen(self) -> None:
+        """Wer mit der Tastatur bedient (Tab), sieht den Strich."""
+        self._tastatur(True)
         knopf = self._knopf()
         ohne = len(knopf.find_all())
         knopf._fokus_ein()
@@ -322,6 +329,76 @@ class KartenKnopfTests(unittest.TestCase):
         gesperrt._fokus_ein()
         self.assertEqual(len(self._knopf(state="disabled").find_all()), len(gesperrt.find_all()),
                          "Ein gesperrter Knopf zeigt keinen Fokus.")
+
+    def test_ein_vom_programm_gesetzter_fokus_zeigt_keinen_strich(self) -> None:
+        """Meldung vom 10.10.2026: Ein Meldungsfenster stellt den Fokus beim Oeffnen auf "OK" - dort stand ein Strich
+        unter dem Knopf, der bei einem Klick irgendwo verschwand. Ohne Tastaturbedienung gibt es keinen Strich."""
+        self._tastatur(False)
+        knopf = self._knopf()
+        ohne = len(knopf.find_all())
+        knopf._fokus_ein()
+        self.assertTrue(knopf._fokus, "der Fokus selbst ist gesetzt (Eingabe und Leertaste gehen)")
+        self.assertEqual(ohne, len(knopf.find_all()), "aber ohne Strich")
+
+    def _fenster_mit_knopf(self):
+        oben = tk.Toplevel(_WURZEL)
+        self.addCleanup(oben.destroy)
+        try:
+            oben.attributes("-alpha", 0.0)       # ein echtes, aber unsichtbares Fenster: Tasten kommen nur dort an
+        except tk.TclError:
+            pass
+        knopf = raster.KartenKnopf(oben, self.z, "OK")
+        knopf.pack()
+        oben.update()
+        return oben, knopf
+
+    def test_tab_zeigt_den_strich_und_ein_mausklick_nimmt_ihn_wieder(self) -> None:
+        """Die Logik hinter den Bindungen am Fenster - ohne auf die Tastaturzustellung von Tk angewiesen zu sein."""
+        self._tastatur(False)
+        oben, knopf = self._fenster_mit_knopf()
+        ohne = len(knopf.find_all())
+        knopf._fokus_ein()
+        self.assertEqual(ohne, len(knopf.find_all()))
+        with mock.patch.object(oben, "focus_get", return_value=knopf):
+            raster._bedienung_geaendert(oben, True)                 # was die Bindung bei Tab ruft
+            self.assertTrue(raster.tastatur_bedient())
+            self.assertEqual(ohne + 1, len(knopf.find_all()), "Tab: Der Knopf mit dem Fokus malt den Strich sofort")
+            raster._bedienung_geaendert(oben, False)                # ... bei einem Mausklick
+            self.assertFalse(raster.tastatur_bedient())
+            self.assertEqual(ohne, len(knopf.find_all()), "Mausklick: Der Strich geht wieder")
+
+    def test_die_fensterbindungen_rufen_diese_logik(self) -> None:
+        """Tab und Mausklick im Fenster erreichen sie wirklich (echte Ereignisse; ohne Tastaturfokus nicht pruefbar)."""
+        self._tastatur(False)
+        oben, knopf = self._fenster_mit_knopf()
+        knopf.focus_force()
+        oben.update()
+        if oben.focus_get() is not knopf:
+            self.skipTest("dieser Lauf bekommt keinen Tastaturfokus - Tab-Ereignisse kaemen nicht an")
+        oben.event_generate("<KeyPress-Tab>", when="now")
+        self.assertTrue(raster.tastatur_bedient(), "Tab im Fenster setzt die Tastaturbedienung")
+        oben.event_generate("<ButtonPress-1>", when="now")
+        self.assertFalse(raster.tastatur_bedient(), "ein Mausklick nimmt sie zurueck")
+
+    def test_die_beobachtung_haengt_nur_einmal_je_fenster(self) -> None:
+        oben, _knopf = self._fenster_mit_knopf()
+        raster.KartenKnopf(oben, self.z, "Zweiter").pack()
+        raster.KartenKnopf(oben, self.z, "Dritter").pack()
+        for folge in ("<KeyPress-Tab>", "<ButtonPress>"):
+            self.assertEqual(1, oben.bind(folge).count("if {"), "doppelt gebunden: " + folge)
+
+    def test_der_zustand_steht_vor_dem_fokuswechsel(self) -> None:
+        """Der Strich muss schon da sein, wenn der naechste Knopf den Fokus bekommt (``FocusIn`` kommt noch im Tab)."""
+        self._tastatur(False)
+        oben, _erster = self._fenster_mit_knopf()
+        zweiter = raster.KartenKnopf(oben, self.z, "Zweiter")
+        zweiter.pack()
+        oben.update()
+        ohne = len(zweiter.find_all())
+        with mock.patch.object(oben, "focus_get", return_value=None):
+            raster._bedienung_geaendert(oben, True)             # Zustand zuerst ...
+        zweiter._fokus_ein()                                    # ... dann kommt der Fokus
+        self.assertEqual(ohne + 1, len(zweiter.find_all()))
 
     def test_nach_einem_designwechsel_stimmen_grund_und_bild(self) -> None:
         knopf = self._knopf(grund="bg_card")

@@ -3,7 +3,7 @@
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
 ![Version](https://img.shields.io/badge/Version-v1.9.71-blue)
-![Tests](https://img.shields.io/badge/Tests-5851%20gr%C3%BCn-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-6220%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,

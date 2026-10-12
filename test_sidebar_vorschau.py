@@ -219,7 +219,7 @@ class QuelltextTests(unittest.TestCase):
         self.assertNotIn("root.withdraw()", abschnitt)
         self.assertLess(
             abschnitt.index('root.attributes("-alpha", 0.0)'),
-            abschnitt.index("app = PS5ConverterGUI(root)"),
+            abschnitt.index("app = PS5ConverterGUI(root, start_leer=True)"),
             "Das Fenster muss vor dem Aufbau unsichtbar werden",
         )
         self.assertLess(

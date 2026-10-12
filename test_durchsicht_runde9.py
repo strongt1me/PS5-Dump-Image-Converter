@@ -371,13 +371,15 @@ class FensterTests(_FadenTest):
 
     # -- H3-10: Zurueckspielen ------------------------------------------
 
-    def _zurueckspielen(self, antwort: bool, *, ziel_da: bool = True):
+    def _zurueckspielen(self, antwort, *, ziel_da: bool = True, lokal_inhalt: bytes = b"NEU"):
         """Ordner senden - seit dem 25.09.2026 ueber die Bibliothek.
 
         Das Fenster "Zurueckspielen" ist in ihr aufgegangen. Gefragt wird
         dort zweimal: erst "Jetzt senden?" mit Groesse und Dauer (hier immer
-        Ja), dann - nur wenn der Ordner auf der Konsole schon liegt - ob er
-        ueberschrieben werden darf. Gezaehlt wird nur diese zweite Frage.
+        Ja), dann - nur wenn der Ordner auf der Konsole schon liegt - seit dem
+        10.10.2026 mit drei Antworten: ``True`` = Fortsetzen (vollstaendige
+        Dateien ueberspringen), ``False`` = alles neu schreiben, ``None`` =
+        Abbrechen. Gezaehlt wird nur diese zweite Frage.
         """
         fern = _ordner(self, "r9_fern_")
         lokal = _ordner(self, "r9_lokal_")
@@ -387,7 +389,7 @@ class FensterTests(_FadenTest):
         else:
             (fern / "mnt" / "usb0").mkdir(parents=True)
         (lokal / "PPSA01234-app").mkdir()
-        (lokal / "PPSA01234-app" / "eboot.bin").write_bytes(b"NEU")
+        (lokal / "PPSA01234-app" / "eboot.bin").write_bytes(lokal_inhalt)
         stube = _FtpStube(fern)
         self.addCleanup(stube.schliessen)
         self._ersetzen(self.app, "_ps5_ip", lambda default="": "127.0.0.1")
@@ -395,7 +397,7 @@ class FensterTests(_FadenTest):
         self._ersetzen(self.app, "_konsole_ftp_bereit", lambda _ip, _melden: True)
 
         ziel = "/mnt/usb0/PPSA01234-app"
-        ueberschreiben = self.app._t("zurueck.ask_overwrite", ziel=ziel)
+        ueberschreiben = self.app._t("zurueck.ask_fortsetzen", ziel=ziel)
         gefragt: list = []
 
         def _frage(_titel, text, **_kwargs):
@@ -406,6 +408,7 @@ class FensterTests(_FadenTest):
 
         vorher = set(_WURZEL.winfo_children())
         with mock.patch.object(APP.messagebox, "askyesno", _frage), \
+                mock.patch.object(APP.messagebox, "askyesnocancel", _frage), \
                 mock.patch.object(APP.messagebox, "showinfo"), \
                 mock.patch.object(APP.messagebox, "showwarning"):
             self.app._bibliothek_ordner_uebertragen(
@@ -421,15 +424,26 @@ class FensterTests(_FadenTest):
         return gefragt, (ergebnis.read_bytes() if ergebnis.exists() else None)
 
     def test_zurueckspielen_fragt_vor_vorhandenem_ordner(self) -> None:
-        gefragt, inhalt = self._zurueckspielen(False)
+        gefragt, inhalt = self._zurueckspielen(None)
         self.assertEqual(1, len(gefragt), "Es wurde nicht gefragt.")
         self.assertEqual(b"ORIGINAL", inhalt,
-                         "Der Ordner auf der Konsole wurde trotz Nein ueberschrieben.")
+                         "Der Ordner auf der Konsole wurde trotz Abbrechen ueberschrieben.")
 
-    def test_zurueckspielen_nach_ja(self) -> None:
-        gefragt, inhalt = self._zurueckspielen(True)
+    def test_zurueckspielen_nach_alles_neu(self) -> None:
+        gefragt, inhalt = self._zurueckspielen(False)
         self.assertEqual(1, len(gefragt))
         self.assertEqual(b"NEU", inhalt)
+
+    def test_zurueckspielen_fortsetzen_ueberspringt_was_schon_gleich_gross_dort_liegt(self) -> None:
+        """Mit "Fortsetzen" bleibt eine Datei in voller Groesse unberuehrt (Vorgabe fuer unterbrochene Laeufe)."""
+        gefragt, inhalt = self._zurueckspielen(True, lokal_inhalt=b"NEU12345")      # 8 Byte wie "ORIGINAL"
+        self.assertEqual(1, len(gefragt))
+        self.assertEqual(b"ORIGINAL", inhalt)
+
+    def test_zurueckspielen_alles_neu_ersetzt_auch_gleich_grosse(self) -> None:
+        gefragt, inhalt = self._zurueckspielen(False, lokal_inhalt=b"NEU12345")
+        self.assertEqual(1, len(gefragt))
+        self.assertEqual(b"NEU12345", inhalt)
 
     def test_zurueckspielen_ohne_vorhandenes_ziel_fragt_nicht(self) -> None:
         gefragt, inhalt = self._zurueckspielen(False, ziel_da=False)
@@ -735,7 +749,8 @@ class TexteTests(unittest.TestCase):
 
     def test_zweisprachig_mit_platzhaltern(self) -> None:
         for schluessel, platzhalter in (
-                ("zurueck.ask_overwrite", ("{ziel}",)),
+                ("zurueck.ask_fortsetzen", ("{ziel}",)),
+                ("zurueck.log_stats", ("{uebersprungen}", "{fortgesetzt}", "{wiederholt}")),
                 ("zurueck.log_kept", ("{ziel}",)),
                 ("pkg_merger.ask_overwrite_many", ("{count}", "{namen}"))):
             for sprache in ("de", "en"):

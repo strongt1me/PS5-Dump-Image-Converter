@@ -203,7 +203,7 @@ class _Dehnbar:
         try:
             self._knopf = raster.knopf_zeichnen(self, self._z, spec, links, oben, breite, self._h,
                                                 zustand=self._zustand())
-            if self._fokus and self._state != "disabled":
+            if self._fokus_strich():
                 ring = self._z.palette.get("fg_accent", "#7fb2ff")
                 self.create_line(links + 3, oben + self._h - 2, links + breite - 3, oben + self._h - 2,
                                  fill=ring, width=max(1, int(self._z.faktor)))

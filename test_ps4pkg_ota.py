@@ -181,6 +181,13 @@ class PaketServerTests(unittest.TestCase):
     def test_die_zaehler(self) -> None:
         _holen(self.port, self.pfad)
         _holen(self.port, self.pfad, kopf={"Range": "bytes=0-99"})
+        # Der Server zaehlt in seinem eigenen Faden, nachdem er gesendet hat - der Client ist unter Last manchmal
+        # vorher fertig (Volllauf 10.10.2026: 700000 statt 700100, einzeln sechsmal gruen). Also warten, bis beide
+        # Anfragen verbucht sind, statt auf einen Zeitpunkt zu hoffen.
+        ende = time.time() + 5
+        while time.time() < ende and (self.server.gesendet(self.name) < len(self.inhalt) + 100
+                                      or len(self.server.anfragen) < 2):
+            time.sleep(0.01)
         self.assertEqual(len(self.inhalt) + 100, self.server.gesendet(self.name))
         self.assertEqual(self.server.gesendet(self.name), self.server.gesendet())
         methoden = [a[0] for a in self.server.anfragen]

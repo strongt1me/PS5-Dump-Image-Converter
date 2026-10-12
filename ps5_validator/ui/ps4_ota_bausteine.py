@@ -32,7 +32,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable
 
-from PIL import Image, ImageTk
+from PIL import ImageTk
 
 from ps5_validator.utils import bibliothek_raster as raster
 from ps5_validator.utils import bibliothek_zeichnen as zeichnen

@@ -179,7 +179,8 @@ class KonsolentafelTests(_MitProgramm):
         self.assertEqual(_en("dienste.col_dienst"), tabelle.heading("dienst", "text"))
         erste = tabelle.get_children()[0]
         dienst = konsole_dienste.KATALOG[0]
-        self.assertEqual(_en(dienst.name_schluessel), tabelle.item(erste, "values")[0])
+        # Nach der Spalte, nicht nach der Stelle: Vorn steht seit dem 10.10.2026 der Favoriten-Stern.
+        self.assertEqual(_en(dienst.name_schluessel), tabelle.set(erste, "dienst"))
         self.assertEqual(_en("tafel.gefunden", name="Wohnzimmer",
                              zustand=_en(konsole.status_schluessel), firmware="12.00"),
                          self.app._konsole_tafel_zustand.get())

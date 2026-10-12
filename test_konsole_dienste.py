@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import socket
 import sys
 import threading
 import time
 import unittest
+import zlib
 from pathlib import Path
 from unittest import mock
 
@@ -770,7 +772,7 @@ class VersionOhneStartenTests(unittest.TestCase):
         modul = _lade_hauptprogramm()
         app = modul.PS5ConverterGUI.__new__(modul.PS5ConverterGUI)
         app._t = lambda schluessel, **werte: STRINGS[schluessel]["de"].format(**werte)
-        erwartet = {"shadowmount": "1.7beta4", "elfldr9020": "0.26", "dpiv2": "1.00",
+        erwartet = {"shadowmount": "1.7beta5fix1", "elfldr9020": "0.26", "dpiv2": "1.00",
                     "elfldr9021": "0.26"}
         for schluessel, version in erwartet.items():
             with self.subTest(dienst=schluessel):
@@ -845,6 +847,25 @@ class _CoolSysCentApi:
         return False
 
 
+def _enthaelt_weboberflaeche(inhalt: bytes) -> bool:
+    """Steht die Seite der Weboberflaeche in der ELF - im Klartext oder gzip-gepackt?
+
+    Bis v1.48.0 lag sie als Klartext in der Datei; seit der 1.5x-Reihe liegt sie gzip-gepackt darin und wird mit
+    ``Content-Encoding: gzip`` ausgeliefert (gemessen 09.10.2026 an v1.55.0: 17 358 Byte HTML in einem von 26
+    gzip-Stroemen). Die Pruefung soll beides erkennen.
+    """
+    if b"<!doctype html" in inhalt.lower():
+        return True
+    for treffer in re.finditer(rb"\x1f\x8b\x08", inhalt):
+        try:
+            anfang = zlib.decompressobj(31).decompress(inhalt[treffer.start():treffer.start() + 4_000_000], 64)
+        except zlib.error:
+            continue
+        if anfang[:14].lower() == b"<!doctype html":
+            return True
+    return False
+
+
 class CoolSysCentTests(unittest.TestCase):
     """PS5 Cooling & System Center - Pro: die eigene App des Projektinhabers (05.10.2026).
 
@@ -868,14 +889,23 @@ class CoolSysCentTests(unittest.TestCase):
 
     def test_die_datei_liegt_bei_und_nennt_ihre_version(self):
         self.assertEqual(1, len(self.dateien), self.dateien)
-        self.assertEqual("1.48.0", kd.version_aus_dateiname(self.dateien[0].name))
+        self.assertRegex(kd.version_aus_dateiname(self.dateien[0].name), r"^\d+\.\d+\.\d+$")
+
+    def test_die_pruefung_erkennt_die_seite_im_klartext_und_gzip_gepackt(self):
+        seite = b"<!doctype html><html lang='en'><head></head><body>x</body></html>"
+        self.assertTrue(_enthaelt_weboberflaeche(b"\x00\x01" + seite + b"\x02"))
+        packer = zlib.compressobj(9, zlib.DEFLATED, 31)
+        gepackt = packer.compress(seite) + packer.flush()
+        self.assertNotIn(b"doctype", gepackt.lower())
+        self.assertTrue(_enthaelt_weboberflaeche(b"\x7fELF" + b"\x00" * 64 + gepackt + b"\x00" * 64))
+        self.assertFalse(_enthaelt_weboberflaeche(b"\x7fELF" + b"\x00" * 64 + b"\x1f\x8b\x08 kein gzip" + b"\x00" * 64))
 
     def test_die_elf_traegt_port_pfad_und_version_des_katalogs(self):
         """Gegen die Datei selbst: Wer die ELF austauscht und den Port aendert, faellt hier auf.
 
-        Gemessen am 05.10.2026 an v1.48.0: ``"deeplinkUri": "http://127.0.0.1:8086"`` (Vorgabe von
-        ``http_port``), die Route ``/api/v1/system`` mit dem Feld ``app_version`` und die Kopfzeile
-        "PS5 Cooling & System Center - Pro 1.48.0".
+        Gemessen am 05.10.2026 an v1.48.0 und am 09.10.2026 an v1.55.0: ``"deeplinkUri": "http://127.0.0.1:8086"``
+        (Vorgabe von ``http_port``), die Route ``/api/v1/system`` mit dem Feld ``app_version`` und die Kopfzeile
+        "PS5 Cooling & System Center - Pro <Fassung>".
         """
         eintrag = kd.dienst("coolsyscent")
         for datei in self.dateien:
@@ -886,7 +916,7 @@ class CoolSysCentTests(unittest.TestCase):
                 self.assertIn(eintrag.version_pfad.encode(), inhalt)
                 self.assertIn(b"app_version", inhalt)
                 self.assertIn(("PS5 Cooling & System Center - Pro %s" % version).encode(), inhalt)
-                self.assertIn(b"<!doctype html", inhalt.lower())
+                self.assertTrue(_enthaelt_weboberflaeche(inhalt), "Die Seite der Weboberflaeche fehlt in der ELF")
 
     def test_die_app_nennt_ihre_laufende_version(self):
         vorbild = kd.dienst("coolsyscent")
@@ -932,7 +962,7 @@ class CoolSysCentTests(unittest.TestCase):
         # Ohne laufende Version zeigt die Spalte die der beiliegenden Datei - nie nur einen Strich.
         text = app._konsole_versionstext(kd.Stand(eintrag))
         self.assertTrue(text and text != "–", "Die Spalte zeigt nur einen Strich.")
-        self.assertIn("1.48.0", text)
+        self.assertIn(kd.version_aus_dateiname(self.dateien[0].name), text)
 
 
 @unittest.skipUnless(TK_DA, "Keine Anzeige verfuegbar")

@@ -63,6 +63,44 @@ class RegelTests(unittest.TestCase):
             with self.subTest(config=config, titel=titel, generation=generation):
                 self.assertFalse(GUI._ampr_titel_ohne_fakelib(config, titel, generation))
 
+    def test_modus_eintraege_ab_beta5(self) -> None:
+        """Wirksam ist der zuletzt gueltige Eintrag des Titels, sonst die Vorgabe."""
+        e = sg.fakelib_aus_eintrag
+        d = "fakelib_mode=%s:disabled" % TITEL
+        faelle = (
+            (d + "\n", d),
+            ("fakelib_mode = %s : DISABLED\n" % TITEL.lower(), d),
+            ("fakelib_default_mode=disabled\n", "fakelib_default_mode=disabled"),
+            # letzter Eintrag gewinnt - auch ueber beide Schluessel hinweg
+            ("fakelib_exclude=%s\nfakelib_mode=%s:full\n" % (TITEL, TITEL), ""),
+            ("fakelib_mode=%s:full\nfakelib_exclude=%s\n" % (TITEL, TITEL),
+             "fakelib_exclude=%s" % TITEL),
+            ("fakelib_mode=%s:disabled\nfakelib_mode=%s:emulators\n" % (TITEL, TITEL), ""),
+            ("fakelib_mode=%s:disabled\nfakelib_mode=%s:default\n" % (TITEL, TITEL), ""),
+            # default entfernt den eigenen Eintrag und erbt die Vorgabe
+            ("fakelib_default_mode=disabled\nfakelib_mode=%s:default\n" % TITEL,
+             "fakelib_default_mode=disabled"),
+            ("fakelib_default_mode=disabled\nfakelib_mode=%s:emulators\n" % TITEL, ""),
+            # Gegenproben
+            ("fakelib_mode=CUSA00001:disabled\n", ""),
+            ("# fakelib_mode=%s:disabled\n" % TITEL, ""),
+            ("fakelib_mode=%s:unsinn\n" % TITEL, ""),
+            ("fakelib_default_mode=unsinn\n", ""),
+            ("fakelib_default_mode=emulators\n", ""),
+            ("fakelib_default_mode=disabled\nfakelib_default_mode=full\n", ""),
+            ("", ""),
+        )
+        for config, soll in faelle:
+            with self.subTest(config=config):
+                self.assertEqual(soll, e(config, TITEL))
+        self.assertEqual("", e(d, ""))
+
+    def test_alte_fassung_kennt_die_modus_schluessel_nicht(self) -> None:
+        for config in ("fakelib_mode=%s:disabled\n" % TITEL,
+                       "fakelib_default_mode=disabled\n"):
+            self.assertFalse(GUI._ampr_titel_ohne_fakelib(config, TITEL, sg.ALT))
+            self.assertTrue(GUI._ampr_titel_ohne_fakelib(config, TITEL, sg.NEU))
+
     def test_global_fakelib_exclude_bleibt_wie_es_war(self) -> None:
         """Die alte Abfrage (Vorgabe) liest weiter nur global_fakelib_exclude."""
         self.assertTrue(GUI._ampr_mitschnitt_titel_ausgenommen(
@@ -120,7 +158,8 @@ class AutomatikTests(unittest.TestCase):
         self.assertEqual(gui._t("amprgen.q_excluded"), frage[1])
         self.assertIn("fakelib_exclude=%s" % TITEL, frage[2])
         self.assertEqual(["stop", "weiter"], [o[0] for o in frage[3]])
-        self.assertIn("!! " + gui._t("amprgen.excluded", title_id=TITEL), meldungen)
+        self.assertIn("!! " + gui._t("amprgen.excluded", title_id=TITEL,
+                                     eintrag="fakelib_exclude=%s" % TITEL), meldungen)
         self.assertIn(gui._t("amprgen.cancelled"), meldungen)
         gui._ampr_alle_fassungen.assert_not_called()
         gui._ampr_ftp_ensure_dir.assert_not_called()
@@ -143,7 +182,8 @@ class AutomatikTests(unittest.TestCase):
             "fakelib_exclude=CUSA00001\nglobal_fakelib_exclude=%s\n" % TITEL, None)
         gui._ampr_gen_frage.assert_not_called()
         gui._ampr_alle_fassungen.assert_called_once()
-        self.assertNotIn("!! " + gui._t("amprgen.excluded", title_id=TITEL), meldungen)
+        self.assertFalse([m for m in meldungen if m.startswith("!! ")
+                          and "fakelib" in m and TITEL in m])
 
     def test_lokal_ohne_konsole_keine_frage(self) -> None:
         """Ohne Konsole gibt es keine config.ini - und damit nichts zu warnen."""
@@ -163,7 +203,28 @@ class AutomatikTests(unittest.TestCase):
                     text = STRINGS[kennung][sprache]
                     self.assertIn("1.7beta4", text)
                     self.assertIn("{title_id}", text)
+                    self.assertIn("{eintrag}", text)
                     self.assertIn(weg, text)
+
+    def test_modus_eintrag_loest_die_warnung_aus(self) -> None:
+        """Ab 1.7beta5: fakelib_mode=<ID>:disabled stoppt ebenso wie fakelib_exclude."""
+        gui, _ftp, meldungen = self._lauf(
+            "fakelib_mode=%s:disabled\n" % TITEL, "stop")
+        frage = gui._ampr_gen_frage.call_args.args
+        self.assertIn("fakelib_mode=%s:disabled" % TITEL, frage[2])
+        self.assertIn(gui._t("amprgen.cancelled"), meldungen)
+        gui._ampr_alle_fassungen.assert_not_called()
+
+    def test_standardmodus_disabled_loest_die_warnung_aus(self) -> None:
+        gui, _ftp, _meldungen = self._lauf("fakelib_default_mode=disabled\n", "stop")
+        frage = gui._ampr_gen_frage.call_args.args
+        self.assertIn("fakelib_default_mode=disabled", frage[2])
+
+    def test_eigener_modus_full_hebt_die_vorgabe_auf(self) -> None:
+        gui, _ftp, _meldungen = self._lauf(
+            "fakelib_default_mode=disabled\nfakelib_mode=%s:full\n" % TITEL, None)
+        gui._ampr_gen_frage.assert_not_called()
+        gui._ampr_alle_fassungen.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -423,7 +423,7 @@ footer{
     <h3>What is AMPR EMU, and when do I need it?</h3>
     <p>When a game starts, the PS5 asks its APR file resolver where the game files are. If the game runs from a mounted image, the resolver gets no usable answer – and the game does not start. AMPR EMU is a replacement library that answers this question on its behalf. You need it for games that are meant to run from an image.</p>
     <p>You can integrate it while creating (checkbox <strong>AMPR EMU</strong> in tasks 1 to 6) or via <strong>button&nbsp;7</strong>: it opens a selection with the <em>new method</em> (ShadowMount+ from 1.7 alpha8), the <em>old method</em> (up to alpha6) and <em>Build AMPR EMU into the backup</em>. The program checks itself which ShadowMount+ version runs on the console and, if necessary, advises you to use the other button.</p>
-    <p>If AMPR EMU has no effect, check the ShadowMount+ <code>config.ini</code>: if the game's title ID is listed under <code>fakelib_exclude</code>, ShadowMount+ from version 1.7beta4 on mounts no <code>fakelib</code> at all for this title. Button&nbsp;7 and the AMPR trace assistant ask in this case before placing anything; you remove the entry under <strong>MORE TOOLS</strong> → <strong>SHADOWMOUNT+</strong>.</p>
+    <p>If AMPR EMU has no effect, check the ShadowMount+ <code>config.ini</code>: if the game's title ID is listed under <code>fakelib_exclude</code> (from version 1.7beta4) or is switched off with <code>fakelib_mode=&lt;ID&gt;:disabled</code> or via <code>fakelib_default_mode=disabled</code> (from 1.7beta5), ShadowMount+ mounts no <code>fakelib</code> at all for this title. The AMPR EMU Manager (button&nbsp;9 of the CONSOLE view) and the AMPR trace assistant ask in this case and name the entry before placing anything; change it under <strong>MORE TOOLS</strong> → <strong>SHADOWMOUNT+</strong>.</p>
   </div>
 
   <div class="frage">
@@ -467,6 +467,17 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Can I unpack a PS5 package without needing space on the PC?</h3>
+    <p>Yes. In <strong>PS5 PKG Dump &amp; Image Converter</strong> (MORE TOOLS) choose the action <strong>Unpack to the PS5</strong>, enter the console's address and the folder there (for example <code>/mnt/usb0/GameName</code>) and start. The program reads the package and sends the files straight to the PS5 over FTP; no unpacked copy is made on the PC. <code>ftpsrv</code> must be running on the console. If the folder already exists there, you can <strong>resume</strong> (complete files are skipped, unfinished ones continue) or rewrite everything; if the connection drops, the program reconnects up to five times and carries on from where it stopped. Cancelling takes effect after the current file.</p>
+    <p class="hinweis"><strong>Untested:</strong> Unpacking to the console is checked against a real package and a stand-in FTP server (every file byte for byte the same), but has not yet been tried on a PS5. Try it with a small game first.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What do Fast, Balanced, Maximum and Low RAM do?</h3>
+    <p>The four buttons under <strong>PRESET</strong> (in the CONVERT view, next to the checkboxes at the bottom of the card) set the compression level and the core count in one go: <em>Fast</em> level 3 with all cores, <em>Balanced</em> level 6 and <em>Maximum</em> level 9 with half the cores, <em>Low RAM</em> level 3 with one core. The block size stays at 65536. Measured on a 664 MB dump, levels 1 and 9 differ by only about 5&nbsp;% in image size (PS5 game data hardly compresses); more cores shorten the time but need more memory. How much memory is free during a run is shown by the live display below the log.</p>
+  </div>
+
+  <div class="frage">
     <h3>A game hangs on the loading screen.</h3>
     <p>Some titles stay at a “Please wait” when started from the image, while the same package runs when installed with the Package Installer. Ruled out so far: the storage location, missing PlayGo content, an online check and an incomplete image – <strong>the cause is still open</strong>. By no means every title is affected.</p>
   </div>
@@ -481,6 +492,17 @@ footer{
     <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with eight tools: <em>Console &amp; payloads</em>, <em>WebKit Autoloader</em>, <em>Library</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em> and <em>BFpilot</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
     <p><strong>Console &amp; payloads</strong> already finds the PS5 by itself when the program starts – you do not have to enter an address. The page queries all known ports, shows state, version and purpose for every service, starts missing services from the bundled <code>helloworld</code> folder and opens web interfaces. On Windows these appear directly in the program, otherwise in the browser.</p>
     <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (the PS5 Cooling &amp; System Center, port 8086), <strong>ShadowMount+</strong>, <strong>SMPlusGui</strong> and <strong>BFpilot</strong> (a second file manager, port 5905) have no page of their own: one press checks whether the payload is already running on the console, sends it by itself if needed – together with the ELF loader if port 9021 is still closed – and then opens its web interface.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I have payloads sent to the PS5 automatically (favorites)?</h3>
+    <p>On <em>Console &amp; payloads</em> the first column of the table carries a star. A click on ☆ (or the space bar on the selected row) makes the service a <strong>favorite</strong>, another click takes it out again. The line above the table names the current favorites.</p>
+    <ul>
+      <li>The program sends favorites by itself <strong>when it starts</strong> and on demand with <strong>Send favorites</strong>. By default these are the FTP server and the kernel log; <strong>Default</strong> restores that.</li>
+      <li>Only what is not running gets sent, in the order of the table. A service that “hangs” (see below) is not sent again.</li>
+      <li><strong>Port 9021</strong> is part of every send: if the ELF loader is closed, the program opens it first through the Payload Manager. If that fails, the favorites are not sent and the log says so. That is why the ELF loader carries no star – neither do ShadowMount+ and DPI&nbsp;v2, which the program does not start itself.</li>
+      <li>The checkbox <strong>Send automatically at program start</strong> (on by default) only switches off the sending at start; the <strong>Send favorites</strong> button stays yours.</li>
+    </ul>
   </div>
 
   <div class="frage">
@@ -518,7 +540,19 @@ footer{
       <li><strong>Host:</strong> It occupies DNS (UDP 53) and HTTPS (TCP 443) and therefore needs administrator rights.</li>
       <li><strong>Installer:</strong> It goes to the console via port 9021. If the port is closed, it goes via FTP to the root of a USB drive; you pick it up there with the Payload Manager.</li>
     </ul>
-    <p>If a new version appears, put its three files into the folder <code>PS5 WebKit Autoloader</code> in addition; the older ones stay selectable.</p>
+    <p>If a new version appears, the <strong>Updates</strong> button (see below) downloads its three files, or you put them into the folder <code>PS5 WebKit Autoloader</code> yourself in addition; the older ones stay selectable.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I get newer versions of the bundled tools?</h3>
+    <p>With the <strong>Updates</strong> button at the top right of the <em>Console &amp; Payloads</em> page, next to <em>Check console</em>. It opens a window and immediately asks each tool's author for the latest release – the payloads in the folder <code>helloworld</code>, the WebKit Autoloader, AMPR EMU and the engines (MkPFS, UFS2Tool, LibProsperoPkg, OrbisPkgTool, PS5-PKG-Tool, PS5 Wee Tools, 7-Zip). This is the only network access; without the button the program never asks anywhere.</p>
+    <ul>
+      <li><strong>New version</strong> can be ticked in the first column (click or space bar); <strong>Download</strong> fetches the selection. Every file is checked against the size and SHA-256 of the release before it is put in place; a tool that consists of several files arrives completely or not at all.</li>
+      <li>Files go to <code>Werkzeug-Updates</code> in the program's settings folder – <strong>never</strong> into the bundled folders. The program takes the highest version there; bundled files stay untouched, and you may delete downloaded ones at any time.</li>
+      <li><strong>New – install by hand</strong> is shown for engines with own adjustments, for archives and for tools without a version in the file name: the window then only gives the verdict and opens the release page on request.</li>
+      <li>GitHub allows 60 requests per hour without signing in; a full check needs about fifty. The program remembers the answers, so a second check hardly counts. When the limit is reached, the window names the time from which it works again.</li>
+    </ul>
+    <p class="hinweis">For elfldr, ftpsrv and klogsrv the program keeps using the tested bundled file in the table, when starting (favorites included) and in its own procedures; the downloaded one is available for sending in the quick selection.</p>
   </div>
 
   <div class="frage">
@@ -528,7 +562,7 @@ footer{
 
   <div class="frage">
     <h3>How do I use other controllers on the PS5 (AnyPad PS5)?</h3>
-    <p>Since v1.9.60 the payload <strong>AnyPad PS5</strong> is bundled (now version 0.8.1-beta). It makes Bluetooth controllers usable on the PS5; games see them as a DualSense. According to its author, the DualShock&nbsp;4&nbsp;v2, 8BitDo SF30 Pro (Switch mode) and GameSir G7 SE are verified; Xbox and Switch Pro controllers among others are supported but not yet verified. On <em>Console &amp; payloads</em> you start it with <strong>Start selected</strong> and open its pairing page (port 8095) with <strong>Open web interface</strong>.</p>
+    <p>Since v1.9.60 the payload <strong>AnyPad PS5</strong> is bundled (now version 0.9.1-beta). It makes Bluetooth controllers usable on the PS5; games see them as a DualSense. According to its author, the DualShock&nbsp;4&nbsp;v2, 8BitDo SF30 Pro (Switch mode) and GameSir G7 SE are verified; Xbox and Switch Pro controllers among others are supported but not yet verified. On <em>Console &amp; payloads</em> you start it with <strong>Start selected</strong> and open its pairing page (port 8095) with <strong>Open web interface</strong>.</p>
     <ul>
       <li>When the console asks who uses the controller, the author advises choosing <strong>Quick play / Guest</strong> (a temporary user).</li>
       <li>A DualShock&nbsp;4 has to be paired again each time you switch it on; other controllers reconnect by themselves.</li>
@@ -536,6 +570,18 @@ footer{
       <li>The page asks for no PIN: anyone on the same network can use it.</li>
     </ul>
     <p class="hinweis">Since October 2026 the project lives on Codeberg; port, page and usage notes come from the author's information.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What do I need to do when updating CheatRunner?</h3>
+    <p>The author requires three things <strong>before</strong> you send a new version (bundled: 0.18, port&nbsp;9999):</p>
+    <ul>
+      <li>On the console, delete everything in <code>/data/cheatrunner</code> except the folders <code>cheats</code> and <code>patches</code> – before the first start of the new version, not after.</li>
+      <li>Delete the old CheatRunner PKG (the tile on the home screen) from the PS5.</li>
+      <li>Clear the browser cache: <em>Settings → System → Browser → Clear Cache</em>.</li>
+    </ul>
+    <p>Then send the new <code>CheatRunner_v0.18.elf</code> as usual. The program deletes nothing on the console by itself.</p>
+    <p class="hinweis">The steps come from the author's README (section "Updating CheatRunner").</p>
   </div>
 
   <div class="frage">

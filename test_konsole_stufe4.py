@@ -148,16 +148,19 @@ class EntferntTests(unittest.TestCase):
     (test_bibliothek_seite): Kommt etwas davon zurueck, faellt es hier auf.
     """
 
-    def test_acht_knoepfe_und_jeder_ist_verdrahtet(self):
+    def test_neun_knoepfe_und_jeder_ist_verdrahtet(self):
         """Seit dem 04.10.2026 sieben (vorher vier, davor drei): 2 ist der WebKit
         Autoloader, dazu 5 CoolSysCent-Pro, 6 ShadowMount+ und 7 SMPlusGui. Knopf 5
         sagte bis zum 05.10.2026 "kommt noch"; seither oeffnet er die Weboberflaeche
         des PS5 Cooling & System Center (Direktaktion wie Prospero Manager). Am
         selben Tag kam "8. Direct Stream" dazu, seit dem 07.10.2026 "8. BFpilot"
-        (Weboberflaeche auf Port 5905) - jede Kennung hat ein Fenster, eine Seite oder eine Aktion."""
+        (Weboberflaeche auf Port 5905), seit dem 12.10.2026 "9. AMPR EMU Manager"
+        (zuvor Aufgabe 7 der Seitenleiste UMWANDELN) - jede Kennung hat ein
+        Fenster, eine Seite oder eine Aktion."""
         klasse = APP.PS5ConverterGUI
         self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
-                          "coolsyscent", "shadowmount", "smplusgui", "bfpilot"],
+                          "coolsyscent", "shadowmount", "smplusgui", "bfpilot",
+                          "amprmgr"],
                          [k for _s, k in klasse._KONSOLE_KNOEPFE])
         for _schluessel, kennung in klasse._KONSOLE_KNOEPFE:
             with self.subTest(kennung=kennung):

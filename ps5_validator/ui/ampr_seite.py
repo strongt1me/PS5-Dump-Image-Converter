@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Aufgabe 7 „AMPR EMU Manager“ als Seite im rechten Bereich der Ansicht UMWANDELN (seit 07.10.2026).
+"""„AMPR EMU Manager“ als Seite im rechten Bereich der Ansicht KONSOLE (seit 07.10.2026, Knopf "9." seit 12.10.2026).
 
 Bis v1.9.65 oeffnete der Knopf zwei Fenster nacheinander: ein rahmenloses Auswahlfenster (Ablageweg,
-Methode) und danach das Fenster des Laufs mit Protokoll. Beides steht jetzt in **einer** Seite in der
-Zelle (1, 1) - dort, wo sonst die Rollflaeche mit Quelle, Ziel und Protokoll liegt:
+Methode) und danach das Fenster des Laufs mit Protokoll; ab 07.10.2026 stand beides in einer Seite, aber
+noch als Aufgabe 7 der Seitenleiste UMWANDELN (eigene Zelle (1, 1), wechselte die Ansicht selbst dorthin).
+Seit 12.10.2026 (Nutzerwunsch) ist es Knopf "9." der Ansicht KONSOLE - dieselbe Seite liegt jetzt in
+derselben Zelle wie die uebrigen drei Seiten der Ansicht KONSOLE (``_KONSOLE_SEITENBAU``, gebaut von
+``PS5ConverterGUI._konsole_amprmgr_bauen``, eingeblendet von ``_konsole_amprmgr_zeigen``):
 
 * **Auswahl:** Ablageweg (pro Spiel, global, Emulatoren), die beiden Methoden mit ihren Anleitungen.
 * **Ablauf:** Geltungsbereich, was passiert, Protokoll; „CONFIG.INI“, „ERNEUT AUSFUEHREN“, Weg zurueck.
@@ -260,9 +263,12 @@ def seite(gui) -> AmprSeite:
 
 
 def zeigen(gui, generation: str = "") -> AmprSeite:
-    """Blendet die Seite im rechten Bereich ein; ohne ``generation`` die Auswahl (oder den laufenden Ablauf)."""
+    """Waehlt Auswahl oder Ablauf; ohne ``generation`` die Auswahl (oder den laufenden Ablauf).
+
+    Das Einblenden selbst (die Seite in die Zelle der Ansicht KONSOLE legen) macht der Aufrufer
+    vorher - ``PS5ConverterGUI._konsole_amprmgr_zeigen`` ueber ``_konsole_seite_setzen``.
+    """
     s = seite(gui)
-    gui._ampr_seite_einblenden(s.rahmen)
     if generation:
         s.zeigen_ablauf(generation)
     elif s.laeuft and s.generation:

@@ -22,7 +22,9 @@ selber verbinden muss."
   sind eine Seite (dritter Wunsch vom selben Tag).
 * Beim Programmstart verbindet sich das Programm von selbst: "Somit muss der
   Nutzer nicht manuell seine PS5 IP eingeben" (vierter Wunsch) - samt
-  Grundausstattung, aber nur vom echten Programmstart aus.
+  Favoriten (Vorgabe: die bisherige Grundausstattung ftpsrv und klogsrv), aber
+  nur vom echten Programmstart aus. Welche Favoriten es gibt, pruefen
+  ``test_konsole_favoriten.py``.
 
 Gegenstellen sind echte Sockets auf 127.0.0.1 (UDP-Antworter wie eine PS5,
 TCP-Horcher als Dienst); ins Netz geht kein Test.
@@ -505,11 +507,13 @@ class SeitenTests(unittest.TestCase):
         erste = kd.KATALOG[0]
         version = kd.version_aus_dateiname(self.app._konsole_payload_datei(erste.payload_muster))
         self.assertTrue(version, "Anker: Zum ELF-Loader liegt eine Datei mit Version bei.")
-        self.assertEqual([self.app._t(erste.name_schluessel), str(erste.port),
+        # Die erste Spalte ist der Favoriten-Stern (seit 10.10.2026); beim ELF-Loader bleibt sie leer: Er wird
+        # beim Senden immer zuerst geoeffnet und braucht keinen Stern.
+        self.assertEqual(["", self.app._t(erste.name_schluessel), str(erste.port),
                           self.app._t("dienste.zustand_aus"), version,
                           self.app._t(erste.zweck_schluessel)],
                          [str(w) for w in self.tabelle.item(erste.schluessel, "values")])
-        for schluessel in ("tafel.check", "dienste.start_button", "dienste.base_button",
+        for schluessel in ("tafel.check", "dienste.start_button", "dienste.fav_button",
                            "dienste.web_button"):
             with self.subTest(knopf=schluessel):
                 self.assertIn(self.app._t(schluessel), self.knopf)
@@ -663,7 +667,7 @@ class SeitenTests(unittest.TestCase):
 
     def test_ohne_adresse_wird_nichts_geschickt(self) -> None:
         with mock.patch.object(APP, "messagebox") as box:
-            self.knopf[self.app._t("dienste.base_button")].invoke()
+            self.knopf[self.app._t("dienste.fav_button")].invoke()
         box.showwarning.assert_called_once()
         self.assertFalse(self.app._konsole_tafel_beschaeftigt())
 
@@ -674,14 +678,15 @@ class SeitenTests(unittest.TestCase):
         box.showinfo.assert_called_once()
         self.assertEqual(self.app._t("dienste.need_auswahl"), box.showinfo.call_args[0][1])
 
-    def test_grundausstattung_startet_nur_was_fehlt(self) -> None:
+    def test_favoriten_senden_startet_nur_was_fehlt(self) -> None:
+        """Ohne eigene Wahl sind die Favoriten die bisherige Grundausstattung (ftpsrv, klogsrv) - der Loader laeuft schon."""
         self.feld.insert(0, "10.0.0.9")
         gestartet: list = []
         with mock.patch.object(kd, "pruefen",
                                lambda host, *a, **k: _uebersicht(host, ("elfldr9021",))), \
                 mock.patch.object(self.app, "_konsole_dienst_starten",
                                   lambda schluessel, ip: gestartet.append((schluessel, ip))):
-            self.knopf[self.app._t("dienste.base_button")].invoke()
+            self.knopf[self.app._t("dienste.fav_button")].invoke()
             self.assertTrue(_bis(lambda: len(gestartet) == 2 and self._laeuft_nichts()))
         self.assertEqual([("ftpsrv", "10.0.0.9"), ("klogsrv", "10.0.0.9")], gestartet)
         self.assertIn(self.app._t("dienste.log_laeuft_schon", name=self.app._t(
@@ -803,10 +808,10 @@ class SeitenTests(unittest.TestCase):
 
     # -- Verbinden beim Programmstart --------------------------------------
 
-    def test_beim_start_gesucht_samt_grundausstattung(self) -> None:
+    def test_beim_start_gesucht_samt_favoriten(self) -> None:
         with mock.patch.object(self.app, "_konsole_tafel_suchen") as suchen:
             self.app._konsole_beim_start_verbinden()
-        suchen.assert_called_once_with(grundausstattung=True)
+        suchen.assert_called_once_with(favoriten=True)
         self.assertEqual([self.app._t("konsole.start_suche") + "\n"], self.hauptprotokoll)
         self.assertTrue(self.app._konsole_start_melden)
 
@@ -848,18 +853,22 @@ class SeitenTests(unittest.TestCase):
                                  self.app._konsole_tafel_zeile(zeile))
 
 
-class GrundausstattungTests(unittest.TestCase):
-    """_konsole_grundausstattung_nachstarten: nur ueber den ELF-Loader, nie Haengendes."""
+class FavoritenNachstartenTests(unittest.TestCase):
+    """_konsole_favoriten_nachstarten: nur ueber den ELF-Loader, nie Haengendes - Vorgabe ftpsrv und klogsrv."""
 
-    def _lauf(self, laufend=(), stumm=()):
+    def _lauf(self, laufend=(), stumm=(), favoriten=None):
         gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
         gestartet: list = []
         gui._konsole_dienst_starten = lambda schluessel, ip: gestartet.append(schluessel)
+        gui._konsole_favoriten = lambda: list(kd.FAVORITEN_STANDARD)
         uebersicht = kd.Uebersicht("10.0.0.9", [
             kd.Stand(d, d.schluessel in laufend, d.schluessel in stumm) for d in kd.KATALOG])
         danach = _uebersicht("10.0.0.9", kd.GRUNDAUSSTATTUNG)
         with mock.patch.object(kd, "pruefen", return_value=danach):
-            ergebnis = gui._konsole_grundausstattung_nachstarten("10.0.0.9", uebersicht)
+            if favoriten is None:
+                ergebnis = gui._konsole_favoriten_nachstarten("10.0.0.9", uebersicht)
+            else:
+                ergebnis = gui._konsole_favoriten_nachstarten("10.0.0.9", uebersicht, favoriten=favoriten)
         return gestartet, ergebnis, uebersicht, danach
 
     def test_ohne_elf_loader_wird_nichts_versucht(self) -> None:
@@ -933,12 +942,12 @@ class QuelltextTests(unittest.TestCase):
         baum = _baum()
         pruefen: list = []
         for name in ("_konsole_tafel_suchen", "_konsole_tafel_pruefen",
-                     "_konsole_tafel_starten", "_konsole_tafel_grundausstattung"):
+                     "_konsole_tafel_starten", "_konsole_tafel_favoriten"):
             pruefen.append((name, next(k for k in ast.walk(_methode(baum, name))
                                        if isinstance(k, ast.FunctionDef)
                                        and k.name == "_arbeit")))
         for name in ("_konsole_dienst_starten", "_konsole_elfldr_sicherstellen",
-                     "_konsole_grundausstattung_nachstarten"):
+                     "_konsole_favoriten_nachstarten"):
             pruefen.append((name, _methode(baum, name)))
         for name, knoten in pruefen:
             with self.subTest(funktion=name):
@@ -1026,10 +1035,13 @@ class TexteTests(unittest.TestCase):
                        "3&nbsp;Sekunden", "30&nbsp;Sekunden",
                        "<code>/data/pldmgr/payloads/elfldr</code>", "nichts hochgeladen",
                        "über die Weboberfläche des Payload-Managers", "bleibt unangetastet",
-                       "Grundausstattung", "(12.00, 12.02, 12.70 &hellip;)",
+                       "<em>Favoriten</em>", "<em>Favoriten senden</em>", "Beim Programmstart automatisch senden",
+                       "(12.00, 12.02, 12.70 &hellip;)",
                        "Port, Version und Zweck", "verraten ihre Version nicht"):
             with self.subTest(stelle=stelle):
                 self.assertIn(stelle, abschnitt)
+        # Die feste Grundausstattung gibt es nicht mehr (seit 10.10.2026 waehlt der Nutzer Favoriten).
+        self.assertNotIn("Grundausstattung", abschnitt)
         self.assertNotIn("Der Zustand der Konsole (rechte Seite)", handbuch)
 
 

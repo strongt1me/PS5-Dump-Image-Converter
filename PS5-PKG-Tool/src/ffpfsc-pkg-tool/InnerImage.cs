@@ -224,6 +224,40 @@ internal sealed class InnerImage : IDisposable
         }
     }
 
+    /// <summary>True when the file's data is one plain extent of the logical image: only such a file can be
+    /// copied starting in the middle (<see cref="CopyFileFrom"/>). Compressed (legacy PFSC) and non-contiguous
+    /// files have to be read from their first byte.</summary>
+    public static bool IsContiguous(PfsReader.File file)
+        => !file.flags.HasFlag(InodeFlags.compressed) && file.blocks == null;
+
+    /// <summary>
+    /// Like <see cref="CopyFile"/>, but starts at byte <paramref name="start"/> - to carry on an interrupted upload.
+    /// Only a contiguous plain file can start in the middle; for any other file, and for a start outside
+    /// 1..size-1, the whole file is copied. Returns the offset the copy really started at: the caller needs it to
+    /// know whether it is appending or overwriting.
+    /// (The idea is fpkg2ftp's CopyFileFrom, kvaps, GPL-3.0-or-later; rewritten here.)
+    /// </summary>
+    public long CopyFileFrom(PfsReader.File file, Stream dest, long start, Action<long>? progress = null, int chunkSize = 32 << 20)
+    {
+        if (start <= 0 || start >= file.size || !IsContiguous(file))
+        {
+            CopyFile(file, dest, progress, chunkSize);
+            return 0;
+        }
+        long remaining = file.size - start, pos = file.offset + start;
+        if (file.offset < 0 || file.offset + file.size > LogicalSize)
+            throw new InvalidDataException($"file extent [0x{file.offset:X},+0x{file.size:X}) lies outside the logical image (0x{LogicalSize:X}).");
+        while (remaining > 0)
+        {
+            int n = (int)Math.Min(remaining, chunkSize);
+            var chunk = _blocks.DecompressRange(pos, n);
+            dest.Write(chunk, 0, n);
+            pos += n; remaining -= n;
+            progress?.Invoke(n);
+        }
+        return start;
+    }
+
     public void Dispose()
     {
         _pfsImage?.Dispose();

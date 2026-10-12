@@ -439,7 +439,7 @@ class SchriftskalierungTests(unittest.TestCase):
         # erzeugten Schriften klein - der Aufruf muss vor _create_widgets
         # stehen.
         quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
-        anfang = quelle.index("    def __init__(self, root: tk.Tk) -> None:")
+        anfang = quelle.index("    def __init__(self, root: tk.Tk, start_leer: bool = False) -> None:")
         # Bis zur naechsten Methode statt einer festen Zeichenzahl: Mit festen
         # 40000 Zeichen fiel der Test am 04.10.2026 um, als __init__ durch den
         # FAQ-Knopf auf 42112 Zeichen wuchs - ohne dass sich an der Reihenfolge

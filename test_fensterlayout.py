@@ -480,29 +480,29 @@ class FenstergroesseTests(unittest.TestCase):
 
 
     def test_ps4_pkg_knoepfe_bleiben_erreichbar(self):
-        """Die Knopfreihe muss auch auf einem kurzen Bildschirm sichtbar sein.
+        """Die Knopfreihe muss auch bei wenig Platz sichtbar bleiben.
 
-        Der Ablageort-Kasten aus v1.8.74 macht das Fenster hoeher als der
-        Bildschirm hier hergibt (854 noetig, 784 moeglich). Entscheidend ist
-        dann nicht, dass alles zu sehen ist, sondern dass EINLESEN, ABBILD
-        ERSTELLEN, ABBRECHEN und SCHLIESSEN erreichbar bleiben. Dafuer wird
-        die Knopfreihe mit ``before=`` vor dem dehnbaren Koerper gepackt.
+        Der Ablageort-Kasten aus v1.8.74 machte das fruehere Popup-Fenster
+        hoeher als der Bildschirm hier hergibt (854 noetig, 784 moeglich).
+        Seit dem 12.10.2026 ist "PKG" (Aufgabe 7 - PKG / FPKG) kein eigenes
+        Fenster mehr, sondern eine eingebettete Seite (SCHLIESSEN ist mit dem
+        Fenster entfallen) - entscheidend bleibt, dass EINLESEN, ABBILD
+        ERSTELLEN und ABBRECHEN erreichbar bleiben. Dafuer wird die
+        Knopfreihe mit ``before=`` vor dem dehnbaren Koerper gepackt.
         """
         import time
+        from ps5_validator.ui import ps4_dump_image
 
         if not self.haupt._ps4ffpsc_wurzel():
             self.skipTest("Eingebettetes PS4-Werkzeug nicht vorhanden")
-        vorher = {str(w) for w in _WURZEL.winfo_children()}
         self.app._show_ps4_pkg_converter()
         ende = time.perf_counter() + 3.0
         while time.perf_counter() < ende:
             _WURZEL.update()
             time.sleep(0.01)
-        neu = [w for w in _WURZEL.winfo_children()
-               if str(w) not in vorher and isinstance(w, tk.Toplevel)
-               and w.winfo_exists()]
-        self.assertTrue(neu, "Es wurde kein Fenster geoeffnet")
-        fenster = neu[-1]
+        seite = getattr(self.app, ps4_dump_image.FENSTER_ATTRIBUT, None)
+        self.assertIsNotNone(seite, "Die Seite 'PKG' wurde nicht aufgebaut")
+        fenster = seite.win
         fenster.update_idletasks()
         knoepfe = [b for b in _sammle(fenster, "Button")
                    if b.winfo_ismapped()]
@@ -513,10 +513,9 @@ class FenstergroesseTests(unittest.TestCase):
             masse.append((str(knopf.cget("text"))[:20], knopf.winfo_height(),
                           knopf.winfo_reqheight(), unten,
                           fenster.winfo_height()))
-        try:
-            fenster.destroy()
-        except Exception:
-            pass
+        # Die Seite ist ein Singleton (anders als ein Popup-Fenster nicht zum Wegwerfen) -
+        # nur wieder ausblenden, sonst verlieren nachfolgende Tests dieser Klasse ihre eigenen Seiten.
+        self.app._pkg_fpkg_seite_verbergen()
         _WURZEL.update_idletasks()
 
         self.assertTrue(masse, "Keine Knoepfe gefunden")

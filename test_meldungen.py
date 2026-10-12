@@ -94,6 +94,39 @@ class FensterTests(unittest.TestCase):
         self.assertIs(False, meldungen.ergebnis("askyesno", m.antwort))
         self.assertFalse(m.win.winfo_exists())
 
+    def test_beim_oeffnen_steht_kein_fokusstrich_unter_dem_knopf(self) -> None:
+        """Meldung vom 10.10.2026: Beim Oeffnen stand ein Strich unter "OK", ein Klick irgendwo nahm ihn weg.
+
+        Das Fenster setzt den Fokus selbst auf den Vorgabeknopf (Eingabetaste geht sofort) - den Strich zeigt nur, wer
+        mit der Tastatur bedient (Tab), nicht ein vom Programm gesetzter Fokus. Alle acht Arten, Vorgabeknopf je Art."""
+        from ps5_validator.utils import bibliothek_raster as raster
+        alt = raster.tastatur_bedient()
+        raster.tastaturbedienung_setzen(False)
+        self.addCleanup(raster.tastaturbedienung_setzen, alt)
+        for art in meldungen.ARTEN:
+            with self.subTest(art=art):
+                m = self._meldung(art)
+                knopf = m.knoepfe[m._vorgabe]
+                gemessen: dict = {}
+
+                def messen(m=m, knopf=knopf, gemessen=gemessen) -> None:
+                    gemessen["fokus"] = bool(knopf._fokus)
+                    if not knopf._fokus:
+                        # Ein unsichtbares Testfenster bekommt keinen Tastaturfokus; das FocusIn, das ``focus_force``
+                        # beim Oeffnen ausloest, wird nachgestellt - sonst pruefte der Test nichts.
+                        knopf._fokus_ein()
+                    gemessen["offen"] = len(knopf.find_all())
+                    knopf._fokus_aus()
+                    gemessen["ohne_fokus"] = len(knopf.find_all())
+                    m._fertig(meldungen._ohne_antwort(m.art))
+
+                m.win.after(300, messen)
+                with mock.patch.object(meldungen, "_blinken"):
+                    m.zeigen()
+                self.assertEqual(gemessen["ohne_fokus"], gemessen["offen"],
+                                 "beim Oeffnen darf kein Strich unter dem Knopf stehen (Fokus gesetzt: %s)"
+                                 % gemessen["fokus"])
+
     def test_die_frage_fuer_alle_liefert_die_vier_antworten(self) -> None:
         for knopf, erwartet in (("yes", "yes"), ("no", "no"), ("yes_all", "yes_all"), ("no_all", "no_all")):
             with self.subTest(knopf=knopf):

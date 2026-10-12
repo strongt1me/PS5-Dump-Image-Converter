@@ -18,6 +18,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
@@ -328,6 +329,91 @@ class BilderTests(unittest.TestCase):
         self.assertEqual((14, 14), pfeil.size)
         self.assertTrue(any(pfeil.getpixel((x, y))[3] > 100 for x in range(14) for y in range(14)))
         self.assertEqual(0, pfeil.getpixel((0, 0))[3])
+
+
+class RundMerkerTests(unittest.TestCase):
+    """Die gemerkten Rundungsbilder (11.10.2026): schneller, aber nie veraendert und nie unbegrenzt."""
+
+    def setUp(self) -> None:
+        z.rund_rechteck_merker_leeren()
+        self.addCleanup(z.rund_rechteck_merker_leeren)
+
+    def test_gleiche_argumente_geben_gleiche_pixel(self) -> None:
+        a = z.rund_rechteck(120, 36, 18.0, "#222222", "#555555", 1.0)
+        b = z.rund_rechteck(120, 36, 18.0, "#222222", "#555555", 1.0)
+        self.assertEqual(a.tobytes(), b.tobytes())
+        self.assertEqual(a.size, b.size)
+
+    def test_das_gemerkte_gleicht_dem_frisch_gerechneten(self) -> None:
+        """Der Merker darf nichts verfaelschen: Das zweite Bild gleicht dem von der Rechnung allein."""
+        argumente = (90, 30, 15.0, "#101820", "#aabbcc", 1.5, False, 255, 4)
+        frisch = z._rund_rechteck_rechnen(*argumente)
+        z.rund_rechteck(90, 30, 15.0, "#101820", "#aabbcc", 1.5)
+        gemerkt = z.rund_rechteck(90, 30, 15.0, "#101820", "#aabbcc", 1.5)
+        self.assertEqual(frisch.tobytes(), gemerkt.tobytes())
+
+    def test_der_aufrufer_bekommt_eine_eigene_kopie(self) -> None:
+        """``alpha_composite`` auf das Ergebnis tun mehrere Aufrufer - das darf das naechste Bild nicht faerben."""
+        erstes = z.rund_rechteck(80, 28, 14.0, "#222222", "#555555", 1.0)
+        vorher = erstes.tobytes()
+        erstes.paste((255, 0, 0, 255), (0, 0, 80, 28))
+        zweites = z.rund_rechteck(80, 28, 14.0, "#222222", "#555555", 1.0)
+        self.assertEqual(vorher, zweites.tobytes(), "der Merker traegt die Veraenderung des ersten Aufrufers")
+        self.assertIsNot(erstes, zweites)
+
+    def test_andere_argumente_geben_ein_anderes_bild(self) -> None:
+        a = z.rund_rechteck(80, 28, 14.0, "#222222", "#555555", 1.0)
+        for abweichung in ((81, 28, 14.0, "#222222", "#555555", 1.0), (80, 28, 7.0, "#222222", "#555555", 1.0),
+                           (80, 28, 14.0, "#223222", "#555555", 1.0), (80, 28, 14.0, "#222222", "#555566", 1.0),
+                           (80, 28, 14.0, "#222222", "#555555", 2.0)):
+            with self.subTest(abweichung=abweichung):
+                self.assertNotEqual(a.tobytes(), z.rund_rechteck(*abweichung).tobytes())
+
+    def test_nur_der_stil_zaehlt_nicht_die_schreibweise_der_zahlen(self) -> None:
+        z.rund_rechteck(80, 28, 14, "#222222", "#555555", 1)
+        z.rund_rechteck(80.0, 28.0, 14.0, "#222222", "#555555", 1.0)
+        self.assertEqual(1, len(z._RUND_MERKER), "dieselben Werte in anderer Schreibweise sind ein Eintrag")
+
+    def test_der_merker_bleibt_unter_seiner_grenze(self) -> None:
+        for breite in range(100, 700, 7):
+            z.rund_rechteck(breite, 40, 20.0, "#222222", "#555555", 1.0)
+        self.assertLessEqual(z._RUND_MERKER_BYTES, z._RUND_MERKER_GRENZE)
+        self.assertEqual(z._RUND_MERKER_BYTES, sum(b.width * b.height * 4 for b in z._RUND_MERKER.values()),
+                         "die Buchfuehrung stimmt mit dem Inhalt ueberein")
+
+    def test_der_aelteste_eintrag_geht_zuerst(self) -> None:
+        with mock.patch.object(z, "_RUND_MERKER_GRENZE", 2 * 100 * 40 * 4 + 10):
+            z.rund_rechteck(100, 40, 20.0, "#111111", "", 1.0)      # 16 000 Byte
+            z.rund_rechteck(100, 40, 20.0, "#222222", "", 1.0)
+            z.rund_rechteck(100, 40, 20.0, "#111111", "", 1.0)      # macht den ersten zum juengsten
+            z.rund_rechteck(100, 40, 20.0, "#333333", "", 1.0)      # verdraengt den zweiten
+        farben = [k[3] for k in z._RUND_MERKER]
+        self.assertEqual(["#111111", "#333333"], farben)
+
+    def test_grosse_flaechen_werden_nicht_gemerkt(self) -> None:
+        z.rund_rechteck(1400, 900, 20.0, "#222222", "#555555", 1.0)
+        self.assertEqual(0, len(z._RUND_MERKER))
+        self.assertEqual(0, z._RUND_MERKER_BYTES)
+
+    def test_gleichzeitig_aus_mehreren_faeden(self) -> None:
+        import threading
+        fehler: list = []
+
+        def lauf(n: int) -> None:
+            try:
+                for i in range(40):
+                    bild = z.rund_rechteck(60 + (i + n) % 9, 24, 12.0, "#222222", "#555555", 1.0)
+                    assert bild.size[1] == 24
+            except Exception as exc:  # noqa: BLE001
+                fehler.append(exc)
+
+        faeden = [threading.Thread(target=lauf, args=(n,)) for n in range(6)]
+        for f in faeden:
+            f.start()
+        for f in faeden:
+            f.join(20)
+        self.assertEqual([], fehler)
+        self.assertEqual(z._RUND_MERKER_BYTES, sum(b.width * b.height * 4 for b in z._RUND_MERKER.values()))
 
 
 class RasterRechnenTests(unittest.TestCase):

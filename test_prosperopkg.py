@@ -307,7 +307,16 @@ class FassungsangabeTests(unittest.TestCase):
 
     def test_lizenzliste_und_oberflaeche_nennen_keine_andere_fassung(self):
         """Die Lizenzliste nannte bis zum 17.09.2026 noch 2.5, ebenso der
-        Hinweis im PKG-Reader - eingebaut ist seit v1.9.21 die 2.6.0."""
+        Hinweis im PKG-Reader - eingebaut ist seit v1.9.21 die 2.6.0.
+
+        Seit dem PS5-PKG-Tool-Einbau (ffpfsc-pkg-tool) gibt es eine ZWEITE,
+        unabhaengig gebaute und eigens versionierte LibProsperoPkg-Kopie, die
+        diesem Werkzeug selbst beiliegt (THIRD_PARTY_LICENSES.md, Zeile zu
+        "PS5-PKG-Tool 2.2.1") - 1.2.0, nichts mit der hier gepruften 2.6.0 aus
+        ``ProsperoPkg-2.5`` zu tun. Die ``ps5pkg.*``-Oberflaechentexte (Builder-
+        Wahl im Fenster "PS5 PKG Dump & Image Converter") meinen diese zweite
+        Kopie und bleiben deshalb aussen vor.
+        """
         import re
 
         from ps5_validator.utils.i18n import STRINGS
@@ -321,7 +330,7 @@ class FassungsangabeTests(unittest.TestCase):
         falsch = sorted({"%s: %s" % (name, treffer)
                          for name, text in [("THIRD_PARTY_LICENSES.md", lizenzen)]
                          + [("%s/%s" % (k, s), t) for k, v in STRINGS.items()
-                            for s, t in v.items()]
+                            if not k.startswith("ps5pkg.") for s, t in v.items()]
                          for treffer in genannt.findall(text)
                          if treffer != fassung})
         self.assertEqual([], falsch, "Nennt eine andere als die eingebaute Fassung.")

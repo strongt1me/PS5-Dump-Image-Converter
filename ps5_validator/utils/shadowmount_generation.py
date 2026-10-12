@@ -727,6 +727,65 @@ VERDRAENGT_GLOBAL = "global"
 #: der globalen fakelib ausnimmt. Die alte Fassung kennt den Schluessel nicht.
 FAKELIB_AUSSCHLUSS = "fakelib_exclude"
 
+#: Ab 1.7beta5: ``fakelib_mode=<ID>:default|full|emulators|disabled`` je Titel
+#: und ``fakelib_default_mode=full|emulators|disabled`` fuer alle ohne eigenen
+#: Eintrag (Vorgabe ``full``). ``fakelib_exclude`` gilt dort als alter Name fuer
+#: ``disabled``; der zuletzt gueltige Eintrag eines Titels gewinnt, gleich
+#: welcher der beiden Schluessel (README 1.7beta5fix1, 12.10.2026).
+FAKELIB_MODUS = "fakelib_mode"
+FAKELIB_STANDARD_MODUS = "fakelib_default_mode"
+FAKELIB_MODI = ("full", "emulators", "disabled")
+
+
+def _kennungen(wert: str) -> "list[str]":
+    return [t.strip().upper() for t in
+            wert.replace(";", " ").replace(",", " ").split() if t.strip()]
+
+
+def fakelib_aus_eintrag(config_text: str, title_id: str) -> str:
+    """Schaltet die config.ini fuer den Titel jede fakelib ab?
+
+    Gibt den wirksamen Eintrag als Text zurueck (z. B. ``fakelib_exclude=ID``,
+    ``fakelib_mode=ID:disabled`` oder ``fakelib_default_mode=disabled``),
+    sonst einen leeren Text. Auskommentierte Zeilen zaehlen nicht.
+    """
+    kennung = (title_id or "").strip().upper()
+    if not (config_text and kennung):
+        return ""
+    eigener = ""         # wirksamer Eintrag nur dieses Titels ("" = keiner / default)
+    eigener_modus = False  # gibt es einen eigenen Eintrag mit full/emulators?
+    standard = ""
+    for rohzeile in config_text.splitlines():
+        zeile = rohzeile.strip()
+        if not zeile or zeile.startswith(("#", ";")) or "=" not in zeile:
+            continue
+        schluessel, _, wert = zeile.partition("=")
+        schluessel, wert = schluessel.strip(), wert.strip()
+        if schluessel == FAKELIB_AUSSCHLUSS:
+            if kennung in _kennungen(wert):
+                eigener = "%s=%s" % (FAKELIB_AUSSCHLUSS, kennung)
+                eigener_modus = False
+        elif schluessel == FAKELIB_MODUS:
+            ziel, _, modus = wert.partition(":")
+            if ziel.strip().upper() != kennung:
+                continue
+            modus = modus.strip().lower()
+            if modus == "disabled":
+                eigener = "%s=%s:disabled" % (FAKELIB_MODUS, kennung)
+                eigener_modus = False
+            elif modus in FAKELIB_MODI:
+                eigener, eigener_modus = "", True
+            elif modus == "default":
+                eigener, eigener_modus = "", False
+        elif schluessel == FAKELIB_STANDARD_MODUS:
+            modus = wert.lower()
+            if modus in FAKELIB_MODI:
+                standard = ("%s=disabled" % FAKELIB_STANDARD_MODUS
+                            if modus == "disabled" else "")
+    if eigener:
+        return eigener
+    return "" if eigener_modus else standard
+
 
 def schalter_an(werte: "dict[str, str]", schluessel: str,
                 vorgabe: bool = True) -> bool:

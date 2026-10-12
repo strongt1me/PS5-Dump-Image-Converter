@@ -35,6 +35,7 @@ internal static partial class Program
                 "inspect" => CmdInspect(args),
                 "list-inner" => CmdListInner(args),
                 "extract-inner" => CmdExtract(args, inner: true),
+                "stream-inner" => CmdStreamInner(args),
                 "extract-outer" => CmdExtract(args, inner: false),
                 "build" => CmdBuild(args),
                 "validate" => CmdValidate(args),
@@ -65,6 +66,10 @@ internal static partial class Program
         Console.WriteLine("      random access, the inner image is NOT decoded as a whole.");
         Console.WriteLine("  extract-inner <pkg> <out-dir> [--passcode P]     [--json]");
         Console.WriteLine("  extract-inner <pkg> <out-dir> --members <file> [--passcode P] [--json]");
+        Console.WriteLine("  stream-inner  <pkg> --plan <file> [--passcode P]");
+        Console.WriteLine("      The listed files as binary frames on stdout (nothing is unpacked to disk); <file> has one");
+        Console.WriteLine("      line per file: <start> TAB <path>, start = offset to carry on from (0 = whole file).");
+        Console.WriteLine("      Frames: see StreamInner.cs. Messages go to stderr.");
         Console.WriteLine("  ps4-list    <ps4.pkg>                            (JSON tree of a PS4 fake package's files)");
         Console.WriteLine("  ps4-extract <ps4.pkg> <out-dir> [--members <file>]  (all files, or the listed files/folders)");
         Console.WriteLine("      Selective: <file> lists one path per line (relative to /app0); a directory");

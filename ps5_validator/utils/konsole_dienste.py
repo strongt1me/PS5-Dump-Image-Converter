@@ -156,7 +156,9 @@ KATALOG: tuple[Dienst, ...] = (
     # Knopfdruck wie webfm/pkgmgr, deshalb MIT payload_muster (anders als
     # ShadowMount+ oben).
     Dienst("prosperomgr", 7070, "ProsperoMgr*.elf", web="/", anlaufzeit=2.0),
-    Dienst("upload", 9113, "ps5upload*.elf"),
+    # Port 9120 (AVA1) seit ps5upload 6.x - vorher 9113/9114. Beleg: ``payload/README.md`` und
+    # ``client/src/lib/addr.ts`` (``PS5_AVA1_PORT``) des Autors, README "Quick start" (12.10.2026).
+    Dienst("upload", 9120, "ps5upload*.elf"),
     # --- Weitere Payloads mit Port (seit 02.10.2026) ---------------------------
     # Ports und Weboberflaechen stammen aus den Beschreibungen der Autoren und,
     # wo vorhanden, aus einer Zeichenkette im ELF selbst (CheatRunner 9999,
@@ -218,7 +220,7 @@ KATALOG: tuple[Dienst, ...] = (
     # Anlaufzeit geschaetzt (er richtet beim ersten Start seinen Zwischenspeicher ein).
     Dienst("wkautoloader", 1022, "WK-AutoLoader_v*.elf", web="/", anlaufzeit=4.0),
     # --- PS5 Cooling & System Center - Pro (seit 05.10.2026) -------------------
-    # Die eigene App des Projektinhabers (helloworld/PS5_Cooling_System_Center_v1.48.0.elf):
+    # Die eigene App des Projektinhabers (helloworld/PS5_Cooling_System_Center_v*.elf):
     # Luefter- und Temperatursteuerung, Systeminfo, Spielebibliothek, Pakete installieren ... im
     # Browser. Port und Weboberflaeche aus dem ELF selbst: ``"deeplinkUri": "http://127.0.0.1:8086"``,
     # der Port ist die Einstellung ``http_port`` (Vorgabe 8086), ``bind_address`` steht ab Werk auf
@@ -297,6 +299,37 @@ class Uebersicht:
 
 def dienst(schluessel: str) -> "Dienst | None":
     return _NACH_SCHLUESSEL.get(schluessel)
+
+
+def favorit_moeglich(eintrag: "Dienst | None") -> bool:
+    """Kann dieser Dienst Favorit sein - also vom Programm selbst gesendet werden?
+
+    Nur, was ein ``payload_muster`` traegt (das Programm schickt die Datei) und kein Plugin ist. Der ELF-Loader
+    zaehlt nicht: Er wird beim Senden der Favoriten **immer** zuerst geoeffnet (Port 9021, bei Bedarf ueber den
+    Payload Manager) und braucht keinen Stern. ShadowMount+ und die zweite Loader-Zeile tragen bewusst kein
+    ``payload_muster`` (siehe oben) - sie koennen es auch nicht werden.
+    """
+    return (eintrag is not None and bool(eintrag.payload_muster) and not eintrag.ist_plugin
+            and eintrag.gruppe != "elfldr")
+
+
+#: Die Favoriten, solange der Nutzer nichts gewaehlt hat: die bisherige Grundausstattung ohne den Loader (er kommt
+#: immer zuerst und gehoert keinem Stern).
+FAVORITEN_STANDARD: tuple[str, ...] = tuple(
+    s for s in GRUNDAUSSTATTUNG if favorit_moeglich(_NACH_SCHLUESSEL.get(s)))
+
+
+def favoriten_lesen(roh: object) -> list[str]:
+    """Die Favoriten aus der gespeicherten Einstellung - in der Reihenfolge des Katalogs.
+
+    ``None`` (noch nie gewaehlt) und alles, was keine Liste ist, ergibt :data:`FAVORITEN_STANDARD`; eine leere
+    Liste ist eine bewusste Wahl (keine Favoriten). Unbekannte und unzulaessige Eintraege fallen weg: Der Katalog
+    aendert sich mit dem Programm, die gespeicherte Einstellung nicht.
+    """
+    if not isinstance(roh, (list, tuple)):
+        return list(FAVORITEN_STANDARD)
+    gewaehlt = {str(s) for s in roh}
+    return [d.schluessel for d in KATALOG if d.schluessel in gewaehlt and favorit_moeglich(d)]
 
 
 def port_offen(adresse: str, port: int, zeit: float = ZEITSCHRANKE) -> bool:
