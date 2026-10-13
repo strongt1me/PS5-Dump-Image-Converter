@@ -1730,6 +1730,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'pkgreader.copy_button': {'de': 'Bericht kopieren', 'en': 'Copy report'},
     'ansicht.to_konsole': {'de': 'KONSOLE  ›', 'en': 'CONSOLE  ›'},
     'ansicht.to_umwandeln': {'de': '‹  UMWANDELN', 'en': '‹  CONVERT'},
+    'ansicht.kopfzeile': {'de': 'BEREICH WECHSELN', 'en': 'SWITCH AREA'},
     'konsole.btn_dienste': {'de': '1. Konsole & Payloads', 'en': '1. Console & payloads'},
     'konsole.btn_webkit': {'de': '2. WebKit Autoloader', 'en': '2. WebKit Autoloader'},
     'konsole.btn_bibliothek': {'de': '3. Bibliothek', 'en': '3. Library'},

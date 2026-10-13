@@ -720,7 +720,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.74"
+APP_VERSION = "v1.9.75"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -2993,6 +2993,12 @@ class RoundedButton(tk.Canvas):
         bei_zustand=None,
         breite_nach_text: bool = False,
         polster_x: int = 20,
+        zeile: bool = False,
+        zeile_farben: "dict | None" = None,
+        zeile_pfeil: bool = False,
+        kopfzeile: str = "",
+        kopf_font: "tuple | None" = None,
+        kopf_farbe: str = "",
         **kwargs,
     ) -> None:
         parent_bg = kwargs.pop("parent_bg", None) or master.cget("bg")
@@ -3037,6 +3043,21 @@ class RoundedButton(tk.Canvas):
         self._pille = bool(pille)
         self._hintergrund = hintergrund
         self._akzent = bool(akzent)
+        # Zeilenform (Seitenleiste, Nutzerwahl 13.10.2026, Entwurf A "Linienliste mit Balken"): keine Pille, sondern
+        # eine flache Zeile mit Haarlinie darunter, linksbuendiger Schrift und - wenn gewaehlt - einem Balken links.
+        # Sie zeichnet ueber den Bildausschnitt der Flaeche wie die Pille und teilt sich deren Zwischenspeicher.
+        # Gewaehlt ist die Zeile, deren ``bg`` die Akzentfarbe (``zeile_farben["balken"]``) traegt - so wie die
+        # Aufrufer sie schon immer gesetzt haben.
+        self._zeile = bool(zeile)
+        self._zeile_farben: "dict | None" = dict(zeile_farben) if zeile_farben else None
+        #: Zeilenform mit einem "›" am rechten Rand (Fussknoepfe der Seitenleiste: sie oeffnen etwas).
+        self._zeile_pfeil = bool(zeile_pfeil)
+        #: Pille mit kleiner Zeile ueber der Beschriftung (der Umschalter der Ansichten: "BEREICH WECHSELN").
+        self._kopfzeile = str(kopfzeile or "")
+        self._kopf_font = kopf_font
+        self._kopf_farbe = str(kopf_farbe or "")
+        if self._zeile:
+            self._pille = True
         self._grund_merker: "tuple | None" = None
         #: Der Stand, mit dem das Bild zuletzt gezeichnet wurde (``_zeichen_stand``); ``nachziehen`` spart sich das
         #: Neuzeichnen, wenn er gleich geblieben ist.
@@ -3143,6 +3164,9 @@ class RoundedButton(tk.Canvas):
         (STARTEN) traegt wie "Starten" in der Bibliothek einen waagerechten
         Verlauf. Die Schrift bleibt echte Tk-Schrift.
         """
+        if getattr(self, "_zeile", False):
+            self._zeile_zeichnen(w, h, disabled)
+            return
         bild = self._grund_holen(w, h).convert("RGBA")
         radius = h / 2.0
         try:
@@ -3161,8 +3185,122 @@ class RoundedButton(tk.Canvas):
         bild.alpha_composite(form)
         self._foto = ImageTk.PhotoImage(bild, master=self)
         self.create_image(0, 0, image=self._foto, anchor="nw")
-        self.create_text(w / 2, h / 2, text=self._text, fill=text_color, font=self._font)
+        if self._kopfzeile:
+            self.create_text(w / 2, h * 0.30, text=self._kopfzeile,
+                             fill=self._kopf_farbe or text_color, font=self._kopf_font or self._font)
+            self.create_text(w / 2, h * 0.65, text=self._text, fill=text_color, font=self._font)
+        else:
+            self.create_text(w / 2, h / 2, text=self._text, fill=text_color, font=self._font)
         self._gezeichnet = self._zeichen_stand(w, h)
+
+    def _zeile_zeichnen(self, w: int, h: int, disabled: bool) -> None:
+        """Zeichnet die Zeilenform: Bildausschnitt, Toenung (gewaehlt/ueberfahren), Haarlinie, Balken, Schrift.
+
+        Die Nummer ("1.") steht gedaempft vor der Beschriftung; gewaehlt faerbt sie sich in die Akzentfarbe.
+        """
+        farben = self._zeile_farben or {}
+        text_hex = self._als_hex(farben.get("text", self._fg))
+        nummer_hex = self._als_hex(farben.get("nummer", text_hex))
+        balken_hex = self._als_hex(farben.get("balken", self._activebackground))
+        linie_hex = self._als_hex(farben.get("linie", text_hex))
+        sperr_hex = self._als_hex(farben.get("gesperrt", nummer_hex))
+        gewaehlt = self._als_hex(self._bg) == balken_hex and not disabled
+        try:
+            faktor = max(1.0, float(self.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            faktor = 1.0
+
+        def rgb(hex_: str) -> tuple[int, int, int]:
+            return (int(hex_[1:3], 16), int(hex_[3:5], 16), int(hex_[5:7], 16))
+
+        bild = self._grund_holen(w, h).convert("RGBA")
+        ebene = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        zeichner = ImageDraw.Draw(ebene)
+        text = str(self._text or "")
+        treffer = re.match(r"^(\d+\.)\s+(.*)$", text)
+        # Die Zeile hat keine Flaeche, die Schrift steht auf dem Leistenbild - und das gehoert nicht zum Design, es ist in
+        # allen Designs dunkelblau. Im hellen Design stand dunkle Schrift darauf (am 13.10.2026 im Rundgang aller Designs
+        # gefunden; eine Flaeche dahinter sah als weisse Kloetze schlecht aus). Darum richtet sich die Schrift nach dem
+        # Bild: Reicht der Kontrast nicht, wird sie hell oder dunkel, die gedaempften Farben mischen sich aus ihr und dem
+        # Bild. Dunkle Designs bleiben dabei unveraendert (ihre Schrift ist schon hell genug).
+        def mittelfarbe(ausschnitt: "Image.Image") -> str:
+            mittel = ImageStat.Stat(ausschnitt.convert("RGB")).mean
+            return "#%02x%02x%02x" % tuple(int(round(v)) for v in mittel)
+
+        grund_hex = mittelfarbe(bild)
+        # Der Pfeil steht am rechten Rand, wo das Leistenbild heller sein kann als unter dem Text.
+        grund_pfeil = mittelfarbe(bild.crop((max(0, w - max(30, int(w * 0.18))), 0, w, h)))
+
+        def lesbar(farbe: str, mindest: float) -> str:
+            kontrast = kontrastverhaeltnis(farbe, grund_hex)
+            if kontrast >= mindest:
+                return farbe
+            besser = bibliothek_zeichnen.kontrastfarbe(grund_hex)
+            return besser if kontrastverhaeltnis(besser, grund_hex) > kontrast + 0.5 else farbe
+
+        def gedaempft(farbe: str, anteil: float, grund: str) -> str:
+            if kontrastverhaeltnis(farbe, grund) >= 3.0:
+                return farbe
+            return bibliothek_zeichnen.mischen(text_hex, grund, anteil)
+
+        def aufgehellt(farbe: str, grund: str) -> str:
+            """Der Akzent bleibt seine Farbe und wird nur so weit aufgehellt (oder abgedunkelt), bis er lesbar ist."""
+            ziel = "#ffffff" if bibliothek_zeichnen.helligkeit(grund) < 0.5 else "#000000"
+            for _ in range(12):
+                if kontrastverhaeltnis(farbe, grund) >= 3.0:
+                    break
+                farbe = bibliothek_zeichnen.mischen(farbe, ziel, 0.12)
+            return farbe
+
+        text_hex = lesbar(text_hex, 4.5)
+        # Gewaehlt oder ueberfahren ist die Zeile mit der Schrift getoent und damit heller: dagegen muss der Rest lesbar sein.
+        tonung = 38 / 255 if gewaehlt else (18 / 255 if self._hovering and not disabled else 0.0)
+        grund_zeile = bibliothek_zeichnen.mischen(grund_hex, text_hex, tonung)
+        grund_pfeil = bibliothek_zeichnen.mischen(grund_pfeil, text_hex, tonung)
+        if disabled:
+            pfeil_hex = gedaempft(sperr_hex, 0.3, grund_pfeil)
+        elif self._hovering:
+            pfeil_hex = aufgehellt(balken_hex, grund_pfeil)
+        else:
+            pfeil_hex = gedaempft(nummer_hex, 0.3, grund_pfeil)
+        nummer_hex = gedaempft(nummer_hex, 0.3, grund_zeile)
+        sperr_hex = gedaempft(sperr_hex, 0.3, grund_zeile)
+        balken_hex = aufgehellt(balken_hex, grund_zeile)
+        if gewaehlt:
+            zeichner.rectangle((0, 0, w - 1, h - 1), fill=rgb(text_hex) + (38,))
+        elif self._hovering and not disabled:
+            zeichner.rectangle((0, 0, w - 1, h - 1), fill=rgb(text_hex) + (18,))
+        zeichner.line((0, h - 1, w - 1, h - 1), fill=rgb(linie_hex) + (110,))
+        if gewaehlt:
+            balken = max(3, int(round(3 * faktor)))
+            zeichner.rectangle((0, 0, balken - 1, h - 1), fill=rgb(balken_hex) + (255,))
+        bild.alpha_composite(ebene)
+        self._foto = ImageTk.PhotoImage(bild, master=self)
+        self.create_image(0, 0, image=self._foto, anchor="nw")
+
+        rand = max(12, int(round(14 * faktor)))
+        if disabled:
+            nummer_farbe = text_farbe = sperr_hex
+        else:
+            nummer_farbe = balken_hex if gewaehlt else nummer_hex
+            text_farbe = text_hex
+        if treffer:
+            nummer, rest = treffer.group(1), treffer.group(2)
+            nummer_id = self.create_text(rand, h / 2, text=nummer, fill=nummer_farbe, font=self._font, anchor="w")
+            links = self.bbox(nummer_id)
+            x_rest = (links[2] if links else rand + int(self._textbreite_von(nummer))) + max(6, int(round(7 * faktor)))
+            self.create_text(x_rest, h / 2, text=rest, fill=text_farbe, font=self._font, anchor="w")
+        else:
+            self.create_text(rand, h / 2, text=text, fill=text_farbe, font=self._font, anchor="w")
+        if self._zeile_pfeil:
+            self.create_text(w - rand, h / 2, text="\u203a", fill=pfeil_hex, font=self._font, anchor="e")
+        self._gezeichnet = self._zeichen_stand(w, h)
+
+    def _textbreite_von(self, text: str) -> int:
+        if self._schrift_obj is None:
+            import tkinter.font as _tkfont  # noqa: PLC0415
+            self._schrift_obj = _tkfont.Font(root=self, font=self._font)
+        return int(self._schrift_obj.measure(text or ""))
 
     def _grund_holen(self, w: int, h: int) -> "Image.Image":
         """Was hinter dem Knopf liegt - gemerkt, bis ``nachziehen`` es verwirft.
@@ -3231,7 +3369,10 @@ class RoundedButton(tk.Canvas):
             skalierung = 0.0
         grund = hashlib.blake2b(self._grund_holen(w, h).tobytes(), digest_size=8).digest()
         return (w, h, str(fuellung), str(schrift), str(self._outline), str(self._disabledoutline), bool(self._akzent),
-                gesperrt, str(self._text), str(self._font), skalierung, grund)
+                gesperrt, str(self._text), str(self._font), skalierung, grund,
+                bool(getattr(self, "_zeile", False)), str(getattr(self, "_zeile_farben", None)), str(self._bg),
+                bool(getattr(self, "_zeile_pfeil", False)), str(getattr(self, "_kopfzeile", "")),
+                str(getattr(self, "_kopf_farbe", "")), str(getattr(self, "_kopf_font", "")))
 
     def nachziehen(self) -> None:
         """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel.
@@ -3301,6 +3442,16 @@ class RoundedButton(tk.Canvas):
             self._font = kwargs.pop("font")
             self._schrift_obj = None
             breite_neu = True
+            redraw_needed = True
+        if "kopfzeile" in kwargs:
+            self._kopfzeile = str(kwargs.pop("kopfzeile") or "")
+            redraw_needed = True
+        if "kopf_farbe" in kwargs:
+            self._kopf_farbe = str(kwargs.pop("kopf_farbe") or "")
+            redraw_needed = True
+        if "zeile_farben" in kwargs:
+            neu_farben = kwargs.pop("zeile_farben")
+            self._zeile_farben = dict(neu_farben) if neu_farben else None
             redraw_needed = True
         if "command" in kwargs:
             self._command = kwargs.pop("command")
@@ -6039,6 +6190,36 @@ class PS5ConverterGUI:
         if genau == schluessel or (fest and not genau):
             return "%s %s" % (self._t("format.%s" % schluessel), self._t(zusatz))
         return self._t("format.%s" % schluessel)
+
+    @staticmethod
+    def _farben_mischen(a: str, b: str, anteil: float) -> str:
+        """``a`` mit dem ``anteil`` (0..1) von ``b`` - fuer die getoente Flaeche des Umschalters."""
+        try:
+            ra, ga, ba = (int(a[i:i + 2], 16) for i in (1, 3, 5))
+            rb, gb, bb = (int(b[i:i + 2], 16) for i in (1, 3, 5))
+        except (ValueError, IndexError, TypeError):
+            return a
+        return "#%02x%02x%02x" % (round(ra + (rb - ra) * anteil), round(ga + (gb - ga) * anteil),
+                                  round(ba + (bb - ba) * anteil))
+
+    def _umschalter_farben(self) -> dict:
+        """Farben des Umschalters der Ansichten: leicht akzentgetoente Flaeche, Akzentrand, gedaempfte Kopfzeile.
+
+        Die Leiste zeigt in jedem Design ihr dunkles Bild. Im hellen Design waere die Pille cremeweiss und stuende als
+        heller Klotz darauf (am 13.10.2026 abgelehnt) - dort traegt sie die Farben des dunklen Designs.
+        """
+        c = self._COLORS
+        if bibliothek_zeichnen.helligkeit(c["seitenknopf_bg"]) > 0.5:
+            c = self._THEMES["dunkel"]
+        return {"bg": self._farben_mischen(c["seitenknopf_bg"], c["fg_accent"], 0.18),
+                "outline": c["fg_accent"], "kopf_farbe": c["fg_secondary"],
+                "text": c["fg_accent"], "hover": c["fg_accent"]}
+
+    def _zeilen_farben(self) -> dict:
+        """Die Farben der Seitenleisten-Zeilen (``RoundedButton(zeile=True)``) aus der Palette des Designs."""
+        c = self._COLORS
+        return {"text": c["fg_primary"], "nummer": c["fg_secondary"], "balken": c["fg_accent"],
+                "linie": c["border"], "gesperrt": c["fg_secondary"]}
 
     def _apply_language(self) -> None:
         """Setzt den Text aller registrierten und der Sprach-Grundgerüst-Widgets neu."""
@@ -8997,11 +9178,13 @@ class PS5ConverterGUI:
         self._ansicht_knopf = RoundedButton(
             sidebar, text=self._t("ansicht.to_konsole"),
             command=self._ansicht_umschalten,
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["seitenknopf_bg"], fg=self._COLORS["fg_accent"],
-            activebackground=self._COLORS["fg_accent"], activeforeground="white",
-            outline=self._COLORS["border"], height=43,
-            pille=True, hintergrund=self._rund_hintergrund)
+            font=(UI_SCHRIFT, pt(13), "bold"),
+            bg=self._umschalter_farben()["bg"], fg=self._umschalter_farben()["text"],
+            activebackground=self._umschalter_farben()["hover"], activeforeground="white",
+            outline=self._umschalter_farben()["outline"], height=58,
+            pille=True, hintergrund=self._rund_hintergrund,
+            kopfzeile=self._t("ansicht.kopfzeile"), kopf_font=(UI_SCHRIFT, pt(8), "bold"),
+            kopf_farbe=self._umschalter_farben()["kopf_farbe"])
         # Ohne fill: Die Knoepfe der Leiste stehen mittig in gemeinsamer Breite
         # (_seitenleiste_breite_anpassen).
         self._ansicht_knopf.pack(pady=(0, 10))
@@ -9022,17 +9205,18 @@ class PS5ConverterGUI:
                 sidebar,
                 text=self._t(f"mode.{mode}"),
                 command=befehl,
-                font=(UI_SCHRIFT, pt(12), "bold"),
+                font=(UI_SCHRIFT, pt(11)),
                 bg=self._COLORS["seitenknopf_bg"],
                 fg=self._COLORS["fg_primary"],
                 activebackground=self._COLORS["fg_accent"],
                 activeforeground=self._COLORS["bg_main"],
                 outline=self._COLORS["border"],
                 radius=8,
-                height=40,
+                height=38,
                 pille=True, hintergrund=self._rund_hintergrund,
+                zeile=True, zeile_farben=self._zeilen_farben(),
             )
-            btn.pack(pady=3)
+            btn.pack(pady=0)
             self.mode_buttons.append((btn, mode))
             if mode in self._MODE_TOOLTIPS:
                 self._mode_tooltip_handles.append(
@@ -9049,15 +9233,16 @@ class PS5ConverterGUI:
                 text=self._t(schluessel),
                 command=(lambda k=kennung, s=schluessel:
                          self._konsole_knopf_gedrueckt(k, s)),
-                font=(UI_SCHRIFT, pt(12), "bold"),
+                font=(UI_SCHRIFT, pt(11)),
                 bg=self._COLORS["seitenknopf_bg"],
                 fg=self._COLORS["fg_primary"],
                 activebackground=self._COLORS["fg_accent"],
                 activeforeground=self._COLORS["bg_main"],
                 outline=self._COLORS["border"],
                 radius=8,
-                height=40,
+                height=38,
                 pille=True, hintergrund=self._rund_hintergrund,
+                zeile=True, zeile_farben=self._zeilen_farben(),
             )
             self._konsole_knoepfe.append((knopf, schluessel))
         # Die Knoepfe, die ein Payload sicherstellen und eine Weboberflaeche
@@ -9142,7 +9327,7 @@ class PS5ConverterGUI:
             footer_frame,
             text=self._t("sidebar.game_info_button"),
             command=self._toggle_info_box,
-            font=(UI_SCHRIFT, pt(9), "bold"),
+            font=(UI_SCHRIFT, pt(11)),
             bg=self._COLORS["seitenknopf_bg"],
             fg=self._COLORS["fg_accent"],
             activebackground=self._COLORS["fg_accent"],
@@ -9150,21 +9335,23 @@ class PS5ConverterGUI:
             # fg_secondary ist gedaempft genug, um "noch nicht verfuegbar" zu
             # zeigen, und bleibt lesbar.
             disabledforeground=self._COLORS["fg_secondary"],
-            outline=self._COLORS["border"], height=43,
+            outline=self._COLORS["border"], height=38,
             pille=True, hintergrund=self._rund_hintergrund,
+            zeile=True, zeile_farben=self._zeilen_farben(), zeile_pfeil=True,
             state=tk.DISABLED,  # Erst aktiv wenn Quelle geladen
         )
         self._register_translatable(self.info_toggle_btn, "sidebar.game_info_button")
-        self.info_toggle_btn.pack(pady=(0, 3))
+        self.info_toggle_btn.pack(pady=(0, 0))
 
         self.resources_btn = RoundedButton(
             footer_frame, text=self._t("sidebar.resources_button"),
             command=self._show_resources,
-            font=(UI_SCHRIFT, pt(9), "bold"),
+            font=(UI_SCHRIFT, pt(11)),
             bg=self._COLORS["seitenknopf_bg"], fg=self._COLORS["fg_primary"],
             activebackground=self._COLORS["fg_accent"], activeforeground="white",
-            outline=self._COLORS["border"], height=43,
+            outline=self._COLORS["border"], height=38,
             pille=True, hintergrund=self._rund_hintergrund,
+            zeile=True, zeile_farben=self._zeilen_farben(), zeile_pfeil=True,
         )
         self.resources_btn.pack(pady=(0, 3))
         self._register_translatable(self.resources_btn, "sidebar.resources_button")
@@ -10116,7 +10303,7 @@ class PS5ConverterGUI:
         schluessel = ("ansicht.to_umwandeln" if self._ansicht_ist_konsole()
                       else "ansicht.to_konsole")
         try:
-            knopf.configure(text=self._t(schluessel))
+            knopf.configure(text=self._t(schluessel), kopfzeile=self._t("ansicht.kopfzeile"))
         except tk.TclError as exc:
             logger.debug("Umschalter nicht beschriftbar: %s", exc)
         self._seitenleiste_breite_anpassen()
@@ -10196,7 +10383,7 @@ class PS5ConverterGUI:
                         self._ansicht_gemerkt.append((widget, widget.pack_info()))
                         widget.pack_forget()
                 for knopf, _schluessel in self._konsole_knoepfe:
-                    knopf.pack(pady=3)
+                    knopf.pack(pady=0)
                 self._pkg_fpkg_seite_verbergen()
                 self.content_scroll.grid_remove()
                 self.content_scrollbar.grid_remove()
@@ -16277,11 +16464,29 @@ class PS5ConverterGUI:
                 crop = self._compute_sidebar_bg_crop(label, w, h)
                 if crop is None:
                     continue
+                self._beschriftung_lesbar_machen(label, crop)
                 photo = ImageTk.PhotoImage(crop)
                 label._caption_bg_photo = photo  # Referenz halten (sonst GC durch Tk)
                 label.config(image=photo, compound="center")
             except Exception as exc:
                 logger.debug("Sidebar-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
+
+    def _beschriftung_lesbar_machen(self, label: object, crop: "Image.Image") -> None:
+        """Stellt die Schrift einer Seitenleisten-Beschriftung hell oder dunkel, wenn sie auf ``crop`` unlesbar waere.
+
+        Das Leistenbild gehoert nicht zum Design: Im hellen Design stand die dunkle Schrift (``fg_primary``) auf dem
+        dunklen Blau der Vorgabe (13.10.2026 im Rundgang aller Designs gefunden). Ausgegangen wird immer von der
+        Rollenfarbe, so laesst sich die Umstellung mit dem Bild oder dem Design wieder zuruecknehmen.
+        """
+        rolle = getattr(label, "_caption_fg_role", "")
+        farbe = self._COLORS.get(rolle) if rolle else None
+        if not farbe:
+            return
+        mittel = ImageStat.Stat(crop.convert("RGB")).mean
+        grund = "#%02x%02x%02x" % tuple(int(round(v)) for v in mittel)
+        if kontrastverhaeltnis(farbe, grund) < 3.0:
+            farbe = bibliothek_zeichnen.kontrastfarbe(grund)
+        label.configure(fg=farbe)
 
     @staticmethod
     def _flaeche_ueber_bild(img: "Image.Image", farbe: str,
@@ -17311,6 +17516,8 @@ class PS5ConverterGUI:
                         label.configure(fg=farbe)
                 except Exception as exc:
                     logger.debug("Schriftfarbe einer Beschriftung konnte nicht gesetzt werden: %s", exc)
+        # Die Rollenfarbe der Seitenleiste gilt nur, solange sie auf dem Leistenbild lesbar bleibt.
+        self._redraw_sidebar_captions()
 
     def _redraw_all_captions(self) -> None:
         """Schneidet saemtliche Beschriftungen neu zu (Karte, Content, Sidebar).
@@ -61776,13 +61983,18 @@ class PS5ConverterGUI:
             if knopf is None:
                 continue
             try:
-                # Seit v1.9.62 Pillen mit Rand wie die Aufgabenknoepfe; seit 06.10.2026
-                # in deren blaugrauer Flaeche (seitenknopf_bg).
+                if name == "_ansicht_knopf":
+                    u = self._umschalter_farben()
+                    knopf.configure(bg=u["bg"], fg=u["text"], activebackground=u["hover"],
+                                    disabledbackground=u["bg"], disabledforeground=c["fg_secondary"],
+                                    outline=u["outline"], kopf_farbe=u["kopf_farbe"])
+                    continue
+                # Fussknoepfe: Zeilenform wie die Aufgabenknoepfe (13.10.2026), Farben aus der Palette.
                 knopf.configure(bg=c["seitenknopf_bg"], fg=c[schriftfarbe],
                                 activebackground=c["fg_accent"],
                                 disabledbackground=c["seitenknopf_bg"],
                                 disabledforeground=c["fg_secondary"],
-                                outline=c["border"])
+                                outline=c["border"], zeile_farben=self._zeilen_farben())
             except tk.TclError as exc:
                 logger.debug("Fußknopf %s nicht umfärbbar: %s", name, exc)
         rahmen = getattr(self, "_sidebar_footer_frame", None)
@@ -61911,17 +62123,20 @@ class PS5ConverterGUI:
             active_mode = self.current_mode.get()
             for btn, m in self.mode_buttons:
                 if m == active_mode:
-                    btn.configure(bg=c["fg_accent"], fg=c["bg_main"], outline=c["border"])
+                    btn.configure(bg=c["fg_accent"], fg=c["bg_main"], outline=c["border"],
+                                  zeile_farben=self._zeilen_farben())
                 else:
                     btn.configure(bg=c["seitenknopf_bg"], fg=c["fg_primary"],
-                                  activebackground=c["fg_accent"], outline=c["border"])
+                                  activebackground=c["fg_accent"], outline=c["border"],
+                                  zeile_farben=self._zeilen_farben())
         # Die Knoepfe der Ansicht KONSOLE - auch wenn sie gerade nicht
         # eingepackt sind; sonst traegen sie beim Umschalten das alte Design.
         for btn, _schluessel in getattr(self, "_konsole_knoepfe", []):
             try:
                 btn.configure(bg=c["seitenknopf_bg"], fg=c["fg_primary"],
                               activebackground=c["fg_accent"],
-                              activeforeground=c["bg_main"], outline=c["border"])
+                              activeforeground=c["bg_main"], outline=c["border"],
+                              zeile_farben=self._zeilen_farben())
             except tk.TclError as exc:
                 logger.debug("Konsolenknopf nicht umfärbbar: %s", exc)
 

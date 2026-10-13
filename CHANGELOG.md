@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.74):** 7-Zip 26.04 und ps5-ultrapack 2.2.2 sind eingebaut, und die Seite FPKG zeigt Cover und Angaben wie die Aufgaben 1 bis 6 und ihr Protokoll lesbar.
+> **Kurz zum aktuellen Stand (v1.9.75):** Die Seitenleiste ist neu gestaltet: eine Liste mit feinen Linien und einem Balken an der gewählten Zeile, dazu ein hoher Umschalter zwischen UMWANDELN und KONSOLE.
 
 ---
+
+## v1.9.75 – 13.10.2026
+
+- **Geändert:** Die Seitenleiste zeigt Aufgaben, Konsolen-Werkzeuge und die beiden Knöpfe am unteren Rand als Liste mit feinen Linien und linksbündiger Schrift; die gewählte Zeile trägt einen Balken in der Akzentfarbe.
+- **Geändert:** Der Umschalter zwischen UMWANDELN und KONSOLE ist höher und größer beschriftet und trägt die kleine Zeile „BEREICH WECHSELN“.
+- **Behoben:** Im hellen Design war die Schrift der Seitenleiste auf dem dunklen Standardbild kaum lesbar; sie bleibt jetzt in jedem Design und vor jedem Bild lesbar.
 
 ## v1.9.74 – 13.10.2026
 

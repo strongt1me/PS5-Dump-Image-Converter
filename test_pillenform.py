@@ -248,28 +248,134 @@ class HauptfensterTests(unittest.TestCase):
         self.addCleanup(app._toggle_language)
         self.assertEqual(1, len({int(k.winfo_reqwidth()) for k in app._seitenleiste_knoepfe()}))
 
-    def test_der_text_der_seitenleistenknoepfe_steht_mittig(self) -> None:
-        """Nutzerwunsch 05.10.2026: "den text in den Sidebar Knoepfen bitte wieder zentrieren".
+    def test_die_seitenleiste_hat_zeilen_und_einen_umschalter(self) -> None:
+        """13.10.2026 (Nutzerwahl, Entwurf A "Linienliste mit Balken"): Aufgaben, Konsolenseiten und Fuss sind
+        Zeilen mit linksbuendiger Schrift; nur der Umschalter der Ansichten bleibt eine Pille - hoeher, mit
+        kleiner Kopfzeile ueber der mittig stehenden Beschriftung.
 
-        Die gemeinsame Startlinie vom 04.10. (Texte linksbuendig im Textblock) ist weg: Jeder Text
-        steht mittig in seinem Knopf - bei kurzen und langen, in beiden Ansichten und im Fuss.
-        Gezeichnet wird direkt (``_pille_zeichnen``): Die KONSOLE-Knoepfe sind in UMWANDELN nicht
-        eingeblendet und haben dort keine Breite.
+        Gezeichnet wird direkt (``_pille_zeichnen``): Die KONSOLE-Knoepfe sind in UMWANDELN nicht eingeblendet und
+        haben dort keine Breite.
         """
         app = self.app
-        knoepfe = app._seitenleiste_knoepfe()
-        self.assertGreaterEqual(len(knoepfe), 15)
-        for knopf in knoepfe:
+        zeilen = [k for k in app._seitenleiste_knoepfe() if k is not app._ansicht_knopf]
+        self.assertGreaterEqual(len(zeilen), 19)
+        for knopf in zeilen:
             with self.subTest(text=knopf._text):
+                self.assertTrue(knopf._zeile)
                 knopf.delete("all")
-                knopf._pille_zeichnen(300, 40, "#202020", "#ffffff", False)
+                knopf._pille_zeichnen(300, 38, "#202020", "#ffffff", False)
                 texte = [i for i in knopf.find_all() if knopf.type(i) == "text"]
-                self.assertEqual(1, len(texte))
-                self.assertEqual(150.0, float(knopf.coords(texte[0])[0]), "Der Text steht nicht in der Mitte")
-                self.assertEqual("center", knopf.itemcget(texte[0], "anchor"))
-                self.assertEqual(20.0, float(knopf.coords(texte[0])[1]))
-        for knopf in knoepfe:                         # nichts bleibt zurueck: neu zeichnen wie im Betrieb
+                self.assertIn(len(texte), (1, 2, 3), "Nummer, Beschriftung und Pfeil")
+                for i in texte:
+                    self.assertEqual(19.0, float(knopf.coords(i)[1]), "Die Schrift steht nicht auf halber Hoehe")
+                erster = min(texte, key=lambda i: float(knopf.coords(i)[0]))
+                self.assertEqual("w", knopf.itemcget(erster, "anchor"))
+                self.assertGreaterEqual(float(knopf.coords(erster)[0]), 10.0, "Die Schrift klebt am Rand")
+        umschalter = app._ansicht_knopf
+        self.assertFalse(umschalter._zeile)
+        self.assertGreaterEqual(int(umschalter.winfo_reqheight()), int(zeilen[0].winfo_reqheight()) + 8,
+                                "Der Umschalter muss hoeher sein als eine Zeile.")
+        umschalter.delete("all")
+        umschalter._pille_zeichnen(300, 58, "#202020", "#ffffff", False)
+        texte = [i for i in umschalter.find_all() if umschalter.type(i) == "text"]
+        self.assertEqual(2, len(texte), "Kopfzeile und Beschriftung")
+        for i in texte:
+            self.assertEqual(150.0, float(umschalter.coords(i)[0]), "Der Text steht nicht in der Mitte")
+            self.assertEqual("center", umschalter.itemcget(i, "anchor"))
+        gezeigt = sorted(umschalter.itemcget(i, "text") for i in texte)
+        self.assertIn(app._t("ansicht.kopfzeile"), gezeigt)
+        for knopf in app._seitenleiste_knoepfe():     # nichts bleibt zurueck: neu zeichnen wie im Betrieb
             knopf.nachziehen()
+
+    def test_gewaehlt_ist_die_zeile_mit_der_akzentfarbe(self) -> None:
+        app = self.app
+        farben = app._zeilen_farben()
+        gewaehlt = [k for k, _m in app.mode_buttons if k._als_hex(k._bg) == k._als_hex(farben["balken"])]
+        self.assertEqual(1, len(gewaehlt), "Genau eine Aufgabe ist gewaehlt (Balken und Toenung links).")
+
+    def test_der_umschalter_ist_in_jedem_design_eine_dunkle_pille(self) -> None:
+        """Die Leiste zeigt ihr dunkles Bild in jedem Design; ein cremeweisser Umschalter im hellen Design stand
+        als heller Klotz darauf (am 13.10.2026 abgelehnt)."""
+        app = self.app
+        for theme in ("dunkel", "futuristisch", "hell", "metallisch"):
+            with self.subTest(theme=theme), mock.patch.dict(app._COLORS, APP.PS5ConverterGUI._THEMES[theme]):
+                u = app._umschalter_farben()
+                self.assertLess(APP.bibliothek_zeichnen.helligkeit(u["bg"]), 0.35, u)
+                self.assertGreaterEqual(APP.kontrastverhaeltnis(u["text"], u["bg"]), 4.5, u)
+
+    @staticmethod
+    def _zeilenfarben(theme: str) -> dict:
+        c = APP.PS5ConverterGUI._THEMES[theme]
+        return {"text": c["fg_primary"], "nummer": c["fg_secondary"], "balken": c["fg_accent"],
+                "linie": c["border"], "gesperrt": c["fg_secondary"]}
+
+    def _zeile_ueber_dunklem_bild(self, theme: str) -> tuple["Image.Image", list[str]]:
+        """Bild und Schriftfarben, die eine nicht gewaehlte Zeile ueber dunkelblauem Leistenbild zeichnet."""
+        app = self.app
+        knopf = next(k for k, _m in app.mode_buttons
+                     if k._als_hex(k._bg) != k._als_hex(app._COLORS["fg_accent"]))
+        alt_farben = knopf._zeile_farben
+        knopf._zeile_farben = self._zeilenfarben(theme)
+        knopf._grund_holen = lambda w, h: Image.new("RGB", (w, h), "#0b1a3c")
+
+        def zurueck() -> None:
+            knopf._zeile_farben = alt_farben
+            knopf.__dict__.pop("_grund_holen", None)
+            knopf.nachziehen()
+        self.addCleanup(zurueck)
+        erfasst: list = []
+        echt = APP.ImageTk.PhotoImage
+
+        def erfassen(bild, *a, **k):
+            erfasst.append(bild.copy())
+            return echt(bild, *a, **k)
+        knopf.delete("all")
+        with mock.patch.object(APP.ImageTk, "PhotoImage", erfassen):
+            knopf._zeile_zeichnen(300, 38, False)
+        schriften = [str(knopf.itemcget(i, "fill")).lower() for i in knopf.find_all() if knopf.type(i) == "text"]
+        return erfasst[-1], schriften
+
+    def test_die_zeile_bleibt_durchsichtig_und_ihre_schrift_passt_sich_dem_bild_an(self) -> None:
+        """13.10.2026, im Rundgang aller Designs gefunden: im hellen Design stand die dunkle Schrift der Zeilen auf
+        dem dunkelblauen Leistenbild - kaum zu lesen. Eine Flaeche dahinter wurde als "weisse Kloetze" abgelehnt:
+        Die Zeile bleibt in allen Designs durchsichtig, nur die Schrift wird hell. Dunkle Designs bleiben, wie sie sind."""
+        grund = "#0b1a3c"
+        bild, schriften = self._zeile_ueber_dunklem_bild("hell")
+        self.assertEqual((11, 26, 60), bild.convert("RGB").getpixel((150, 4)), "Keine Flaeche hinter der Zeile")
+        self.assertTrue(schriften)
+        for farbe in schriften:
+            self.assertGreaterEqual(APP.kontrastverhaeltnis(farbe, grund), 3.0,
+                                    "Helles Design: Schrift %s ist auf dem dunklen Bild nicht lesbar" % farbe)
+        for dunkel in ("dunkel", "futuristisch", "metallisch"):
+            with self.subTest(theme=dunkel):
+                palette = APP.PS5ConverterGUI._THEMES[dunkel]
+                bild, schriften = self._zeile_ueber_dunklem_bild(dunkel)
+                self.assertEqual((11, 26, 60), bild.convert("RGB").getpixel((150, 4)))
+                self.assertEqual({palette["fg_primary"].lower(), palette["fg_secondary"].lower()}, set(schriften),
+                                 "Die Schrift eines dunklen Designs bleibt unveraendert")
+
+    def test_seitenleisten_beschriftung_wird_auf_dem_bild_lesbar_gestellt(self) -> None:
+        """Das Leistenbild gehoert nicht zum Design: dunkle Schrift auf dunklem Bild wird hell, helle auf hellem dunkel."""
+        app = self.app
+
+        class Attrappe:
+            _caption_fg_role = "fg_primary"
+            farbe = ""
+
+            def configure(self, **kw) -> None:
+                self.farbe = kw["fg"]
+
+        dunkles_bild = Image.new("RGB", (40, 12), "#0b1a3c")
+        helles_bild = Image.new("RGB", (40, 12), "#f0f0f0")
+        for theme, bild, erwartet in (
+                ("hell", dunkles_bild, "#ffffff"),
+                ("dunkel", dunkles_bild, APP.PS5ConverterGUI._THEMES["dunkel"]["fg_primary"]),
+                ("dunkel", helles_bild, "#101418")):
+            with self.subTest(theme=theme, erwartet=erwartet), mock.patch.dict(
+                    app._COLORS, APP.PS5ConverterGUI._THEMES[theme]):
+                label = Attrappe()
+                app._beschriftung_lesbar_machen(label, bild)
+                self.assertEqual(erwartet, label.farbe)
 
     def test_jede_beschriftung_mit_bildausschnitt_hat_eine_farbrolle(self) -> None:
         """Sonst zieht ein Designwechsel ihre Schrift nicht nach (_apply_caption_colors)."""
