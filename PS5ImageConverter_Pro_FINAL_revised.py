@@ -720,7 +720,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.72"
+APP_VERSION = "v1.9.73"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -46328,11 +46328,25 @@ class PS5ConverterGUI:
         "fan_target_temperature": "system",
         # -------------------------------------------------------------------
         "scan_depth": "1",
-        "scan_interval_seconds": "60",
+        # Bis 12.10.2026 stand hier 60; README und config.ini.example nennen seit alpha6 15.
+        "scan_interval_seconds": "15",
         "stability_wait_seconds": "10",
         "exfat_backend": "lvd",
         "ufs_backend": "lvd",
         "backport_fakelib": "1",
+        # --- neu in 1.7beta5(fix1), Werte aus deren README/config.ini.example (12.10.2026) ---------
+        # Benachrichtigungssprache; "auto" folgt der Konsole.
+        "language": "auto",
+        # 1 haelt gefundene Abbilder zwischen Spielstarts eingehaengt. Werkzeuge wie exFAT2AMPR lesen
+        # ein eingehaengtes Abbild dann direkt, ohne ShadowMount+ um ein Einhaengen zu bitten.
+        "persistent_image_mounts": "0",
+        # Modus fuer Spiele ohne eigenen Eintrag (full|emulators|disabled); je Spiel steht
+        # fakelib_mode=<ID>:<modus> (wiederholbar) darunter, fakelib_exclude ist der alte Name fuer disabled.
+        "fakelib_default_mode": "full",
+        "update_emulators": "1",
+        "emulators_path": "/data/shadowmount/emus",
+        "auto_update_ampr": "0",
+        "ampr_update_url": "https://github.com/drakmor/ampr_emu/releases/latest/download/libSceAmpr.sprx",
         "global_fakelib": "1",
         "global_fakelib_path": "/data/shadowmount/fakelib",
         "global_fakelib_priority": "game",

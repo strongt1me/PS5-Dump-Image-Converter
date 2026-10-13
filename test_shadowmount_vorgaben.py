@@ -72,6 +72,9 @@ def _vorgaben(text: str) -> dict[str, set[str]]:
         # Zahlen keine Vorgaben sind.
         vorne = rest.split(";")[0]
         zahlen = set(_WERT.findall(vorne))
+        # "(full scan loop interval; default: `15`)" - die Vorgabe steht hinter dem Semikolon und
+        # wurde bis 12.10.2026 uebersehen (der Editor fuehrte 60 statt 15).
+        zahlen.update(re.findall(r"default[^`;]*`(\d+)`", rest))
         if zahlen:
             raus.setdefault(treffer.group("name"), set()).update(zahlen)
     return raus
@@ -139,6 +142,25 @@ class VorgabenTests(unittest.TestCase):
         """
         self.assertEqual("4096", self.eigene.get("lvd_pfs_sector_size"))
         self.assertEqual("4096", self.eigene.get("md_ufs_sector_size"))
+
+    def test_abfrageintervall_ist_15(self):
+        """Der Editor fuehrte bis 12.10.2026 60; jede Anleitung nennt 15."""
+        self.assertEqual("15", self.eigene.get("scan_interval_seconds"))
+
+    def test_die_schluessel_aus_1_7beta5_haben_die_werkswerte_der_readme(self):
+        """Werte aus README und config.ini.example von 1.7beta5fix1 (12.10.2026)."""
+        soll = {
+            "language": "auto",
+            "persistent_image_mounts": "0",
+            "fakelib_default_mode": "full",
+            "update_emulators": "1",
+            "emulators_path": "/data/shadowmount/emus",
+            "auto_update_ampr": "0",
+            "ampr_update_url": "https://github.com/drakmor/ampr_emu/releases/latest/download/libSceAmpr.sprx",
+        }
+        for schluessel, wert in soll.items():
+            with self.subTest(schluessel=schluessel):
+                self.assertEqual(wert, self.eigene.get(schluessel))
 
 
 if __name__ == "__main__":

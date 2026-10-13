@@ -2,9 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.72):** Die PS5-Paket-Werkzeuge sitzen jetzt als Knopf „7. PKG / FPKG“ in der Ansicht KONSOLE, und sieben mitgelieferte Payloads sind auf neueren Fassungen.
+> **Kurz zum aktuellen Stand (v1.9.73):** Der PlayGo-Stub liegt jetzt auch in Fassung 0.6 bei, und der ShadowMount+-Editor kennt die neuen Einstellungen von 1.7beta5.
 
 ---
+
+## v1.9.73 – 13.10.2026
+
+- **Aktualisiert:** Der PlayGo-Stub (pgo_stub) liegt jetzt auch in Fassung 0.6 bei und lässt sich neben 0.5 auswählen.
+- **Geändert:** Der Knopf „Updates“ meldet jetzt auch neue Fassungen des PlayGo-Stubs.
+- **Geändert:** Der ShadowMount+-Editor kennt jetzt die Einstellungen aus 1.7beta5, darunter den Modus der fakelib und das Eingehängt-Lassen von Abbildern.
+- **Behoben:** Der ShadowMount+-Editor schrieb für das Abfrageintervall der Spielordner 60 statt der Vorgabe 15 Sekunden.
 
 ## v1.9.72 – 12.10.2026
 

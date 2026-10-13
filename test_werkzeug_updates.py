@@ -110,6 +110,10 @@ RELEASES = {
         ('1.7beta3', False, '2026-10-01', ['shadowmountplus.elf', 'ShadowMountPlus_1.7beta3.zip']),
         ('1.7beta2', False, '2026-09-21', ['shadowmountplus.elf', 'ShadowMountPlus_1.7beta2.zip']),
     ],
+    'drakmor/pgo_stub': [
+        ('0.6', False, '2026-10-10', ['libScePlayGo.sprx', 'libScePlayGo_log.sprx']),
+        ('0.5', True, '2026-07-02', ['pgo_stub_0.5.zip']),
+    ],
     'drakmor/nanoDNS': [
         ('0.4', False, '2026-08-04', ['nanodns-ps4.elf', 'nanodns.elf']),
         ('0.3', False, '2026-06-03', ['nanodns-ps4.elf', 'nanodns.elf']),
@@ -706,6 +710,15 @@ class AbdeckungTests(unittest.TestCase):
         self.assertEqual("fest:" + konverter, wu.werkzeug("ps5-pkg-tool").lokal)
         self.assertEqual("fest:" + ultrapack, wu.werkzeug("ps5-ultrapack").lokal)
 
+    def test_playgo_stimmt_mit_dem_ordner(self) -> None:
+        # Die Ordner heissen PlayGo_v0.6 (mit Unterstrich) und liefern keine Fassung ueber "ordnername" - deshalb steht
+        # sie fest in der Tabelle und wird hier gegen den hoechsten Ordner gehalten.
+        ordner = [p.name for p in (PROJEKT / "PlayGo & AMPR_EMU").glob("PlayGo_v*") if p.is_dir()]
+        fassungen = [n.split("_v", 1)[1] for n in ordner]
+        self.assertTrue(fassungen)
+        hoechste = max(fassungen, key=wu.fassungsschluessel)
+        self.assertEqual("fest:" + hoechste, wu.werkzeug("playgo").lokal)
+
     def test_die_ordner_fassungen_sind_lesbar(self) -> None:
         bestand = wu.Bestand(wurzeln=[str(PROJEKT)])
         for schluessel in ("mkpfs", "ufs2tool", "prosperopkg", "orbispkgtool", "wee-tools", "7zip",
@@ -896,7 +909,7 @@ class UrteilTests(unittest.TestCase):
         # Drei Fassungen, die ihr Autor (noch) nicht so veroeffentlicht hat, dazu LibProsperoPkg 2.6.0 (Eigenbau).
         self.assertEqual(4, zaehler.get(wu.STATUS_NEUER))
         self.assertEqual(1, zaehler.get(wu.STATUS_UNKLAR))                 # DPI v2: keine Freigabe
-        self.assertEqual(11, zaehler.get(wu.STATUS_OHNE_QUELLE))           # davon YT-Blocker (eigene Umsetzung)
+        self.assertEqual(10, zaehler.get(wu.STATUS_OHNE_QUELLE))           # davon YT-Blocker (Sammlung, kein Einzel-ELF)
         self.assertGreaterEqual(zaehler.get(wu.STATUS_NEU_HINWEIS, 0), 1)  # 7-Zip 26.04
         self.assertNotIn(wu.STATUS_FEHLER, zaehler)
         self.assertNotIn(wu.STATUS_NEU, zaehler)

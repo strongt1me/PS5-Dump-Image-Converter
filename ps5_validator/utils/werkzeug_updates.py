@@ -564,12 +564,14 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
              hinweis="updates.hinweis_mit_ampr", lokal="ordnername"),
     Werkzeug("ps4ffpfsc", "PS4 FFPFSC", GRUPPE_WERKZEUG, "", ordner="PS4FFPFSC-*", art=ART_KEINE,
              hinweis="updates.hinweis_ohne_quelle", lokal="ordnername"),
+    # PlayGo-Stub (drakmor/pgo_stub): Ordner heissen PlayGo_v0.6, nicht <Name>-<Fassung> - deshalb fest;
+    # AbdeckungTests.test_playgo_stimmt_mit_dem_ordner haelt die Zahl gegen den hoechsten PlayGo_v*-Ordner.
+    Werkzeug("playgo", "PlayGo-Stub (pgo_stub)", GRUPPE_WERKZEUG, "drakmor/pgo_stub", ordner="PlayGo & AMPR_EMU",
+             art=ART_HINWEIS, hinweis="updates.hinweis_festgelegt", lokal="fest:0.6"),
     # --- Eigenbestand ---------------------------------------------------------------------------------------------
     Werkzeug("appinst", "PS5-AppInstall (appinst.elf)", GRUPPE_EIGEN, "", ordner="PS5-AppInstall", art=ART_KEINE,
              hinweis="updates.hinweis_selbst_gebaut"),
     Werkzeug("fakelibs", "Backport-Fakelibs", GRUPPE_EIGEN, "", ordner="Backport_Fakelibs", art=ART_KEINE,
-             hinweis="updates.hinweis_eigenbestand"),
-    Werkzeug("playgo", "PlayGo-Stub", GRUPPE_EIGEN, "", ordner="PlayGo & AMPR_EMU", art=ART_KEINE,
              hinweis="updates.hinweis_eigenbestand"),
 )
 

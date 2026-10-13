@@ -156,7 +156,12 @@ class FensterLeckTests(unittest.TestCase):
                 pass
             return win
 
-        gdi, user = self._messen(oeffnen, anzahl=8)
+        # Zweimal messen, der kleinere Wert zaehlt: Im Volllauf (13.10.2026 zweimal in drei Laeufen, 4,4 und 4,6 gegen die
+        # Grenze 4,0) schlugen einmalige Anlaeufe von Tk mit rund 35 Objekten auf die acht Fenster durch, im Einzellauf
+        # steht der zweite Messlauf bei 0. Ein echtes Leck zeigt sich in beiden Laeufen.
+        gdi_a, user_a = self._messen(oeffnen, anzahl=8)
+        gdi_b, user_b = self._messen(oeffnen, anzahl=8)
+        gdi, user = min(gdi_a, gdi_b), min(user_a, user_b)
         self.assertLess(gdi, 4.0, "Je PS4-Fenster bleiben %.1f GDI-Objekte stehen (vorher 93)" % gdi)
         self.assertLess(user, 2.0, "Je PS4-Fenster bleiben %.1f USER-Objekte stehen" % user)
         gc.collect()
