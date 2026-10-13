@@ -160,6 +160,79 @@ class FensterTests(unittest.TestCase):
             self.app._show_ps5_pkg_converter()
         oeffnen.assert_called_once()
 
+    def test_knopfleiste_steht_buendig_mit_den_karten(self) -> None:
+        """13.10.2026 (Bild des Nutzers): "Umwandlung starten" und "Abbrechen" ragten links ueber die Karten hinaus."""
+        f = self.f
+        f.win.update_idletasks()
+        _pumpen(0.3)
+        seite_x = f.seiten["umwandeln"].winfo_rootx()
+        nav_rahmen = f._nav["umwandeln"][0]
+        nav_rechts = nav_rahmen.master.winfo_rootx() + nav_rahmen.master.winfo_width()
+        for knopf in (f.start_knopf, f.abbrechen_knopf):
+            self.assertGreaterEqual(knopf.winfo_rootx(), nav_rechts, "Der Knopf ragt in die Navigation hinein.")
+        self.assertLessEqual(abs(f.start_knopf.winfo_rootx() - seite_x), 4,
+                             "Der Startknopf steht nicht an der linken Kante der Karten.")
+        self.assertGreater(f.abbrechen_knopf.winfo_rootx(), f.start_knopf.winfo_rootx())
+
+    def test_das_protokoll_liegt_unter_dem_ergebnis_und_ist_sichtbar(self) -> None:
+        """13.10.2026: In der Karte AUFTRAG bekam das Protokoll keine Hoehe - der Text war nicht zu sehen."""
+        f = self.f
+        f._protokoll("Probezeile im Protokoll")
+        f.win.update_idletasks()
+        _pumpen(0.3)
+        karte = f.ergebnis_karte
+        # Das Pillen-Kit setzt Textfeld und Karte in runde Rahmen; beide liegen unterhalb der rechten Spalte.
+        for teil in (f.protokoll, karte):
+            self.assertTrue(str(teil).startswith(str(f.spalte_rechts) + "."), "Protokoll und Ergebnis: dieselbe Spalte.")
+        self.assertGreaterEqual(f.protokoll.winfo_rooty(), karte.winfo_rooty() + karte.winfo_height(),
+                                "Das Protokoll muss unter dem Ergebnis stehen.")
+        self.assertGreaterEqual(f.protokoll.winfo_height(), 60, "Das Protokoll ist zu niedrig, um gelesen zu werden.")
+        self.assertGreaterEqual(f.protokoll.winfo_width(), 200)
+        self.assertIn("Probezeile im Protokoll", f.protokoll.get("1.0", "end"))
+
+    def test_kein_cover_und_kein_vorschauknopf_mehr_in_der_rechten_spalte(self) -> None:
+        """13.10.2026 (Nutzerwunsch): Das Cover steht in der Seitenleiste, "Vorschau oeffnen" ist entfallen."""
+        for name in ("cover_vorschau", "vorschau_knopf", "_vorschau_oeffnen"):
+            self.assertFalse(hasattr(self.f, name), name)
+        self.assertNotIn("ps5pkg.preview_open", STRINGS)
+
+    def test_die_paketwahl_zeigt_cover_und_angaben_in_seitenleiste_und_info_box(self) -> None:
+        """Wie bei den Aufgaben 1 bis 6 (``_update_info_box``): Cover, Titel, Title-ID, Groesse und Format."""
+        from PIL import Image
+        pfad = next(p for p in self.pakete if p.endswith("alpha.pkg"))
+        png = Path(self.ordner) / "icon0.png"
+        Image.new("RGB", (64, 64), (200, 40, 40)).save(png)
+        self.pakete[pfad].icon = str(png)
+        self._laden("alpha.pkg")
+        app = self.app
+        self.assertEqual("Alpha Spiel", app._meta_labels["title"].get())
+        self.assertEqual("PPSA00001", app._meta_labels["title_id"].get())
+        self.assertNotIn(app._info_src_size_var.get(), ("", "–"))
+        self.assertEqual(STRINGS["ps5pkg.meta_method"]["de"], app._info_method_var.get())
+        self.assertIsNotNone(app._sidebar_cover_source, "Das Cover muss in der Seitenleiste stehen.")
+        self.assertEqual("Alpha Spiel", app._sidebar_preview_title_label.cget("text"))
+        # Was aus der Quelle der Aufgaben 1 bis 6 stammt, gehoert nicht zu diesem Paket
+        self.assertEqual("–", app._meta_labels["sdk_stand"].get())
+        self.assertEqual("–", app._meta_labels["ampr_emu"].get())
+
+    def test_ohne_cover_bleibt_der_titel_in_der_seitenleiste(self) -> None:
+        self._laden("beta.pkg")
+        self.assertEqual("Beta Rennen", self.app._meta_labels["title"].get())
+        self.assertIsNone(self.app._sidebar_cover_source)
+
+    def test_zuruecksetzen_nimmt_die_angaben_wieder_heraus(self) -> None:
+        from PIL import Image
+        pfad = next(p for p in self.pakete if p.endswith("alpha.pkg"))
+        png = Path(self.ordner) / "icon1.png"
+        Image.new("RGB", (64, 64), (40, 200, 40)).save(png)
+        self.pakete[pfad].icon = str(png)
+        self._laden("alpha.pkg")
+        self.assertIsNotNone(self.app._sidebar_cover_source)
+        fz.spielinfo_zuruecksetzen(self.app)
+        _pumpen(0.3)
+        self.assertIsNone(self.app._sidebar_cover_source)
+        self.assertNotEqual("Alpha Spiel", self.app._meta_labels["title"].get())
+
     def test_die_seitenwahl(self) -> None:
         self.f._seite_zeigen("bibliothek")
         self.assertEqual("bibliothek", self.f.aktuelle_seite)
@@ -998,7 +1071,8 @@ class TexteTests(unittest.TestCase):
         fehlend = sorted(s for s in schluessel if s not in STRINGS)
         self.assertEqual([], fehlend)
         gleich_erlaubt = {"ps5pkg.window_title", "ps5pkg.src_debug_short", "ps5pkg.lib_title",
-                          "ps5pkg.card_cover", "ps5pkg.col_version", "ps5pkg.prop_title_id", "ps5pkg.start_button"}
+                          "ps5pkg.card_cover", "ps5pkg.col_version", "ps5pkg.prop_title_id", "ps5pkg.start_button",
+                          "ps5pkg.meta_method"}
         for s in sorted(schluessel):
             with self.subTest(schluessel=s):
                 self.assertTrue(STRINGS[s]["de"].strip() and STRINGS[s]["en"].strip())

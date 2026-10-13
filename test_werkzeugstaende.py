@@ -324,7 +324,7 @@ class NennungTests(unittest.TestCase):
     #: Fremdbestand: Ordner -> ein Text, der dafuer in der Lizenzdatei steht.
     FREMD = {
         # Seit v1.9.70: 7-Zip fuer Archive als Quelle (Zip, 7z, RAR). Fiel erst im Volllauf von v1.9.71 auf.
-        "7-Zip-26.00": "7-Zip",
+        "7-Zip-26.04": "7-Zip",
         "AMPR_PackTools-4.0": "AMPR PackTools",
         "Backport_Fakelibs": "Backport_Fakelibs",
         "MkPFS-1.1.0": "MkPFS 1.1.0",

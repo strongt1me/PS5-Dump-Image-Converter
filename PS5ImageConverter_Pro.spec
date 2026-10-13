@@ -69,10 +69,10 @@ if os.path.isdir(_helloworld):
 
 # 7-Zip fuer .7z und .rar als Quelle von Aufgabe 1 (seit v1.9.70; LGPL, Lizenztext liegt bei).
 # Nur die Fassung dieser Plattform - siehe ps5_validator/utils/archiv_quelle.py.
-_siebenzip = os.path.join(_here, '7-Zip-26.00')
+_siebenzip = os.path.join(_here, '7-Zip-26.04')
 if os.path.isdir(os.path.join(_siebenzip, 'windows')):
-    _datas.append((os.path.join(_siebenzip, 'windows'), '7-Zip-26.00/windows'))
-    _datas.append((os.path.join(_siebenzip, 'License.txt'), '7-Zip-26.00'))
+    _datas.append((os.path.join(_siebenzip, 'windows'), '7-Zip-26.04/windows'))
+    _datas.append((os.path.join(_siebenzip, 'License.txt'), '7-Zip-26.04'))
 
 # ffpfsc-pkg-tool fuer „PS5 PKG Dump & Image Converter“ (seit v1.9.71; GPL-3.0-or-later, Quelle und
 # Lizenz liegen in PS5-PKG-Tool/). Nur der Bau dieser Plattform.
@@ -503,7 +503,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.73',
+    name='PS5_Dump_Image_Converter_v1.9.74',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

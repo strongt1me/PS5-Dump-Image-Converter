@@ -720,7 +720,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.73"
+APP_VERSION = "v1.9.74"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -39012,6 +39012,10 @@ class PS5ConverterGUI:
             self._copy_total_bytes = total_bytes_box[0]
             self.task_total_source_bytes = total_bytes_box[0]
 
+        # Alles ausser einem fertigen Image laesst keine Datei zurueck: "wb" legt sie sofort an, und ein
+        # Fehler im Schreiber (z. B. ein Name ausserhalb von ASCII) oder ein Abbruch liess sonst eine leere
+        # oder halbe .exfat im Ziel liegen (12.10.2026 an der EXE gemessen: 0 Bytes nach Fehlschlag).
+        bau_fertig = False
         try:
             self.task_progress = max(self.task_progress, pct_start + (pct_end - pct_start) * 0.03)
             with out_path.open("wb") as out_handle:
@@ -39100,10 +39104,17 @@ class PS5ConverterGUI:
             self._copy_done_bytes = self._copy_total_bytes
             self.task_progress = max(self.task_progress, pct_end)
             self._append_to_log(self._t('log.auto.0272', v0=out_path))
+            bau_fertig = True
             return True
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0273', v0=exc))
             return False
+        finally:
+            if not bau_fertig:
+                try:
+                    out_path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.debug("Teildatei nicht entfernbar (%s): %s", out_path, exc)
 
     def _verify_exfat_file_count(self, exfat_path: str,
                                  expected_file_count: int):

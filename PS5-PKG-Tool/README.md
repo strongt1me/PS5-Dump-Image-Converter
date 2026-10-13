@@ -5,6 +5,10 @@
 Bibliothek **LibProsperoPkg 1.2.0** (GPL-3.0-or-later; als fertige Datei `src/ffpfsc-pkg-tool/lib/`, die Quelle
 dazu liegt nicht bei - siehe `src/ffpfsc-pkg-tool/lib/README.md`).
 
+Seit 13.10.2026 steht die Versionskonstante auf **2.2.2** (ps5-ultrapack 2.2.2 aendert am C#-Teil nur diese Zeile; `lib/` und
+`patches/` sind gleich geblieben) und `ffpfsc-pkg-tool.dll` ist in allen vier Ordnern neu gebaut - der Bau aus dem unveraenderten
+Quelltext ergab vorher byte-gleich die eingecheckte Datei.
+
 Gebaut am 08.10.2026 mit .NET SDK 10.0.401, **framework-abhaengig** (net10.0; das Programm braucht die .NET-
 Laufzeit 10 ohnehin), je Plattform ein Ordner:
 

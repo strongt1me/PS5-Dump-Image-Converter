@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.73</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.74</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.73</span>
+      <span class="marke">Version v1.9.74</span>
       <span class="marke">Stand 13. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -1023,7 +1023,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Programm vor dem Bau mit einer Meldung ab (bei <code>.ffpfsc</code>,
   <code>.ffpfs</code>, <code>.exFAT</code> und <code>.ffpkg</code> gleichermaßen),
   statt dass es erst an der Konsole auffällt.</p>
-  <p><strong>Archiv als Quelle.</strong> Ein Klick auf <strong>Dump Ordner</strong> fragt zuerst, ob die Quelle ein Ordner oder ein Archiv (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>) ist; ein Archiv l&auml;sst sich auch auf das Quellfeld ziehen. Das Programm entpackt es in den Arbeitsordner (<code>ps5conv_archiv_&hellip;</code>, dort muss mindestens so viel Platz frei sein, wie das Archiv gro&szlig; ist) und nimmt den Spielordner darin &ndash; mit <code>sce_sys/param.json</code> &ndash; als Quelle. Fortschritt und Ergebnis stehen im Protokoll. <code>.zip</code> entpackt das Programm selbst, <code>.7z</code> und <code>.rar</code> entpackt das beiliegende <strong>7-Zip</strong> (Ordner <code>7-Zip-26.00</code>; fehlt es, sucht das Programm ein installiertes). Der Entpackordner wird beim n&auml;chsten Archiv ersetzt, ein Rest nach zw&ouml;lf Stunden wie jeder andere Arbeitsordner abger&auml;umt.</p>
+  <p><strong>Archiv als Quelle.</strong> Ein Klick auf <strong>Dump Ordner</strong> fragt zuerst, ob die Quelle ein Ordner oder ein Archiv (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>) ist; ein Archiv l&auml;sst sich auch auf das Quellfeld ziehen. Das Programm entpackt es in den Arbeitsordner (<code>ps5conv_archiv_&hellip;</code>, dort muss mindestens so viel Platz frei sein, wie das Archiv gro&szlig; ist) und nimmt den Spielordner darin &ndash; mit <code>sce_sys/param.json</code> &ndash; als Quelle. Fortschritt und Ergebnis stehen im Protokoll. <code>.zip</code> entpackt das Programm selbst, <code>.7z</code> und <code>.rar</code> entpackt das beiliegende <strong>7-Zip</strong> (Ordner <code>7-Zip-26.04</code>; fehlt es, sucht das Programm ein installiertes). Der Entpackordner wird beim n&auml;chsten Archiv ersetzt, ein Rest nach zw&ouml;lf Stunden wie jeder andere Arbeitsordner abger&auml;umt.</p>
   <p><strong>Geht der Arbeitsspeicher aus,</strong> startet das Programm den Lauf selbst neu &ndash; mit halb so vielen Kernen, bis zu dreimal &ndash; und schreibt es ins Protokoll. Erkannt wird das nur, wenn die Engine selbst <code>MemoryError</code> meldet. Hilft auch ein Kern nicht, bleibt der Hinweis auf zu wenig Arbeitsspeicher.</p>
   <div class="kasten">
     <span class="titel">Wenn Sie unsicher sind</span>
@@ -1996,9 +1996,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   (auch <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code>). Rechts stehen das Cover (<code>icon0.png</code> aus dem Paket)
   und die <em>Technische Übersicht</em> aus der <code>param.json</code> – Titel, Content-ID, Versionen,
   erforderliche Systemsoftware, SDK, Kategorie, DRM-Typ –, die <em>Alles kopieren</em> in die Zwischenablage legt.
-  Auf der Seite <em>Umwandeln</em> öffnet <em>Vorschau öffnen</em> unter dem Cover dasselbe Bild groß in
-  einem eigenen Fenster (Klick oder Esc schließt es). Doppelklick oder <em>Umwandeln</em> nimmt das Paket auf die
-  Seite <em>Umwandeln</em> mit.</p>
+  Wie bei den Aufgaben 1 bis 6 steht das Cover des gewählten Pakets samt Titel in der Seitenleiste, und
+  <em>Spiel Info – Updates &amp; Patches</em> zeigt seine Angaben (Titel, Title-ID, Content-ID, Version, Größe) und sucht
+  Updates und Patches. Doppelklick oder <em>Umwandeln</em> nimmt das Paket auf die
+  Seite <em>Umwandeln</em> mit; dort steht das Protokoll rechts unter dem Ergebnis.</p>
 
   <div class="kasten">
     <span class="titel">Gemessen und Grenzen</span>
@@ -2817,7 +2818,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.73), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.74), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -3018,7 +3019,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.73</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.74</strong></span>
     <span>Stand 13. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

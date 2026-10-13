@@ -2,9 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.73):** Der PlayGo-Stub liegt jetzt auch in Fassung 0.6 bei, und der ShadowMount+-Editor kennt die neuen Einstellungen von 1.7beta5.
+> **Kurz zum aktuellen Stand (v1.9.74):** 7-Zip 26.04 und ps5-ultrapack 2.2.2 sind eingebaut, und die Seite FPKG zeigt Cover und Angaben wie die Aufgaben 1 bis 6 und ihr Protokoll lesbar.
 
 ---
+
+## v1.9.74 – 13.10.2026
+
+- **Aktualisiert:** 7-Zip 26.04 (Entpacken von .7z und .rar, mit mehreren Sicherheitskorrekturen) und ps5-ultrapack 2.2.2 (Engine im PS5-Paket-Werkzeug).
+- **Geändert:** Auf der Seite FPKG erscheint das Cover wie bei den Aufgaben 1 bis 6 in der Seitenleiste, „Spiel Info – Updates & Patches“ zeigt die Angaben des Pakets, und der Knopf „Vorschau öffnen“ entfällt.
+- **Behoben:** Auf der Seite FPKG ist das Protokoll jetzt lesbar (rechts unter dem Ergebnis), und „Umwandlung starten“ und „Abbrechen“ beginnen an der linken Kante der Karten.
+- **Behoben:** Scheitert der Bau eines exFAT-Abbilds oder wird er abgebrochen, bleibt keine leere oder halbe .exfat-Datei mehr im Zielordner liegen.
 
 ## v1.9.73 – 13.10.2026
 

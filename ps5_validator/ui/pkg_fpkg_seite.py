@@ -116,13 +116,18 @@ class PkgFpkgSeite:
         """Zeigt "PKG" (``ps4_dump_image``) - eine Vorgabe (aus der Bibliothek) wird gleich eingelesen."""
         h = self.h
         fenster = ps4_dump_image.oeffnen(self.g, h.UI_SCHRIFT, h.MONO_SCHRIFT, h.pt, vorgabe, master=self.inhalt)
+        kam_von_fpkg = self.unterseite == UNTERSEITE_FPKG
         self._umschalten(UNTERSEITE_PKG, fenster.win)
+        if kam_von_fpkg:
+            # Die Angaben des FPKG-Pakets in Seitenleiste und Info-Box gehoeren nicht zu "PKG".
+            ps5_pkg_fenster.spielinfo_zuruecksetzen(self.g)
 
     def fpkg_zeigen(self, vorgabe: str = "") -> None:
         """Zeigt "FPKG" (``ps5_pkg_fenster``)."""
         h = self.h
         fenster = ps5_pkg_fenster.oeffnen(self.g, h.UI_SCHRIFT, h.MONO_SCHRIFT, h.pt, vorgabe, master=self.inhalt)
         self._umschalten(UNTERSEITE_FPKG, fenster.win)
+        fenster.spielinfo_nachziehen()
 
 
 def seite(gui) -> PkgFpkgSeite:

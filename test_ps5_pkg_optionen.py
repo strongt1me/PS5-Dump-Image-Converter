@@ -170,7 +170,7 @@ class RegelTests(unittest.TestCase):
     def test_jeder_neue_text_ist_zweisprachig(self) -> None:
         for schluessel, text in STRINGS.items():
             if schluessel.startswith("ps5pkg.opt_") or schluessel in ("ps5pkg.nav_options", "ps5pkg.selected_caption",
-                                                                       "ps5pkg.preview_open", "ps5pkg.preview_title"):
+                                                                       "ps5pkg.meta_method"):
                 with self.subTest(schluessel=schluessel):
                     self.assertTrue(text["de"].strip() and text["en"].strip())
                     self.assertNotEqual("", text["de"])
@@ -343,8 +343,7 @@ class DialogTests(unittest.TestCase):
         self.assertEqual(self.ordner, self.f.ziel_var.get())
         self.assertEqual("extrahieren", self.f.aktion_var.get())
         self.assertEqual("exfat", self.f.format_schluessel)
-        self.assertEqual("disabled", str(self.f.vorschau_knopf.cget("state")), "Cover aus: keine Vorschau")
-        self.assertEqual("", str(self.f.cover_vorschau.cget("text")))
+        self.assertIsNone(self.app._sidebar_cover_source, "Cover aus: kein Cover in der Seitenleiste")
         reihenfolge = list(self.f.liste.get_children())
         self.assertEqual(sorted(self.pakete, key=lambda p: -self.pakete[p].groesse), reihenfolge, "nach Groesse sortiert")
         self.assertIsNone(getattr(self.f, ui.DIALOG_ATTRIBUT))

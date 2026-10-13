@@ -325,14 +325,6 @@ class Ps5PkgFenster:
         self.zaehler_var = tk.StringVar(value="")
         tk.Label(status, textvariable=self.zaehler_var, font=(F, pt(9)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="right")
-        leiste = tk.Frame(self.win, bg=c["bg_main"], padx=14, pady=8)
-        leiste.pack(side="bottom", fill="x")
-        self.start_knopf = self._pille(leiste, "ps5pkg.start_button", self._starten, akzent=True)
-        self.start_knopf.pack(side="left")
-        self.abbrechen_knopf = self._pille(leiste, "action.cancel", self._abbrechen)
-        self.abbrechen_knopf.pack(side="left", padx=(10, 0))
-        self.abbrechen_knopf.configure(state="disabled")
-
         rumpf = tk.Frame(self.win, bg=c["bg_main"])
         rumpf.pack(fill="both", expand=True)
         rumpf.columnconfigure(1, weight=1)
@@ -342,6 +334,16 @@ class Ps5PkgFenster:
         flaeche.grid(row=0, column=1, sticky="nsew", padx=(0, 14))
         flaeche.columnconfigure(0, weight=1)
         flaeche.rowconfigure(0, weight=1)
+        # Die Knopfleiste liegt in derselben Spalte wie die Karten (Zeile darunter, ohne Gewicht - sie behaelt ihre
+        # Hoehe, wenn der Platz knapp wird): so stehen "Umwandlung starten" und "Abbrechen" buendig mit der linken Kante
+        # der Karten. Bis 12.10.2026 hing sie ueber die ganze Breite unten und ragte links ueber die Navigation hinaus.
+        leiste = tk.Frame(rumpf, bg=c["bg_main"], pady=8)
+        leiste.grid(row=1, column=1, sticky="ew", padx=(0, 14))
+        self.start_knopf = self._pille(leiste, "ps5pkg.start_button", self._starten, akzent=True)
+        self.start_knopf.pack(side="left")
+        self.abbrechen_knopf = self._pille(leiste, "action.cancel", self._abbrechen)
+        self.abbrechen_knopf.pack(side="left", padx=(10, 0))
+        self.abbrechen_knopf.configure(state="disabled")
         self.seiten = {"umwandeln": tk.Frame(flaeche, bg=c["bg_main"]), "bibliothek": tk.Frame(flaeche, bg=c["bg_main"])}
         for seite in self.seiten.values():
             seite.grid(row=0, column=0, sticky="nsew")
@@ -405,7 +407,11 @@ class Ps5PkgFenster:
         links.rowconfigure(2, weight=1)
         rechts = tk.Frame(seite, bg=c["bg_main"], width=380)
         rechts.grid(row=0, column=1, sticky="ns")
-        rechts.grid_propagate(False)
+        # Die Kinder werden gepackt, nicht gegridet: Erst pack_propagate(False) haelt die Breite von 380 fest (bis
+        # 13.10.2026 stand hier grid_propagate - ohne Wirkung; die Spalte war so breit wie ihr Inhalt und sprang, sobald
+        # ein Cover erschien).
+        rechts.pack_propagate(False)
+        self.spalte_rechts = rechts
 
         # QUELLE
         quelle = self._karte(links, "ps5pkg.card_source")
@@ -524,15 +530,11 @@ class Ps5PkgFenster:
             row=1, column=0, sticky="w", padx=(0, 12))
         self.balken_gesamt = pw.Progressbar(balken, mode="determinate", maximum=100.0)
         self.balken_gesamt.grid(row=1, column=1, sticky="ew", pady=2)
-        # Die Textknoepfe zuerst unten packen - sonst quetscht sie das Protokoll bei kleiner Fensterhoehe weg.
         textknoepfe = tk.Frame(auftrag, bg=c["bg_card"])
-        textknoepfe.pack(side="bottom", fill="x")
+        textknoepfe.pack(fill="x", pady=(10, 0))
         self.ausgabe_knopf = self._pille(textknoepfe, "ps5pkg.open_output", self._ausgabe_oeffnen, klein=True)
         self.ausgabe_knopf.pack(side="left")
         self._pille(textknoepfe, "ps5pkg.clear_log", self._verlauf_leeren, klein=True).pack(side="left", padx=(8, 0))
-        self.protokoll = pw.Text(auftrag, height=6, font=(self.M, pt(9)), bg=c["console_bg"], fg=c["console_fg"],
-                                 relief="flat", wrap="word", state="disabled")
-        self.protokoll.pack(fill="both", expand=True, pady=(8, 8))
 
         # ERGEBNIS
         ergebnis = self._karte(rechts, "ps5pkg.card_result")
@@ -547,12 +549,15 @@ class Ps5PkgFenster:
             self.ergebnis_var[schluessel] = var
             tk.Label(zeile, textvariable=var, font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_primary"], anchor="e",
                      wraplength=210, justify="right").pack(side="right", fill="x", expand=True)
-        # Das Cover des gewaehlten Pakets: unter dem Ergebnis, mit abgerundeten Ecken; "Vorschau oeffnen" zeigt es gross.
-        self.vorschau_knopf = self._pille(ergebnis, "ps5pkg.preview_open", self._vorschau_oeffnen, klein=True)
-        self.vorschau_knopf.pack(anchor="e", pady=(6, 0))
-        self.cover_vorschau = tk.Label(rechts, bg=c["bg_main"], fg=c["fg_secondary"], font=(F, pt(9)),
-                                       text=t("ps5pkg.no_cover"))
-        self.cover_vorschau.pack(pady=(16, 0))
+        self.ergebnis_karte = ergebnis
+        # Das Cover steht seit dem 13.10.2026 (Nutzerwunsch) nicht mehr hier, sondern wie bei den Aufgaben 1 bis 6 in der
+        # Seitenleiste (:meth:`_spielinfo_zeigen`); der Knopf "Vorschau oeffnen" ist entfallen.
+        # Das Protokoll liegt unter dem Ergebnis: In der Karte AUFTRAG blieb ihm bei normaler Fensterhoehe keine Hoehe -
+        # der Text war nicht zu sehen. Es fuellt den Rest der Spalte; die Breite bestimmt die Spalte (width=1), nicht
+        # der Text.
+        self.protokoll = pw.Text(rechts, height=6, width=1, font=(self.M, pt(9)), bg=c["console_bg"],
+                                 fg=c["console_fg"], relief="flat", wrap="word", state="disabled")
+        self.protokoll.pack(fill="both", expand=True, pady=(12, 0))
 
     def _kachel(self, eltern, spalte: int, schluessel: str, name: str, endung: str) -> None:
         g, c, F, pt = self.g, self.c, self.F, self.pt
@@ -887,7 +892,7 @@ class Ps5PkgFenster:
                 self.paket_typ.configure(text="")
                 self._cover = None
                 self.cover_label.configure(image="", text=self.t("ps5pkg.no_cover"))
-                self.cover_vorschau.configure(image="", text=self.t("ps5pkg.no_cover"))
+                spielinfo_zuruecksetzen(self.g)
                 if self.pakete:
                     self._paket_waehlen(gewaehlen_info=self.pakete[0])
         laeuft = self._job is not None or self._uebergabe is not None
@@ -902,6 +907,7 @@ class Ps5PkgFenster:
                 self._kacheln_faerben()
         if self.aktuell is not None:
             self._cover_zeigen(self.aktuell)
+            self._spielinfo_zeigen(self.aktuell)
         self._liste_fuellen(auswaehlen=self.aktuell.pfad if self.aktuell is not None else "")
         self._knoepfe_pruefen()
         if werte[opt.ORDNER] and (werte[opt.ORDNER] != alt[opt.ORDNER] or werte[opt.REKURSIV] != alt[opt.REKURSIV]):
@@ -990,6 +996,7 @@ class Ps5PkgFenster:
             self.format_schluessel = "ffpfsc"
         self._aktion_anwenden()
         self._cover_zeigen(info)
+        self._spielinfo_zeigen(info)
         self.tech.delete(*self.tech.get_children())
         for eig, wert in uebersicht(info, self.t, self._fmt):
             self.tech.insert("", "end", values=(eig, wert))
@@ -1015,39 +1022,52 @@ class Ps5PkgFenster:
         if self._cover is not None:
             self.cover_label.configure(image=self._cover, text="", compound="center")
             self.cover_label.configure(height=300)
-            self.cover_vorschau.configure(image=self._cover, text="")
         else:
             text = self.t("ps5pkg.no_cover") if an else ""        # ausgeschaltet: nichts anzeigen, auch keinen Hinweis
             self.cover_label.configure(image="", text=text)
-            self.cover_vorschau.configure(image="", text=text)
 
-    def _vorschau_oeffnen(self) -> None:
-        """Zeigt das Cover des gewaehlten Pakets gross in einem eigenen Fenster (Klick oder Esc schliesst es)."""
-        info = self.aktuell
-        if info is None or not info.icon or not os.path.isfile(info.icon):
-            self._status(self.t("ps5pkg.no_cover"))
-            return
+    def _spielinfo_zeigen(self, info: "wz.PaketInfo") -> None:
+        """Cover, Titel und Metadaten des gewaehlten Pakets in die Seitenleiste und das Fenster "Spiel Info - Updates &
+        Patches": derselbe Weg (``_update_info_box``) wie bei den Aufgaben 1 bis 6 (Nutzerwunsch 13.10.2026)."""
+        g = self.g
         try:
-            from PIL import Image, ImageTk
-            bild = Image.open(info.icon).convert("RGBA")
+            meta = dict(g._meta_from_param_json_payload(info.param)) if info.param else {}
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Vorschau nicht lesbar: %s", exc)
-            self._status(self.t("ps5pkg.no_cover"))
-            return
-        grenze = max(300, min(900, int(self.win.winfo_screenheight() * 0.8)))
-        bild.thumbnail((grenze, grenze))
-        fenster = tk.Toplevel(self.win)
-        fenster.title(self.t("ps5pkg.preview_title", name=info.titel or os.path.basename(info.pfad)))
-        fenster.configure(bg=self.c["bg_main"])
-        fenster.transient(self.win.winfo_toplevel())
-        foto = ImageTk.PhotoImage(bild, master=fenster)
-        etikett = tk.Label(fenster, image=foto, bg=self.c["bg_main"], bd=0, cursor="hand2")
-        etikett.image = foto                                  # das Fenster haelt das Bild, nichts bleibt danach stehen
-        etikett.pack(padx=12, pady=12)
-        for ziel in (etikett, fenster):
-            ziel.bind("<Button-1>", lambda _e: fenster.destroy())
-        fenster.bind("<Escape>", lambda _e: fenster.destroy())
-        fenster.focus_set()
+            logger.debug("Metadaten des Pakets nicht lesbar: %s", exc)
+            meta = {}
+        for schluessel, wert in (("title", info.titel), ("title_id", info.title_id), ("content_id", info.content_id)):
+            if wert and str(meta.get(schluessel, "") or "–") in ("–", "-", ""):
+                meta[schluessel] = wert
+        meta["_metadata_method"] = self.t("ps5pkg.meta_method")
+        cover = None
+        if self._cover_an() and info.icon and os.path.isfile(info.icon):
+            try:
+                from PIL import Image
+                cover = Image.open(info.icon).convert("RGBA")
+                cover.load()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Cover fuer die Seitenleiste nicht lesbar: %s", exc)
+                cover = None
+        g._update_info_box(meta, cover, self._fmt(info.groesse), "")
+        # Was die Info-Box aus der Quelle der Aufgaben 1 bis 6 liest, gehoert nicht zu diesem Paket.
+        for schluessel in ("sdk_stand", "ampr_emu"):
+            if schluessel in g._meta_labels:
+                g._meta_labels[schluessel].set("–")
+        g._info_format_var.set(self.t("ps5pkg.badge_folder") if info.ist_ordner
+                               else self.t("ps5pkg.badge_debug") if info.debug else (info.typ or "–"))
+
+    def spielinfo_nachziehen(self) -> None:
+        """Zeigt die Angaben des gewaehlten Pakets erneut, wenn die Seite wieder erscheint.
+
+        Der Wechsel zu Aufgabe 7 loest ueber ``current_mode`` eine Neuberechnung der Quelle aus (verzoegert um 180 ms),
+        die Seitenleiste und Info-Box leert - deshalb kommt diese Anzeige kurz danach noch einmal."""
+        def _lauf() -> None:
+            try:
+                if self.win.winfo_exists() and self.aktuell is not None and self.win.winfo_ismapped():
+                    self._spielinfo_zeigen(self.aktuell)
+            except tk.TclError:
+                pass
+        self.win.after(400, _lauf)
 
     def _ziel_name(self) -> str:
         """Name des Ergebnisses: Ordner oder Datei mit Endung."""
@@ -1128,9 +1148,6 @@ class Ps5PkgFenster:
             self.start_knopf.configure(state="disabled" if (laeuft or self.aktuell is None) else "normal")
             self.abbrechen_knopf.configure(state="normal" if laeuft else "disabled")
             self.cover_knopf.configure(state="normal" if self.aktuell is not None else "disabled")
-            hat_cover = (self.aktuell is not None and self._cover_an() and bool(self.aktuell.icon)
-                         and os.path.isfile(self.aktuell.icon))
-            self.vorschau_knopf.configure(state="normal" if hat_cover else "disabled")
         except tk.TclError:
             pass
 
@@ -1741,6 +1758,16 @@ class Ps5PkgFenster:
                 pass
         if getattr(self.g, FENSTER_ATTRIBUT, None) is self:
             setattr(self.g, FENSTER_ATTRIBUT, None)
+
+
+def spielinfo_zuruecksetzen(gui) -> None:
+    """Nimmt die Angaben dieser Seite aus Seitenleiste und Info-Box und laesst das Programm die Quelle der gewaehlten
+    Aufgabe neu lesen (derselbe Weg wie bei einem Wechsel der Quelle)."""
+    try:
+        gui._last_preview_ctx = None
+        gui._on_source_path_changed()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Spiel Info nicht zuruecksetzbar: %s", exc)
 
 
 def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",

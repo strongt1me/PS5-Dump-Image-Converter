@@ -208,5 +208,65 @@ class ExfatFolderPreflightTests(unittest.TestCase):
                 self.assertEqual(len(entries), 54)  # eboot + param.json + big.pak + empty.txt + 50 small files
 
 
+class ExfatFolderAufraeumenTests(unittest.TestCase):
+    """Ein Bau, der nicht fertig wird, laesst keine Datei im Ziel zurueck (12.10.2026 an der EXE gemessen)."""
+
+    @staticmethod
+    def _quelle(td: str) -> Path:
+        src = Path(td) / "PPSA04263-app0"
+        (src / "sce_sys").mkdir(parents=True)
+        (src / "eboot.bin").write_bytes(os.urandom(1024))
+        param = create_default_param(title_id="PPSA04263", title="Test Game")
+        (src / "sce_sys" / "param.json").write_bytes(json.dumps(param).encode("utf-8"))
+        return src
+
+    def test_fehler_im_schreiber_hinterlaesst_keine_datei(self) -> None:
+        with TemporaryDirectory() as td:
+            src = self._quelle(td)
+            (src / "Umlaut_äöü.txt").write_text("exFAT-Namen ausserhalb von ASCII kann der Schreiber nicht", encoding="utf-8")
+            out_file = Path(td) / "out.exfat"
+
+            gui = _make_gui()
+            ok = gui._create_exfat_from_folder(str(src), str(out_file))
+
+            self.assertFalse(ok)
+            self.assertFalse(out_file.exists(), "Nach einem Fehlschlag darf keine (leere) .exfat im Ziel bleiben.")
+
+    def test_abbruch_mitten_im_bau_hinterlaesst_keine_halbe_datei(self) -> None:
+        import sys
+        from unittest import mock
+
+        with TemporaryDirectory() as td:
+            src = self._quelle(td)
+            out_file = Path(td) / "out.exfat"
+            gui = _make_gui()
+            gui._extract_embedded_mkpfs()
+            if str(MKPFS_DIR) not in sys.path:
+                sys.path.insert(0, str(MKPFS_DIR))
+            import mkpfs.exfat_writer as writer
+
+            def _abgebrochen(_src, on_layout=None):
+                if on_layout is not None:
+                    on_layout(4096)
+                yield b"\0" * 2048
+                gui.is_running = False          # der Anwender bricht ab
+                yield b"\0" * 2048
+
+            with mock.patch.object(writer, "iter_exfat_image", _abgebrochen):
+                ok = gui._create_exfat_from_folder(str(src), str(out_file))
+
+            self.assertFalse(ok)
+            self.assertFalse(out_file.exists(), "Nach einem Abbruch darf keine halbe .exfat im Ziel bleiben.")
+
+    def test_gelungener_bau_bleibt_liegen(self) -> None:
+        with TemporaryDirectory() as td:
+            src = self._quelle(td)
+            out_file = Path(td) / "out.exfat"
+            gui = _make_gui()
+            ok = gui._create_exfat_from_folder(str(src), str(out_file))
+            self.assertTrue(ok, f"Log: {gui._log_lines}")
+            self.assertGreater(out_file.stat().st_size, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
