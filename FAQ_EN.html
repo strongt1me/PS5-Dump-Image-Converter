@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.76</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.77</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,7 +144,7 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.76</span>
+      <span class="marke">Version v1.9.77</span>
       <span class="marke">As of 14 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
@@ -456,19 +456,19 @@ footer{
 
   <div class="frage">
     <h3>Can I use PS4 games too?</h3>
-    <p>Yes. <strong>PS4 PKG Dump &amp; Image Converter</strong> (MORE TOOLS) reads your PS4 packages and turns base, update and optionally DLC into a normal game folder (format <strong>Dump folder</strong>), an image for ShadowMount+ (<strong>ffpfsc</strong> or <strong>exFAT</strong>) or a merged package. <strong>ONLINE UPDATES</strong> downloads missing updates for PS4 games from Sony. PS5 packages (debug packages, FPKG) are unpacked and converted by <strong>PS5 PKG Dump &amp; Image Converter</strong> (MORE TOOLS).</p>
+    <p>Yes. <strong>PS4 PKG Dump &amp; Image Converter</strong> (task 7 – PKG / FPKG, page PKG) reads your PS4 packages and turns base, update and optionally DLC into a normal game folder (format <strong>Dump folder</strong>), an image for ShadowMount+ (<strong>ffpfsc</strong> or <strong>exFAT</strong>) or a merged package. <strong>ONLINE UPDATES</strong> downloads missing updates for PS4 games from Sony. PS5 packages (debug packages, FPKG) are unpacked and converted by <strong>PS5 PKG Dump &amp; Image Converter</strong> (task 7 – PKG / FPKG, page FPKG).</p>
     <p class="hinweis"><strong>Trophies:</strong> a PS4 game that starts from an image does not register its trophies (<em>Trophy registration failed, 0x80551618</em>). This is by design and not caused by the image. If you need the trophies, install the game with the Package Installer. PS5 titles are not affected.</p>
   </div>
 
   <div class="frage">
     <h3>Can I send a package to the console over the network?</h3>
-    <p>Yes, with <strong>PS4 PKG Dump &amp; Image Converter</strong> (MORE TOOLS): read in the packages, choose a game, press <strong>SEND TO CONSOLE</strong> and enter the console's address. There are two ways: on a PS5 the OnionHEN package manager (called <em>DPI v2</em> in <em>Console &amp; payloads</em>) receives the package and installs it; a PS4 fetches it from the PC through the Remote Package Installer. <strong>Detect</strong> asks which service answers at the address.</p>
+    <p>Yes, with <strong>PS4 PKG Dump &amp; Image Converter</strong> (task 7 – PKG / FPKG, page PKG): read in the packages, choose a game, press <strong>SEND TO CONSOLE</strong> and enter the console's address. There are two ways: on a PS5 the OnionHEN package manager (called <em>DPI v2</em> in <em>Console &amp; payloads</em>) receives the package and installs it; a PS4 fetches it from the PC through the Remote Package Installer. <strong>Detect</strong> asks which service answers at the address.</p>
     <p class="hinweis"><strong>Untested:</strong> sending has not yet been tried on a console – both ways are tested against stand-ins for the services. Whether a particular package starts afterwards can only be told by trying.</p>
   </div>
 
   <div class="frage">
     <h3>Can I unpack a PS5 package without needing space on the PC?</h3>
-    <p>Yes. In <strong>PS5 PKG Dump &amp; Image Converter</strong> (MORE TOOLS) choose the action <strong>Unpack to the PS5</strong>, enter the console's address and the folder there (for example <code>/mnt/usb0/GameName</code>) and start. The program reads the package and sends the files straight to the PS5 over FTP; no unpacked copy is made on the PC. <code>ftpsrv</code> must be running on the console. If the folder already exists there, you can <strong>resume</strong> (complete files are skipped, unfinished ones continue) or rewrite everything; if the connection drops, the program reconnects up to five times and carries on from where it stopped. Cancelling takes effect after the current file.</p>
+    <p>Yes. In <strong>PS5 PKG Dump &amp; Image Converter</strong> (task 7 – PKG / FPKG, page FPKG) choose the action <strong>Unpack to the PS5</strong>, enter the console's address and the folder there (for example <code>/mnt/usb0/GameName</code>) and start. The program reads the package and sends the files straight to the PS5 over FTP; no unpacked copy is made on the PC. <code>ftpsrv</code> must be running on the console. If the folder already exists there, you can <strong>resume</strong> (complete files are skipped, unfinished ones continue) or rewrite everything; if the connection drops, the program reconnects up to five times and carries on from where it stopped. Cancelling takes effect after the current file.</p>
     <p class="hinweis"><strong>Untested:</strong> Unpacking to the console is checked against a real package and a stand-in FTP server (every file byte for byte the same), but has not yet been tried on a PS5. Try it with a small game first.</p>
   </div>
 
@@ -489,7 +489,7 @@ footer{
 
   <div class="frage">
     <h3>What does the CONSOLE view show?</h3>
-    <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with eight tools: <em>Console &amp; payloads</em>, <em>WebKit Autoloader</em>, <em>Library</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em> and <em>BFpilot</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
+    <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with ten tools: <em>Console &amp; payloads</em>, <em>WebKit Autoloader</em>, <em>Library</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em>, <em>BFpilot</em>, <em>AMPR EMU Manager</em> and <em>AMPR trace</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
     <p><strong>Console &amp; payloads</strong> already finds the PS5 by itself when the program starts – you do not have to enter an address. The page queries all known ports, shows state, version and purpose for every service, starts missing services from the bundled <code>helloworld</code> folder and opens web interfaces. On Windows these appear directly in the program, otherwise in the browser.</p>
     <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (the PS5 Cooling &amp; System Center, port 8086), <strong>ShadowMount+</strong>, <strong>SMPlusGui</strong> and <strong>BFpilot</strong> (a second file manager, port 5905) have no page of their own: one press checks whether the payload is already running on the console, sends it by itself if needed – together with the ELF loader if port 9021 is still closed – and then opens its web interface.</p>
   </div>
@@ -655,7 +655,7 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.76</strong></span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.77</strong></span>
   <span>As of 14 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 

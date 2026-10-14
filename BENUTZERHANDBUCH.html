@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.76</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.77</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.76</span>
+      <span class="marke">Version v1.9.77</span>
       <span class="marke">Stand 14. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -439,12 +439,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Oben rechts liegt die Werkzeugleiste mit weiteren Funktionen (FILEZILLA, JS LOADER, CREDITS, DESIGN und mehr). Für eine normale Konvertierung brauchen Sie diese Schaltflächen nicht – sie sind in <a href="#k14">Kapitel 14</a> erklärt.</p>
   <h3>2.1 Die zweite Ansicht: KONSOLE</h3>
   <p>Unter dem Logo in der Seitenleiste schaltet <strong>KONSOLE&nbsp;›</strong>
-  auf eine zweite Ansicht um. Dort stehen links acht Werkzeuge für die Arbeit
+  auf eine zweite Ansicht um. Dort stehen links zehn Werkzeuge für die Arbeit
   mit der Konsole: <em>1.&nbsp;Konsole &amp; Payloads</em>,
   <em>2.&nbsp;WebKit Autoloader</em>, <em>3.&nbsp;Bibliothek</em>,
   <em>4.&nbsp;Prospero Manager</em>, <em>5.&nbsp;CoolSysCent-Pro</em>,
-  <em>6.&nbsp;ShadowMount+</em>, <em>7.&nbsp;SMPlusGui</em> und
-  <em>8.&nbsp;BFpilot</em>. Titelbild,
+  <em>6.&nbsp;ShadowMount+</em>, <em>7.&nbsp;SMPlusGui</em>,
+  <em>8.&nbsp;BFpilot</em>, <em>9.&nbsp;AMPR EMU Manager</em> und
+  <em>10.&nbsp;AMPR-Mitschnitt</em>. Titelbild,
   „Spiel Info“ und „Was man sonst ev. noch braucht“ gibt es dort nicht. Rechts
   steht die Seite <strong>Konsole &amp; Payloads</strong> (siehe unten);
   <em>2.&nbsp;WebKit Autoloader</em> und <em>3.&nbsp;Bibliothek</em> zeigen an
@@ -1398,8 +1399,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     liest. Im Protokoll steht dann &bdquo;Eigenes Packprofil
     &uuml;bernommen&ldquo;.</p>
     <p><strong>Muss dieses Profil von Hand geschrieben werden? Nein.</strong>
-    Der <strong>AMPR-Mitschnitt-Assistent</strong> (<em>WEITERE
-    TOOLS</em>, Abschnitt 13) f&uuml;hrt Schritt f&uuml;r Schritt durch
+    Der <strong>AMPR-Mitschnitt-Assistent</strong> (Knopf
+    <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE; er zeigt seine Seite rechts
+    und beginnt erst mit <strong>STARTEN</strong>) f&uuml;hrt Schritt f&uuml;r Schritt durch
     mehrere echte Spieldurchl&auml;ufe auf Ihrer PS5 und erzeugt daraus genau
     diese Datei automatisch &ndash; passend benannt und am richtigen Ort.
     Vorher pr&uuml;ft er, ob ShadowMount+ die Aufnahme-Bibliothek wirklich
@@ -1678,6 +1680,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p><strong>Zu finden unter:</strong> Aufgabe 7 – PKG / FPKG → <strong>PKG</strong>. In der
   Bibliothek öffnet <em>Konvertieren</em> bei einem PS4-Paket dieselbe Seite mit der Datei. Ein zweiter Druck
   auf „PKG“ ändert nichts.</p>
+  <p><strong>Spiel Info.</strong> Wie bei den Aufgaben 1 bis 6 steht das Cover des markierten Spiels
+  (<code>icon0.png</code> aus dem Paket bzw. aus <code>sce_sys</code>) samt Titel in der Seitenleiste, und
+  <em>Spiel Info – Updates &amp; Patches</em> zeigt Titel, Title-ID, Content-ID, Version, Firmware, Region,
+  Kategorie und Plattform aus der <code>param.sfo</code>. Updates und Patches sucht das Fenster bei PS4-Titeln auf
+  orbispatches.com; fehlende Angaben wie Hersteller oder Cover holt das Programm von dort nach, wenn das
+  Nachschlagen von Metadaten in den Einstellungen erlaubt ist.</p>
   <p><strong>So arbeitet es.</strong> Die Pakete werden mit <strong>OrbisPkgTool</strong> (MIT-Lizenz,
   Ordner <code>OrbisPkgTool-1.0.0</code>) entpackt; Basis und Updates werden in der Reihenfolge der
   Fassungen zu einem Dump-Ordner zusammengespielt (ein späteres Update überschreibt die Dateien des
@@ -2043,7 +2051,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>AMPR-Mitschnitt-Assistent</strong> (führt Schritt für Schritt durch das Aufnehmen echter Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode), <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>.</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE.</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k14">Abschnitt 14.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -2829,7 +2837,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.76), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.77), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -3030,7 +3038,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.76</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.77</strong></span>
     <span>Stand 14. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

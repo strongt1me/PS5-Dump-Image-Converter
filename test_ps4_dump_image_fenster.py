@@ -101,6 +101,13 @@ class FensterTests(unittest.TestCase):
         cls.haupt = haupt
         cls.app = haupt.PS5ConverterGUI(_WURZEL)
         cls.app._current_language = "de"
+        # Die Spiel-Info fragt fehlende Angaben online nach (orbispatches.com) - nicht aus den Tests heraus.
+        cls._netz = mock.patch.object(cls.app, "_metadaten_online_erlaubt", return_value=False)
+        cls._netz.start()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._netz.stop()
 
     def _fenster(self):
         f = fenster_modul.oeffnen(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT, self.haupt.pt)
@@ -294,6 +301,110 @@ class FensterTests(unittest.TestCase):
             self.assertIn("CUSA00001", f.spiele)
             self.assertEqual(os.path.abspath(tmp), f.spiele["CUSA00001"].dump_ordner)
             self.assertEqual(("CUSA00001",), tuple(f.liste.get_children()))
+
+    @staticmethod
+    def _png() -> bytes:
+        import io
+        from PIL import Image
+        puffer = io.BytesIO()
+        Image.new("RGB", (64, 64), (200, 30, 30)).save(puffer, "PNG")
+        return puffer.getvalue()
+
+    def test_ein_gewaehltes_paket_fuellt_seitenleiste_und_spiel_info(self) -> None:
+        """Nutzerwunsch 14.10.2026: Cover in der Seitenleiste und Metadaten in "Spiel Info - Updates & Patches"
+        wie bei den Aufgaben 1 bis 6 - auch auf der Seite PKG."""
+        from test_ps4pkg_bibliothek import paket_bauen
+        from ps5_validator.utils import ps4pkg_bibliothek as bib
+        with tempfile.TemporaryDirectory() as tmp:
+            pfad = paket_bauen(Path(tmp) / "spiel.pkg", titel="Testspiel", title_id="CUSA00001", app_ver="01.02")
+            f = self._fenster()
+            f.pakete = [bib.lese_paket(str(pfad))]
+            with mock.patch.object(fenster_modul.bib, "lese_bild", return_value=self._png()), \
+                    mock.patch.object(self.app, "_metadaten_online_erlaubt", return_value=False), \
+                    mock.patch.object(self.app, "_update_info_box", wraps=self.app._update_info_box) as box:
+                f._gruppieren()
+                _WURZEL.update()
+            box.assert_called()
+            meta, cover = box.call_args[0][0], box.call_args[0][1]
+            self.assertEqual("Testspiel", meta["title"])
+            self.assertEqual("CUSA00001", meta["title_id"])
+            self.assertEqual("UP0000-CUSA00001_00-0000000000000000", meta["content_id"])
+            self.assertEqual("01.02", meta["version"])
+            self.assertEqual("PS4", meta["platform"])
+            self.assertIsNotNone(cover, "Das Cover kommt aus dem Paket (icon0.png).")
+            self.assertEqual("CUSA00001", self.app._meta_labels["title_id"].get())
+            self.assertEqual("PKG", self.app._info_format_var.get())
+
+    def test_ein_entpacktes_spiel_fuellt_seitenleiste_und_spiel_info(self) -> None:
+        from test_ps4_abbild import _sfo
+        with tempfile.TemporaryDirectory() as tmp:
+            sce = Path(tmp) / "sce_sys"
+            sce.mkdir()
+            (sce / "param.sfo").write_bytes(_sfo({"TITLE_ID": "CUSA00002", "TITLE": "Dumpspiel", "APP_VER": "01.05"}))
+            (sce / "icon0.png").write_bytes(self._png())
+            f = self._fenster()
+            f.art_var.set(fenster_modul.QUELLE_DUMP)
+            f.quelle_var.set(tmp)
+            with mock.patch.object(self.app, "_metadaten_online_erlaubt", return_value=False), \
+                    mock.patch.object(self.app, "_update_info_box", wraps=self.app._update_info_box) as box:
+                f._einlesen()
+                _WURZEL.update()
+            meta, cover = box.call_args[0][0], box.call_args[0][1]
+            self.assertEqual("Dumpspiel", meta["title"])
+            self.assertEqual("01.05", meta["version"])
+            self.assertIsNotNone(cover)
+            self.assertEqual("Dump", self.app._info_format_var.get())
+
+    def test_fehlende_angaben_kommen_online_nach_wie_bei_den_aufgaben(self) -> None:
+        """Nutzerhinweis 14.10.2026: PS4-Titel ueber orbispatches.com - derselbe Weg (_enrich_meta_online) wie bei
+        den Aufgaben 1 bis 6, im Faden; ohne Erlaubnis (metadata_online) wird nicht gefragt."""
+        from ps5_validator.utils import ps4pkg_bibliothek as bib
+        f = self._fenster()
+        f.pakete = [bib.PkgEintrag(pfad="E:/a.pkg", lesbar=True, title_id="CUSA00003", titel="Netzspiel",
+                                   typ=bib.TYP_BASIS, app_ver="01.00", groesse=10)]
+
+        def nachschlag(meta, tid):
+            self.assertEqual("CUSA00003", tid)
+            return dict(meta, publisher="Testverlag", genre="Rennen"), None
+
+        with mock.patch.object(fenster_modul.bib, "lese_bild", return_value=None), \
+                mock.patch.object(self.app, "_metadaten_online_erlaubt", return_value=False), \
+                mock.patch.object(self.app, "_enrich_meta_online") as netz:
+            f._gruppieren()
+            _WURZEL.update()
+        netz.assert_not_called()
+        with mock.patch.object(fenster_modul.bib, "lese_bild", return_value=None), \
+                mock.patch.object(self.app, "_metadaten_online_erlaubt", return_value=True), \
+                mock.patch.object(self.app, "_enrich_meta_online", side_effect=nachschlag) as netz:
+            f._spielinfo_zeigen()
+            # Der Faden meldet sich ueber root.after - das nimmt Tk nur an, solange mainloop() wirklich laeuft.
+            import time
+            ende = time.monotonic() + 5.0
+
+            def _wache() -> None:
+                if self.app._meta_labels["publisher"].get() == "Testverlag" or time.monotonic() >= ende:
+                    _WURZEL.quit()
+                    return
+                _WURZEL.after(20, _wache)
+
+            _WURZEL.after(20, _wache)
+            _WURZEL.mainloop()
+        netz.assert_called_once()
+        self.assertEqual("Testverlag", self.app._meta_labels["publisher"].get())
+        self.assertEqual("CUSA00003", self.app._meta_labels["title_id"].get())
+
+    def test_ohne_auswahl_bleibt_die_anzeige_unberuehrt(self) -> None:
+        f = self._fenster()
+        f.spiele = {}
+        f.liste.delete(*f.liste.get_children())
+        with mock.patch.object(self.app, "_update_info_box") as box:
+            f._spielinfo_zeigen()
+        box.assert_not_called()
+
+    def test_die_seite_pkg_zieht_die_spiel_info_nach(self) -> None:
+        quelle = (PROJEKT / "ps5_validator" / "ui" / "pkg_fpkg_seite.py").read_text(encoding="utf-8")
+        rumpf = quelle.split("def pkg_zeigen", 1)[1].split("def fpkg_zeigen", 1)[0]
+        self.assertIn("fenster.spielinfo_nachziehen()", rumpf)
 
     def test_ein_ordner_ohne_param_sfo_wird_gemeldet(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

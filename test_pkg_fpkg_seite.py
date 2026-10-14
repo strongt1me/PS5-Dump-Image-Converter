@@ -118,7 +118,9 @@ class SeitenTests(unittest.TestCase):
 
     def test_der_konsole_knopf_neun_zeigt_dieselbe_ampr_seite(self) -> None:
         kennungen = [k for _s, k in self.app._KONSOLE_KNOEPFE]
-        self.assertEqual("amprmgr", kennungen[-1])
+        # Knopf 9; seit 14.10.2026 folgt Knopf 10 "AMPR-Mitschnitt".
+        self.assertEqual("amprmgr", kennungen[8])
+        self.assertEqual("amprmitschnitt", kennungen[9])
         self.assertEqual("_konsole_amprmgr_zeigen", self.app._KONSOLE_SEITEN["amprmgr"])
 
 

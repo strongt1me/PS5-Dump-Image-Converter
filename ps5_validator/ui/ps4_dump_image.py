@@ -236,6 +236,7 @@ class Ps4DumpImageFenster:
         rolle = pw.Scrollbar(liste_rahmen, orient="vertical", command=self.liste.yview)
         rolle.pack(side="right", fill="y")
         self.liste.configure(yscrollcommand=rolle.set)
+        self.liste.bind("<<TreeviewSelect>>", lambda _e: self._spielinfo_zeigen(), add="+")
 
         # ── Ziel und Einstellungen ──────────────────────────────────────
         tk.Label(koerper, text=t("ps4pkg.output_label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
@@ -574,6 +575,127 @@ class Ps4DumpImageFenster:
             self.liste.selection_set(gemerkt)
         elif self.liste.get_children():
             self.liste.selection_set(self.liste.get_children()[0])
+
+    # ------------------------------------------------------------------
+    # Spiel Info in der Seitenleiste
+    # ------------------------------------------------------------------
+    def _spielinfo_zeigen(self) -> None:
+        """Cover, Titel und Metadaten des gewaehlten Spiels in die Seitenleiste und das Fenster "Spiel Info - Updates &
+        Patches": derselbe Weg (``_update_info_box``) wie bei den Aufgaben 1 bis 6 und auf der Seite FPKG
+        (Nutzerwunsch 14.10.2026). Mehrere gewaehlt: das erste. Ohne Auswahl bleibt die Anzeige unberuehrt."""
+        gewaehlt = self._gewaehlt()
+        if not gewaehlt:
+            return
+        s = gewaehlt[0]
+        g = self.g
+        meta: dict = {}
+        icon: "bytes | None" = None
+        try:
+            if s.dump_ordner:
+                for kandidat in (s.dump_ordner, os.path.join(s.dump_ordner, "app")):
+                    sce = os.path.join(kandidat, "sce_sys")
+                    if os.path.isfile(os.path.join(sce, "param.sfo")):
+                        with open(os.path.join(sce, "param.sfo"), "rb") as datei:
+                            meta = dict(g._meta_from_param_sfo_bytes(datei.read(1024 * 1024)))
+                        if os.path.isfile(os.path.join(sce, "icon0.png")):
+                            with open(os.path.join(sce, "icon0.png"), "rb") as datei:
+                                icon = datei.read()
+                        break
+            else:
+                quelle = s.basis or s.neuestes_update or (s.zusaetze[0] if s.zusaetze else None)
+                if quelle is not None:
+                    meta = dict(g._meta_aus_sfo(quelle.sfo or {}))
+                    if quelle.content_id:
+                        meta["content_id"] = quelle.content_id
+                    for paket in [p for p in (s.basis, *reversed(s.updates)) if p is not None]:
+                        icon = bib.lese_bild(paket.pfad)
+                        if icon:
+                            break
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Metadaten des Spiels nicht lesbar: %s", exc)
+        for schluessel, wert in (("title", s.titel), ("title_id", s.title_id), ("version", s.version)):
+            if wert and wert != "-" and str(meta.get(schluessel, "") or "–") in ("–", "-", ""):
+                meta[schluessel] = wert
+        if s.version and s.version != "-":
+            meta["version"] = s.version          # mit eingespieltem Update gilt dessen Fassung
+        meta["platform"] = {"ps4": "PS4", "ps5": "PS5"}.get(ps4_werkzeug.plattform(s.title_id), "–")
+        meta["_metadata_method"] = "param.sfo"
+        cover = None
+        if icon:
+            try:
+                import io
+                from PIL import Image
+                cover = Image.open(io.BytesIO(icon)).convert("RGBA")
+                cover.load()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Cover fuer die Seitenleiste nicht lesbar: %s", exc)
+                cover = None
+        groesse = s.groesse() if not s.dump_ordner else 0
+        try:
+            g._update_info_box(meta, cover, g._fmt_bytes(groesse) if groesse else "–", "")
+            # Was die Info-Box aus der Quelle der Aufgaben 1 bis 6 liest, gehoert nicht zu diesem Spiel.
+            for schluessel in ("sdk_stand", "ampr_emu"):
+                if schluessel in g._meta_labels:
+                    g._meta_labels[schluessel].set("–")
+            g._info_format_var.set("Dump" if s.dump_ordner else "PKG")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Spiel Info nicht anzeigbar: %s", exc)
+        self._online_ergaenzen(s, meta, cover)
+
+    def _online_ergaenzen(self, s: "ab.Spiel", meta: dict, lokal_cover) -> None:
+        """Fehlende Angaben (Hersteller, Genre, Erscheinungsdatum, Cover) online nachtragen - derselbe Weg wie bei den
+        Aufgaben 1 bis 6 (``_enrich_meta_online``; PS4-Titel ueber orbispatches.com) und nur, wenn die Einstellung
+        ``metadata_online`` es erlaubt. Der Faden fasst kein Widget an; das Ergebnis gilt nur, wenn danach noch
+        dasselbe Spiel gewaehlt ist."""
+        g = self.g
+        try:
+            if not g._metadaten_online_erlaubt():
+                return
+        except Exception:  # noqa: BLE001
+            return
+        fehlt = [k for k in ("publisher", "genre", "release_date") if str(meta.get(k, "") or "–") in ("–", "-", "")]
+        if not fehlt and lokal_cover is not None:
+            return
+        title_id = s.title_id
+        groesse = s.groesse() if not s.dump_ordner else 0
+
+        def arbeit() -> None:
+            try:
+                neu, cover = g._enrich_meta_online(dict(meta), title_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Online-Nachschlag fuer %s fehlgeschlagen: %s", title_id, exc)
+                return
+            try:
+                g.root.after(0, lambda: self._online_fertig(title_id, neu, lokal_cover or cover, groesse))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Online-Ergebnis verworfen (Fenster zu): %s", exc)
+
+        threading.Thread(target=arbeit, daemon=True, name="ps4dib-metadaten").start()
+
+    def _online_fertig(self, title_id: str, neu, cover, groesse: int) -> None:
+        g = self.g
+        try:
+            gewaehlt = self._gewaehlt()
+            if not gewaehlt or gewaehlt[0].title_id != title_id or not isinstance(neu, dict) or not neu:
+                return
+            g._update_info_box(neu, cover, g._fmt_bytes(groesse) if groesse else "–", "")
+            for schluessel in ("sdk_stand", "ampr_emu"):
+                if schluessel in g._meta_labels:
+                    g._meta_labels[schluessel].set("–")
+            g._info_format_var.set("Dump" if gewaehlt[0].dump_ordner else "PKG")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Online-Ergebnis nicht anzeigbar: %s", exc)
+
+    def spielinfo_nachziehen(self) -> None:
+        """Zeigt die Angaben des gewaehlten Spiels erneut, wenn die Seite wieder erscheint (wie auf der Seite FPKG:
+        der Wechsel zu Aufgabe 7 leert Seitenleiste und Info-Box verzoegert um 180 ms)."""
+        def _lauf() -> None:
+            try:
+                if self.win.winfo_exists() and self.win.winfo_ismapped() and self.liste.selection():
+                    self._spielinfo_zeigen()
+            except tk.TclError:
+                pass
+        self.win.after(400, _lauf)
 
     # ------------------------------------------------------------------
     # Starten

@@ -720,7 +720,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.76"
+APP_VERSION = "v1.9.77"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3266,15 +3266,28 @@ class RoundedButton(tk.Canvas):
         nummer_hex = gedaempft(nummer_hex, 0.3, grund_zeile)
         sperr_hex = gedaempft(sperr_hex, 0.3, grund_zeile)
         balken_hex = aufgehellt(balken_hex, grund_zeile)
-        if gewaehlt:
-            zeichner.rectangle((0, 0, w - 1, h - 1), fill=rgb(text_hex) + (38,))
-        elif self._hovering and not disabled:
-            zeichner.rectangle((0, 0, w - 1, h - 1), fill=rgb(text_hex) + (18,))
         zeichner.line((0, h - 1, w - 1, h - 1), fill=rgb(linie_hex) + (110,))
-        if gewaehlt:
-            balken = max(3, int(round(3 * faktor)))
-            zeichner.rectangle((0, 0, balken - 1, h - 1), fill=rgb(balken_hex) + (255,))
         bild.alpha_composite(ebene)
+        # Gewaehlt/ueberfahren: die getoente Flaeche mit leicht runden Ecken (Nutzerwunsch 14.10.2026), der Balken
+        # links folgt ihrer Rundung. Vierfach gross gezeichnet und verkleinert, sonst stufen sich die Boegen.
+        if gewaehlt or (self._hovering and not disabled):
+            hoehe = max(1, h - 1)                          # die Haarlinie unten bleibt frei
+            radius = max(4, int(round(7 * faktor)))
+            fach = 4
+            form = Image.new("L", (w * fach, hoehe * fach), 0)
+            ImageDraw.Draw(form).rounded_rectangle((0, 0, w * fach - 1, hoehe * fach - 1),
+                                                   radius=radius * fach, fill=255)
+            form = form.resize((w, hoehe), _LANCZOS)
+            tonung_ebene = Image.new("RGBA", (w, hoehe), rgb(text_hex) + (0,))
+            tonung_ebene.putalpha(form.point(lambda a: a * (38 if gewaehlt else 18) // 255))
+            bild.alpha_composite(tonung_ebene, (0, 0))
+            if gewaehlt:
+                balken = max(3, int(round(3 * faktor)))
+                balken_ebene = Image.new("RGBA", (w, hoehe), rgb(balken_hex) + (0,))
+                balken_maske = form.copy()
+                ImageDraw.Draw(balken_maske).rectangle((balken, 0, w, hoehe), fill=0)
+                balken_ebene.putalpha(balken_maske)
+                bild.alpha_composite(balken_ebene, (0, 0))
         self._foto = ImageTk.PhotoImage(bild, master=self)
         self.create_image(0, 0, image=self._foto, anchor="nw")
 
@@ -4484,7 +4497,8 @@ class PS5ConverterGUI:
         ("titlebar.pkg_merger", "_show_pkg_merger_dialog"),
         ("titlebar.param_manifest", "_show_param_manifest_editor"),
         ("titlebar.ampr_index", "_show_ampr_index_builder"),
-        ("titlebar.ampr_mitschnitt", "_show_ampr_mitschnitt_assistent"),
+        # Der AMPR-Mitschnitt-Assistent stand hier bis zum 14.10.2026; seitdem ist er Knopf 10 der Ansicht KONSOLE und
+        # zeigt sich rechts als Seite (Nutzerwunsch) - siehe _KONSOLE_KNOEPFE und _konsole_mitschnitt_bauen.
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.elf_eboot", "_show_elf_zu_eboot"),
         ("titlebar.dump_rename", "_show_dump_rename"),
@@ -4543,6 +4557,8 @@ class PS5ConverterGUI:
         # Verlegt aus der Seitenleiste UMWANDELN (Nutzerwunsch 12.10.2026): zeigt dieselbe Seite wie zuvor
         # Aufgabe 7 (ampr_seite.py), nur ueber einen anderen Knopf erreicht - siehe _KONSOLE_SEITEN unten.
         ("konsole.btn_amprmgr", "amprmgr"),
+        # Seit dem 14.10.2026 (Nutzerwunsch): der AMPR-Mitschnitt-Assistent, bis dahin ein Fenster unter WEITERE TOOLS.
+        ("konsole.btn_amprmitschnitt", "amprmitschnitt"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -9187,7 +9203,13 @@ class PS5ConverterGUI:
             kopf_farbe=self._umschalter_farben()["kopf_farbe"])
         # Ohne fill: Die Knoepfe der Leiste stehen mittig in gemeinsamer Breite
         # (_seitenleiste_breite_anpassen).
-        self._ansicht_knopf.pack(pady=(0, 10))
+        # Darunter etwa 5 mm Luft bis zur Knopfreihe (Nutzerwunsch 14.10.2026; vorher 10 px) - in Millimetern,
+        # damit der Abstand bei jeder Skalierung gleich aussieht.
+        try:
+            _luft = max(10, int(round(float(sidebar.winfo_fpixels("5m")))))
+        except (tk.TclError, ValueError):
+            _luft = 24
+        self._ansicht_knopf.pack(pady=(0, _luft))
 
         # Modus-Buttons in Sidebar - als Pillen, der Text mittig im Knopf
         # (Nutzerwunsch 05.10.2026: wieder zentriert; die gemeinsame
@@ -11895,6 +11917,7 @@ class PS5ConverterGUI:
         "webkit": "_konsole_webkit_zeigen",
         "bibliothek": "_konsole_bibliothek_umschalten",
         "amprmgr": "_konsole_amprmgr_zeigen",
+        "amprmitschnitt": "_show_ampr_mitschnitt_assistent",
     }
 
     #: Die Seiten rechts in der Ansicht KONSOLE: je Seite das Attribut, unter
@@ -11909,6 +11932,8 @@ class PS5ConverterGUI:
         # Seit dem 12.10.2026: die Seite des AMPR EMU Manager (bis dahin Aufgabe 7
         # der Seitenleiste UMWANDELN, siehe ps5_validator/ui/ampr_seite.py).
         "amprmgr": ("_konsole_amprmgr", "_konsole_amprmgr_bauen", "konsole.btn_amprmgr"),
+        # Seit dem 14.10.2026: der AMPR-Mitschnitt-Assistent (bis dahin ein Fenster unter WEITERE TOOLS).
+        "amprmitschnitt": ("_konsole_mitschnitt", "_konsole_mitschnitt_bauen", "konsole.btn_amprmitschnitt"),
         # Eine Weboberflaeche der Konsole (seit 26.09.2026) - ohne eigenen
         # Knopf: Sie kommt von einer der drei Seiten und fuehrt dorthin
         # zurueck; hervorgehoben bleibt deren Knopf (_webseite_herkunft).
@@ -52330,43 +52355,62 @@ class PS5ConverterGUI:
     _AMPR_MITSCHNITT_SPIELZEIT_GRENZE = 6.0 * 3600.0
 
     def _show_ampr_mitschnitt_assistent(self) -> None:
-        """Fenster: Mitschnitte aufnehmen und daraus ein Packprofil erzeugen.
+        """Knopf "10. AMPR-Mitschnitt" der Ansicht KONSOLE: zeigt rechts die Seite des Assistenten.
 
-        Vorbild ist :meth:`_show_ampr_generation` - Protokollbereich,
-        Start-/Schliessen-Knopf, ein Arbeitsfaden. Neu ist der Statusbereich
-        fuer die Wartephase: kein Dialog, kein ``grab_set()`` - waehrend der
-        Nutzer spielt, bleibt der Rest des Programms bedienbar.
+        Bis zum 14.10.2026 ein eigenes Fenster unter WEITERE TOOLS, das beim Oeffnen sofort loslief. Jetzt liegt
+        es als Seite in derselben Zelle wie die uebrigen Seiten der Ansicht KONSOLE (:data:`_KONSOLE_SEITENBAU`),
+        und der Lauf beginnt mit STARTEN - eine Seite, die man anklickt, soll nicht schon etwas tun.
+        """
+        if not self._ansicht_ist_konsole():
+            self._ansicht_setzen("konsole")
+        self._konsole_seite_setzen("amprmitschnitt")
+
+    def _konsole_mitschnitt_bauen(self) -> None:
+        """Baut die Seite des AMPR-Mitschnitt-Assistenten einmal: Mitschnitte aufnehmen, daraus ein Packprofil.
+
+        Ablauf wie zuvor im Fenster (Vorbild :meth:`_show_ampr_generation`): Protokoll, ein Arbeitsfaden, der
+        Statusbereich fuer die Wartephase - kein Dialog, kein ``grab_set()``, waehrend der Nutzer spielt, bleibt der
+        Rest des Programms bedienbar. Die Seite steht fuer die Automatik dort, wo frueher das Fenster stand: Eltern
+        der Rueckfragen und Ziel von ``_spaeter_im_fenster``. ABBRECHEN fragt nach, solange der Lauf aktiv ist; die
+        Rueckstellung an der Konsole (``finally`` der Automatik) laeuft auch dann zu Ende.
         """
         c = self._COLORS
-        win = self._build_modern_toplevel(
-            self._t("amprmitschnitt.title"), 940, 760,
-            min_width=820, min_height=580)
-        self._build_modern_header(win, self._t("amprmitschnitt.title"),
-                                  self._t("amprmitschnitt.subtitle"))
+        rahmen = tk.Frame(self.root, bg=c["bg_main"], padx=24, pady=18)
+        self._konsole_mitschnitt = rahmen
+        win = rahmen
 
-        tk.Label(win, text=self._t("amprmitschnitt.what_happens"),
+        def _umbrechend(text: str, schrift, farbe: str, oben: int = 0, unten: int = 4) -> tk.Label:
+            label = tk.Label(rahmen, text=text, font=schrift, bg=c["bg_main"], fg=farbe, anchor="w",
+                             justify="left", wraplength=700)
+            label.pack(fill="x", pady=(oben, unten))
+            label.bind("<Configure>", lambda e, l=label: l.configure(wraplength=max(100, e.width - 8)))
+            return label
+
+        titel = tk.Label(rahmen, text=self._t("amprmitschnitt.title"), font=(UI_SCHRIFT, pt(15), "bold"),
+                         bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
+        titel.pack(fill="x")
+        self._register_translatable(titel, "amprmitschnitt.title")
+        _umbrechend(self._t("amprmitschnitt.subtitle"), (UI_SCHRIFT, pt(9)), c["fg_secondary"], 4, 10)
+
+        # Knoepfe unten zuerst packen - sonst quetscht das wachsende Protokoll sie weg.
+        knopfreihe = tk.Frame(rahmen, bg=c["bg_main"])
+        knopfreihe.pack(side="bottom", fill="x", pady=(12, 0))
+
+        tk.Label(rahmen, text=self._t("amprmitschnitt.what_happens"),
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
-                                                      pady=(6, 2))
-        tk.Label(win, text=self._t("amprmitschnitt.what_happens_text"),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"], anchor="w", wraplength=880,
-                 justify="left").pack(fill="x", padx=16, pady=(0, 4))
-        tk.Label(win, text=self._t("amprmitschnitt.hint_partial"),
-                 font=(UI_SCHRIFT, pt(9), "italic"), bg=c["bg_main"],
-                 fg=c["accent"], anchor="w", wraplength=880,
-                 justify="left").pack(fill="x", padx=16, pady=(0, 8))
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(6, 2))
+        _umbrechend(self._t("amprmitschnitt.what_happens_text"), (UI_SCHRIFT, pt(9)), c["fg_secondary"])
+        _umbrechend(self._t("amprmitschnitt.hint_partial"), (UI_SCHRIFT, pt(9), "italic"), c["accent"], 0, 8)
 
         # ── Statusbereich fuer die Wartephase ────────────────────────────
-        # Immer sichtbar, aber leer/deaktiviert ausserhalb einer Wartephase -
-        # so bleibt die Position im Fenster fest (kein Nachpacken noetig,
-        # das die Reihenfolge der uebrigen Bereiche durcheinanderbraechte).
-        status = self._pw.Karte(win, bg=c["bg_card"], padx=12, pady=10)
-        status.pack(fill="x", padx=16, pady=(0, 8))
+        # Immer sichtbar, aber leer/deaktiviert ausserhalb einer Wartephase - so bleibt die Position fest.
+        status = self._pw.Karte(rahmen, bg=c["bg_card"], padx=12, pady=10)
+        status.pack(fill="x", pady=(0, 8))
         status_label = tk.Label(status, text="", font=(UI_SCHRIFT, pt(9), "bold"),
                                 bg=c["bg_card"], fg=c["fg_primary"],
                                 anchor="w", wraplength=860, justify="left")
         status_label.pack(fill="x")
+        status_label.bind("<Configure>", lambda e: status_label.configure(wraplength=max(100, e.width - 8)))
         status_knopf = self._pw.Button(status, text=self._t("amprmitschnitt.segment_confirm_btn"),
                                   style="Accent.TButton", state="disabled",
                                   command=lambda: None)
@@ -52375,13 +52419,12 @@ class PS5ConverterGUI:
                                       "knopf": status_knopf, "event": None}
 
         # ── Protokoll ──────────────────────────────────────────────────
-        tk.Label(win, text=self._t("amprgen.log"),
+        tk.Label(rahmen, text=self._t("amprgen.log"),
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
-                                                      pady=(4, 2))
-        koerper = tk.Frame(win, bg=c["bg_main"], padx=16)
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(4, 2))
+        koerper = tk.Frame(rahmen, bg=c["bg_main"])
         koerper.pack(fill="both", expand=True, pady=(0, 4))
-        feld = self._pw.Text(koerper, height=12, wrap="word",
+        feld = self._pw.Text(koerper, height=10, wrap="word",
                        font=("Consolas", pt(9)), bg=c["bg_card"],
                        fg=c["fg_primary"], relief="flat", state="disabled")
         rolle = self._pw.Scrollbar(koerper, orient="vertical", command=feld.yview)
@@ -52403,48 +52446,39 @@ class PS5ConverterGUI:
 
         laeuft = {"aktiv": False}
         abbruch_zustand = {"aktiv": False}
-        start_knopf: dict[str, Any] = {}
+        knoepfe: dict[str, Any] = {}
         kennung = id(win)
 
         def _abgebrochen() -> bool:
             return abbruch_zustand["aktiv"]
 
         def _abbrechen_lassen() -> None:
-            """Bricht den Lauf ab - auch von aussen (on_closing).
-
-            Das Fenster faellt erst zu, sobald der Arbeitsfaden das bemerkt
-            und zurueckgestellt hat (_wieder_frei unten) - ein sofortiges
-            destroy() wuerde ihm den Boden unter den Fuessen wegziehen,
-            waehrend er noch in einer FTP-Uebertragung steckt.
-            """
+            """Bricht den Lauf ab - auch von aussen (on_closing). Der Arbeitsfaden stellt danach zurueck."""
             abbruch_zustand["aktiv"] = True
             ereignis = segment_ui.get("event")
             if ereignis is not None:
                 ereignis.set()
 
-        def _schliessen_versuchen() -> None:
-            if not laeuft["aktiv"]:
-                win.destroy()
-                return
-            if abbruch_zustand["aktiv"]:
-                # Schon abgebrochen, er stellt gerade zurueck - danach faellt
-                # das Fenster von selbst zu. Kein zweites Mal fragen.
+        def _abbrechen_fragen() -> None:
+            if not laeuft["aktiv"] or abbruch_zustand["aktiv"]:
                 return
             if self._ask_yesno_threadsafe(
                     self._t("amprmitschnitt.title"),
                     self._t("amprmitschnitt.close_confirm"), default_yes=False):
                 _abbrechen_lassen()
 
-        win.protocol("WM_DELETE_WINDOW", _schliessen_versuchen)
+        def _knoepfe_setzen(aktiv: bool) -> None:
+            for name, an in (("start", not aktiv), ("abbrechen", aktiv)):
+                k = knoepfe.get(name)
+                if k is not None and k.winfo_exists():
+                    k.configure(state="normal" if an else "disabled")
 
         def _starten() -> None:
             if laeuft["aktiv"]:
                 return
             laeuft["aktiv"] = True
             abbruch_zustand["aktiv"] = False
-            knopf = start_knopf.get("widget")
-            if knopf is not None:
-                knopf.configure(state="disabled")
+            _knoepfe_setzen(True)
             _protokoll("")
             _protokoll("=" * 60)
             _protokoll(self._t("amprmitschnitt.run_start"))
@@ -52458,16 +52492,7 @@ class PS5ConverterGUI:
                     # Erst hier, nach der Rueckstellung im finally der
                     # Automatik, darf ein wartendes Beenden weitermachen.
                     self._mitschnitt_laeufe.pop(kennung, None)
-
-                    def _wieder_frei() -> None:
-                        k = start_knopf.get("widget")
-                        if k is not None and k.winfo_exists():
-                            k.configure(state="normal")
-                        if not win.winfo_exists():
-                            return
-                        if abbruch_zustand["aktiv"]:
-                            win.destroy()
-                    self._spaeter_im_fenster(win, _wieder_frei)
+                    self._spaeter_im_fenster(win, _knoepfe_setzen, False)
             # Vor dem Start angemeldet: Ein Beenden dazwischen faende den Lauf
             # sonst nicht und wartete nicht auf ihn.
             self._mitschnitt_laeufe[kennung] = {"fenster": win,
@@ -52478,21 +52503,16 @@ class PS5ConverterGUI:
             except Exception:
                 self._mitschnitt_laeufe.pop(kennung, None)
                 laeuft["aktiv"] = False
+                _knoepfe_setzen(False)
                 raise
 
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x")
-        self._pw.Button(knopfreihe, text=self._t("action.close"),
-                   command=_schliessen_versuchen).pack(side="right")
-        start = self._pw.Button(knopfreihe, text=self._t("amprmitschnitt.btn_run"),
-                           style="Accent.TButton", command=_starten)
-        start.pack(side="left")
-        start_knopf["widget"] = start
-
-        # Sofort loslegen, wie beim Vorbild _show_ampr_generation - der
-        # Knopf im Hauptfenster ist der Startbefehl, nicht das Oeffnen
-        # eines Formulars.
-        self._spaeter_im_fenster(win, _starten)
+        knoepfe["start"] = self._seitenpille(knopfreihe, "amprmitschnitt.btn_run", _starten, akzent=True)
+        knoepfe["start"].pack(side="left")
+        knoepfe["abbrechen"] = self._seitenpille(knopfreihe, "action.cancel", _abbrechen_fragen)
+        knoepfe["abbrechen"].pack(side="left", padx=(10, 0))
+        _knoepfe_setzen(False)
+        self._mitschnitt_starten = _starten          # fuer Tests und einen kuenftigen Direktaufruf
+        self._mitschnitt_abbrechen = _abbrechen_fragen
 
     def _ampr_mitschnitt_automatik(self, win, melde, segment_ui,
                                    abgebrochen: Callable[[], bool]) -> None:

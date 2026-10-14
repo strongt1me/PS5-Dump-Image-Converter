@@ -143,11 +143,16 @@ class WerkzeugAnbindungTests(unittest.TestCase):
 class EinstiegspunktTests(unittest.TestCase):
     """Der Menueeintrag und seine Beschriftung."""
 
-    def test_eintrag_in_weitere_tools(self) -> None:
+    def test_knopf_zehn_der_ansicht_konsole_statt_weitere_tools(self) -> None:
+        """Seit 14.10.2026 (Nutzerwunsch): Knopf "10. AMPR-Mitschnitt" in KONSOLE, Seite rechts - nicht mehr
+        unter WEITERE TOOLS."""
         anfang = QUELLE.index("_MORE_TOOLS_ENTRIES: tuple")
         block = QUELLE[anfang:QUELLE.index(")\n", anfang)]
-        self.assertIn('("titlebar.ampr_mitschnitt", "_show_ampr_mitschnitt_assistent")',
-                      block)
+        self.assertNotIn('"_show_ampr_mitschnitt_assistent")', block)
+        self.assertIn('("konsole.btn_amprmitschnitt", "amprmitschnitt")', QUELLE)
+        self.assertIn('"amprmitschnitt": "_show_ampr_mitschnitt_assistent"', QUELLE)
+        self.assertIn('"amprmitschnitt": ("_konsole_mitschnitt", "_konsole_mitschnitt_bauen",', QUELLE)
+        self.assertTrue(STRINGS["konsole.btn_amprmitschnitt"]["de"].startswith("10."))
 
     def test_beschriftung_ist_zweisprachig(self) -> None:
         self.assertIn("titlebar.ampr_mitschnitt", STRINGS)
@@ -157,23 +162,25 @@ class EinstiegspunktTests(unittest.TestCase):
 
 
 class AutomatikTests(unittest.TestCase):
-    """Das Fenster arbeitet von selbst - Vorbild _show_ampr_generation."""
+    """Die Seite arbeitet nach STARTEN von selbst - Vorbild _show_ampr_generation."""
 
-    def test_der_lauf_startet_beim_oeffnen(self) -> None:
-        self.assertIn("self._spaeter_im_fenster(win, _starten)",
-                      _rumpf("_show_ampr_mitschnitt_assistent"))
+    def test_der_lauf_startet_erst_mit_starten(self) -> None:
+        """Seit 14.10.2026 eine Seite: Wer sie anklickt, soll nicht schon einen Lauf ausloesen."""
+        seite = _rumpf("_konsole_mitschnitt_bauen")
+        self.assertIn('"amprmitschnitt.btn_run", _starten', seite)
+        self.assertNotIn("self._spaeter_im_fenster(win, _starten)", seite)
+        self.assertNotIn("_starten", _rumpf("_show_ampr_mitschnitt_assistent"))
 
     def test_der_lauf_geht_in_einen_eigenen_faden(self) -> None:
-        fenster = _rumpf("_show_ampr_mitschnitt_assistent")
-        self.assertIn('threading.Thread(target=_lauf, daemon=True,', fenster)
+        seite = _rumpf("_konsole_mitschnitt_bauen")
+        self.assertIn('threading.Thread(target=_lauf, daemon=True,', seite)
 
-    def test_schliessen_fragt_nach_solange_der_lauf_aktiv_ist(self) -> None:
-        """Kein hartes destroy() waehrend die Automatik noch laeuft."""
-        fenster = _rumpf("_show_ampr_mitschnitt_assistent")
-        self.assertIn('win.protocol("WM_DELETE_WINDOW", _schliessen_versuchen)',
-                      fenster)
-        self.assertIn("if not laeuft[\"aktiv\"]:", fenster)
-        self.assertIn("_ask_yesno_threadsafe", fenster)
+    def test_abbrechen_fragt_nach_solange_der_lauf_aktiv_ist(self) -> None:
+        """Kein hartes Ende waehrend die Automatik noch laeuft - die Rueckstellung laeuft zu Ende."""
+        seite = _rumpf("_konsole_mitschnitt_bauen")
+        self.assertIn('"action.cancel", _abbrechen_fragen', seite)
+        self.assertIn("if not laeuft[\"aktiv\"]", seite)
+        self.assertIn("_ask_yesno_threadsafe", seite)
 
     def test_die_wartephase_hat_kein_grab_set(self) -> None:
         """Kernstueck des Plans: kein Toplevel, kein grab_set()-AUFRUF beim Warten.
@@ -360,8 +367,15 @@ class EchterAufbauTests(unittest.TestCase):
             _WURZEL.after(20, _wache)
 
         with mock.patch.object(self.app, "_ampr_mitschnitt_automatik", _bewacht):
-            fenster = self._fenster_oeffnen("_show_ampr_mitschnitt_assistent")
+            # Seit 14.10.2026 eine Seite der Ansicht KONSOLE: sie zeigt sich, der Lauf beginnt mit STARTEN.
+            self.app._show_ampr_mitschnitt_assistent()
+            _WURZEL.update()
+            fenster = self.app._konsole_mitschnitt
+            self.addCleanup(self.app._ansicht_setzen, "umwandeln")
             self.assertTrue(fenster.winfo_exists())
+            self.assertEqual("grid", fenster.winfo_manager())
+            self.assertFalse(fertig.is_set(), "Der Lauf darf erst mit STARTEN beginnen.")
+            self.app._mitschnitt_starten()
 
             _WURZEL.after(20, _wache)
             notbremse = _WURZEL.after(8000, _WURZEL.quit)

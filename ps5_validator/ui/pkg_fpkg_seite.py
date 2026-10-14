@@ -150,6 +150,7 @@ class PkgFpkgSeite:
         if kam_von_fpkg:
             # Die Angaben des FPKG-Pakets in Seitenleiste und Info-Box gehoeren nicht zu "PKG".
             ps5_pkg_fenster.spielinfo_zuruecksetzen(self.g)
+        fenster.spielinfo_nachziehen()
 
     def fpkg_zeigen(self, vorgabe: str = "") -> None:
         """Zeigt "FPKG" (``ps5_pkg_fenster``)."""

@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.76):** PS4Mount ist dabei, Archive mit Passwort lassen sich entpacken, und FPKG → .ffpkg klappt auch bei knappem Platz auf C:.
+> **Kurz zum aktuellen Stand (v1.9.77):** Der AMPR-Mitschnitt sitzt jetzt in der Ansicht KONSOLE, und die Seite PKG zeigt Cover und Spiel-Info wie die Aufgaben 1 bis 6.
 
 ---
+
+## v1.9.77 – 14.10.2026
+
+- **Neu:** Auf der Seite PKG stehen Cover und Titel des markierten Spiels in der Seitenleiste, und „Spiel Info – Updates & Patches“ zeigt seine Angaben samt Updates von orbispatches.com.
+- **Geändert:** Der AMPR-Mitschnitt-Assistent ist von WEITERE TOOLS in die Ansicht KONSOLE umgezogen (Knopf „10. AMPR-Mitschnitt“) und beginnt erst mit STARTEN.
+- **Geändert:** Die gewählte Zeile der Seitenleiste hat leicht runde Ecken, und die Knopfreihe steht etwa 5 mm unter dem Umschalter UMWANDELN/KONSOLE.
 
 ## v1.9.76 – 14.10.2026
 

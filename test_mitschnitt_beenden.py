@@ -38,6 +38,8 @@ from ps5_validator.utils.i18n import STRINGS                # noqa: E402
 PS5ConverterGUI = APP.PS5ConverterGUI
 HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
 ASSISTENT = "_show_ampr_mitschnitt_assistent"
+#: Seit 14.10.2026 eine Seite der Ansicht KONSOLE (Knopf 10) statt eines Fensters; der Lauf steckt in ihrem Bau.
+SEITENBAU = "_konsole_mitschnitt_bauen"
 
 try:
     import tkinter as tk
@@ -189,7 +191,7 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertIn("_mitschnitt_laeuft", self._rufe(tick))
 
     def test_abmeldung_steht_im_finally_nach_der_automatik(self) -> None:
-        lauf = self._innere(self.methoden[ASSISTENT], "_lauf")
+        lauf = self._innere(self.methoden[SEITENBAU], "_lauf")
         versuch = next(k for k in lauf.body if isinstance(k, ast.Try))
         self.assertIn("_ampr_mitschnitt_automatik", self._rufe(ast.Module(versuch.body, [])))
         abmeldung = [k for teil in versuch.finalbody for k in ast.walk(teil)
@@ -324,9 +326,10 @@ class BeendenTests(unittest.TestCase):
         return bool(bedingung())
 
     def _assistent_starten(self):
-        self.app._werkzeugfenster_umschalten(ASSISTENT)
-        fenster = self.app._werkzeugfenster[ASSISTENT]
-        fenster.withdraw()
+        getattr(self.app, ASSISTENT)()
+        self.addCleanup(self.app._ansicht_setzen, "umwandeln")
+        fenster = self.app._konsole_mitschnitt
+        self.app._mitschnitt_starten()
         self.assertTrue(self._schleife_bis(self.gestartet.is_set, 5.0),
                         "Der Lauf des Assistenten startete nicht.")
         self.assertTrue(self.app._mitschnitt_laeuft())
@@ -344,8 +347,7 @@ class BeendenTests(unittest.TestCase):
         self.assertEqual([_text("amprmitschnitt.quit_confirm")], self.fragen)
         self.assertIn(_text("amprmitschnitt.quit_waiting") + "\n", self.protokoll)
         self.assertFalse(self.app._mitschnitt_laeuft())
-        self.assertTrue(self._schleife_bis(lambda: not fenster.winfo_exists(), 3.0),
-                        "Das Fenster des Assistenten blieb stehen.")
+        self.assertTrue(fenster.winfo_exists(), "Die Seite gehoert zum Programm und geht erst mit ihm.")
 
     def test_nein_laesst_alles_laufen(self) -> None:
         fenster = self._assistent_starten()
@@ -415,18 +417,20 @@ class BeendenTests(unittest.TestCase):
         frage.assert_not_called()
         self.assertEqual(["destroy"], self.ablauf)
 
-    def test_das_fenster_fragt_nicht_zweimal(self) -> None:
-        """Schon abgebrochen, stellt zurueck: Das Kreuz des Assistenten fragt nicht erneut."""
+    def test_abbrechen_fragt_nicht_zweimal(self) -> None:
+        """Schon abgebrochen, stellt zurueck: ABBRECHEN auf der Seite fragt nicht erneut (bis 14.10.2026 das
+        Kreuz des eigenen Fensters)."""
         self.zurueck_frei.clear()
         fenster = self._assistent_starten()
         with mock.patch.object(APP.messagebox, "askyesno", self._ja):
-            fenster.tk.call(fenster.protocol("WM_DELETE_WINDOW"))
+            self.app._mitschnitt_abbrechen()
             self._schleife_bis(lambda: False, 0.3)
-            fenster.tk.call(fenster.protocol("WM_DELETE_WINDOW"))
+            self.app._mitschnitt_abbrechen()
         self.assertEqual([_text("amprmitschnitt.close_confirm")], self.fragen)
-        self.assertTrue(fenster.winfo_exists(), "Das Fenster ging vor der Rueckstellung zu.")
+        self.assertTrue(self.app._mitschnitt_laeuft(), "Der Lauf endete vor der Rueckstellung.")
         self.zurueck_frei.set()
-        self.assertTrue(self._schleife_bis(lambda: not fenster.winfo_exists(), 5.0))
+        self.assertTrue(self._schleife_bis(lambda: not self.app._mitschnitt_laeuft(), 5.0))
+        self.assertTrue(fenster.winfo_exists())
 
 
 if __name__ == "__main__":

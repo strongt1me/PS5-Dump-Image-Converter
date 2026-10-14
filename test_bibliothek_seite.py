@@ -347,11 +347,12 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         CoolSysCent-Pro, ShadowMount+ und SMPlusGui), seit dem 05.10.2026
         acht: "8. Direct Stream", seit dem 07.10.2026 "8. BFpilot", seit dem
         12.10.2026 neun: "9. AMPR EMU Manager" (zuvor Aufgabe 7 der Seitenleiste
-        UMWANDELN, siehe test_pkg_fpkg_seite.py)."""
+        UMWANDELN, siehe test_pkg_fpkg_seite.py), seit dem 14.10.2026 zehn:
+        "10. AMPR-Mitschnitt" (zuvor unter WEITERE TOOLS)."""
         kennungen = [k for _s, k in APP.PS5ConverterGUI._KONSOLE_KNOEPFE]
         self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
                           "coolsyscent", "shadowmount", "smplusgui",
-                          "bfpilot", "amprmgr"], kennungen)
+                          "bfpilot", "amprmgr", "amprmitschnitt"], kennungen)
         for weg in ("konsole.btn_actremotelink", "konsole.btn_remoteplay",
                     "konsole.btn_prosperolight"):
             self.assertNotIn(weg, STRINGS)
@@ -377,8 +378,9 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         # Payloads" ist die Uebersicht, und auch der WebKit Autoloader (damals
         # noch die Spielstaende) ist kein eigenes Fenster mehr. Seit dem
         # 12.10.2026 kommt "amprmgr" dazu (AMPR EMU Manager, Knopf 9).
+        # Seit dem 14.10.2026 "amprmitschnitt" (AMPR-Mitschnitt, Knopf 10).
         # Dazu seit dem 26.09.2026 die Seite einer Weboberflaeche - ohne Knopf.
-        self.assertEqual({"uebersicht", "webkit", "bibliothek", "amprmgr", "web"},
+        self.assertEqual({"uebersicht", "webkit", "bibliothek", "amprmgr", "amprmitschnitt", "web"},
                          set(klasse._KONSOLE_SEITENBAU))
         self.assertEqual("", klasse._KONSOLE_SEITENBAU["web"][2])
         for seite, (_attr, bauen, _knopf) in klasse._KONSOLE_SEITENBAU.items():
@@ -387,7 +389,8 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         self.assertEqual({"dienste": "_konsole_dienste_zeigen",
                           "webkit": "_konsole_webkit_zeigen",
                           "bibliothek": "_konsole_bibliothek_umschalten",
-                          "amprmgr": "_konsole_amprmgr_zeigen"},
+                          "amprmgr": "_konsole_amprmgr_zeigen",
+                          "amprmitschnitt": "_show_ampr_mitschnitt_assistent"},
                          klasse._KONSOLE_SEITEN)
         self.assertEqual({}, klasse._KONSOLE_FENSTER)
         self.assertFalse(hasattr(klasse, "_show_konsole_remoteplay"))
