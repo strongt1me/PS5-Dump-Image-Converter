@@ -14,7 +14,12 @@ Weboberflaeche auf Port 8084 mitbringt.
 Der nimmt Payloads ueber zwei Aufrufe entgegen::
 
     POST /manage:upload?filename=<Name>     (Koerper: das nackte ELF)
-    GET  /loadpayload:<Pfad auf der Konsole>
+    POST /loadpayload:<Pfad auf der Konsole>  (bis 0.5.2 auch GET)
+
+Seit Payload Manager 0.6.0 (Release-Notes: "restricted actions to POST requests with origin validation") nimmt er
+Aktionen nur noch per POST an, und ohne Origin/Referer eines Browsers nur mit dem Kopf ``X-PLDMGR-Request: 1``
+(``mutation_authorized`` in ``src/http_server.c``) - sonst 405 bzw. 403. Beides schickt :func:`_pldmgr_ruf` immer;
+0.5.2 nimmt POST auf ``/loadpayload`` ebenso an (Weg nach Adresse, nicht nach Methode) und uebergeht den Kopf.
 
 Ein Unterschied bleibt und laesst sich nicht wegprogrammieren: Der
 Payload Manager reicht die Ausgabe des Payloads **nicht** zurueck.
@@ -166,11 +171,19 @@ def ueber_elfldr(host: str, daten: bytes, port: int = ELFLDR_PORT,
     return b"".join(teile).decode("utf-8", "replace").strip()
 
 
+#: Adressen, die beim Payload Manager etwas ausloesen - seit 0.6.0 nur per POST (``is_mutation_route``).
+_PLDMGR_AKTIONEN = ("/manage:upload", "/loadpayload:")
+
+
 def _pldmgr_ruf(host: str, pfad: str, koerper: bytes | None = None,
                 port: int = PLDMGR_PORT, timeout: float = 180.0) -> str:
     adresse = "http://%s:%d%s" % (host, int(port), pfad)
+    aktion = koerper is not None or pfad.startswith(_PLDMGR_AKTIONEN)
     ruf = urllib.request.Request(
-        adresse, data=koerper, method="POST" if koerper is not None else "GET")
+        adresse, data=(koerper if koerper is not None else (b"" if aktion else None)),
+        method="POST" if aktion else "GET")
+    # Ohne Browser kein Origin: der Payload Manager (ab 0.6.0) erkennt eine erlaubte Aktion an diesem Kopf.
+    ruf.add_header("X-PLDMGR-Request", "1")
     if koerper is not None:
         ruf.add_header("Content-Type", "application/octet-stream")
     with urllib.request.urlopen(ruf, timeout=timeout) as antwort:

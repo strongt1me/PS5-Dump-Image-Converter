@@ -39,7 +39,9 @@ TYP_ORDNER = "Ordner"
 #: an einem 31-GB-Paket auf einer Festplatte: Das Lesen des Inhalts (``list-inner``) dauerte mit kaltem Zwischenspeicher
 #: 80 s (das Werkzeug liest dabei nur ~1,5 MB/s, viele kleine Stuecke verstreut), mit warmem 0,5 s - und das Fenster
 #: stand die ganze Zeit auf "0 %", sodass es wie ein Absturz aussah.
-_HERZSCHLAG = 3.0
+_HERZSCHLAG = 1.0
+#: Ab dieser Spielgroesse stehen Menge und Dateizahl in der Fortschrittszeile (darunter waeren es "0 KB").
+_MENGE_AB = 16 * 1024 * 1024
 
 #: ``[####] 42% extract (pfad)`` - so meldet das Werkzeug seinen Fortschritt.
 _FORTSCHRITT = re.compile(r"\[#{2,}\]\s*(\d{1,3})%\s*(.*)")
@@ -113,6 +115,34 @@ def _beenden(prozess: subprocess.Popen) -> None:
         pass
 
 
+def _dekodieren(roh: bytes) -> str:
+    """Eine Ausgabezeile des Werkzeugs als Text.
+
+    .NET schreibt in eine umgeleitete Ausgabe in der Codeseite der Konsole, nicht in UTF-8: "LEGO\u00ae" kam als
+    "LEGO\ufffd" im Protokoll an (14.10.2026). Erst UTF-8, sonst die OEM-Codeseite (Windows), zuletzt Ersatzzeichen.
+    """
+    try:
+        return roh.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    if sys.platform == "win32":
+        try:
+            import ctypes  # noqa: PLC0415
+            return roh.decode("cp%d" % ctypes.windll.kernel32.GetOEMCP())
+        except (LookupError, UnicodeDecodeError, AttributeError, OSError):
+            pass
+    return roh.decode("utf-8", errors="replace")
+
+
+def menge_kurz(n: int) -> str:
+    """Bytes knapp lesbar: ``31.8 GB``, ``420 MB`` (fuer die Fortschrittszeile, sprachneutral)."""
+    if n >= 1024 ** 3:
+        return "%.1f GB" % (n / 1024 ** 3)
+    if n >= 1024 ** 2:
+        return "%d MB" % (n // 1024 ** 2)
+    return "%d KB" % max(0, n // 1024)
+
+
 def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, abbruch: _Abbruch | None = None,
            popen_extra: dict | None = None) -> tuple[int, str]:
     """Startet das Werkzeug und liest seine Ausgabe zeilenweise (stdout und stderr zusammen).
@@ -151,14 +181,14 @@ def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, 
                 if not stellen:
                     break
                 i = min(stellen)
-                text = rest[:i].decode("utf-8", errors="replace").strip()
+                text = _dekodieren(rest[:i]).strip()
                 rest = rest[i + 1:]
                 if text:
                     gesammelt.append(text + "\n")
                     if zeile:
                         zeile(text)
         if rest.strip():
-            text = rest.decode("utf-8", errors="replace").strip()
+            text = _dekodieren(rest).strip()
             gesammelt.append(text + "\n")
             if zeile:
                 zeile(text)
@@ -443,7 +473,8 @@ def baum(werkzeug: str, paket: str, popen_extra: dict | None = None, *, passcode
 
 def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zeile: _Zeile | None = None,
                 fortschritt: Callable[[int, str], None] | None = None, abbruch: _Abbruch | None = None,
-                popen_extra: dict | None = None, arbeitsordner: str | None = None) -> str:
+                popen_extra: dict | None = None, arbeitsordner: str | None = None,
+                platz_pruefen: Callable[[int], str] | None = None) -> str:
     """Entpackt das ganze Spiel (``/app0`` samt ``sce_sys``) nach ``ziel``.
 
     Der volle Entpack des Werkzeugs (``extract-inner`` ohne ``--members``) meldet keinen Fortschritt. Deshalb wird
@@ -459,28 +490,64 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zei
     """
     Path(ziel).mkdir(parents=True, exist_ok=True)
     beginn = time.monotonic()
-    stand = {"p": 0, "datei": "", "zuletzt": beginn}
+    stand: dict = {"p": 0, "datei": "", "zuletzt": beginn, "dateien": [], "gesamt": 0}
     ende = threading.Event()                          # weckt den Herzschlag sofort, wenn der Aufruf endet
+
+    def fertige_dateien() -> int:
+        """Wie viele Dateien schon vollstaendig im Ziel liegen - ohne die gerade geschriebene.
+
+        Die laufende Datei zaehlt nie mit: Windows meldet ihre Groesse schon vor dem Schreiben voll.
+        """
+        dateien = stand["dateien"]
+        if not dateien or len(dateien) > 20000:
+            return 0
+        anzahl = 0
+        for rel, groesse in dateien:
+            if rel == stand["datei"]:
+                continue
+            try:
+                if os.path.getsize(os.path.join(ziel, rel)) >= groesse:
+                    anzahl += 1
+            except OSError:
+                continue
+        return anzahl
+
+    def zeile_bauen(mit_zeit: bool) -> str:
+        """``<Datei> · 24.2 GB / 110.1 GB · 109/194 · m:ss`` - die Menge folgt dem Prozentwert des Werkzeugs."""
+        teile = [stand["datei"] or "\u2026"]
+        if stand["gesamt"] >= _MENGE_AB:
+            teile.append("%s / %s" % (menge_kurz(int(stand["gesamt"] * stand["p"] / 100)), menge_kurz(stand["gesamt"])))
+            teile.append("%d/%d" % (fertige_dateien(), len(stand["dateien"])))
+        if mit_zeit:
+            dauer = int(time.monotonic() - beginn)
+            teile.append("%d:%02d" % (dauer // 60, dauer % 60))
+        return " \u00b7 ".join(teile)
 
     def jede(text: str) -> None:
         treffer = _FORTSCHRITT.match(text)
         if treffer and fortschritt:
-            # "[####] 42% extract (Media/a.dat)" - der Dateiname steht in Klammern
+            # "[####] 42% extract (Media/a.dat)" - der Dateiname steht in Klammern. Der Wert des Werkzeugs ist
+            # bytegenau (geschriebene Bytes / Gesamtbytes); die Anzeige laeuft nur vorwaerts.
             datei = re.search(r"\((.*)\)\s*$", treffer.group(2))
-            stand["p"] = min(100, int(treffer.group(1)))
+            stand["p"] = max(stand["p"], min(100, int(treffer.group(1))))
             stand["datei"] = datei.group(1) if datei else ""
             stand["zuletzt"] = time.monotonic()
-            fortschritt(stand["p"], stand["datei"])
+            fortschritt(stand["p"], zeile_bauen(False) if stand["gesamt"] >= _MENGE_AB else stand["datei"])
         elif zeile:
             zeile(text)
 
     def herzschlag() -> None:
-        """Meldet sich, solange das Werkzeug schweigt: ``<Datei> · m:ss`` - damit ein langes Lesen nicht wie ein Absturz wirkt."""
+        """Meldet sich, solange das Werkzeug schweigt - mit dem letzten Stand und der Zeit seit dem Start.
+
+        Bis zum 14.10.2026 kam der Prozentwert zwischen zwei Meldungen des Werkzeugs aus der Groesse der Dateien im
+        Ziel. Windows meldet die gerade geschriebene Datei aber schon vor dem Schreiben voll: Die Anzeige sprang vor
+        und beim naechsten Wert des Werkzeugs wieder zurueck. Jetzt bleibt der Wert der des Werkzeugs (nichts wird
+        erfunden), das Lebenszeichen zeigt Datei, Menge und Zeit.
+        """
         while not ende.wait(_HERZSCHLAG):
             if time.monotonic() - stand["zuletzt"] >= _HERZSCHLAG:
-                dauer = int(time.monotonic() - beginn)
                 try:
-                    fortschritt(stand["p"], "%s · %d:%02d" % (stand["datei"] or "…", dauer // 60, dauer % 60))
+                    fortschritt(stand["p"], zeile_bauen(True))
                 except Exception:  # noqa: BLE001 - ein Rueckruf darf das Entpacken nie beenden
                     return
 
@@ -489,11 +556,19 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zei
     liste = ""
     passcode_args = _passcode_args(passcode)
     argumente = ["extract-inner", paket, ziel] + passcode_args
+    platz_meldung = ""
     try:
         if zeile:
             zeile("[info] Paketinhalt wird gelesen - bei einem grossen Paket auf einer Festplatte kann das eine Minute "
                   "dauern ...")
         eintraege = baum(werkzeug, paket, popen_extra, passcode=passcode)
+        stand["dateien"] = [(e["path"], int(e.get("size") or 0)) for e in eintraege if e.get("type", "file") == "file"]
+        stand["gesamt"] = sum(g for _p, g in stand["dateien"])
+        # Erst jetzt ist die entpackte Groesse bekannt - ein komprimiertes Paket waechst um ein Vielfaches (LEGO Batman:
+        # 31,8 GB Paket, 110 GB entpackt). Reicht der Platz nicht, endet es hier statt nach Minuten mitten im Schreiben.
+        # (Nicht hier werfen: das except darunter faengt Fehler ab und entpackt dann am Stueck.)
+        if platz_pruefen is not None and stand["gesamt"]:
+            platz_meldung = platz_pruefen(stand["gesamt"]) or ""
         if zeile:
             zeile("[info] Paketinhalt gelesen: %d Eintraege in %d s" % (len(eintraege), int(time.monotonic() - beginn)))
         if eintraege:
@@ -508,6 +583,14 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zei
     except BaseException:
         ende.set()                                    # der Herzschlag darf nie ueber den Aufruf hinaus weiterlaufen
         raise
+    if platz_meldung:
+        ende.set()
+        if liste:
+            try:
+                os.remove(liste)
+            except OSError:
+                pass
+        raise Fehler(platz_meldung)
     try:
         rc, aus = laufen(werkzeug, argumente, zeile=jede, abbruch=abbruch, popen_extra=popen_extra)
         if rc == -1:

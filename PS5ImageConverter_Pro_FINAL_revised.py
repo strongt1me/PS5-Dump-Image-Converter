@@ -720,7 +720,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.75"
+APP_VERSION = "v1.9.76"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -9501,6 +9501,20 @@ class PS5ConverterGUI:
             pille=True, hintergrund=self._rund_hintergrund,
         )
         self.src_browse_btn.grid(row=1, column=2, padx=(10, 0), pady=(5, 15))
+        # "Archiv..." steht links neben "Dump Ordner" - nur bei Aufgabe 1. Es sitzt per place ueber dem Quellfeld, nicht
+        # in einem Rahmen: Ein Rahmen waere auf dem Hintergrundbild als Kasten zu sehen (siehe _src_archiv_platzieren).
+        self.src_archiv_btn = RoundedButton(
+            path_card, text=self._t("main.archive_button"), command=self._browse_archiv,
+            font=(UI_SCHRIFT, pt(11), "bold"),
+            bg=self._COLORS["console_bg"], fg=self._COLORS["fg_primary"],
+            activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
+            outline=self._COLORS["border"],
+            radius=8, height=44, width=110,
+            parent_bg=self._COLORS["bg_card"],
+            pille=True, hintergrund=self._rund_hintergrund,
+        )
+        self._src_archiv_stand: "tuple | None" = None
+        self.src_browse_btn.bind("<Configure>", lambda _e: self._src_archiv_platzieren(), add="+")
 
         self.format_title = ttk.Label(
             path_card,
@@ -12863,6 +12877,10 @@ class PS5ConverterGUI:
                 self.src_browse_btn.config(text=self._t("main.browse_ffpkg_button"))
             else:
                 self.src_browse_btn.config(text=self._t("main.browse_file_button"))
+        if hasattr(self, "src_archiv_btn"):
+            self.src_archiv_btn.config(text=self._t("main.archive_button"))
+            self._src_archiv_stand = None
+            self._src_archiv_platzieren()
         # Quellpfad leeren wenn er nicht zur neuen Aufgabe passt
         # (Regel: falscher Pfad-Typ darf nicht angezeigt werden)
         if hasattr(self, "source_path"):
@@ -18127,11 +18145,56 @@ class PS5ConverterGUI:
             sichtbar += self._t("batch.auswahl_weitere", count=len(namen) - zeigen)
         self._append_to_log(self._t("batch.log_auswahl", count=len(quellen), namen=sichtbar) + "\n")
 
+    def _src_archiv_platzieren(self) -> None:
+        """Setzt "Archiv..." links neben "Dump Ordner" (Aufgabe 1) oder nimmt es weg (alle anderen Aufgaben).
+
+        Das Quellfeld bekommt rechts so viel Luft, wie der Knopf braucht, damit er nichts verdeckt. Wird bei jeder
+        Groessen- oder Ortsaenderung von "Dump Ordner" und beim Aufgabenwechsel aufgerufen; ein unveraenderter Stand
+        loest nichts aus (sonst schaukelte sich das Neuanordnen ueber <Configure> auf).
+        """
+        knopf = getattr(self, "src_archiv_btn", None)
+        haupt = getattr(self, "src_browse_btn", None)
+        feld = getattr(self, "src_entry", None)
+        if knopf is None or haupt is None or feld is None:
+            return
+        try:
+            aktiv = self.current_mode.get() == "pack_folder" and bool(haupt.winfo_ismapped())
+            breite = int(knopf.winfo_reqwidth())
+            stand = (aktiv, haupt.winfo_x(), haupt.winfo_y(), breite)
+            if stand == getattr(self, "_src_archiv_stand", None):
+                return
+            self._src_archiv_stand = stand
+            if aktiv:
+                # bordermode="outside": Die Karte hat 30 px Innenabstand, place rechnet vorgabemaessig ab dessen Innenkante,
+                # winfo_x() des Rasterknopfs aber ab der Aussenkante - sonst sitzt der Knopf 30 px zu weit rechts unten.
+                knopf.place(in_=haupt.master, x=haupt.winfo_x() - breite - 10, y=haupt.winfo_y(),
+                            bordermode="outside")
+                tk.Misc.lift(knopf)      # nicht knopf.lift(): bei einer Canvas heisst das tag_raise und braucht Argumente
+                feld.grid_configure(padx=(0, breite + 10))
+            else:
+                knopf.place_forget()
+                feld.grid_configure(padx=0)
+        except tk.TclError as exc:
+            logger.debug("Archiv-Knopf nicht zu platzieren: %s", exc)
+
+    def _browse_archiv(self) -> None:
+        """Aufgabe 1: ein Archiv (.zip, .7z, .rar) mit einem Spielordner als Quelle waehlen (Knopf "Archiv...")."""
+        archiv = filedialog.askopenfilename(
+            title=self._t("dialog.title.choose_archive"),
+            initialdir=self._get_source_dialog_initial_dir(),
+            filetypes=[
+                (self._t("filetype.archive"), "*.zip *.7z *.rar"),
+                (self._t("filetype.all_files"), "*.*"),
+            ],
+        )
+        if archiv:
+            self._archiv_als_quelle(os.path.normpath(archiv))
+
     def _browse_source(self) -> None:
         """Öffnet einen Datei- oder Verzeichnis-Dialog für den Quellpfad.
 
         Quellauswahl-Regeln:
-          Aufgabe 1 (pack_folder)         → nur Ordner (Game Dump Ordner)
+          Aufgabe 1 (pack_folder)         → Ordner (Game Dump Ordner); ein Archiv waehlt der Knopf "Archiv..." daneben
           Aufgabe 2 (unpack_to_exfat)     → .ffpfsc/.ffpfs Datei (von Aufgabe 1)
           Aufgabe 3 (pack_file)           → .exfat Datei (von Aufgabe 2)
           Aufgabe 4 (ffpkg_to_ffpfsc)     → .ffpkg Datei
@@ -18144,30 +18207,7 @@ class PS5ConverterGUI:
         initial_dir = self._get_source_dialog_initial_dir()
 
         if mode == "pack_folder":
-            # Aufgabe 1: Ordner - oder ein Archiv mit einem Spielordner (seit v1.9.70)
-            ordner_text = self._t("quelle.art_ordner")
-            archiv_text = self._t("quelle.art_archiv")
-            zuletzt = str(self._load_setting("aufgabe1_quellart", "ordner") or "")
-            eintraege = ([archiv_text, ordner_text] if zuletzt == "archiv"
-                         else [ordner_text, archiv_text])
-            art = self._auswahl_dialog(self._t("dialog.title.choose_source_type"),
-                                       self._t("quelle.frage_ordner_oder_archiv"),
-                                       eintraege, parent=self.root)
-            if not art:
-                return
-            self._save_setting("aufgabe1_quellart", "archiv" if art == archiv_text else "ordner")
-            if art == archiv_text:
-                archiv = filedialog.askopenfilename(
-                    title=self._t("dialog.title.choose_archive"),
-                    initialdir=initial_dir,
-                    filetypes=[
-                        (self._t("filetype.archive"), "*.zip *.7z *.rar"),
-                        (self._t("filetype.all_files"), "*.*"),
-                    ],
-                )
-                if archiv:
-                    self._archiv_als_quelle(os.path.normpath(archiv))
-                return
+            # Aufgabe 1: der Ordner - ein Archiv (seit v1.9.70) waehlt der Knopf "Archiv..." daneben, ohne Zwischenfrage
             path = filedialog.askdirectory(
                 title=self._t("filedialog.choose_dump_folder"),
                 initialdir=initial_dir,
@@ -18331,7 +18371,7 @@ class PS5ConverterGUI:
         self._remember_source_dialog_path(path)
         self.source_path.set(path)
 
-    def _archiv_als_quelle(self, archiv: str) -> None:
+    def _archiv_als_quelle(self, archiv: str, passwort: str = "") -> None:
         """Entpackt ein Archiv in den Arbeitsordner; der Spielordner darin wird die Quelle (Aufgabe 1).
 
         Seit v1.9.70. ``.zip`` geht ueber die Standardbibliothek, ``.7z`` und ``.rar`` ueber 7-Zip
@@ -18374,7 +18414,8 @@ class PS5ConverterGUI:
             return
         self._archiv_ordner = ziel
         self._archiv_laeuft = True
-        self._append_to_log(self._t("quelle.archiv_start", name=name, ziel=ziel))
+        if not passwort:
+            self._append_to_log(self._t("quelle.archiv_start", name=name, ziel=ziel))
         if hasattr(self, "status_label"):
             self.status_label.config(text=self._t("quelle.archiv_status", name=name, prozent="0%"))
         popen_extra = ({"creationflags": _NO_WIN_FLAGS, "startupinfo": _silent_startupinfo()}
@@ -18388,8 +18429,12 @@ class PS5ConverterGUI:
         def arbeit() -> None:
             try:
                 wurzel = archiv_quelle.entpacken(archiv, ziel, wurzeln=wurzeln, melden=fortschritt,
-                                                 popen_extra=popen_extra)
+                                                 popen_extra=popen_extra, passwort=passwort)
                 fehler = ""
+            except archiv_quelle.PasswortFehler as exc:
+                grund = str(exc)      # ``exc`` gibt es nach dem except-Block nicht mehr - die Lambda liefe in einen NameError
+                self._hauptfaden_planen(lambda: self._archiv_passwort_fragen(archiv, bool(passwort), grund))
+                return
             except archiv_quelle.ArchivFehler as exc:
                 wurzel, fehler = "", str(exc) or "?"
             except Exception as exc:  # noqa: BLE001
@@ -18398,6 +18443,73 @@ class PS5ConverterGUI:
             self._hauptfaden_planen(lambda: self._archiv_fertig(archiv, wurzel, fehler))
 
         threading.Thread(target=arbeit, daemon=True, name="archiv-entpacken").start()
+
+    def _archiv_passwort_fragen(self, archiv: str, falsch: bool, grund: str = "") -> None:
+        """Hauptfaden: Das Archiv ist verschluesselt - nach dem Passwort fragen und neu entpacken.
+
+        Gemeldet am 14.10.2026: Eine passwortgeschuetzte .rar brach mit "Break signaled" ab, weil 7-Zip auf der Konsole
+        nach dem Passwort fragte und keine Konsole da war. Das Passwort steht nirgends im Protokoll.
+        """
+        self._archiv_laeuft = False
+        if hasattr(self, "status_label"):
+            self.status_label.config(text="")
+        # 7-Zip entpackt das Unverschluesselte vorher: Was bis zum Fehler entstanden ist, wird nicht gebraucht.
+        teilreste = getattr(self, "_archiv_ordner", "")
+        if teilreste and os.path.isdir(teilreste):
+            _rmtree_force(teilreste, ignore_errors=True)
+        name = os.path.basename(archiv)
+        self._append_to_log(self._t("quelle.archiv_passwort_falsch" if falsch else "quelle.archiv_passwort_noetig",
+                                    name=name))
+        eingabe = self._passwort_dialog(self._t("quelle.archiv_passwort_titel"),
+                                        self._t("quelle.archiv_passwort_frage", name=name), self.root)
+        if not eingabe:
+            self._append_to_log(self._t("quelle.archiv_passwort_abgebrochen"))
+            return
+        self._archiv_als_quelle(archiv, passwort=eingabe)
+
+    def _passwort_dialog(self, titel: str, frage: str, parent) -> str:
+        """Kleines Fenster mit verdecktem Eingabefeld; liefert das Passwort oder "" bei Abbruch.
+
+        Steht dort, wo geklickt wurde (:meth:`_dialog_an_maus`), und nimmt mit Enter an, mit Escape zurueck.
+        """
+        c = self._COLORS
+        dlg = tk.Toplevel(parent, bg=c["bg_main"])
+        dlg.withdraw()
+        dlg.title(titel)
+        dlg.transient(parent)
+        dlg.resizable(False, False)
+        ergebnis = {"wert": ""}
+        tk.Label(dlg, text=frage, bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(10)), justify="left",
+                 wraplength=420, anchor="w").pack(anchor="w", padx=16, pady=(16, 10))
+        eingabe = tk.StringVar()
+        feld = self._pw.Entry(dlg, textvariable=eingabe, show="*", font=(UI_SCHRIFT, pt(10)), width=42)
+        feld.pack(fill="x", padx=16)
+
+        def _ok(_e=None) -> None:
+            ergebnis["wert"] = eingabe.get()
+            dlg.destroy()
+
+        reihe = tk.Frame(dlg, bg=c["bg_main"])
+        reihe.pack(fill="x", padx=16, pady=(14, 16))
+        self._pw.Button(reihe, text=self._t("action.close"), command=dlg.destroy).pack(side="right")
+        self._pw.Button(reihe, text="OK", style="Accent.TButton", command=_ok).pack(side="right", padx=(0, 8))
+        dlg.bind("<Return>", _ok)
+        dlg.bind("<KP_Enter>", _ok)
+        dlg.bind("<Escape>", lambda _e: dlg.destroy())
+        dlg.update_idletasks()
+        self._dialog_an_maus(dlg, parent)
+        dlg.deiconify()
+        dlg.update_idletasks()
+        try:
+            dlg.grab_set()
+        except tk.TclError as exc:
+            logger.debug("Passwortfenster ohne Sperre des Hauptfensters: %s", exc)
+        try:
+            feld.focus_force()
+        except tk.TclError:
+            pass
+        dlg.wait_window()
+        return ergebnis["wert"]
 
     def _archiv_fertig(self, archiv: str, wurzel: str, fehler: str) -> None:
         """Hauptfaden: Ergebnis des Entpackens uebernehmen oder melden."""
@@ -30101,6 +30213,10 @@ class PS5ConverterGUI:
             # UFS2-Datei ungeeignet ist. Das Temp-Verzeichnis wird bereits auf
             # Schreibbarkeit und Kapazität geprüft.
             staging_dir = self._mkdtemp(prefix="ps5conv_ffpkg_stage_")
+            staging_dir = self._ffpkg_buehne_mit_platz(staging_dir, final_path, int(source_bytes))
+            if not staging_dir:
+                self._last_ffpkg_build_diagnostics = {"preflight": "zu_wenig_platz"}
+                return False
             stage_path = os.path.join(staging_dir, "candidate.ffpkg")
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0093', v0=exc))
@@ -30461,6 +30577,66 @@ class PS5ConverterGUI:
             _delete_if_exists(stage_path)
             if staging_dir:
                 _rmtree_force(staging_dir)
+
+    #: So viel groesser als der Spielordner wird das UFS2-Abbild hoechstens (gemessen an LEGO Batman: 118,2 GB Ordner,
+    #: 130,1 GB Abbild = Faktor 1,10; dazu Reserve fuer das makefs-Profil mit fester Groesse).
+    _FFPKG_ABBILD_FAKTOR = 1.15
+
+    @staticmethod
+    def _dateisystem_von(ordner: str) -> str:
+        """Name des Dateisystems (``NTFS``, ``exFAT`` ...) des Laufwerks, auf dem ``ordner`` liegt; "" unbekannt."""
+        if sys.platform != "win32":
+            return ""
+        try:
+            import ctypes  # noqa: PLC0415
+            wurzel = os.path.splitdrive(os.path.abspath(ordner))[0] + "\\"
+            name = ctypes.create_unicode_buffer(64)
+            if ctypes.windll.kernel32.GetVolumeInformationW(wurzel, None, 0, None, None, None, name, 64):
+                return name.value
+        except (OSError, AttributeError, ValueError):
+            pass
+        return ""
+
+    def _ffpkg_buehne_mit_platz(self, buehne: str, final_path: str, quellbytes: int) -> str:
+        """Gibt den Ordner zurueck, in dem das Abbild gebaut wird - mit genug Platz - oder "" (dann ist abgebrochen).
+
+        Gemeldet am 14.10.2026 (LEGO Batman, FPKG -> .ffpkg): Der entpackte Spielordner (110 GB) und das Abbild
+        (124 GB) lagen beide im Temp auf C: - 218 GB frei reichten nicht, UFS2Tool brach bei allen drei Profilen mit
+        "nicht genug Speicherplatz" ab, erst nach 10 Minuten Entpacken. Reicht der Platz im Temp nicht, wird jetzt auf
+        dem Ziellaufwerk gebaut, wenn es dort reicht und es NTFS/ReFS ist: Die fertige Datei wird dann verschoben statt
+        kopiert und belegt den Platz nur einmal. Sonst Abbruch vor dem Bau, mit beiden Zahlen.
+        """
+        noetig = int(quellbytes * self._FFPKG_ABBILD_FAKTOR) + (1 << 30)
+        try:
+            frei = int(shutil.disk_usage(buehne).free)
+        except OSError:
+            return buehne                         # nicht messbar - nicht im Weg stehen
+        if frei >= noetig:
+            return buehne
+        ziel_ordner = os.path.dirname(os.path.abspath(final_path))
+        try:
+            frei_ziel = int(shutil.disk_usage(ziel_ordner).free)
+        except OSError:
+            frei_ziel = 0
+        dateisystem = self._dateisystem_von(ziel_ordner).upper()
+        # exFAT geht (grosse Dateien, wahlfreies Schreiben) - das USB-Laufwerk fuer die PS5 ist meist exFAT. FAT32 nicht
+        # (4-GB-Grenze), unbekannt (Netzlaufwerk) auch nicht.
+        geeignet = dateisystem in ("NTFS", "REFS", "EXFAT") or (sys.platform != "win32")
+        _rmtree_force(buehne, ignore_errors=True)
+        if frei_ziel >= noetig and geeignet:
+            try:
+                neu = tempfile.mkdtemp(prefix="ps5conv_ffpkg_stage_", dir=ziel_ordner)
+            except OSError as exc:
+                logger.debug("Buehne auf dem Ziellaufwerk nicht anlegbar: %s", exc)
+            else:
+                self._append_to_log(self._t("ffpkg.buehne_auf_ziel", temp=os.path.dirname(buehne),
+                                            frei=format_ffpkg_bytes(frei), noetig=format_ffpkg_bytes(noetig),
+                                            ordner=neu))
+                return neu
+        self._append_to_log(self._t("ffpkg.zu_wenig_platz", temp=os.path.dirname(buehne),
+                                    frei=format_ffpkg_bytes(frei), ziel=ziel_ordner,
+                                    frei_ziel=format_ffpkg_bytes(frei_ziel), noetig=format_ffpkg_bytes(noetig)))
+        return ""
 
     def _ffpkg_auf_zielvolume_bringen(self, stage_path: str, transfer_path: str,
                                       kopieren) -> str:
@@ -58825,6 +59001,7 @@ class PS5ConverterGUI:
         # Farbe schon im Erzeuger setzen - sonst blitzt das Fenster kurz weiss
         # auf, bevor es dunkel wird (siehe test_sidebar_vorschau).
         dlg = tk.Toplevel(parent or self.root, bg=c["bg_main"])
+        dlg.withdraw()                      # erst zeigen, wenn es an seinem Platz steht
         dlg.title(titel)
         dlg.transient(parent or self.root)
         dlg.resizable(False, False)
@@ -58855,9 +59032,46 @@ class PS5ConverterGUI:
                    command=_ok).pack(side="right", padx=(0, 8))
 
         dlg.update_idletasks()
-        dlg.grab_set()
+        self._dialog_an_maus(dlg, parent or self.root)
+        dlg.deiconify()
+        dlg.update_idletasks()
+        try:
+            dlg.grab_set()
+        except tk.TclError as exc:
+            logger.debug("Auswahldialog ohne Sperre des Hauptfensters: %s", exc)
         dlg.wait_window()
         return ergebnis["wert"]
+
+    @staticmethod
+    def _dialog_an_maus(dlg: "tk.Toplevel", eltern) -> None:
+        """Setzt ein kleines Fenster dorthin, wo geklickt wurde - nicht in die Ecke oben links.
+
+        Die Mitte des Fensters kommt auf die Maus, das obere Viertel auf Maushoehe; innerhalb des Elternfensters
+        gehalten, so bleibt es auf demselben Bildschirm. Steht die Maus nicht ueber dem Elternfenster (Dialog
+        per Tastatur oder durch Ablegen geoeffnet), ueber dessen Mitte; ist das Elternfenster nicht zu gebrauchen,
+        mitten auf dem Bildschirm. Gemeldet am 14.10.2026: "Quellentyp waehlen" ging oben links auf.
+        """
+        dlg.update_idletasks()
+        breite, hoehe = dlg.winfo_reqwidth(), dlg.winfo_reqheight()
+        x = y = None
+        try:
+            oben = eltern.winfo_toplevel()
+            links, oben_y = oben.winfo_rootx(), oben.winfo_rooty()
+            rechts, unten = links + oben.winfo_width(), oben_y + oben.winfo_height()
+            if oben.winfo_viewable() and rechts - links >= breite + 16 and unten - oben_y >= hoehe + 16:
+                maus_x, maus_y = dlg.winfo_pointerx(), dlg.winfo_pointery()
+                if links <= maus_x <= rechts and oben_y <= maus_y <= unten:
+                    x, y = maus_x - breite // 2, maus_y - hoehe // 4
+                else:
+                    x, y = links + (rechts - links - breite) // 2, oben_y + (unten - oben_y - hoehe) // 3
+                x = max(links + 8, min(x, rechts - breite - 8))
+                y = max(oben_y + 8, min(y, unten - hoehe - 8))
+        except tk.TclError:
+            x = y = None
+        if x is None or y is None:           # Elternfenster nicht zu gebrauchen: mitten auf den Bildschirm
+            x = max(0, (dlg.winfo_screenwidth() - breite) // 2)
+            y = max(0, (dlg.winfo_screenheight() - hoehe) // 3)
+        dlg.geometry("+%d+%d" % (x, y))
 
     def _klog_payload_pfad(self) -> str:
         """Pfad zum mitgelieferten klogsrv - im Skript wie in der EXE."""
@@ -62161,6 +62375,7 @@ class PS5ConverterGUI:
         # Durchsuchen-Buttons in der Quelle-Karte (Pillen)
         for _browse_btn in (
             getattr(self, "src_browse_btn", None),
+            getattr(self, "src_archiv_btn", None),
             getattr(self, "dest_btn", None),
             getattr(self, "temp_btn", None),
         ):

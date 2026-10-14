@@ -254,9 +254,35 @@ class Ps5PkgFenster:
             pass
 
     def _melden(self, text: str) -> None:
-        """Aus jedem Faden: eine Zeile fuers Protokoll."""
+        """Aus jedem Faden: eine Zeile fuers Protokoll - die Ausgaben des Werkzeugs in Worten (:meth:`_lesbar`)."""
+        text = self._lesbar(text)
+        if not text:
+            return
         with self._sperre:
             self._z["zeilen"].append(text)
+
+    #: Ausgaben des Werkzeugs, die im Protokoll in Worten stehen - (Muster, Textschluessel). Der Rest bleibt, ohne
+    #: die Kennung "[info]" davor. Nutzer 14.10.2026: "im Status-Log verstehe ich nur Bahnhof".
+    _LESBAR = (
+        (re.compile(r"^\[info\] Paketinhalt wird gelesen"), "ps5pkg.log_reading_contents"),
+        (re.compile(r"^\[info\] Paketinhalt gelesen: (?P<anzahl>\d+) Eintraege in (?P<sekunden>\d+) s"),
+         "ps5pkg.log_contents_read"),
+        (re.compile(r"^\[info\] extract-inner \(members\).*\((?P<anzahl>\d+) member\(s\)\)\s*$"),
+         "ps5pkg.log_extracting_files"),
+        (re.compile(r"^\[info\] extract-inner\b"), "ps5pkg.log_extracting_all"),
+        (re.compile(r"^OK\W+extracted (?P<anzahl>\d+) file"), "ps5pkg.log_extracted"),
+        (re.compile(r"^\[info\] (kein Fortschritt je Datei|Entpacken je Datei gescheitert)"), "ps5pkg.log_whole_extract"),
+    )
+
+    def _lesbar(self, text: str) -> str:
+        text = str(text or "").strip()
+        for muster, schluessel in self._LESBAR:
+            treffer = muster.search(text)
+            if treffer:
+                return self.t(schluessel, **treffer.groupdict())
+        if text.startswith("[info] "):
+            return text[len("[info] "):]
+        return text
 
     def _status(self, text: str) -> None:
         try:
@@ -415,6 +441,7 @@ class Ps5PkgFenster:
 
         # QUELLE
         quelle = self._karte(links, "ps5pkg.card_source")
+        self.quelle_karte = quelle          # daran richtet die Seite PKG/FPKG ihren Knopf "PKG" aus
         quelle.grid(row=0, column=0, sticky="ew")
         oben = tk.Frame(quelle, bg=c["bg_card"])
         oben.pack(fill="x")
@@ -535,6 +562,14 @@ class Ps5PkgFenster:
         self.ausgabe_knopf = self._pille(textknoepfe, "ps5pkg.open_output", self._ausgabe_oeffnen, klein=True)
         self.ausgabe_knopf.pack(side="left")
         self._pille(textknoepfe, "ps5pkg.clear_log", self._verlauf_leeren, klein=True).pack(side="left", padx=(8, 0))
+        # Was gerade entsteht (Datei, Menge, Dateien, Zeit) - unter den Knoepfen, buendig mit "Ausgabe oeffnen", ueber die
+        # ganze Breite der Karte (Nutzer 14.10.2026: neben "Verlauf leeren" war zu wenig Platz, die Zeile lief ab).
+        self.datei_var = tk.StringVar(value="")
+        datei_zeile = tk.Label(auftrag, textvariable=self.datei_var, font=(F, pt(9)), bg=c["bg_card"],
+                               fg=c["fg_secondary"], anchor="w", justify="left")
+        # expand: steht mittig im freien Raum zwischen den Knoepfen und der Unterkante der Karte (Nutzer 14.10.2026)
+        datei_zeile.pack(fill="x", expand=True, pady=(8, 0))
+        datei_zeile.bind("<Configure>", lambda e: datei_zeile.configure(wraplength=max(120, e.width - 4)))
 
         # ERGEBNIS
         ergebnis = self._karte(rechts, "ps5pkg.card_result")
@@ -558,6 +593,12 @@ class Ps5PkgFenster:
         self.protokoll = pw.Text(rechts, height=6, width=1, font=(self.M, pt(9)), bg=c["console_bg"],
                                  fg=c["console_fg"], relief="flat", wrap="word", state="disabled")
         self.protokoll.pack(fill="both", expand=True, pady=(12, 0))
+        # Abstand nach jeder Meldung (nicht zwischen den umbrochenen Zeilen einer Meldung) - so steht jede fuer sich und
+        # liest sich leichter (Nutzer 14.10.2026).
+        try:
+            self.protokoll.configure(spacing3=max(20, int(pt(22))))
+        except tk.TclError:
+            pass
 
     def _kachel(self, eltern, spalte: int, schluessel: str, name: str, endung: str) -> None:
         g, c, F, pt = self.g, self.c, self.F, self.pt
@@ -1270,6 +1311,24 @@ class Ps5PkgFenster:
         self._konsole_ziel = (adresse, fern)
         self._job_starten("konsole", self._lauf_konsole, info, fern)
 
+    def _platz_fuer_entpacken(self, ziel: str, gesamt: int) -> str:
+        """Arbeitsfaden: reicht der Platz fuer das entpackte Spiel (``gesamt`` Bytes, aus dem Paketinhalt)? "" = ja.
+
+        Die Schaetzung vor dem Start (Paketgroesse x ENTPACKT_FAKTOR) kennt die Kompression nicht: Fuer LEGO Batman
+        nannte sie 54 GB, entpackt waren es 110 GB (14.10.2026). Hier steht die echte Zahl fest.
+        """
+        ordner = ziel
+        while ordner and not os.path.isdir(ordner):
+            ordner = os.path.dirname(ordner)
+        try:
+            frei = int(shutil.disk_usage(ordner or ziel).free)
+        except OSError:
+            return ""
+        noetig = int(gesamt) + (1 << 30)
+        if frei >= noetig:
+            return ""
+        return self.t("ps5pkg.err_space_unpacked", ordner=ordner, frei=self._fmt(frei), noetig=self._fmt(noetig))
+
     def _platz_reicht(self, ordner: str, noetig: int, nachfragen: bool = False) -> bool:
         """Genug freier Platz in ``ordner``? Knapp: Rueckfrage (``nachfragen``); weniger als gebraucht: Absage."""
         try:
@@ -1411,7 +1470,8 @@ class Ps5PkgFenster:
         try:
             schluss = wz.extrahieren(self._werkzeug(), info.pfad, ziel, passcode=self._passcode(), zeile=self._melden,
                                      fortschritt=fortschritt, abbruch=lambda: self._abbruch,
-                                     popen_extra=self._popen_extra())
+                                     popen_extra=self._popen_extra(),
+                                     platz_pruefen=lambda gesamt: self._platz_fuer_entpacken(ziel, gesamt))
             ende = {"ok": True, "text": schluss, "ausgabe": ziel}
         except wz.Fehler as exc:
             ende = {"ok": False, "text": str(exc)}
@@ -1618,8 +1678,12 @@ class Ps5PkgFenster:
             self.balken_gesamt["value"] = (gesamt if gesamt is not None
                                            else prozent if self._job["art"] != "umwandeln" else prozent / 2.0)
             if datei:
-                self._status(datei)
+                # Nur der Dateiname, nicht der Ordnerpfad im Spiel - sonst lief die Zeile rechts aus der Karte.
+                erster, _trenner, rest = datei.partition(" \u00b7 ")
+                kurz = erster.replace("\\", "/").rsplit("/", 1)[-1] or erster
+                self.datei_var.set(kurz + (" \u00b7 " + rest if rest else ""))
         if fertig is not None and self._job is not None:
+            self.datei_var.set("")
             self._job_beendet(fertig)
         if self._uebergabe is not None:
             self._uebergabe_beobachten()

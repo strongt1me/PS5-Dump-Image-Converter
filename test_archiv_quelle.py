@@ -152,6 +152,63 @@ class SiebenzipArchivTests(unittest.TestCase):
                                         popen_extra={"creationflags": 0x08000000})
             self.assertIn("7-Zip", str(ctx.exception))
 
+    def _verschluesselt(self, t: str, passwort: str = "geheim123", endung: str = ".7z") -> tuple[Path, Path]:
+        quelle = Path(t) / "q" / "Spiel"
+        _spiel(quelle)
+        archiv = Path(t) / ("geheim" + endung)
+        subprocess.run([SIEBENZIP, "a", str(archiv), str(quelle), "-p" + passwort, "-mhe=on", "-bso0", "-bsp0"],
+                       check=True, stdin=subprocess.DEVNULL, creationflags=0x08000000)
+        return quelle, archiv
+
+    def test_verschluesseltes_archiv_ohne_passwort_meldet_den_passwortfehler(self) -> None:
+        """14.10.2026: Eine passwortgeschuetzte .rar brach mit "7-Zip meldet Fehler (Code 255): ... Break signaled" ab -
+        7-Zip fragte auf der Konsole nach dem Passwort und las nichts. Jetzt ein eigener Fehler, nach dem das Programm fragt."""
+        with tempfile.TemporaryDirectory() as t:
+            _quelle, archiv = self._verschluesselt(t)
+            with self.assertRaises(archiv_quelle.PasswortFehler):
+                archiv_quelle.entpacken(str(archiv), str(Path(t) / "ziel"), wurzeln=[str(PROJEKT)],
+                                        popen_extra={"creationflags": 0x08000000})
+
+    def test_falsches_passwort_ist_ein_passwortfehler_und_ersetzt_sich_nicht_still(self) -> None:
+        with tempfile.TemporaryDirectory() as t:
+            _quelle, archiv = self._verschluesselt(t, passwort="pippo")
+            # Ein vom Anwender genanntes Passwort gilt allein - die bekannten kommen dann nicht dazu.
+            with self.assertRaises(archiv_quelle.PasswortFehler):
+                archiv_quelle.entpacken(str(archiv), str(Path(t) / "ziel"), wurzeln=[str(PROJEKT)],
+                                        popen_extra={"creationflags": 0x08000000}, passwort="falsch")
+
+    def test_mit_dem_richtigen_passwort_wird_entpackt(self) -> None:
+        with tempfile.TemporaryDirectory() as t:
+            quelle, archiv = self._verschluesselt(t)
+            wurzel = archiv_quelle.entpacken(str(archiv), str(Path(t) / "ziel"), wurzeln=[str(PROJEKT)],
+                                             popen_extra={"creationflags": 0x08000000}, passwort="geheim123")
+            for datei in ("eboot.bin", "Media/a.dat", "sce_sys/param.json"):
+                self.assertEqual((quelle / datei).read_bytes(), (Path(wurzel) / datei).read_bytes())
+
+    def test_die_bekannten_passwoerter_der_szene_werden_selbst_probiert(self) -> None:
+        for passwort in archiv_quelle.BEKANNTE_PASSWOERTER:
+            with self.subTest(passwort=passwort), tempfile.TemporaryDirectory() as t:
+                quelle, archiv = self._verschluesselt(t, passwort=passwort)
+                wurzel = archiv_quelle.entpacken(str(archiv), str(Path(t) / "ziel"), wurzeln=[str(PROJEKT)],
+                                                 popen_extra={"creationflags": 0x08000000})
+                self.assertEqual((quelle / "eboot.bin").read_bytes(), (Path(wurzel) / "eboot.bin").read_bytes())
+
+    def test_ein_unverschluesseltes_archiv_ignoriert_ein_passwort(self) -> None:
+        with tempfile.TemporaryDirectory() as t:
+            quelle, archiv = self._bauen(t, ".7z")
+            wurzel = archiv_quelle.entpacken(str(archiv), str(Path(t) / "ziel"), wurzeln=[str(PROJEKT)],
+                                             popen_extra={"creationflags": 0x08000000}, passwort="irgendwas")
+            self.assertEqual((quelle / "eboot.bin").read_bytes(), (Path(wurzel) / "eboot.bin").read_bytes())
+
+    def test_ein_fehlversuch_laesst_nichts_im_entpackordner_zurueck(self) -> None:
+        with tempfile.TemporaryDirectory() as t:
+            _quelle, archiv = self._verschluesselt(t, passwort="unbekannt-xyz")
+            ziel = Path(t) / "ziel"
+            with self.assertRaises(archiv_quelle.PasswortFehler):
+                archiv_quelle.entpacken(str(archiv), str(ziel), wurzeln=[str(PROJEKT)],
+                                        popen_extra={"creationflags": 0x08000000})
+            self.assertEqual([], list(ziel.iterdir()))
+
     def test_rar_endung_geht_den_siebenzip_weg(self) -> None:
         with tempfile.TemporaryDirectory() as t:
             archiv = Path(t) / "x.rar"
@@ -264,15 +321,109 @@ class FensterTests(unittest.TestCase):
             fehler.assert_called_once()
             self.assertFalse(getattr(self.app, "_archiv_laeuft", False))
 
-    def test_die_quellwahl_bietet_ordner_und_archiv_an(self) -> None:
+    def _verschluesseltes_spiel(self, t: str, passwort: str = "geheim123") -> Path:
+        quelle = Path(t) / "q" / "PPSA01234"
+        _spiel(quelle)
+        archiv = Path(t) / "geheim.7z"
+        subprocess.run([SIEBENZIP, "a", str(archiv), str(quelle), "-p" + passwort, "-mhe=on", "-bso0", "-bsp0"],
+                       check=True, stdin=subprocess.DEVNULL, creationflags=0x08000000)
+        return archiv
+
+    def test_ein_archiv_mit_bekanntem_passwort_wird_ohne_rueckfrage_zur_quelle(self) -> None:
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as t:
+            archiv = self._verschluesseltes_spiel(t, "DLPSGAME.COM")
+            self.app.source_path.set("")
+            with mock.patch.object(self.haupt.PS5ConverterGUI, "_passwort_dialog") as frage:
+                self.app._archiv_als_quelle(str(archiv))
+                self._warten()
+                self._warten()
+            self.addCleanup(lambda: __import__("shutil").rmtree(self.app._archiv_ordner, ignore_errors=True))
+            frage.assert_not_called()
+            self.assertTrue(self.app.source_path.get().endswith("PPSA01234"), self.app.source_path.get())
+
+    def test_ein_unbekanntes_passwort_wird_erfragt_und_ein_falsches_noch_einmal(self) -> None:
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as t:
+            archiv = self._verschluesseltes_spiel(t)
+            self.app.source_path.set("")
+            with mock.patch.object(self.haupt.PS5ConverterGUI, "_passwort_dialog",
+                                   side_effect=["falsch", "geheim123"]) as frage:
+                for _ in range(4):
+                    if _ == 0:
+                        self.app._archiv_als_quelle(str(archiv))
+                    self._warten()
+            self.addCleanup(lambda: __import__("shutil").rmtree(self.app._archiv_ordner, ignore_errors=True))
+            self.assertEqual(2, frage.call_count, "Erst unbekannt, dann falsch: zweimal gefragt")
+            self.assertTrue(self.app.source_path.get().endswith("PPSA01234"), self.app.source_path.get())
+
+    def test_ein_abgebrochenes_passwortfenster_laesst_die_quelle_stehen(self) -> None:
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as t:
+            archiv = self._verschluesseltes_spiel(t)
+            self.app.source_path.set("VORHER")
+            with mock.patch.object(self.haupt.PS5ConverterGUI, "_passwort_dialog", return_value="") as frage:
+                self.app._archiv_als_quelle(str(archiv))
+                self._warten()
+                self._warten()
+            frage.assert_called_once()
+            self.assertEqual("VORHER", self.app.source_path.get())
+            self.assertFalse(getattr(self.app, "_archiv_laeuft", False))
+            self.assertFalse(os.path.isdir(self.app._archiv_ordner), "Der halbe Entpackordner wird weggeraeumt")
+
+    def test_dump_ordner_oeffnet_ohne_zwischenfrage_gleich_die_ordnerwahl(self) -> None:
+        """14.10.2026: Die Zwischenfrage "Ordner oder Archiv" entfaellt; das Archiv waehlt der Knopf daneben."""
+        from unittest import mock
+        self.app.current_mode.set("pack_folder")
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(self.haupt.PS5ConverterGUI, "_auswahl_dialog") as frage, \
+                mock.patch.object(self.haupt.filedialog, "askdirectory", return_value=t) as ordner, \
+                mock.patch.object(self.haupt.PS5ConverterGUI, "_validate_source_path", return_value=""):
+            self.app._browse_source()
+        frage.assert_not_called()
+        ordner.assert_called_once()
+
+    def test_der_archivknopf_waehlt_ein_archiv_und_uebernimmt_es(self) -> None:
         from unittest import mock
         with tempfile.TemporaryDirectory() as t:
             archiv = self._zip(t)
-            with mock.patch.object(self.haupt.PS5ConverterGUI, "_auswahl_dialog",
-                                   return_value=self.app._t("quelle.art_archiv")) as frage,                     mock.patch.object(self.haupt.filedialog, "askopenfilename", return_value=str(archiv)),                     mock.patch.object(self.app, "_archiv_als_quelle") as uebernehmen:
-                self.app._browse_source()
-            self.assertEqual(2, len(frage.call_args.args[2]))
+            with mock.patch.object(self.haupt.filedialog, "askopenfilename", return_value=str(archiv)) as datei, \
+                    mock.patch.object(self.app, "_archiv_als_quelle") as uebernehmen:
+                self.app._browse_archiv()
+            self.assertIn("*.zip *.7z *.rar", str(datei.call_args.kwargs["filetypes"]))
             uebernehmen.assert_called_once_with(os.path.normpath(str(archiv)))
+
+    def test_ein_abgebrochener_archivdialog_aendert_nichts(self) -> None:
+        from unittest import mock
+        with mock.patch.object(self.haupt.filedialog, "askopenfilename", return_value=""), \
+                mock.patch.object(self.app, "_archiv_als_quelle") as uebernehmen:
+            self.app._browse_archiv()
+        uebernehmen.assert_not_called()
+
+    def test_der_archivknopf_steht_nur_bei_aufgabe_1_neben_dump_ordner(self) -> None:
+        app = self.app
+        _WURZEL.deiconify()
+        self.addCleanup(_WURZEL.withdraw)
+        app.current_mode.set("pack_folder")
+        app._src_archiv_stand = None
+        for _ in range(4):          # Platz machen verschiebt "Dump Ordner": erst nach dem Nachziehen stimmt es
+            _WURZEL.update()
+            app._src_archiv_platzieren()
+        _WURZEL.update()
+        knopf, haupt = app.src_archiv_btn, app.src_browse_btn
+        self.assertEqual("place", knopf.winfo_manager(), "Aufgabe 1: der Archiv-Knopf ist da")
+        self.assertLess(knopf.winfo_x() + knopf.winfo_reqwidth(), haupt.winfo_x(), "links neben Dump Ordner")
+        self.assertEqual(haupt.winfo_y(), knopf.winfo_y())
+        app.current_mode.set("pack_folder")
+        for modus in ("unpack_to_exfat", "batch_convert", "dump_validator"):
+            with self.subTest(modus=modus):
+                app.current_mode.set(modus)
+                app._src_archiv_stand = None
+                app._src_archiv_platzieren()
+                self.assertEqual("", knopf.winfo_manager(), "Nur Aufgabe 1 hat den Archiv-Knopf")
+        app.current_mode.set("pack_folder")
+        app._src_archiv_stand = None
+        app._src_archiv_platzieren()
 
     def test_die_texte_gibt_es_in_beiden_sprachen(self) -> None:
         from ps5_validator.utils.i18n import STRINGS

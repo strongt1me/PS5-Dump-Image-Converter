@@ -499,6 +499,7 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
        _d("game-compressor.elf", "game-compressor_v{f}.elf")),
     _p("wk-autoloader", "WK AutoLoader", "X-F1REBALL-X/wk-autoloader", "WK-AutoLoader_v*.elf",
        _d("wk-dual-payload.elf", "WK-AutoLoader_v{f}.elf")),
+    _p("ps4mount", "PS4Mount", "gasb07/ps4mount", "ps4mount_v*.elf", _d("ps4mount.elf", "ps4mount_v{f}.elf")),
     _p("anypad", "AnyPad PS5", "codeberg:elmonomalva0/Any-Pad-ps5", "AnyPad-PS5-*.elf", _d("AnyPad-PS5-{f}.elf"),
        vorab=True, hinweis="updates.hinweis_vorab"),
     _p("onionhen", "OnionHEN", "aydencharles/onionHEN", "OnionHEN_v*.elf", _d("OnionHEN.elf", "OnionHEN_v{f}.elf"),

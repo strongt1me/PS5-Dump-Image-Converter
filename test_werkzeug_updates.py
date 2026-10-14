@@ -84,6 +84,7 @@ RELEASES = {
         ('v1.4.1', False, '2026-09-27', ['pkg-manager_v1.4.1.elf']),
     ],
     'itsPLK/ps5-payload-manager': [
+        ('v0.6.0', False, '2026-10-13', ['pldmgr_v0.6.0.elf']),
         ('v0.5.2', False, '2026-09-29', ['pldmgr_v0.5.2.elf']),
         ('v0.5.1', False, '2026-08-02', ['pldmgr_v0.5.1.elf']),
     ],
@@ -198,6 +199,11 @@ RELEASES = {
         ('v1.0.16', False, '2026-10-06', ['installer.elf', 'wk-dual-payload.elf']),
         ('v1.0.14', False, '2026-10-06', ['installer.elf', 'wk-dual-payload.elf']),
     ],
+    'gasb07/ps4mount': [
+        ('v0.4.4', False, '2026-10-14', ['ps4mount.elf', 'ps4mount.elf.sha256']),
+        ('v0.4.1', False, '2026-10-12', ['ps4mount.elf', 'ps4mount.elf.sha256']),
+        ('v0.4.0', False, '2026-10-11', ['ps4mount.elf', 'ps4mount.elf.sha256']),
+    ],
     'aydencharles/onionHEN': [
         ('v0.9.0-beta2', True, '2026-10-07', ['OnionHEN.elf']),
         ('v0.9.0-beta1', True, '2026-10-03', ['OnionHEN.elf']),
@@ -293,7 +299,7 @@ HELLOWORLD = [
     "game-compressor_v1.1.1.elf", "garlic-savemgr_v1.13.1.elf", "garlic-worker-ps5_2026-04-09.elf",
     "gdbsrv-ps5_v0.9.elf", "klogsrv-ps5_v0.9.elf", "kstuff_lite_v1.11_Beta_EchoStretch.elf",
     "kstuff_v1.13-fpkg-dr-test5.elf", "lapy_jb_daemon-v1.2.elf", "nanodns_v0.4.elf", "np-fake-signin-v1.3.elf",
-    "pkgmgr_v1.5.0.elf", "pldmgr_v0.5.2.elf", "ps5-app-dumper_v2.10.elf", "ps5-backpork_v0.1.elf",
+    "pkgmgr_v1.5.0.elf", "pldmgr_v0.6.0.elf", "ps4mount_v0.4.4.elf", "ps5-app-dumper_v2.10.elf", "ps5-backpork_v0.1.elf",
     "ps5-hwinfo-bench_v0.1.elf", "ps5-hwinfo-sysinfo_v0.1.elf", "ps5-self-pager-full-system_v1.2.elf",
     "ps5-self-pager-game_v1.2.elf", "ps5-self-pager-shellcore_v1.2.elf", "ps5-self-pager-system-common-lib_v1.2.elf",
     "ps5-syslang-de-v0.2.1.elf", "ps5-unified-autoloader-v0.1.5-915a65e.elf", "ps5debug-NG_v1.3.2.elf",

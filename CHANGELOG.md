@@ -2,9 +2,20 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.75):** Die Seitenleiste ist neu gestaltet: eine Liste mit feinen Linien und einem Balken an der gewählten Zeile, dazu ein hoher Umschalter zwischen UMWANDELN und KONSOLE.
+> **Kurz zum aktuellen Stand (v1.9.76):** PS4Mount ist dabei, Archive mit Passwort lassen sich entpacken, und FPKG → .ffpkg klappt auch bei knappem Platz auf C:.
 
 ---
+
+## v1.9.76 – 14.10.2026
+
+- **Neu:** PS4Mount 0.4.4 (gasb07) liegt bei und steht in „Konsole & Payloads“ (Port 8770) – es spielt PS4-Fake-PKGs direkt vom USB-Laufwerk, ohne sie zu installieren.
+- **Neu:** Bei Aufgabe 1 wählt der Knopf „Archiv…“ neben „Dump Ordner“ ein .zip, .7z oder .rar; die Zwischenfrage „Ordner oder Archiv“ entfällt.
+- **Neu:** Archive mit Passwort werden entpackt – das Programm probiert „pippo“ und „DLPSGAME.COM“ und fragt sonst nach dem Passwort.
+- **Aktualisiert:** Payload Manager 0.6.0; das Senden über ihn (wenn Port 9021 zu ist) ist an die neue Fassung angepasst.
+- **Geändert:** Auf der Seite FPKG läuft der Fortschritt nur noch vorwärts und zeigt unter den Knöpfen Datei, Menge, Dateizahl und Zeit; das Protokoll steht in Worten, mit Abstand zwischen den Meldungen.
+- **Geändert:** Die Seite PKG / FPKG hat keine Überschrift mehr, die Knöpfe PKG und FPKG sind größer und stehen bündig über der Karte QUELLE.
+- **Behoben:** FPKG → .ffpkg scheiterte bei knappem Platz auf C: erst nach dem Entpacken; jetzt prüft das Programm vorher mit der echten Größe und baut das Abbild bei Bedarf auf dem Ziellaufwerk.
+- **Behoben:** Kleine Auswahlfenster gingen in der Ecke oben links auf; sie stehen jetzt dort, wo geklickt wurde.
 
 ## v1.9.75 – 13.10.2026
 

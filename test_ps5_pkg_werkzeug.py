@@ -532,5 +532,77 @@ class FensterHilfenTests(unittest.TestCase):
         self.assertEqual("-", leer["ps5pkg.prop_concept"])
 
 
+
+class AnzeigeTests(unittest.TestCase):
+    """14.10.2026 (LEGO Batman, 31,8 GB): Die Anzeige stand minutenlang auf 0 %, das Protokoll war "Bahnhof"
+    ("[info] extract-inner (members) E:\\...pkg -> ...LEGO\ufffd BatmanT ...")."""
+
+    def test_der_fortschritt_laeuft_nur_vorwaerts_und_nennt_menge_und_dateien(self) -> None:
+        """Zweiter Befund 14.10.2026: Die Anzeige sprang vor und zurueck - die Groesse der gerade geschriebenen Datei
+        meldet Windows schon vor dem Schreiben voll. Der Wert ist jetzt der des Werkzeugs, nur vorwaerts."""
+        gross = 100 * 1024 * 1024
+        eintraege = [{"path": "fertig.dat", "type": "file", "size": gross},
+                     {"path": "laeuft.dat", "type": "file", "size": gross}]
+
+        def laufen(werkzeug, argumente, zeile=None, **_kw):
+            ziel = argumente[2]
+            with open(os.path.join(ziel, "fertig.dat"), "wb") as d:
+                d.truncate(gross)
+            with open(os.path.join(ziel, "laeuft.dat"), "wb") as d:
+                d.truncate(gross)                          # vorab volle Groesse wie unter Windows
+            for z in ("[####] 50% extract (laeuft.dat)", "[####] 49% extract (laeuft.dat)",
+                      "[####] 60% extract (laeuft.dat)"):
+                zeile(z)
+            time.sleep(0.3)
+            return 0, "OK - extracted 2 file(s) to X\n"
+
+        meldungen: list = []
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "_HERZSCHLAG", 0.1), \
+                mock.patch.object(wz, "baum", return_value=eintraege), mock.patch.object(wz, "laufen", side_effect=laufen):
+            os.makedirs(os.path.join(t, "ziel"))
+            wz.extrahieren("werkzeug", "x.pkg", os.path.join(t, "ziel"), arbeitsordner=t,
+                           fortschritt=lambda pz, d: meldungen.append((pz, d)))
+        werte = [pz for pz, _d in meldungen]
+        self.assertEqual(werte, sorted(werte), "nie zurueck: %s" % werte)
+        self.assertEqual(60, werte[-1], "kein erfundener Wert ueber dem des Werkzeugs")
+        letzte = meldungen[-1][1]
+        self.assertIn("120 MB / 200 MB", letzte, "die Menge folgt dem Prozentwert")
+        self.assertIn("1/2", letzte, "die laufende Datei zaehlt nicht als fertig, obwohl sie schon voll gross ist")
+
+    def test_die_ausgabe_wird_auch_in_der_oem_codeseite_gelesen(self) -> None:
+        self.assertEqual("LEGO\u00ae", wz._dekodieren("LEGO\u00ae".encode("utf-8")))
+        if sys.platform == "win32":
+            import ctypes
+            codeseite = "cp%d" % ctypes.windll.kernel32.GetOEMCP()
+            self.assertEqual("LEGO\u00ae", wz._dekodieren("LEGO\u00ae".encode(codeseite)))
+
+    def test_menge_kurz(self) -> None:
+        self.assertEqual("31.8 GB", wz.menge_kurz(int(31.8 * 1024 ** 3)))
+        self.assertEqual("420 MB", wz.menge_kurz(420 * 1024 ** 2))
+
+    def test_die_werkzeugzeilen_stehen_in_worten_im_protokoll(self) -> None:
+        texte = {"ps5pkg.log_extracting_files": "Entpacke {anzahl} Dateien", "ps5pkg.log_contents_read": "{anzahl} in {sekunden}",
+                 "ps5pkg.log_extracted": "fertig {anzahl}", "ps5pkg.log_reading_contents": "lese",
+                 "ps5pkg.log_extracting_all": "alles", "ps5pkg.log_whole_extract": "am Stueck"}
+
+        class Attrappe:
+            _LESBAR = fz.PS5PkgFenster._LESBAR if hasattr(fz, "PS5PkgFenster") else None
+
+            def t(self, schluessel, **werte):
+                return texte[schluessel].format(**werte)
+
+        klasse = next(k for k in vars(fz).values() if isinstance(k, type) and hasattr(k, "_LESBAR"))
+        a = Attrappe()
+        a._LESBAR = klasse._LESBAR
+        lesbar = lambda z: klasse._lesbar(a, z)   # noqa: E731
+        self.assertEqual("Entpacke 215 Dateien", lesbar(
+            "[info] extract-inner (members)  E:\\x.pkg -> C:\\t\\LEGO\ufffd BatmanT  (215 member(s))"))
+        self.assertEqual("215 in 3", lesbar("[info] Paketinhalt gelesen: 215 Eintraege in 3 s"))
+        self.assertEqual("fertig 215", lesbar("OK \u2014 extracted 215 file(s) and 3 folder(s) to C:\\t"))
+        self.assertEqual("lese", lesbar("[info] Paketinhalt wird gelesen - bei einem grossen Paket ..."))
+        self.assertEqual("etwas anderes", lesbar("[info] etwas anderes"), "nur die Kennung faellt weg")
+        self.assertEqual("[warn] bleibt", lesbar("[warn] bleibt"))
+
+
 if __name__ == "__main__":
     unittest.main()

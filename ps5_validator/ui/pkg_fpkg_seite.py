@@ -47,6 +47,8 @@ class PkgFpkgSeite:
         self.c = gui._COLORS
         self.unterseite = ""
         self._sichtbar: "tk.Frame | None" = None
+        #: Das Objekt der sichtbaren Unterseite - liefert sie ``quelle_karte``, steht der PKG-Knopf buendig darueber.
+        self._aktiv = None
         self.knoepfe: "dict[str, object]" = {}
         self._bauen()
 
@@ -58,28 +60,53 @@ class PkgFpkgSeite:
         F, pt = h.UI_SCHRIFT, h.pt
         self.rahmen = tk.Frame(g.root, bg=c["bg_main"], padx=24, pady=18)
 
-        kopf = tk.Frame(self.rahmen, bg=c["bg_main"])
-        kopf.pack(fill="x")
-        titel = tk.Label(kopf, text=t("pkg_fpkg_seite.title"), font=(F, pt(15), "bold"),
-                         bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
-        titel.pack(side="left")
-        g._register_translatable(titel, "pkg_fpkg_seite.title")
-
+        # Ohne Ueberschrift "PKG / FPKG" (Nutzer 14.10.2026: die Seite heisst schon so in der Seitenleiste); die zwei
+        # Knoepfe sind groesser und der erste steht buendig ueber der Karte QUELLE (:meth:`_reihe_ausrichten`).
         reihe = tk.Frame(self.rahmen, bg=c["bg_main"])
-        reihe.pack(fill="x", pady=(14, 0))
+        reihe.pack(fill="x")
+        self._reihe = reihe
         for kennung, befehl in ((UNTERSEITE_PKG, self._pkg_knopf_gedrueckt),
                                 (UNTERSEITE_FPKG, self._fpkg_knopf_gedrueckt)):
             knopf = h.RoundedButton(
                 reihe, text="", command=befehl,
-                font=(F, pt(10), "bold"), bg=c["console_bg"], fg=c["fg_secondary"],
+                font=(F, pt(13), "bold"), bg=c["console_bg"], fg=c["fg_secondary"],
                 activebackground=c["fg_accent"], activeforeground=c["bg_main"],
-                outline=c["border"], radius=8, height=34, pille=True, breite_nach_text=True, polster_x=18)
-            knopf.pack(side="left", padx=(0, 8))
+                outline=c["border"], radius=8, height=46, pille=True, breite_nach_text=True, polster_x=28)
+            knopf.pack(side="left", padx=(0, 10))
             self.knoepfe[kennung] = knopf
 
         self.inhalt = tk.Frame(self.rahmen, bg=c["bg_main"])
         self.inhalt.pack(fill="both", expand=True, pady=(14, 0))
+        self.inhalt.bind("<Configure>", lambda _e: self._reihe_ausrichten(), add="+")
         self._knoepfe_zeichnen()
+
+    def _reihe_ausrichten(self) -> None:
+        """Schiebt die Knopfreihe so, dass "PKG" links buendig mit der Karte QUELLE der Unterseite steht.
+
+        Die Unterseite FPKG hat links eine Leiste (Umwandeln, Bibliothek, Optionen); ohne Ausgleich stuende "PKG" ueber
+        der Leiste statt ueber der Karte. Eine Unterseite ohne ``quelle_karte`` (PKG) bekommt keinen Versatz.
+        """
+        knopf = self.knoepfe.get(UNTERSEITE_PKG)
+        karte = getattr(self._aktiv, "quelle_karte", None)
+        if karte is not None and not getattr(karte, "_reihe_gebunden", False):
+            # Die Karte wird erst nach der Seite sichtbar und wandert mit der Fensterbreite: dann neu ausrichten.
+            karte.bind("<Configure>", lambda _e: self._reihe_ausrichten(), add="+")
+            karte._reihe_gebunden = True
+        try:
+            jetzt = int(self._reihe.pack_info().get("padx", 0) or 0)
+        except (tk.TclError, TypeError, ValueError):
+            jetzt = 0
+        try:
+            if karte is None or knopf is None or not karte.winfo_ismapped():
+                ziel = 0
+            else:
+                # Sichtbar ist die runde Huelle der Karte (pw.Karte), nicht ihr Innenrahmen - an ihr ausrichten.
+                kante = getattr(karte, "_huelle", karte)
+                ziel = max(0, jetzt + kante.winfo_rootx() - knopf.winfo_rootx())
+            if ziel != jetzt:
+                self._reihe.pack_configure(padx=(ziel, 0))
+        except tk.TclError:
+            pass
 
     def _knopf_text(self, kennung: str) -> str:
         return self.t("pkg_fpkg_seite.tab_pkg" if kennung == UNTERSEITE_PKG else "pkg_fpkg_seite.tab_fpkg")
@@ -117,7 +144,9 @@ class PkgFpkgSeite:
         h = self.h
         fenster = ps4_dump_image.oeffnen(self.g, h.UI_SCHRIFT, h.MONO_SCHRIFT, h.pt, vorgabe, master=self.inhalt)
         kam_von_fpkg = self.unterseite == UNTERSEITE_FPKG
+        self._aktiv = fenster
         self._umschalten(UNTERSEITE_PKG, fenster.win)
+        self.rahmen.after_idle(self._reihe_ausrichten)
         if kam_von_fpkg:
             # Die Angaben des FPKG-Pakets in Seitenleiste und Info-Box gehoeren nicht zu "PKG".
             ps5_pkg_fenster.spielinfo_zuruecksetzen(self.g)
@@ -126,8 +155,10 @@ class PkgFpkgSeite:
         """Zeigt "FPKG" (``ps5_pkg_fenster``)."""
         h = self.h
         fenster = ps5_pkg_fenster.oeffnen(self.g, h.UI_SCHRIFT, h.MONO_SCHRIFT, h.pt, vorgabe, master=self.inhalt)
+        self._aktiv = fenster
         self._umschalten(UNTERSEITE_FPKG, fenster.win)
         fenster.spielinfo_nachziehen()
+        self.rahmen.after_idle(self._reihe_ausrichten)
 
 
 def seite(gui) -> PkgFpkgSeite:

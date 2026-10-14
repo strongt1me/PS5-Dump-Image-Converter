@@ -110,6 +110,11 @@ BEKANNT_STUMM: set[tuple[str, str, str]] = {
     # Ebenen tief und erst, nachdem das Entpacken (mit Fortschritt) fertig ist; an 6690 Dateien
     # 0,15-0,18 s (drei Laeufe), auch wenn sich nichts findet.
     ("archiv_quelle.py", "spielwurzel", "os.walk"),
+    # Gemessen am 14.10.2026: _ziel_leeren raeumt nach einem falschen Archiv-Passwort weg, was 7-Zip bis dahin
+    # entpackt hat - das sind nur die unverschluesselten Dateien. Am echten 10,9-GB-RAR (alle Dateien verschluesselt)
+    # dauerte der ganze Fehlversuch 2-4 s und hinterliess 0 MB (drei Laeufe). Danach fragt das Programm sichtbar nach
+    # dem Passwort und schreibt es ins Protokoll.
+    ("archiv_quelle.py", "_ziel_leeren", "shutil.rmtree"),
     ("ampr_assetpakete.py", "bestand_aufraeumen", "shutil.rmtree"),
     ("ampr_assetpakete.py", "direktleser_merkmale", "os.walk"),
     ("ampr_assetpakete.py", "filmordner_muster", "os.walk"),

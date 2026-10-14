@@ -648,6 +648,7 @@ class QuelltextTests(unittest.TestCase):
         "_bildschirm_erkannt": "die eine Quelle fuer den erkannten Schirm",
         "_build_info_popup": "zentriert ein festes Fenster",
         "_center_window_safe": "Lage am echten Schirm (die Groesse nimmt _bildschirm_fuer_fenster)",
+        "_dialog_an_maus": "Lage: Rueckfall mitten auf den Schirm, wenn das Elternfenster nicht zu gebrauchen ist",
         "_diagnose_anzeige": "Bericht nennt den echten Schirm",
         "_diagnose_pruefen": "Messwert fuer die Pruefung",
         "_fenstergeometrie_wiederherstellen": "holt ein verlorenes Fenster auf den ersten Schirm",

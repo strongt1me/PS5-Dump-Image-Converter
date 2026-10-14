@@ -572,6 +572,52 @@ class HauptfensterTests(unittest.TestCase):
                               bibliothek_raster.RundeKarte)
 
 
+@unittest.skipUnless(_TK_DA, "kein Tk")
+class AuswahldialogOrtTests(unittest.TestCase):
+    """14.10.2026: "Quellentyp waehlen" ging in der Ecke oben links des Bildschirms auf. Kleine Fenster stehen dort,
+    wo geklickt wurde - im Elternfenster gehalten, ohne Maus darueber mittig."""
+
+    def setUp(self) -> None:
+        self.eltern = tk.Toplevel(_WURZEL)
+        self.eltern.geometry("900x600+150+120")
+        self.eltern.update()
+        self.addCleanup(self.eltern.destroy)
+        self.dlg = tk.Toplevel(self.eltern)
+        tk.Label(self.dlg, text="x", width=40, height=8).pack()
+        self.dlg.withdraw()
+
+    def _ort(self, maus: tuple[int, int]) -> tuple[int, int, int, int]:
+        with mock.patch.object(tk.Misc, "winfo_pointerx", return_value=maus[0]), \
+                mock.patch.object(tk.Misc, "winfo_pointery", return_value=maus[1]):
+            APP.PS5ConverterGUI._dialog_an_maus(self.dlg, self.eltern)
+        self.dlg.update_idletasks()
+        teile = self.dlg.geometry().replace("x", "+").split("+")
+        return int(teile[2]), int(teile[3]), self.dlg.winfo_reqwidth(), self.dlg.winfo_reqheight()
+
+    def test_das_fenster_geht_dort_auf_wo_geklickt_wurde(self) -> None:
+        mx, my = self.eltern.winfo_rootx() + 600, self.eltern.winfo_rooty() + 300
+        x, y, b, h = self._ort((mx, my))
+        self.assertLessEqual(abs(x + b // 2 - mx), 1, "Die Mitte des Fensters liegt auf der Maus")
+        self.assertEqual(my - h // 4, y)
+        self.assertNotEqual((0, 0), (x, y), "Nicht in der Ecke oben links")
+
+    def test_am_rand_bleibt_es_im_elternfenster(self) -> None:
+        rechts = self.eltern.winfo_rootx() + self.eltern.winfo_width()
+        unten = self.eltern.winfo_rooty() + self.eltern.winfo_height()
+        x, y, b, h = self._ort((rechts - 2, unten - 2))
+        self.assertLessEqual(x + b, rechts - 8)
+        self.assertLessEqual(y + h, unten - 8)
+        x, y, b, h = self._ort((self.eltern.winfo_rootx() + 1, self.eltern.winfo_rooty() + 1))
+        self.assertGreaterEqual(x, self.eltern.winfo_rootx() + 8)
+        self.assertGreaterEqual(y, self.eltern.winfo_rooty() + 8)
+
+    def test_ohne_maus_ueber_dem_elternfenster_geht_es_mittig_auf(self) -> None:
+        x, y, b, h = self._ort((5, 5))
+        links = self.eltern.winfo_rootx()
+        self.assertEqual(links + (self.eltern.winfo_width() - b) // 2, x)
+        self.assertGreater(y, self.eltern.winfo_rooty())
+
+
 class QuelltextTests(unittest.TestCase):
 
     @classmethod

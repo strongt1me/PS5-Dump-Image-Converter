@@ -232,6 +232,16 @@ KATALOG: tuple[Dienst, ...] = (
     # Konsole noch NICHT nachgemessen.
     Dienst("coolsyscent", 8086, "PS5_Cooling_System_Center_v*.elf", web="/", anlaufzeit=3.0,
            version_muster=r'"app_version"\s*:\s*"([^"]+)"', version_pfad="/api/v1/system"),
+    # --- PS4Mount (seit 14.10.2026) --------------------------------------------
+    # PS4-Fake-PKGs von einem USB-Laufwerk spielen, ohne sie zu installieren (gasb07/ps4mount, GPL-3.0-or-later).
+    # Port 8770 und Weboberflaeche laut README des Autors ("http://<PS5 IP>:8770", das Panel liegt auch im Medien-Tab)
+    # und aus dem ELF selbst ("deeplinkUri": "http://127.0.0.1:8770/"; ``WEB_PORT`` in ``src/web.h``). Die laufende Version
+    # nennt ``GET /api/games`` als ``{"version":"PS4Mount 0.4.4","games":[...]}`` - aus dem Quelltext 0.4.1 und 0.4.4 gelesen, an der
+    # Konsole noch NICHT nachgemessen. Gestartet wird das ELF wie beschrieben ueber den ELF-Loader (payload_muster); es
+    # liest das Kernel-Protokoll (klogsrv auf 3232 oder kein anderer Leser von /dev/klog) und scannt beim Start die
+    # USB-Laufwerke. Anlaufzeit geschaetzt.
+    Dienst("ps4mount", 8770, "ps4mount_v*.elf", web="/", anlaufzeit=3.0,
+           version_muster=r'"version"\s*:\s*"PS4Mount\s+([^"]+)"', version_pfad="/api/games"),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,
