@@ -430,6 +430,7 @@ footer{
     <h3>What are asset packs?</h3>
     <p>With the method <strong>Asset pack</strong>, the game files are additionally put into packed bands (<code>ampr_assets-*.pak</code>) that AMPR EMU reads block by block from version 0.4.2.1 on. This saves space and file descriptors on the console. For this, <strong>both</strong> drop-down lists must be right: AMPR version <code>test-pack</code> (or <code>test-debug-pack</code> for troubleshooting) and method <em>Asset pack</em> – the version <code>test-nopack</code> that is preselected at the top cannot do it.</p>
     <p>Every packed block is checked byte by byte against the original file. Your original files stay in place unless you choose otherwise; only leave them out after a successful test on the console. The detailed guide opens with the <strong>Asset Packs Guide</strong> button.</p>
+    <p>For <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> and games built on the <em>Unity</em> or <em>Insomniac</em> engine, the program automatically sets up a tested pack profile (since v1.9.78). A profile of your own next to the dump folder (<code>&lt;folder name&gt;_ampr_pack.toml</code>) always takes precedence.</p>
   </div>
 
   <div class="frage">

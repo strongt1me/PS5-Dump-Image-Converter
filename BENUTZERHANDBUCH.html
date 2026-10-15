@@ -1389,6 +1389,22 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     IL2CPP-Metadaten &ndash;, und beide gelten f&uuml;r alle Spiele ihrer
     Art. Ob ein Titel eine dritte hat, zeigt erst der Start auf der
     Konsole.</p>
+    <p><strong>F&uuml;r vier Spielgruppen liegen getestete Profile bei (seit
+    v1.9.78).</strong> Erkennt das Programm beim Packen
+    <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em>, ein Spiel der
+    <em>Unity</em>-Engine oder eines der <em>Insomniac</em>-Engine, legt es
+    statt des allgemeinen Profils das passende an. Die Profile stammen aus dem
+    Projekt MkPFS.CSharp von danthespal (GPL-3.0) und wurden dort an einer
+    echten PS5 gepr&uuml;ft; sie liegen im Ordner
+    <code>AMPR_PackTools-4.0\profiles</code>. Erkannt wird ein Titel an seiner
+    Title-ID in <code>sce_sys\param.sfo</code> (ASTRO BOT, UFC 6) oder an
+    seinen Dateien (Unity, Insomniac). Gilt Ihr eigenes Profil (siehe unten),
+    wird nichts davon angefasst. Auch ein mitgeliefertes Profil z&auml;hlt als
+    vom Programm erzeugt: Die Originale bleiben also stehen, und beim
+    n&auml;chsten Packen wird es neu geschrieben. Welches Profil benutzt
+    wurde, nennt die erste Zeile der Datei <code>ampr_pack.toml</code>, deren
+    Ablageort im Protokoll steht (&bdquo;integriertes Profil f&uuml;r
+    &hellip;&ldquo;).</p>
     <p><strong>Ihr eigenes Profil hat immer Vorrang.</strong> Legen Sie eine
     Datei mit dem Namen des Dump-Ordners und der Endung
     <code>_ampr_pack.toml</code> <em>neben</em> den Dump-Ordner &ndash; zum
