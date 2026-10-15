@@ -945,6 +945,13 @@ class Metadatenleser:
             if sdk != "–":
                 meta["sdk"] = sdk
 
+        # Sonys Adresse der Updateliste dieses Titels (mit einer Kennung je
+        # Titel, aus der Title-ID nicht errechenbar) - Grundlage der
+        # offiziellen PS5-Updates (ps5_updates). Nur wenn die Datei sie nennt.
+        version_uri = _scalar(payload.get("versionFileUri"))
+        if version_uri:
+            meta["version_file_uri"] = version_uri
+
         region = _pick_scalar(payload, "region", "defaultLanguage", "defaultLanguageCode")
         if region == "–":
             cid = _pick_scalar(payload, "contentId", "content_id")

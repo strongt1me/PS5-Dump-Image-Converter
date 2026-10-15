@@ -129,6 +129,7 @@ from ps5_validator.utils.dump_rename import (
 from ps5_validator.utils import anleitung
 from ps5_validator.utils import bibliothek as bibliothek_bestand
 from ps5_validator.utils import ps5_downloads
+from ps5_validator.utils import ps5_updates
 from ps5_validator.utils import prosperopkg
 from ps5_validator.utils import orbispkg
 from ps5_validator.utils import payload_versand
@@ -5480,6 +5481,10 @@ class PS5ConverterGUI:
         # Verhindert wiederholtes Laden derselben Patches in einer Session.
         # Cache-Eintrag: (timestamp_float, results_list)
         self._patch_cache: dict[str, tuple] = {}  # title_id -> (ts, results)
+        # Pakete aus Sonys offizieller Liste (manifest_url -> Angaben); die
+        # Tabellenzeile traegt nur "sony-update:<manifest_url>".
+        self._sony_pakete: dict[str, dict] = {}
+        self._sony_lauf: dict | None = None
         self._PATCH_CACHE_TTL: int = 3600  # 1 Stunde gültig
         # Live-Systemtelemetrie (CPU/RAM/Temp-Speicher) während laufender Aufgaben.
         self._psutil_proc = None          # gecachtes psutil.Process()-Handle
@@ -23030,6 +23035,15 @@ class PS5ConverterGUI:
         self._hauptfaden_planen(lambda t=tid_upper: self._patch_status_var.set(self._t("info_popup.status_loading", title_id=t)))
         if tid_upper.startswith(("PPSA", "PPSS")):
             sites = [("https://prosperopatches.com", "PS5")]
+            # Sonys eigene Liste, wenn das Spiel ihre Adresse nennt
+            # (param.json: versionFileUri). Als eigene "Seite" mit einem
+            # Vorsatz, damit sie wie die anderen im Faden laeuft.
+            _quelle_meta = getattr(self, "_letzte_meta", None) or {}
+            _sony_uri = str(_quelle_meta.get("version_file_uri", "") or "").strip()
+            if (_sony_uri and ps5_updates.verxml_url_gueltig(_sony_uri)
+                    and self._sanitize_title_id(
+                        str(_quelle_meta.get("title_id", ""))) == tid_upper):
+                sites.append(("sony:" + _sony_uri, "sony"))
         elif tid_upper.startswith(("CUSA", "PUSA")):
             sites = [("https://orbispatches.com", "PS4")]
         else:
@@ -23055,8 +23069,12 @@ class PS5ConverterGUI:
             """
             site_results = []
             try:
-                site_results, fehlgeschlagen = self._patchseite_lesen(
-                    base_url, platform, tid_upper)
+                if base_url.startswith("sony:"):
+                    site_results, fehlgeschlagen = self._sony_updates_lesen(
+                        base_url[len("sony:"):], tid_upper)
+                else:
+                    site_results, fehlgeschlagen = self._patchseite_lesen(
+                        base_url, platform, tid_upper)
                 if fehlgeschlagen:
                     _gescheitert[0] = True
             except Exception as exc:
@@ -23093,8 +23111,10 @@ class PS5ConverterGUI:
                 threads.append(t)
                 t.start()
             # Warten bis alle fertig (non-blocking da daemon=True)
-            for t in threads:
-                t.join(timeout=6)  # 5s Timeout + 1s Puffer
+            for t, (_basis, _konsole) in zip(threads, sites):
+                # 5s Timeout + 1s Puffer; Sonys Liste braucht mehrere
+                # Abfragen (Liste + je ein Manifest) und darf laenger.
+                t.join(timeout=40 if _basis.startswith("sony:") else 6)
             # Finale Anzeige falls noch nicht geschehen
             with _lock:
                 vollstaendig = (_done_count[0] >= _total) and not _gescheitert[0]
@@ -42150,6 +42170,226 @@ class PS5ConverterGUI:
             logger.debug("Patch-Ergebnis-Verarbeitung fehlgeschlagen: %s", exc)
             return ergebnisse, True
 
+    def _ps5upd_text(self, fehler: str) -> str:
+        """Macht aus einer Meldung von ``ps5_updates`` einen lesbaren Satz.
+
+        Das Modul meldet ``schluessel`` oder ``schluessel|einzelheit``; was
+        kein Uebersetzungsschluessel ist (Text aus dem System), bleibt stehen.
+        """
+        schluessel, _, einzelheit = str(fehler).partition("|")
+        text = self._t(schluessel, detail=einzelheit, nr=einzelheit)
+        return str(fehler) if text == schluessel else text
+
+    def _sony_updates_lesen(self, adresse: str, kennung: str) -> tuple[list, bool]:
+        """Sonys offizielle Updateliste eines PS5-Titels - im Faden.
+
+        ``adresse`` ist die ``versionFileUri`` aus der ``param.json`` des
+        Spiels. Je Fassung wird noch das Manifest geholt (eine Anfrage), damit
+        die Groesse in der Tabelle steht; scheitert das, bleibt ein Strich.
+
+        Returns:
+            ``(zeilen, gescheitert)`` im Format von :meth:`_patchseite_lesen`;
+            die Adresse zum Laden ist ``sony-update:<manifest_url>``. Ein 4xx
+            von Sonys Server heisst "keine Liste", nicht "gescheitert".
+        """
+        try:
+            fassungen = ps5_updates.verxml_holen(adresse)
+        except ps5_updates.UpdateFehler as exc:
+            grund = str(exc)
+            if grund.startswith("ps5upd.http|4"):
+                return [], False
+            logger.debug("Sonys Updateliste fuer %s: %s", kennung, grund)
+            text = self._t("ps5upd.log_fehler", title_id=kennung,
+                           error=self._ps5upd_text(grund))
+            self._hauptfaden_planen(lambda t=text: self._append_to_log(t))
+            return [], True
+        self._hauptfaden_planen(lambda n=len(fassungen): self._append_to_log(
+            self._t("ps5upd.log_liste", count=n, title_id=kennung)))
+        plattform = self._t("ps5upd.plattform")
+        zeilen: list = []
+        for nr, fassung in enumerate(fassungen[:8]):
+            if not fassung.manifest_url:
+                continue
+            groesse = 0
+            try:
+                groesse = ps5_updates.manifest_holen(fassung.manifest_url).gesamt
+            except ps5_updates.UpdateFehler as exc:
+                logger.debug("Manifest %s: %s", fassung.manifest_url, exc)
+            stamm = os.path.splitext(
+                urllib.parse.urlparse(fassung.manifest_url).path.rsplit("/", 1)[-1])[0]
+            datei = re.sub(r"[^A-Za-z0-9._-]", "_", "%s_v%s.pkg" % (stamm or kennung, fassung.inhalt))
+            self._sony_pakete[fassung.manifest_url] = {
+                "title_id": kennung, "version": fassung.inhalt,
+                "manifest_url": fassung.manifest_url, "dateiname": datei,
+                "name": stamm or kennung, "gesamt": groesse,
+            }
+            zeilen.append((plattform, fassung.inhalt,
+                           self._fmt_bytes(groesse) if groesse else "-",
+                           fassung.firmware or "-", "-", nr == 0,
+                           "sony-update:" + fassung.manifest_url))
+        return zeilen, False
+
+    def _sony_update_laden(self, manifest_url: str, ist_neueste: "bool | None") -> None:
+        """Klick auf DOWNLOAD bei einer Zeile von Sonys offizieller Liste."""
+        info = self._sony_pakete.get(manifest_url)
+        if not info:
+            return
+        lauf = getattr(self, "_sony_lauf", None)
+        eltern = self._info_popup if getattr(self, "_info_popup", None) is not None else self.root
+        if lauf and lauf.get("aktiv"):
+            messagebox.showinfo(self._t("ps5upd.fenster_titel"),
+                                self._t("ps5upd.laeuft_schon"), parent=eltern)
+            return
+        basis = self._download_basis() or self._download_basis_waehlen(eltern)
+        if not basis:
+            messagebox.showwarning(
+                self._t("downloads.storage_missing_title"),
+                self._t("downloads.storage_missing_message",
+                        update=ps5_downloads.ORDNER_UPDATE,
+                        patch=ps5_downloads.ORDNER_PATCH), parent=eltern)
+            return
+        vorhanden = ps5_downloads.bereits_vorhanden(basis, info["dateiname"])
+        if vorhanden:
+            messagebox.showinfo(self._t("ps5upd.fenster_titel"),
+                                self._t("ps5upd.bereits", pfad=vorhanden), parent=eltern)
+            return
+        ziel = ps5_downloads.zielpfad(
+            basis, ps5_downloads.art_bestimmen(ist_neueste), info["dateiname"])
+        self._sony_ladefenster(info, ziel)
+
+    def _sony_ladefenster(self, info: dict, ziel: str) -> None:
+        """Fenster, das ein Update-Paket von Sonys Server laedt (fortsetzbar).
+
+        Der Faden schreibt nur in ``stand``; ein Takt im Fenster zeigt
+        (Faden-Regel: der Arbeiter fasst Tk nie an).
+        """
+        c = self._COLORS
+        titel = self._t("ps5upd.fenster_titel")
+        win = self._build_modern_toplevel(titel, 720, 330, min_width=560, min_height=300)
+        lauf: dict[str, Any] = {"aktiv": True, "win": win}
+        self._sony_lauf = lauf
+        abbruch = threading.Event()
+        stand: dict[str, Any] = {"geladen": 0, "gesamt": int(info.get("gesamt") or 0),
+                                 "fertig": False, "fehler": "", "status": ""}
+        probe = {"zeit": time.monotonic(), "bytes": 0, "tempo": 0.0}
+
+        self._build_modern_header(win, titel, self._t("ps5upd.fenster_untertitel"))
+        koerper = tk.Frame(win, bg=c["bg_main"])
+        koerper.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+        tk.Label(koerper, text=self._t("ps5upd.kopf", name=info["name"], version=info["version"],
+                                       groesse=self._fmt_bytes(stand["gesamt"]) if stand["gesamt"] else "-"),
+                 font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_main"], fg=c["fg_primary"],
+                 anchor="w").pack(fill="x", pady=(0, 2))
+        tk.Label(koerper, text=self._t("ps5upd.ziel", pfad=ziel), font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w", justify="left",
+                 wraplength=660).pack(fill="x")
+        hinweis = tk.Label(koerper, text=self._t("ps5upd.hinweis"), font=(UI_SCHRIFT, pt(8)),
+                           bg=c["bg_main"], fg=c["fg_secondary"], anchor="w", justify="left",
+                           wraplength=660)
+        hinweis.pack(fill="x", pady=(6, 6))
+        hinweis.bind("<Configure>", lambda _e: hinweis.configure(
+            wraplength=max(200, hinweis.winfo_width() - 8)))
+        balken = self._pw.Progressbar(koerper, mode="determinate", maximum=100)
+        balken.pack(fill="x", pady=(4, 4))
+        status_var = tk.StringVar(value=self._t("ps5upd.status_start"))
+        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w", justify="left", wraplength=660).pack(fill="x")
+
+        knoepfe = tk.Frame(koerper, bg=c["bg_main"], pady=8)
+        knoepfe.pack(side="bottom", fill="x")
+        abbrechen_btn = self._pw.Button(knoepfe, text=self._t("ps5upd.knopf_abbrechen"),
+                                        command=abbruch.set)
+        abbrechen_btn.pack(side="left")
+        ordner_btn = self._pw.Button(
+            knoepfe, text=self._t("ps5upd.knopf_ordner"), state="disabled",
+            command=lambda: self._oeffnen_oder_melden(
+                os.path.dirname(ziel), titel=titel, parent=win))
+        ordner_btn.pack(side="left", padx=(8, 0))
+        schliessen_btn = self._pw.Button(knoepfe, text=self._t("action.close"))
+        schliessen_btn.pack(side="right")
+
+        def _zeit(sekunden: float) -> str:
+            sekunden = int(max(0, sekunden))
+            return "%d:%02d:%02d" % (sekunden // 3600, sekunden % 3600 // 60, sekunden % 60)
+
+        def _fortschritt(geladen: int, gesamt: int) -> None:
+            stand["geladen"] = geladen
+            stand["gesamt"] = gesamt
+
+        def _arbeit() -> None:
+            try:
+                manifest = ps5_updates.manifest_holen(
+                    info["manifest_url"], abbruch=abbruch.is_set)
+                stand["gesamt"] = manifest.gesamt
+                stand["status"] = ""
+                ps5_updates.paket_laden(manifest, ziel, fortschritt=_fortschritt,
+                                        abbruch=abbruch.is_set, faeden=3)
+                stand["fertig"] = True
+            except ps5_updates.UpdateFehler as exc:
+                stand["fehler"] = self._ps5upd_text(str(exc))
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("PS5-Update-Download: unerwarteter Fehler")
+                stand["fehler"] = str(exc)
+            finally:
+                lauf["aktiv"] = False
+
+        def _takt() -> None:
+            try:
+                if not win.winfo_exists():
+                    return
+            except tk.TclError:
+                return
+            aktiv = lauf["aktiv"]       # vor der Anzeige lesen (Endstand nicht verlieren)
+            gesamt = stand["gesamt"]
+            geladen = stand["geladen"]
+            jetzt = time.monotonic()
+            if jetzt - probe["zeit"] >= 1.0:
+                tempo = (geladen - probe["bytes"]) / (jetzt - probe["zeit"])
+                probe["tempo"] = tempo if probe["tempo"] == 0 else 0.7 * probe["tempo"] + 0.3 * tempo
+                probe["zeit"], probe["bytes"] = jetzt, geladen
+            try:
+                prozent = (100.0 * geladen / gesamt) if gesamt else 0.0
+                balken.configure(value=max(0.0, min(100.0, prozent)))
+                if stand["fertig"]:
+                    status_var.set(self._t("ps5upd.status_fertig", pfad=ziel))
+                elif stand["fehler"]:
+                    status_var.set(self._t("ps5upd.status_fehler", fehler=stand["fehler"]))
+                elif gesamt and geladen:
+                    tempo = probe["tempo"]
+                    rest = _zeit((gesamt - geladen) / tempo) if tempo > 1 else "-"
+                    status_var.set(self._t(
+                        "ps5upd.status_lade", geladen=self._fmt_bytes(geladen),
+                        gesamt=self._fmt_bytes(gesamt), prozent="%.1f" % prozent,
+                        tempo=self._fmt_bytes(int(tempo)), rest=rest))
+            except tk.TclError:
+                return
+            if aktiv:
+                win.after(250, _takt)
+                return
+            try:
+                abbrechen_btn.configure(state="disabled")
+                if stand["fertig"]:
+                    ordner_btn.configure(state="normal")
+                    self._append_to_log(self._t("ps5upd.log_fertig", name=info["name"],
+                                                version=info["version"], pfad=ziel))
+            except tk.TclError:
+                pass
+
+        def _schliessen() -> None:
+            if lauf["aktiv"]:
+                if not messagebox.askyesno(titel, self._t("ps5upd.beenden_frage"), parent=win):
+                    return
+                abbruch.set()
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+
+        schliessen_btn.configure(command=_schliessen)
+        win.protocol("WM_DELETE_WINDOW", _schliessen)
+        threading.Thread(target=_arbeit, daemon=True, name="ps5-update-laden").start()
+        _takt()
+
     def _patchliste_holen(self, title_id: str, *, online: bool) -> tuple[list, bool]:
         """Die Updateliste eines Titels - fuer die Bibliothek, im Faden.
 
@@ -49798,6 +50038,9 @@ class PS5ConverterGUI:
         kommt nach vorn und uebernimmt die Adresse von dort per Zwischenablage.
         """
         self._letzte_patch_ist_neueste = ist_neueste
+        if url.startswith("sony-update:"):
+            self._sony_update_laden(url[len("sony-update:"):], ist_neueste)
+            return
         if ps5_downloads.ist_pkg_url(url):
             self._download_aufnehmen(url, ist_neueste=ist_neueste)
             return
