@@ -352,7 +352,7 @@ class NennungTests(unittest.TestCase):
     #: Zeile fuer etwas, das wir gar nicht weitergeben. (``Streaming`` stand
     #: hier bis zum 25.09.2026 - mit ProsperoLight ist der Ordner heraus.)
     EIGEN = {"ps5_validator", "Hintergrundbilder", "Anleitungen", ".github",
-             "libs", "release_notes", "scripts", "tests"}
+             "libs", "release_notes", "scripts", "tests", "docs"}
 
     @classmethod
     def setUpClass(cls) -> None:
