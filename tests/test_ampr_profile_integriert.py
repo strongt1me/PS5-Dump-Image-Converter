@@ -48,11 +48,11 @@ def _spiel(wurzel: Path, title_id: str = "") -> Path:
 
 class ProfileSindLesbar(unittest.TestCase):
     def test_index_nennt_jede_datei_und_jede_datei_ist_toml(self):
-        index = json.loads(Path(ap.PROFIL_ORDNER, "index.json").read_text("utf-8"))
+        index = json.loads(Path(ap.profil_ordner(), "index.json").read_text("utf-8"))
         text = json.dumps(index)
         for dateiname in ap.MITGELIEFERTE_PROFILE.values():
             with self.subTest(profil=dateiname):
-                pfad = Path(ap.PROFIL_ORDNER, dateiname)
+                pfad = Path(ap.profil_ordner(), dateiname)
                 self.assertTrue(pfad.is_file(), "%s fehlt" % dateiname)
                 self.assertIn(dateiname, text, "index.json kennt %s nicht" % dateiname)
                 daten = tomllib.loads(pfad.read_text("utf-8"))

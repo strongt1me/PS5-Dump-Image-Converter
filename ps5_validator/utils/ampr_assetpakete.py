@@ -558,6 +558,22 @@ def direktleser_merkmale(app0: str) -> tuple[str, tuple[str, ...]]:
     return engine, tuple(sorted(set(gefunden[engine])))
 
 
+def profil_ordner() -> str:
+    """Der Ordner mit den mitgelieferten Profilen.
+
+    Gesucht wird wie beim Packwerkzeug ueber :func:`werkzeugordner_finden`
+    (gebaute Fassungen legen die Datenordner nicht dort ab, wo der Quelltext
+    liegt - unter macOS etwa nach ``Contents/Resources``). Erst wenn das
+    Werkzeug nicht gefunden wird, gilt der Pfad relativ zu dieser Datei.
+    """
+    werkzeug = werkzeugordner_finden()
+    if werkzeug:
+        kandidat = os.path.join(werkzeug, "profiles")
+        if os.path.isdir(kandidat):
+            return kandidat
+    return PROFIL_ORDNER
+
+
 def title_id_aus_sfo(app0: str) -> str:
     """Liest die TITLE_ID aus ``sce_sys/param.sfo`` - oder gibt '' zurueck.
 
@@ -623,7 +639,7 @@ def profil_integriert_fuer(app0: str) -> tuple[str, str]:
     if title_id:
         dateiname = MITGELIEFERTE_PROFILE.get(title_id, "")
         if dateiname:
-            pfad = os.path.join(PROFIL_ORDNER, dateiname)
+            pfad = os.path.join(profil_ordner(), dateiname)
             if os.path.isfile(pfad):
                 return title_id, pfad
     # 2. Engine-Erkennung (Unity)
@@ -631,14 +647,14 @@ def profil_integriert_fuer(app0: str) -> tuple[str, str]:
     if engine:
         dateiname = MITGELIEFERTE_PROFILE.get(engine, "")
         if dateiname:
-            pfad = os.path.join(PROFIL_ORDNER, dateiname)
+            pfad = os.path.join(profil_ordner(), dateiname)
             if os.path.isfile(pfad):
                 return engine, pfad
     # 3. Insomniac anhand Ordnerstruktur (nicht ueber DIREKTLESER)
     if _erkennt_insomniac(app0):
         dateiname = MITGELIEFERTE_PROFILE.get("Insomniac", "")
         if dateiname:
-            pfad = os.path.join(PROFIL_ORDNER, dateiname)
+            pfad = os.path.join(profil_ordner(), dateiname)
             if os.path.isfile(pfad):
                 return "Insomniac", pfad
     return "", ""
