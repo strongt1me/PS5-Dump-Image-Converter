@@ -523,6 +523,8 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     # Die Zahlen im Dateinamen (13.60-1.00) sind Firmware und Plugin-Fassung, keine Fassung der Freigabe.
     _hinweis("dpiv2", "DPI v2 (OnionHEN-Plugin)", "OnionBuddies/onionHEN-dpiv2-plugin", "dpiv2-*.elf",
              "updates.hinweis_ohne_freigabe", lokal="fest:"),
+    _ohne("byepervisor", "Byepervisor Reborn", "byepervisor_reborn.elf",
+          "updates.hinweis_ohne_freigabe", seite=_SEITEN["github"] % "drakmor/Byepervisor-Reborn"),
     _ohne("kstuff-drakmor", "kstuff-lite (drakmor, Testfassung)", "kstuff_v*-fpkg-dr-test*.elf",
           "updates.hinweis_testfassung", seite=_SEITEN["github"] % "drakmor/kstuff-lite"),
     _ohne("bdj-unpatch", "Y2JB-P2JB bdj_unpatch", "bdj_unpatch_*.elf", "updates.hinweis_paket",

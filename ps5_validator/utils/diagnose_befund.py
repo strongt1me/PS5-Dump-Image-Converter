@@ -875,7 +875,7 @@ class Diagnosebericht:
 
         Das Gegenstueck zu Hypothesis. Dort sucht eine Bibliothek selbst nach
         einer Eingabe, die eine Eigenschaft verletzt, und schrumpft sie auf
-        das kleinste Gegenbeispiel (``test_eigenschaften.py``). Hier laeuft
+        das kleinste Gegenbeispiel (``tests/test_eigenschaften.py``). Hier laeuft
         eine feste, kurze Auswahl derselben Eigenschaften - dafuer dort, wo
         kein Testlauf hinkommt: in der ausgelieferten EXE.
 
@@ -1119,7 +1119,7 @@ class Diagnosebericht:
                           "   (sonst schreiben die Tests in die echten Einstellungen)")
             zeilen.append("  ruff check PS5ImageConverter_Pro_FINAL_revised.py ps5_validator")
             zeilen.append("  coverage run -m pytest -q; coverage json -o coverage.json")
-            zeilen.append("  python -m pytest test_eigenschaften.py -q")
+            zeilen.append("  python -m pytest tests/test_eigenschaften.py -q")
             zeilen.append("  python tools\\mutationstest.py"
                           "        (sind die Tests etwas wert?)")
             zeilen.append("  git bisect run powershell -NoProfile -File "

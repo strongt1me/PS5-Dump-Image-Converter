@@ -29,6 +29,9 @@ __pycache__/
 # ausführt). Das ging nicht auf: Sieben Dateien waren trotzdem verfolgt,
 # und wer die Tests nachvollziehen will, hatte sie nicht. 58 Dateien,
 # zusammen rund 860 KB Text.
+# Seit dem 15.10.2026 liegen die Tests im Ordner tests/, die Release Notes in
+# release_notes/ und die Pruefskripte in scripts/ - im Stamm standen sonst
+# 386 Eintraege, und GitHub zeigte die README erst darunter.
 
 # Die Release Notes kommen mit: Sie gehören zu einer veröffentlichten Fassung
 # und beschreiben, was sie ausmacht - zusammen 372 KB Text. Prüfsummenlisten

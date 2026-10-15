@@ -1,0 +1,1237 @@
+"""Regressionstests fuer drei kleinere Funde aus dem Praxistest.
+
+1. Hintergrundbild: Die Auswahl wurde als absoluter Pfad gespeichert. In der
+   EXE liegt der mitgelieferte Bildordner unter ``sys._MEIPASS`` und wird beim
+   Beenden geloescht - die gespeicherte Wahl zeigte danach ins Leere und das
+   Bild fiel still auf den Standard zurueck.
+2. Pillow: ``Image.getdata()`` ist seit Pillow 12 veraltet (Entfernung mit
+   Pillow 14) und warf bei jedem Programmstart eine DeprecationWarning.
+3. Temp-Reste: ``ps5conv_*``-Ordner wurden nur beim Schliessen der Oberflaeche
+   entfernt - ein CLI-Lauf endet ueber sys.exit() und liess sie liegen.
+"""
+from __future__ import annotations
+
+import ast
+import os
+import sys
+import tempfile
+import time
+import tkinter as tk
+import unittest
+import warnings
+from pathlib import Path
+
+PROJEKT = Path(__file__).resolve().parent.parent
+if str(PROJEKT) not in sys.path:
+    sys.path.insert(0, str(PROJEKT))
+
+import PS5ImageConverter_Pro_FINAL_revised as APP
+
+QUELLDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
+
+
+class HintergrundbildPfadTests(unittest.TestCase):
+    """Mitgelieferte Bilder werden als Markierung gespeichert, nicht als Pfad."""
+
+    def setUp(self) -> None:
+        self.GUI = APP.PS5ConverterGUI
+        self.bundle = self.GUI._bundled_background_dir()
+        if not self.bundle or not os.path.isdir(self.bundle):
+            self.skipTest("mitgelieferter Bildordner nicht vorhanden")
+        bilder = self.GUI._bundled_background_images()
+        if not bilder:
+            self.skipTest("keine mitgelieferten Bilder vorhanden")
+        self.bild = bilder[0]
+
+    def test_mitgeliefertes_bild_wird_als_markierung_abgelegt(self) -> None:
+        wert = self.GUI._encode_background_setting(self.bild)
+        self.assertTrue(wert.startswith(self.GUI._BUNDLED_IMAGE_MARKER))
+        self.assertEqual(wert.split(":", 1)[1], os.path.basename(self.bild))
+
+    def test_markierung_wird_wieder_aufgeloest(self) -> None:
+        wert = self.GUI._encode_background_setting(self.bild)
+        self.assertEqual(
+            os.path.normcase(self.GUI._decode_background_setting(wert)),
+            os.path.normcase(self.bild),
+        )
+
+    def test_eigenes_bild_bleibt_absoluter_pfad(self) -> None:
+        with tempfile.TemporaryDirectory() as ordner:
+            eigen = os.path.join(ordner, "eigenes.png")
+            Path(eigen).write_bytes(b"\x89PNG\r\n\x1a\n")
+            wert = self.GUI._encode_background_setting(eigen)
+            self.assertFalse(wert.startswith(self.GUI._BUNDLED_IMAGE_MARKER))
+            self.assertEqual(os.path.normcase(wert), os.path.normcase(eigen))
+            self.assertEqual(os.path.normcase(self.GUI._decode_background_setting(wert)),
+                             os.path.normcase(eigen))
+
+    def test_toter_meipass_pfad_wird_repariert(self) -> None:
+        """Genau der Altbestand aus der Konfiguration des Nutzers."""
+        tot = os.path.join(
+            r"C:\Users\XYZ\AppData\Local\Temp\_MEI213362\Hintergrundbilder",
+            os.path.basename(self.bild),
+        )
+        self.assertFalse(os.path.isfile(tot))
+        self.assertEqual(
+            os.path.normcase(self.GUI._decode_background_setting(tot)),
+            os.path.normcase(self.bild),
+        )
+
+    def test_unbekannter_pfad_bleibt_leer(self) -> None:
+        self.assertEqual(self.GUI._decode_background_setting(r"X:\gibtsnicht\bild.png"), "")
+        self.assertEqual(self.GUI._decode_background_setting(""), "")
+        self.assertEqual(self.GUI._decode_background_setting("   "), "")
+
+    def test_markierung_ohne_passende_datei_bleibt_leer(self) -> None:
+        wert = self.GUI._BUNDLED_IMAGE_MARKER + "gibtsnicht.png"
+        self.assertEqual(self.GUI._decode_background_setting(wert), "")
+
+
+class VeralteteBildschnittstelleTests(unittest.TestCase):
+    """``Image.getdata()`` ist seit Pillow 12 veraltet und faellt mit 14 weg.
+
+    Der Rest dieser Klasse pruefte die Durchschnittsfarbe eines Bildes; sie
+    wurde nur fuer die Kartentoenung gebraucht und ist mit allen anderen
+    Bildeffekten ausgebaut. Diese eine Sicherung bleibt: Sie haengt nicht an
+    den Effekten, sondern an der Pillow-Fassung, und ein Rueckfall auf
+    ``getdata()`` faellt sonst erst als Warnung beim Programmstart auf.
+    """
+
+    def test_getdata_wird_nicht_mehr_aufgerufen(self) -> None:
+        """Nur der Aufruf ist verboten - im Kommentar darf der Name stehen."""
+        quelltext = QUELLDATEI.read_text(encoding="utf-8")
+        aufrufe = [
+            zeile.strip() for zeile in quelltext.splitlines()
+            if ".getdata()" in zeile
+            and not zeile.lstrip().startswith("#")
+            and "``" not in zeile
+        ]
+        self.assertEqual(aufrufe, [], f"noch vorhanden: {aufrufe}")
+
+
+class TempRestTests(unittest.TestCase):
+    """Alte Arbeitsordner werden abgeraeumt, junge nicht angefasst."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="sweep_")
+        self.basis = self._tmp.name
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _ordner(self, name: str, alter_stunden: float) -> str:
+        pfad = os.path.join(self.basis, name)
+        os.makedirs(pfad, exist_ok=True)
+        Path(os.path.join(pfad, "inhalt.bin")).write_bytes(b"x" * 16)
+        zeitpunkt = time.time() - alter_stunden * 3600
+        os.utime(pfad, (zeitpunkt, zeitpunkt))
+        return pfad
+
+    def _sweep(self) -> None:
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._get_runtime_temp_dir = lambda: self.basis
+        gui._append_to_log = lambda *a, **k: None
+        gui._t = lambda schluessel, **kw: schluessel
+        APP.PS5ConverterGUI._sweep_stale_temp_dirs(gui)
+
+    def test_alter_rest_wird_entfernt(self) -> None:
+        alt = self._ordner("ps5conv_ufs2_alt", 30)
+        self._sweep()
+        self.assertFalse(os.path.exists(alt))
+
+    def test_junger_ordner_bleibt_unberuehrt(self) -> None:
+        """Schutz fuer einen parallel laufenden zweiten Vorgang."""
+        jung = self._ordner("ps5conv_ufs2_jung", 1)
+        self._sweep()
+        self.assertTrue(os.path.exists(jung))
+
+    def test_fremde_ordner_bleiben_unberuehrt(self) -> None:
+        fremd = self._ordner("wichtige_daten", 99)
+        self._sweep()
+        self.assertTrue(os.path.exists(fremd))
+
+    def test_nur_einmal_je_prozess(self) -> None:
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._get_runtime_temp_dir = lambda: self.basis
+        gui._append_to_log = lambda *a, **k: None
+        gui._t = lambda schluessel, **kw: schluessel
+        APP.PS5ConverterGUI._sweep_stale_temp_dirs(gui)
+        spaeter = self._ordner("ps5conv_nested_pfs_alt", 40)
+        APP.PS5ConverterGUI._sweep_stale_temp_dirs(gui)
+        self.assertTrue(os.path.exists(spaeter), "zweiter Durchlauf haette nicht laufen duerfen")
+
+
+class CliAufraeumenTests(unittest.TestCase):
+    """Der CLI-Modus muss die Temp-Ziele selbst abraeumen."""
+
+    def test_cli_ruft_die_bereinigung_auf(self) -> None:
+        quelltext = QUELLDATEI.read_text(encoding="utf-8")
+        start = quelltext.index("def _run_cli(")
+        block = quelltext[start:start + 40000]
+        ende = block.index("if __name__ ==") if "if __name__ ==" in block else len(block)
+        block = block[:ende]
+        self.assertIn("_cleanup_exit_temp_targets()", block)
+
+    def test_sweep_haengt_an_der_temp_erzeugung(self) -> None:
+        quelltext = QUELLDATEI.read_text(encoding="utf-8")
+        start = quelltext.index("def _mkdtemp(")
+        self.assertIn("_sweep_stale_temp_dirs()", quelltext[start:start + 600])
+
+
+class TempResteNachAufgabeTests(unittest.TestCase):
+    """Alte Reste werden am Ende jeder Aufgabe abgeraeumt.
+
+    ``_sweep_stale_temp_dirs`` haengt an ``_mkdtemp`` und laeuft einmal je
+    Prozess. In der Pruefmatrix vom 12.09.2026 griff er deshalb nur in einem
+    von fuenf Laeufen: Die Wege der Aufgaben 3, 6 und 8 legen ihren
+    Arbeitsordner gar nicht ueber ``_mkdtemp`` an. 178 GB aus abgebrochenen
+    Laeufen blieben fast einen Tag liegen.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="nach_aufgabe_")
+        self.basis = self._tmp.name
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _ordner(self, name: str, alter_stunden: float) -> str:
+        pfad = os.path.join(self.basis, name)
+        os.makedirs(pfad, exist_ok=True)
+        Path(os.path.join(pfad, "inhalt.bin")).write_bytes(b"x" * 16)
+        zeitpunkt = time.time() - alter_stunden * 3600
+        os.utime(pfad, (zeitpunkt, zeitpunkt))
+        return pfad
+
+    def _gui(self):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._get_runtime_temp_dir = lambda: self.basis
+        gui._append_to_log = lambda *a, **k: None
+        gui._t = lambda schluessel, **kw: schluessel
+        return gui
+
+    def test_raeumt_auch_nach_einem_frueheren_sweep_ab(self) -> None:
+        """Das Gegenstueck zu ``test_nur_einmal_je_prozess``."""
+        gui = self._gui()
+        APP.PS5ConverterGUI._sweep_stale_temp_dirs(gui)
+        spaeter = self._ordner("ps5conv_ffpkg_stage_alt", 20)
+        APP.PS5ConverterGUI._temp_reste_nach_aufgabe_abraeumen(gui)
+        self.assertFalse(os.path.exists(spaeter),
+                         "Ein Rest aus einem abgebrochenen Lauf blieb liegen.")
+
+    def test_junge_ordner_bleiben_auch_am_aufgabenende(self) -> None:
+        """Schutz fuer parallel offene Programmfenster."""
+        gui = self._gui()
+        jung = self._ordner("ps5conv_exfat_jung", 1)
+        APP.PS5ConverterGUI._temp_reste_nach_aufgabe_abraeumen(gui)
+        self.assertTrue(os.path.exists(jung))
+
+    def test_haengt_im_gemeinsamen_ausgang_vor_dem_herunterfahren(self) -> None:
+        """Am AST geprueft - Kommentare zaehlen nicht als Aufruf."""
+        baum = ast.parse(QUELLDATEI.read_text(encoding="utf-8"))
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_run_engine_thread")
+
+        def zeile_von(knoten_liste, attr):
+            for anweisung in knoten_liste:
+                for knoten in ast.walk(anweisung):
+                    if isinstance(knoten, ast.Attribute) and knoten.attr == attr:
+                        return knoten.lineno
+            return None
+
+        ausgaenge = [k for k in ast.walk(methode)
+                     if isinstance(k, ast.Try) and k.finalbody
+                     and zeile_von(k.finalbody, "_maybe_shutdown_after_task")]
+        self.assertTrue(ausgaenge, "Der gemeinsame Ausgang ist nicht mehr zu finden.")
+        finalbody = ausgaenge[-1].finalbody
+        aufraeumen = zeile_von(finalbody, "_temp_reste_nach_aufgabe_abraeumen")
+        herunterfahren = zeile_von(finalbody, "_maybe_shutdown_after_task")
+        self.assertIsNotNone(aufraeumen,
+                             "Das Aufraeumen haengt nicht im gemeinsamen Ausgang.")
+        self.assertLess(aufraeumen, herunterfahren,
+                        "Das Herunterfahren darf nicht vor dem Aufraeumen "
+                        "eingeplant werden.")
+
+
+class FfpkgVerschiebenTests(unittest.TestCase):
+    """Das fertige .ffpkg wird verschoben, wenn Buehne und Ziel auf einem Datentraeger liegen.
+
+    Bis v1.9.15 lief immer eine vollstaendige Kopie aus dem Arbeitsordner ins
+    Ziel. Ein 61-GB-Paket belegte damit 122 GB - obwohl beide beim Anwender
+    auf demselben Laufwerk liegen und ein Umbenennen genuegt haette.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="ffpkg_verschieben_")
+        self.stage = os.path.join(self._tmp.name, "stage", "candidate.ffpkg")
+        self.ziel = os.path.join(self._tmp.name, "ziel", "spiel.transfer-test.ffpkg")
+        os.makedirs(os.path.dirname(self.stage))
+        os.makedirs(os.path.dirname(self.ziel))
+        self.inhalt = os.urandom(8192)
+        Path(self.stage).write_bytes(self.inhalt)
+        self.kopiert = []
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _kopieren(self, quelle: str, ziel: str) -> None:
+        self.kopiert.append((quelle, ziel))
+        Path(ziel).write_bytes(Path(quelle).read_bytes())
+
+    @staticmethod
+    def _gui():
+        return APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+
+    def test_gleicher_datentraeger_wird_verschoben(self) -> None:
+        art = APP.PS5ConverterGUI._ffpkg_auf_zielvolume_bringen(
+            self._gui(), self.stage, self.ziel, self._kopieren)
+        self.assertEqual("verschoben", art)
+        self.assertEqual([], self.kopiert, "Es wurde trotzdem kopiert.")
+        self.assertFalse(os.path.exists(self.stage),
+                         "Die Buehne liegt noch da - der Platz ist doppelt belegt.")
+        self.assertEqual(self.inhalt, Path(self.ziel).read_bytes())
+
+    def test_anderer_datentraeger_wird_kopiert(self) -> None:
+        gui = self._gui()
+        gui._selber_datentraeger = lambda a, b: False
+        art = APP.PS5ConverterGUI._ffpkg_auf_zielvolume_bringen(
+            gui, self.stage, self.ziel, self._kopieren)
+        self.assertEqual("kopiert", art)
+        self.assertEqual(1, len(self.kopiert))
+        self.assertEqual(self.inhalt, Path(self.ziel).read_bytes())
+
+    def test_scheitert_das_verschieben_wird_doch_kopiert(self) -> None:
+        """Gleicher Laufwerksbuchstabe, aber ein eingehaengtes Volume."""
+        from unittest import mock
+        with mock.patch.object(APP.os, "replace",
+                               side_effect=OSError(17, "anderes Laufwerk")):
+            art = APP.PS5ConverterGUI._ffpkg_auf_zielvolume_bringen(
+                self._gui(), self.stage, self.ziel, self._kopieren)
+        self.assertEqual("kopiert", art)
+        self.assertEqual(1, len(self.kopiert))
+
+    def test_der_bau_nutzt_den_weg_wirklich(self) -> None:
+        """Eine Reparatur, die nur der Test ruft, schuetzt niemanden."""
+        baum = ast.parse(QUELLDATEI.read_text(encoding="utf-8"))
+        bau = next(k for k in ast.walk(baum)
+                   if isinstance(k, ast.FunctionDef)
+                   and k.name == "_build_ffpkg_from_folder")
+        aufrufe = [n for n in ast.walk(bau) if isinstance(n, ast.Call)]
+        self.assertTrue(
+            any(isinstance(n.func, ast.Attribute)
+                and n.func.attr == "_ffpkg_auf_zielvolume_bringen" for n in aufrufe),
+            "Der Bau bringt den Kandidaten nicht mehr ueber den Verschiebe-Weg ins Ziel.")
+        blanke_kopie = [n for n in aufrufe
+                        if isinstance(n.func, ast.Name)
+                        and n.func.id == "_kopiere_mit_fortschritt"
+                        and n.args and isinstance(n.args[0], ast.Name)
+                        and n.args[0].id == "stage_path"]
+        self.assertEqual([], blanke_kopie, "Die Buehne wird wieder direkt kopiert.")
+
+
+class SidebarCoverTests(unittest.TestCase):
+    """Das Cover in der Sidebar-Vorschau.
+
+    Es sass mit ungleichen Raendern in seiner Flaeche: waagerecht 96 px links
+    gegen 97 px rechts, senkrecht klebte es direkt unter den Modusknoepfen und
+    liess den gesamten Rest bis zum Fussbereich als Leerraum stehen.
+
+    Seit dem 06.10.2026 ist es so breit wie die Knoepfe ("passend groesser",
+    Nutzer), begrenzt durch die Hoehe bis zur Fussleiste - und hoechstens ein
+    Pixel kleiner, damit der Restplatz gerade aufgeht und Tk ihn gleichmaessig
+    verteilen kann.
+    """
+
+    class _Fake:
+        def __init__(self, **werte):
+            self._w = werte
+
+        def winfo_width(self):
+            return self._w.get("width", 0)
+
+        def winfo_height(self):
+            return self._w.get("height", 0)
+
+        def winfo_y(self):
+            return self._w.get("y", 0)
+
+        def winfo_reqheight(self):
+            return self._w.get("reqheight", 0)
+
+        def winfo_ismapped(self):
+            return self._w.get("mapped", True)
+
+        def winfo_manager(self):
+            # _center_sidebar_cover fragt den Packmanager statt der Abbildung
+            # ab: Ein Widget ist gepackt, bevor Tk es abbildet.
+            return "pack" if self._w.get("mapped", True) else ""
+
+    def _gui(self, knopfbreite=473):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui.mode_buttons = [(self._Fake(width=knopfbreite), "pack_folder")]
+        gui.sidebar = self._Fake(width=knopfbreite + 20)
+        return gui
+
+    def test_cover_so_breit_wie_die_knoepfe(self):
+        """Seit 06.10.2026 (Nutzer: "passend groesser"): buendig mit den Knoepfen."""
+        gui = self._gui(knopfbreite=473)
+        self.assertEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui), 473)
+
+    def test_die_hoehe_bis_zur_fussleiste_begrenzt(self):
+        """Ist die Leiste niedrig, passt das Bild samt Spielname zwischen Knoepfe und Fussleiste."""
+        gui = self._gui(knopfbreite=473)
+        gui.mode_buttons = [(self._Fake(width=473, y=400, height=40), "pack_folder")]
+        gui._sidebar_footer_frame = self._Fake(y=740)
+        gui._sidebar_titel_hoehe = lambda: 30
+        groesse = APP.PS5ConverterGUI._sidebar_cover_width(gui)
+        frei = 740 - 440 - 30 - 3 * APP.PS5ConverterGUI._SIDEBAR_COVER_ABSTAND
+        self.assertLessEqual(groesse, frei)
+        self.assertEqual((473 - groesse) % 2, 0, "ungerader Restplatz ergaebe 96/97 px")
+
+    def test_gerader_restplatz_bleibt_unangetastet(self):
+        gui = self._gui(knopfbreite=474)
+        self.assertEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui), 474)
+
+    def test_schmale_sidebar_schneidet_nicht_ab(self):
+        gui = self._gui(knopfbreite=200)
+        self.assertLessEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui), 200)
+
+    def test_untergrenze_wird_eingehalten(self):
+        gui = self._gui(knopfbreite=40)
+        self.assertGreaterEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui), 120)
+
+    def test_ohne_gemessene_geometrie_bleibt_der_alte_wert(self):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui.mode_buttons = []
+        gui.sidebar = None
+        self.assertEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui), 300)
+
+    def test_innenbreite_kommt_vom_modusknopf(self):
+        gui = self._gui(knopfbreite=473)
+        self.assertEqual(APP.PS5ConverterGUI._sidebar_interior_width(gui), 473)
+
+    def test_senkrechte_zentrierung_teilt_den_freiraum(self):
+        """Der Block aus Bild und Name bekommt oben und unten gleich viel Luft."""
+        gesetzt = {}
+
+        class _Label(self._Fake):
+            def winfo_exists(self):
+                return True
+
+            def pack_configure(self, **kw):
+                gesetzt.update(kw)
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui.mode_buttons = [(self._Fake(width=473, y=476, height=40), "pack_folder")]
+        gui._sidebar_preview_img_label = _Label(y=519, reqheight=300, mapped=True)
+        gui._sidebar_footer_frame = self._Fake(y=887)
+        gui._sidebar_preview_title_label = self._Fake(reqheight=20, mapped=True)
+        gui._sidebar_cover_pady = 0
+        APP.PS5ConverterGUI._center_sidebar_cover(gui)
+        # Bereich 516..887, Bild 300, Titel 20+6, Vorlauf 519-516 = 3
+        # frei = 887-516-300-26 = 45, Rest = 39  ->  Mitte = 19
+        # dazu der gewuenschte Zusatzabstand von 8 px  ->  27
+        abstand = APP.PS5ConverterGUI._SIDEBAR_COVER_ABSTAND
+        self.assertEqual(gesetzt.get("pady"), (19 + abstand, 0))
+        # Der Block sitzt bewusst um diesen Abstand tiefer als die exakte Mitte
+        # (Wunsch vom 16.08.2026). Ein Pixel Rest bleibt bei ungeradem Platz.
+        oben = 3 + 19 + abstand
+        unten = 887 - (516 + 3 + 19 + abstand + 300 + 26)
+        self.assertLessEqual(
+            abs((oben - unten) - 2 * abstand), 1,
+            f"oben={oben} unten={unten}: der Block soll {abstand} px tiefer sitzen")
+
+    def test_gesetzte_polsterung_wird_selbst_gemerkt(self):
+        """pack_info() liefert ein Tupel; ein int() darauf warf und legte die
+        Zentrierung ab dem zweiten Aufruf still lahm."""
+        gesetzt = {}
+
+        class _Label(self._Fake):
+            def winfo_exists(self):
+                return True
+
+            def pack_configure(self, **kw):
+                gesetzt.update(kw)
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui.mode_buttons = [(self._Fake(width=473, y=476, height=40), "pack_folder")]
+        # y = bereich_oben + Vorlauf 3 + gesetzte Polsterung 27
+        gui._sidebar_preview_img_label = _Label(y=546, reqheight=300, mapped=True)
+        gui._sidebar_footer_frame = self._Fake(y=887)
+        gui._sidebar_preview_title_label = self._Fake(reqheight=20, mapped=True)
+        gui._sidebar_cover_pady = 19 + APP.PS5ConverterGUI._SIDEBAR_COVER_ABSTAND
+        APP.PS5ConverterGUI._center_sidebar_cover(gui)
+        self.assertEqual(gui._sidebar_cover_pady,
+                         19 + APP.PS5ConverterGUI._SIDEBAR_COVER_ABSTAND)
+        self.assertEqual(gesetzt, {}, "unveraenderte Lage darf nicht neu gesetzt werden")
+
+    def test_ohne_geometrie_passiert_nichts(self):
+        """Vor dem ersten Zeichnen liefert Tk 0/1 - dann darf nichts gesetzt werden."""
+        gesetzt = {}
+
+        class _Label(self._Fake):
+            def winfo_exists(self):
+                return True
+
+            def pack_configure(self, **kw):
+                gesetzt.update(kw)
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui.mode_buttons = [(self._Fake(width=473, y=0, height=0), "pack_folder")]
+        gui._sidebar_preview_img_label = _Label(y=0, reqheight=1, mapped=True)
+        gui._sidebar_footer_frame = self._Fake(y=0)
+        gui._sidebar_preview_title_label = self._Fake(reqheight=0, mapped=False)
+        APP.PS5ConverterGUI._center_sidebar_cover(gui)
+        self.assertEqual(gesetzt, {})
+
+    def test_kein_negativer_abstand_bei_engem_platz(self):
+        gesetzt = {}
+
+        class _Label(self._Fake):
+            def winfo_exists(self):
+                return True
+
+            def winfo_manager(self):
+                return "pack"
+
+            def pack_info(self):
+                return {"pady": 40}
+
+            def pack_configure(self, **kw):
+                gesetzt.update(kw)
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui.mode_buttons = [(self._Fake(width=473, y=476, height=40), "pack_folder")]
+        gui._sidebar_preview_img_label = _Label(y=560, reqheight=300, mapped=True)
+        gui._sidebar_footer_frame = self._Fake(y=700)
+        gui._sidebar_preview_title_label = self._Fake(reqheight=20, mapped=True)
+        APP.PS5ConverterGUI._center_sidebar_cover(gui)
+        self.assertEqual(gesetzt.get("pady"), (0, 0))
+
+    def test_label_wird_nicht_gefuellt_sonst_entsteht_ein_rahmen(self):
+        """Ein Label zeichnet immer seinen Hintergrund. Mit fill="x" stand der
+        unbedeckte Teil als heller Rahmen neben dem Cover - genau der Effekt,
+        der in v1.8.28 schon bei den Karten-Beschriftungen behoben wurde."""
+        quelltext = QUELLDATEI.read_text(encoding="utf-8")
+        start = quelltext.index("_sidebar_preview_img_label.config(image=self._sidebar_preview_photo)")
+        block = quelltext[start:start + 400]
+        self.assertIn('pack(anchor="center"', block)
+        self.assertNotIn('pack(fill="x"', block)
+
+
+def _tk_wurzel_abraeumen(fenster) -> None:
+    """Raeumt eine Tk-Wurzel restlos ab - im Faden, der sie angelegt hat.
+
+    ``destroy()`` allein genuegt nicht. Es schliesst die Fenster und setzt
+    ``tkinter._default_root`` zurueck, gibt aber den Tcl-Interpreter nicht
+    frei: Der haengt am Python-Objekt und stirbt erst, wenn die Muellabfuhr
+    es einsammelt. Wann das geschieht, entscheidet sie selbst.
+
+    Genau daran ist der Gesamtdurchlauf am 31.08.2026 gestorben. Ein
+    spaeteres Modul baut ein WPF-Fenster in einem eigenen STA-Faden; das
+    belegt genug Speicher, um dort eine Sammlung auszuloesen. Sie fand die
+    laengst zerstoerte Wurzel von hier und rief ``Tcl_DeleteInterp`` im
+    falschen Faden auf - Tcl bricht das mit
+    ``Tcl_AsyncDelete: async handler deleted by the wrong thread`` ab, und
+    zwar den ganzen Prozess, ohne Ergebniszeile.
+
+    Der Fehler traf, wer alphabetisch als Erster nach diesem Modul ein
+    WPF-Fenster baut. Bis zum 31.08.2026 war das ``test_wpf_spielinfo``;
+    nachgewiesen ist es fuer beide.
+    """
+    import gc
+
+    try:
+        fenster.destroy()
+    finally:
+        # Erst hier ist der Faden noch der richtige. Zwei Durchgaenge, weil
+        # der erste den Verweisring aufbricht und der zweite das Objekt
+        # einsammelt.
+        gc.collect()
+        gc.collect()
+
+
+class TkAufraeumenTests(unittest.TestCase):
+    """Die Wache dagegen, dass die Falle zurueckkommt.
+
+    Wer hier eine Tk-Wurzel anlegt und nur ``destroy()`` ruft, laesst den
+    Tcl-Interpreter fuer die Muellabfuhr liegen - und die raeumt ihn
+    irgendwann im falschen Faden ab. Der Gesamtdurchlauf stirbt dann ohne
+    Ergebniszeile, und der Absturz erscheint in einem ganz anderen Modul.
+    """
+
+    def test_jede_wurzel_geht_ueber_den_aufraeumweg(self) -> None:
+        baum = ast.parse(Path(__file__).read_text(encoding="utf-8",
+                                                  errors="replace"))
+        for f in ast.walk(baum):
+            if not isinstance(f, ast.FunctionDef):
+                continue
+            # Ueber die Aufrufe, nicht ueber den Text: Eine Pruefung
+            # sucht die Zeile "root = ... tk.Tk()" im Monolithen und
+            # traegt sie als Zeichenkette. Eine Textsuche haelte das
+            # faelschlich fuer eine Wurzel.
+            legt_an = any(
+                isinstance(k, ast.Call)
+                and isinstance(k.func, ast.Attribute)
+                and k.func.attr == "Tk"
+                and isinstance(k.func.value, ast.Name)
+                and k.func.value.id == "tk"
+                for k in ast.walk(f))
+            if not legt_an:
+                continue
+            with self.subTest(pruefung=f.name):
+                self.assertIn("_tk_wurzel_abraeumen(", ast.unparse(f),
+                              "%s legt eine Tk-Wurzel an und raeumt sie "
+                              "nur mit destroy() ab." % f.name)
+
+    def test_der_weg_sammelt_wirklich_ein(self) -> None:
+        """Ohne die Sammlung bliebe der Interpreter am Leben."""
+        rumpf = ast.unparse(next(
+            k for k in ast.walk(ast.parse(
+                Path(__file__).read_text(encoding="utf-8", errors="replace")))
+            if isinstance(k, ast.FunctionDef)
+            and k.name == "_tk_wurzel_abraeumen"))
+        self.assertIn("gc.collect()", rumpf)
+        self.assertIn("fenster.destroy()", rumpf)
+
+
+class FruehesFenstersymbolTests(unittest.TestCase):
+    """Beim Start darf nie die Tk-Standardfeder in der Taskleiste stehen.
+
+    Bis v1.8.51 bekam das Fenster sein Symbol erst in
+    ``PS5ConverterGUI.__init__`` - also nach dem Aufbau von Hintergrundbildern,
+    Cover und Bedienelementen. Der Taskleisteneintrag entsteht aber schon mit
+    ``tk.Tk()``, und bis dahin zeigt Windows das Standardsymbol von Tk. Rund
+    eine Sekunde bei jedem Start.
+
+    ``root.attributes("-alpha", 0.0)`` half nicht: Es macht das Fenster
+    durchsichtig, nicht den Taskleisteneintrag weg.
+    """
+
+    QUELLE = Path(APP.__file__).read_text(encoding="utf-8")
+
+    def test_funktion_vorhanden(self):
+        self.assertTrue(callable(getattr(APP, "_fenstersymbol_sofort_setzen", None)))
+
+    def _gui_start(self) -> str:
+        """Nur der Abschnitt des GUI-Starts.
+
+        'app = PS5ConverterGUI(root ...' steht auch im Kommandozeilenzweig, und der
+        kommt im Quelltext frueher - eine Suche ueber die ganze Datei misst
+        deshalb die falsche Stelle.
+        """
+        beginn = self.QUELLE.index("# Normaler GUI-Modus")
+        return self.QUELLE[beginn:]
+
+    def test_aufruf_steht_vor_dem_aufbau(self):
+        # Die Reihenfolge ist der ganze Punkt: erst Symbol, dann Oberflaeche.
+        abschnitt = self._gui_start()
+        symbol = abschnitt.index("_fenstersymbol_sofort_setzen(root)")
+        aufbau = abschnitt.index("app = PS5ConverterGUI(root, start_leer=True)")
+        self.assertLess(symbol, aufbau,
+                        "Das Symbol wird erst nach dem Aufbau der Oberflaeche gesetzt")
+
+    def test_aufruf_direkt_nach_dem_fenster(self):
+        """Zwischen Fenster und Symbol steht nur der Titel.
+
+        Am Syntaxbaum des Startblocks statt an der woertlichen Zeile: Die
+        Suche nach "root = TkinterDnD.Tk() if _DND_AVAILABLE else tk.Tk()"
+        starb am 17.09.2026, als das Hauptfenster seinen Klassennamen bekam
+        (``className``, fuer StartupWMClass unter Linux).
+        """
+        import ast
+
+        baum = ast.parse(self.QUELLE)
+        start = next(k for k in baum.body if isinstance(k, ast.If)
+                     and "__main__" in ast.unparse(k.test))
+        anweisungen = start.body
+        # Seit dem 24.09.2026 entsteht die Wurzel in _hauptfenster_anlegen
+        # (Rueckfall ohne tkdnd, Durchsicht H12-12).
+        fenster = next(i for i, a in enumerate(anweisungen)
+                       if isinstance(a, ast.Assign) and ast.unparse(a.targets[0]) == "root"
+                       and ("Tk(" in ast.unparse(a.value)
+                            or "_hauptfenster_anlegen(" in ast.unparse(a.value)))
+        symbol = next(i for i, a in enumerate(anweisungen)
+                      if "_fenstersymbol_sofort_setzen(root)" in ast.unparse(a))
+        # Nur der Titel darf dazwischenstehen (Kommentare kennt der Baum
+        # nicht). Alles Weitere verlaengert die Zeitspanne, in der die Feder
+        # sichtbar ist.
+        dazwischen = [ast.unparse(a) for a in anweisungen[fenster + 1:symbol]]
+        self.assertEqual(dazwischen, ["root.title(APP_TITLE)"], f"Dazwischen steht: {dazwischen}")
+
+    def test_drei_quellen_in_der_richtigen_reihenfolge(self):
+        block = self.QUELLE[self.QUELLE.index("def _fenstersymbol_sofort_setzen"):]
+        block = block[:block.index("def _set_windows_app_user_model_id")]
+        datei = block.index("app_icon.ico")
+        eingebettet_ico = block.index("_APP_ICON_ICO_B64")
+        eingebettet_png = block.index("_APP_ICON_PNG32_B64")
+        self.assertLess(datei, eingebettet_ico)
+        self.assertLess(eingebettet_ico, eingebettet_png)
+
+    def test_setzt_wirklich_ein_symbol(self):
+        try:
+            fenster = tk.Tk()
+        except Exception:
+            self.skipTest("Kein Tk verfuegbar")
+        fenster.withdraw()
+        try:
+            self.assertTrue(APP._fenstersymbol_sofort_setzen(fenster))
+        finally:
+            _tk_wurzel_abraeumen(fenster)
+
+    def test_kein_temp_rest_wenn_das_setzen_scheitert(self):
+        """Der Fehlerzweig muss die eben geschriebene .ico wieder abraeumen.
+
+        Weg 2 schreibt das eingebettete Symbol in eine temporaere Datei und
+        loescht sie ueber after(). Scheitert danach iconbitmap, wird das after()
+        nie erreicht - ohne eigenes Aufraeumen bliebe bei jedem Start eine
+        Datei im Temp-Ordner liegen.
+        """
+        import glob
+        import tempfile as _tf
+        from unittest import mock
+
+        try:
+            fenster = tk.Tk()
+        except Exception:
+            self.skipTest("Kein Tk verfuegbar")
+        fenster.withdraw()
+        muster = os.path.join(_tf.gettempdir(), "*.ico")
+        vorher = set(glob.glob(muster))
+        try:
+            # Weg 1 ausschalten, Weg 2 scheitern lassen.
+            with mock.patch.object(APP, "_bundled_resource", return_value=""),                  mock.patch.object(fenster, "iconbitmap", side_effect=RuntimeError("geht nicht")):
+                APP._fenstersymbol_sofort_setzen(fenster)
+            self.assertEqual(set(glob.glob(muster)) - vorher, set(),
+                             "Der Fehlerzweig hat eine .ico im Temp-Ordner liegen lassen")
+        finally:
+            _tk_wurzel_abraeumen(fenster)
+
+    def test_parameter_ist_typisiert(self):
+        # Die Datei nutzt durchgaengig Typangaben; der Helfer soll das auch.
+        zeile = [z for z in self.QUELLE.splitlines()
+                 if z.startswith("def _fenstersymbol_sofort_setzen")]
+        self.assertTrue(zeile)
+        self.assertIn("tk.Tk | tk.Toplevel", zeile[0])
+
+    def test_eingebettetes_ico_gleicht_der_datei(self):
+        # Zwei Quellen, ein Motiv: Weichen sie voneinander ab, zeigt das
+        # Programm je nach Weg ein anderes Symbol.
+        import base64
+        import re
+
+        treffer = re.search(r'_APP_ICON_ICO_B64 = "([^"]+)"', self.QUELLE)
+        self.assertIsNotNone(treffer)
+        eingebettet = base64.b64decode(treffer.group(1))
+        with open(Path(APP.__file__).parent / "app_icon.ico", "rb") as datei:
+            self.assertEqual(eingebettet, datei.read())
+
+
+class DpiWechselTests(unittest.TestCase):
+    """Der Monitorwechsel wird festgehalten, nicht ausgeglichen.
+
+    Ein gemischter Aufbau laesst sich hier nicht herstellen - der Rechner hat
+    einen Monitor. Geprueft wird deshalb die Logik mit untergeschobener
+    Fenster-DPI: Wechselt sie, muss genau eine Warnung fallen; bleibt sie
+    gleich, keine.
+    """
+
+    def _gui(self, dpi_folge):
+        """Baut ein Objekt, dem eine Folge von DPI-Werten vorgesetzt wird."""
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._letzte_fenster_dpi = None
+        gui._dpi_abfrage_moeglich = True
+        gui.root = type("Wurzel", (), {"winfo_id": lambda self: 1})()
+        self._folge = list(dpi_folge)
+        return gui
+
+    def _laufen_lassen(self, gui, dpi_folge):
+        """Ruft die Feststellung je einmal pro DPI-Wert auf."""
+        import logging
+        from unittest import mock
+
+        meldungen = []
+
+        class _Faenger(logging.Handler):
+            def emit(self, satz):
+                meldungen.append((satz.levelno, satz.getMessage()))
+
+        faenger = _Faenger()
+        APP.logger.addHandler(faenger)
+        try:
+            for wert in dpi_folge:
+                with mock.patch.object(APP.ctypes, "windll") as windll:
+                    windll.user32.GetDpiForWindow.return_value = wert
+                    gui._dpi_wechsel_festhalten()
+        finally:
+            APP.logger.removeHandler(faenger)
+        return meldungen
+
+    def test_gleiche_dpi_meldet_nur_den_start(self):
+        gui = self._gui([120, 120, 120])
+        meldungen = self._laufen_lassen(gui, [120, 120, 120])
+        warnungen = [m for stufe, m in meldungen if stufe >= 30]
+        self.assertEqual(warnungen, [], "Ohne Wechsel darf keine Warnung fallen")
+        self.assertEqual(gui._letzte_fenster_dpi, 120)
+
+    def test_wechsel_wird_einmal_gemeldet(self):
+        gui = self._gui([120, 120, 96, 96])
+        meldungen = self._laufen_lassen(gui, [120, 120, 96, 96])
+        warnungen = [m for stufe, m in meldungen if stufe >= 30]
+        self.assertEqual(len(warnungen), 1, meldungen)
+        self.assertIn("125 % -> 100 %", warnungen[0])
+        self.assertIn("DPI 120 -> 96", warnungen[0])
+        self.assertEqual(gui._letzte_fenster_dpi, 96)
+
+    def test_fehlende_windows_funktion_wird_nicht_nachgefragt(self):
+        from unittest import mock
+
+        gui = self._gui([])
+        with mock.patch.object(APP.ctypes, "windll") as windll:
+            windll.user32.GetDpiForWindow.side_effect = AttributeError("zu alt")
+            gui._dpi_wechsel_festhalten()
+            gui._dpi_wechsel_festhalten()
+            # Nach dem ersten Fehlschlag wird gar nicht mehr gefragt.
+            self.assertEqual(windll.user32.GetDpiForWindow.call_count, 1)
+        self.assertFalse(gui._dpi_abfrage_moeglich)
+
+    def test_feststellung_haengt_nicht_an_den_abbruchbedingungen(self):
+        # Ein Monitorwechsel kann in jeden Zweig von _on_root_configure
+        # laufen - Vollbild, kein Hintergrundbild, gleiche Groesse. Die
+        # Feststellung muss davor stehen, sonst faellt sie genau dann aus,
+        # wenn sie gebraucht wird.
+        quelle = QUELLDATEI.read_text(encoding="utf-8")
+        anfang = quelle.index("    def _on_root_configure(self, event: tk.Event)")
+        block = quelle[anfang:anfang + 1600]
+        self.assertIn("self._dpi_wechsel_festhalten()", block)
+        self.assertLess(
+            block.index("self._dpi_wechsel_festhalten()"),
+            # Die Vollbild-Ausnahme ist mit v1.8.55 gefallen; die
+            # Abbruchbedingung heisst seither nur noch so.
+            block.index("if not self._bg_image_cache:"),
+            "Die Feststellung steht hinter einer Abbruchbedingung.",
+        )
+
+    def test_nichts_wird_umgerechnet(self):
+        # Absichtserklaerung: Die Feststellung darf keine Schrift und keine
+        # Geometrie anfassen. Faellt das je um, muss es hier auffallen.
+        quelle = QUELLDATEI.read_text(encoding="utf-8")
+        anfang = quelle.index("    def _dpi_wechsel_festhalten(self)")
+        ende = quelle.index("    def _on_root_configure(", anfang)
+        rumpf = quelle[anfang:ende]
+        for verboten in ("tk scaling", ".configure(font", "geometry(", "nametofont"):
+            self.assertNotIn(verboten, rumpf,
+                             "Die Feststellung greift ein, statt nur zu melden")
+
+
+class FehlerfaengerTests(unittest.TestCase):
+    """Unbehandelte Ausnahmen werden aufgezeichnet statt verschluckt.
+
+    Die EXE wird mit console=False gebaut, damit ist sys.stderr leer.
+    Tkinter schreibt Fehler aus Knopf-Handlern genau dorthin - sie
+    verschwanden spurlos, und der Knopf tat einfach nichts.
+    """
+
+    def setUp(self):
+        APP._LETZTE_FEHLER.clear()
+
+    def _ausnahme(self, art, text):
+        try:
+            raise art(text)
+        except art:
+            import sys as _s
+            return _s.exc_info()
+
+    def test_alle_drei_wege_werden_aufgezeichnet(self):
+        import sys, threading
+
+        APP._haken_setzen()
+        sys.excepthook(*self._ausnahme(ValueError, "Probe Haupt"))
+
+        def kaputt():
+            raise RuntimeError("Probe Faden")
+        faden = threading.Thread(target=kaputt, name="Prober")
+        faden.start()
+        faden.join()
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._append_to_log = lambda _s: None
+        gui._t = lambda k, **kw: ""
+        gui._tk_fehler_melden(*self._ausnahme(KeyError, "Probe Tk"))
+
+        quellen = [e.split(" | ")[1] for e in APP._LETZTE_FEHLER]
+        self.assertEqual(quellen, ["Hauptfaden", "Faden Prober", "Tk-Ereignis"])
+
+    def test_rueckverfolgung_steht_drin(self):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._append_to_log = lambda _s: None
+        gui._t = lambda k, **kw: ""
+        gui._tk_fehler_melden(*self._ausnahme(ZeroDivisionError, "Probe"))
+        eintrag = APP._LETZTE_FEHLER[-1]
+        self.assertIn("ZeroDivisionError", eintrag)
+        self.assertIn("Traceback", eintrag)
+
+    def test_melden_scheitert_nie(self):
+        # Ein Fehler beim Melden eines Fehlers darf das Programm nicht
+        # mitreissen - im Fensterbetrieb gaebe es keinen Ort dafuer.
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+
+        def sprengt(_s):
+            raise OSError("Protokoll kaputt")
+        gui._append_to_log = sprengt
+        gui._t = lambda k, **kw: ""
+        gui._tk_fehler_melden(*self._ausnahme(ValueError, "Probe"))
+        self.assertEqual(len(APP._LETZTE_FEHLER), 1)
+
+    def test_ringspeicher_laeuft_nicht_ueber(self):
+        for i in range(40):
+            APP._fehler_festhalten("Probe", ValueError, ValueError(str(i)), None)
+        self.assertEqual(len(APP._LETZTE_FEHLER), 20)
+
+    def test_haken_werden_beim_start_gesetzt(self):
+        quelle = QUELLDATEI.read_text(encoding="utf-8")
+        anfang = quelle.index("    multiprocessing.freeze_support()")
+        block = quelle[anfang:anfang + 600]
+        self.assertIn("_haken_setzen()", block,
+                      "Die Haken muessen gleich beim Start stehen.")
+        self.assertIn("self.root.report_callback_exception = self._tk_fehler_melden",
+                      quelle)
+
+
+class DiagnoseberichtTests(unittest.TestCase):
+    """Der Bericht traegt jetzt auch Anzeige, Umgebung und Werkzeuge."""
+
+    def _gui(self):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._current_theme = "dunkel"
+        gui._current_language = "de"
+        gui.is_fullscreen = False
+        gui._bg_image_cache = None
+        gui._sidebar_bg_image_cache = None
+        gui.mkpfs_dir = ""
+        gui._load_setting = lambda k, v=None: v
+        return gui
+
+    def test_umgebung_nennt_das_wesentliche(self):
+        zeilen = "\n".join(self._gui()._diagnose_umgebung())
+        for begriff in ("Gebaut als EXE", "Pillow", "tkinterdnd2",
+                        "Drag & Drop aktiv", "Administratorrechte"):
+            self.assertIn(begriff, zeilen)
+
+    def test_werkzeuge_loesen_keine_suche_aus(self):
+        # Ein frischer Suchlauf durchkaemmt alle Laufwerke - der Bericht
+        # darf nicht minutenlang haengen.
+        gui = self._gui()
+        gerufen = []
+        gui._find_filezilla = lambda: gerufen.append("suche")
+        gui._find_filezilla_by_scan = lambda **k: gerufen.append("scan")
+        gui._diagnose_werkzeuge()
+        self.assertEqual(gerufen, [])
+
+    def test_abschnitt_kann_scheitern_ohne_den_bericht_zu_kippen(self):
+        """Ein einzelner Abschnitt darf den ganzen Bericht nie verhindern.
+
+        Der Block wird bis zum Ende der Abschnittsschleife gelesen, nicht
+        ueber eine feste Zeichenzahl: Mit 900 Zeichen fiel der Test um,
+        sobald ein neunter Abschnitt dazukam (die Fortschrittsanzeige am
+        24.08.2026) - obwohl der Sicherheitsnetz-Code unveraendert war.
+        """
+        from ps5_validator.utils.diagnose_befund import Diagnosebericht
+
+        # Ausgefuehrt statt gelesen: Ein Bauer wirft, und der Bericht
+        # muss trotzdem vollstaendig sein. Die frueheren Textsuchen
+        # ueberlebten den Umzug nach diagnose_befund nicht - und sie
+        # bewachten ausgerechnet die Zusicherung, um die es hier geht.
+        bericht = Diagnosebericht()
+        echt = bericht._bauer_holen
+
+        def _einer_wirft(name):
+            if name == "_diagnose_doktor":
+                def _platzt():
+                    raise RuntimeError("Absicht")
+                return _platzt
+            return echt(name)
+
+        bericht._bauer_holen = _einer_wirft
+        text = bericht.bericht_text()
+
+        self.assertIn("Abschnitt fehlgeschlagen", text,
+                      "Der Fehlschlag wurde nicht vermerkt.")
+        self.assertIn("Absicht", text)
+        # Und der Rest steht trotzdem da - alle elf Ueberschriften.
+        for schluessel, _name in Diagnosebericht.ABSCHNITTE:
+            with self.subTest(abschnitt=schluessel):
+                self.assertIn(schluessel, text)
+        self.assertIn("diagnostics.report_section_log_tail", text,
+                      "Der Bericht brach nach dem Fehlschlag ab.")
+
+    def test_protokolldatei_wird_gelesen(self):
+        """Kopfzeile mit Pfad und Groesse, danach hoechstens N Protokollzeilen.
+
+        Die Kopfzeile kam mit v1.8.93 dazu, weil im Bericht nicht stand, dass
+        unter den letzten achtzig Zeilen eine 22-MB-Datei lag. Sie zaehlt
+        gegen die angeforderte Zahl nicht mit.
+
+        Dieser Test war unmittelbar nach der Aenderung noch gruen - aber nur,
+        weil das Protokoll gerade frisch umgerollt war und ueberhaupt weniger
+        als fuenf Zeilen hatte. Deshalb hier ausdruecklich beides pruefen:
+        die Kopfzeile und die Zahl der Zeilen dahinter.
+        """
+        zeilen = APP.PS5ConverterGUI._diagnose_protokolldatei(5)
+        self.assertTrue(zeilen)
+        self.assertTrue(zeilen[0].startswith("("),
+                        "erste Zeile ist die Kopfzeile: %r" % zeilen[0])
+        self.assertTrue(zeilen[0].rstrip().endswith(")"))
+        self.assertLessEqual(len(zeilen) - 1, 5)
+
+    def test_abschnitte_sind_zweisprachig(self):
+        from ps5_validator.utils.i18n import STRINGS
+
+        for schluessel in ("diagnostics.report_section_display",
+                           "diagnostics.report_section_runtime",
+                           "diagnostics.report_section_tools",
+                           "diagnostics.report_section_space",
+                           "diagnostics.report_section_errors",
+                           "diagnostics.report_section_logfile",
+                           "log.unhandled_gui_error"):
+            self.assertIn(schluessel, STRINGS)
+            for sprache in ("de", "en"):
+                self.assertTrue(STRINGS[schluessel].get(sprache), schluessel)
+
+
+class Aufgabe7OhneZielTests(unittest.TestCase):
+    """Aufgabe 7 arbeitet im Quellordner und darf kein Ziel verlangen.
+
+    Gefunden am 08.09.2026 beim Durchgehen aller Aufgaben: Ein Aufruf ohne
+    ``--dest`` endete mit "Bitte ein Zielverzeichnis angeben" - obwohl der
+    AMPR EMU Manager gar nichts an einem Ziel abzulegen hat. In der
+    Testreihe fiel es zunaechst nicht auf, weil in den Einstellungen noch
+    ein Ziel aus einem frueheren Fall stand.
+
+    Dass es ein Versehen war und keine Absicht, zeigt die
+    Speicherplatz-Pruefung unmittelbar darunter: Sie nimmt ``ampr_manager``
+    seit jeher aus. Die Ausnahme fehlte nur eine Pruefung weiter oben.
+    Seit v1.9.15 heisst diese Pruefung ``_platz_klaeren``.
+
+    Ein *angegebenes* Ziel muss weiterhin beanstandet werden, wenn es nicht
+    existiert - sonst landet ein Tippfehler stillschweigend im Quellordner.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def _pruefblock(self) -> str:
+        anfang = self.quelle.index("# Zielpfad validieren nur für Modi")
+        # Endmarke ist der Aufruf der Platzpruefung, kein Kommentar: Den
+        # Kommentar "# Speicherplatz-Validierung" gibt es seit v1.9.15
+        # nicht mehr, und beide Tests brachen daran mit ValueError ab.
+        ende = self.quelle.index("self._platz_klaeren(", anfang)
+        return self.quelle[anfang:ende]
+
+    def test_ohne_ziel_wird_aufgabe_7_nicht_abgewiesen(self):
+        block = self._pruefblock()
+        self.assertIn('mode != "ampr_manager"', block,
+                      "Aufgabe 7 verlangt wieder ein Zielverzeichnis, das "
+                      "sie nicht braucht.")
+
+    def test_ein_angegebenes_ziel_wird_weiter_geprueft(self):
+        block = self._pruefblock()
+        self.assertIn("if dst and not os.path.isdir(dst):", block,
+                      "Ein angegebenes, aber nicht vorhandenes Ziel muss "
+                      "weiterhin auffallen.")
+
+    def test_der_modus_kommt_ohne_ziel_aus(self):
+        """Anker: Faellt _mode_ampr_manager nicht mehr selbst zurueck,
+        waere die gelockerte Vorpruefung ein Loch statt einer Erleichterung.
+        """
+        baum = ast.parse(self.quelle)
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_mode_ampr_manager")
+        rumpf = ast.unparse(knoten)
+        self.assertIn("dst if dst and os.path.isdir(dst) else src_dir", rumpf,
+                      "Aufgabe 7 faellt ohne gueltiges Ziel nicht mehr auf "
+                      "den Quellordner zurueck.")
+
+    def test_die_hilfe_nennt_aufgabe_7(self):
+        stelle = self.quelle.index('"--dest"')
+        zeile = self.quelle[stelle:stelle + 300]
+        self.assertIn("Aufgabe 7", zeile,
+                      "Die Hilfe zu --dest verschweigt, dass Aufgabe 7 "
+                      "ohne Ziel auskommt.")
+
+
+class UmbenennenTests(unittest.TestCase):
+    """Zwei Stellen im Dump-Rename, beide am 08.09.2026 gefunden.
+
+    * ``os.path.exists(ziel)`` lehnte eine reine Schreibweisen-Aenderung
+      ab. Windows und macOS unterscheiden Gross- und Kleinschreibung
+      nicht: "spiel" und "Spiel" sind fuer sie derselbe Pfad, und das
+      Fenster meldete "existiert bereits" - fuer genau diese Aenderung
+      wird es aber oft benutzt.
+    * Nach dem Umbenennen zeigte das Quellfeld im Hauptfenster weiter auf
+      den alten Namen. Der naechste Start scheiterte dann mit "Quelle
+      nicht gefunden", obwohl der Anwender nur umbenannt hatte.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def _rumpf(self) -> str:
+        stelle = self.quelle.index("def _render_dump_rename_window")
+        return self.quelle[stelle:stelle + 9000]
+
+    def test_reine_schreibweise_wird_zugelassen(self):
+        rumpf = self._rumpf()
+        self.assertIn("nur_schreibweise", rumpf,
+                      "Eine reine Gross-/Kleinschreibungsaenderung wird "
+                      "wieder als 'existiert bereits' abgelehnt.")
+        self.assertIn("os.path.normcase", rumpf)
+
+    def test_der_quellpfad_wird_nachgezogen(self):
+        rumpf = self._rumpf()
+        # Seit dem 24.09.2026 benennt _ordner_umbenennen um (H10-3) - und
+        # davor steht noch die Pruefung, ob der neue Name wirklich dasteht.
+        stelle = rumpf.index("self._ordner_umbenennen(ordner, ziel, nur_schreibweise)")
+        danach = rumpf[stelle:stelle + 2000]
+        self.assertIn("self.source_path.set(ziel)", danach,
+                      "Nach dem Umbenennen zeigt das Quellfeld wieder auf "
+                      "den alten, nicht mehr vorhandenen Ordner.")
+
+    def test_die_pruefung_bleibt_fuer_echte_kollisionen(self):
+        """Anker: Ohne diese Bedingung waere die Lockerung ein Loch."""
+        rumpf = self._rumpf()
+        self.assertIn("if os.path.exists(ziel) and not nur_schreibweise:", rumpf)
+
+
+class StilleFehlschlaegeTests(unittest.TestCase):
+    """Wo ein Fehlschlag bisher nur im Protokoll oder gar nirgends stand.
+
+    Alle am 08.09.2026 beim Durchgehen der offenen Befundliste bestaetigt.
+    Gemeinsames Muster: Der Aufruf misslingt, die Oberflaeche geht wortlos
+    in den Ruhezustand, und der Anwender haelt den Knopf fuer kaputt.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def test_dump_rename_fasst_gleiche_vorschlaege_zusammen(self):
+        stelle = self.quelle.index("vorhandene: list[tuple[str, str]] = []")
+        block = self.quelle[stelle:stelle + 400]
+        self.assertIn("gesehen", block)
+        self.assertIn("name not in gesehen", block)
+
+    def test_filezilla_meldet_eine_misslungene_installation(self):
+        stelle = self.quelle.index("def _install_filezilla")
+        block = self.quelle[stelle:self.quelle.index("def _launch_filezilla")]
+        self.assertIn("filezilla.installation_fehlgeschlagen", block,
+                      "Eine misslungene Installation steht wieder nur im "
+                      "Protokoll.")
+
+    def test_filezilla_meldet_eine_untaugliche_auswahl(self):
+        self.assertIn("filezilla.pfad_untauglich", self.quelle,
+                      "Eine abgelehnte Dateiauswahl faellt wieder wortlos "
+                      "unter den Tisch.")
+
+    def test_die_bibliothek_meldet_unlesbare_ordner(self):
+        for schluessel in ("library.ordner_unlesbar", "library.ordner_verschwunden"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, self.quelle)
+
+    def test_der_autoloader_meldet_einen_leeren_ordner(self):
+        for schluessel in ("autoloader.restore_empty", "autoloader.restore_unreadable"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, self.quelle)
+
+    def test_der_autoloader_meldet_nur_in_ein_lebendes_fenster(self):
+        stelle = self.quelle.index("def _autoloader_auftrag")
+        block = self.quelle[stelle:stelle + 2600]
+        self.assertIn("_spaeter_im_fenster", block)
+        self.assertNotIn("self.root.after(0, lambda: stand_var.set(meldung))", block,
+                         "Der Arbeitsfaden meldet wieder ungeprueft an das "
+                         "Fenster - schliesst man es waehrenddessen, endet "
+                         "er mitten in der Arbeit.")
+
+    def test_der_webkit_usb_weg_schreibt_ins_protokoll(self):
+        """Beide Fehlerzweige melden **und** protokollieren.
+
+        Ueber den Syntaxbaum statt ueber eine Zeichenkettensuche im
+        Quelltext: Beim ersten Anlauf stand hier der Name der falschen
+        Funktion, und die Pruefung waere klaglos gruen geblieben, haette
+        ich nicht zufaellig zwei Treffer verlangt.
+        """
+        baum = ast.parse(self.quelle)
+        rumpf = next(
+            ast.unparse(k) for k in ast.walk(baum)
+            if isinstance(k, ast.FunctionDef) and k.name == "_webkit_auf_usb_ablegen")
+        # Seit dem 04.10.2026 (WebKit als Seite der Ansicht KONSOLE) geht das Protokoll ueber
+        # die Zeile der Seite (_webkit_zeile) - sie schreibt auch ins Hauptprotokoll.
+        self.assertEqual(2, rumpf.count("self._webkit_zeile(self._t('webkit.usb_failed'"),
+                         "Die USB-Fehler des WebKit-Wegs stehen wieder nur "
+                         "im Meldungsfenster.")
+        self.assertEqual(2, rumpf.count("messagebox.showerror"),
+                         "Anker: Ohne die Meldungsfenster waere das "
+                         "Protokoll allein zu wenig.")
+
+    def test_der_cover_speicher_faengt_leer_an(self):
+        self.assertIn(
+            'self._library_cover_cache: dict[str, "ImageTk.PhotoImage"] = {}',
+            self.quelle,
+            "Der Cover-Zwischenspeicher wird wieder ueber getattr "
+            "weitergereicht und nie geleert.")
+
+
+class ZweiUebersehenTests(unittest.TestCase):
+    """Zwei Punkte, die ich beim Durchgehen der Liste uebersprungen hatte.
+
+    Aufgefallen erst beim Zurueckschreiben der Ergebnisse in die Liste -
+    ein Grund mehr, das nicht zu vergessen.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def test_das_filezilla_setup_wird_wieder_geloescht(self):
+        """Rund 12 MB je Anlauf blieben im Temp-Ordner liegen.
+
+        Der Dateiname kommt im ganzen Quelltext nur an einer Stelle vor -
+        es hat sie also nie jemand aufgeraeumt.
+        """
+        stelle = self.quelle.index("def _install_filezilla")
+        block = self.quelle[stelle:self.quelle.index("def _launch_filezilla")]
+        self.assertIn("os.remove(installer)", block)
+        self.assertIn("finally:", block,
+                      "Ohne finally bleibt die Datei liegen, sobald die "
+                      "Installation scheitert - also genau dann, wenn es "
+                      "haeufig passiert.")
+
+    def test_der_credits_docstring_luegt_nicht_mehr(self):
+        """Er versprach ein rahmenloses Fenster, das es nie war."""
+        import ast
+        baum = ast.parse(self.quelle)
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef) and k.name == "_show_credits")
+        text = ast.get_docstring(knoten) or ""
+        # Ohne den Docstring: Der erklaert die Sache und nennt das Wort
+        # dabei selbst - danach zu suchen fand die eigene Erklaerung.
+        anweisungen = [k for k in knoten.body
+                       if not (isinstance(k, ast.Expr)
+                               and isinstance(k.value, ast.Constant)
+                               and isinstance(k.value.value, str))]
+        rumpf = "\n".join(ast.unparse(k) for k in anweisungen)
+        self.assertNotIn("overrideredirect", rumpf,
+                         "Wenn das Fenster jetzt doch rahmenlos ist, "
+                         "gehoert der Satz zurueck in den Docstring.")
+        erste_zeile = text.splitlines()[0] if text else ""
+        self.assertNotIn("rahmenlos", erste_zeile,
+                         "Der Docstring verspricht wieder ein rahmenloses "
+                         "Fenster, obwohl es eine Titelleiste hat.")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

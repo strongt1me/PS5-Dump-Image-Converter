@@ -1,0 +1,813 @@
+#!/usr/bin/env python3
+"""
+Build-Validierungstests für PS5ImageConverter
+- Prüft ob PyInstaller das EXE bauen kann
+- Validiert spec-Datei
+- Prüft alle benötigten Daten-Dateien
+"""
+
+import contextlib
+import io
+import os
+import re
+import sys
+import subprocess
+import unittest
+from pathlib import Path
+
+#: Projektwurzel - die Pruefdatei liegt darin.
+PROJEKT = Path(__file__).resolve().parent.parent
+
+# UTF-8 Encoding für Windows
+if sys.stdout.encoding != 'utf-8':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+GREEN = '\033[92m'
+RED = '\033[91m'
+YELLOW = '\033[93m'
+BLUE = '\033[94m'
+RESET = '\033[0m'
+
+# Unicode symbols with fallback for Windows
+try:
+    "[OK]".encode(sys.stdout.encoding)
+    CHECK = "[OK]"
+    CROSS = "[FAIL]"
+except (UnicodeEncodeError, AttributeError):
+    CHECK = "[+]"
+    CROSS = "[x]"
+
+def print_header(title):
+    print(f"\n{BLUE}{'='*60}")
+    print(f"  {title}")
+    print(f"{'='*60}{RESET}\n")
+
+def pruefe_pyinstaller_installed():
+    print_header("TEST: PyInstaller Installation")
+    # Gefragt wird dieselbe Umgebung, mit der Build_EXE.ps1 baut
+    # (``$PYTHON -m PyInstaller``), nicht irgendein ``pyinstaller`` im PATH.
+    # Bis 23.09.2026 stand hier der PATH-Aufruf: Auf dem neuen Rechner fehlte
+    # er, obwohl die .venv PyInstaller hatte - und umgekehrt haette ein
+    # fremdes PyInstaller im PATH eine .venv ohne PyInstaller gedeckt.
+    try:
+        result = subprocess.run([sys.executable, '-m', 'PyInstaller', '--version'],
+                              capture_output=True, text=True, timeout=60)
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            print(f"  {GREEN}[OK]{RESET}  PyInstaller {version}")
+            return True
+        else:
+            print(f"  {RED}[FAIL]{RESET}  PyInstaller nicht gefunden")
+            return False
+    except Exception as e:
+        print(f"  {RED}[FAIL]{RESET}  Fehler: {e}")
+        return False
+
+def _app_version() -> str:
+    """Liest APP_VERSION aus der Hauptdatei.
+
+    Frueher stand die Versionsnummer hier fest im Test und musste bei jedem
+    Sprung von Hand nachgezogen werden - vergass man es, meldete der Test
+    "Output-Dateiname fehlt", obwohl an der .spec nichts falsch war.
+
+    Gelesen wird die ganze Datei. Bis zum 31.08.2026 waren es die ersten
+    20000 Zeichen - eine willkuerliche Grenze, hinter die APP_VERSION
+    rutschte, sobald jemand oben ein paar Zeilen Kommentar ergaenzte. Der
+    Test meldete dann "keine Version gefunden", und die Ursache stand
+    dreissig Zeilen weiter oben in einer ganz anderen Sache.
+    """
+    import re
+    with open('PS5ImageConverter_Pro_FINAL_revised.py', encoding='utf-8') as datei:
+        quelle = datei.read()
+    treffer = re.search(r'APP_VERSION\s*=\s*"(v[\d.]+)"', quelle)
+    return treffer.group(1) if treffer else ''
+
+
+def pruefe_spec_file():
+    print_header("TEST: Spec-Datei Validierung")
+
+    spec_file = "PS5ImageConverter_Pro.spec"
+    if not os.path.exists(spec_file):
+        print(f"  {RED}[FAIL]{RESET}  {spec_file} nicht gefunden")
+        return False
+
+    try:
+        with open(spec_file, 'r') as f:
+            spec_content = f.read()
+
+        # Prüfe auf kritische Elemente
+        checks = [
+            ('name=', 'Exe-Name'),
+            ('datas=', 'Daten-Dateien'),
+            ('hiddenimports=', 'Hidden Imports'),
+            ('UFS2Tool-4.1', 'UFS2Tool-v4.1-Laufzeit je Plattform'),
+            (f'PS5_Dump_Image_Converter_{_app_version()}', 'Output-Dateiname'),
+        ]
+
+        all_ok = True
+        for pattern, desc in checks:
+            if pattern in spec_content:
+                print(f"  {GREEN}[OK]{RESET}  {desc}")
+            else:
+                print(f"  {RED}[FAIL]{RESET}  {desc} fehlt")
+                all_ok = False
+
+        return all_ok
+    except Exception as e:
+        print(f"  {RED}[FAIL]{RESET}  Fehler beim Lesen: {e}")
+        return False
+
+def pruefe_data_files():
+    print_header("TEST: Daten-Dateien für Build")
+
+    required_files = {
+        'app_icon.ico': 'Anwendungsicon',
+        'Build_EXE.ps1': 'Windows-Buildskript',
+        'Start_Build.bat': 'Windows-Doppelklickstarter',
+    }
+    optional_files = {
+        'helloworld/': 'Optionale Helloworld-Einbettung',
+    }
+
+    all_exist = True
+    for file_path, description in required_files.items():
+        exists = os.path.exists(file_path)
+        status = f"{GREEN}[OK]{RESET}" if exists else f"{RED}[FAIL]{RESET}"
+        size_info = ""
+
+        if exists:
+            if os.path.isfile(file_path):
+                size_info = f" ({os.path.getsize(file_path):,} Bytes)"
+            elif os.path.isdir(file_path):
+                files = len(list(Path(file_path).rglob('*')))
+                size_info = f" ({files} Dateien)"
+
+        print(f"  {status}  {description:30} {file_path}{size_info}")
+        all_exist = all_exist and exists
+
+    for file_path, description in optional_files.items():
+        exists = os.path.exists(file_path)
+        status = f"{GREEN}[OK]{RESET}" if exists else f"{YELLOW}[i]{RESET}"
+        print(f"  {status}  {description:30} {file_path}" + ("" if exists else " (nicht eingebettet)"))
+
+    return all_exist
+
+def pruefe_windows_build_starter():
+    print_header("TEST: Windows-Buildstarter")
+
+    starter = Path('Start_Build.bat')
+    if not starter.is_file():
+        print(f"  {RED}[FAIL]{RESET}  Start_Build.bat nicht gefunden")
+        return False
+
+    try:
+        content = starter.read_text(encoding='utf-8')
+    except UnicodeDecodeError:
+        content = starter.read_text(encoding='cp1252')
+    except Exception as e:
+        print(f"  {RED}[FAIL]{RESET}  Starter konnte nicht gelesen werden: {e}")
+        return False
+
+    required_tokens = ('powershell.exe', 'Build_EXE.ps1', 'exit /b %RC%')
+    missing = [token for token in required_tokens if token.lower() not in content.lower()]
+    if missing:
+        print(f"  {RED}[FAIL]{RESET}  Starter unvollständig: {', '.join(missing)}")
+        return False
+
+    print(f"  {GREEN}[OK]{RESET}  Start_Build.bat ruft Build_EXE.ps1 kontrolliert auf")
+    return True
+
+
+def pruefe_icon_format():
+    print_header("TEST: Icon-Format Validierung")
+
+    icon_file = 'app_icon.ico'
+    try:
+        with open(icon_file, 'rb') as f:
+            header = f.read(4)
+
+        # ICO-Dateien beginnen mit 00 00 01 00 (little-endian)
+        if header == b'\x00\x00\x01\x00':
+            size = os.path.getsize(icon_file)
+            print(f"  {GREEN}[OK]{RESET}  Valides ICO-Format ({size:,} Bytes)")
+            return True
+        else:
+            print(f"  {RED}[FAIL]{RESET}  Ungültiges ICO-Header")
+            return False
+    except Exception as e:
+        print(f"  {RED}[FAIL]{RESET}  Fehler: {e}")
+        return False
+
+def pruefe_python_version():
+    print_header("TEST: Python-Version Kompatibilität")
+
+    py_version = sys.version_info
+    version_str = f"{py_version.major}.{py_version.minor}.{py_version.micro}"
+
+    # Python 3.8+ erforderlich für moderne Features
+    if py_version.major >= 3 and py_version.minor >= 8:
+        print(f"  {GREEN}[OK]{RESET}  Python {version_str}")
+        return True
+    else:
+        print(f"  {RED}[FAIL]{RESET}  Python {version_str} zu alt (3.8+ erforderlich)")
+        return False
+
+def pruefe_dependencies_frozen():
+    """Haelt requirements.txt gegen die installierten Fassungen.
+
+    Bis zum 17.09.2026 gab die Funktion beide Listen nur aus und lieferte
+    immer True - verglichen wurde nichts. Beim ersten echten Vergleich standen
+    zwei Pins still hinter dem Bau zurueck (cryptography 49.0.0 gegen 50.0.1
+    seit dem 26.08., tkinterdnd2 0.6.2 gegen 0.6.3): Die Bauskripte
+    installieren mit --upgrade, requirements.txt blieb stehen.
+    """
+    print_header("TEST: Abhängigkeits-Versionen für Build")
+
+    try:
+        import importlib.metadata as metadaten
+        from packaging.requirements import Requirement
+
+        zeilen = (PROJEKT / 'requirements.txt').read_text(encoding='utf-8').splitlines()
+        anforderungen = [Requirement(z.strip()) for z in zeilen
+                         if z.strip() and not z.strip().startswith('#')]
+        if not anforderungen:
+            print(f"  {RED}[FAIL]{RESET}  requirements.txt nennt nichts")
+            return False
+
+        alles_ok = True
+        for anforderung in anforderungen:
+            # Eine Anforderung nur fuer ein anderes System (seit 26.09.2026:
+            # pythonnet und pywebview mit sys_platform == "win32") gilt hier nicht.
+            if anforderung.marker is not None and not anforderung.marker.evaluate():
+                print(f"  [--]  {anforderung.name:20} gilt hier nicht ({anforderung.marker})")
+                continue
+            try:
+                installiert = metadaten.version(anforderung.name)
+            except metadaten.PackageNotFoundError:
+                print(f"  {RED}[FAIL]{RESET}  {anforderung.name:20} fehlt (verlangt: {anforderung})")
+                alles_ok = False
+                continue
+            if anforderung.specifier and not anforderung.specifier.contains(
+                    installiert, prereleases=True):
+                print(f"  {RED}[FAIL]{RESET}  {anforderung.name:20} {installiert} "
+                      f"passt nicht zu {anforderung.specifier}")
+                alles_ok = False
+            else:
+                print(f"  {GREEN}[OK]{RESET}  {anforderung.name:20} {installiert}")
+        return alles_ok
+    except Exception as e:
+        print(f"  {RED}[FAIL]{RESET}  Fehler: {e}")
+        return False
+
+def pruefe_output_directory():
+    """Sind dist/ und build/ fuer den Bau beschreibbar?
+
+    Bis zum 17.09.2026 haengte die Funktion in beiden Zweigen True an und
+    schrieb nie etwas. Jetzt wird je Ordner eine Probedatei angelegt, die
+    beim Schliessen von selbst verschwindet; fehlt ein Ordner, wird der
+    Projektordner geprueft, in dem PyInstaller ihn anlegt. Angelegt wird
+    kein Ordner.
+    """
+    import tempfile
+
+    print_header("TEST: Build-Output-Verzeichnis")
+
+    results = []
+    for dir_name in ('dist', 'build'):
+        ordner = PROJEKT / dir_name
+        ziel = ordner if ordner.is_dir() else PROJEKT
+        try:
+            with tempfile.TemporaryFile(dir=ziel, prefix='.bauprobe_'):
+                pass
+        except OSError as e:
+            print(f"  {RED}[FAIL]{RESET}  {dir_name}/ nicht beschreibbar ({ziel}): {e}")
+            results.append(False)
+            continue
+        if ordner.is_dir():
+            file_count = sum(1 for f in ordner.rglob('*') if f.is_file())
+            print(f"  {YELLOW}[i]{RESET}  {dir_name}/ existiert mit {file_count} Dateien (wird überschrieben)")
+        else:
+            print(f"  {GREEN}[OK]{RESET}  {dir_name}/ entsteht neu")
+        results.append(True)
+
+    return bool(results) and all(results)
+
+class BauvoraussetzungenTests(unittest.TestCase):
+    """Die acht Bau-Voraussetzungen - bis zum 03.09.2026 liefen sie nie mit.
+
+    Sie standen als Modulfunktionen ``test_*`` da, und ``unittest`` sammelt
+    nur Methoden in ``TestCase``-Klassen ein: Die Datei trug elf laufende
+    Pruefungen und daneben acht, die niemand rief. Die Ruempfe sind
+    unveraendert geblieben - sie heissen jetzt ``pruefe_*`` und werden von
+    hier aufgerufen. Ihre Ausgabe landet in der Fehlermeldung, damit im
+    Bericht steht, woran es lag.
+    """
+
+    def _pruefen(self, funktion) -> None:
+        puffer = io.StringIO()
+        with contextlib.redirect_stdout(puffer):
+            bestanden = funktion()
+        self.assertTrue(bestanden, puffer.getvalue().strip() or funktion.__name__)
+
+    def test_pyinstaller_ist_da(self) -> None:
+        self._pruefen(pruefe_pyinstaller_installed)
+
+    def test_die_spec_datei_taugt(self) -> None:
+        self._pruefen(pruefe_spec_file)
+
+    def test_die_datendateien_liegen_da(self) -> None:
+        self._pruefen(pruefe_data_files)
+
+    def test_das_bauskript_liegt_da(self) -> None:
+        self._pruefen(pruefe_windows_build_starter)
+
+    def test_das_symbol_hat_das_richtige_format(self) -> None:
+        self._pruefen(pruefe_icon_format)
+
+    def test_die_pythonfassung_reicht(self) -> None:
+        self._pruefen(pruefe_python_version)
+
+    def test_die_abhaengigkeiten_sind_festgenagelt(self) -> None:
+        self._pruefen(pruefe_dependencies_frozen)
+
+    def test_der_ausgabeordner_ist_beschreibbar(self) -> None:
+        self._pruefen(pruefe_output_directory)
+
+
+def main():
+    print(f"\n{BLUE}{'='*60}")
+    print("  PS5 IMAGE CONVERTER - BUILD-VALIDIERUNG")
+    print(f"{'='*60}{RESET}\n")
+
+    results = {}
+
+    results['PyInstaller'] = pruefe_pyinstaller_installed()
+    results['SpecFile'] = pruefe_spec_file()
+    results['DataFiles'] = pruefe_data_files()
+    results['BuildStarter'] = pruefe_windows_build_starter()
+    results['IconFormat'] = pruefe_icon_format()
+    results['PythonVersion'] = pruefe_python_version()
+    results['Dependencies'] = pruefe_dependencies_frozen()
+    results['OutputDir'] = pruefe_output_directory()
+
+    # Zusammenfassung
+    print_header("BUILD-READINESS ZUSAMMENFASSUNG")
+
+    passed = sum(1 for v in results.values() if v)
+    total = len(results)
+
+    for test_name, result in results.items():
+        status = f"{GREEN}[OK]{RESET}" if result else f"{RED}[FAIL]{RESET}"
+        print(f"  {status}  {test_name}")
+
+    print(f"\n  {BLUE}Ergebnis:{RESET} {passed}/{total} Tests bestanden")
+
+    if passed == total:
+        print(f"\n  {GREEN}🔨 BUILD KANN GESTARTET WERDEN!{RESET}")
+        print(f"  {BLUE}Befehl:{RESET} .\\Build_EXE.ps1\n")
+        return 0
+    else:
+        print(f"\n  {RED}⚠  {total - passed} Voraussetzung(en) nicht erfüllt{RESET}\n")
+        return 1
+
+
+class VersionsstandTests(unittest.TestCase):
+    """Die Versionsnummer steht an vier Stellen - sie muessen zusammenpassen.
+
+    Am 22.08.2026 aufgefallen: Die fertige EXE meldete in ihren
+    Dateieigenschaften **1.8.72.0**, waehrend das Programm v1.8.81 war.
+    file_version_info.txt war neun Ausgaben lang nicht mitgezogen worden,
+    und niemand hat es gemerkt - die Datei faellt nur auf, wenn man die
+    Eigenschaften der EXE im Explorer aufschlaegt.
+
+    Diese Datei war bis dahin ein reines Handskript ohne TestCase und
+    lieferte unter "unittest discover" null Tests. Deshalb steht die
+    Pruefung jetzt als richtige Testklasse hier.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.version = _app_version()          # z. B. "v1.8.81"
+        cls.blank = cls.version.lstrip("v")   # z. B. "1.8.81"
+
+    def test_die_hauptdatei_nennt_ueberhaupt_eine_version(self) -> None:
+        self.assertRegex(self.version, r"^v\d+\.\d+\.\d+$")
+
+    def test_die_spec_baut_den_passenden_namen(self) -> None:
+        with open("PS5ImageConverter_Pro.spec", encoding="utf-8") as datei:
+            inhalt = datei.read()
+        self.assertIn("PS5_Dump_Image_Converter_%s" % self.version, inhalt,
+                      "Der Zielname der .spec passt nicht zu APP_VERSION.")
+
+    def test_die_versionsressource_haengt_nicht_zurueck(self) -> None:
+        """Sonst zeigt Windows in den Dateieigenschaften etwas anderes an."""
+        with open("file_version_info.txt", encoding="utf-8") as datei:
+            inhalt = datei.read()
+        vierstellig = self.blank + ".0"
+        klammer = "(%s, 0)" % ", ".join(self.blank.split("."))
+        self.assertIn(klammer, inhalt, "filevers/prodvers haengen zurueck.")
+        self.assertIn("'FileVersion', '%s'" % vierstellig, inhalt)
+        self.assertIn("'ProductVersion', '%s'" % vierstellig, inhalt)
+        self.assertIn("PS5_Dump_Image_Converter_%s.exe" % self.version, inhalt)
+
+    def test_das_bauskript_kennt_dieselbe_version(self) -> None:
+        with open("Build_EXE.ps1", encoding="utf-8-sig") as datei:
+            inhalt = datei.read()
+        self.assertIn('$EXE_VERSION = "%s"' % self.version, inhalt)
+
+    def test_der_bau_starter_kennt_sie_auch(self) -> None:
+        """Start_Build.bat nennt die Version zweimal, und niemand sah nach.
+
+        Beim Sprung auf v1.9.5 blieb die Datei auf v1.9.4 stehen und fiel
+        erst beim naechsten Release auf. Sie zeigt dem Anwender beim Start
+        des Baus an, welche Fassung entsteht - eine falsche Nummer dort ist
+        harmlos fuer das Ergebnis, aber irrefuehrend.
+        """
+        with open("Start_Build.bat", encoding="utf-8-sig") as datei:
+            inhalt = datei.read()
+        veraltet = re.findall(r"v\d+\.\d+\.\d+", inhalt)
+        self.assertTrue(veraltet, "Start_Build.bat nennt gar keine Version")
+        self.assertEqual({self.version}, set(veraltet),
+                         "Start_Build.bat nennt eine andere Fassung: %s"
+                         % sorted(set(veraltet)))
+
+
+class AmprOrdnerImProgrammTests(unittest.TestCase):
+    """Der AMPR-/PlayGo-Ordner steckt in der Programmdatei.
+
+    Zwischen v1.8.94 und v1.8.95 lag er daneben, damit sich eine neue
+    AMPR-Fassung hineinlegen lässt, ohne neu zu bauen. Das wiegt den Nachteil
+    nicht auf: Wer das Programm weitergibt oder verschiebt und den Ordner
+    vergisst, hat in Aufgabe 7 **keine einzige Version** zur Auswahl - und
+    zwar still, mit der Meldung "keine passende Datei", ohne dass die Ursache
+    erkennbar wäre. Die Auslieferung ist wieder eine einzige Datei.
+
+    Der Weg für eigene Versionen bleibt: Der AMPR-EMU-Manager hat eine
+    Ordnerwahl, und ``--ampr-store`` tut auf der Kommandozeile dasselbe.
+    """
+
+    ORDNER = "PlayGo & AMPR_EMU"
+
+    def _spec(self, name):
+        return (PROJEKT / name).read_text(encoding="utf-8", errors="replace")
+
+    def _skript(self, name):
+        return (PROJEKT / name).read_text(encoding="utf-8", errors="replace")
+
+    def test_jeder_bauplan_bettet_ihn_ein(self):
+        """Vergisst es einer, fehlt er auf genau dieser Plattform."""
+        # Einer seit dem 31.08.2026. Erst ging der macOS-Bauplan ins
+        # Tk-Repository, dann der fuer Linux: Diese Fassung traegt die
+        # WPF-Oberflaeche, und die gibt es nur unter Windows.
+        for name in ("PS5ImageConverter_Pro.spec",):
+            with self.subTest(bauplan=name):
+                inhalt = self._spec(name)
+                self.assertIn("_ampr_store", inhalt,
+                              "%s bettet den Ordner nicht ein" % name)
+                self.assertIn("_datas.append((_ampr_store, 'PlayGo & AMPR_EMU'))",
+                              inhalt,
+                              "%s legt ihn nicht in die Daten" % name)
+
+    def test_kein_bauskript_legt_ihn_mehr_daneben(self):
+        """Sonst lägen dieselben 3 MB zweimal in der Auslieferung."""
+        for skript, verboten in (
+            ("Build_EXE.ps1", "Copy-Item $AMPR_QUELLE"),
+        ):
+            with self.subTest(skript=skript):
+                self.assertNotIn(verboten, self._skript(skript),
+                                 "%s kopiert den Ordner noch daneben" % skript)
+
+    def test_jedes_bauskript_raeumt_einen_alten_ordner_weg(self):
+        """Ein Rest aus einem früheren Bau würde nur verwirren - er sähe aus
+        wie der maßgebliche Versionsspeicher und wäre doch nie benutzt."""
+        for skript, marke in (
+            ("Build_EXE.ps1", "Remove-Item $amprAlt -Recurse -Force"),
+        ):
+            with self.subTest(skript=skript):
+                self.assertIn(marke, self._skript(skript),
+                              "%s raeumt den alten Ordner nicht weg" % skript)
+
+    # Hier stand bis zum 31.08.2026 test_macos_raeumt_gerade_NICHT_auf.
+    # Es ist mit Build_macOS.sh gegangen, aber sein Grund soll nicht mit
+    # verschwinden - er ist teuer bezahlt und gilt im Tk-Repository
+    # weiter:
+    #
+    # Unter Windows und Linux liegt ein Rest aus einem frueheren Bau
+    # NEBEN dem Programm und stoert nur. Im macOS-Buendel dagegen legt
+    # PyInstaller die eingebetteten Daten genau nach
+    # Contents/Resources. Dort zu loeschen nimmt der Mac-Fassung ihre
+    # AMPR-Versionen und macht die Signatur ungueltig - im CI-Lauf vom
+    # 25.08.2026 genau so passiert.
+
+    def test_das_windows_buendel_traegt_ihn_nicht_doppelt(self):
+        inhalt = self._skript("Build_EXE.ps1")
+        self.assertNotIn('Copy-Item $AMPR_QUELLE (Join-Path $buendel', inhalt)
+
+    def test_die_summe_zaehlt_den_ordnerinhalt_mit(self):
+        """Mit ``-File`` allein fiele ein Ordnerinhalt aus der Größenangabe."""
+        self.assertIn("Get-ChildItem $buendel -Recurse -File",
+                      self._skript("Build_EXE.ps1"))
+
+    def test_die_eigene_ordnerwahl_bleibt(self):
+        """Der Ausweg für eigene AMPR-Fassungen darf nicht wegfallen."""
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8", errors="replace")
+        self.assertIn("--ampr-store", quelle)
+
+    def test_die_aufloesung_findet_ihn_im_programm(self):
+        """Der Kern - nachgestellt wie in der gebauten EXE.
+
+        ``_MEIPASS`` trägt den Ordner, und genau dort muss die Auflösung ihn
+        nehmen. Läge daneben noch ein alter Ordner, dürfte er nicht gewinnen:
+        Sonst arbeitete das Programm mit einem Stand, den niemand mehr pflegt.
+        """
+        import importlib.util
+        import shutil
+        import tempfile
+
+        spec = importlib.util.spec_from_file_location(
+            "hp_ampr", PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py")
+        modul = importlib.util.module_from_spec(spec)
+        sys.modules["hp_ampr"] = modul
+        spec.loader.exec_module(modul)
+
+        mei = tempfile.mkdtemp(prefix="meipass_")
+        neben = tempfile.mkdtemp(prefix="neben_exe_")
+        # Im Programm: die maßgebliche Fassung.
+        tief = os.path.join(mei, self.ORDNER, "AMPR_EMU", "0.3.6.4 no debug")
+        os.makedirs(tief)
+        with open(os.path.join(tief, "libSceAmpr.sprx"), "wb") as f:
+            f.write(b"x" * 16)
+        # Daneben: ein Rest aus einem früheren Bau, der nicht gewinnen darf.
+        alt_tief = os.path.join(neben, self.ORDNER, "AMPR_EMU", "0.1.0 no debug")
+        os.makedirs(alt_tief)
+        with open(os.path.join(alt_tief, "libSceAmpr.sprx"), "wb") as f:
+            f.write(b"y" * 16)
+
+        merker = (sys.argv[0], getattr(sys, "_MEIPASS", None), modul.__file__)
+        try:
+            sys.argv[0] = os.path.join(neben, "PS5_Dump_Image_Converter.exe")
+            sys._MEIPASS = mei
+            modul.__file__ = os.path.join(mei, "PS5ImageConverter_Pro_FINAL_revised.py")
+
+            gefunden = modul._bundled_resource(self.ORDNER)
+            self.assertTrue(gefunden, "Der Ordner wurde gar nicht gefunden")
+            self.assertTrue(
+                os.path.normcase(gefunden).startswith(os.path.normcase(mei)),
+                "Gefunden wurde %r statt des Ordners im Programm" % gefunden)
+
+            klasse = modul.PS5ConverterGUI
+            # Eine echte, uneingerichtete Instanz statt der Klasse als
+            # ``self``. Der Kniff ``klasse.methode(klasse, ...)`` trug,
+            # solange die Methode nur Klassenangaben las. Seit sie den
+            # Ordner "AMPR EMU updates" mitliest, ruft sie eine zweite
+            # Methode auf ``self`` - und dann verschiebt der Kniff die
+            # Argumente um eins.
+            gui = klasse.__new__(klasse)
+            eintraege = gui._ampr_scan_version_store(klasse._ampr_bundled_store())
+            self.assertEqual(len(eintraege), 1, eintraege)
+            self.assertEqual(eintraege[0]["version"], "0.3.6.4",
+                             "Der alte Ordner daneben hat gewonnen")
+        finally:
+            sys.argv[0], modul.__file__ = merker[0], merker[2]
+            if merker[1] is None:
+                sys.__dict__.pop("_MEIPASS", None)
+            else:
+                sys._MEIPASS = merker[1]
+            sys.modules.pop("hp_ampr", None)
+            shutil.rmtree(mei, ignore_errors=True)
+            shutil.rmtree(neben, ignore_errors=True)
+
+
+
+class EingebetteteOrdnerTests(unittest.TestCase):
+    """Nichts, was git ignoriert, darf in die fertige Datei wandern.
+
+    Die .spec-Dateien betten ganze Ordner ein, indem sie darueberlaufen.
+    Was dort sonst noch liegt, kommt mit - auch das, was beim Uebersetzen
+    nebenbei entsteht und deshalb in .gitignore steht. Am 06.09.2026 waren
+    das 222 Dateien mit 87,8 MB .NET-Bauausgabe unter
+    ProsperoPkg-2.5/src/ProsperoPkgCli/{bin,obj}: Die Windows-Fassung wuchs
+    dadurch von 143 auf 182 MB. Im Baum faellt so etwas nicht auf, weil git
+    es gar nicht erst zeigt - gesehen wurde es nur, weil die fertige Datei
+    beim Groessenvergleich mit der Vorversion aus dem Rahmen fiel.
+
+    Geprueft wird das Ergebnis, nicht der Wortlaut: Der Test liest aus jeder
+    .spec, welche Ordner sie einbettet und welche Unterordner sie auslaesst,
+    laeuft selbst darueber und fragt git.
+    """
+
+    SPECS = ("PS5ImageConverter_Pro.spec",
+             "PS5ImageConverter_Pro_linux.spec",
+             "PS5ImageConverter_Pro_macos.spec")
+
+    #: Keine Ausnahmen mehr.
+    #:
+    #: Hier standen bis zum 07.09.2026 zwei Werkzeuge aus dem mitgelieferten
+    #: PlayGo-Quellcode: Sie liegen unter ``tools/``, und die Regel ``tools/``
+    #: in .gitignore stand ohne fuehrenden Schraegstrich - damit traf sie jeden
+    #: gleichnamigen Ordner in jeder Tiefe. Die beiden Dateien waren dadurch
+    #: nicht in git, lagen aber in der ausgelieferten Datei. Ein frischer Klon
+    #: hatte sie nicht, die Bauten auf fremder Hardware also auch nicht.
+    #:
+    #: Statt die Ausnahme zu pflegen, wurde die Ursache behoben: Die Regeln
+    #: sind jetzt verankert, die beiden Dateien liegen in git. Eine leere
+    #: Liste ist hier das richtige Ergebnis - jeder neue Eintrag waere ein
+    #: Hinweis darauf, dass wieder etwas Ausgeliefertes an git vorbeilaeuft.
+    ERLAUBT: frozenset[str] = frozenset()
+
+    @staticmethod
+    def _eingebettete_ordner(spec_name):
+        """Liest aus der .spec: Ordnername -> ausgelassene Unterordner."""
+        import ast
+        baum = ast.parse((PROJEKT / spec_name).read_text(encoding="utf-8"))
+
+        # Erst die Zuweisungen der Form  X = os.path.join(_here, 'Name')
+        quelle = {}
+        for knoten in ast.walk(baum):
+            if (isinstance(knoten, ast.Assign) and len(knoten.targets) == 1
+                    and isinstance(knoten.targets[0], ast.Name)
+                    and isinstance(knoten.value, ast.Call)
+                    and len(knoten.value.args) == 2
+                    and isinstance(knoten.value.args[1], ast.Constant)
+                    and isinstance(knoten.value.args[1].value, str)):
+                quelle[knoten.targets[0].id] = knoten.value.args[1].value
+
+        # Dann die Aufrufe, die so einen Ordner einbetten.
+        gefunden = {}
+        for knoten in ast.walk(baum):
+            if not (isinstance(knoten, ast.Call)
+                    and isinstance(knoten.func, ast.Name)
+                    and knoten.func.id == "_dateien_ohne_pycache"):
+                continue
+            if not knoten.args or not isinstance(knoten.args[0], ast.Name):
+                continue
+            name = quelle.get(knoten.args[0].id)
+            if name is None:
+                continue
+            ohne = set()
+            for schluessel in knoten.keywords:
+                if (schluessel.arg == "_ohne"
+                        and isinstance(schluessel.value, ast.Tuple)):
+                    ohne = {e.value for e in schluessel.value.elts
+                            if isinstance(e, ast.Constant)}
+            gefunden[name] = ohne
+        return gefunden
+
+    @staticmethod
+    def _von_git_ignoriert(pfade):
+        """Fragt git, welche der Pfade es ignoriert.
+
+        Die Liste geht als Bytes hinein, nicht als Text: Unter Windows macht
+        Python beim Schreiben aus jedem Zeilenvorschub ein Wagenruecklauf-
+        Paar, git nimmt den Wagenruecklauf als Teil des Pfades und antwortet
+        dann in Anfuehrungszeichen. Der Vergleich lief dadurch schon einmal
+        vollstaendig ins Leere - von 229 gemeldeten Treffern passte einer.
+        """
+        if not pfade:
+            return set()
+        lauf = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            input=chr(10).join(pfade).encode("utf-8"),
+            capture_output=True, timeout=300)
+        return {z.strip() for z
+                in lauf.stdout.decode("utf-8", "replace").splitlines()
+                if z.strip()}
+
+    def setUp(self):
+        if not (PROJEKT / ".git").exists():
+            self.skipTest("kein git-Arbeitsbaum")
+
+    def test_specs_betten_ordner_ein(self):
+        """Ankerpruefung: Findet die Auswertung ueberhaupt noch etwas?
+
+        Ohne diese Pruefung waere der Test unten stumm richtig, sobald sich
+        der Name des Sammelhelfers aendert - er haette dann null Ordner zu
+        pruefen und meldete Erfolg.
+        """
+        for spec_name in self.SPECS:
+            with self.subTest(spec=spec_name):
+                ordner = self._eingebettete_ordner(spec_name)
+                self.assertIn(
+                    "ProsperoPkg-2.5", ordner,
+                    "%s bettet ProsperoPkg-2.5 nicht mehr ueber "
+                    "_dateien_ohne_pycache ein - die Auswertung dieses Tests "
+                    "passt nicht mehr zur .spec." % spec_name)
+
+    def test_kein_von_git_ignorierter_inhalt(self):
+        for spec_name in self.SPECS:
+            with self.subTest(spec=spec_name):
+                dateien = []
+                for name, ohne in self._eingebettete_ordner(spec_name).items():
+                    wurzel = PROJEKT / name
+                    if not wurzel.is_dir():
+                        continue
+                    for stamm, unter, namen in os.walk(wurzel):
+                        unter[:] = [u for u in unter
+                                    if u != "__pycache__" and u not in ohne]
+                        for n in namen:
+                            pfad = Path(stamm, n).relative_to(PROJEKT)
+                            dateien.append(pfad.as_posix())
+                uebrig = sorted(self._von_git_ignoriert(dateien) - self.ERLAUBT)
+                self.assertEqual(
+                    uebrig[:10], [],
+                    "%s bettet %d von git ignorierte Datei(en) ein - "
+                    "das ist Bauschutt und blaeht die fertige Datei auf."
+                    % (spec_name, len(uebrig)))
+
+
+class ToteAbhaengigkeitenTests(unittest.TestCase):
+    """Nichts mitliefern, was das Programm nicht benutzt.
+
+    Gemessen am 20.09.2026 an der v1.9.29-EXE: 23 Module von bcrypt und
+    PyNaCl lagen darin - Abhaengigkeiten von paramiko, das das Programm seit
+    v1.8.93 nirgends benutzt (ins Netz geht es ueber urllib.request, auf die
+    Konsole ueber ftplib). Sie standen als hiddenimports in allen drei .spec,
+    und die Bauskripte installierten paramiko eigens dafuer: zwei
+    Fremdbibliotheken in jeder Auslieferung, die niemand brauchte und die in
+    keiner Nennung standen.
+    """
+
+    SPECS = ("PS5ImageConverter_Pro.spec", "PS5ImageConverter_Pro_linux.spec",
+             "PS5ImageConverter_Pro_macos.spec")
+    TOT = ("paramiko", "bcrypt", "nacl")
+
+    @staticmethod
+    def _hiddenimports(spec_name):
+        import ast
+        baum = ast.parse((PROJEKT / spec_name).read_text(encoding="utf-8"))
+        for knoten in ast.walk(baum):
+            if (isinstance(knoten, ast.keyword) and knoten.arg == "hiddenimports"
+                    and isinstance(knoten.value, ast.List)):
+                return {e.value for e in knoten.value.elts
+                        if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+        return set()
+
+    def test_die_pruefung_liest_die_hiddenimports(self) -> None:
+        """Anker - sonst waere der Test darunter stumm richtig."""
+        for spec in self.SPECS:
+            with self.subTest(spec=spec):
+                self.assertIn("mkpfs.utils", self._hiddenimports(spec))
+
+    def test_keine_toten_hiddenimports(self) -> None:
+        for spec in self.SPECS:
+            namen = self._hiddenimports(spec)
+            for tot in self.TOT:
+                with self.subTest(spec=spec, modul=tot):
+                    self.assertEqual(
+                        [], sorted(n for n in namen
+                                   if n == tot or n.startswith(tot + ".")),
+                        "%s liefert %s mit, obwohl es niemand importiert" % (spec, tot))
+
+    def test_kein_bauskript_installiert_sie(self) -> None:
+        for skript in ("Build_EXE.ps1", "Build_Linux.sh", "Build_macOS.sh"):
+            text = (PROJEKT / skript).read_text(encoding="utf-8-sig")
+            zeilen = [z for z in text.splitlines() if not z.lstrip().startswith("#")
+                      and ("pip install" in z or "_installieren " in z)]
+            for tot in self.TOT:
+                with self.subTest(skript=skript, modul=tot):
+                    self.assertEqual([], [z.strip() for z in zeilen if tot in z])
+
+    def test_das_programm_benutzt_sie_wirklich_nicht(self) -> None:
+        """Die Gegenprobe zum Streichen: Wird eines doch gebraucht, muss es zurueck."""
+        quellen = [PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"]
+        quellen += sorted((PROJEKT / "ps5_validator").rglob("*.py"))
+        for datei in quellen:
+            text = datei.read_text(encoding="utf-8", errors="replace")
+            for tot in self.TOT:
+                with self.subTest(datei=datei.name, modul=tot):
+                    self.assertNotRegex(text, r"(?m)^\s*(import|from)\s+%s\b" % tot)
+
+
+class LaufzeitordnerIgnoriertTests(unittest.TestCase):
+    """Was das Programm zur Laufzeit neben sich anlegt, gehoert nicht ins Repo.
+
+    Das Repo ist oeffentlich. Bis zum 25.09.2026 stand die Regel fuer die
+    Sicherungen der config.ini in Anfuehrungszeichen - git kennt dort keine,
+    die Regel griff nicht, und eine Sicherung aus einem Quelltextstart waere
+    mit ``git add`` hineingerutscht. Die Namen kommen aus dem Programm, nicht
+    aus dem Test. Dazu zwei Ordner, deren Funktion am selben Tag heraus ist
+    (chiaki-ng, ProsperoLight): Was dort noch liegt, ist Fremdsoftware.
+    """
+
+    def setUp(self):
+        if not (PROJEKT / ".git").exists():
+            self.skipTest("kein git-Arbeitsbaum")
+
+    def test_die_ordner_neben_dem_programm_sind_ignoriert(self):
+        sys.path.insert(0, str(PROJEKT))
+        import PS5ImageConverter_Pro_FINAL_revised as haupt
+        from ps5_validator.utils import ampr_updates, wee_tools
+        for ordner in (ampr_updates.ORDNERNAME, wee_tools.ARBEITSORDNER_NAME,
+                       haupt.PS5ConverterGUI._SMP_BACKUP_DIR, "chiaki-ng", "Streaming"):
+            with self.subTest(ordner=ordner):
+                lauf = subprocess.run(["git", "check-ignore", "-q", ordner + "/probe.bin"],
+                                      cwd=str(PROJEKT), capture_output=True, timeout=60)
+                self.assertEqual(0, lauf.returncode,
+                                 "git check-ignore: 0 = ignoriert, 1 = nicht, 128 = Fehler")
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+

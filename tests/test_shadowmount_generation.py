@@ -1,0 +1,357 @@
+# -*- coding: utf-8 -*-
+"""Die zwei Ablage-Mechaniken von ShadowMountPlus.
+
+Der Umbau zwischen 1.7 alpha6 und 1.7 alpha8 macht eine Ablage, die vorher
+richtig war, danach wirkungslos - und zwar ohne jede Meldung. Genau solche
+Aenderungen gehoeren festgenagelt: Wenn hier etwas kippt, merkt man es sonst
+erst an einem Spiel, das ohne seine Ersatzbibliotheken startet.
+
+Quelle sind die beiden Anleitungen vom 22.08.2026, die am Quellcode beider
+Fassungen geprueft wurden. Der Spielordner ist seit 28.09.2026 auf den
+gemessenen Stand von 1.7beta1/beta2 umgestellt (``SPIELORDNER_JE_FASSUNG``):
+Dort wird ``fakelib2`` wieder zuerst gelesen, nur alpha8 bis alpha13fix1
+uebergingen es.
+"""
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+PROJEKT = Path(__file__).resolve().parent.parent
+if str(PROJEKT) not in sys.path:
+    sys.path.insert(0, str(PROJEKT))
+
+from ps5_validator.utils import shadowmount_generation as sg
+
+
+class ProfilTests(unittest.TestCase):
+    """Was die beiden Fassungen unterscheidet."""
+
+    def test_beide_generationen_sind_da(self) -> None:
+        self.assertEqual(set(sg.GENERATIONEN), {sg.ALT, sg.NEU})
+
+    def test_eine_unbekannte_kennung_scheitert_laut(self) -> None:
+        """Lieber ein Fehler als still die falsche Mechanik anwenden."""
+        with self.assertRaises(KeyError):
+            sg.profil("alpha7")
+
+    def test_fakelib2_im_spielordner_je_fassung(self) -> None:
+        """Wirksam bis alpha6, dazwischen nicht, ab 1.7beta1 wieder.
+
+        Am Quelltext gemessen (``resolve_game_fakelib_source_for_path``).
+        Bis zum 28.09.2026 stand hier ``NEU: False`` - der alpha8-Stand,
+        und die Warnungen nannten ein ``fakelib2`` "ignoriert", das in der
+        beiliegenden 1.7beta2 gewinnt.
+        """
+        self.assertEqual(sg.SPIELORDNER_JE_FASSUNG, (
+            (sg.ALT, "bis 1.7 alpha6", ("fakelib2", "fakelib")),
+            (sg.NEU, "1.7 alpha8 bis alpha13fix1", ("fakelib",)),
+            (sg.NEU, "ab 1.7beta1", ("fakelib2", "fakelib")),
+        ))
+        self.assertTrue(sg.profil(sg.ALT)["spiel_fakelib2_wirkt"])
+        self.assertTrue(sg.profil(sg.NEU)["spiel_fakelib2_wirkt"])
+
+    def test_das_profil_beschreibt_die_neueste_stufe(self) -> None:
+        for generation in (sg.ALT, sg.NEU):
+            with self.subTest(generation=generation):
+                letzte = [o for g, _f, o in sg.SPIELORDNER_JE_FASSUNG
+                          if g == generation][-1]
+                self.assertEqual(sg.profil(generation)["spiel_ordner"], letzte)
+
+    def test_abgelegt_wird_was_jede_fassung_liest(self) -> None:
+        """``fakelib`` - obwohl ``NEU`` seit 1.7beta1 ``fakelib2`` zuerst liest.
+
+        Nimmt ``ablageordner`` den ersten gelesenen Namen, schreibt das
+        Programm nach ``fakelib2``, und alpha8 bis alpha13fix1 starten das
+        Spiel ohne die Bibliotheken.
+        """
+        alle = set.intersection(*(set(o) for _g, _f, o
+                                  in sg.SPIELORDNER_JE_FASSUNG))
+        self.assertEqual(alle, {"fakelib"})
+        self.assertEqual(sg.ablageordner(sg.NEU, sg.ORT_SPIEL), "fakelib")
+        self.assertEqual(sg.profil(sg.NEU)["spiel_ablage"], "fakelib")
+
+    def test_nur_die_neue_fassung_kennt_cache_und_emulatoren(self) -> None:
+        self.assertFalse(sg.profil(sg.ALT)["hat_cache"])
+        self.assertFalse(sg.profil(sg.ALT)["hat_emus"])
+        self.assertTrue(sg.profil(sg.NEU)["hat_cache"])
+        self.assertTrue(sg.profil(sg.NEU)["hat_emus"])
+
+    def test_nur_die_alte_fassung_stapelt_schichten(self) -> None:
+        self.assertTrue(sg.profil(sg.ALT)["stapelt_schichten"])
+        self.assertFalse(sg.profil(sg.NEU)["stapelt_schichten"])
+
+
+class SuchreihenfolgeTests(unittest.TestCase):
+    """Die alte Fassung sucht nach Ordnernamen, die neue nach Pfaden."""
+
+    def test_alt_entscheidet_am_ordnernamen(self) -> None:
+        wege = sg.suchreihenfolge(sg.ALT)
+        self.assertEqual(len(wege), 2)
+        self.assertIn("app0/fakelib2/", wege[0])
+        self.assertIn("app0/fakelib/", wege[1])
+
+    def test_alt_bevorzugt_fakelib2(self) -> None:
+        """Bis alpha6 gewinnt fakelib2 - auch wenn es leer ist."""
+        wege = sg.suchreihenfolge(sg.ALT)
+        self.assertLess(wege[0].index("fakelib2"), len(wege[0]))
+        self.assertNotIn("fakelib2", wege[1])
+
+    def test_neu_hat_vier_pfade_in_fester_reihenfolge(self) -> None:
+        """So in ``sm_fakelib.c`` von 1.7beta2 (``candidates[]``)."""
+        self.assertEqual(sg.suchreihenfolge(sg.NEU), (
+            "<scanpath>/backports/<TITLE_ID>/fakelib2/",
+            "<scanpath>/backports/<TITLE_ID>/fakelib/",
+            "<Spielquelle>/fakelib2/",
+            "<Spielquelle>/fakelib/",
+        ))
+
+    def test_neu_sucht_im_spielordner_zuletzt(self) -> None:
+        """Der Backport-Ordner schlaegt das Spiel, auch dessen fakelib2."""
+        wege = sg.suchreihenfolge(sg.NEU)
+        self.assertTrue(all("backports" in w for w in wege[:2]))
+        self.assertTrue(all(w.startswith("<Spielquelle>/") for w in wege[2:]))
+
+
+class AblagezielTests(unittest.TestCase):
+    """Wohin die Bibliotheken tatsaechlich gehoeren."""
+
+    def test_backport_ist_bei_beiden_der_gleiche_pfad(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            with self.subTest(generation=gen):
+                ziel = sg.ablageziel(gen, sg.ORT_BACKPORT,
+                                     title_id="PPSA01234",
+                                     scanpath="/data/homebrew")
+                self.assertEqual(
+                    ziel["pfad"],
+                    "/data/homebrew/backports/PPSA01234/fakelib2")
+                self.assertTrue(ziel["empfohlen"])
+
+    def test_der_scanpath_darf_einen_schraegstrich_am_ende_haben(self) -> None:
+        ziel = sg.ablageziel(sg.NEU, sg.ORT_BACKPORT, title_id="PPSA01234",
+                             scanpath="/data/homebrew/")
+        self.assertEqual(ziel["pfad"],
+                         "/data/homebrew/backports/PPSA01234/fakelib2")
+
+    def test_backport_ohne_angaben_scheitert(self) -> None:
+        with self.assertRaises(ValueError):
+            sg.ablageziel(sg.NEU, sg.ORT_BACKPORT)
+
+    def test_im_spielordner_unterscheiden_sich_die_fassungen(self) -> None:
+        alt = sg.ablageziel(sg.ALT, sg.ORT_SPIEL, wurzel="/mnt/usb0/Spiel")
+        neu = sg.ablageziel(sg.NEU, sg.ORT_SPIEL, wurzel="/mnt/usb0/Spiel")
+        self.assertTrue(alt["pfad"].endswith("fakelib2"))
+        self.assertTrue(neu["pfad"].endswith("fakelib"))
+        self.assertFalse(neu["pfad"].endswith("fakelib2"))
+
+    def test_die_neue_fassung_raet_vom_spielordner_ab(self) -> None:
+        """Und nennt beide Stufen, statt fakelib2 "ignoriert" zu nennen."""
+        neu = sg.ablageziel(sg.NEU, sg.ORT_SPIEL, wurzel="/mnt/usb0/Spiel")
+        self.assertFalse(neu["empfohlen"])
+        self.assertIn("1.7beta1", neu["hinweis"])
+        self.assertIn("alpha13fix1", neu["hinweis"])
+        self.assertNotIn("ignoriert", neu["hinweis"])
+
+    def test_windows_pfade_behalten_ihren_trenner(self) -> None:
+        ziel = sg.ablageziel(sg.ALT, sg.ORT_SPIEL, wurzel=r"E:\Spiele\PPSA01234")
+        self.assertEqual(ziel["pfad"], r"E:\Spiele\PPSA01234\fakelib2")
+
+    def test_ein_unbekannter_ort_scheitert(self) -> None:
+        with self.assertRaises(ValueError):
+            sg.ablageziel(sg.ALT, "irgendwo", wurzel="/x")
+
+
+class BeanstandungenTests(unittest.TestCase):
+    """Was an einer bestehenden Ablage nicht wirkt."""
+
+    def test_fakelib2_im_spielordner_wird_bei_neu_beanstandet(self) -> None:
+        """Genau ein Satz: wirkt ab 1.7beta1, nicht in der Zwischenstufe."""
+        meldungen = sg.beanstandungen(sg.NEU, sg.ORT_SPIEL, ["fakelib2"])
+        self.assertEqual(len(meldungen), 1, meldungen)
+        self.assertIn("1.7beta1", meldungen[0])
+        self.assertIn("alpha13fix1", meldungen[0])
+        self.assertIn("umbenennen nach 'fakelib'", meldungen[0])
+        self.assertNotIn("ignoriert", meldungen[0])
+
+    def test_dieselbe_ablage_ist_bei_alt_in_ordnung(self) -> None:
+        self.assertEqual(sg.beanstandungen(sg.ALT, sg.ORT_SPIEL, ["fakelib2"]), [])
+
+    def test_nur_fakelib_ist_ueberall_in_ordnung(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            with self.subTest(generation=gen):
+                self.assertEqual(
+                    sg.beanstandungen(gen, sg.ORT_SPIEL, ["fakelib"]), [])
+
+    def test_beide_ordner_im_spiel_warnen_bei_alt(self) -> None:
+        """fakelib2 gewinnt, fakelib bleibt ungenutzt - ohne Meldung."""
+        meldungen = sg.beanstandungen(sg.ALT, sg.ORT_SPIEL,
+                                      ["fakelib", "fakelib2"])
+        self.assertTrue(any("ungenutzt" in m for m in meldungen))
+
+    def test_beide_ordner_ein_satz_fuer_beide_generationen(self) -> None:
+        """Wortgleich - sonst stuende er beim Einbau zweimal fast gleich da.
+
+        Er nennt den Gewinner der beiliegenden Fassung und die Ausnahme.
+        """
+        alt = sg.beanstandungen(sg.ALT, sg.ORT_SPIEL, ["fakelib", "fakelib2"])
+        neu = sg.beanstandungen(sg.NEU, sg.ORT_SPIEL, ["fakelib2", "fakelib"])
+        self.assertEqual(alt, neu)
+        self.assertEqual(len(neu), 1, neu)
+        self.assertIn("'fakelib2' gewinnt", neu[0])
+        self.assertIn("1.7beta1", neu[0])
+        self.assertIn("alpha13fix1", neu[0])
+
+    def test_grossschreibung_stoert_nicht(self) -> None:
+        self.assertTrue(sg.beanstandungen(sg.NEU, sg.ORT_SPIEL, ["FakeLib2"]))
+
+    def test_leere_liste_gibt_keine_beanstandung(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            for ort in (sg.ORT_SPIEL, sg.ORT_BACKPORT):
+                with self.subTest(generation=gen, ort=ort):
+                    self.assertEqual(sg.beanstandungen(gen, ort, []), [])
+
+    def test_im_backport_wirken_bei_neu_beide_ordner(self) -> None:
+        self.assertEqual(sg.beanstandungen(sg.NEU, sg.ORT_BACKPORT, ["fakelib"]), [])
+
+    def test_beide_im_backport_nennen_den_gewinner(self) -> None:
+        meldungen = sg.beanstandungen(sg.NEU, sg.ORT_BACKPORT,
+                                      ["fakelib", "fakelib2"])
+        self.assertTrue(any("gewinnt" in m for m in meldungen))
+
+
+class ErkennungTests(unittest.TestCase):
+    """Welche Fassung auf der Konsole laeuft - drei Anzeichen."""
+
+    def test_ein_neuer_schluessel_genuegt(self) -> None:
+        befund = sg.generation_erkennen(config_text="update_emulators=1")
+        self.assertEqual(befund["generation"], sg.NEU)
+
+    def test_eine_config_ohne_neue_schluessel_ist_nur_ein_hinweis(self) -> None:
+        """Nach dem Umstieg bleibt die alte config.ini stehen (U2-2).
+
+        ShadowMount+ legt sie nur an, wenn keine da ist. Bis zum 24.09.2026
+        galt eine Datei ohne die neuen Schluessel als Beleg fuer ALT - auf
+        einer umgestiegenen Konsole riet die Automatik dann zur alten
+        Ablage, die alpha8 ohne Meldung ignoriert.
+        """
+        befund = sg.generation_erkennen(
+            config_text="backport_fakelib=1\nglobal_fakelib=1")
+        self.assertEqual(befund["generation"], "")
+        self.assertFalse(befund["widerspruch"])
+        # Gezeigt wird der Hinweis trotzdem - mit leerer Kennung.
+        self.assertEqual([k for k, _ in befund["belege"]], [""])
+
+    def test_die_logzeile_genuegt_allein(self) -> None:
+        befund = sg.generation_erkennen(
+            log_text="[FAKELIB] using cache for PPSA01234: ...")
+        self.assertEqual(befund["generation"], sg.NEU)
+
+    def test_ein_fehlender_cache_beweist_nichts(self) -> None:
+        """Der Cache entsteht erst, wenn er gebraucht wird."""
+        befund = sg.generation_erkennen(cache_ordner_da=False)
+        self.assertEqual(befund["generation"], "")
+        self.assertEqual(befund["belege"], [])
+
+    def test_ohne_anhaltspunkte_wird_nichts_behauptet(self) -> None:
+        befund = sg.generation_erkennen()
+        self.assertEqual(befund["generation"], "")
+        self.assertFalse(befund["widerspruch"])
+
+    def test_eine_alte_config_widerspricht_dem_cache_nicht(self) -> None:
+        """Der Cache ist ein Beleg, die alte config.ini nur ein Hinweis.
+
+        Bis zum 24.09.2026 stand hier ein "Widerspruch" - genau der Fall
+        einer umgestiegenen Konsole mit stehengebliebener config.ini.
+        """
+        befund = sg.generation_erkennen(
+            config_text="backport_fakelib=1", cache_ordner_da=True)
+        self.assertFalse(befund["widerspruch"])
+        self.assertEqual(befund["generation"], sg.NEU)
+        self.assertEqual(len(befund["belege"]), 2)
+
+    def test_die_belege_werden_mitgeliefert(self) -> None:
+        """Ohne Beleg waere die Aussage nicht nachpruefbar."""
+        befund = sg.generation_erkennen(config_text="auto_update_ampr=0")
+        self.assertTrue(befund["belege"])
+        self.assertIn("auto_update_ampr", befund["belege"][0][1])
+
+
+class RangfolgeTests(unittest.TestCase):
+    """Wer bei gleichen Dateinamen gewinnt."""
+
+    def test_alt_stapelt_zwei_schichten(self) -> None:
+        self.assertEqual(len(sg.rangfolge(sg.ALT, "game")), 2)
+
+    def test_neu_kennt_drei_quellen(self) -> None:
+        self.assertEqual(len(sg.rangfolge(sg.NEU, "game")), 3)
+
+    def test_standard_laesst_das_spiel_gewinnen(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            with self.subTest(generation=gen):
+                self.assertIn("Spiel-fakelib", sg.rangfolge(gen, "game")[:2])
+
+    def test_global_stellt_die_globale_nach_vorn(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            with self.subTest(generation=gen):
+                self.assertEqual(sg.rangfolge(gen, "global")[0],
+                                 "globale fakelib")
+
+    def test_emulatoren_gibt_es_nur_in_der_neuen_fassung(self) -> None:
+        self.assertNotIn("Emulator-Dateien", sg.rangfolge(sg.ALT, "game"))
+        self.assertIn("Emulator-Dateien", sg.rangfolge(sg.NEU, "game"))
+
+
+class ConfigTests(unittest.TestCase):
+    """Die Schluessel, die je Fassung gelten."""
+
+    def test_die_neuen_schluessel_fehlen_in_der_alten_fassung(self) -> None:
+        alte = {k for k, _ in sg.profil(sg.ALT)["config_schluessel"]}
+        for schluessel in sg.NUR_NEU_SCHLUESSEL:
+            with self.subTest(schluessel=schluessel):
+                self.assertNotIn(schluessel, alte)
+
+    def test_die_neue_fassung_kennt_sie_alle(self) -> None:
+        neue = {k for k, _ in sg.profil(sg.NEU)["config_schluessel"]}
+        for schluessel in sg.NUR_NEU_SCHLUESSEL:
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, neue)
+
+    def test_der_master_schalter_gilt_in_beiden(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            with self.subTest(generation=gen):
+                schluessel = {k for k, _ in sg.profil(gen)["config_schluessel"]}
+                self.assertIn("backport_fakelib", schluessel)
+
+    def test_der_ampr_download_ist_ab_werk_aus(self) -> None:
+        """Ohne diese Option kein Netzzugriff - das muss so bleiben."""
+        vorgaben = dict(sg.profil(sg.NEU)["config_schluessel"])
+        self.assertEqual(vorgaben["auto_update_ampr"], "0")
+
+
+class CacheUndFallenTests(unittest.TestCase):
+    """Cache-Pfad und die Punkte, an denen es haengt."""
+
+    def test_der_cache_pfad_stimmt(self) -> None:
+        self.assertEqual(sg.cache_pfad("PPSA01234"),
+                         "/data/shadowmount/cache/PPSA01234/fakelib")
+
+    def test_beide_fassungen_nennen_stolperfallen(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            with self.subTest(generation=gen):
+                self.assertTrue(sg.stolperfallen(gen))
+
+    def test_der_cache_ordner_taucht_nur_bei_neu_auf(self) -> None:
+        alt = " ".join(sg.stolperfallen(sg.ALT))
+        neu = " ".join(sg.stolperfallen(sg.NEU))
+        self.assertNotIn("Cache-Ordner", alt)
+        self.assertIn("Cache-Ordner", neu)
+
+    def test_backpork_wird_in_beiden_genannt(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            with self.subTest(generation=gen):
+                self.assertIn("BackPork", " ".join(sg.stolperfallen(gen)))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

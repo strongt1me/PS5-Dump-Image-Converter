@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.77):** Der AMPR-Mitschnitt sitzt jetzt in der Ansicht KONSOLE, und die Seite PKG zeigt Cover und Spiel-Info wie die Aufgaben 1 bis 6.
+> **Kurz zum aktuellen Stand (v1.9.78):** Für ASTRO BOT, EA Sports UFC 6, Insomniac-Spiele und Unity-Spiele legt das Programm beim Asset-Pack jetzt automatisch ein getestetes Packprofil an.
 
 ---
+
+## v1.9.78 – 15.10.2026
+
+- **Neu:** Beim Bauen von Asset-Packs erkennt das Programm ASTRO BOT, EA Sports UFC 6 sowie Spiele der Insomniac- und der Unity-Engine und setzt ein getestetes Packprofil ein; eigene Profile bleiben unangetastet.
+- **Geändert:** Weitere Dateien, die die Konsole außerhalb des Spiels liest (Texturdaten, Lademenü-Katalog, Scream-Audiodaten), bleiben beim Asset-Pack lose auf der Platte.
+- **Aktualisiert:** PS4 Mount 0.5.0; neu in der Payload-Sammlung: Byepervisor Reborn.
 
 ## v1.9.77 – 14.10.2026
 

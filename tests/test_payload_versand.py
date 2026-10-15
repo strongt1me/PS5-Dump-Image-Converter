@@ -1,0 +1,500 @@
+# -*- coding: utf-8 -*-
+"""Tests fuer den Payload-Versand mit seinen drei Wegen.
+
+Die Wegwahl ist der ganze Sinn des Moduls, und sie ist nicht beliebig:
+elfldr zuerst, weil nur er die Ausgabe des Payloads zurueckreicht. Wer die
+Reihenfolge umdreht, bekommt ein Werkzeug, das zwar etwas startet, aber
+nie sagen kann, ob es geklappt hat - genau der Zustand, in dem die
+Fehlersuche am 29.08.2026 mehrfach stecken blieb.
+"""
+import io
+import os
+import shutil
+import socket
+import sys
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+
+PROJEKT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJEKT))
+
+import PS5ImageConverter_Pro_FINAL_revised as APP
+from ps5_validator.utils import i18n, payload_versand as pv
+
+HAUPTDATEI = str(PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py")
+
+
+class _Lauscher:
+    """Ein Port, auf dem wirklich jemand zuhoert - fuer port_offen()."""
+
+    def __init__(self):
+        self.buchse = socket.socket()
+        self.buchse.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.buchse.bind(("127.0.0.1", 0))
+        self.buchse.listen(1)
+        self.port = self.buchse.getsockname()[1]
+
+    def zu(self):
+        self.buchse.close()
+
+
+class PortTests(unittest.TestCase):
+    """port_offen soll nicht raten, sondern nachsehen."""
+
+    def test_offener_port_wird_erkannt(self):
+        lauscher = _Lauscher()
+        try:
+            self.assertTrue(pv.port_offen("127.0.0.1", lauscher.port))
+        finally:
+            lauscher.zu()
+
+    def test_geschlossener_port_wird_erkannt(self):
+        lauscher = _Lauscher()
+        port = lauscher.port
+        lauscher.zu()
+        self.assertFalse(pv.port_offen("127.0.0.1", port, timeout=1.0))
+
+
+class ElfldrTests(unittest.TestCase):
+    """Der gewohnte Weg: senden, Senderichtung schliessen, Ausgabe lesen."""
+
+    def test_ausgabe_kommt_zurueck(self):
+        lauscher = _Lauscher()
+        empfangen = []
+
+        def bedienen():
+            verbindung, _ = lauscher.buchse.accept()
+            teile = []
+            while True:
+                st = verbindung.recv(4096)
+                if not st:
+                    break
+                teile.append(st)
+            empfangen.append(b"".join(teile))
+            verbindung.sendall(b"appinst: 'FAKE02932' registriert\n")
+            verbindung.close()
+
+        threading.Thread(target=bedienen, daemon=True).start()
+        antwort = pv.ueber_elfldr("127.0.0.1", b"ELFDATEN", port=lauscher.port)
+        lauscher.zu()
+        self.assertEqual(empfangen[0], b"ELFDATEN")
+        self.assertIn("registriert", antwort)
+
+
+class AblageortTests(unittest.TestCase):
+    """Der Ordnername kommt vom Dienst, nicht aus einer Vermutung."""
+
+    def setUp(self):
+        self.echt = pv._pldmgr_ruf
+
+    def tearDown(self):
+        pv._pldmgr_ruf = self.echt
+
+    def test_folder_name_aus_der_antwort_wird_genommen(self):
+        pv._pldmgr_ruf = lambda *a, **k: '{"folder_name": "eigenwillig"}'
+        self.assertEqual(pv.pldmgr_ablageort("h", "appinst.elf"),
+                         "/data/pldmgr/payloads/eigenwillig/appinst.elf")
+
+    def test_ohne_brauchbare_antwort_wird_der_name_genommen(self):
+        pv._pldmgr_ruf = lambda *a, **k: "kein json"
+        self.assertEqual(pv.pldmgr_ablageort("h", "appinst.elf"),
+                         "/data/pldmgr/payloads/appinst/appinst.elf")
+
+
+class PldmgrTests(unittest.TestCase):
+    """Was der Payload Manager annimmt - und was nicht."""
+
+    def setUp(self):
+        self.rufe = []
+        self.echt = pv._pldmgr_ruf
+
+        def merken(host, pfad, koerper=None, port=pv.PLDMGR_PORT, timeout=0):
+            self.rufe.append((pfad, len(koerper) if koerper else 0))
+            return '{"folder_name": "appinst"}'
+        pv._pldmgr_ruf = merken
+
+    def tearDown(self):
+        pv._pldmgr_ruf = self.echt
+
+    def test_erst_hochladen_dann_starten(self):
+        ziel = pv.ueber_pldmgr("h", b"ELF", "appinst.elf")
+        pfade = [p for p, _ in self.rufe]
+        self.assertTrue(pfade[0].startswith("/manage:check"))
+        self.assertTrue(pfade[1].startswith("/manage:upload"))
+        self.assertTrue(pfade[2].startswith("/loadpayload:"))
+        self.assertEqual(ziel, "/data/pldmgr/payloads/appinst/appinst.elf")
+
+    def test_nur_der_upload_traegt_daten(self):
+        pv.ueber_pldmgr("h", b"ELFDATEN", "appinst.elf")
+        groessen = {p.split("?")[0]: n for p, n in self.rufe}
+        self.assertEqual(groessen["/manage:upload"], 8)
+
+    def test_fremde_endung_wird_abgelehnt(self):
+        # Der Dienst nimmt nur .elf und .bin. Das vorher zu sagen ist
+        # freundlicher, als ihn einen Fehler zurueckgeben zu lassen.
+        with self.assertRaises(pv.VersandFehler):
+            pv.ueber_pldmgr("h", b"x", "irgendwas.txt")
+
+
+class WegwahlTests(unittest.TestCase):
+    """Welcher Weg genommen wird - der Kern des Moduls."""
+
+    def setUp(self):
+        self.gesichert = (pv.port_offen, pv.ueber_elfldr, pv.ueber_pldmgr,
+                          pv.elfldr_aufwecken)
+        self.tmp = tempfile.mkdtemp()
+        self.elfldr = os.path.join(self.tmp, "elfldr.elf")
+        with open(self.elfldr, "wb") as fh:
+            fh.write(b"\x7fELF" + b"\x00" * 40)
+
+    def tearDown(self):
+        (pv.port_offen, pv.ueber_elfldr, pv.ueber_pldmgr,
+         pv.elfldr_aufwecken) = self.gesichert
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _ports(self, elfldr_offen, pldmgr_offen):
+        pv.port_offen = lambda host, port, timeout=1.5: (
+            elfldr_offen if int(port) == pv.ELFLDR_PORT else pldmgr_offen)
+
+    def test_offener_elfldr_wird_direkt_genommen(self):
+        self._ports(True, True)
+        pv.ueber_elfldr = lambda *a, **k: "ausgabe"
+        pv.ueber_pldmgr = lambda *a, **k: self.fail("Umweg genommen")
+        weg, ausgabe, _b = pv.senden("h", b"x", "a.elf",
+                                     elfldr_pfad=self.elfldr)
+        self.assertEqual(weg, pv.WEG_ELFLDR)
+        self.assertEqual(ausgabe, "ausgabe")
+
+    def test_geschlossener_elfldr_wird_geweckt(self):
+        # Der eigentliche Gewinn: Danach steht 9021 offen, und die Ausgabe
+        # ist wieder da. Nur deshalb lohnt der Umweg ueberhaupt.
+        self._ports(False, True)
+        geweckt = []
+        pv.elfldr_aufwecken = lambda *a, **k: (geweckt.append(1) or True)
+        pv.ueber_elfldr = lambda *a, **k: "ausgabe nach dem Wecken"
+        pv.ueber_pldmgr = lambda *a, **k: self.fail("haette wecken sollen")
+        weg, ausgabe, bemerkung = pv.senden("h", b"x", "a.elf",
+                                            elfldr_pfad=self.elfldr)
+        self.assertEqual(weg, pv.WEG_GEWECKT)
+        self.assertEqual(ausgabe, "ausgabe nach dem Wecken")
+        self.assertEqual(bemerkung, "elfldr.elf")
+        self.assertEqual(len(geweckt), 1)
+
+    def test_ohne_elfldr_datei_bleibt_der_direkte_weg(self):
+        self._ports(False, True)
+        pv.ueber_pldmgr = lambda *a, **k: "/data/pldmgr/payloads/a/a.elf"
+        weg, ausgabe, bemerkung = pv.senden("h", b"x", "a.elf", elfldr_pfad="")
+        self.assertEqual(weg, pv.WEG_PLDMGR)
+        self.assertEqual(ausgabe, "", "ohne elfldr gibt es keine Ausgabe")
+        self.assertIn("a.elf", bemerkung)
+
+    def test_gescheitertes_wecken_faellt_auf_den_direkten_weg(self):
+        self._ports(False, True)
+        pv.elfldr_aufwecken = lambda *a, **k: False
+        pv.ueber_pldmgr = lambda *a, **k: "/data/pldmgr/payloads/a/a.elf"
+        weg, _ausgabe, _b = pv.senden("h", b"x", "a.elf",
+                                      elfldr_pfad=self.elfldr)
+        self.assertEqual(weg, pv.WEG_PLDMGR)
+
+    def test_beide_zu_ist_ein_fehler_mit_beiden_ports(self):
+        self._ports(False, False)
+        with self.assertRaises(pv.VersandFehler) as fall:
+            pv.senden("h", b"x", "a.elf")
+        text = str(fall.exception)
+        self.assertIn("9021", text)
+        self.assertIn("8084", text)
+
+
+class EinbauTests(unittest.TestCase):
+    """Verdrahtung im Hauptprogramm."""
+
+    @classmethod
+    def setUpClass(cls):
+        with io.open(HAUPTDATEI, "rb") as fh:
+            cls.quelle = fh.read().decode("utf-8")
+
+    def test_der_zentrale_sender_benutzt_das_modul(self):
+        # Alle Wege - ftpsrv nachladen, KLOG, Autoloader - gehen durch
+        # _send_payload_to_ps5. Nur dort eingesetzt, wirkt es ueberall.
+        self.assertIn("payload_versand.senden", self.quelle)
+
+    def test_das_mitgelieferte_elfldr_wird_durchgereicht(self):
+        self.assertIn("elfldr_pfad=self._elfldr_payload_path()", self.quelle)
+
+    def test_elfldr_liegt_bei(self):
+        pfad = PROJEKT / "helloworld" / pv.ELFLDR_NAME
+        self.assertTrue(pfad.is_file(), "%s fehlt" % pv.ELFLDR_NAME)
+        with open(pfad, "rb") as fh:
+            self.assertEqual(fh.read(4), b"\x7fELF")
+
+    def test_texte_gibt_es_in_beiden_sprachen(self):
+        for schluessel in ("payload.elfldr_geweckt", "payload.via_pldmgr",
+                           "payload.sent_pldmgr", "webkit.credit"):
+            eintrag = i18n.STRINGS[schluessel]
+            self.assertTrue(eintrag.get("de"), schluessel)
+            self.assertTrue(eintrag.get("en"), schluessel)
+
+    def test_meldung_sagt_dass_der_port_offen_bleibt(self):
+        # Das ist die Nachricht, die der Anwender braucht: Er muss nicht
+        # jedes Mal neu wecken.
+        text = i18n.STRINGS["payload.elfldr_geweckt"]["de"]
+        self.assertIn("{port}", text)
+        self.assertIn("offen", text)
+
+
+class LesezeitTests(unittest.TestCase):
+    """``_send_payload_to_ps5(lesezeit=)`` kommt als ``timeout`` beim Versand an.
+
+    Bis zum 25.09.2026 stand diese Pruefung beim Koppel-Assistenten, dessen
+    Agent sie brauchte (er schreibt nie etwas, 30 s Warten je Start). Der
+    Assistent ist heraus, der Schalter ist allgemein geblieben.
+    """
+
+    def test_die_lesezeit_geht_an_den_versand(self):
+        import types
+        aufrufe = []
+
+        def _senden(*_argumente, **benannt):
+            aufrufe.append(benannt)
+            return pv.WEG_ELFLDR, "", ""
+
+        stube = types.SimpleNamespace(
+            _PAYLOAD_SEND_PORT=pv.ELFLDR_PORT, _elfldr_payload_path=lambda: "",
+            _modul_texte=lambda _m, _p: {}, _append_to_log=lambda _t: None,
+            _t=lambda k, **_w: k, _fmt_bytes=lambda n: "%d B" % n)
+        with tempfile.TemporaryDirectory() as ordner:
+            elf = Path(ordner) / "dienst.elf"
+            elf.write_bytes(b"\x7fELF")
+            echt = pv.senden
+            pv.senden = _senden
+            try:
+                senden = APP.PS5ConverterGUI._send_payload_to_ps5
+                self.assertTrue(senden(stube, "10.0.0.5", str(elf), lesezeit=5.0)[0])
+                self.assertTrue(senden(stube, "10.0.0.5", str(elf))[0])
+            finally:
+                pv.senden = echt
+        self.assertEqual([5.0, 30.0], [a["timeout"] for a in aufrufe])
+
+
+class WebkitDankTests(unittest.TestCase):
+    """Der Dank an itsPLK und das Bild daneben."""
+
+    @classmethod
+    def setUpClass(cls):
+        with io.open(HAUPTDATEI, "rb") as fh:
+            cls.quelle = fh.read().decode("utf-8")
+
+    def _gui(self):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._t = lambda key, **kw: key
+        return gui
+
+    def test_dank_steht_im_fenster(self):
+        self.assertIn('self._t("webkit.credit")', self.quelle)
+
+    def test_dank_nennt_itsplk(self):
+        for sprache in ("de", "en"):
+            self.assertIn("itsPLK", i18n.STRINGS["webkit.credit"][sprache])
+
+    def test_fehlendes_bild_stoert_nicht(self):
+        # Ohne Datei muss das Fenster trotzdem aufgehen - deshalb None statt
+        # einer Ausnahme. Geprueft wird gegen einen leeren Ordner: Solange
+        # ein Bild beiliegt, sagte dieser Test sonst nichts mehr aus.
+        gui = self._gui()
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, gui._WEBKIT_ORDNER))
+            echt = APP._bundled_resource
+            APP._bundled_resource = lambda *teile: os.path.join(tmp, *teile)
+            try:
+                self.assertIsNone(gui._webkit_bild_laden())
+            finally:
+                APP._bundled_resource = echt
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_das_beiliegende_bild_ist_brauchbar(self):
+        # Nicht ueber _webkit_bild_laden: Das braucht eine Tk-Wurzel und
+        # liefert ohne sie stillschweigend None - der Test saehe gruen aus,
+        # auch wenn die Datei fehlte oder unlesbar waere.
+        from PIL import Image
+        gui = self._gui()
+        # Ueber den Helfer des Programms, nicht ueber eine eigene Nachbildung:
+        # So wird auch geprueft, dass der Pfad dort richtig zusammenkommt.
+        pfad = gui._webkit_bild_pfad()
+        self.assertTrue(pfad, "%s liegt nicht bei" % gui._WEBKIT_BILD)
+        with Image.open(pfad) as bild:
+            breite, hoehe = bild.size
+        self.assertGreaterEqual(min(breite, hoehe), gui._WEBKIT_BILD_KANTE,
+                                "kleiner als die Anzeigekante - wuerde weich")
+        self.assertLess(os.path.getsize(pfad), 1024 * 1024,
+                        "unnoetig gross fuer eine 84-px-Anzeige")
+
+    def test_bild_wird_rund_und_quadratisch_geliefert(self):
+        from PIL import Image
+        gui = self._gui()
+        tmp = tempfile.mkdtemp()
+        try:
+            ordner = os.path.join(tmp, gui._WEBKIT_ORDNER)
+            os.makedirs(ordner)
+            # Bewusst nicht quadratisch: Der Zuschnitt soll das richten.
+            Image.new("RGB", (300, 200), (10, 20, 30)).save(
+                os.path.join(ordner, gui._WEBKIT_BILD))
+            echt = APP._bundled_resource
+            APP._bundled_resource = lambda *teile: os.path.join(tmp, *teile)
+            try:
+                import tkinter
+                try:
+                    wurzel = tkinter.Tk()
+                    wurzel.withdraw()
+                except tkinter.TclError:
+                    self.skipTest("keine Anzeige verfuegbar")
+                try:
+                    bild = gui._webkit_bild_laden()
+                    self.assertIsNotNone(bild)
+                    self.assertEqual(bild.width(), gui._WEBKIT_BILD_KANTE)
+                    self.assertEqual(bild.height(), gui._WEBKIT_BILD_KANTE)
+                finally:
+                    wurzel.destroy()
+            finally:
+                APP._bundled_resource = echt
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+
+class WebkitSendewegTests(unittest.TestCase):
+    """Der Installer-Versand, wenn Port 9021 zu ist.
+
+    Der USB-Weg bleibt ausdruecklich erhalten: Er traegt auch dann noch,
+    wenn gar kein Dienst mehr antwortet - der Payload Manager nicht.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with io.open(HAUPTDATEI, "rb") as fh:
+            cls.quelle = fh.read().decode("utf-8")
+
+    def test_beide_wege_stehen_zur_wahl(self):
+        self.assertIn('self._t("webkit.weg_pldmgr")', self.quelle)
+        self.assertIn('self._t("webkit.weg_usb")', self.quelle)
+
+    def test_der_usb_weg_ist_nicht_entfallen(self):
+        self.assertIn("_webkit_auf_usb_ablegen", self.quelle)
+
+    def test_ohne_payload_manager_bleibt_es_beim_alten_dialog(self):
+        # Antwortet auch 8084 nicht, soll der Anwender nicht vor einer
+        # Auswahl mit einem einzigen Eintrag stehen.
+        self.assertIn("if len(wege) == 1:", self.quelle)
+
+    def test_die_wahl_haengt_am_port_des_payload_managers(self):
+        # Ueber _ps5_port_open, damit die Pruefung stillzulegen ist. Der
+        # direkte Modulaufruf ging in den Tests an eine echte Konsole und
+        # oeffnete dort einen Dialog, der auf eine Antwort wartete.
+        self.assertIn("self._ps5_port_open(ip, payload_versand.PLDMGR_PORT)",
+                      self.quelle)
+        self.assertNotIn("payload_versand.port_offen(ip,", self.quelle)
+
+    def test_texte_gibt_es_in_beiden_sprachen(self):
+        for schluessel in ("webkit.weg_pldmgr", "webkit.weg_usb",
+                           "webkit.port_closed_wahl"):
+            eintrag = i18n.STRINGS[schluessel]
+            self.assertTrue(eintrag.get("de"), schluessel)
+            self.assertTrue(eintrag.get("en"), schluessel)
+
+    def test_die_frage_erklaert_beide_wege(self):
+        text = i18n.STRINGS["webkit.port_closed_wahl"]["de"]
+        self.assertIn("{ip}", text)
+        self.assertIn("{port}", text)
+        self.assertIn("elfldr", text)
+        self.assertIn("USB", text)
+
+class PayloadAntwortTests(unittest.TestCase):
+    """Was die Konsole zurueckmeldet, muss der Anwender lesen koennen.
+
+    ``ueber_elfldr`` reicht die Ausgabe des Payloads laut seinem Docstring
+    gerade deshalb zurueck, "ohne sie liesse sich Erfolg nicht von
+    Fehlschlag unterscheiden". ``_send_payload_to_ps5`` warf sie bis zum
+    06.09.2026 in eine Wegwerf-Variable und sah nie hinein - der Anwender
+    erfuhr also nie, was die Konsole gesagt hat.
+
+    **Bewertet wird sie bewusst nicht.** Es gibt keinen allgemeinen
+    Fehlermarker: ``app_install`` darf auf "registriert" pruefen, weil es
+    sein eigenes Payload kennt; ein dauerhaft laufendes Payload wie ftpsrv
+    gibt gar nichts aus, und leer waere dort **kein** Fehlschlag.
+    """
+
+    def _gui(self, sprache: str):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._t = lambda s, **w: i18n.translate(sprache, s, **w)
+        self.protokoll: list[str] = []
+        gui._append_to_log = self.protokoll.append
+        gui._elfldr_payload_path = lambda: ""
+        gui._PAYLOAD_SEND_PORT = pv.ELFLDR_PORT
+        return gui
+
+    def _senden(self, gui, ausgabe: str):
+        echt = pv.senden
+        pv.senden = lambda *a, **k: (pv.WEG_ELFLDR, ausgabe, "")
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".elf", delete=False) as fh:
+                fh.write(b"x" * 10)
+                pfad = fh.name
+            try:
+                return gui._send_payload_to_ps5("1.2.3.4", pfad)
+            finally:
+                os.unlink(pfad)
+        finally:
+            pv.senden = echt
+
+    def test_die_antwort_steht_im_protokoll(self):
+        gui = self._gui("de")
+        self._senden(gui, "ELF loaded\nsceKernelLoadStartModule failed: 0x80020016")
+        zusammen = "".join(self.protokoll)
+        self.assertIn("sceKernelLoadStartModule failed", zusammen,
+                      "Die Rueckmeldung des Payloads wird wieder verworfen.")
+
+    def test_auch_auf_englisch(self):
+        gui = self._gui("en")
+        self._senden(gui, "ELF loaded")
+        zusammen = "".join(self.protokoll)
+        # Der Anfang "[PAYLOAD] " steht auch im deutschen Text - er trennte
+        # die Sprachen nie. Geprueft wird das englische Verb und das Fehlen
+        # des deutschen.
+        self.assertIn("reports:", zusammen)
+        self.assertNotIn("meldet", zusammen)
+
+    def test_eine_leere_antwort_erzeugt_keine_zeile(self):
+        """ftpsrv laeuft weiter und sagt nichts - das ist kein Fehler."""
+        gui = self._gui("de")
+        ok, _text = self._senden(gui, "   \n  ")
+        self.assertTrue(ok)
+        self.assertEqual([], [z for z in self.protokoll if "PAYLOAD" in z])
+
+    def test_die_rueckgabe_bleibt_die_groessenangabe(self):
+        """Aufrufer setzen sie in Saetze ein - ein ganzer Satz waere Unsinn."""
+        gui = self._gui("de")
+        ok, text = self._senden(gui, "irgendetwas")
+        self.assertTrue(ok)
+        self.assertEqual("10 B", text)
+
+    def test_die_groessenangabe_traegt_kein_deutsches_wort(self):
+        """Sie steht auch in der englischen Fassung im Satz.
+
+        Bis v1.9.10 gab die Methode ``f"{len(daten)} Bytes"`` zurueck -
+        deutsch geschrieben, mit grossem B, und genau so erschien es in
+        "The installer was sent (12345 Bytes)". Jetzt kommt die Angabe aus
+        ``_fmt_bytes``: "10 B", "26.0 MB" - Einheiten, die in beiden
+        Sprachen gleich heissen.
+        """
+        for sprache in ("de", "en"):
+            with self.subTest(sprache=sprache):
+                gui = self._gui(sprache)
+                _ok, text = self._senden(gui, "irgendetwas")
+                self.assertNotIn("Bytes", text)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

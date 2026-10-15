@@ -1,0 +1,1354 @@
+# -*- coding: utf-8 -*-
+"""Tests gegen zusammengequetschte Bedienelemente in den Werkzeugfenstern.
+
+Hintergrund: Wird eine dehnbare Liste (``pack(fill="both", expand=True)``) vor
+einer festen Knopfleiste gepackt, beansprucht sie den gesamten Raum. Reicht die
+Fensterhöhe nicht, bekommt die Knopfleiste nur den Rest – gemessen 24 statt 51
+Pixel, wodurch die Beschriftungen wegfallen und die Knöpfe leer aussehen. Genau
+das trat im BACKPORT- und im DOWNLOADS-Fenster auf.
+
+Zweiter Fall: Eine ``StringVar``, die nur lokal gehalten wird, verschwindet mit
+dem Ende der Funktion. Eine daran gebundene Combobox zeigt danach nichts mehr an,
+obwohl das Widget selbst weiterlebt.
+
+Beide Fälle lassen sich nur am laufenden Tk-Baum messen, nicht am Quelltext.
+Ohne verfügbare Anzeige werden die Tests übersprungen.
+"""
+from pathlib import Path
+import ast
+import io
+import os
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pruefflaeche
+
+HAUPTDATEI = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "PS5ImageConverter_Pro_FINAL_revised.py")
+
+try:
+    import tkinter as tk
+    # Vorhandene Wurzel weiterbenutzen. Ein bedingungsloses tk.Tk() legt
+    # eine ZWEITE an, sobald ein alphabetisch frueheres Testmodul schon
+    # eine hat - Bilder der einen gibt es in der anderen nicht, und der
+    # Aufbau scheitert mit "image pyimageNNN doesn't exist". Genau das
+    # passierte am 23.08.2026, als test_drehknopf.py dazukam.
+    _WURZEL = tk._default_root or tk.Tk()
+    _WURZEL.withdraw()
+    TK_DA = True
+except Exception:                                    # pragma: no cover
+    TK_DA = False
+    _WURZEL = None
+
+
+def _lade_hauptprogramm():
+    import importlib.util
+    if "hauptprogramm" in sys.modules:
+        return sys.modules["hauptprogramm"]
+    spec = importlib.util.spec_from_file_location("hauptprogramm", HAUPTDATEI)
+    modul = importlib.util.module_from_spec(spec)
+    sys.modules["hauptprogramm"] = modul
+    spec.loader.exec_module(modul)
+    return modul
+
+
+def _leerer_spielordner(testfall):
+    """Ein leerer Ordner fuer das BACKPORT-Fenster, nach dem Test entfernt.
+
+    Das Fenster startet beim Oeffnen die Analyse im Faden. Bis 16.09.2026
+    bekam es hier den Projektordner: Der Faden las dann im Hintergrund jede
+    ausfuehrbare Datei des ganzen Baums samt mitgelieferter Werkzeuge,
+    waehrend laengst andere Tests liefen - und starb in der Testreihe
+    fuenfmal an einem Tk-Zugriff, den niemand sah. Fuer das Layout reicht
+    ein leerer Ordner; gemessen wird sofort nach dem Oeffnen.
+    """
+    ordner = tempfile.TemporaryDirectory(prefix="ps5conv_test_backport_")
+    testfall.addCleanup(ordner.cleanup)
+    return ordner.name
+
+
+def _sammle(widget, art):
+    """Alle Nachfahren einer Widget-Klasse."""
+    treffer = []
+    try:
+        kinder = widget.winfo_children()
+    except Exception:
+        return treffer
+    for kind in kinder:
+        if kind.__class__.__name__ == art:
+            treffer.append(kind)
+        treffer += _sammle(kind, art)
+    return treffer
+
+
+def _gequetschte_knoepfe(fenster):
+    """Sichtbare Knöpfe, die weniger Platz bekommen als sie anfordern.
+
+    Knöpfe in einer bewusst höhenbegrenzten Leiste (``pack_propagate(False)``,
+    etwa die eigene Titelzeile) zählen nicht – dort ist die Höhe Absicht.
+    """
+    zu_klein = []
+    for knopf in _sammle(fenster, "Button"):
+        if not knopf.winfo_ismapped():
+            continue
+        try:
+            eltern = knopf.nametowidget(knopf.winfo_parent())
+            if not eltern.pack_propagate():
+                continue
+        except Exception:
+            pass
+        if (knopf.winfo_height() < knopf.winfo_reqheight()
+                or knopf.winfo_width() < knopf.winfo_reqwidth()):
+            zu_klein.append(
+                f"{knopf.cget('text')!r}: {knopf.winfo_width()}x{knopf.winfo_height()}"
+                f" statt {knopf.winfo_reqwidth()}x{knopf.winfo_reqheight()}")
+    return zu_klein
+
+
+def _leere_comboboxen(fenster):
+    """Comboboxen, die Werte anbieten, aber keinen anzeigen."""
+    leer = []
+    for box in _sammle(fenster, "Combobox"):
+        try:
+            if box.cget("values") and not box.get():
+                leer.append(str(box))
+        except Exception:
+            pass
+    return leer
+
+
+@unittest.skipUnless(TK_DA, "Keine Anzeige verfügbar")
+class FensterLayoutTests(unittest.TestCase):
+    """Öffnet die selbst gebauten Werkzeugfenster und misst sie aus."""
+
+    @classmethod
+    def setUpClass(cls):
+        haupt = _lade_hauptprogramm()
+        cls.haupt = haupt
+        # Keine echten Dialoge während der Messung.
+        for name in ("askopenfilename", "askdirectory", "asksaveasfilename"):
+            setattr(haupt.filedialog, name, lambda *a, **k: "")
+        for name in ("showinfo", "showwarning", "showerror"):
+            setattr(haupt.messagebox, name, lambda *a, **k: None)
+        cls.app = haupt.PS5ConverterGUI(_WURZEL)
+
+    def _oeffne(self, aufruf):
+        vorher = {str(w) for w in _WURZEL.winfo_children()}
+        aufruf()
+        _WURZEL.update_idletasks()
+        neu = [w for w in _WURZEL.winfo_children()
+               if str(w) not in vorher and isinstance(w, tk.Toplevel)
+               and w.winfo_exists()]
+        self.assertTrue(neu, "Es wurde kein Fenster geöffnet")
+        fenster = neu[-1]
+        fenster.update_idletasks()
+        return fenster
+
+    def _schliesse(self, fenster):
+        try:
+            fenster.destroy()
+        except Exception:
+            pass
+        self.app._downloads_win = None
+        self.app._downloads_tree = None
+        _WURZEL.update_idletasks()
+
+    def test_backport_knoepfe_voll_sichtbar(self):
+        fenster = self._oeffne(
+            lambda: self.app._render_backport_window(_leerer_spielordner(self)))
+        try:
+            zu_klein = _gequetschte_knoepfe(fenster)
+            self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
+            knoepfe = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
+            self.assertEqual(len(knoepfe), 3, "Erwartet: Starten, Nur prüfen, Schließen")
+            for knopf in knoepfe:
+                self.assertTrue(str(knopf.cget("text")).strip(),
+                                "Knopf ohne Beschriftung")
+        finally:
+            self._schliesse(fenster)
+
+    def test_backport_auswahlfelder_zeigen_einen_wert(self):
+        """Die Klappliste im Backport-Fenster: die Firmware.
+
+        Geprueft wird, dass sie nicht leer bleibt - das war der Fehler, den
+        eine nur lokal gehaltene StringVar ausloeste.
+
+        Bis zum 05.09.2026 stand hier eine zweite Liste fuer den
+        Bibliotheksordner. Sie ist raus: Waehlen liess sich darin seit v1.8.98
+        nichts mehr, was gewirkt haette, denn ab ShadowMountPlus 1.7 alpha8
+        zaehlt im Spielordner ausschliesslich ``fakelib``. Der Ordner wird
+        stattdessen angezeigt - siehe unten.
+        """
+        fenster = self._oeffne(
+            lambda: self.app._render_backport_window(_leerer_spielordner(self)))
+        try:
+            self.assertEqual(_leere_comboboxen(fenster), [],
+                             "Eine Auswahl ist leer")
+            boxen = _sammle(fenster, "Combobox")
+            self.assertEqual(len(boxen), 1, "Erwartet: nur noch die Firmware")
+            box = boxen[0]
+            self.assertGreaterEqual(box.current(), 0, "Kein Eintrag ausgewählt")
+            self.assertTrue(str(box.get()).strip(), "Auswahl ohne Text")
+
+            from ps5_validator.utils import ps5_backport as bp
+            # Voreinstellung ist die Firmware mit Ersatzbibliotheken.
+            self.assertIn(f"{bp.FIRMWARE_STANDARD}.00", str(box.get()))
+        finally:
+            self._schliesse(fenster)
+
+    def test_backport_nennt_den_bibliotheksordner_als_text(self):
+        """Angezeigt statt waehlbar - aber angezeigt werden muss er.
+
+        Sonst muesste der Anwender raten, wohin die Ersatzbibliotheken gehen.
+        Die frueher hier stehende Auswahl versprach eine Wahl, die es nicht
+        gab: Das Protokoll bestaetigte "Ersatzbibliotheken gehen nach
+        fakelib2", abgelegt wurde nach fakelib.
+        """
+        from ps5_validator.utils import ps5_backport as bp
+
+        fenster = self._oeffne(
+            lambda: self.app._render_backport_window(_leerer_spielordner(self)))
+        try:
+            texte = [str(w.cget("text")).strip().lower()
+                     for w in _sammle(fenster, "Label")]
+            self.assertIn(self.app._fakelib_ordnername().lower(), texte,
+                          "Der Ablageordner steht nirgends im Fenster.")
+            # Und er darf nicht mehr auswaehlbar sein.
+            for box in _sammle(fenster, "Combobox"):
+                self.assertNotIn(str(box.get()).strip().lower(),
+                                 bp.FAKELIB_ORDNERNAMEN,
+                                 "Der Ordner haengt wieder in einer Auswahl.")
+        finally:
+            self._schliesse(fenster)
+
+    def test_downloads_knoepfe_voll_sichtbar(self):
+        fenster = self._oeffne(self.app._show_downloads_manager)
+        try:
+            zu_klein = _gequetschte_knoepfe(fenster)
+            self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
+        finally:
+            self._schliesse(fenster)
+
+    def test_remote_ini_editor_knoepfe_voll_sichtbar(self):
+        # Der Editor gehoert zu ShadowMount+; der AMPR-EMU-Manager oeffnet ihn mit.
+        fenster = self._oeffne(self.app._show_shadowmount_editor)
+        try:
+            zu_klein = _gequetschte_knoepfe(fenster)
+            self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
+        finally:
+            self._schliesse(fenster)
+
+    def test_js_loader_knoepfe_voll_sichtbar(self):
+        fenster = self._oeffne(self.app._show_js_loader)
+        try:
+            zu_klein = _gequetschte_knoepfe(fenster)
+            self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
+        finally:
+            self._schliesse(fenster)
+
+    def test_pkg_merger_knoepfe_ueberhaupt_sichtbar(self):
+        """Hier war die Knopfleiste komplett aus dem Fenster gedrängt.
+
+        Weder "Zusammenführen" noch "Schließen" waren zu sehen – gemessen null
+        sichtbare Knöpfe. Ein reiner Größenvergleich hätte das nicht gefunden,
+        weil unsichtbare Knöpfe gar nicht erst mitgezählt werden.
+        """
+        import tempfile
+        import shutil
+        ordner = tempfile.mkdtemp(prefix="merger_test_")
+        try:
+            for teil in range(3):
+                ziel = os.path.join(ordner, f"Spiel (01.003.000)_{teil}.pkg")
+                with io.open(ziel, "wb") as fh:
+                    fh.write(b"\x7fCNT" + bytes(1024))
+            self.haupt.filedialog.askdirectory = lambda *a, **k: ordner
+            fenster = self._oeffne(self.app._show_pkg_merger_dialog)
+            try:
+                sichtbar = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
+                # Seit Runde 19 (U1-5) mit "Abbrechen" - drei Knoepfe.
+                self.assertEqual(len(sichtbar), 3,
+                                 "Zusammenführen, Abbrechen und Schließen müssen "
+                                 "sichtbar sein")
+                self.assertEqual(_gequetschte_knoepfe(fenster), [])
+            finally:
+                self._schliesse(fenster)
+        finally:
+            shutil.rmtree(ordner, ignore_errors=True)
+
+
+class QuelltextTests(unittest.TestCase):
+    """Sichert die Packreihenfolge auch dort ab, wo sie leicht verrutscht."""
+
+    @classmethod
+    def setUpClass(cls):
+        with io.open(HAUPTDATEI, encoding="utf-8") as fh:
+            cls.quelle = fh.read()
+
+    def test_backport_packt_knopfreihe_vor_der_liste(self):
+        knopf = self.quelle.index('knopfreihe.pack(side="bottom", fill="x")')
+        liste = self.quelle.index('rahmen.pack(fill="both", expand=True, padx=16, pady=(8, 6))')
+        self.assertLess(knopf, liste,
+                        "Die Knopfreihe muss vor der dehnbaren Liste gepackt werden")
+
+    def test_pkg_merger_packt_knopfreihe_vor_dem_koerper(self):
+        anfang = self.quelle.index("def _render_pkg_merger_window(")
+        ende = self.quelle.index("def _show_param_manifest_editor(", anfang)
+        block = self.quelle[anfang:ende]
+        knopf = block.index('btn_row.pack(side="bottom", fill="x")')
+        koerper = block.index('body.pack(fill="both", expand=True)')
+        self.assertLess(knopf, koerper)
+
+    def test_remote_ini_packt_knopfreihe_vor_dem_koerper(self):
+        # Nur innerhalb dieser Methode suchen: 'body.pack(...)' kommt im
+        # Programm mehrfach vor, in anderen Fenstern völlig zu Recht.
+        anfang = self.quelle.index("def _show_remote_ini_editor(")
+        ende = self.quelle.index("def _show_js_loader(", anfang)
+        block = self.quelle[anfang:ende]
+        knopf = block.index('btn_row.pack(side="bottom", fill="x")')
+        koerper = block.index('body.pack(fill="both", expand=True)')
+        self.assertLess(knopf, koerper,
+                        "Die Knopfreihe muss vor dem dehnbaren Körper gepackt werden")
+
+    def test_backport_firmware_box_ohne_lokale_stringvar(self):
+        # Eine nur lokal gehaltene StringVar würde eingesammelt.
+        stelle = self.quelle.index('fw_box = self._pw.Combobox(')
+        block = self.quelle[stelle:stelle + 200]
+        self.assertNotIn("textvariable", block)
+
+    def test_ziel_firmware_faellt_sauber_zurueck(self):
+        # current() liefert -1, wenn nichts gewählt ist; ein direkter Zugriff
+        # nähme dann stillschweigend den letzten Eintrag.
+        stelle = self.quelle.index("def _ziel_firmware()")
+        block = self.quelle[stelle:stelle + 700]
+        self.assertIn("0 <= stelle < len(", block)
+        self.assertIn("return ps5_backport.FIRMWARE_STANDARD", block)
+
+
+class TabellenkopfTests(unittest.TestCase):
+    """Kopfzeile und Daten einer Spalte muessen denselben Anker haben.
+
+    ``tree.column(..., anchor="w")`` stellt nur die Daten links; die Kopfzeile
+    zentriert Tk weiter. Bei schmalen Spalten faellt das kaum auf, bei einem
+    maximierten Fenster stehen Ueberschrift und Werte weit auseinander - im
+    param.json-Editor stand "Schluessel" auf halber Spaltenbreite, waehrend die
+    Werte am linken Rand begannen.
+    """
+
+    def setUp(self):
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        with io.open(APP.__file__, encoding="utf-8") as datei:
+            self.quelle = datei.read()
+
+    def _heading_aufrufe(self):
+        """Alle .heading(...)-Aufrufe samt ihrer Argumente, ueber Zeilen hinweg."""
+        import re
+
+        treffer = []
+        for anfang in (m.start() for m in re.finditer(r"\.heading\(", self.quelle)):
+            tiefe, i = 0, anfang + len(".heading")
+            while i < len(self.quelle):
+                if self.quelle[i] == "(":
+                    tiefe += 1
+                elif self.quelle[i] == ")":
+                    tiefe -= 1
+                    if tiefe == 0:
+                        treffer.append(self.quelle[anfang:i + 1])
+                        break
+                i += 1
+        return treffer
+
+    def test_jede_kopfzeile_hat_einen_anker(self):
+        ohne = [a for a in self._heading_aufrufe() if "anchor" not in a]
+        self.assertEqual(ohne, [], f"{len(ohne)} Kopfzeile(n) ohne anchor")
+
+    def test_es_gibt_ueberhaupt_kopfzeilen(self):
+        # Schutz vor einem Test, der nur deshalb gruen ist, weil er nichts findet.
+        self.assertGreaterEqual(len(self._heading_aufrufe()), 10)
+
+
+@unittest.skipUnless(_WURZEL is not None, "keine Anzeige verfuegbar")
+class FenstergroesseTests(unittest.TestCase):
+    """Jedes Werkzeugfenster muss seinen eigenen Inhalt fassen.
+
+    Die Masse sind von Hand eingetragen. Waechst der Inhalt, bleibt die
+    Zahl stehen und die unterste Knopfreihe rutscht aus dem Fenster - der
+    Nutzer muss es erst groesser ziehen, um an "Schliessen" zu kommen.
+
+    Am 19.08.2026 an einer Bildschirmaufnahme nachgemessen: acht von zehn
+    pruefbaren Fenstern waren zu klein. Dem AMPR-Index fehlten 265 Pixel
+    Hoehe, dem Diagnosebericht 137, dem JS Loader 101.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        haupt = _lade_hauptprogramm()
+        cls.haupt = haupt
+        for name in ("askopenfilename", "askdirectory", "asksaveasfilename"):
+            setattr(haupt.filedialog, name, lambda *a, **k: "")
+        for name in ("showinfo", "showwarning", "showerror"):
+            setattr(haupt.messagebox, name, lambda *a, **k: None)
+        haupt.messagebox.askyesno = lambda *a, **k: False
+        cls.app = haupt.PS5ConverterGUI(_WURZEL)
+        _WURZEL.update_idletasks()
+
+    def _messen(self, aufruf):
+        """Oeffnet ein Fenster und liefert (ist_breite, ist_hoehe, noetig...)."""
+        import time
+
+        vorher = {str(w) for w in _WURZEL.winfo_children()}
+        aufruf()
+        # Das Fenster waechst verzoegert auf seinen Inhalt (80/400 ms).
+        for _ in range(12):
+            _WURZEL.update()
+            time.sleep(0.05)
+        neu = [w for w in _WURZEL.winfo_children()
+               if str(w) not in vorher and isinstance(w, tk.Toplevel)
+               and w.winfo_exists()]
+        self.assertTrue(neu, "Es wurde kein Fenster geoeffnet")
+        fenster = neu[-1]
+        fenster.update_idletasks()
+        masse = fenster.geometry().split("+")[0].split("x")
+        ist = (int(masse[0]), int(masse[1]))
+        noetig = (fenster.winfo_reqwidth(), fenster.winfo_reqheight())
+        try:
+            fenster.destroy()
+        except Exception:
+            pass
+        for attribut in ("_downloads_win", "_downloads_tree", "_klog_win"):
+            if hasattr(self.app, attribut):
+                setattr(self.app, attribut, None)
+        _WURZEL.update_idletasks()
+        return ist, noetig
+
+    def _pruefen(self, name, aufruf):
+        ist, noetig = self._messen(aufruf)
+        # Was ueber die Grenze aus _fenster_auf_inhalt_wachsen
+        # hinausgeht, kann das Programm auf diesem Bildschirm gar nicht
+        # darstellen - dann misst diese Pruefung die Grenze und nicht
+        # das Fenster. Dieselbe Toleranz von 2 px wie unten: So wird
+        # nie etwas uebersprungen, das durchgekommen waere. Warum das
+        # ueberhaupt noetig ist, steht in pruefflaeche.py.
+        pruefflaeche.passt_sonst_ueberspringen(
+            _WURZEL, noetig[0] - 2, noetig[1] - 2, name)
+        self.assertGreaterEqual(
+            ist[1], noetig[1] - 2,
+            "%s ist %d px zu niedrig - die unterste Knopfreihe liegt "
+            "ausserhalb des Fensters." % (name, noetig[1] - ist[1]))
+        self.assertGreaterEqual(
+            ist[0], noetig[0] - 2,
+            "%s ist %d px zu schmal." % (name, noetig[0] - ist[0]))
+
+    def test_autoloader_fasst_seinen_inhalt(self):
+        # Ohne Adresse: Sonst holt das Fenster beim Oeffnen von der echten
+        # Konsole - ein Test darf nicht ins Netz greifen.
+        alt = self.app._ps5_ip
+        self.app._ps5_ip = lambda default="": ""
+        try:
+            self._pruefen("ps5_autoloader", self.app._show_autoloader)
+        finally:
+            self.app._ps5_ip = alt
+
+    def test_ampr_index_fasst_seinen_inhalt(self):
+        self._pruefen("AMPR-Index", self.app._show_ampr_index_builder)
+
+    def test_diagnosebericht_fasst_seinen_inhalt(self):
+        self._pruefen("Diagnosebericht", self.app._show_diagnostic_report)
+
+    def test_js_loader_fasst_seinen_inhalt(self):
+        self._pruefen("JS Loader", self.app._show_js_loader)
+
+    def test_klog_fasst_seinen_inhalt(self):
+        self._pruefen("KLOG", self.app._show_klog_window)
+
+    def test_pkg_entpacken_fasst_seinen_inhalt(self):
+        # Stand bis 02.10.2026 fuer "PKG bauen" hier; das Fenster ist ausgebaut.
+        self._pruefen("PS4 PKG -> Dump Ordner", self.app._show_pkg_entpacken)
+
+    def test_downloads_fasst_seinen_inhalt(self):
+        self._pruefen("Downloads", self.app._show_downloads_manager)
+
+    def test_design_fasst_seinen_inhalt(self):
+        self._pruefen("Design", self.app._show_theme_dialog)
+
+    def test_backport_fasst_seinen_inhalt(self):
+        self._pruefen("Backport", lambda: self.app._render_backport_window(
+            _leerer_spielordner(self)))
+
+
+    def test_ps4_pkg_knoepfe_bleiben_erreichbar(self):
+        """Die Knopfreihe muss auch bei wenig Platz sichtbar bleiben.
+
+        Der Ablageort-Kasten aus v1.8.74 machte das fruehere Popup-Fenster
+        hoeher als der Bildschirm hier hergibt (854 noetig, 784 moeglich).
+        Seit dem 12.10.2026 ist "PKG" (Aufgabe 7 - PKG / FPKG) kein eigenes
+        Fenster mehr, sondern eine eingebettete Seite (SCHLIESSEN ist mit dem
+        Fenster entfallen) - entscheidend bleibt, dass EINLESEN, ABBILD
+        ERSTELLEN und ABBRECHEN erreichbar bleiben. Dafuer wird die
+        Knopfreihe mit ``before=`` vor dem dehnbaren Koerper gepackt.
+        """
+        import time
+        from ps5_validator.ui import ps4_dump_image
+
+        if not self.haupt._ps4ffpsc_wurzel():
+            self.skipTest("Eingebettetes PS4-Werkzeug nicht vorhanden")
+        self.app._show_ps4_pkg_converter()
+        ende = time.perf_counter() + 3.0
+        while time.perf_counter() < ende:
+            _WURZEL.update()
+            time.sleep(0.01)
+        seite = getattr(self.app, ps4_dump_image.FENSTER_ATTRIBUT, None)
+        self.assertIsNotNone(seite, "Die Seite 'PKG' wurde nicht aufgebaut")
+        fenster = seite.win
+        fenster.update_idletasks()
+        knoepfe = [b for b in _sammle(fenster, "Button")
+                   if b.winfo_ismapped()]
+        masse = []
+        for knopf in knoepfe:
+            unten = (knopf.winfo_rooty() - fenster.winfo_rooty()
+                     + knopf.winfo_height())
+            masse.append((str(knopf.cget("text"))[:20], knopf.winfo_height(),
+                          knopf.winfo_reqheight(), unten,
+                          fenster.winfo_height()))
+        # Die Seite ist ein Singleton (anders als ein Popup-Fenster nicht zum Wegwerfen) -
+        # nur wieder ausblenden, sonst verlieren nachfolgende Tests dieser Klasse ihre eigenen Seiten.
+        self.app._pkg_fpkg_seite_verbergen()
+        _WURZEL.update_idletasks()
+
+        self.assertTrue(masse, "Keine Knoepfe gefunden")
+        for text, hoehe, noetig, unten, fensterhoehe in masse:
+            with self.subTest(knopf=text):
+                self.assertGreaterEqual(
+                    hoehe, noetig - 2,
+                    "Knopf %r ist auf %d statt %d px zusammengequetscht."
+                    % (text, hoehe, noetig))
+                self.assertLessEqual(
+                    unten, fensterhoehe,
+                    "Knopf %r endet bei %d, das Fenster ist nur %d px hoch - "
+                    "er liegt ausserhalb." % (text, unten, fensterhoehe))
+
+    def test_der_wachstumsschritt_haengt_am_gemeinsamen_bau(self):
+        # Sechzehn Fenster entstehen ueber _build_modern_toplevel. Faellt
+        # der Aufruf dort weg, sind sie alle wieder betroffen.
+        quelle = io.open(HAUPTDATEI, encoding="utf-8").read()
+        anfang = quelle.index("    def _build_modern_toplevel(")
+        block = quelle[anfang:anfang + 3000]
+        self.assertIn("_fenster_auf_inhalt_wachsen(", block)
+        self.assertNotIn("win.after_idle(lambda: self._fenster_auf_inhalt_wachsen",
+                         block,
+                         "after_idle laeuft zu frueh - mehrere Erbauer rufen "
+                         "selbst update_idletasks().")
+
+
+class DesignwechselFarbenTests(unittest.TestCase):
+    """Die Schriftfarben muessen einen Design-Wechsel im Betrieb ueberstehen.
+
+    Zwei Fehler dieser Art in zwei Versionen:
+
+    * v1.8.62 hellte "PRUEFUNG NACH DEM PACKEN" auf, trug es aber nicht in die
+      Rollentabelle von _apply_caption_colors() ein - beim ersten Wechsel waere
+      die Aenderung wieder verschwunden.
+    * v1.8.63 trug das Kaestchen zum Herunterfahren ein, doch _apply_theme()
+      setzte danach fg_secondary noch einmal fest darueber. Beim Start war es
+      hell, nach dem ersten Wechsel wieder grau.
+
+    Beides war am Quelltext nicht zu sehen. Deshalb wird hier die Farbe am
+    lebenden Widget gemessen, nach jedem Wechsel.
+    """
+
+    BESCHRIFTUNGEN = (
+        "src_title", "format_title", "perf_title",
+        "format_info_label", "dest_title", "temp_title", "shutdown_check",
+        "status_label", "telemetry_label",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        haupt = _lade_hauptprogramm()
+        cls.haupt = haupt
+        cls.app = haupt.PS5ConverterGUI(_WURZEL)
+        _WURZEL.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        # Nicht im hellen Design stehen lassen - der naechste Test in
+        # derselben Wurzel saehe sonst fremde Farben.
+        try:
+            cls.app._apply_theme("dunkel")
+            _WURZEL.update_idletasks()
+        except Exception:
+            pass
+
+    def _messen(self, design):
+        self.app._apply_theme(design)
+        _WURZEL.update_idletasks()
+        soll = self.app._COLORS["fg_primary"]
+        abweichend = []
+        for name in self.BESCHRIFTUNGEN:
+            widget = getattr(self.app, name, None)
+            self.assertIsNotNone(widget, "%s fehlt" % name)
+            ist = str(widget.cget("foreground"))
+            if ist.lower() != soll.lower():
+                abweichend.append((name, ist))
+        return soll, abweichend
+
+    def test_alle_designs_und_zurueck(self):
+        """Hin und zurueck, weil ein Fehler nur in eine Richtung auftreten kann.
+
+        Die Designs kommen aus der Tabelle selbst. Bis 16.09.2026 stand hier
+        eine feste Liste mit "mittel" - ein Design, das es seit v1.9.19 nicht
+        mehr gibt. _apply_theme uebergeht unbekannte Namen still; gemessen
+        wurde dann zweimal das vorige Design, und "futuristisch" und
+        "metallisch" nie.
+        """
+        designs = list(self.app._THEMES)
+        self.assertGreaterEqual(len(designs), 2, "Nichts zum Wechseln da.")
+        folge = designs + list(reversed(designs)) + designs[:1]
+        for design in folge:
+            soll, abweichend = self._messen(design)
+            self.assertEqual(
+                self.app._current_theme, design,
+                "_apply_theme hat '%s' nicht angenommen - gemessen waere das "
+                "vorige Design." % design)
+            self.assertEqual(
+                abweichend, [],
+                "Nach dem Wechsel auf '%s' (fg_primary=%s) tragen diese "
+                "Beschriftungen eine fremde Farbe: %s" % (design, soll, abweichend))
+
+    def test_kein_zweiter_schreiber_fuer_das_kaestchen(self):
+        """Der konkrete Rueckfall: _apply_theme() setzte die Schriftfarbe des
+        Kaestchens noch einmal fest, nachdem die Rollentabelle sie gesetzt
+        hatte. Zwei Schreiber auf derselben Eigenschaft - der zweite gewinnt.
+
+        Ueber den Syntaxbaum. Bis 16.09.2026 suchte der Test den Wortlaut mit
+        "\\r\\n" - in einem Text, den io.open schon auf "\\n" umgestellt hatte.
+        Er haette den Rueckfall nie gefunden.
+        """
+        with io.open(HAUPTDATEI, encoding="utf-8") as fh:
+            baum = ast.parse(fh.read())
+        klasse = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.ClassDef) and k.name == "PS5ConverterGUI")
+        methode = next(m for m in klasse.body
+                       if isinstance(m, ast.FunctionDef) and m.name == "_apply_theme")
+        aufrufe = [k for k in ast.walk(methode)
+                   if isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)
+                   and k.func.attr in ("configure", "config")
+                   and isinstance(k.func.value, ast.Attribute)
+                   and k.func.value.attr == "shutdown_check"]
+        self.assertTrue(aufrufe, "_apply_theme faerbt das Kaestchen nicht mehr - "
+                                 "der Test misst sonst nichts.")
+        for aufruf in aufrufe:
+            for wort in aufruf.keywords:
+                if wort.arg not in ("fg", "foreground"):
+                    continue
+                fest = (isinstance(wort.value, ast.Subscript)
+                        and isinstance(wort.value.slice, ast.Constant)
+                        and wort.value.slice.value == "fg_secondary")
+                self.assertFalse(fest, "_apply_theme setzt die Schriftfarbe "
+                                       "wieder fest auf fg_secondary.")
+
+
+class RueckrufNachSchliessenTests(unittest.TestCase):
+    """Ein Arbeitsfaden darf nicht abstuerzen, wenn sein Fenster schon zu ist.
+
+    Gefunden am 20.08.2026 beim Durchgang durch alle Werkzeugfenster: Das
+    Bibliotheksfenster wurde geschlossen, waehrend sein Suchlauf noch lief.
+    Der Faden rief ``win.after(0, _finish)`` und starb an
+    "RuntimeError: main thread is not in main loop" - im Programm unsichtbar,
+    im Fehlerbericht ein Absturz, der keiner ist.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI.__new__(cls.haupt.PS5ConverterGUI)
+
+    def test_offenes_fenster_nimmt_den_rueckruf(self):
+        fenster = tk.Toplevel(_WURZEL)
+        _WURZEL.update_idletasks()
+        try:
+            self.assertTrue(self.app._spaeter_im_fenster(fenster, lambda: None))
+        finally:
+            fenster.destroy()
+
+    def test_geschlossenes_fenster_ergibt_false_statt_ausnahme(self):
+        fenster = tk.Toplevel(_WURZEL)
+        _WURZEL.update_idletasks()
+        fenster.destroy()
+        _WURZEL.update_idletasks()
+        self.assertFalse(self.app._spaeter_im_fenster(fenster, lambda: None))
+
+    def test_ohne_fenster(self):
+        self.assertFalse(self.app._spaeter_im_fenster(None, lambda: None))
+
+    def test_aus_einem_arbeitsfaden(self):
+        # Der eigentliche Fall: Tk wirft nur, wenn der Aufruf aus einem
+        # anderen Faden kommt. Ein Test im Hauptfaden wuerde ihn verfehlen.
+        import threading
+        fenster = tk.Toplevel(_WURZEL)
+        _WURZEL.update_idletasks()
+        fenster.destroy()
+        _WURZEL.update_idletasks()
+
+        ergebnis = []
+
+        def faden():
+            try:
+                ergebnis.append(self.app._spaeter_im_fenster(fenster, lambda: None))
+            except Exception as exc:
+                ergebnis.append("AUSNAHME: %s" % exc)
+
+        t = threading.Thread(target=faden)
+        t.start()
+        t.join(timeout=5)
+        self.assertEqual(ergebnis, [False], ergebnis)
+
+    def test_die_beiden_bekannten_stellen_nutzen_den_helfer(self):
+        with io.open(HAUPTDATEI, encoding="utf-8") as fh:
+            quelle = fh.read()
+        # Seit dem 25.09.2026 ist die Bibliothek eine Seite ("seite" statt
+        # "win") - der Rueckruf geht weiter ueber den Helfer.
+        self.assertIn("self._spaeter_im_fenster(seite, _finish)", quelle,
+                      "Der Suchlauf der Bibliothek ruft wieder direkt after().")
+        self.assertNotIn("seite.after(0, _finish)", quelle)
+        self.assertNotIn("win.after(0, _finish)", quelle)
+class FensterbindungTests(unittest.TestCase):
+    """Werkzeugfenster duerfen nicht hinter das Hauptfenster rutschen.
+
+    Gemeldet am 22.08.2026: Oeffnet man ein Werkzeugfenster und drueckt
+    danach einen anderen Knopf, verschwindet das erste. Der Grund ist
+    nicht das Oeffnen des zweiten Fensters, sondern der Klick aufs
+    Hauptfenster, der noetig ist, um an den Knopf zu kommen: Er holt das
+    Hauptfenster nach vorn, und besitzerlose Fenster fallen dahinter.
+
+    An der Z-Reihenfolge von Windows nachgemessen - drei offene Fenster,
+    nach einem Klick lagen zwei darunter. Mit ``transient()`` bleibt
+    keines mehr zurueck.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (Path(HAUPTDATEI).read_text(encoding="utf-8")
+                      if isinstance(HAUPTDATEI, str)
+                      else HAUPTDATEI.read_text(encoding="utf-8"))
+
+    def _methode(self, name: str) -> str:
+        # Nicht "(self" mitsuchen: Mehrere dieser Methoden haben eine
+        # mehrzeilige Signatur, "self" steht dort erst in der
+        # naechsten Zeile.
+        anfang = self.quelle.index("    def %s(" % name)
+        weiter = self.quelle.index(chr(10) + "    def ", anfang + 10)
+        return self.quelle[anfang:weiter]
+
+    def test_der_gemeinsame_erbauer_bindet(self) -> None:
+        self.assertIn("_fenster_an_hauptfenster_binden",
+                      self._methode("_build_modern_toplevel"))
+
+    def test_der_helfer_ordnet_zu(self) -> None:
+        rumpf = self._methode("_fenster_an_hauptfenster_binden")
+        self.assertIn("transient(", rumpf,
+                      "Ohne transient faellt das Fenster wieder zurueck.")
+
+    def test_der_taskleisteneintrag_wird_zurueckgeholt(self) -> None:
+        """transient kostet ihn sonst - der war hier ausdruecklich gewollt."""
+        rumpf = self._methode("_fenster_an_hauptfenster_binden")
+        self.assertIn("_taskleisteneintrag_zurueckholen", rumpf)
+        stil = self._methode("_taskleisteneintrag_zurueckholen")
+        self.assertIn("_WS_EX_APPWINDOW", stil)
+        self.assertIn("IST_WINDOWS", stil,
+                      "Der Stil gilt nur unter Windows.")
+
+    def test_der_stil_kommt_ohne_flackern_aus(self) -> None:
+        """Aus- und Einblenden waere bei jedem Oeffnen sichtbar gewesen.
+
+        Am 22.08.2026 gemessen: Der Stil allein genuegt, die Taskleiste
+        nimmt ihn ohne ShowWindow an.
+        """
+        stil = self._methode("_taskleisteneintrag_zurueckholen")
+        self.assertNotIn("ShowWindow", stil)
+
+    def test_auch_die_fenster_neben_dem_erbauer_sind_gebunden(self) -> None:
+        """Drei entstehen direkt - darunter CREDITS aus der Werkzeugleiste."""
+        for methode in ("_show_credits", "_show_ampr_ftp_picker"):
+            with self.subTest(methode=methode):
+                self.assertIn("_fenster_an_hauptfenster_binden",
+                              self._methode(methode))
+
+    def test_rahmenlose_einblendungen_bleiben_unangetastet(self) -> None:
+        """Sie haben kein eigenes Fensterverhalten - transient waere sinnlos."""
+        for methode in ("_build_info_popup", "_show_resources", "_show_splash"):
+            with self.subTest(methode=methode):
+                rumpf = self._methode(methode)
+                self.assertIn("overrideredirect", rumpf)
+                self.assertNotIn("_fenster_an_hauptfenster_binden", rumpf)
+
+
+class UmschalterTests(unittest.TestCase):
+    """Derselbe Knopf schliesst das Fenster wieder.
+
+    Gewuenscht am 23.08.2026: Der erste Druck oeffnet, der zweite
+    schliesst - statt ein zweites Fenster darueberzulegen.
+
+    Geprueft wird an einem eigens angehaengten Probe-Fenster, nicht an
+    einem echten Werkzeug: Der Umschalter soll fuer jedes Fenster gelten,
+    und ein Probe-Fenster haelt den Test von den Eigenheiten einzelner
+    Werkzeuge frei.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        haupt = _lade_hauptprogramm()
+        cls.haupt = haupt
+        for name in ("askopenfilename", "askdirectory", "asksaveasfilename"):
+            setattr(haupt.filedialog, name, lambda *a, **k: "")
+        for name in ("showinfo", "showwarning", "showerror"):
+            setattr(haupt.messagebox, name, lambda *a, **k: None)
+        cls.app = haupt.PS5ConverterGUI(_WURZEL)
+
+    def setUp(self):
+        self.app._werkzeugfenster.clear()
+        self.geoeffnet = []
+
+    def tearDown(self):
+        for fenster in self.geoeffnet:
+            try:
+                if fenster.winfo_exists():
+                    fenster.destroy()
+            except tk.TclError:
+                pass
+        self.app._werkzeugfenster.clear()
+
+    def _probe(self, name="_probe_fenster", schliessbar=True):
+        """Haengt eine Methode an, die ein schlichtes Fenster oeffnet."""
+        app = self.app
+        merker = self.geoeffnet
+
+        def oeffnen():
+            fenster = tk.Toplevel(_WURZEL)
+            merker.append(fenster)
+            app._fenster_an_hauptfenster_binden(fenster)
+            if not schliessbar:
+                # Wie ein Fenster, das waehrend eines Laufs nicht zugeht.
+                fenster.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        setattr(app, name, oeffnen)
+        return name
+
+    def test_erster_druck_oeffnet(self):
+        name = self._probe()
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        fenster = self.app._werkzeugfenster.get(name)
+        self.assertIsNotNone(fenster, "Es wurde kein Fenster gemerkt")
+        self.assertTrue(fenster.winfo_exists())
+
+    def test_zweiter_druck_schliesst(self):
+        name = self._probe()
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        fenster = self.app._werkzeugfenster[name]
+
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        self.assertFalse(fenster.winfo_exists(),
+                         "Der zweite Druck hat nicht geschlossen")
+        self.assertNotIn(name, self.app._werkzeugfenster)
+
+    def test_dritter_druck_oeffnet_wieder(self):
+        name = self._probe()
+        for _ in range(3):
+            self.app._werkzeugfenster_umschalten(name)
+            _WURZEL.update_idletasks()
+        self.assertTrue(self.app._werkzeugfenster[name].winfo_exists())
+
+    def test_von_hand_geschlossen_zaehlt_auch(self):
+        """Wer ueber das X schliesst, bekommt beim naechsten Druck wieder eines.
+
+        Ohne das Vergessen bliebe ein toter Eintrag stehen, und der naechste
+        Druck haette nichts zu schliessen und nichts zu oeffnen.
+        """
+        name = self._probe()
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        self.app._werkzeugfenster[name].destroy()
+        _WURZEL.update_idletasks()
+        self.assertNotIn(name, self.app._werkzeugfenster,
+                         "Der Eintrag haette verschwinden muessen")
+
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        self.assertTrue(self.app._werkzeugfenster[name].winfo_exists())
+
+    def test_ein_fenster_darf_sich_weigern(self):
+        """Laeuft gerade etwas, bleibt das Fenster stehen.
+
+        Der Umschalter geht ueber ``WM_DELETE_WINDOW``, damit die
+        Ruecksprachen und Abbruchwaechter der Fenster gelten. Ein hartes
+        ``destroy()`` koennte einen Lauf mitten im Schreiben abschneiden.
+        """
+        name = self._probe(name="_probe_stur", schliessbar=False)
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        fenster = self.app._werkzeugfenster[name]
+
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        self.assertTrue(fenster.winfo_exists(),
+                        "Das Fenster wurde gegen seinen Willen geschlossen")
+        self.assertIs(self.app._werkzeugfenster.get(name), fenster,
+                      "Es muss gemerkt bleiben, sonst gibt es ein zweites")
+
+
+class UmschalterVerdrahtungTests(unittest.TestCase):
+    """Die Knoepfe muessen ueber den Umschalter gehen, nicht daran vorbei."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (Path(HAUPTDATEI).read_text(encoding="utf-8")
+                      if isinstance(HAUPTDATEI, str)
+                      else HAUPTDATEI.read_text(encoding="utf-8"))
+
+    def test_fensterknoepfe_gehen_ueber_den_umschalter(self):
+        # _show_library_window fehlt seit dem 25.09.2026: Die Bibliothek ist
+        # eine Seite der Ansicht KONSOLE, kein Fenster mit Titelleistenknopf.
+        # _show_webkit_autoloader fehlt seit dem 04.10.2026 aus demselben Grund.
+        for methode in ("_show_credits", "_show_js_loader",
+                        "_show_diagnostic_report",
+                        "_show_klog_window_geprueft"):
+            with self.subTest(methode=methode):
+                self.assertIn('self._werkzeugknopf("%s")' % methode,
+                              self.quelle)
+                self.assertNotIn("command=self.%s," % methode, self.quelle)
+
+    def test_auch_die_klapplisten_eintraege(self):
+        """Sie nennen die Methode nicht woertlich, gehen aber denselben Weg.
+
+        Die Eintraege entstehen in einer Schleife ueber
+        ``_MORE_TOOLS_ENTRIES``; dort steht ``self._werkzeugknopf(_befehl_name)``.
+        Geprueft wird deshalb die Schleife selbst - und dass keiner der
+        Eintraege am Umschalter vorbei verdrahtet ist. SHADOWMOUNT+ liegt
+        seit v1.8.101 dort statt in der Titelleiste.
+        """
+        self.assertIn("self._werkzeugknopf(_befehl_name)", self.quelle)
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+        befehle = [b for _k, b in PS5ConverterGUI._MORE_TOOLS_ENTRIES]
+        self.assertIn("_show_shadowmount_editor", befehle)
+        for methode in befehle:
+            with self.subTest(methode=methode):
+                self.assertNotIn("command=self.%s," % methode, self.quelle)
+
+    def test_die_ampr_methoden_ebenfalls(self):
+        """Sie haengen seit v1.8.98 nicht mehr an einem eigenen Knopf.
+
+        Ihr Aufrufer ist das Auswahlfenster hinter Knopf 7, und der reicht
+        den Methodennamen als Variable weiter - ``_werkzeugknopf`` mit
+        festem Namen gibt es fuer sie nicht mehr. Der Umschalter muss
+        trotzdem dazwischen liegen: sonst baut der zweite Druck ein zweites
+        Fenster. Geprueft wird deshalb der Aufruf mit der Variablen.
+        """
+        # Seit 07.10.2026 gibt es keine Fenster dazu mehr: Auswahl und Ablauf sind eine Seite.
+        self.assertNotIn("self._werkzeugfenster_umschalten(methode)", self.quelle)
+        for methode in ("_show_ampr_alte_methode", "_show_ampr_neue_methode"):
+            with self.subTest(methode=methode):
+                self.assertNotIn("command=self.%s," % methode, self.quelle)
+
+    def test_die_menues_ebenfalls(self):
+        """Auch das Untermenue und die eingefaltete Liste."""
+        self.assertNotIn("command=getattr(self,", self.quelle)
+        self.assertIn("self._werkzeugknopf(_befehl_name)", self.quelle)
+        self.assertIn("self._werkzeugknopf(befehl)", self.quelle)
+
+    def test_fremdprogramme_bleiben_aussen_vor(self):
+        """FileZilla, das Handbuch, die FAQ und die Asset-Pack-Anleitung oeffnen kein eigenes Fenster."""
+        for methode in ("_launch_filezilla", "_open_benutzerhandbuch",
+                       "_open_assetpack_anleitung", "_open_faq"):
+            with self.subTest(methode=methode):
+                self.assertIn("command=self.%s," % methode, self.quelle)
+                self.assertNotIn('self._werkzeugknopf("%s")' % methode,
+                                 self.quelle)
+
+
+
+
+
+
+class StartRuheTests(unittest.TestCase):
+    """Das Fenster darf nicht zucken, sobald es zu sehen ist.
+
+    Gemessen am 26.08.2026: Das Fenster wurde sichtbar, und 274 ms später
+    sprang die ganze Pfad-Karte 8 px nach oben und wurde 12 px flacher.
+
+    Die Ursache steckt in der Reihenfolge. Windows vergibt die endgültige
+    Fenstergröße erst beim **Abbilden**; vorher misst sich die Karte zu
+    schmal, und ``_einbauzeile_passt_daneben`` entscheidet auf „eigene
+    Zeile". Sobald das Fenster dann wirklich dasteht, meldet ``<Configure>``
+    die wahre Breite, die Einbauzeile wandert neben die Prüfstufe und die
+    Zeile darunter fällt zusammen. ``update_idletasks()`` allein fängt das
+    nicht ab – es arbeitet die Abbildungsereignisse nicht mit ab.
+
+    Geprüft wird die Reihenfolge im Quelltext: erst ``update()`` und ein
+    Ausrichten, dann erst sichtbar machen.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (Path(HAUPTDATEI).read_text(encoding="utf-8")
+                      if isinstance(HAUPTDATEI, str)
+                      else HAUPTDATEI.read_text(encoding="utf-8"))
+
+    def test_ausrichten_kommt_vor_dem_sichtbarmachen(self) -> None:
+        sichtbar = self.quelle.find('root.attributes("-alpha", 1.0)')
+        self.assertGreater(sichtbar, 0, "Das Sichtbarmachen fehlt")
+        ordnen = self.quelle.find("app._kartenzeilen_ordnen()")
+        self.assertGreater(ordnen, 0,
+                           "Vor dem Sichtbarmachen wird nicht ausgerichtet")
+        self.assertLess(ordnen, sichtbar,
+                        "Ausgerichtet wird erst, nachdem das Fenster steht - "
+                        "genau dann sieht man den Sprung")
+
+    def test_die_abbildungsereignisse_werden_abgearbeitet(self) -> None:
+        """``update_idletasks()`` allein genügt nicht - ``update()`` muss sein."""
+        sichtbar = self.quelle.find('root.attributes("-alpha", 1.0)')
+        vorher = self.quelle[:sichtbar]
+        self.assertIn("root.update()", vorher,
+                      "Ohne update() kennt die Karte ihre wahre Breite nicht")
+
+
+@unittest.skipUnless(TK_DA, "Keine Anzeige verfügbar")
+class KnopfreihenBeiMindestgroesseTests(unittest.TestCase):
+    """Keine Knopfreihe darf bei Mindestfenstergroesse zusammengedrueckt werden.
+
+    Bisher stand je Fenster eine eigene Pruefung hier - und deshalb fiel
+    nicht auf, dass zwei weitere dieselbe Falle hatten. Am 08.09.2026
+    gemessen, jeweils auf die eigene ``minsize`` gezogen:
+
+    * Param-/Manifest-Editor: "Schliessen" und "Speichern unter" **12 px**
+      statt 42 - die Beschriftungen waren damit weg.
+    * SELF-Inspektor: beide Knoepfe **10 px** statt 42.
+
+    Ursache ist immer dieselbe: Ein dehnbarer Bereich (``expand=True``)
+    wird **vor** der Knopfreihe gepackt und nimmt sich den Platz. Ein
+    nachtraegliches ``side="bottom"`` reicht nicht - auch das ist
+    nachgemessen; erst die umgekehrte Packreihenfolge half.
+
+    Diese Pruefung geht deshalb ueber **alle** selbst gebauten Fenster,
+    nicht ueber eine gepflegte Liste.
+    """
+
+    #: Fenster, die keinen eigenen Toplevel oeffnen (fremdes Programm,
+    #: Systembrowser) oder auf Fremdsoftware warten.
+    OHNE_FENSTER = ("_launch_filezilla", "_open_benutzerhandbuch",
+                   "_open_assetpack_anleitung", "_open_faq")
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        import tempfile
+        haupt = _lade_hauptprogramm()
+        cls.haupt = haupt
+
+        # Ein Ordner, mit dem die Fenster etwas anfangen koennen: Mehrere
+        # fragen zuerst danach und kehren ohne Auswahl sofort zurueck.
+        cls._ordner = tempfile.mkdtemp(prefix="knopfreihen_")
+        os.makedirs(os.path.join(cls._ordner, "sce_sys"), exist_ok=True)
+        with io.open(os.path.join(cls._ordner, "sce_sys", "param.json"),
+                     "w", encoding="utf-8") as fh:
+            json.dump({"titleId": "PPSA00000",
+                       "contentId": "IV0000-PPSA00000_00-KNOPFREIHEN000",
+                       "localizedParameters": {"defaultLanguage": "de-DE",
+                                               "de-DE": {"titleName": "Probe"}}}, fh)
+        with io.open(os.path.join(cls._ordner, "eboot.bin"), "wb") as fh:
+            fh.write(b"\x7fELF" + bytes(4092))
+        datei = os.path.join(cls._ordner, "eboot.bin")
+
+        for name in ("askdirectory", "choose_dump_folder"):
+            if hasattr(haupt.filedialog, name):
+                setattr(haupt.filedialog, name, lambda *a, **k: cls._ordner)
+        haupt.filedialog.askopenfilename = lambda *a, **k: datei
+        haupt.filedialog.askopenfilenames = lambda *a, **k: (datei,)
+        haupt.filedialog.asksaveasfilename = lambda *a, **k: os.path.join(
+            cls._ordner, "aus.bin")
+        for name in ("showinfo", "showwarning", "showerror"):
+            setattr(haupt.messagebox, name, lambda *a, **k: None)
+        # "Nein" heisst im Param-/Manifest-Editor "neues Dokument" - damit
+        # oeffnet das Fenster, ohne eine Datei anzufassen.
+        haupt.messagebox.askyesnocancel = lambda *a, **k: False
+        haupt.messagebox.askquestion = lambda *a, **k: "no"
+        for name in ("askyesno", "askokcancel", "askretrycancel"):
+            setattr(haupt.messagebox, name, lambda *a, **k: False)
+        haupt.PS5ConverterGUI._auswahl_dialog = lambda self, *a, **k: ""
+        cls.app = haupt.PS5ConverterGUI(_WURZEL)
+        # Sprache ausdruecklich festlegen. Die Breite eines Knopfes haengt an
+        # der Laenge seiner Beschriftung, und die deutschen sind hier laenger:
+        # "Auf PS5 schreiben..." braucht 242 px, "Write to PS5..." deutlich
+        # weniger. Ohne diese Zeile prueft der Lauf, was gerade eingestellt
+        # ist - am 08.09.2026 fiel derselbe Befund deshalb im Verbund auf und
+        # beim Einzelaufruf nicht.
+        cls.app._current_language = "de"
+        _WURZEL.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        shutil.rmtree(getattr(cls, "_ordner", ""), ignore_errors=True)
+
+    @staticmethod
+    def _beruhigen(sekunden=0.8):
+        import time
+        ende = time.perf_counter() + sekunden
+        while time.perf_counter() < ende:
+            _WURZEL.update()
+            time.sleep(0.01)
+
+    def _fenster_namen(self):
+        """Alle Werkzeugfenster aus den beiden Leisten des Programms."""
+        klasse = self.haupt.PS5ConverterGUI
+        namen = [befehl for _schluessel, befehl in klasse._MORE_TOOLS_ENTRIES]
+        namen += [befehl for _n, _s, befehl in klasse._FALTBARE_TITELKNOEPFE]
+        return [n for n in namen if n not in self.OHNE_FENSTER]
+
+    def test_es_gibt_ueberhaupt_fenster_zu_pruefen(self):
+        """Anker: Faende die Liste nichts, waere die Wache klaglos gruen."""
+        self.assertGreaterEqual(len(self._fenster_namen()), 15)
+
+    def test_keine_knopfreihe_wird_gequetscht(self):
+        beanstandet = []
+        for name in self._fenster_namen():
+            aufruf = getattr(self.app, name, None)
+            if aufruf is None:
+                continue
+            with self.subTest(fenster=name):
+                vorher = {str(w) for w in _WURZEL.winfo_children()}
+                try:
+                    aufruf()
+                except Exception as exc:                  # pragma: no cover
+                    self.fail("%s wirft beim Oeffnen: %s" % (name, exc))
+                self._beruhigen()
+                neu = [w for w in _WURZEL.winfo_children()
+                       if str(w) not in vorher and isinstance(w, tk.Toplevel)
+                       and w.winfo_exists()]
+                if not neu:
+                    continue
+                fenster = neu[-1]
+                try:
+                    breite, hoehe = fenster.minsize()
+                    if breite and hoehe:
+                        fenster.geometry("%dx%d" % (breite, hoehe))
+                        self._beruhigen()
+                    gequetscht = _gequetschte_knoepfe(fenster)
+                    if gequetscht:
+                        beanstandet.append("%s: %s" % (name, ", ".join(gequetscht)))
+                finally:
+                    try:
+                        fenster.destroy()
+                    except Exception:
+                        pass
+                    self.app._downloads_win = None
+                    self.app._downloads_tree = None
+                    self._beruhigen(0.2)
+        self.assertEqual([], beanstandet,
+                         "Diese Knopfreihen bekommen bei Mindestfenstergroesse "
+                         "weniger Platz, als sie brauchen:\n  "
+                         + "\n  ".join(beanstandet))
+
+
+@unittest.skipUnless(TK_DA, "keine Anzeige verfuegbar")
+class FortschrittszeileTests(unittest.TestCase):
+    """Das Groessenfeld neben dem Fortschrittsbalken bleibt einzeilig.
+
+    Am 13.09.2026 mit Bild gemeldet: "Copy: 1.95/150.74 GB | Rest: 148.78 GB |
+    34.1 MB/s (steigend) | ETA: 29:20" brach um, "29:20" stand in einer zweiten
+    Zeile. Die Spalte war fest 520 px breit; die Zeile misst bei 125 %
+    Anzeigeskalierung 532 px, mit dreistelligen Werten 568. Die Schrift waechst
+    mit der Skalierung, eine Pixelgrenze nicht.
+
+    Gemessen wird wie in ``HinweiszeilenHoeheTests`` bei fester Skalierung und
+    mit der Schrift des echten Etiketts - dort steht, warum beides noetig ist.
+    """
+
+    #: Windows bei 125 % - derselbe Wert wie in HinweiszeilenHoeheTests.
+    SKALIERUNG = 1.6683
+
+    #: Gewoehnliche Zeilen, wie ``_update_progress_gui`` sie baut. Die erste
+    #: ist die gemeldete.
+    ZEILEN = (
+        "Copy: 1.95/150.74 GB | Rest: 148.78 GB | 34.1 MB/s (steigend) | ETA: 29:20",
+        "Copy: 150.74/150.74 GB | Rest: 150.74 GB | 234.5 MB/s (steigend) | ETA: 129:59",
+        "Write: 888.88/888.88 GB | Rest: 888.88 GB | 888.8 MB/s | ETA: 888:88",
+        "Kompr.: 888.88/888.88 GB | Rest: 888.88 GB | 888.8 MB/s | ETA: 888:88",
+        "Extr.: 88.8% von 888.88 GB | 888.8 MB/s | ETA: 888:88",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
+
+    def test_gewoehnliche_zeilen_passen_bei_125_prozent(self):
+        from tkinter import font as tkfont
+
+        vorher = float(_WURZEL.tk.call("tk", "scaling"))
+        _WURZEL.tk.call("tk", "scaling", self.SKALIERUNG)
+        try:
+            breite = self.app._fortschrittstext_breite()
+            schrift = tkfont.Font(root=_WURZEL,
+                                  font=self.app.size_label.cget("font"))
+            messung = [(schrift.measure(zeile), zeile) for zeile in self.ZEILEN]
+        finally:
+            _WURZEL.tk.call("tk", "scaling", vorher)
+        # Anker: Bei 100 % misst die gemeldete Zeile rund 425 px, bei 125 %
+        # 532. Liegt sie darunter, greift die feste Skalierung nicht, und die
+        # Pruefung bestuende immer.
+        self.assertGreater(messung[0][0], 480, "Skalierung 125 % nicht wirksam")
+        zu_lang = ["%d px > %d: %s" % (px, breite, zeile)
+                   for px, zeile in messung if px > breite]
+        self.assertEqual([], zu_lang,
+                         "Diese Zeilen brechen neben dem Balken bei 125 % um:\n  "
+                         + "\n  ".join(zu_lang))
+
+    def test_spalte_fasst_umbruchbreite_und_abstand(self):
+        """Die Spalte fasst die volle Umbruchbreite plus den Abstand links.
+
+        Das Raster zaehlt ``padx`` zur Spalte. Reserviert sie nur die
+        Umbruchbreite, waechst sie bei den laengsten Zeilen doch noch, und der
+        Balken daneben zuckt - am 13.09.2026 gemessen: 310 -> 299 px.
+        """
+        leiste = self.app.action_bar
+        etikett = self.app.size_label
+        umbruch = int(float(str(etikett.cget("wraplength"))))
+        polster = etikett.grid_info().get("padx", 0)
+        if isinstance(polster, (tuple, list)):
+            links = int(str(polster[0]))
+        else:
+            links = int(str(polster).split()[0])
+        spalte = int(leiste.grid_columnconfigure(4)["minsize"])
+        self.assertGreater(links, 0, "Abstand links nicht lesbar")
+        self.assertGreaterEqual(spalte, umbruch + links)
+        self.assertGreaterEqual(umbruch, self.app._FORTSCHRITTSTEXT_MINDESTBREITE)
+
+
+class HinweiszeilenHoeheTests(unittest.TestCase):
+    """Der Hinweis unter der Zielformat-Liste darf nicht wachsen.
+
+    Am 12.09.2026 hat der Anwender es so gemeldet: „Dieser Text verbraucht
+    viel zu viel Hoehe ... Jetzt nimmt er dem Status log zuviel Platz weg."
+    Der Hinweis stand bei einem PFS-Container ueber **vier** gerenderte
+    Zeilen (80 px), weil zwei der drei Teiltexte laenger waren als die
+    ``wraplength`` von 560 px und deshalb umbrachen.
+
+    Gemessen wird in Pixeln, nicht in Zeichen: Ein Umlaut ist schmaler als
+    ein "W", und eine Zeichenzahl haette den Umbruch nicht vorhergesagt.
+    Die Pruefung geht ueber **beide** Sprachen - der englische Text ist
+    regelmaessig laenger.
+    """
+
+    #: Die Teiltexte, aus denen der Hinweis zusammengesetzt wird.
+    TEILE = ("main.format_options_hint_default", "main.pfs_speed_hint",
+             "main.smp_rang_pfs", "main.smp_rang_ffpkg", "main.smp_rang_exfat")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
+    #: Die Anzeigeskalierung, gegen die gemessen wird - Windows bei 125 %,
+    #: die Einstellung des Rechners, an dem entwickelt wird.
+    #:
+    #: Fest, nicht die gerade eingestellte: Unter Windows rechnet nicht
+    #: ``pt()`` die Punkte in Pixel um, sondern ``tk scaling``. Beim
+    #: Einzellauf dieser Datei steht das auf 1,0 - dort passt jeder Text.
+    #: Im Gesamtlauf hat ein frueheres Modul die echte Skalierung gesetzt,
+    #: und dieselbe Pruefung faellt um. Genau so ist am 12.09.2026 ein
+    #: echter Befund zweimal durchgerutscht: ``main.smp_rang_exfat`` misst
+    #: auf Deutsch 618 px und bricht damit seit Langem um.
+    SKALIERUNG = 1.6683
+
+    def _breiten_und_grenze(self):
+        """Misst jeden Teiltext bei fester Anzeigeskalierung.
+
+        Die Schrift kommt vom **echten** Etikett - nachgebaut aus
+        ``UI_SCHRIFT`` und ``pt(9)`` traefe sie eine andere Konfiguration
+        als die im Fenster. Die Skalierung wird dafuer festgenagelt und
+        danach zurueckgestellt, damit die Messung reproduzierbar ist und
+        die uebrigen Tests nichts davon merken.
+        """
+        from tkinter import font as tkfont
+        from ps5_validator.utils.i18n import STRINGS
+
+        etikett = self.app.format_info_label
+        vorher = float(_WURZEL.tk.call("tk", "scaling"))
+        _WURZEL.tk.call("tk", "scaling", self.SKALIERUNG)
+        try:
+            schrift = tkfont.Font(root=_WURZEL, font=etikett.cget("font"))
+            breiten = {}
+            for schluessel in self.TEILE:
+                for sprache in ("de", "en"):
+                    # Der Quellhinweis traegt einen Platzhalter - mit dem
+                    # laengsten Wert fuellen, den er annehmen kann.
+                    text = STRINGS[schluessel][sprache].replace(
+                        "{formats}",
+                        ".ffpfsc, .ffpfs, .exFAT, .ffpkg, Dump-Ordner")
+                    breiten["%s/%s" % (schluessel, sprache)] = (
+                        schrift.measure(text), text)
+        finally:
+            _WURZEL.tk.call("tk", "scaling", vorher)
+        return breiten, int(etikett.cget("wraplength"))
+
+    def test_kein_teiltext_bricht_um(self):
+        breiten, grenze = self._breiten_und_grenze()
+        zu_lang = ["%s: %d px von %d (%s)" % (name, breite, grenze, text)
+                   for name, (breite, text) in sorted(breiten.items())
+                   if breite > grenze]
+        self.assertEqual([], zu_lang,
+                         "Diese Hinweise brechen bei 125 % Anzeigeskalierung "
+                         "um und kosten je eine zusaetzliche Zeile:\n  "
+                         + "\n  ".join(zu_lang))
+
+    def test_der_hinweis_bleibt_unter_drei_zeilen(self):
+        """Bei einem PFS-Container ist er am laengsten: Quelle, Tempo, Rang.
+
+        Bis zum 17.09.2026 setzte dieser Test den Modus "1" (kennt
+        ``_MODE_SOURCE_TYPES`` nicht) und das Etikett ".exfat" (heisst
+        ``.exFAT``) - gemessen wurde ein anderer Hinweis als in jeder echten
+        Aufgabe, der exFAT-Fall ganz ohne Rangzeile, und eine Obergrenze von
+        drei Zeilen stand nirgends (Befund T16). Jetzt mit echter Aufgabe,
+        echten Etiketten und der Rangzeile als Beleg, dass die Wahl ankam.
+        """
+        app = self.app
+        vorher = (app._current_language, app.current_mode.get(), app.target_format.get())
+
+        def _zurueck():
+            app._current_language = vorher[0]
+            app.current_mode.set(vorher[1])
+            app.target_format.set(vorher[2])
+        self.addCleanup(_zurueck)
+        modus = "universal_convert"          # nennt alle vier Quellarten
+        hoehen = {}
+        for sprache in ("de", "en"):
+            app._current_language = sprache
+            for schluessel in ("ffpfsc", "ffpfs", "ffpkg", "exfat"):
+                app.current_mode.set(modus)
+                app.target_format.set(app._t("format." + schluessel))
+                app._format_hinweis_setzen(modus)
+                _WURZEL.update_idletasks()
+                text = app.format_info_label.cget("text")
+                rang = app._t(app._SMP_EINSTUFUNG[schluessel])
+                with self.subTest(sprache=sprache, ziel=schluessel):
+                    self.assertIn(rang, text, "Die Zielwahl kam im Hinweis nicht an.")
+                    self.assertLessEqual(text.count("\n") + 1, 3, text)
+                hoehen["%s %s" % (sprache, schluessel)] = (
+                    app.format_info_label.winfo_reqheight(),
+                    text.count("\n") + 1)
+        zu_hoch = ["%s: %d px fuer %d Zeilen" % (k, px, zeilen)
+                   for k, (px, zeilen) in hoehen.items()
+                   if px > zeilen * 22]
+        self.assertEqual([], zu_hoch,
+                         "Diese Hinweise brauchen mehr Platz als sie Zeilen "
+                         "haben - da bricht etwas um:\n  "
+                         + "\n  ".join(zu_hoch))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

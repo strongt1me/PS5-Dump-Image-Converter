@@ -57,8 +57,8 @@ on:
       - 'Build_macOS.sh'
       - 'Install_macOS.sh'
       - 'extract_icon_icns.py'
-      - 'test_macos_fassung.py'
-      - 'test_macos_ausloeser.py'
+      - 'tests/test_macos_fassung.py'
+      - 'tests/test_macos_ausloeser.py'
       - 'ps5_validator/**'
       - 'requirements.txt'
       - '.github/workflows/macos-buendel.yml'
@@ -156,7 +156,8 @@ jobs:
 
       - name: Tests der macOS-Fassung
         run: |
-          .venv-macos/bin/python -m unittest test_macos_fassung -v
+          # Die Tests liegen seit dem 15.10.2026 im Ordner tests/.
+          PYTHONPATH="tests:." .venv-macos/bin/python -m unittest test_macos_fassung -v
 
       - name: Baut der Mac dasselbe Abbild wie Windows?
         # Die Messung, die am 06.09.2026 gefehlt hat. Ein Mac-Anwender
@@ -170,7 +171,7 @@ jobs:
         # Faellt er hier, baut macOS wirklich anders - und der Fehlertext
         # sagt, ob es auf dem Laeufer wiederholbar ist.
         run: |
-          PS5CONV_KONFIGORDNER="$RUNNER_TEMP/ps5conv_ci" \
+          PS5CONV_KONFIGORDNER="$RUNNER_TEMP/ps5conv_ci" PYTHONPATH="tests:." \
             .venv-macos/bin/python -m unittest test_abbild_plattformgleich -v
 
       - name: Geht die Oberflaeche ueberhaupt auf?

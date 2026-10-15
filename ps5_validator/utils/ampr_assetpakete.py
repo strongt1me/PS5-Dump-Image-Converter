@@ -51,6 +51,13 @@ logger = logging.getLogger("PS5Converter.utils.ampr_assetpakete")
 #: Import des Werkzeugs sein ``ampr_pack_format`` nicht.
 PACKWERKZEUG_ORDNER = "AMPR_PackTools-4.0"
 
+#: Mitgelieferte Spielprofile (aus danthespal/MkPFS.CSharp, GPL-3.0).
+#: Vier erprobte Titel: ASTRO BOT, UFC 6, Insomniac-Engine, Unity-Engine.
+#: Liegt neben dem Werkzeugordner, relativ zu dieser Datei berechnet.
+PROFIL_ORDNER: str = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", PACKWERKZEUG_ORDNER, "profiles")
+)
+
 #: Das Werkzeug selbst.
 PACKWERKZEUG = "ampr_pack.py"
 
@@ -168,6 +175,37 @@ NIE_PACKEN: tuple[str, ...] = (
     # 4,46 GB allein bei Ghost of Yotei.
     "movies/**", "**/movies/**",
     "movie/**", "**/movie/**",
+    # --- Aus LZ4 Compression 1.5.0 nachgetragen (15.10.2026) ---------------
+    # LZ4 Compression (Husam Osman, GPL-3.0) haelt diese Dateien per
+    # k_keep_on_disk[] lose: das Programm laedt sie ausserhalb des
+    # Spielprozesses, wo der AMPR EMU den Zugriff nicht abfangen kann.
+    # Fehlende Muster wurden am 15.10.2026 mit einem Testbaum gemessen:
+    # Alle unten stehenden Eintraege landeten im Band, obwohl sie lose sein
+    # muessen. Quelle: ampr_pack.c, Kommentar "Ghost of Yotei needs to get
+    # past a black screen (found by a Reddit user, confirmed on PPSA26344
+    # 02.002.000)".
+    # .texmeshman: Shader-Metadaten (all_shaders, game.sprig, pulse.sprig).
+    # Die Endung ist stabil - jedes Spiel, das diese Dateien erzeugt, legt
+    # sie unter cache_ps5/ mit dieser Endung ab.
+    "*.texmeshman", "**/*.texmeshman",
+    # Der Lademenue-Katalog wird beim Hochfahren des Spiels gelesen, bevor
+    # der Emulator hochgefahren ist. Die Datei liegt unter cache_ps5/ -
+    # ``**/load_menu_catalog.log`` deckt sie dort ab; ``load_menu_catalog.log``
+    # deckt die Wurzelebene von app0 ab (tritt in der Praxis nicht auf, ist
+    # aber gemaess der Doppelform-Konvention noetig, s. NIE_PACKEN-Kopfkommentar).
+    "load_menu_catalog.log", "**/load_menu_catalog.log",
+    # Scream-Audio-Laufzeitdaten: drei feste Dateien unter sounds/scream/
+    # _generated/. Die Endungen decken .bus (Bus-Konfiguration), .dml
+    # (Distanzmodell) und .gmx (Gruppenmischung) pauschal ab, damit ein
+    # kuenftiges Spiel mit einer vierten Scream-Datei nicht bricht.
+    "sounds/scream/_generated/*.bus", "**/sounds/scream/_generated/*.bus",
+    "sounds/scream/_generated/*.dml", "**/sounds/scream/_generated/*.dml",
+    "sounds/scream/_generated/*.gmx", "**/sounds/scream/_generated/*.gmx",
+    # Hinweis: Leere Dateien (Groesse 0) laedt LZ4 Compression ebenfalls
+    # immer lose (if(size == 0) return 1). Unser Python-Packer verpackt
+    # sie, was auf der Konsole harmlos ist - leere Eintraege im Band haben
+    # keine Nutzdaten, die fehlen koennten. Spielplatzhalter (pgc_*_dummy_
+    # _file) sind bereits oben per Muster abgedeckt.
 )
 
 
@@ -469,6 +507,18 @@ DIREKTLESER: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: Mitgelieferte Profile (aus danthespal/MkPFS.CSharp, GPL-3.0).
+#: Schluessel: Title-ID (PPSA-Format) oder Engine-Name aus DIREKTLESER.
+#: Die Insomniac-Engine wird nicht ueber DIREKTLESER erkannt (die Markerdateien
+#: ``dag``/``toc`` sind zu generisch), sondern direkt in
+#: :func:`profil_integriert_fuer` geprueft.
+MITGELIEFERTE_PROFILE: dict[str, str] = {
+    "PPSA21567": "astrobot.toml",        # ASTRO BOT (01.019.000, getestet)
+    "PPSA23566": "ufc6-PPSA23566.toml",  # EA Sports UFC 6 (01.004.000, getestet)
+    "Unity":     "unity.toml",           # Unity-Engine (getestet an PPSA28997)
+    "Insomniac": "insomniac.toml",       # Insomniac-Engine (getestet an PPSA03671)
+}
+
 
 def direktleser_merkmale(app0: str) -> tuple[str, tuple[str, ...]]:
     """Traegt dieser Titel eine Engine, die am Emulator vorbei liest?
@@ -508,6 +558,92 @@ def direktleser_merkmale(app0: str) -> tuple[str, tuple[str, ...]]:
     return engine, tuple(sorted(set(gefunden[engine])))
 
 
+def title_id_aus_sfo(app0: str) -> str:
+    """Liest die TITLE_ID aus ``sce_sys/param.sfo`` - oder gibt '' zurueck.
+
+    Nur lesend, nie werfend. Format: Big-Endian-Magic + Tabelleneintraege -
+    gleicher Aufbau wie in ``ps4pkg_bibliothek.sfo_lesen``.
+    """
+    import struct as _struct
+    pfad = os.path.join(str(app0 or ""), "sce_sys", "param.sfo")
+    try:
+        with open(pfad, "rb") as dat:
+            roh = dat.read()
+    except OSError:
+        return ""
+    if len(roh) < 0x14 or roh[:4] != b"\x00PSF":
+        return ""
+    try:
+        schl_start, dat_start, anzahl = _struct.unpack_from("<III", roh, 0x08)
+        for i in range(min(anzahl, 512)):
+            schl_off, _fmt, laenge, _max, dat_off = _struct.unpack_from(
+                "<HHIII", roh, 0x14 + i * 16)
+            ende = roh.find(b"\x00", schl_start + schl_off)
+            if ende < 0:
+                continue
+            name = roh[schl_start + schl_off:ende].decode("ascii", "replace")
+            if name == "TITLE_ID":
+                return (roh[dat_start + dat_off:dat_start + dat_off + laenge]
+                        .split(b"\x00", 1)[0].decode("utf-8", "replace"))
+    except (_struct.error, IndexError):
+        pass
+    return ""
+
+
+def _erkennt_insomniac(app0: str) -> bool:
+    """Typische Insomniac-Titelstruktur: ``dag``, ``toc`` und ``d/`` in app0.
+
+    ``dag`` und ``toc`` als Dateinamen in Unterordnern sind zu generisch fuer
+    :data:`DIREKTLESER` (Frostbite hat ebenfalls viele ``.toc``-Dateien).
+    Erst alle drei zusammen an der Wurzel von app0 sind Insomniac-typisch.
+    """
+    try:
+        return (os.path.isfile(os.path.join(str(app0), "dag")) and
+                os.path.isfile(os.path.join(str(app0), "toc")) and
+                os.path.isdir(os.path.join(str(app0), "d")))
+    except OSError:
+        return False
+
+
+def profil_integriert_fuer(app0: str) -> tuple[str, str]:
+    """Welches mitgelieferte Profil passt zu diesem Spielordner?
+
+    Prueft der Reihe nach:
+    1. Genaues Title-ID-Profil aus ``sce_sys/param.sfo``.
+    2. Engine-Profil aus :func:`direktleser_merkmale` (derzeit: Unity).
+    3. Insomniac-Engine anhand der typischen Ordnerstruktur.
+
+    Returns:
+        ``(Bezeichnung, vollstaendiger Pfad)`` oder ``("", "")``.
+    """
+    if not app0:
+        return "", ""
+    # 1. Title-ID (genaues Profil hat Vorrang vor allgemeinem Engine-Profil)
+    title_id = title_id_aus_sfo(app0)
+    if title_id:
+        dateiname = MITGELIEFERTE_PROFILE.get(title_id, "")
+        if dateiname:
+            pfad = os.path.join(PROFIL_ORDNER, dateiname)
+            if os.path.isfile(pfad):
+                return title_id, pfad
+    # 2. Engine-Erkennung (Unity)
+    engine, _ = direktleser_merkmale(app0)
+    if engine:
+        dateiname = MITGELIEFERTE_PROFILE.get(engine, "")
+        if dateiname:
+            pfad = os.path.join(PROFIL_ORDNER, dateiname)
+            if os.path.isfile(pfad):
+                return engine, pfad
+    # 3. Insomniac anhand Ordnerstruktur (nicht ueber DIREKTLESER)
+    if _erkennt_insomniac(app0):
+        dateiname = MITGELIEFERTE_PROFILE.get("Insomniac", "")
+        if dateiname:
+            pfad = os.path.join(PROFIL_ORDNER, dateiname)
+            if os.path.isfile(pfad):
+                return "Insomniac", pfad
+    return "", ""
+
+
 def videos_im_pack(zeilen: list[dict[str, Any]]) -> list[str]:
     """Welche gepackten Dateien liegen in einem Film-/Videoordner?
 
@@ -528,19 +664,18 @@ def videos_im_pack(zeilen: list[dict[str, Any]]) -> list[str]:
 
 
 def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "") -> str:
-    """Legt das Standardprofil ab - ein eigenes des Anwenders bleibt.
+    """Legt das Packprofil ab - ein eigenes des Anwenders bleibt.
 
-    Ein Profil des Anwenders bleibt unangetastet: Wer eines aus Mitschnitten
-    erzeugt und dorthin gelegt hat, will es benutzt sehen - es beim
-    naechsten Lauf zu ueberschreiben waere der teuerste Datenverlust, den
-    dieses Modul anrichten koennte.
+    Reihenfolge:
+    1. Existiert eine Datei, die NICHT von diesem Programm stammt?
+       → Benutzerdefiniertes Profil, unveraendert zurueckgeben.
+    2. Ergibt :func:`profil_integriert_fuer` ein Ergebnis?
+       → Mitgeliefertes Spielprofil schreiben (PROFIL_KENNZEILE vorangestellt).
+    3. Fallback: Standardprofil erzeugen und schreiben.
 
-    Ein Profil, das dieses Programm selbst geschrieben hat, wird dagegen
-    **jedes Mal neu** geschrieben. Bis zum 17.09.2026 blieb es liegen: Ein
-    abgebrochener Lauf liess den Ausgabeordner samt Profil neben dem
-    Spielordner zurueck (gemessen bei Ghost of Yotei, 12.09.2026), und jeder
-    spaetere Lauf packte mit dem alten Profil weiter - auch nachdem sich die
-    Ausschlussliste im Programm geaendert hatte.
+    Ein Profil dieses Programms (Schritt 2 und 3) wird **jedes Mal neu**
+    geschrieben, damit Aenderungen an den Profilen oder der Ausschlussliste
+    beim naechsten Lauf wirksam werden.
 
     Returns:
         Der Pfad des Profils.
@@ -550,6 +685,23 @@ def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "") -> str:
     ordner = os.path.dirname(os.path.abspath(ziel))
     if ordner:
         os.makedirs(ordner, exist_ok=True)
+    # Mitgeliefertes Profil (Title-ID oder Engine-Erkennung)?
+    bezeichnung, quell_pfad = profil_integriert_fuer(app0)
+    if quell_pfad:
+        try:
+            with open(quell_pfad, "r", encoding="utf-8") as quelle:
+                inhalt = quelle.read()
+            with open(ziel, "w", encoding="utf-8", newline="\n") as datei:
+                datei.write(
+                    PROFIL_KENNZEILE + " - integriertes Profil fuer "
+                    + bezeichnung + ".\n")
+                datei.write(inhalt)
+            logger.debug("integriertes Profil fuer %s: %s", bezeichnung, ziel)
+            return ziel
+        except OSError as exc:
+            logger.warning("integriertes Profil nicht lesbar (%s): %s",
+                           quell_pfad, exc)
+    # Fallback: Standardprofil (vorsichtig, unbekannte Daten)
     with open(ziel, "w", encoding="utf-8", newline="\n") as datei:
         zusatz = ((*filmordner_muster(app0), *systemdateien_muster(app0))
                   if app0 else ())
