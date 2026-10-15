@@ -4215,6 +4215,17 @@ class PS5ConverterGUI:
             "elf_btn_hover":   "#8A66C0",
             "remote_dir":      "#3FC1C9",
         },
+        "graphit": {
+            # Dunkle Karte (~45) wie "futuristisch"/"dunkel": dasselbe Muster, Violett aber heller als dort,
+            # weil Graphit etwas heller liegt als Piano Black.
+            "fg_success":      "#3FC1C9",
+            "fg_warning":      "#F5C542",
+            "error_btn":       "#E8524F",
+            "error_btn_hover": "#C43D3A",
+            "elf_btn":         "#8E64CC",
+            "elf_btn_hover":   "#744DAE",
+            "remote_dir":      "#3FC1C9",
+        },
     }
 
     #: Bei Achromatopsie hilft keine Farbwahl - es bleibt nur Helligkeit.
@@ -4261,6 +4272,14 @@ class PS5ConverterGUI:
             "fg_warning":      "#A9B5CC",
             "fg_success":      "#0C0D0F",
             "remote_dir":      "#0C0D0F",
+        },
+        "graphit": {
+            # Dunkle Karte (~45): drei Helligkeitsstufen wie bei "futuristisch".
+            "error_btn":       "#F0FFFF",
+            "error_btn_hover": "#C8D6D6",
+            "fg_warning":      "#A9B5CC",
+            "fg_success":      "#676F7D",
+            "remote_dir":      "#676F7D",
         },
     }
 
@@ -4412,7 +4431,44 @@ class PS5ConverterGUI:
             "elf_btn":          "#B98A3E",
             "elf_btn_hover":    "#966C2A",
         },
+        "graphit": {
+            # Ruhig Graphit (seit v1.9.79, Entwurf A des Nutzers): das Anthrazit von "Metallisch", beruhigt - ein
+            # stahlblauer Akzent, neutrale Flaechen, die Nebenknoepfe (frueher Tuerkis) in Schiefergrau.
+            "bg_main":          "#1C1F24",
+            "bg_card":          "#2A2E35",
+            "fg_primary":       "#E8EAEE",
+            "fg_accent":        "#9DBBE6",
+            "accent_btn":       "#4A78B5",
+            "accent_btn_hover": "#5C8CCB",
+            "tuerkis_btn":      "#3A4A60",
+            "tuerkis_btn_hover": "#475A74",
+            "error_btn":        "#C4635F",
+            "error_btn_hover":  "#A94F4B",
+            "console_bg":       "#1A1D21",
+            "seitenknopf_bg":   "#1A1D21",
+            "console_fg":       "#DADDE3",
+            "progress_bg":      "#23262B",
+            "progress_fill":    "#7FA6DC",
+            "accent":           "#9DBBE6",
+            "border":           "#3A3F47",
+            "header_bg":        "#17191D",
+            "fg_secondary":     "#9AA0AA",
+            "fg_warning":       "#D9A441",
+            "fg_success":       "#5BBF95",
+            "link_fg":          "#9DBBE6",
+            "link_hover":       "#B8CFEE",
+            "log_cmd":          "#7FA6DC",
+            "remote_dir":       "#5BBF95",
+            "elf_btn":          "#5E6B80",
+            "elf_btn_hover":    "#4C586B",
+        },
     }
+
+    #: Designs mit ruhiger Menueleiste und einheitlicher Ueberschrift: Alle Knoepfe der Titelleiste tragen die
+    #: Nebenschriftfarbe (statt FILEZILLA gruen, JS LOADER orange, CREDITS blau), und die Seitenueberschrift hat die
+    #: Hauptschriftfarbe auf allen Seiten (statt Akzentfarbe auf den Aufgabenseiten, Weiss auf den Konsolenseiten).
+    #: Die vier aelteren Designs bleiben, wie sie waren.
+    _RUHIGE_DESIGNS: "frozenset[str]" = frozenset({"graphit"})
 
     # Aktive Palette – wird in __init__ aus Config geladen
     _COLORS: dict[str, str] = dict(_THEMES["dunkel"])
@@ -4916,7 +4972,7 @@ class PS5ConverterGUI:
             text=self._t("titlebar.credits"),
             font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
-            fg=self._COLORS["fg_accent"],
+            fg=self._titelleisten_schrift("fg_accent"),
             activebackground=self._COLORS["bg_card"],
             activeforeground=self._COLORS["fg_accent"],
             relief="flat",
@@ -4932,7 +4988,7 @@ class PS5ConverterGUI:
         def _cred_enter(e):
             self._btn_credits_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
         def _cred_leave(e):
-            self._btn_credits_title.config(fg=self._COLORS["fg_accent"], bg=self._COLORS["header_bg"])
+            self._btn_credits_title.config(fg=self._titelleisten_schrift("fg_accent"), bg=self._COLORS["header_bg"])
         self._btn_credits_title.bind("<Enter>", _cred_enter)
         self._btn_credits_title.bind("<Leave>", _cred_leave)
         # JS Loader Button (links von CREDITS)
@@ -4941,7 +4997,7 @@ class PS5ConverterGUI:
             text=self._t("titlebar.jsloader"),
             font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
-            fg=self._COLORS["fg_warning"],
+            fg=self._titelleisten_schrift("fg_warning"),
             activebackground=self._COLORS["bg_card"],
             activeforeground="white",
             relief="flat",
@@ -4957,7 +5013,7 @@ class PS5ConverterGUI:
         def _jsloader_enter(e):
             self._btn_jsloader_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
         def _jsloader_leave(e):
-            self._btn_jsloader_title.config(fg=self._COLORS["fg_warning"], bg=self._COLORS["header_bg"])
+            self._btn_jsloader_title.config(fg=self._titelleisten_schrift("fg_warning"), bg=self._COLORS["header_bg"])
         self._btn_jsloader_title.bind("<Enter>", _jsloader_enter)
         self._btn_jsloader_title.bind("<Leave>", _jsloader_leave)
         # FileZilla Button (links von JS LOADER)
@@ -8788,7 +8844,8 @@ class PS5ConverterGUI:
 
         style.configure("Header.TLabel",
                  font=(UI_SCHRIFT, pt(22), "bold"),
-                 foreground=c["fg_accent"],
+                 foreground=(c["fg_primary"] if getattr(self, "_current_theme", "") in self._RUHIGE_DESIGNS
+                             else c["fg_accent"]),
                          background=c["bg_main"])
 
         style.configure("Subtitle.TLabel",
@@ -60392,7 +60449,7 @@ class PS5ConverterGUI:
 
 
     def _show_theme_dialog(self) -> None:
-        """Zeigt den Design-Auswahl-Dialog (die vier Themes)."""
+        """Zeigt den Design-Auswahl-Dialog (die fuenf Themes)."""
         c = self._COLORS
         # Resizable + Scrollbar statt resizable=False, siehe ausfuehrlicher
         # Kommentar in _show_settings_dialog (DPI-Awareness kann Inhalte bei
@@ -60402,7 +60459,7 @@ class PS5ConverterGUI:
         # passen (die Namen tragen seit v1.9.19 den PS3-Zusatz), hoch genug,
         # dass alle vier Themes plus Hinweis ohne Scrollbalken hineinpassen.
         dlg = self._build_modern_toplevel(
-            self._t("theme_dialog.title_bar"), 640, 480, min_width=560, min_height=430,
+            self._t("theme_dialog.title_bar"), 640, 540, min_width=560, min_height=490,
         )
         dlg.lift()
         dlg.focus_force()
@@ -60432,6 +60489,8 @@ class PS5ConverterGUI:
              "#ECEAE3", "#0F6FB8"),
             ("metallisch", self._t("theme_dialog.theme_metallisch_label"), self._t("theme_dialog.theme_metallisch_desc"),
              "#2C2F35", "#9FB6CC"),
+            ("graphit", self._t("theme_dialog.theme_graphit_label"), self._t("theme_dialog.theme_graphit_desc"),
+             "#1C1F24", "#4A78B5"),
         ]
 
         for key, label, desc, bg_prev, acc_prev in _theme_info:
@@ -62165,6 +62224,9 @@ class PS5ConverterGUI:
             palette: Fuer die Diagnose eine andere als die aktive Palette.
         """
         farben = self._COLORS if palette is None else palette
+        # Ruhige Designs: eine Farbe fuer die ganze Leiste (siehe ``_RUHIGE_DESIGNS``).
+        if getattr(self, "_current_theme", "") in self._RUHIGE_DESIGNS:
+            schluessel = "fg_secondary"
         farbe = farben.get(schluessel) or ""
         kopf = farben.get("header_bg") or ""
         if farbe and kopf and \

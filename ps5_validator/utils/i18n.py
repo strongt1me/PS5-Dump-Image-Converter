@@ -2357,6 +2357,8 @@ STRINGS: dict[str, dict[str, str]] = {
     'theme_dialog.theme_hell_desc': {'de': 'Warmes, cremiges Weiß, dunkle Schrift', 'en': 'Warm creamy white, dark text'},
     'theme_dialog.theme_metallisch_label': {'de': 'Metallisch', 'en': 'Metallic'},
     'theme_dialog.theme_metallisch_desc': {'de': 'Gebürstetes Anthrazit-Metall, Silber/Stahlblau', 'en': 'Brushed charcoal metal, silver/steel blue'},
+    'theme_dialog.theme_graphit_label': {'de': 'Ruhig Graphit', 'en': 'Calm Graphite'},
+    'theme_dialog.theme_graphit_desc': {'de': 'Ruhiges Anthrazit, ein stahlblauer Akzent', 'en': 'Calm charcoal, one steel-blue accent'},
     'theme_dialog.restart_hint': {'de': 'Hinweis: Nach dem Anwenden startet das Programm neu, damit die Benutzeroberfläche korrekt im neuen Design angezeigt wird.', 'en': 'Note: after applying, the program restarts so the user interface is displayed correctly in the new theme.'},
     'theme_dialog.apply_button': {'de': 'ANWENDEN', 'en': 'APPLY'},
     'settings_dialog.title_bar': {'de': '  Einstellungen', 'en': '  SETTINGS'},

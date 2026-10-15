@@ -1,5 +1,6 @@
 ## Neu
 
+- Das Design „Ruhig Graphit“ (DESIGN → Ruhig Graphit): ruhiges Anthrazit mit einem stahlblauen Akzent, einer Farbe für die ganze Menüleiste und derselben Überschriftenfarbe auf allen Seiten; die vier bisherigen Designs bleiben unverändert.
 - Ist kein Temp-Ordner gewählt, arbeitet eine Aufgabe unter Windows im Ordner „Temp - Dump-Image Converter“ im Wurzelverzeichnis des Systemlaufwerks (meist C:), den das Programm beim Start der Aufgabe anlegt.
 
 ## Geändert

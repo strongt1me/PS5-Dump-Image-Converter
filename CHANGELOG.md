@@ -2,12 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.79):** Ohne gewählten Temp-Ordner arbeitet das Programm jetzt in einem eigenen Ordner im Wurzelverzeichnis von C:, sieben Payloads sind aktualisiert, und fremde Daten werden vorsichtiger eingelesen.
+> **Kurz zum aktuellen Stand (v1.9.79):** Neues Design „Ruhig Graphit“, ein eigener Arbeitsordner im Wurzelverzeichnis von C: ohne gewählten Temp-Ordner, sieben aktualisierte Payloads und vorsichtigeres Einlesen fremder Daten.
 
 ---
 
 ## v1.9.79 – 15.10.2026
 
+- **Neu:** Das Design „Ruhig Graphit“ (DESIGN → Ruhig Graphit): ruhiges Anthrazit mit einem stahlblauen Akzent, einer Farbe für die ganze Menüleiste und derselben Überschriftenfarbe auf allen Seiten; die vier bisherigen Designs bleiben unverändert.
 - **Neu:** Ist kein Temp-Ordner gewählt, arbeitet eine Aufgabe unter Windows im Ordner „Temp - Dump-Image Converter“ im Wurzelverzeichnis des Systemlaufwerks (meist C:), den das Programm beim Start der Aufgabe anlegt.
 - **Aktualisiert:** PS5 Payload Manager 0.6.1, PS4Mount 0.5.1, PS5Upload 7.0.23, OnionHEN 0.9.0, AnyPad PS5 0.9.5-beta, WK Autoloader 1.1.2 und PS5 Cooling & System Center – Pro 1.67.0.
 - **Geändert:** Antworten aus dem Netz und Archive werden vorsichtiger eingelesen, die Umgebungsprüfung verlangt Python 3.11 statt 3.10, und die leere Bibliothek sagt, wie sie sich füllt.
