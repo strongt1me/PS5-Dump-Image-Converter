@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Das Design "Ruhig Graphit" (Entwurf A, v1.9.79) - und dass die vier aelteren Designs bleiben, wie sie waren.
+"""Die Designs "Ruhig Graphit", "Mitternachtsblau" und "Hell und klar" (Entwuerfe A, B, C; v1.9.79) - und dass die
+vier aelteren Designs bleiben, wie sie waren.
 
 Nutzerauftrag (15.10.2026): die Oberflaeche "einheitlich, harmonisch, ruhig, professionell und modern" gestalten, nach
-dem Umbau muesse alles "noch so funktionieren wie jetzt". Gewaehlt wurde Entwurf A, umgesetzt als **zusaetzliches**
-Design: Wer es nicht will, waehlt ein anderes; die alten Paletten sind hier mit Pruefsumme festgehalten.
+dem Umbau muesse alles "noch so funktionieren wie jetzt". Gewaehlt wurde A, danach auch B und C - alle als
+**zusaetzliche** Designs: Wer sie nicht will, waehlt ein anderes; die alten Paletten sind hier mit Pruefsumme
+festgehalten.
 """
 from __future__ import annotations
 
@@ -18,6 +20,9 @@ PROJEKT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJEKT))
 
 HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
+
+#: Die neuen Designs (Schluessel im Programm) und ihre Namen.
+NEUE = {"graphit": "Ruhig Graphit", "mitternacht": "Mitternachtsblau", "klar": "Hell und klar"}
 
 #: SHA-256 von ``json.dumps(palette, sort_keys=True)`` je altem Design, gemessen am 15.10.2026. Aendert jemand mit
 #: Absicht eine dieser Paletten, wird die Summe hier nachgezogen - ohne Absicht faellt sie auf.
@@ -53,12 +58,14 @@ class PaletteTests(unittest.TestCase):
                 self.assertEqual(soll, hashlib.sha256(roh).hexdigest(),
                                  "Die Palette von %s hat sich geaendert." % name)
 
-    def test_graphit_hat_dieselben_schluessel_wie_die_anderen(self) -> None:
+    def test_die_neuen_designs_haben_dieselben_schluessel_wie_die_anderen(self) -> None:
         soll = set(self.klasse._THEMES["metallisch"])
-        self.assertEqual(soll, set(self.klasse._THEMES["graphit"]))
+        for name in NEUE:
+            with self.subTest(design=name):
+                self.assertEqual(soll, set(self.klasse._THEMES[name]))
 
-    def test_graphit_ist_ein_zusaetzliches_design(self) -> None:
-        self.assertEqual({"futuristisch", "dunkel", "hell", "metallisch", "graphit"}, set(self.klasse._THEMES))
+    def test_die_neuen_designs_sind_zusaetzlich(self) -> None:
+        self.assertEqual({"futuristisch", "dunkel", "hell", "metallisch", *NEUE}, set(self.klasse._THEMES))
 
     def test_die_vorgabe_bleibt_dunkel(self) -> None:
         """Wer nichts waehlt, sieht wie bisher das dunkle Design - "Ruhig Graphit" ist eine Wahl, kein Zwang."""
@@ -66,10 +73,12 @@ class PaletteTests(unittest.TestCase):
         self.assertIn('self._load_setting_static("theme", "dunkel")', quelle)
         self.assertIn('_THEMES["dunkel"])', quelle)
 
-    def test_farbschwaeche_kennt_graphit(self) -> None:
+    def test_farbschwaeche_kennt_die_neuen_designs(self) -> None:
         for satz in (self.klasse._FARBSCHWAECHE_ROTGRUEN, self.klasse._FARBSCHWAECHE_ACHROMAT):
-            self.assertIn("graphit", satz)
-            self.assertEqual(set(satz["dunkel"]), set(satz["graphit"]))
+            for name in NEUE:
+                with self.subTest(design=name):
+                    self.assertIn(name, satz)
+                    self.assertEqual(set(satz["dunkel"]), set(satz[name]))
 
     def test_ein_akzent_und_ruhige_nebenknoepfe(self) -> None:
         """Der Kern von Entwurf A: Der Nebenknopf ist kein Tuerkis mehr, sondern ein Schiefergrau - Gruen ist es nicht."""
@@ -85,8 +94,16 @@ class RuhigeOberflaecheTests(unittest.TestCase):
         cls.haupt = _lade_hauptprogramm()
         cls.klasse = cls.haupt.PS5ConverterGUI
 
-    def test_nur_graphit_ist_ruhig(self) -> None:
-        self.assertEqual(frozenset({"graphit"}), self.klasse._RUHIGE_DESIGNS)
+    def test_die_neuen_designs_sind_ruhig_die_alten_nicht(self) -> None:
+        self.assertEqual(frozenset(NEUE), self.klasse._RUHIGE_DESIGNS)
+
+    def test_zwei_designs_schreiben_dunkel(self) -> None:
+        """Hell und Hell und klar haben helle Flaechen - dort braucht das Hintergrundbild helle Farben."""
+        self.assertEqual(frozenset({"hell", "klar"}), self.klasse._HELLE_DESIGNS)
+        for design in self.klasse._THEMES:
+            g = self._gui(design)
+            with self.subTest(design=design):
+                self.assertEqual(design not in ("hell", "klar"), g._design_ist_dunkel())
 
     def _gui(self, design: str):
         g = self.klasse.__new__(self.klasse)
@@ -94,12 +111,13 @@ class RuhigeOberflaecheTests(unittest.TestCase):
         g._COLORS = dict(self.klasse._THEMES[design])
         return g
 
-    def test_die_menueleiste_hat_in_graphit_eine_farbe(self) -> None:
-        g = self._gui("graphit")
-        soll = g._COLORS["fg_secondary"]
-        for rolle in ("fg_accent", "fg_warning", "fg_success", "fg_secondary"):
-            with self.subTest(rolle=rolle):
-                self.assertEqual(soll, g._titelleisten_schrift(rolle))
+    def test_die_menueleiste_hat_in_den_neuen_designs_eine_farbe(self) -> None:
+        for design in NEUE:
+            g = self._gui(design)
+            soll = g._COLORS["fg_secondary"]
+            for rolle in ("fg_accent", "fg_warning", "fg_success", "fg_secondary"):
+                with self.subTest(design=design, rolle=rolle):
+                    self.assertEqual(soll, g._titelleisten_schrift(rolle))
 
     def test_die_menueleiste_bleibt_in_den_alten_designs_bunt(self) -> None:
         for design in ("futuristisch", "dunkel", "hell", "metallisch"):
@@ -109,10 +127,12 @@ class RuhigeOberflaecheTests(unittest.TestCase):
                     self.assertEqual(g._COLORS[rolle], g._titelleisten_schrift(rolle),
                                      "%s/%s: die Leiste hat sich veraendert" % (design, rolle))
 
-    def test_die_leiste_ist_in_graphit_lesbar(self) -> None:
-        g = self._gui("graphit")
-        k = self.haupt.kontrastverhaeltnis(g._titelleisten_schrift("fg_accent"), g._COLORS["header_bg"])
-        self.assertGreaterEqual(k, 4.5)
+    def test_die_leiste_ist_in_den_neuen_designs_lesbar(self) -> None:
+        for design in NEUE:
+            g = self._gui(design)
+            with self.subTest(design=design):
+                k = self.haupt.kontrastverhaeltnis(g._titelleisten_schrift("fg_accent"), g._COLORS["header_bg"])
+                self.assertGreaterEqual(k, 4.5)
 
     def test_die_ueberschrift_folgt_dem_design(self) -> None:
         quelle = HAUPTDATEI.read_text(encoding="utf-8")
@@ -130,11 +150,13 @@ class RuhigeOberflaecheTests(unittest.TestCase):
     def test_der_designdialog_listet_das_neue_design(self) -> None:
         from ps5_validator.utils.i18n import STRINGS
         quelle = HAUPTDATEI.read_text(encoding="utf-8")
-        self.assertIn('("graphit", self._t("theme_dialog.theme_graphit_label")', quelle)
-        for schluessel in ("theme_dialog.theme_graphit_label", "theme_dialog.theme_graphit_desc"):
-            for sprache in ("de", "en"):
-                self.assertTrue(STRINGS[schluessel][sprache].strip(), "%s/%s fehlt" % (schluessel, sprache))
-        self.assertEqual("Ruhig Graphit", STRINGS["theme_dialog.theme_graphit_label"]["de"])
+        for design, name in NEUE.items():
+            with self.subTest(design=design):
+                self.assertIn('("%s", self._t("theme_dialog.theme_%s_label")' % (design, design), quelle)
+                for schluessel in ("theme_dialog.theme_%s_label" % design, "theme_dialog.theme_%s_desc" % design):
+                    for sprache in ("de", "en"):
+                        self.assertTrue(STRINGS[schluessel][sprache].strip(), "%s/%s fehlt" % (schluessel, sprache))
+                self.assertEqual(name, STRINGS["theme_dialog.theme_%s_label" % design]["de"])
 
 
 if __name__ == "__main__":

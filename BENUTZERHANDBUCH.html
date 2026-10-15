@@ -2674,7 +2674,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k15">
   <h2><span class="nr">15</span> Design und Hintergrundbild</h2>
-  <p>Über den Knopf <strong>DESIGN</strong> stehen fünf Farbschemata zur Auswahl:</p>
+  <p>Über den Knopf <strong>DESIGN</strong> stehen sieben Farbschemata zur Auswahl:</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Design</th><th>Charakter</th></tr></thead>
@@ -2684,13 +2684,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>Hell</strong></td><td>Warmes, cremiges Weiß mit dunkler Schrift.</td></tr>
       <tr><td><strong>Metallisch</strong></td><td>Gebürstetes Anthrazit-Metall mit Silber und Stahlblau.</td></tr>
       <tr><td><strong>Ruhig Graphit</strong></td><td>Ruhiges Anthrazit mit einem stahlblauen Akzent. Die Menüleiste oben trägt nur eine Schriftfarbe (statt FILEZILLA grün, JS LOADER orange, CREDITS blau), die Seitenüberschrift hat auf allen Seiten dieselbe Farbe, und die Nebenknöpfe sind schiefergrau statt türkis. Anordnung und Bedienung sind in allen Designs gleich.</td></tr>
+      <tr><td><strong>Mitternachtsblau</strong></td><td>Tiefes Nachtblau mit einem hellen Blau als Akzent; Menüleiste, Überschrift und Nebenknöpfe wie bei Ruhig Graphit. Dazu passt ein dunkles Hintergrundbild, zum Beispiel <code>bg_01_navy-curves</code>.</td></tr>
+      <tr><td><strong>Hell und klar</strong></td><td>Kühles Weiß mit dunkler Schrift und einem blauen Akzent; Menüleiste und Überschrift einheitlich. Dazu passt ein helles Hintergrundbild, zum Beispiel <code>bg_07_porcelain</code> mit <code>sidebar_07_porcelain</code>.</td></tr>
     </tbody>
   </table>
   </div>
   <p>Die Wahl wird pro Benutzer gespeichert. Nach Klick auf <strong>ANWENDEN</strong> startet das Programm automatisch neu, damit die Oberfläche vollständig im neuen Design erscheint. Läuft gerade eine Aufgabe, wird der Neustart zurückgestellt – bitte danach von Hand neu starten.</p>
   <p>Knöpfe, Eingabefelder und Klapplisten sind in allen Designs abgerundet (Pillenform) – in beiden Ansichten, UMWANDELN und KONSOLE. Die Seitenleiste ist bewusst anders gestaltet: Der Umschalter zwischen UMWANDELN und KONSOLE ist eine hohe, abgerundete Fläche mit der kleinen Zeile „BEREICH WECHSELN“ über dem Namen des anderen Bereichs. Die Aufgaben, die Werkzeuge der Ansicht KONSOLE und die beiden Knöpfe am unteren Rand stehen als Liste mit feinen Linien und linksbündiger Schrift; die gewählte Zeile trägt einen Balken in der Akzentfarbe, die Zeile unter dem Mauszeiger ist leicht getönt. Das Bild der Seitenleiste ist in allen Designs dunkel; wäre die Schrift eines Designs darauf nicht lesbar (zum Beispiel im hellen Design), wird sie automatisch hell, und der Umschalter trägt dort die Farben des dunklen Designs. Die Zeilen selbst bleiben durchsichtig.</p>
   <p>Überschriften, Beschriftungen und Hinweistexte stehen direkt auf dem Hintergrundbild, ohne Fläche dahinter. Der Drehknopf für die Worker liegt ebenfalls frei auf dem Bild.</p>
-  <p><strong>Titelleisten.</strong> Unter Windows 11 sind die Titelleisten aller Fenster des Programms dunkel graublau, mit heller Schrift und hellen Fensterknöpfen; im Design <strong>Hell</strong> bleibt die Leiste hell. Beim Wechsel des Designs färben sich offene Fenster sofort um. Unter Windows 10, Linux und macOS gibt es diese Möglichkeit nicht, dort bleibt die Leiste des Systems. Die Standarddialoge von Windows (Datei oder Ordner wählen) gehören dem System und bleiben hell.</p>
+  <p><strong>Titelleisten.</strong> Unter Windows 11 sind die Titelleisten aller Fenster des Programms dunkel graublau, mit heller Schrift und hellen Fensterknöpfen; in den Designs <strong>Hell</strong> und <strong>Hell und klar</strong> bleibt die Leiste hell. Beim Wechsel des Designs färben sich offene Fenster sofort um. Unter Windows 10, Linux und macOS gibt es diese Möglichkeit nicht, dort bleibt die Leiste des Systems. Die Standarddialoge von Windows (Datei oder Ordner wählen) gehören dem System und bleiben hell.</p>
 
   <div class="kasten">
     <span class="titel">Gro&szlig;e Bildschirme und hohe Anzeigeskalierung</span>
@@ -2726,7 +2728,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Die Bilder erscheinen so, wie sie in der Datei stehen; Helligkeit und Kontrast lassen sich unter <strong>Darstellung</strong> verstellen (Abschnitt 14.2). Die Beschriftungen stehen direkt auf dem Bild – deshalb kommt es darauf an, wie hell es ist:</p>
   <div class="kasten achtung">
     <span class="titel">Helle Bilder gehören zum Design Hell</span>
-    <p>Die Designs Futuristisch, Dunkel, Metallisch und Ruhig Graphit schreiben <em>hell</em>. Auf einem hellen Bild verschwindet diese Schrift: <code>bg_07_porcelain</code>, <code>bg_12_ice-light</code> und <code>bg_19_frost-waves</code> sowie <code>sidebar_07_porcelain</code>, <code>sidebar_12_ice-light</code> und <code>sidebar_16_sand-dunes</code> sind darum für das Design <strong>Hell</strong> gedacht, das dunkel schreibt. Grenzwertig sind <code>bg_04_mist-blue</code>, <code>bg_14_sunset-silk</code> und <code>sidebar_04_mist-blue</code>.</p>
+    <p>Die Designs Futuristisch, Dunkel, Metallisch, Ruhig Graphit und Mitternachtsblau schreiben <em>hell</em>. Auf einem hellen Bild verschwindet diese Schrift: <code>bg_07_porcelain</code>, <code>bg_12_ice-light</code> und <code>bg_19_frost-waves</code> sowie <code>sidebar_07_porcelain</code>, <code>sidebar_12_ice-light</code> und <code>sidebar_16_sand-dunes</code> sind darum für die Designs <strong>Hell</strong> und <strong>Hell und klar</strong> gedacht, die dunkel schreiben. Grenzwertig sind <code>bg_04_mist-blue</code>, <code>bg_14_sunset-silk</code> und <code>sidebar_04_mist-blue</code>.</p>
     <p>Das Einstellungsfenster weist unter der Vorschau darauf hin, sobald ein helles Bild gewählt ist; auch der Diagnosebericht meldet es (<em>Bildhelligkeit</em>). Wer ein helles Bild trotzdem im dunklen Design haben will, senkt unter <strong>Darstellung</strong> die Helligkeit des Bildes – der Hinweis verschwindet dann von selbst.</p>
   </div>
   <div class="kasten">

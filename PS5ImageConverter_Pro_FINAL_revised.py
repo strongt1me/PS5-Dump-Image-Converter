@@ -4226,6 +4226,26 @@ class PS5ConverterGUI:
             "elf_btn_hover":   "#744DAE",
             "remote_dir":      "#3FC1C9",
         },
+        "mitternacht": {
+            # Dunkle Karte (~36) wie "graphit": dasselbe Muster.
+            "fg_success":      "#3FC1C9",
+            "fg_warning":      "#F5C542",
+            "error_btn":       "#E8524F",
+            "error_btn_hover": "#C43D3A",
+            "elf_btn":         "#8E64CC",
+            "elf_btn_hover":   "#744DAE",
+            "remote_dir":      "#3FC1C9",
+        },
+        "klar": {
+            # Helle Karte wie "hell": dasselbe Muster.
+            "fg_success":      "#0E7C86",
+            "fg_warning":      "#B8860B",
+            "error_btn":       "#B3261E",
+            "error_btn_hover": "#8C1D17",
+            "elf_btn":         "#5B2E91",
+            "elf_btn_hover":   "#45216E",
+            "remote_dir":      "#0E7C86",
+        },
     }
 
     #: Bei Achromatopsie hilft keine Farbwahl - es bleibt nur Helligkeit.
@@ -4280,6 +4300,22 @@ class PS5ConverterGUI:
             "fg_warning":      "#A9B5CC",
             "fg_success":      "#676F7D",
             "remote_dir":      "#676F7D",
+        },
+        "mitternacht": {
+            # Dunkle Karte (~36): wie "graphit".
+            "error_btn":       "#F0FFFF",
+            "error_btn_hover": "#C8D6D6",
+            "fg_warning":      "#A9B5CC",
+            "fg_success":      "#676F7D",
+            "remote_dir":      "#676F7D",
+        },
+        "klar": {
+            # Helle Karte: wie "hell" - der Fehler am dunkelsten.
+            "error_btn":       "#090A0B",
+            "error_btn_hover": "#000000",
+            "fg_warning":      "#505560",
+            "fg_success":      "#9BA6BB",
+            "remote_dir":      "#9BA6BB",
         },
     }
 
@@ -4462,13 +4498,77 @@ class PS5ConverterGUI:
             "elf_btn":          "#5E6B80",
             "elf_btn_hover":    "#4C586B",
         },
+        "mitternacht": {
+            # Mitternachtsblau (seit v1.9.79, Entwurf B des Nutzers): tiefes Nachtblau, ein heller Akzent,
+            # Nebenknoepfe in gedecktem Blau.
+            "bg_main":          "#0E1420",
+            "bg_card":          "#1A2536",
+            "fg_primary":       "#EAF0FA",
+            "fg_accent":        "#6EA8FF",
+            "accent_btn":       "#2F6FEB",
+            "accent_btn_hover": "#4A86F7",
+            "tuerkis_btn":      "#26364F",
+            "tuerkis_btn_hover": "#304565",
+            "error_btn":        "#D1565F",
+            "error_btn_hover":  "#B3444D",
+            "console_bg":       "#0B101A",
+            "seitenknopf_bg":   "#0B101A",
+            "console_fg":       "#D6E2F5",
+            "progress_bg":      "#121A28",
+            "progress_fill":    "#4A86F7",
+            "accent":           "#6EA8FF",
+            "border":           "#2A3A54",
+            "header_bg":        "#090D15",
+            "fg_secondary":     "#8FA0BC",
+            "fg_warning":       "#E3B04B",
+            "fg_success":       "#4FC79A",
+            "link_fg":          "#6EA8FF",
+            "link_hover":       "#9CC3FF",
+            "log_cmd":          "#6EA8FF",
+            "remote_dir":       "#4FC79A",
+            "elf_btn":          "#566A8F",
+            "elf_btn_hover":    "#455776",
+        },
+        "klar": {
+            # Hell und klar (seit v1.9.79, Entwurf C des Nutzers): kuehles Weiss, dunkle Schrift, ein blauer Akzent.
+            "bg_main":          "#E9EDF3",
+            "bg_card":          "#FFFFFF",
+            "fg_primary":       "#1B2330",
+            "fg_accent":        "#2457C5",
+            "accent_btn":       "#2F66D0",
+            "accent_btn_hover": "#2556B3",
+            "tuerkis_btn":      "#4A6285",
+            "tuerkis_btn_hover": "#3E5373",
+            "error_btn":        "#C2413A",
+            "error_btn_hover":  "#A53630",
+            "console_bg":       "#F4F6FA",
+            "seitenknopf_bg":   "#FFFFFF",
+            "console_fg":       "#1B2330",
+            "progress_bg":      "#E3E8F0",
+            "progress_fill":    "#2F66D0",
+            "accent":           "#2457C5",
+            "border":           "#D2D8E2",
+            "header_bg":        "#DDE2EA",
+            "fg_secondary":     "#4F5B6D",
+            "fg_warning":       "#B45309",
+            "fg_success":       "#1A7F37",
+            "link_fg":          "#2457C5",
+            "link_hover":       "#1B459E",
+            "log_cmd":          "#2457C5",
+            "remote_dir":       "#1A7F37",
+            "elf_btn":          "#8A97AD",
+            "elf_btn_hover":    "#76839A",
+        },
     }
 
     #: Designs mit ruhiger Menueleiste und einheitlicher Ueberschrift: Alle Knoepfe der Titelleiste tragen die
     #: Nebenschriftfarbe (statt FILEZILLA gruen, JS LOADER orange, CREDITS blau), und die Seitenueberschrift hat die
     #: Hauptschriftfarbe auf allen Seiten (statt Akzentfarbe auf den Aufgabenseiten, Weiss auf den Konsolenseiten).
     #: Die vier aelteren Designs bleiben, wie sie waren.
-    _RUHIGE_DESIGNS: "frozenset[str]" = frozenset({"graphit"})
+    _RUHIGE_DESIGNS: "frozenset[str]" = frozenset({"graphit", "mitternacht", "klar"})
+
+    #: Designs mit heller Flaeche und dunkler Schrift - sie brauchen ein helles Hintergrundbild, alle anderen ein dunkles.
+    _HELLE_DESIGNS: "frozenset[str]" = frozenset({"hell", "klar"})
 
     # Aktive Palette – wird in __init__ aus Config geladen
     _COLORS: dict[str, str] = dict(_THEMES["dunkel"])
@@ -60449,7 +60549,7 @@ class PS5ConverterGUI:
 
 
     def _show_theme_dialog(self) -> None:
-        """Zeigt den Design-Auswahl-Dialog (die fuenf Themes)."""
+        """Zeigt den Design-Auswahl-Dialog (die sieben Themes)."""
         c = self._COLORS
         # Resizable + Scrollbar statt resizable=False, siehe ausfuehrlicher
         # Kommentar in _show_settings_dialog (DPI-Awareness kann Inhalte bei
@@ -60459,7 +60559,7 @@ class PS5ConverterGUI:
         # passen (die Namen tragen seit v1.9.19 den PS3-Zusatz), hoch genug,
         # dass alle vier Themes plus Hinweis ohne Scrollbalken hineinpassen.
         dlg = self._build_modern_toplevel(
-            self._t("theme_dialog.title_bar"), 640, 540, min_width=560, min_height=490,
+            self._t("theme_dialog.title_bar"), 640, 630, min_width=560, min_height=580,
         )
         dlg.lift()
         dlg.focus_force()
@@ -60491,6 +60591,10 @@ class PS5ConverterGUI:
              "#2C2F35", "#9FB6CC"),
             ("graphit", self._t("theme_dialog.theme_graphit_label"), self._t("theme_dialog.theme_graphit_desc"),
              "#1C1F24", "#4A78B5"),
+            ("mitternacht", self._t("theme_dialog.theme_mitternacht_label"),
+             self._t("theme_dialog.theme_mitternacht_desc"), "#0E1420", "#2F6FEB"),
+            ("klar", self._t("theme_dialog.theme_klar_label"), self._t("theme_dialog.theme_klar_desc"),
+             "#E9EDF3", "#2F66D0"),
         ]
 
         for key, label, desc, bg_prev, acc_prev in _theme_info:
@@ -61980,12 +62084,12 @@ class PS5ConverterGUI:
             return None
 
     def _design_ist_dunkel(self) -> bool:
-        """Wahr bei Futuristisch, Dunkel und Metallisch - sie schreiben hell.
+        """Wahr bei Futuristisch, Dunkel, Metallisch, Ruhig Graphit und Mitternachtsblau - sie schreiben hell.
 
-        Nur das Design Hell schreibt dunkel; die Schrift auf dem Hintergrundbild
-        braucht dort ein helles Bild, in den anderen drei ein dunkles.
+        Nur die Designs Hell und Hell und klar schreiben dunkel (``_HELLE_DESIGNS``); die Schrift auf dem
+        Hintergrundbild braucht dort ein helles Bild, in den anderen ein dunkles.
         """
-        return getattr(self, "_current_theme", "dunkel") != "hell"
+        return getattr(self, "_current_theme", "dunkel") not in self._HELLE_DESIGNS
 
     def _fenster_titelfarben_einrichten(self) -> None:
         """Die Titelleisten aller Fenster dunkel graublau (Windows 11) - im Design Hell bleiben sie hell.
