@@ -721,7 +721,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.79"
+APP_VERSION = "v1.9.80"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -4499,7 +4499,7 @@ class PS5ConverterGUI:
             "elf_btn_hover":    "#4C586B",
         },
         "mitternacht": {
-            # Mitternachtsblau (seit v1.9.79, Entwurf B des Nutzers): tiefes Nachtblau, ein heller Akzent,
+            # Mitternachtsblau (seit v1.9.80, Entwurf B des Nutzers): tiefes Nachtblau, ein heller Akzent,
             # Nebenknoepfe in gedecktem Blau.
             "bg_main":          "#0E1420",
             "bg_card":          "#1A2536",
@@ -4530,7 +4530,7 @@ class PS5ConverterGUI:
             "elf_btn_hover":    "#455776",
         },
         "klar": {
-            # Hell und klar (seit v1.9.79, Entwurf C des Nutzers): kuehles Weiss, dunkle Schrift, ein blauer Akzent.
+            # Hell und klar (seit v1.9.80, Entwurf C des Nutzers): kuehles Weiss, dunkle Schrift, ein blauer Akzent.
             "bg_main":          "#E9EDF3",
             "bg_card":          "#FFFFFF",
             "fg_primary":       "#1B2330",

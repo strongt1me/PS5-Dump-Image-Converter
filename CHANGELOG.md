@@ -2,9 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.79):** Neues Design „Ruhig Graphit“, ein eigener Arbeitsordner im Wurzelverzeichnis von C: ohne gewählten Temp-Ordner, sieben aktualisierte Payloads und vorsichtigeres Einlesen fremder Daten.
+> **Kurz zum aktuellen Stand (v1.9.80):** Drei neue ruhige Designs – „Ruhig Graphit“, „Mitternachtsblau“ und „Hell und klar“ –, ein eigener Arbeitsordner im Wurzelverzeichnis von C: ohne gewählten Temp-Ordner, sieben aktualisierte Payloads und vorsichtigeres Einlesen fremder Daten.
 
 ---
+
+## v1.9.80 – 15.10.2026
+
+- **Neu:** Zwei weitere Designs im Fenster DESIGN: „Mitternachtsblau“ (tiefes Blau) und „Hell und klar“ (helle Flächen). Wie „Ruhig Graphit“ haben sie eine einheitliche Menüleiste und Überschriftenfarbe; die vier älteren Designs bleiben unverändert.
 
 ## v1.9.79 – 15.10.2026
 
