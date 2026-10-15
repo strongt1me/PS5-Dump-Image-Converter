@@ -171,8 +171,14 @@ def xml_auswerten(text: "str | bytes") -> "UpdateInfo | None":
         enthaelt (der Server antwortet fuer Titel ohne Update mit leerem oder
         andersartigem Inhalt).
     """
+    roh = text if isinstance(text, bytes) else text.encode("utf-8")
+    # Sonys Antwort ist ein flaches Dokument ohne Typdeklaration. Eine DOCTYPE- oder ENTITY-Angabe
+    # (Entity-Aufblaehung "Billion Laughs") hat darin nichts zu suchen - gar nicht erst parsen.
+    # Ein NUL-Byte verraet UTF-16/32, in dem die Suche unten nichts faende - Sony liefert UTF-8.
+    if b"\x00" in roh or b"<!DOCTYPE" in roh.upper() or b"<!ENTITY" in roh.upper():
+        return None
     try:
-        wurzel = ET.fromstring(text if isinstance(text, bytes) else text.encode("utf-8"))
+        wurzel = ET.fromstring(roh)
     except (ET.ParseError, ValueError):
         return None
     patch = wurzel if wurzel.tag == "titlepatch" else wurzel.find(".//titlepatch")

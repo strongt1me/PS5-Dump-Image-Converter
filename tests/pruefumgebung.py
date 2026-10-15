@@ -36,6 +36,20 @@ import tempfile
 #: Die Umgebungsvariable, die ``plattform.konfigurationsordner`` auswertet.
 UMGEBUNGSNAME = "PS5CONV_KONFIGORDNER"
 
+#: Die Umgebungsvariable, die ``arbeitsordner.standard_ordner`` auswertet (``arbeitsordner.UEBERSTEUERUNG``).
+ARBEITSORDNER_NAME = "PS5CONV_STANDARD_TEMP"
+
+
+def arbeitsordner_umlenken() -> str:
+    """Lenkt den Standard-Arbeitsordner um - ausser der Aufrufer hat schon einen gesetzt.
+
+    Ohne das legte jeder Test, der den Arbeitsordner braucht, ``C:\\Temp - Dump-Image Converter`` im echten
+    Wurzelverzeichnis des Systemlaufwerks an (seit v1.9.79 der Standard, wenn niemand einen Ordner waehlt).
+    """
+    if not os.environ.get(ARBEITSORDNER_NAME):
+        os.environ[ARBEITSORDNER_NAME] = os.path.join(tempfile.gettempdir(), "ps5conv_pruefung", "arbeitsordner")
+    return os.environ[ARBEITSORDNER_NAME]
+
 
 def umlenken(name: str = "pruefstand", leeren: bool = False) -> str:
     """Lenkt den Einstellungsordner auf einen eigenen um.
@@ -65,6 +79,7 @@ def umlenken(name: str = "pruefstand", leeren: bool = False) -> str:
         shutil.rmtree(ordner, ignore_errors=True)
     os.makedirs(ordner, exist_ok=True)
     os.environ[UMGEBUNGSNAME] = ordner
+    arbeitsordner_umlenken()
     return ordner
 
 

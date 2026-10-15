@@ -53,6 +53,11 @@ import pruefumgebung
 if not os.environ.get(pruefumgebung.UMGEBUNGSNAME):
     pruefumgebung.umlenken("conftest")
 
+# Ebenso der Standard-Arbeitsordner: Seit v1.9.79 ist das unter Windows "Temp - Dump-Image Converter" im Wurzelverzeichnis
+# des Systemlaufwerks. Die Testreihe soll dort nichts anlegen - auch nicht, wenn der Aufrufer nur
+# PS5CONV_KONFIGORDNER gesetzt hat (dann lief umlenken() oben nicht).
+pruefumgebung.arbeitsordner_umlenken()
+
 # Dieselbe DPI-Einstellung wie das Programm (Kopf des Hauptmoduls) - und zwar
 # bevor irgendeine Testdatei ihre Tk-Wurzel anlegt. Tk uebernimmt die
 # Aufloesung beim Anlegen der Wurzel: Kam eine Testdatei ohne Import des

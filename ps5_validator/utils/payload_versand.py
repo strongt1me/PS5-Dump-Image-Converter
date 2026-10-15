@@ -187,7 +187,7 @@ def _pldmgr_ruf(host: str, pfad: str, koerper: bytes | None = None,
     if koerper is not None:
         ruf.add_header("Content-Type", "application/octet-stream")
     with urllib.request.urlopen(ruf, timeout=timeout) as antwort:
-        return antwort.read().decode("utf-8", "replace")
+        return antwort.read(8 * 1024 * 1024).decode("utf-8", "replace")
 
 
 def pldmgr_ablageort(host: str, name: str, port: int = PLDMGR_PORT) -> str:

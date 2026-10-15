@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.78</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.79</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.78</span>
+      <span class="marke">Version v1.9.79</span>
       <span class="marke">Stand 15. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -396,7 +396,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>oder ein Mac</td><td>Das Programm läuft auch auf einem Mac mit macOS 11 oder neuer. Wie Sie es dort erstellen und starten, steht in <a href="#k20">Kapitel 20</a>. Es gelten dieselben Einschränkungen wie unter Linux.</td></tr>
       <tr><td>Freier Speicherplatz</td><td>Halten Sie Platz für Quelle, Zwischendateien und Ergebnis bereit. Große Dumps benötigen entsprechend mehr.</td></tr>
       <tr><td>Arbeitskopie</td><td>Arbeiten Sie bei wichtigen Daten immer mit einer Kopie. Bewahren Sie die unveränderte Quelle getrennt auf.</td></tr>
-      <tr><td>Lokaler Temp-Ordner</td><td>Möglichst ein schneller lokaler Datenträger, zum Beispiel <code>C:\PS5Converter_Temp</code>.</td></tr>
+      <tr><td>Lokaler Temp-Ordner</td><td>Möglichst ein schneller lokaler Datenträger, zum Beispiel <code>C:\PS5Converter_Temp</code>. Wählen Sie nichts, legt das Programm beim Start einer Aufgabe unter Windows im Wurzelverzeichnis des Systemlaufwerks (dort, wo Windows installiert ist, meist <code>C:</code>) den Ordner <code>Temp - Dump-Image Converter</code> an und arbeitet darin.</td></tr>
     </tbody>
   </table>
   </div>
@@ -434,7 +434,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </table>
   </div>
 
-  <p><strong>Beim Öffnen ist nichts vorbelegt:</strong> AMPR EMU, PlayGo und BACKPORT sind aus, AMPR EMU steht auf <em>Normal</em> (ohne Pack) mit der neuesten Fassung ohne Pack, und QUELLE, ZIELORDNER und TEMP-ORDNER sind leer. Was Sie im Lauf einer Sitzung ankreuzen oder wählen, bleibt bis zum Beenden stehen; beim nächsten Start beginnt wieder alles leer. Die Kommandozeile (<code>--cli</code>) liest dagegen weiter die zuletzt gespeicherten Einstellungen.</p>
+  <p><strong>Beim Öffnen ist nichts vorbelegt:</strong> AMPR EMU, PlayGo und BACKPORT sind aus, AMPR EMU steht auf <em>Normal</em> (ohne Pack) mit der neuesten Fassung ohne Pack, und QUELLE, ZIELORDNER und TEMP-ORDNER sind leer. Bleibt der TEMP-ORDNER leer, arbeitet die erste Aufgabe unter Windows im Ordner <code>Temp - Dump-Image Converter</code> im Wurzelverzeichnis des Systemlaufwerks (meist <code>C:\</code>); das Programm legt ihn dann an und trägt ihn ins Feld ein. Unter Linux und macOS gilt der Temp-Ordner des Systems. Was Sie im Lauf einer Sitzung ankreuzen oder wählen, bleibt bis zum Beenden stehen; beim nächsten Start beginnt wieder alles leer. Die Kommandozeile (<code>--cli</code>) liest dagegen weiter die zuletzt gespeicherten Einstellungen.</p>
 
   <p>Oben rechts liegt die Werkzeugleiste mit weiteren Funktionen (FILEZILLA, JS LOADER, CREDITS, DESIGN und mehr). Für eine normale Konvertierung brauchen Sie diese Schaltflächen nicht – sie sind in <a href="#k14">Kapitel 14</a> erklärt.</p>
   <h3>2.1 Die zweite Ansicht: KONSOLE</h3>
@@ -2837,7 +2837,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <thead><tr><th>Problem</th><th>Was Sie tun können</th></tr></thead>
     <tbody>
       <tr><td>Virenschutz meldet oder entfernt die EXE</td><td>Programme, die mit PyInstaller gebaut sind, werden gelegentlich fälschlich gemeldet. Das Programm trägt selbst keine Ausnahmen in Ihren Virenschutz ein und installiert keine Zertifikate. Laden Sie die EXE nur von der Release-Seite des Projekts; stimmt die Quelle, können Sie die EXE in Ihrem Virenschutz selbst als Ausnahme eintragen.</td></tr>
-      <tr><td>STARTEN bleibt deaktiviert</td><td>Prüfen Sie, ob Quelle, Zielordner und Temp-Ordner vollständig gewählt wurden. Bei Aufgabe 8 wird kein Zielordner benötigt.</td></tr>
+      <tr><td>STARTEN bleibt deaktiviert</td><td>Prüfen Sie, ob Quelle und Zielordner vollständig gewählt wurden; der Temp-Ordner darf leer bleiben. Bei Aufgabe 8 wird kein Zielordner benötigt.</td></tr>
       <tr><td>Quelle wird abgelehnt</td><td>Kontrollieren Sie, ob die gewählte Aufgabe zum Dateityp passt. Nutzen Sie bei Bedarf Aufgabe 6 oder prüfen Sie die Quelle mit Aufgabe 8.</td></tr>
       <tr><td>„sce_sys/param.json fehlt“ mit Ja/Nein-Abfrage</td><td>Das Spiel ist unvollständig. Bei <strong>Ja</strong> legt das Programm eine gültige <code>param.json</code> an und der Bau läuft weiter; die Title-ID kommt aus <code>sce_sys/nptitle.dat</code>, ersatzweise aus dem Ordnernamen. Ist in den Einstellungen <em>Fehlende Metadaten online nachschlagen</em> gesetzt (unter Windows und Linux ab Werk), werden Titel und Content-ID dabei gleich nachgeschlagen. Bei <strong>Nein</strong> bricht der Bau ab – erstellen Sie dann am besten ein neues Backup vom Original.</td></tr>
       <tr><td>Content-ID in der <code>param.json</code> („param.json has no Content ID“)</td><td>Titel und Content-ID stehen in <strong>keiner</strong> Datei eines Backups – auch nicht in der <code>eboot.bin</code>. Nur die Title-ID ist lokal zu finden. Mit dem Haken <em>Fehlende Metadaten online nachschlagen</em> in den Einstellungen schlägt das Programm beides nach; dabei wird ausschließlich die Title-ID an prosperopatches.com gesendet. Ohne Haken, ohne Internet oder wenn die Seite nicht antwortet, bekommt die Datei einen <strong>Platzhalter</strong> als Content-ID (<code>UP0000-&lt;Title-ID&gt;_00-…</code>) – ohne Content-ID brechen Werkzeuge ab, die daraus ein PKG bauen. Fehlt sie in einer vorhandenen <code>param.json</code>, bietet das Programm an, den Platzhalter einzutragen; die alte Datei bleibt als <code>param.json.alt</code> erhalten. Für Updates und DLC muss die echte Content-ID eingetragen werden.</td></tr>
@@ -2853,7 +2853,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.78), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.79), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -3054,7 +3054,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.78</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.79</strong></span>
     <span>Stand 15. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

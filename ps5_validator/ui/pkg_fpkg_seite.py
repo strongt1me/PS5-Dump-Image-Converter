@@ -56,7 +56,7 @@ class PkgFpkgSeite:
     # Aufbau
     # ------------------------------------------------------------------
     def _bauen(self) -> None:
-        g, h, c, t = self.g, self.h, self.c, self.t
+        g, h, c = self.g, self.h, self.c
         F, pt = h.UI_SCHRIFT, h.pt
         self.rahmen = tk.Frame(g.root, bg=c["bg_main"], padx=24, pady=18)
 

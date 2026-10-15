@@ -156,8 +156,10 @@ class SiebenzipArchivTests(unittest.TestCase):
         quelle = Path(t) / "q" / "Spiel"
         _spiel(quelle)
         archiv = Path(t) / ("geheim" + endung)
+        # CREATE_NO_WINDOW gibt es nur unter Windows - anderswo lehnt subprocess das Argument mit ValueError ab.
         subprocess.run([SIEBENZIP, "a", str(archiv), str(quelle), "-p" + passwort, "-mhe=on", "-bso0", "-bsp0"],
-                       check=True, stdin=subprocess.DEVNULL, creationflags=0x08000000)
+                       check=True, stdin=subprocess.DEVNULL,
+                       creationflags=0x08000000 if sys.platform == "win32" else 0)
         return quelle, archiv
 
     def test_verschluesseltes_archiv_ohne_passwort_meldet_den_passwortfehler(self) -> None:
@@ -325,8 +327,10 @@ class FensterTests(unittest.TestCase):
         quelle = Path(t) / "q" / "PPSA01234"
         _spiel(quelle)
         archiv = Path(t) / "geheim.7z"
+        # CREATE_NO_WINDOW gibt es nur unter Windows - anderswo lehnt subprocess das Argument mit ValueError ab.
         subprocess.run([SIEBENZIP, "a", str(archiv), str(quelle), "-p" + passwort, "-mhe=on", "-bso0", "-bsp0"],
-                       check=True, stdin=subprocess.DEVNULL, creationflags=0x08000000)
+                       check=True, stdin=subprocess.DEVNULL,
+                       creationflags=0x08000000 if sys.platform == "win32" else 0)
         return archiv
 
     def test_ein_archiv_mit_bekanntem_passwort_wird_ohne_rueckfrage_zur_quelle(self) -> None:

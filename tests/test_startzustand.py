@@ -144,12 +144,17 @@ class StartLeerTests(unittest.TestCase):
             self.app._browse_dest()
         self.assertEqual(self.ziel, dialog.call_args.kwargs["initialdir"])
 
-    def test_ein_leerer_temp_ordner_heisst_system_temp_und_bleibt_leer(self) -> None:
-        """Der erste Aufruf (Telemetrie, Vorabpruefung) darf das Feld nicht fuellen, das der Nutzer leer sehen wollte."""
+    def test_ein_leerer_temp_ordner_heisst_standardordner_und_bleibt_leer(self) -> None:
+        """Der erste Aufruf (Telemetrie, Vorabpruefung) darf das Feld nicht fuellen, das der Nutzer leer sehen wollte.
+
+        Ein leeres Feld heisst seit v1.9.79 den Standard-Arbeitsordner (Windows: "Temp - Dump-Image Converter" im
+        Wurzelverzeichnis des Systemlaufwerks, siehe ``arbeitsordner``; die Testreihe lenkt ihn um), vorher den
+        Temp-Ordner des Systems.
+        """
         a = self.app
         a._temp_pruefung = None
         benutzt = a._get_runtime_temp_dir()
-        self.assertEqual(os.path.normpath(tempfile.gettempdir()), benutzt)
+        self.assertEqual(os.path.normpath(os.environ["PS5CONV_STANDARD_TEMP"]), benutzt)
         self.assertEqual("", a.temp_path.get())
         self.assertEqual("", a._load_setting("temp_dir", None), "auch die Einstellung bleibt leer")
 

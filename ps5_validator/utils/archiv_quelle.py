@@ -239,7 +239,40 @@ def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melde
             _ziel_leeren(ziel)          # was vor dem Fehler entpackt war, wird nicht gebraucht
     if letzter is not None:
         raise letzter
+    verknuepfung_nach_aussen(ziel)
     return spielwurzel(ziel)
+
+
+def verknuepfung_nach_aussen(ziel: str) -> None:
+    """Bricht ab, wenn das entpackte Archiv eine Verknuepfung enthaelt, die aus dem Ordner herauszeigt.
+
+    ZIP legt beim Entpacken nie Verknuepfungen an (und prueft jeden Pfad vorher); 7-Zip dagegen kann sie aus
+    7z- und RAR-Archiven wiederherstellen. Ein Spiele-Dump hat solche Verknuepfungen nicht - zeigt eine nach
+    ``/etc`` oder in den Benutzerordner, wuerde das Programm beim Einlesen, Packen oder Loeschen
+    dort hineinlaufen. Deshalb gilt: Verknuepfung, die ausserhalb von ``ziel`` endet = Fehler.
+
+    Raises:
+        ArchivFehler: Mit dem Namen der ersten gefundenen Verknuepfung.
+    """
+    wurzel = os.path.realpath(ziel)
+    ist_knoten = getattr(os.path, "isjunction", lambda _pfad: False)
+    offen = [ziel]
+    while offen:
+        ordner = offen.pop()
+        try:
+            eintraege = list(os.scandir(ordner))
+        except OSError:
+            continue
+        for eintrag in eintraege:
+            # DirEntry kennt Verknuepfung und Ordner schon aus dem Auflisten - kein weiterer Aufruf je Datei.
+            ist_link = eintrag.is_symlink() or ist_knoten(eintrag.path)
+            if ist_link:
+                echt = os.path.realpath(eintrag.path)
+                if echt != wurzel and not echt.startswith(wurzel + os.sep):
+                    raise ArchivFehler("Unzulaessige Verknuepfung im Archiv: %s -> %s"
+                                       % (os.path.relpath(eintrag.path, ziel), echt))
+            elif eintrag.is_dir(follow_symlinks=False):
+                offen.append(eintrag.path)
 
 
 def _ziel_leeren(ziel: str) -> None:

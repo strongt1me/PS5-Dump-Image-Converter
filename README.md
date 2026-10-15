@@ -7,11 +7,11 @@
 **PS5-Dumps und Abbilder umwandeln, entpacken und prüfen, PS4- und PS5-Pakete bauen
 und die Konsole gleich mit bedienen – unter Windows, Linux und macOS.**
 
-![Version](https://img.shields.io/badge/Version-v1.9.78-blue)
-![Tests](https://img.shields.io/badge/Tests-6352%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.9.79-blue)
+![Tests](https://img.shields.io/badge/Tests-6378%20gr%C3%BCn-brightgreen)
 ![Lizenz](https://img.shields.io/badge/Lizenz-GPL--3.0--or--later-blue)
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)
 ![Sprachen](https://img.shields.io/badge/Sprachen-DE%20%C2%B7%20EN-lightgrey)
 
 [Funktionen](#funktionen) ·
@@ -171,7 +171,7 @@ Unter macOS legt `Erste Installation.command` die App ab und entfernt die Quaran
   etwas einzuhängen – auf jedem System. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   ist nur der Rückfall für ungewöhnliche Abbilder unter Windows; wird er gebraucht, sagt das Programm es
   und kann ihn selbst installieren
-- **Aus dem Quelltext:** Python 3.10+ und `pip`
+- **Aus dem Quelltext:** Python 3.11+ und `pip`
 
 ## Bedienung
 

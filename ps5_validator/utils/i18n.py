@@ -2763,7 +2763,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'library.filter_einbau': {'de': 'Backport · AMPR · PlayGo', 'en': 'Backport · AMPR · PlayGo'},
     'library.sort_label': {'de': 'Sortierung', 'en': 'Sort by'},
     'library.sort_absteigend': {'de': 'Absteigend', 'en': 'Descending'},
-    'library.kopf_leer': {'de': 'Noch keine Titel', 'en': 'No titles yet'},
+    'library.kopf_leer': {'de': 'Noch keine Titel – oben „PS5“ wählen oder einen Scan-Ordner hinzufügen', 'en': 'No titles yet – choose “PS5” above or add a scan folder'},
     'library.kopf_spiele': {'de': '{count} Spiele', 'en': '{count} games'},
     'library.kopf_treffer': {'de': '{sichtbar} von {gesamt} Spielen', 'en': '{sichtbar} of {gesamt} games'},
     'library.kopf_ps5': {'de': '{count} PS5', 'en': '{count} PS5'},

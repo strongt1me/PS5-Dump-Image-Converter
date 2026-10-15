@@ -132,6 +132,7 @@ from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import prosperopkg
 from ps5_validator.utils import orbispkg
 from ps5_validator.utils import payload_versand
+from ps5_validator.utils import arbeitsordner
 from ps5_validator.utils import app_install
 from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
@@ -720,8 +721,14 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.78"
+APP_VERSION = "v1.9.79"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
+
+#: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
+#: bekannte Seiten - die Grenze schuetzt davor, dass eine fehlerhafte oder feindliche Antwort den Speicher
+#: fuellt. Gelesen wird einfach bis dorthin; was darueber liegt, ist ohnehin kein brauchbares Dokument.
+NETZ_MAX_SEITE = 8 * 1024 * 1024
+NETZ_MAX_BILD = 32 * 1024 * 1024
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
 #: gemessen am 17.09.2026 in WSLg: Tk schreibt die Klasse mit grossem ersten
@@ -1656,8 +1663,9 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
     # -- Python --------------------------------------------------------
     haupt, neben = sys.version_info[:2]
     fassung = "%d.%d.%d" % sys.version_info[:3]
-    if (haupt, neben) < (3, 10):
-        melde(DOKTOR_FEHLER, "Python %s ist zu alt - 3.10 oder neuer nötig"
+    # 3.11: ``tomllib`` (Packwerkzeug des AMPR EMU) gibt es erst ab dieser Fassung; vorher scheitert schon der Import.
+    if (haupt, neben) < (3, 11):
+        melde(DOKTOR_FEHLER, "Python %s ist zu alt - 3.11 oder neuer nötig"
               % fassung)
     else:
         melde(DOKTOR_GUT, "Python %s (%s)"
@@ -6840,8 +6848,11 @@ class PS5ConverterGUI:
                 return False
             norm = os.path.abspath(path_str)
             try:
+                # Nur zum Vergleichen: Diese Pruefung darf den Standard-Arbeitsordner nicht anlegen (sie laeuft auch
+                # beim Start). Fehlt er, gilt der Temp-Ordner des Systems - der Ordner selbst waere dann nicht der
+                # Arbeitsordner, und ein "ps5conv_*" darin bliebe verwaltet.
                 temp_root = os.path.normcase(
-                    os.path.abspath(self._get_runtime_temp_dir()))
+                    os.path.abspath(self._get_runtime_temp_dir(anlegen=False)))
             except Exception:  # noqa: BLE001
                 temp_root = ""
 
@@ -8717,15 +8728,19 @@ class PS5ConverterGUI:
         self._last_task_ok = bool(success) and not aborted
         return ""
 
-    def _extract_embedded_mkpfs(self) -> str:
+    def _extract_embedded_mkpfs(self, anlegen: bool = True) -> str:
         """Stellt die eingebettete mkpfs-Engine bereit.
 
         Siehe werkzeuge_bereitstellen.mkpfs_bereitstellen. Der Temp-Ordner
         wird fertig hereingereicht - seine Herkunft haengt an einer
         Tk-Variable und bleibt deshalb hier.
+
+        Args:
+            anlegen: Siehe ``_get_runtime_temp_dir``. Das Vorwaermen beim Start sagt ``False``: Der Standard-Arbeitsordner
+                im Wurzelverzeichnis des Systemlaufwerks soll erst mit der ersten Aufgabe entstehen.
         """
         return werkzeuge_bereitstellen.mkpfs_bereitstellen(
-            self._get_runtime_temp_dir(), MKPFS_REQUIRED_VERSION,
+            self._get_runtime_temp_dir(anlegen), MKPFS_REQUIRED_VERSION,
             melden=self._append_to_log, text=self._t)
 
     # ------------------------------------------------------------------
@@ -13935,7 +13950,7 @@ class PS5ConverterGUI:
         """Extrahiert die eingebettete Engine im Hintergrund vorab."""
         try:
             if not self.mkpfs_dir:
-                self.mkpfs_dir = self._extract_embedded_mkpfs()
+                self.mkpfs_dir = self._extract_embedded_mkpfs(anlegen=False)
         except Exception as exc:
             logger.debug("_warmup_mkpfs_engine: %s", exc)
 
@@ -18612,14 +18627,20 @@ class PS5ConverterGUI:
                 return os.path.normpath(saved)
         except Exception as exc:
             logger.debug("temp_dir konnte nicht geladen werden: %s", exc)
-        return os.path.normpath(tempfile.gettempdir())
+        return os.path.normpath(arbeitsordner.standard_ordner() or tempfile.gettempdir())
 
     #: So lange gilt eine bestandene Schreibprobe. Neu geprueft wird erst
     #: danach - oder sofort, wenn ein anderer Ordner gewaehlt wurde.
     _TEMP_PRUEF_GUELTIG_S: float = 30.0
 
-    def _get_runtime_temp_dir(self) -> str:
+    def _get_runtime_temp_dir(self, anlegen: bool = True) -> str:
         """Ermittelt einen gültigen, beschreibbaren Temp-Ordner zur Laufzeit.
+
+        Args:
+            anlegen: Hat der Anwender keinen Ordner gewaehlt, gilt der Standard-Arbeitsordner (Windows: "Temp -
+                Dump-Image Converter" im Wurzelverzeichnis des Systemlaufwerks). Mit ``False`` legt der Aufruf ihn nicht
+                an: Gibt es ihn noch nicht, kommt der Temp-Ordner des Systems zurueck. Das ist fuer die Startarbeiten im
+                Hintergrund (Engine entpacken) - der Ordner soll erst entstehen, wenn eine Aufgabe ihn braucht.
 
         Das Ergebnis wird kurz zwischengespeichert. Ohne das kostete diese
         Funktion spuerbar Zeit, denn ``_mkpfs_line_visible`` ruft sie je
@@ -18659,12 +18680,18 @@ class PS5ConverterGUI:
                 candidate = ""
         if not candidate:
             candidate = str(self._load_setting("temp_dir", "")).strip()
-        # Ein leeres Feld (Programmstart seit 11.10.2026) heisst: System-Temp. Der Ordner wird dann benutzt, aber
-        # NICHT in das Feld oder die Einstellung geschrieben - sonst fuellte der erste Aufruf (Telemetrie, Vorabpruefung)
-        # das Feld, das der Nutzer leer sehen wollte, und Arbeitsfaeden saehen einen Ordner, den die Oberflaeche nie nannte.
+        # Ein leeres Feld (Programmstart seit 11.10.2026) heisst: kein Ordner gewaehlt. Dann gilt unter Windows der Ordner
+        # "Temp - Dump-Image Converter" im Wurzelverzeichnis des Systemlaufwerks (seit v1.9.79, arbeitsordner.py), sonst
+        # der Temp-Ordner des Systems. Er wird benutzt, aber hier NICHT in das Feld oder die Einstellung geschrieben -
+        # sonst fuellte der erste Aufruf (Telemetrie, Vorabpruefung) das Feld, das der Nutzer leer sehen wollte, und
+        # Arbeitsfaeden saehen einen Ordner, den die Oberflaeche nie nannte. Beim Start einer Aufgabe traegt
+        # ``_launch_task`` ihn ins Feld ein.
         vom_nutzer = bool(candidate)
         if not candidate:
-            candidate = tempfile.gettempdir()
+            standard = arbeitsordner.standard_ordner()
+            candidate = standard or tempfile.gettempdir()
+            if standard and not anlegen and not os.path.isdir(standard):
+                return os.path.normpath(tempfile.gettempdir())
 
         jetzt = time.monotonic()
         gemerkt = getattr(self, "_temp_pruefung", None)
@@ -18748,6 +18775,10 @@ class PS5ConverterGUI:
         if hasattr(self, "temp_path") and im_hauptfaden:
             _add(self.temp_path.get())
         _add(str(self._load_setting("temp_dir", "")).strip())
+        # Der Standard-Arbeitsordner (seit v1.9.79): Reste eines frueheren Laufs dort raeumt der Start auf, und
+        # faellt ein gewaehlter Ordner aus, ist er der naechste Versuch. Es folgt der Temp-Ordner des Systems -
+        # dort liegen die Reste aelterer Fassungen.
+        _add(arbeitsordner.standard_ordner())
         _add(tempfile.gettempdir())
 
         try:
@@ -23432,7 +23463,7 @@ class PS5ConverterGUI:
                     },
                 )
                 with urllib.request.urlopen(req, timeout=6) as resp:
-                    html_text = resp.read().decode("utf-8", errors="replace")
+                    html_text = resp.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace")
             except Exception as exc:
                 logger.debug("Patch-Search-Fallback fehlgeschlagen: %s | %s", ddg_query, exc)
                 continue
@@ -23509,7 +23540,7 @@ class PS5ConverterGUI:
                     },
                 )
                 with urllib.request.urlopen(req, timeout=6) as resp:
-                    html_text = resp.read().decode("utf-8", errors="replace")
+                    html_text = resp.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace")
             except Exception as exc:
                 logger.debug("PS-Store-Titelsuche fehlgeschlagen: %s | %s", title, exc)
                 continue
@@ -23627,7 +23658,7 @@ class PS5ConverterGUI:
                     }
                 )
                 with urllib.request.urlopen(req, timeout=5) as r:
-                    data = _json2.loads(r.read())
+                    data = _json2.loads(r.read(NETZ_MAX_SEITE))
                 links = data.get("links", [])
                 if not links:
                     return
@@ -23697,7 +23728,7 @@ class PS5ConverterGUI:
         try:
             req = _ureq2.Request(cover_url, headers={"User-Agent": "Mozilla/5.0"})
             with _ureq2.urlopen(req, timeout=5) as r:
-                img_data = r.read()
+                img_data = r.read(NETZ_MAX_BILD)
             return Image.open(_io2.BytesIO(img_data)).convert("RGB")
         except Exception as exc:
             logger.debug("Online-Cover Download fehlgeschlagen: %s | %s", cover_url, exc)
@@ -23727,7 +23758,7 @@ class PS5ConverterGUI:
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
             )
             with urllib.request.urlopen(req, timeout=5) as r:
-                html = r.read().decode("utf-8", errors="replace")
+                html = r.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace")
         except Exception as exc:
             logger.debug("Patch-Seiten-Metadaten konnten nicht geladen werden: %s | %s", tid, exc)
             return {}
@@ -25472,6 +25503,10 @@ class PS5ConverterGUI:
             self.size_label.config(text="")
         self.console_view.delete("1.0", tk.END)
         effective_tmp = self._get_runtime_temp_dir()
+        # Hat der Anwender keinen Ordner gewaehlt, arbeitet der Lauf im Standardordner (Windows: "Temp - Dump-Image
+        # Converter" im Wurzelverzeichnis des Systemlaufwerks). Er steht danach im Feld - so sieht man, wo gearbeitet wird.
+        if not str(self.temp_path.get()).strip():
+            self.temp_path.set(effective_tmp)
         self._append_to_log(self._t('log.auto.0037', v0=mode))
         self._append_to_log(self._t('log.auto.0038', v0=effective_tmp))
         if self._temp_von_speicheroptimierung_bedroht(effective_tmp):
@@ -38900,7 +38935,7 @@ class PS5ConverterGUI:
                                        "AppleWebKit/537.36"},
             )
             with urllib.request.urlopen(anfrage, timeout=8) as antwort:
-                doc = antwort.read().decode("utf-8", errors="replace")
+                doc = antwort.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace")
         except Exception as exc:
             logger.debug("Online-Nachschlag fehlgeschlagen (%s): %s", title_id, exc)
             return {}
@@ -41862,7 +41897,7 @@ class PS5ConverterGUI:
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
             )
             with urllib.request.urlopen(req, timeout=5) as r:
-                html = r.read().decode("utf-8", errors="replace")
+                html = r.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace")
             if "404" in html[:500] or "not here" in html.lower():
                 return ergebnisse, False
             key = None
@@ -41899,7 +41934,7 @@ class PS5ConverterGUI:
                 },
             )
             with urllib.request.urlopen(api_req, timeout=5) as r:
-                data = json.loads(r.read().decode("utf-8", errors="replace"))
+                data = json.loads(r.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace"))
             if not data.get("success"):
                 return ergebnisse, True
             for patch in data.get("patches", []):
@@ -47938,7 +47973,7 @@ class PS5ConverterGUI:
             adresse, headers={"User-Agent": "PS5DumpImageConverter/%s" % APP_VERSION,
                               "Accept": "application/json"})
         with urllib.request.urlopen(anfrage, timeout=12) as antwort:
-            return antwort.read().decode("utf-8", errors="replace")
+            return antwort.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace")
 
     def _diagnose_umgebung(self):
         """Siehe diagnose_befund.Diagnosebericht._diagnose_umgebung."""
