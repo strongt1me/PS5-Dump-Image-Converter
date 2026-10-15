@@ -434,6 +434,12 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Wie stark wird gepackt, und wie prüfe oder entpacke ich ein fertiges Asset-Pack?</h3>
+    <p><strong>Die Stärke</strong> stellen Sie unter <strong>EINSTELLUNGEN</strong> im Abschnitt <em>Asset-Pack (LZ4)</em> ein (seit v1.9.80). Vorgabe ist Stufe <strong>9</strong>: Stufe 12 spart nach Messungen an echten Spieldaten nur 0,0 bis 0,6 Prozentpunkte mehr, braucht aber das 1,2- bis 3,6-Fache an Zeit. Bilder, Texturen, Archive, Ton, Video und Konfigurationsdateien bleiben im allgemeinen Profil lose, weil sie schon verdichtet sind.</p>
+    <p><strong>Prüfen und Entpacken</strong> geht unter <strong>WEITERE TOOLS</strong> → <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong> (seit v1.9.80). Wählen Sie den Spielordner mit <code>ampr_assets.index</code>: <em>PRÜFEN</em> liest jeden Block gegen die Prüfsummen und sagt, ob die Bibliothek im Ordner Bänder lesen kann; <em>ENTPACKEN</em> legt die gepackten Dateien wieder lose hin – in einen neuen Ordner (der Spielordner bleibt) oder in den Spielordner selbst (danach werden die Bänder gelöscht). Ein Abbild lässt sich so nicht öffnen; packen Sie es vorher mit Aufgabe 2 aus.</p>
+  </div>
+
+  <div class="frage">
     <h3>Was macht der Haken „PlayGo“?</h3>
     <p>Er legt einen Ersatz für <code>libScePlayGo.sprx</code> ins Spiel, der alle Sprach- und Szenariopakete als installiert meldet. Die meisten Spiele brauchen das nicht, deshalb ist er ab Werk aus. Erklärt ein Titel PlayGo-Inhalte und ist der Haken nicht gesetzt, fragt das Programm am Anfang des Laufs nach – bevor kopiert, entpackt oder gepackt wird.</p>
   </div>

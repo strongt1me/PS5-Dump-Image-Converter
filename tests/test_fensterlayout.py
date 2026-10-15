@@ -455,6 +455,10 @@ class FenstergroesseTests(unittest.TestCase):
     def test_ampr_index_fasst_seinen_inhalt(self):
         self._pruefen("AMPR-Index", self.app._show_ampr_index_builder)
 
+    def test_asset_pack_werkzeug_fasst_seinen_inhalt(self):
+        self._pruefen("Asset-Pack pruefen/entpacken",
+                      self.app._show_asset_pack_werkzeug)
+
     def test_diagnosebericht_fasst_seinen_inhalt(self):
         self._pruefen("Diagnosebericht", self.app._show_diagnostic_report)
 

@@ -90,7 +90,7 @@ class SchliessenFunktioniertTests(unittest.TestCase):
     #: Stelle rueckte "PS4 PKG -> Dump Ordner", das ebenso einen Lauf hat.
     MIT_KNOPF = ("_show_pkg_entpacken",
                  "_render_dump_rename_window", "_show_js_loader",
-                 "_show_ampr_index_builder")
+                 "_show_ampr_index_builder", "_show_asset_pack_werkzeug")
 
     def test_diese_fenster_haben_einen_schliessen_knopf(self):
         baum = _baum()

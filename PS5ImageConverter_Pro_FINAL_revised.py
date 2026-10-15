@@ -4661,6 +4661,10 @@ class PS5ConverterGUI:
         ("titlebar.pkg_merger", "_show_pkg_merger_dialog"),
         ("titlebar.param_manifest", "_show_param_manifest_editor"),
         ("titlebar.ampr_index", "_show_ampr_index_builder"),
+        # Fertige Asset-Packs ansehen, pruefen, entpacken (seit v1.9.80) - das
+        # Gegenstueck zu "Compress with LZ4" / "Verify" / "Uncompress" der
+        # Konsolen-App LZ4 Compression, am PC.
+        ("titlebar.asset_pack", "_show_asset_pack_werkzeug"),
         # Der AMPR-Mitschnitt-Assistent stand hier bis zum 14.10.2026; seitdem ist er Knopf 10 der Ansicht KONSOLE und
         # zeigt sich rechts als Seite (Nutzerwunsch) - siehe _KONSOLE_KNOEPFE und _konsole_mitschnitt_bauen.
         ("titlebar.self_inspector", "_show_self_inspector"),
@@ -5448,6 +5452,9 @@ class PS5ConverterGUI:
         self._cli_ampr_originale_weglassen = False
         self._ampr_originale_weglassen = False
         self._ampr_ordner_ist_kopie = False
+        # LZ4-Stufe des Asset-Packs von der Kommandozeile (--ampr-lz4-stufe);
+        # None = die gespeicherte Einstellung gilt (_ampr_lz4_stufe).
+        self._cli_ampr_lz4_stufe = None
         # PlayGo-Rueckfrage am Anfang des Laufs (_playgo_vor_dem_lauf_klaeren):
         # schon nachgesehen - oder erst beim Einbau fragen, weil sich das
         # Abbild vorher nicht lesen liess.
@@ -33406,6 +33413,27 @@ class PS5ConverterGUI:
             an = False
         return an and self._ampr_methode() == AMPR_METHODE_ASSETPACK
 
+    #: Einstellung der LZ4-Stufe fuer Asset-Packs (EINSTELLUNGEN, Abschnitt
+    #: "ASSET-PACK (LZ4)"); gespeichert als ganze Zahl 1 bis 12.
+    _AMPR_LZ4_STUFE_SETTING = "ampr_lz4_stufe"
+
+    def _ampr_lz4_stufe(self) -> int:
+        """Die LZ4-Stufe, mit der Asset-Packs gebaut werden (1 bis 12).
+
+        Vorrang hat ``--ampr-lz4-stufe`` der Kommandozeile, danach die
+        gespeicherte Einstellung; Unbrauchbares wird zur Vorgabe 9. Bis v1.9.80
+        stand die Stufe fest auf 12 - gemessen 1,2- bis 3,6-mal langsamer fuer
+        0,0 bis 0,6 Prozentpunkte (``ampr_assetpakete.LZ4_STUFE_VORGABE``).
+        Gelesen wird die gespeicherte Einstellung, nie eine Tk-Variable: Das
+        laeuft im Arbeitsfaden.
+        """
+        cli = getattr(self, "_cli_ampr_lz4_stufe", None)
+        if cli is not None:
+            return ampr_assetpakete.lz4_stufe_lesen(cli)
+        return ampr_assetpakete.lz4_stufe_lesen(
+            self._load_setting(self._AMPR_LZ4_STUFE_SETTING,
+                               ampr_assetpakete.LZ4_STUFE_VORGABE))
+
     def _ampr_pack_arbeiter(self) -> int:
         """Wie viele Packvorgaenge parallel laufen duerfen.
 
@@ -34190,13 +34218,20 @@ class PS5ConverterGUI:
             # nicht - das Werkzeug vergleicht mit fnmatchcase, und am
             # 20.09.2026 landeten deshalb 17 von 17 Filmen aus
             # "Media/StreamingAssets/Movies" im Band.
+            stufe = self._ampr_lz4_stufe()
             profil = ampr_assetpakete.profil_schreiben(
                 os.path.join(ausgabe, "ampr_pack.toml"),
-                arbeiter=self._ampr_pack_arbeiter(), app0=ordner)
+                arbeiter=self._ampr_pack_arbeiter(), app0=ordner, stufe=stufe)
             eigenes_profil = ampr_assetpakete.profil_ist_eigenes(profil)
             self._append_to_log(self._t(
                 "ampr_pack.profil" if eigenes_profil else "ampr_pack.profil_anwender",
                 path=profil))
+            if eigenes_profil:
+                # Ein Profil des Anwenders bringt seine eigene Stufe mit.
+                self._append_to_log(self._t(
+                    "ampr_pack.stufe_schnell"
+                    if stufe <= ampr_assetpakete.LZ4_STUFE_SCHNELL_BIS
+                    else "ampr_pack.stufe_hc", stufe=stufe))
             # Wer ohne Originale bauen laesst, soll hier erfahren, worauf das
             # hinauslaeuft - nicht erst, wenn das Spiel auf der Konsole
             # stehenbleibt. Erst an dieser Stelle steht fest, ob das Profil
@@ -34360,7 +34395,7 @@ class PS5ConverterGUI:
             return True
         if not self._ampr_direktleser_riegel(ordner, eigenes_profil):
             return True
-        return self._ampr_originale_entfernen(ordner)
+        return self._ampr_originale_entfernen(ordner, zeilen)
 
     def _ampr_pack_konsolenhinweis(self, ordner: str) -> None:
         """Sagt beim Bauen, was die Konsole fuer dieses Abbild braucht.
@@ -34500,8 +34535,14 @@ class PS5ConverterGUI:
         self._append_to_log(self._t("ampr_pack.direktleser_ausweg"))
         return False
 
-    def _ampr_originale_entfernen(self, ordner: str) -> bool:
+    def _ampr_originale_entfernen(self, ordner: str,
+                                  zeilen: "list[dict[str, Any]] | None" = None) -> bool:
         """Entfernt die gepackten Originale aus der Arbeitskopie (Abschnitt 6).
+
+        Danach werden leere Dateien, die im Band standen, wieder angelegt
+        (``ampr_assetpakete.leere_dateien_zurueckschreiben``): LZ4 Compression
+        haelt sie immer lose, weil die PS5 sie ausserhalb des Spiels prueft.
+        ``zeilen`` ist die Dateiliste des Manifests **vor** dem Entfernen.
 
         Geht ueber ``remove-packed-sources`` des Entwicklers - gegen den Satz,
         der schon im Ordner liegt, samt ``.crc``. Das Werkzeug prueft davor
@@ -34535,6 +34576,9 @@ class PS5ConverterGUI:
             count=int(ergebnis.get("files") or 0),
             size=self._fmt_bytes(int(ergebnis.get("bytes") or 0)),
             dirs=int(ergebnis.get("directories") or 0)))
+        if zeilen:
+            ampr_assetpakete.leere_dateien_zurueckschreiben(
+                zeilen, ordner, melden=self._append_to_log, text=self._t)
         return True
 
     def _ampr_pack_speicher_einpassen(self, manifest: str, index_pfad: str,
@@ -58745,6 +58789,405 @@ class PS5ConverterGUI:
 
         _log(self._t("ampr_index.log_welcome"))
 
+    def _asset_pack_laufzeit_befund(self, ordner: str) -> tuple[str, dict[str, Any]]:
+        """Liest, ob die Bibliothek im Spielordner gepackte Baender lesen kann.
+
+        Gemessen wird an der Datei ``fakelib/libSceAmpr.sprx`` gegen den Vorrat
+        dieses Programms (SHA-256, wie beim AMPR EMU Manager).
+
+        Returns:
+            ``(art, info)``: ``"fehlt"`` (keine Datei), ``"ok"`` (bekannte,
+            pack-faehige Fassung), ``"falsch"`` (bekannte Fassung ohne
+            Pack-Unterstuetzung) oder ``"unbekannt"`` (nicht im Vorrat).
+            ``info`` traegt dann ``version`` und ``variant``.
+        """
+        datei = self._fakelib_pfad(ordner) / self._AMPR_SPRX_NAME
+        if not datei.is_file():
+            return "fehlt", {}
+        gefunden = self._ampr_identify_installed(
+            str(ordner), self._ampr_alle_fassungen("")).get(self._AMPR_SPRX_NAME) or {}
+        if not gefunden.get("known"):
+            return "unbekannt", {}
+        info = {"version": str(gefunden.get("version") or "?"),
+                "variant": str(gefunden.get("variant") or "?")}
+        if ampr_assetpakete.variante_kann_packen(info["variant"]):
+            return "ok", info
+        return "falsch", info
+
+    def _show_asset_pack_werkzeug(self) -> None:
+        """Fenster "Asset-Pack pruefen und entpacken" fuer fertige Spielordner.
+
+        Das Gegenstueck am PC zu ``Verify LZ4 Packs`` und ``Uncompress LZ4`` der
+        Konsolen-App LZ4 Compression, mit dem Werkzeug des Entwicklers
+        (``ampr_pack.py verify`` und ``unpack``):
+
+        * **PRUEFEN** liest jeden Block und haelt ihn gegen die Pruefsummen,
+          und sagt dazu, ob die Laufzeit im Ordner die Baender lesen kann, ob
+          lose gefuehrte Dateien fehlen und ob Systemdateien im Band stehen.
+        * **ENTPACKEN** legt die gepackten Dateien wieder lose hin - in einen
+          neuen Ordner (der Quellordner bleibt) oder in den Spielordner selbst
+          (danach werden Manifest, Pruefsummen und Baender geloescht).
+
+        Gewaehlt wird der Spielordner, nicht ein Abbild: Ein ``.ffpfsc``/
+        ``.exfat`` laesst sich nicht einhaengen (siehe Memory
+        ``project_abbild_nachtraeglich_aendern``) - dafuer gibt es Aufgabe 2.
+        """
+        if hasattr(self, "_asset_pack_win") and self._asset_pack_win is not None:
+            try:
+                if self._asset_pack_win.winfo_exists():
+                    self._asset_pack_win.lift()
+                    self._asset_pack_win.focus_force()
+                    return
+            except Exception:
+                pass
+            self._asset_pack_win = None
+
+        c = self._COLORS
+        titel = self._t("assetpack_tool.window_title")
+        win = self._build_modern_toplevel(titel, 780, 560, min_width=640, min_height=460)
+        self._asset_pack_win = win
+
+        # Zustand des Fensters. Der Arbeitsfaden fasst Tk nie an: Er liest nur
+        # diese Werte (und den Abbruch-Event) und meldet ueber
+        # _spaeter_im_fenster zurueck.
+        lauf: dict[str, Any] = {"aktiv": False, "abbruch": threading.Event(),
+                                "start": 0.0, "schluessel": "", "uhr": None}
+        merk: dict[str, Any] = {"ordner": "", "befund": None}
+
+        ordner_var = tk.StringVar()
+        status_var = tk.StringVar(value=self._t("assetpack_tool.status_ready"))
+        knoepfe: list[Any] = []
+
+        def _log(nachricht: str) -> None:
+            try:
+                console.config(state="normal")
+                console.insert("end", str(nachricht).rstrip("\n") + "\n")
+                console.see("end")
+                console.config(state="disabled")
+            except Exception as exc:
+                logger.debug("Protokollzeile nicht eintragbar: %s", exc)
+
+        def _melden(zeile: str) -> None:
+            """Aus dem Faden: eine Zeile ins Protokoll."""
+            self._spaeter_im_fenster(win, _log, zeile)
+
+        def _knoepfe_setzen(frei: bool) -> None:
+            for knopf in knoepfe:
+                try:
+                    knopf.config(state="normal" if frei else "disabled")
+                except tk.TclError:
+                    pass
+            try:
+                abbrechen_knopf.config(state="disabled" if frei else "normal")
+            except tk.TclError:
+                pass
+
+        def _ticken() -> None:
+            lauf["uhr"] = None
+            if not lauf["aktiv"] or not self._fenster_lebt(win):
+                return
+            vergangen = int(time.monotonic() - lauf["start"])
+            status_var.set(self._t(lauf["schluessel"],
+                                   zeit="%d:%02d" % (vergangen // 60, vergangen % 60)))
+            lauf["uhr"] = win.after(1000, _ticken)
+
+        def _uhr_anhalten() -> None:
+            if lauf["uhr"] is not None:
+                try:
+                    win.after_cancel(lauf["uhr"])
+                except tk.TclError:
+                    pass
+                lauf["uhr"] = None
+
+        def _fehlertext(fehler: str) -> str:
+            # Das Modul nennt manche Gruende als Uebersetzungsschluessel.
+            return (self._t(fehler) if fehler.startswith("ampr_pack.")
+                    else fehler).strip()
+
+        def _starten(arbeit, uhr_schluessel: str) -> None:
+            """Startet ``arbeit`` im Faden; sperrt die Knoepfe bis zum Ende."""
+            if lauf["aktiv"]:
+                return
+            lauf["aktiv"] = True
+            lauf["abbruch"].clear()
+            lauf["start"] = time.monotonic()
+            lauf["schluessel"] = uhr_schluessel
+            _knoepfe_setzen(False)
+            _ticken()
+
+            def _faden() -> None:
+                fehler = ""
+                try:
+                    arbeit()
+                except ampr_assetpakete.PackFehler as exc:
+                    fehler = str(exc)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Asset-Pack-Werkzeug: unerwarteter Fehler")
+                    fehler = str(exc)
+
+                def _fertig() -> None:
+                    lauf["aktiv"] = False
+                    _uhr_anhalten()
+                    _knoepfe_setzen(True)
+                    if fehler:
+                        _log(self._t("assetpack_tool.log_fehler",
+                                     error=_fehlertext(fehler)))
+                        abgebrochen = lauf["abbruch"].is_set()
+                        status_var.set(self._t(
+                            "assetpack_tool.status_cancelled" if abgebrochen
+                            else "assetpack_tool.status_failed"))
+                    else:
+                        status_var.set(self._t("assetpack_tool.status_done"))
+
+                if not self._spaeter_im_fenster(win, _fertig):
+                    lauf["aktiv"] = False
+
+            threading.Thread(target=_faden, daemon=True,
+                             name="asset-pack-werkzeug").start()
+
+        def _abbruch() -> bool:
+            return lauf["abbruch"].is_set()
+
+        def _befund_lesen(ordner: str) -> dict[str, Any]:
+            """Im Faden: Manifest lesen, zusammenfassen, im Protokoll nennen."""
+            _melden(self._t("assetpack_tool.log_start_read", path=ordner))
+            befund = ampr_assetpakete.ordner_befund(ordner, melden=_melden)
+            merk["ordner"] = ordner
+            merk["befund"] = befund
+            _melden(self._t(
+                "assetpack_tool.log_befund",
+                dateien=befund["dateien"], gepackt=befund["gepackt"],
+                gepackt_groesse=self._fmt_bytes(befund["gepackt_bytes"]),
+                baender=len(befund["baender"]),
+                band_groesse=self._fmt_bytes(befund["band_bytes"]),
+                lose=befund["lose"]))
+            if befund["fehlende_gepackte"]:
+                _melden(self._t(
+                    "assetpack_tool.log_originale_fehlen",
+                    count=befund["fehlende_gepackte"],
+                    size=self._fmt_bytes(befund["fehlende_gepackte_bytes"])))
+            else:
+                _melden(self._t("assetpack_tool.log_originale_da"))
+            return befund
+
+        def _ordner_gueltig() -> str:
+            """Im Hauptfaden: der gewaehlte Ordner - oder "" nach einer Meldung."""
+            ordner = ordner_var.get().strip()
+            if not ordner or not os.path.isdir(ordner):
+                messagebox.showwarning(titel, self._t("assetpack_tool.msg_choose_folder"),
+                                       parent=win)
+                return ""
+            if not ampr_assetpakete.manifest_im_ordner(ordner):
+                messagebox.showwarning(titel, self._t("assetpack_tool.msg_no_pack"),
+                                       parent=win)
+                return ""
+            return ordner
+
+        def _befund_fuer(ordner: str) -> dict[str, Any]:
+            if merk["ordner"] == ordner and merk["befund"] is not None:
+                return merk["befund"]
+            return _befund_lesen(ordner)
+
+        def _pruefen() -> None:
+            ordner = _ordner_gueltig()
+            if not ordner:
+                return
+
+            def _arbeit() -> None:
+                befund = _befund_lesen(ordner)
+                for name in befund["baender_fehlen"]:
+                    _melden(self._t("assetpack_tool.log_baender_fehlen", name=name))
+                if befund["baender_fehlen"]:
+                    raise ampr_assetpakete.PackFehler("ampr_pack.baender_fehlen")
+                _melden(self._t("assetpack_tool.log_check_start"))
+                ergebnis = ampr_assetpakete.ordner_pruefen(
+                    ordner, melden=_melden, abbruch=_abbruch)
+                _melden(self._t(
+                    "assetpack_tool.log_check_ok",
+                    files=int(ergebnis.get("files") or 0),
+                    chunks=int(ergebnis.get("physical_chunks") or 0),
+                    raw=self._fmt_bytes(int(ergebnis.get("raw_bytes") or 0)),
+                    stored=self._fmt_bytes(int(ergebnis.get("stored_bytes") or 0))))
+                hinweise = 0
+                art, info = self._asset_pack_laufzeit_befund(ordner)
+                if art == "ok":
+                    _melden(self._t("assetpack_tool.log_laufzeit_ok", **info))
+                else:
+                    hinweise += 1
+                    schluessel = {
+                        "fehlt": "assetpack_tool.log_laufzeit_fehlt",
+                        "falsch": "assetpack_tool.log_laufzeit_falsch",
+                        "unbekannt": "assetpack_tool.log_laufzeit_unbekannt",
+                    }[art]
+                    _melden(self._t(schluessel, **info))
+                if befund["lose_fehlend"]:
+                    hinweise += 1
+                    _melden(self._t("assetpack_tool.log_lose_fehlen",
+                                    count=len(befund["lose_fehlend"]),
+                                    beispiel=befund["lose_fehlend"][0]))
+                if befund["systemdateien"]:
+                    hinweise += 1
+                    _melden(self._t("assetpack_tool.log_system_im_pack",
+                                    count=len(befund["systemdateien"]),
+                                    beispiel=befund["systemdateien"][0]))
+                _melden(self._t("assetpack_tool.log_check_hinweise", count=hinweise)
+                        if hinweise else self._t("assetpack_tool.log_check_gut"))
+
+            _starten(_arbeit, "assetpack_tool.status_checking")
+
+        def _entpacken() -> None:
+            ordner = _ordner_gueltig()
+            if not ordner:
+                return
+            antwort = messagebox.askyesnocancel(
+                titel, self._t("assetpack_tool.ask_art"), parent=win)
+            if antwort is None:
+                return
+            ziel = ""
+            if antwort:
+                ziel = filedialog.askdirectory(
+                    parent=win, title=self._t("assetpack_tool.choose_target_title"),
+                    mustexist=False)
+                if not ziel:
+                    return
+                ziel = os.path.normpath(ziel)
+            elif not messagebox.askyesno(
+                    titel, self._t("assetpack_tool.ask_in_ordner", ordner=ordner),
+                    icon="warning", parent=win):
+                return
+
+            def _arbeit() -> None:
+                # Platz vorab, im Faden (das Manifest zu lesen kann dauern):
+                # Ein halb gefuellter Datentraeger ist schlimmer als eine
+                # Absage. Gemessen wird dort, wo geschrieben wird.
+                befund = _befund_fuer(ordner)
+                bedarf = ampr_assetpakete.entpack_platzbedarf(
+                    befund, in_ordner=not ziel)
+                messort = ordner if not ziel else (
+                    ziel if os.path.isdir(ziel) else os.path.dirname(ziel) or ziel)
+                try:
+                    frei = shutil.disk_usage(messort).free
+                except OSError as exc:
+                    logger.debug("Freier Platz nicht messbar (%s): %s", messort, exc)
+                    frei = None
+                if frei is not None and frei < bedarf:
+                    raise ampr_assetpakete.PackFehler(self._t(
+                        "assetpack_tool.msg_platz", laufwerk=messort,
+                        bedarf=self._fmt_bytes(bedarf), frei=self._fmt_bytes(frei)))
+                if ziel:
+                    _melden(self._t("assetpack_tool.log_unpack_start_neu", path=ziel))
+                    erg = ampr_assetpakete.entpacken_in_neuen_ordner(
+                        ordner, ziel, melden=_melden, text=self._t, abbruch=_abbruch)
+                    _melden(self._t(
+                        "assetpack_tool.log_unpack_neu_ok",
+                        files=int(erg.get("files") or 0),
+                        size=self._fmt_bytes(int(erg.get("bytes") or 0)),
+                        kopiert=int(erg.get("kopiert") or 0), path=ziel))
+                else:
+                    _melden(self._t("assetpack_tool.log_unpack_start_ordner", path=ordner))
+                    erg = ampr_assetpakete.entpacken_in_ordner(
+                        ordner, melden=_melden, text=self._t, abbruch=_abbruch)
+                    # Das Manifest ist weg - der gemerkte Befund stimmt nicht mehr.
+                    merk["ordner"] = ""
+                    merk["befund"] = None
+                    _melden(self._t(
+                        "assetpack_tool.log_unpack_ordner_ok",
+                        files=int(erg.get("files") or 0),
+                        size=self._fmt_bytes(int(erg.get("bytes") or 0)),
+                        entfernt=int(erg.get("entfernt") or 0)))
+
+            _starten(_arbeit, "assetpack_tool.status_unpacking")
+
+        def _abbrechen_gedrueckt() -> None:
+            lauf["abbruch"].set()
+
+        def _schliessen() -> None:
+            if lauf["aktiv"]:
+                if not messagebox.askyesno(titel, self._t("assetpack_tool.msg_busy"),
+                                           parent=win):
+                    return
+                lauf["abbruch"].set()
+            _uhr_anhalten()
+            self._asset_pack_win = None
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _schliessen)
+
+        self._build_modern_header(win, titel, self._t("assetpack_tool.subtitle"))
+        main = tk.Frame(win, bg=c["bg_main"])
+        main.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+
+        zeile = tk.Frame(main, bg=c["bg_main"])
+        zeile.pack(fill="x", pady=(0, 10))
+        tk.Label(zeile, text=self._t("assetpack_tool.folder_label"), width=14, anchor="w",
+                 bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(10))).pack(side="left")
+        self._pw.Entry(zeile, textvariable=ordner_var,
+                       bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
+                       relief="flat", bd=0, font=(UI_SCHRIFT, pt(9))).pack(
+                           side="left", fill="x", expand=True, padx=(4, 8))
+
+        def _waehlen() -> None:
+            if lauf["aktiv"]:
+                return
+            pfad = filedialog.askdirectory(parent=win, title=self._t("assetpack_tool.choose_title"))
+            if not pfad:
+                return
+            ordner_var.set(os.path.normpath(pfad))
+            merk["ordner"] = ""
+            merk["befund"] = None
+            if not ampr_assetpakete.manifest_im_ordner(pfad):
+                _log(self._t("ampr_pack.kein_manifest"))
+                return
+            _starten(lambda: _befund_lesen(os.path.normpath(pfad)),
+                     "assetpack_tool.status_reading")
+
+        self._pw.Button(zeile, text=self._t("action.browse"),
+                        bg=c["fg_accent"], fg=c["bg_main"],
+                        activebackground=c["accent_btn_hover"], activeforeground="white",
+                        relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"),
+                        padx=10, pady=2, command=_waehlen).pack(side="left")
+
+        # Die Knopfreihe unten VOR dem dehnbaren Protokollfeld packen (sonst
+        # wird sie bei knapper Hoehe zusammengedrueckt - der Fehler aus v1.8.69).
+        schluss = tk.Frame(main, bg=c["bg_main"], pady=8)
+        schluss.pack(side="bottom", fill="x")
+        self._pw.Button(schluss, text=self._t("action.close"),
+                        command=_schliessen).pack(side="right")
+
+        aktionen = tk.Frame(main, bg=c["bg_main"])
+        aktionen.pack(fill="x", pady=(0, 6))
+        for schluessel, befehl in (("assetpack_tool.check_button", _pruefen),
+                                   ("assetpack_tool.unpack_button", _entpacken)):
+            knopf = self._pw.Button(
+                aktionen, text=self._t(schluessel), command=befehl,
+                bg=c["accent_btn"], fg="white",
+                activebackground=c["accent_btn_hover"], activeforeground="white",
+                relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(10), "bold"),
+                padx=16, pady=7)
+            knopf.pack(side="left", padx=(0, 8))
+            knoepfe.append(knopf)
+        abbrechen_knopf = self._pw.Button(
+            aktionen, text=self._t("assetpack_tool.cancel_button"),
+            command=_abbrechen_gedrueckt, state="disabled",
+            bg=c["bg_card"], fg=c["fg_primary"], relief="flat", cursor="hand2",
+            font=(UI_SCHRIFT, pt(10)), padx=16, pady=7)
+        abbrechen_knopf.pack(side="left")
+
+        tk.Label(main, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x", pady=(0, 6))
+
+        console_outer = self._pw.Rahmen(main)
+        console_outer.pack(fill="both", expand=True)
+        console = self._pw.Text(console_outer, bg=c["bg_main"], fg=c["fg_primary"],
+                                insertbackground=c["fg_primary"], font=(MONO_SCHRIFT, pt(9)),
+                                relief="flat", state="disabled", wrap="word")
+        console.pack(fill="both", expand=True, side="left")
+        vsb = self._pw.Scrollbar(console_outer, orient="vertical", command=console.yview)
+        vsb.pack(side="right", fill="y")
+        console.config(yscrollcommand=vsb.set)
+
+        _log(self._t("assetpack_tool.log_welcome"))
+
     #: Faltet nur die Bytes A..Z - wie ``key_for`` in ``build_ampr_index.py``.
     _AMPR_ASCII_FALTUNG = bytes.maketrans(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                                           b"abcdefghijklmnopqrstuvwxyz")
@@ -61499,6 +61942,57 @@ class PS5ConverterGUI:
                  wraplength=460, justify="left", anchor="w").pack(
                      anchor="w", fill="x", pady=(0, 10))
 
+        # ── Asset-Pack: LZ4-Stufe ───────────────────────────────────────
+        # Wirkt nur beim Bauen eines Asset-Packs (Methode "Asset-Pack" beim
+        # Erstellen), deshalb hier und nicht im Hauptfenster: Die Einbauzeile
+        # dort ist bei Mindestbreite schon voll. Gespeichert wird sofort, wie
+        # bei der Farbschwaeche.
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
+        tk.Label(body, text=self._t("settings_dialog.lz4_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.lz4_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+
+        # 1 steht fuer 1 bis 4 (schneller Modus, dort ist alles dasselbe).
+        _lz4_wahl = (1, 5, 6, 7, 8, 9, 10, 11, 12)
+
+        def _lz4_text(stufe: int) -> str:
+            if stufe == 1:
+                return self._t("settings_dialog.lz4_stufe_schnell")
+            if stufe == ampr_assetpakete.LZ4_STUFE_VORGABE:
+                return self._t("settings_dialog.lz4_stufe_vorgabe", stufe=stufe)
+            if stufe == ampr_assetpakete.LZ4_STUFE_MAX:
+                return self._t("settings_dialog.lz4_stufe_klein")
+            return str(stufe)
+
+        _lz4_namen = {stufe: _lz4_text(stufe) for stufe in _lz4_wahl}
+        _lz4_zurueck = {text: stufe for stufe, text in _lz4_namen.items()}
+        _lz4_jetzt = self._ampr_lz4_stufe()
+        if _lz4_jetzt not in _lz4_namen:
+            _lz4_jetzt = 1 if _lz4_jetzt <= ampr_assetpakete.LZ4_STUFE_SCHNELL_BIS else 9
+        lz4_var = tk.StringVar(value=_lz4_namen[_lz4_jetzt])
+        lz4_combo = self._pw.Combobox(
+            body, textvariable=lz4_var, state="readonly",
+            values=[_lz4_namen[stufe] for stufe in _lz4_wahl],
+            font=(UI_SCHRIFT, pt(9)))
+        lz4_combo.pack(anchor="w", fill="x", pady=(0, 10))
+
+        def _lz4_gewaehlt(_ereignis=None) -> None:
+            neu = _lz4_zurueck.get(lz4_var.get())
+            if neu is None:
+                # Unbekannter Auswahltext: aussteigen, nicht still die Vorgabe
+                # speichern (so ging die Kompressionsstufe schon einmal verloren).
+                logger.warning("LZ4-Stufe: unbekannte Auswahl %r", lz4_var.get())
+                return
+            self._save_setting(self._AMPR_LZ4_STUFE_SETTING, neu)
+            logger.info("LZ4-Stufe auf %d gestellt", neu)
+
+        lz4_combo.bind("<<ComboboxSelected>>", _lz4_gewaehlt)
+
         # ── Farbsehschwaeche ────────────────────────────────────────────
         #
         # Nur die Farben, die eine Bedeutung tragen, werden ersetzt - Erfolg,
@@ -63651,6 +64145,13 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "Quellordner selbst wird nie entfernt. Bewusst nicht von --ja "
              "mitentschieden.")
     parser.add_argument(
+        "--ampr-lz4-stufe", type=int, default=None, metavar="1-12",
+        help="LZ4-Stufe des Asset-Packs (1 bis 12; 1 bis 4 schneller Modus, "
+             "ab 5 LZ4 HC; Vorgabe 9). Ohne den Schalter gilt die in den "
+             "Einstellungen gespeicherte Stufe. Gilt fuer das Programmprofil "
+             "und die mitgelieferten Spielprofile, nicht fuer ein eigenes "
+             "Profil aus Konsolen-Mitschnitten.")
+    parser.add_argument(
         "--shutdown-on-success", action="store_true",
         help=(
             "Rechner nach erfolgreichem Abschluss herunterfahren (nach dem Lösen "
@@ -63869,6 +64370,8 @@ def _cli_schalter_uebernehmen(app: "PS5ConverterGUI", args: argparse.Namespace) 
     # Asset-Pack ohne Originale, siehe PS5ConverterGUI._ampr_originale_klaeren.
     app._cli_ampr_originale_weglassen = bool(
         getattr(args, "ampr_originale_weglassen", False))
+    # LZ4-Stufe des Asset-Packs, siehe PS5ConverterGUI._ampr_lz4_stufe.
+    app._cli_ampr_lz4_stufe = getattr(args, "ampr_lz4_stufe", None)
 
 
 def _hauptfenster_anlegen():
@@ -63995,6 +64498,16 @@ def _run_cli(args: argparse.Namespace) -> int:
             print(f"[FEHLER] {ampr_error}", file=sys.stderr)
             return 2
         return _run_cli_ampr_ftp_index(args)
+
+    # Eine Stufe ausserhalb 1 bis 12 nicht still zur Vorgabe machen: Wer
+    # --ampr-lz4-stufe 15 tippt, meint etwas anderes als 9.
+    stufe_cli = getattr(args, "ampr_lz4_stufe", None)
+    if stufe_cli is not None and not (
+            ampr_assetpakete.LZ4_STUFE_MIN <= stufe_cli <= ampr_assetpakete.LZ4_STUFE_MAX):
+        print("[FEHLER] --ampr-lz4-stufe nimmt eine Zahl von %d bis %d (erhalten: %s)."
+              % (ampr_assetpakete.LZ4_STUFE_MIN, ampr_assetpakete.LZ4_STUFE_MAX,
+                 stufe_cli), file=sys.stderr)
+        return 2
 
     if not args.source:
         print("[FEHLER] --source ist erforderlich.", file=sys.stderr)

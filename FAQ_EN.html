@@ -434,6 +434,12 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>How strongly is it packed, and how do I check or unpack a finished asset pack?</h3>
+    <p><strong>The strength</strong> is set under <strong>SETTINGS</strong> in the section <em>ASSET PACK (LZ4)</em> (since v1.9.80). The default is level <strong>9</strong>: measured on real game data, level 12 saves only 0.0 to 0.6 percentage points more but takes 1.2 to 3.6 times as long. Images, textures, archives, audio, video and configuration files stay loose in the general profile because they are already compressed.</p>
+    <p><strong>Checking and unpacking</strong> is under <strong>MORE TOOLS</strong> → <strong>ASSET PACK CHECK / UNPACK</strong> (since v1.9.80). Choose the game folder that holds <code>ampr_assets.index</code>: <em>CHECK</em> reads every block against the checksums and tells you whether the library in the folder can read volumes; <em>UNPACK</em> puts the packed files back as loose files – into a new folder (the game folder stays) or into the game folder itself (the volumes are deleted afterwards). An image cannot be opened this way; unpack it with task 2 first.</p>
+  </div>
+
+  <div class="frage">
     <h3>What does the “PlayGo” checkbox do?</h3>
     <p>It places a replacement for <code>libScePlayGo.sprx</code> in the game that reports all language and scenario packages as installed. Most games do not need this, so it is off by default. If a title declares PlayGo content and the checkbox is not set, the program asks at the beginning of the run – before anything is copied, unpacked or packed.</p>
   </div>

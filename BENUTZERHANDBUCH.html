@@ -1405,6 +1405,35 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     wurde, nennt die erste Zeile der Datei <code>ampr_pack.toml</code>, deren
     Ablageort im Protokoll steht (&bdquo;integriertes Profil f&uuml;r
     &hellip;&ldquo;).</p>
+    <p><strong>Wie stark gepackt wird, stellen Sie selbst ein (seit
+    v1.9.80).</strong> Unter <strong>EINSTELLUNGEN</strong> steht im Abschnitt
+    <em>Asset-Pack (LZ4)</em> die LZ4-Stufe. Vorgabe ist <strong>9</strong>.
+    Stufe 12, die bis v1.9.79 fest eingestellt war, spart nach Messungen an
+    echten Spieldaten nur 0,0 bis 0,6 Prozentpunkte mehr, braucht aber das
+    1,2- bis 3,6-fache an Zeit; Stufe 1 packt am schnellsten und spart
+    kaum Platz. Die Stufe ver&auml;ndert nur Gr&ouml;&szlig;e und Packzeit,
+    nicht das Format &ndash; die Konsole liest jede Stufe gleich. Sie gilt
+    f&uuml;r das allgemeine Profil des Programms und f&uuml;r die
+    mitgelieferten Spielprofile, <em>nicht</em> f&uuml;r Ihr eigenes Profil
+    (siehe unten). In der Kommandozeile setzt sie
+    <code>--ampr-lz4-stufe</code> (1 bis 12).</p>
+    <p><strong>Schon verdichtete Dateien bleiben lose (seit v1.9.80).</strong>
+    Das allgemeine Profil packt keine Bilder und Texturen (<code>png</code>,
+    <code>jpg</code>, <code>dds</code>, <code>gnf</code> &hellip;), keine
+    Archive (<code>zip</code>, <code>7z</code>, <code>rar</code> &hellip;),
+    keinen Ton und kein Video (<code>ogg</code>, <code>wem</code>,
+    <code>bnk</code>, <code>at9</code>, <code>mp4</code>, <code>bk2</code>
+    &hellip;) und keine Konfigurationsdateien (<code>json</code>,
+    <code>ini</code>, <code>xml</code>, <code>txt</code> &hellip;). LZ4 bringt
+    dort kaum etwas; die Konfigurationsdateien liest die Konsole zudem gern
+    selbst vom Datentr&auml;ger. An 37 gemessenen Dumps (1620&nbsp;GB) betrifft das 24&nbsp;%
+    der Daten, vor allem Archive und Videos. Die vier mitgelieferten
+    Spielprofile und Ihr eigenes Profil bleiben davon unber&uuml;hrt.</p>
+    <p><strong>Leere Dateien bleiben nicht verloren (seit v1.9.80).</strong>
+    Die PS5 pr&uuml;ft manche leere Dateien (etwa Sprachplatzhalter) au&szlig;erhalb
+    des Spiels; fehlen sie, kann das Spiel auf einem schwarzen Bild stehen
+    bleiben. Werden gepackte Originale weggelassen, legt das Programm leere
+    Dateien deshalb nach dem Entfernen wieder an.</p>
     <p><strong>Ihr eigenes Profil hat immer Vorrang.</strong> Legen Sie eine
     Datei mit dem Namen des Dump-Ordners und der Endung
     <code>_ampr_pack.toml</code> <em>neben</em> den Dump-Ordner &ndash; zum
@@ -1620,6 +1649,43 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Frage, sobald die Dateien ausgepackt daliegen, und immer noch vor dem Bau
   des Ergebnisses. Auf der Kommandozeile wird nicht gefragt: Dort steht ein
   Hinweis im Protokoll, und es gilt die gespeicherte Einstellung.</p>
+
+  <h3>11.4 Ein fertiges Asset-Pack pr&uuml;fen und entpacken</h3>
+  <p>Seit v1.9.80 gibt es dazu ein eigenes Fenster: <strong>WEITERE TOOLS
+  &rarr; ASSET-PACK PR&Uuml;FEN / ENTPACKEN</strong>. Es ist das Gegenst&uuml;ck
+  am PC zu <em>Verify LZ4 Packs</em> und <em>Uncompress LZ4</em> der
+  Konsolen-App <em>LZ4 Compression</em> und benutzt dasselbe Werkzeug wie der
+  Bau (<code>ampr_pack.py</code>, <code>verify</code> und
+  <code>unpack</code>). W&auml;hlen Sie den <strong>Spielordner selbst</strong>
+  &ndash; den, in dem <code>eboot.bin</code> und <code>ampr_assets.index</code>
+  liegen. Ein Abbild (<code>.ffpfsc</code>, <code>.exFAT</code>) l&auml;sst sich
+  nicht einh&auml;ngen; packen Sie es vorher mit Aufgabe 2 aus.</p>
+  <ul>
+    <li><strong>Nach dem Ausw&auml;hlen</strong> liest das Fenster nur das
+    Manifest und nennt, wie viele Dateien gepackt und wie viele lose sind, wie
+    gro&szlig; die B&auml;nder sind und ob die Originale der gepackten Dateien
+    noch daneben liegen.</li>
+    <li><strong>PR&Uuml;FEN</strong> liest jeden Block und h&auml;lt ihn gegen
+    <code>ampr_assets.index.crc</code>. Das geht auch, wenn die Originale
+    l&auml;ngst weg sind. Dazu sagt das Fenster, ob
+    <code>fakelib/libSceAmpr.sprx</code> eine Fassung ist, die B&auml;nder lesen
+    kann (<code>test-pack</code> oder <code>test-debug-pack</code>), ob lose
+    gef&uuml;hrte Dateien im Ordner fehlen und ob Systemdateien
+    (<code>playgo.pgm</code>, <code>*.packman</code> &hellip;) im Band stehen.
+    Das sind Hinweise, keine Fehler der B&auml;nder.</li>
+    <li><strong>ENTPACKEN &hellip;</strong> legt die gepackten Dateien wieder
+    lose hin. Sie w&auml;hlen: <em>in einen neuen Ordner</em> &ndash; der
+    Spielordner bleibt unver&auml;ndert, das Ergebnis ist ein loses Spiel ohne
+    B&auml;nder &ndash;, oder <em>in den Spielordner selbst</em>; dann werden
+    Manifest, Pr&uuml;fsummen und B&auml;nder erst nach dem erfolgreichen
+    Auspacken gel&ouml;scht, und davor fragt das Fenster noch einmal nach.
+    <code>ampr_emu.index</code> und die Bibliotheken in <code>fakelib</code>
+    bleiben, wie sie sind. Vorher pr&uuml;ft das Fenster, ob auf dem
+    Ziellaufwerk genug Platz frei ist.</li>
+  </ul>
+  <p>ABBRECHEN h&auml;lt den Lauf an. Beim Entpacken in einen neuen Ordner
+  r&auml;umt das Programm dann auf; beim Entpacken in den Spielordner bleibt
+  der ganze Satz stehen, und der Lauf l&auml;sst sich wiederholen.</p>
 </section>
 
 <section class="kapitel" id="k12">
@@ -2067,12 +2133,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE.</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong> (11.4), <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE.</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k14">Abschnitt 14.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
       <tr><td><strong>DESIGN</strong></td><td>Öffnet die Farbschema-Auswahl – siehe <a href="#k15">Kapitel 15</a>.</td></tr>
-      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Ganz oben die Anzeige: Skalierung (Schieberegler) und Bildschirmauflösung (Klappliste) lassen sich von Hand einstellen und mit einem Knopf auf automatisch zurücksetzen (Abschnitt 14.3). Darunter das Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads.</td></tr>
+      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Ganz oben die Anzeige: Skalierung (Schieberegler) und Bildschirmauflösung (Klappliste) lassen sich von Hand einstellen und mit einem Knopf auf automatisch zurücksetzen (Abschnitt 14.3). Darunter das Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads und – im Abschnitt <em>Asset-Pack (LZ4)</em> – die LZ4-Stufe für Asset-Packs (Abschnitt 11.1).</td></tr>
       <tr><td><strong>EN / DE</strong></td><td>Schaltet die komplette Oberfläche zwischen Deutsch und Englisch um – Hauptfenster, alle Dialoge und sämtliche Protokollmeldungen.</td></tr>
       <tr><td><strong>FAQ</strong></td><td>Links neben BENUTZERHANDBUCH: Öffnet die häufigen Fragen mit kurzen Antworten in Ihrem Browser – auf Englisch, wenn die Oberfläche auf EN steht. Sie liegen dem Programm bei; eine Internetverbindung ist nicht nötig. Als PDF liegen sie neben der Programmdatei.</td></tr>
       <tr><td><strong>BENUTZERHANDBUCH</strong></td><td>Öffnet dieses Handbuch in Ihrem Browser. Es liegt dem Programm bei; eine Internetverbindung ist nicht nötig.</td></tr>

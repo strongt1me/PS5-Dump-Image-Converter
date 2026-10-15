@@ -93,6 +93,88 @@ PACKFAEHIGE_VARIANTEN: frozenset[str] = frozenset({
     "test-pack", "test-debug-pack",
 })
 
+#: LZ4-Stufe der Baender: 1 bis 12 wie bei LZ4 Compression und Lazy_AMPR.
+#: 1 bis 4 laufen im schnellen Modus, 5 bis 12 mit LZ4 HC; 9 ist die Vorgabe.
+#:
+#: Gemessen am 15.10.2026 (python-lz4 4.4.5, 64-KiB-Bloecke, Stichproben von
+#: Dumps): Stufe 12 spart gegenueber 9 nur 0,0 bis 0,6 Prozentpunkte, ist aber
+#: 1,2- bis 3,6-mal langsamer (Mafia, pakchunk0: 52,6 -> 52,3 % bei 31 -> 9
+#: MB/s je Kern). Bis v1.9.80 stand die Stufe fest auf 12. Die Stufe aendert
+#: nur Groesse und Packzeit, nicht das Format - jede Stufe liest die
+#: Laufzeit gleich.
+LZ4_STUFE_VORGABE = 9
+LZ4_STUFE_MIN = 1
+LZ4_STUFE_MAX = 12
+LZ4_STUFE_SCHNELL_BIS = 4
+
+
+def lz4_stufe_lesen(wert: Any) -> int:
+    """Eine gespeicherte oder uebergebene LZ4-Stufe als Zahl von 1 bis 12.
+
+    Alles Unbrauchbare (Text, Wahrheitswert, Zahl ausserhalb) wird zur
+    Vorgabe - eine kaputte Einstellung darf den Bau nicht anhalten.
+    """
+    if isinstance(wert, bool):
+        return LZ4_STUFE_VORGABE
+    try:
+        stufe = int(wert)
+    except (TypeError, ValueError):
+        return LZ4_STUFE_VORGABE
+    if not LZ4_STUFE_MIN <= stufe <= LZ4_STUFE_MAX:
+        return LZ4_STUFE_VORGABE
+    return stufe
+
+
+def kompression_zeilen(stufe: Any) -> tuple[str, ...]:
+    """Die drei TOML-Zeilen, die ``ampr_pack.py`` fuer die Stufe liest.
+
+    Im schnellen Modus bleibt ``acceleration = 1`` (so rechnet auch LZ4
+    Compression); die Stufe 1 bis 4 ist dort also dasselbe.
+    """
+    stufe = lz4_stufe_lesen(stufe)
+    modus = "fast" if stufe <= LZ4_STUFE_SCHNELL_BIS else "hc"
+    return ('compression_mode = "%s"' % modus,
+            "compression_level = %d" % stufe,
+            "acceleration = 1")
+
+
+_KOMPRESSIONSSCHLUESSEL = re.compile(
+    r"^\s*(compression_mode|compression_level|acceleration)\s*=")
+
+
+def profil_stufe_einsetzen(text: str, stufe: Any) -> str:
+    """Setzt die gewaehlte Stufe in ein Profil dieses Programms ein.
+
+    Gedacht fuer die mitgelieferten Spielprofile: Zwei tragen
+    ``compression_level = 12`` selbst, zwei gar keine Angabe (dann gilt 12
+    im Werkzeug). LZ4 Compression wendet die gewaehlte Stufe ebenfalls auf
+    jedes Profil an. Ein Profil des Anwenders fasst das Programm nie an
+    (:func:`profil_schreiben`).
+
+    Nur Zeilen in der Tabelle ``[pack]`` werden ersetzt; ein Profil ohne diese
+    Tabelle bekommt sie am Ende angehaengt.
+    """
+    ergebnis: list[str] = []
+    in_pack = False
+    eingesetzt = False
+    for zeile in text.splitlines():
+        kopf = zeile.split("#", 1)[0].strip()
+        if kopf.startswith("["):
+            in_pack = kopf == "[pack]"
+            ergebnis.append(zeile)
+            if in_pack and not eingesetzt:
+                ergebnis.extend(kompression_zeilen(stufe))
+                eingesetzt = True
+            continue
+        if in_pack and _KOMPRESSIONSSCHLUESSEL.match(zeile):
+            continue
+        ergebnis.append(zeile)
+    if not eingesetzt:
+        ergebnis.append("")
+        ergebnis.append("[pack]")
+        ergebnis.extend(kompression_zeilen(stufe))
+    return "\n".join(ergebnis) + "\n"
+
 #: Was niemals in ein Band wandert.
 #:
 #: Die ersten Zeilen sind Systemwege: Das Ladeprogramm der Konsole liest
@@ -201,11 +283,67 @@ NIE_PACKEN: tuple[str, ...] = (
     "sounds/scream/_generated/*.bus", "**/sounds/scream/_generated/*.bus",
     "sounds/scream/_generated/*.dml", "**/sounds/scream/_generated/*.dml",
     "sounds/scream/_generated/*.gmx", "**/sounds/scream/_generated/*.gmx",
-    # Hinweis: Leere Dateien (Groesse 0) laedt LZ4 Compression ebenfalls
-    # immer lose (if(size == 0) return 1). Unser Python-Packer verpackt
-    # sie, was auf der Konsole harmlos ist - leere Eintraege im Band haben
-    # keine Nutzdaten, die fehlen koennten. Spielplatzhalter (pgc_*_dummy_
-    # _file) sind bereits oben per Muster abgedeckt.
+    # Leere Dateien (Groesse 0) laedt LZ4 Compression ebenfalls immer lose
+    # (if(size == 0) return 1) - die Sprachplatzhalter von Ghost of Yotei
+    # prueft die PS5 ausserhalb des Spiels (Schwarzbild, Version 1.4.3 des
+    # Werkzeugs). Das Python-Werkzeug packt sie; ohne "Originale weglassen"
+    # bleiben sie ohnehin als Datei liegen, mit dem Weglassen schreibt
+    # :func:`leere_dateien_zurueckschreiben` sie danach wieder hin.
+    # Spielplatzhalter (pgc_*_dummy_file) sind oben per Muster abgedeckt.
+)
+
+#: Dateiendungen, die das **Standardprofil** lose laesst: schon verdichtete
+#: Medien, Bilder, Texturen und Archive (LZ4 bringt dort fast nichts), dazu
+#: Konfigdateien, die das Spiel oder das System auch ausserhalb des AMPR EMU
+#: liest. Die Liste folgt ``k_safety_exclusions`` aus LZ4 Compression 1.5.0
+#: (``ampr_pack_profile.c``), das sie fuer jedes Profil erzwingt.
+#:
+#: Hier gilt sie **nur** fuer das Standardprofil dieses Programms. Die
+#: mitgelieferten Spielprofile sind an der Konsole erprobt und bleiben, wie sie
+#: sind; ein Profil des Anwenders fasst das Programm nie an.
+#:
+#: Gemessen am 15.10.2026 (Metadaten echter Dumps): Ghost of Yotei 4,8 GB
+#: (3,2 %, alles ``.at9``), Teardown 0,74 GB (18,8 %), Dirt 5 6,1 GB (6,5 %),
+#: Mafia, Street Fighter 6 und Matchbox rund 0 %. Ueber alle 37 Dumps des
+#: Entwicklungsrechners (1620 GB) tragen diese Endungen 384 GB (24 %), vor allem
+#: ``zip`` (Forza Horizon 5, 131 GB), ``gnfp``/``jxm``/``7z`` (ASTRO BOT, hat ein
+#: eigenes Profil und ist davon nicht betroffen), ``bk2``, ``mp4``, ``webm``,
+#: ``wem`` und ``at9`` - durchweg verdichtete Daten.
+#:
+#: Die Muster stehen **ohne** ``**/``-Doppel: ``fnmatch.fnmatchcase`` laesst
+#: ``*`` auch ``/`` treffen, ``*.png`` trifft also ``a/b/c.png`` ebenso wie
+#: ``c.png`` (``test_ampr_assetpakete.LoseListeTests``). Schreibweisen mit
+#: Grossbuchstaben liefert :func:`lose_endungen_muster` aus dem Ordnerbaum.
+#: **``dat`` fehlt hier absichtlich**, obwohl LZ4 Compression ``*.dat`` lose laesst:
+#: Ueber alle Dumps des Entwicklungsrechners sind es 283 Dateien und 0,19 GB von
+#: 1620 GB - der Gewinn ist null, die Aenderung gegenueber dem erprobten
+#: Verhalten (Asterix & Obelix, Arcade Game Zone) nicht. Die ``.dat`` der
+#: Systemschicht (``nptitle.dat``, ``playgo-chunk.dat``, ``global-metadata.dat``)
+#: stehen einzeln in :data:`NIE_PACKEN` bzw. :data:`SYSTEMDATEIEN`.
+LOSE_ENDUNGEN: tuple[str, ...] = (
+    # Konfiguration und Sicherungen
+    "json", "ini", "cfg", "xml", "txt", "bak", "utoc",
+    # Bilder und Texturen
+    "png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "tga", "tif", "tiff",
+    "exr", "hdr", "psd", "dds", "ktx", "ktx2", "astc", "basis", "gnf",
+    "gnfp", "jxm", "vtf",
+    # Archive und Abbilder
+    "zip", "7z", "rar", "gz", "xz", "bz2", "zst", "lz4", "pfs", "img",
+    # Audio und Video (die Konsole spielt sie ueber eigene Dekoder)
+    "mp3", "ogg", "flac", "aac", "opus", "m4a", "at9", "wem", "bnk",
+    "bk2", "mp4", "ivf", "usm", "avi", "mkv", "mov", "wmv", "flv", "webm",
+    "m4v",
+)
+
+#: Ordner, die das Standardprofil ebenfalls lose laesst (Entschluesseltes,
+#: Duplex-Dateien, Trophaeen, Nutzungsdaten) - wie ``k_safety_exclusions``.
+LOSE_ORDNER: tuple[str, ...] = ("decrypted", "_DUPLEX_", "trophy2", "uds")
+
+#: Die fertigen Ausschlussmuster fuer das Standardprofil.
+LOSE_MUSTER: tuple[str, ...] = (
+    tuple("*.%s" % endung for endung in LOSE_ENDUNGEN)
+    + tuple(muster for ordner in LOSE_ORDNER
+            for muster in ("%s/**" % ordner, "**/%s/**" % ordner))
 )
 
 
@@ -291,7 +429,8 @@ def variante_kann_packen(variante: str) -> bool:
 
 
 def standardprofil_text(arbeiter: int = 0,
-                        zusatz_ausschluss: "tuple[str, ...]" = ()) -> str:
+                        zusatz_ausschluss: "tuple[str, ...]" = (),
+                        stufe: Any = LZ4_STUFE_VORGABE) -> str:
     """Ein Packprofil ohne Mitschnitte - vorsichtig, aber vollstaendig.
 
     Die Werte stammen aus der mitgelieferten ``ampr_pack.example.toml``
@@ -306,15 +445,19 @@ def standardprofil_text(arbeiter: int = 0,
       sinnvoll, wenn ein Mitschnitt den Zugriff belegt, hier aber geraten.
     * ``auto_loose_large_files = true`` bleibt an: Grosse Dateien ohne
       messbaren Gewinn bleiben lose, statt Rechenzeit zu kosten.
+    * Medien, Bilder, Archive und Konfigdateien (:data:`LOSE_MUSTER`) bleiben
+      lose - schon verdichtet oder von der Systemschicht gelesen.
 
     Args:
         arbeiter: Anzahl der Packvorgaenge auf dem PC. 0 laesst das
             Werkzeug selbst waehlen.
+        stufe: LZ4-Stufe 1 bis 12 (:data:`LZ4_STUFE_VORGABE` = 9).
     """
     # Die festen Muster plus die Filmordner dieses Spiels. Letztere kommen
     # aus dem Ordnerbaum, weil das Werkzeug die Schreibung genau nimmt.
     ausschluss = "\n".join('  "%s",' % muster
-                           for muster in (*NIE_PACKEN, *zusatz_ausschluss))
+                           for muster in (*NIE_PACKEN, *LOSE_MUSTER,
+                                          *zusatz_ausschluss))
     zeilen = [
         PROFIL_KENNZEILE + " - Packprofil ohne Mitschnitte.",
         "# Einheitlich 64 KiB/mixed: die Herstellerempfehlung fuer unbekannte",
@@ -333,8 +476,7 @@ def standardprofil_text(arbeiter: int = 0,
         'payload_alignment = "64KiB"',
         'chunk_alignment = "64B"',
         "",
-        'compression_mode = "hc"',
-        "compression_level = 12",
+        *kompression_zeilen(stufe),
         "deduplicate = true",
         'deduplicate_scope = "lane"',
         "deduplicate_streaming = false",
@@ -467,6 +609,43 @@ def systemdateien_muster(app0: str) -> tuple[str, ...]:
     except OSError as exc:
         logger.debug("Systemdateien nicht suchbar (%s): %s", app0, exc)
     return tuple(sorted(set(gefunden)))
+
+
+def lose_endungen_muster(app0: str) -> tuple[str, ...]:
+    """Ausschlussmuster fuer Schreibweisen von :data:`LOSE_ENDUNGEN` in **diesem** Spiel.
+
+    Das Werkzeug vergleicht mit ``fnmatch.fnmatchcase``, also nach Schreibung:
+    ``*.png`` trifft ``Logo.PNG`` nicht. :data:`LOSE_MUSTER` kennt nur die
+    kleine Schreibung; hier kommen die Schreibweisen dazu, die im Ordnerbaum
+    wirklich vorkommen (``*.PNG``, ``*.Dds``).
+
+    Gelesen wird mit ``os.scandir`` - die Dateinamen genuegen, kein ``stat``
+    ausser dem, das der Eintrag ohnehin mitbringt.
+
+    Returns:
+        Muster wie ``"*.PNG"`` - nur fuer Schreibweisen ungleich der kleinen.
+    """
+    bekannt = set(LOSE_ENDUNGEN)
+    gefunden: set[str] = set()
+    stapel = [str(app0)]
+    while stapel:
+        ordner = stapel.pop()
+        try:
+            with os.scandir(ordner) as eintraege:
+                for eintrag in eintraege:
+                    try:
+                        if eintrag.is_dir(follow_symlinks=False):
+                            stapel.append(eintrag.path)
+                            continue
+                    except OSError:
+                        continue
+                    endung = os.path.splitext(eintrag.name)[1][1:]
+                    if endung and endung != endung.lower() \
+                            and endung.lower() in bekannt:
+                        gefunden.add("*.%s" % endung)
+        except OSError as exc:
+            logger.debug("Endungen nicht suchbar (%s): %s", ordner, exc)
+    return tuple(sorted(gefunden))
 
 
 #: Dateien, an denen eine Spielengine erkennbar ist, die ihre Daten **am
@@ -679,19 +858,24 @@ def videos_im_pack(zeilen: list[dict[str, Any]]) -> list[str]:
     return getroffen
 
 
-def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "") -> str:
+def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "",
+                     stufe: Any = LZ4_STUFE_VORGABE) -> str:
     """Legt das Packprofil ab - ein eigenes des Anwenders bleibt.
 
     Reihenfolge:
     1. Existiert eine Datei, die NICHT von diesem Programm stammt?
        → Benutzerdefiniertes Profil, unveraendert zurueckgeben.
     2. Ergibt :func:`profil_integriert_fuer` ein Ergebnis?
-       → Mitgeliefertes Spielprofil schreiben (PROFIL_KENNZEILE vorangestellt).
+       → Mitgeliefertes Spielprofil schreiben (PROFIL_KENNZEILE vorangestellt),
+       mit der gewaehlten LZ4-Stufe (:func:`profil_stufe_einsetzen`).
     3. Fallback: Standardprofil erzeugen und schreiben.
 
     Ein Profil dieses Programms (Schritt 2 und 3) wird **jedes Mal neu**
     geschrieben, damit Aenderungen an den Profilen oder der Ausschlussliste
     beim naechsten Lauf wirksam werden.
+
+    Args:
+        stufe: LZ4-Stufe 1 bis 12 (:data:`LZ4_STUFE_VORGABE` = 9).
 
     Returns:
         Der Pfad des Profils.
@@ -711,7 +895,7 @@ def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "") -> str:
                 datei.write(
                     PROFIL_KENNZEILE + " - integriertes Profil fuer "
                     + bezeichnung + ".\n")
-                datei.write(inhalt)
+                datei.write(profil_stufe_einsetzen(inhalt, stufe))
             logger.debug("integriertes Profil fuer %s: %s", bezeichnung, ziel)
             return ziel
         except OSError as exc:
@@ -719,9 +903,10 @@ def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "") -> str:
                            quell_pfad, exc)
     # Fallback: Standardprofil (vorsichtig, unbekannte Daten)
     with open(ziel, "w", encoding="utf-8", newline="\n") as datei:
-        zusatz = ((*filmordner_muster(app0), *systemdateien_muster(app0))
+        zusatz = ((*filmordner_muster(app0), *systemdateien_muster(app0),
+                   *lose_endungen_muster(app0))
                   if app0 else ())
-        datei.write(standardprofil_text(arbeiter, zusatz))
+        datei.write(standardprofil_text(arbeiter, zusatz, stufe))
     return ziel
 
 
@@ -1463,3 +1648,373 @@ def quellen_entfernen(manifest: str, app0: str, melden: Melder = stumm,
     except ValueError as exc:
         raise PackFehler("Zusammenfassung nicht lesbar: %s" % exc) from exc
     return daten if isinstance(daten, dict) else {}
+
+
+def _rel_aus_zeile(zeile: dict[str, Any]) -> str:
+    """Der Pfad einer ``list --json``-Zeile relativ zum Spielordner (mit ``/``)."""
+    pfad = str(zeile.get("path") or "").replace("\\", "/")
+    if pfad.lower().startswith("/app0/"):
+        return pfad[len("/app0/"):]
+    return pfad.lstrip("/")
+
+
+def _innerhalb(wurzel: str, rel: str) -> str:
+    """Der volle Pfad zu ``rel`` unter ``wurzel`` - oder "" bei Ausbruch.
+
+    Ein Pfad aus einem fremden Manifest mit ``..`` oder einem Laufwerk darf nie
+    ausserhalb des Spielordners schreiben.
+    """
+    teile = [t for t in rel.split("/") if t]
+    if not teile or any(t in (".", "..") or ":" in t for t in teile):
+        return ""
+    voll = os.path.normpath(os.path.join(str(wurzel), *teile))
+    basis = os.path.normpath(str(wurzel))
+    try:
+        if os.path.commonpath([voll, basis]) != basis:
+            return ""
+    except ValueError:
+        # Verschiedene Laufwerke (Windows) - sicher draussen.
+        return ""
+    return voll
+
+
+def leere_dateien_zurueckschreiben(zeilen: list[dict[str, Any]], app0: str,
+                                   melden: Melder = stumm,
+                                   text: Textquelle = schluessel_zeigen) -> int:
+    """Legt gepackte Dateien der Groesse 0 nach dem Entfernen der Originale wieder hin.
+
+    LZ4 Compression haelt leere Dateien immer lose: Die Sprachplatzhalter von
+    Ghost of Yotei prueft die PS5 ausserhalb des Spiels, und fehlen sie, steht
+    das Spiel auf einem schwarzen Bild (Werkzeug 1.4.3, 14.10.2026). Das
+    Python-Werkzeug packt sie, und ``remove-packed-sources`` loescht sie dann
+    mit den uebrigen Originalen. Eine leere Datei hat keine Nutzdaten, die man
+    sichern muesste - sie wird einfach wieder angelegt.
+
+    Args:
+        zeilen: Die Ausgabe von :func:`liste`, **vor** dem Entfernen gelesen.
+
+    Returns:
+        Anzahl der neu angelegten Dateien.
+    """
+    angelegt = 0
+    for zeile in zeilen:
+        if not isinstance(zeile, dict) or not zeile.get("packed"):
+            continue
+        try:
+            if int(zeile.get("logical_size") or 0) != 0:
+                continue
+        except (TypeError, ValueError):
+            continue
+        ziel = _innerhalb(app0, _rel_aus_zeile(zeile))
+        if not ziel or os.path.exists(ziel):
+            continue
+        try:
+            os.makedirs(os.path.dirname(ziel), exist_ok=True)
+            with open(ziel, "wb"):
+                pass
+        except OSError as exc:
+            logger.debug("Leere Datei nicht anlegbar (%s): %s", ziel, exc)
+            continue
+        angelegt += 1
+    if angelegt:
+        melden(text("ampr_pack.leere_zurueck", count=angelegt))
+    return angelegt
+
+
+# ---------------------------------------------------------------------------
+# Fertige Asset-Pack-Ordner: ansehen, pruefen, entpacken
+# ---------------------------------------------------------------------------
+# Bis v1.9.79 konnte das Programm Baender nur bauen. ``ampr_pack.py`` bringt
+# ``verify`` und ``unpack`` mit; LZ4 Compression (Konsole) bietet beides als
+# "Verify LZ4 Packs" und "Uncompress LZ4" an. Hier die PC-Seite dazu.
+
+
+def manifest_im_ordner(ordner: str) -> str:
+    """Pfad des Manifests im Spielordner - oder "" ohne Asset-Pack."""
+    pfad = os.path.join(str(ordner or ""), MANIFEST_NAME)
+    return pfad if os.path.isfile(pfad) else ""
+
+
+def ordner_befund(ordner: str, melden: Melder = stumm) -> dict[str, Any]:
+    """Was ein fertiger Asset-Pack-Ordner enthaelt - ohne einen Block zu lesen.
+
+    Liest nur das Manifest (``inspect`` und ``list --json``) und sieht im Ordner
+    nach. Das dauert Sekunden, auch bei 80.000 Dateien.
+
+    Returns:
+        Ein Woerterbuch mit ``dateien``, ``gepackt``, ``lose``,
+        ``gepackt_bytes`` (logische Groesse), ``gesamt_bytes``, ``band_bytes``
+        (auf der Platte), ``baender``, ``baender_fehlen``, ``crc_da``,
+        ``fehlende_gepackte`` und ``fehlende_gepackte_bytes`` (gepackte Dateien,
+        die nicht mehr lose im Ordner liegen), ``lose_fehlend`` und
+        ``systemdateien`` (siehe :func:`lose_fehlend`,
+        :func:`systemdateien_im_pack`), ``uebersicht`` (die Ausgabe von
+        ``inspect``).
+
+    Raises:
+        PackFehler: ``ampr_pack.kein_manifest``, wenn kein Manifest da ist.
+    """
+    manifest = manifest_im_ordner(ordner)
+    if not manifest:
+        raise PackFehler("ampr_pack.kein_manifest")
+    daten = uebersicht(manifest, melden)
+    zeilen = liste(manifest, melden)
+    baender = bandnamen(daten)
+    gepackt = [z for z in zeilen if isinstance(z, dict) and z.get("packed")]
+    fehlende = 0
+    fehlende_bytes = 0
+    for zeile in gepackt:
+        ziel = _innerhalb(ordner, _rel_aus_zeile(zeile))
+        if ziel and not os.path.isfile(ziel):
+            fehlende += 1
+            fehlende_bytes += int(zeile.get("logical_size") or 0)
+    band_bytes = 0
+    baender_fehlen: list[str] = []
+    for name in baender:
+        try:
+            band_bytes += os.path.getsize(os.path.join(str(ordner), name))
+        except OSError:
+            baender_fehlen.append(name)
+    return {
+        "uebersicht": daten,
+        "dateien": len(zeilen),
+        "gepackt": len(gepackt),
+        "lose": len(zeilen) - len(gepackt),
+        "gepackt_bytes": sum(int(z.get("logical_size") or 0) for z in gepackt),
+        "gesamt_bytes": sum(int(z.get("logical_size") or 0)
+                            for z in zeilen if isinstance(z, dict)),
+        "band_bytes": band_bytes,
+        "baender": baender,
+        "baender_fehlen": baender_fehlen,
+        "crc_da": os.path.isfile(manifest + ".crc"),
+        "fehlende_gepackte": fehlende,
+        "fehlende_gepackte_bytes": fehlende_bytes,
+        "lose_fehlend": lose_fehlend(zeilen, str(ordner)),
+        "systemdateien": systemdateien_im_pack(zeilen),
+    }
+
+
+def ordner_pruefen(ordner: str, melden: Melder = stumm,
+                   abbruch: Callable[[], bool] | None = None) -> dict[str, Any]:
+    """Liest jeden Block eines fertigen Ordners und haelt ihn gegen die ``.crc``.
+
+    Wie ``verify`` der Anleitung, aber ohne ``--root``: In einem fertigen Spiel
+    sind die Originale oft weg, dann gibt es nichts zu vergleichen - die
+    Pruefsummenbeilage ist der Massstab.
+
+    Returns:
+        ``files``, ``physical_chunks``, ``stored_bytes``, ``raw_bytes``.
+
+    Raises:
+        PackFehler: ``ampr_pack.kein_manifest``, ``ampr_pack.crc_fehlt`` oder
+            die Meldung des Werkzeugs (beschaedigtes Band, falsche Groesse).
+    """
+    manifest = manifest_im_ordner(ordner)
+    if not manifest:
+        raise PackFehler("ampr_pack.kein_manifest")
+    if not os.path.isfile(manifest + ".crc"):
+        raise PackFehler("ampr_pack.crc_fehlt")
+    roh = _lauf(["verify", "--index", manifest], melden, abbruch)
+    try:
+        daten = json.loads(roh or "{}")
+    except ValueError as exc:
+        raise PackFehler("Pruefergebnis nicht lesbar: %s" % exc) from exc
+    return daten if isinstance(daten, dict) else {}
+
+
+def entpack_platzbedarf(befund: dict[str, Any], in_ordner: bool) -> int:
+    """Wie viel freier Platz das Entpacken mindestens braucht (Bytes).
+
+    * In den eigenen Ordner: nur, was dort noch fehlt - liegen die Originale
+      noch daneben, ist das wenig.
+    * In einen neuen Ordner: das ganze Spiel.
+
+    Ein Viertel GiB Luft kommt dazu (Zwischendateien, Zeitstempel).
+    """
+    luft = 256 * 1024 * 1024
+    if in_ordner:
+        return int(befund.get("fehlende_gepackte_bytes") or 0) + luft
+    return int(befund.get("gesamt_bytes") or 0) + luft
+
+
+def _dateien_scannen(wurzel: str):
+    """Alle Dateien und Ordner unter ``wurzel`` als ``(rel, absolut, ist_ordner)``.
+
+    Mit ``os.scandir`` und ohne Rekursion, ohne Verknuepfungen zu folgen.
+    """
+    stapel = [""]
+    while stapel:
+        rel_ordner = stapel.pop()
+        voll = os.path.join(wurzel, rel_ordner) if rel_ordner else wurzel
+        try:
+            with os.scandir(voll) as eintraege:
+                for eintrag in eintraege:
+                    rel = (rel_ordner + "/" + eintrag.name) if rel_ordner else eintrag.name
+                    try:
+                        ist_ordner = eintrag.is_dir(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    if ist_ordner:
+                        stapel.append(rel)
+                    yield rel, eintrag.path, ist_ordner
+        except OSError as exc:
+            logger.debug("Ordner nicht lesbar (%s): %s", voll, exc)
+
+
+def entpacken_in_ordner(ordner: str, melden: Melder = stumm,
+                        text: Textquelle = schluessel_zeigen,
+                        abbruch: Callable[[], bool] | None = None) -> dict[str, Any]:
+    """Legt alle gepackten Dateien in den Spielordner und entfernt dann die Baender.
+
+    Wie ``Uncompress LZ4`` in place. Reihenfolge ist Absicht: erst auspacken
+    (``unpack --overwrite``, je Datei atomar ueber einen Zwischennamen), dann
+    ein zweiter Blick auf den Befund, **erst danach** Manifest, ``.runtime``,
+    ``.crc`` und Baender loeschen. Bricht etwas ab, liegt noch der ganze Satz da
+    und der Lauf laesst sich wiederholen.
+
+    ``ampr_emu.index`` und die Bibliotheken in ``fakelib`` bleiben unberuehrt.
+
+    Returns:
+        ``files``, ``bytes`` (ausgepackt), ``entfernt`` (geloeschte Dateien des
+        Bestands).
+
+    Raises:
+        PackFehler: kein Manifest, fehlende Baender, Abbruch oder ein Fehler des
+            Werkzeugs.
+    """
+    manifest = manifest_im_ordner(ordner)
+    if not manifest:
+        raise PackFehler("ampr_pack.kein_manifest")
+    daten = uebersicht(manifest, melden)
+    baender = bandnamen(daten)
+    fehlend = [n for n in baender
+               if not os.path.isfile(os.path.join(str(ordner), n))]
+    if fehlend:
+        raise PackFehler("ampr_pack.baender_fehlen")
+    roh = _lauf(["unpack", "--index", manifest, "--output", str(ordner),
+                 "--overwrite"], melden, abbruch)
+    try:
+        ergebnis = json.loads(roh or "{}")
+    except ValueError as exc:
+        raise PackFehler("Entpackergebnis nicht lesbar: %s" % exc) from exc
+    if not isinstance(ergebnis, dict):
+        ergebnis = {}
+    erwartet = int(daten.get("packed_files") or 0)
+    # Nur ein Vergleich, der etwas aussagt: Ohne gepackte Dateien gibt es
+    # nichts auszupacken, und ein anderes Ergebnis waere ein Rueckstand.
+    if erwartet and int(ergebnis.get("files") or 0) != erwartet:
+        raise PackFehler("ampr_pack.entpacken_unvollstaendig")
+    entfernt = 0
+    for name in _bestandsdateien(str(ordner), baender):
+        pfad = os.path.join(str(ordner), *name.split("/"))
+        try:
+            os.remove(pfad)
+            entfernt += 1
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            logger.warning("Bestandsdatei nicht entfernbar (%s): %s", pfad, exc)
+            melden(text("ampr_pack.bestand_bleibt", name=name))
+    ergebnis["entfernt"] = entfernt
+    return ergebnis
+
+
+def entpacken_in_neuen_ordner(ordner: str, ziel: str, melden: Melder = stumm,
+                              text: Textquelle = schluessel_zeigen,
+                              abbruch: Callable[[], bool] | None = None
+                              ) -> dict[str, Any]:
+    """Baut aus einem gepackten Spielordner einen losen in einem **neuen** Ordner.
+
+    Wie ``Uncompress LZ4`` in einen neuen Ordner: Alles, was nicht zum
+    Packbestand gehoert und nicht im Band steht (Systemordner, Bibliotheken,
+    lose gefuehrte Dateien), wird kopiert; die gepackten Dateien kommen aus den
+    Baendern. Der Quellordner bleibt unveraendert. Liegen die Originale dort noch
+    daneben, werden sie **nicht** kopiert - die Baender sind die Quelle, so
+    entsteht das, was die Konsole gesehen haette.
+
+    Args:
+        ziel: Ein Ordner, den es nicht gibt oder der leer ist.
+
+    Returns:
+        ``files`` und ``bytes`` (aus den Baendern), ``kopiert`` (Dateien).
+
+    Raises:
+        PackFehler: ``ampr_pack.ziel_nicht_leer``, ``ampr_pack.ziel_im_quellordner``,
+            kein Manifest, Abbruch oder ein Fehler des Werkzeugs. Ein von diesem
+            Aufruf angelegter Zielordner wird bei jedem Fehler wieder entfernt.
+    """
+    manifest = manifest_im_ordner(ordner)
+    if not manifest:
+        raise PackFehler("ampr_pack.kein_manifest")
+    quelle = os.path.normcase(os.path.abspath(str(ordner)))
+    ziel_abs = os.path.normcase(os.path.abspath(str(ziel)))
+    if ziel_abs == quelle or ziel_abs.startswith(quelle + os.sep):
+        raise PackFehler("ampr_pack.ziel_im_quellordner")
+    ziel_war_da = os.path.isdir(ziel)
+    if ziel_war_da and os.listdir(ziel):
+        raise PackFehler("ampr_pack.ziel_nicht_leer")
+
+    daten = uebersicht(manifest, melden)
+    baender = bandnamen(daten)
+    zeilen = liste(manifest, melden)
+    gepackt = {_rel_aus_zeile(z).lower() for z in zeilen
+               if isinstance(z, dict) and z.get("packed")}
+    bestand = {n.lower() for n in _bestandsdateien(str(ordner), baender)}
+
+    kopiert = 0
+    try:
+        os.makedirs(ziel, exist_ok=True)
+        for rel, voll, ist_ordner in _dateien_scannen(str(ordner)):
+            if abbruch is not None and abbruch():
+                raise PackFehler("ampr_pack.abgebrochen")
+            if ist_ordner:
+                ziel_ordner = _innerhalb(ziel, rel)
+                if ziel_ordner:
+                    os.makedirs(ziel_ordner, exist_ok=True)
+                continue
+            kleinrel = rel.lower()
+            if kleinrel in gepackt or kleinrel in bestand:
+                continue
+            ziel_datei = _innerhalb(ziel, rel)
+            if not ziel_datei:
+                continue
+            os.makedirs(os.path.dirname(ziel_datei), exist_ok=True)
+            try:
+                _kopieren_mit_abbruch(voll, ziel_datei, abbruch)
+            except OSError as exc:
+                raise PackFehler("%s nicht kopierbar: %s" % (rel, exc)) from exc
+            kopiert += 1
+            if kopiert % 500 == 0:
+                melden(text("ampr_pack.entpacken_kopiert", count=kopiert))
+        melden(text("ampr_pack.entpacken_kopiert", count=kopiert))
+        roh = _lauf(["unpack", "--index", manifest, "--output", str(ziel),
+                     "--overwrite"], melden, abbruch)
+        try:
+            ergebnis = json.loads(roh or "{}")
+        except ValueError as exc:
+            raise PackFehler("Entpackergebnis nicht lesbar: %s" % exc) from exc
+        if not isinstance(ergebnis, dict):
+            ergebnis = {}
+        erwartet = int(daten.get("packed_files") or 0)
+        if erwartet and int(ergebnis.get("files") or 0) != erwartet:
+            raise PackFehler("ampr_pack.entpacken_unvollstaendig")
+    except BaseException:
+        # Auch bei Abbruch (KeyboardInterrupt) nichts Halbes zuruecklassen.
+        # Ein Ordner, den es vorher nicht gab, geht ganz; ein leerer, den der
+        # Anwender angegeben hat, wird wieder geleert (er war leer, sonst waere
+        # es oben schon abgelehnt worden).
+        if not ziel_war_da:
+            shutil.rmtree(ziel, ignore_errors=True)
+        else:
+            try:
+                for name in os.listdir(ziel):
+                    pfad = os.path.join(ziel, name)
+                    if os.path.isdir(pfad) and not os.path.islink(pfad):
+                        shutil.rmtree(pfad, ignore_errors=True)
+                    else:
+                        os.remove(pfad)
+            except OSError as exc:
+                logger.debug("Zielordner nicht leerbar (%s): %s", ziel, exc)
+        raise
+    ergebnis["kopiert"] = kopiert
+    return ergebnis
