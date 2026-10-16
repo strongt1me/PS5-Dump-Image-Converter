@@ -204,6 +204,10 @@ RELEASES = {
         ('v0.4.1', False, '2026-10-12', ['ps4mount.elf', 'ps4mount.elf.sha256']),
         ('v0.4.0', False, '2026-10-11', ['ps4mount.elf', 'ps4mount.elf.sha256']),
     ],
+    'gasb07/NeoEnabler': [
+        ('v0.2.1', False, '2026-10-15', ['neo-manager.elf', 'neo-manager.elf.sha256']),
+        ('v0.2.0', False, '2026-10-15', ['neo-manager.elf', 'neo-manager.elf.sha256']),
+    ],
     'aydencharles/onionHEN': [
         ('v0.9.0-beta2', True, '2026-10-07', ['OnionHEN.elf']),
         ('v0.9.0-beta1', True, '2026-10-03', ['OnionHEN.elf']),
@@ -277,6 +281,12 @@ RELEASES = {
         ('v0.7.0-beta', False, '2026-10-08', ['AnyPad-PS5-0.7.0-beta.elf', 'AnyPad-PS5-0.7.0-beta.elf.sha256']),
     ],
     'knutwurst/ps5-ultrapack': [
+        ('v2.2.5', False, '2026-10-15', ['PS5-UltraPack-2.2.5-macos-arm64.zip',
+                                         'PS5-UltraPack-2.2.5-macos-arm64.zip.sha256']),
+        ('v2.2.4', False, '2026-10-15', ['PS5-UltraPack-2.2.4-macos-arm64.zip',
+                                         'PS5-UltraPack-2.2.4-macos-arm64.zip.sha256']),
+        ('v2.2.3', False, '2026-10-14', ['PS5-UltraPack-2.2.3-macos-arm64.zip',
+                                         'PS5-UltraPack-2.2.3-macos-arm64.zip.sha256']),
         ('v2.2.2', False, '2026-10-08', ['PS5-UltraPack-2.2.2-macos-arm64.zip',
                                          'PS5-UltraPack-2.2.2-macos-arm64.zip.sha256']),
         ('v2.2.1', False, '2026-10-07', ['PS5-UltraPack-2.2.1-macos-arm64.zip',
@@ -298,7 +308,7 @@ HELLOWORLD = [
     "ftpsrv-ps5_v0.21.1.elf", "ftpsrv-ps5_v1.15-ng.elf", "ftpsrv-ps5_v1.16-ng-stable.elf",
     "game-compressor_v1.1.1.elf", "garlic-savemgr_v1.13.1.elf", "garlic-worker-ps5_2026-04-09.elf",
     "gdbsrv-ps5_v0.9.elf", "klogsrv-ps5_v0.9.elf", "kstuff_lite_v1.11_Beta_EchoStretch.elf",
-    "kstuff_v1.13-fpkg-dr-test5.elf", "lapy_jb_daemon-v1.2.elf", "nanodns_v0.4.elf", "np-fake-signin-v1.3.elf",
+    "kstuff_v1.13-fpkg-dr-test5.elf", "lapy_jb_daemon-v1.2.elf", "nanodns_v0.4.elf", "neo-manager_v0.2.1.elf", "np-fake-signin-v1.3.elf",
     "pkgmgr_v1.5.0.elf", "pldmgr_v0.6.0.elf", "ps4mount_v0.4.4.elf", "ps5-app-dumper_v2.10.elf", "ps5-backpork_v0.1.elf",
     "ps5-hwinfo-bench_v0.1.elf", "ps5-hwinfo-sysinfo_v0.1.elf", "ps5-self-pager-full-system_v1.2.elf",
     "ps5-self-pager-game_v1.2.elf", "ps5-self-pager-shellcore_v1.2.elf", "ps5-self-pager-system-common-lib_v1.2.elf",

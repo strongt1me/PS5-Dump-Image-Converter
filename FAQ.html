@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.80</title>
+<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.81</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Häufige Fragen (FAQ)</span></h1>
     <p class="unter">Kurze Antworten auf die Fragen, die bei der Arbeit mit dem Programm am häufigsten auftauchen – vom ersten Start über das Umwandeln bis zur PS5. Ausführlich steht alles im Benutzerhandbuch.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.80</span>
-      <span class="marke">Stand 15. Oktober 2026</span>
+      <span class="marke">Version v1.9.81</span>
+      <span class="marke">Stand 16. Oktober 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -440,6 +440,12 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Wie lade ich ein offizielles PS5-Update von Sony?</h3>
+    <p>Wählen Sie das Spiel als Quelle und öffnen Sie <strong>Spiel-Info</strong>. Nennt die <code>sce_sys\param.json</code> des Spiels Sonys Updateliste (<code>versionFileUri</code>), stehen dort Zeilen <strong>PS5 · Sony</strong> mit Fassung, Größe und nötiger Firmware (seit v1.9.81). Ein Klick auf <strong>Download</strong> lädt das Paket direkt auf den Rechner: in Teilen, fortsetzbar, jeder Teil gegen Sonys SHA-256 geprüft. Es landet in <em>PS5 Spiele Updates</em> (neueste Fassung) oder <em>Patches</em>. Installiert wird nichts, und die Datei geht nicht auf die Konsole.</p>
+    <p>Läuft nanoDNS auf Ihrer PS5, gehören <code>sgst.prod.dl.playstation.net</code> und <code>gs2.ww.prod.dl.playstation.net</code> in dessen <code>[exceptions]</code> – ab Werk steht dort nur <code>gst.prod.dl.playstation.net</code>.</p>
+  </div>
+
+  <div class="frage">
     <h3>Was macht der Haken „PlayGo“?</h3>
     <p>Er legt einen Ersatz für <code>libScePlayGo.sprx</code> ins Spiel, der alle Sprach- und Szenariopakete als installiert meldet. Die meisten Spiele brauchen das nicht, deshalb ist er ab Werk aus. Erklärt ein Titel PlayGo-Inhalte und ist der Haken nicht gesetzt, fragt das Programm am Anfang des Laufs nach – bevor kopiert, entpackt oder gepackt wird.</p>
   </div>
@@ -662,8 +668,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.80</strong></span>
-  <span>Stand 15. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
+  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.81</strong></span>
+  <span>Stand 16. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
 </footer>
 
 </body>

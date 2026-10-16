@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.80</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.81</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.80</span>
-      <span class="marke">Stand 15. Oktober 2026</span>
+      <span class="marke">Version v1.9.81</span>
+      <span class="marke">Stand 16. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -534,16 +534,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   selbst ein und drücken <em>Konsole prüfen</em>.</p>
   <p>Oben nennt die Seite Name, Zustand und Firmware der Konsole &ndash; die
   Firmware so, wie die Konsole sie selbst schreibt (12.00, 12.02, 12.70 &hellip;).
-  Darunter fragt sie alle sechsundzwanzig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
+  Darunter fragt sie alle siebenundzwanzig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
   und 9020), Payload-Manager, FTP-Server, Kernel-Protokoll, PKG Manager,
   Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver, ShadowMount+,
   Prospero Manager, ps5upload, CheatRunner, App Dumper, Game Compressor,
   SMPlusGui, aria2, zftpd, gdbsrv, ps5debug-NG, AnyPad PS5, DPI&nbsp;v2, den
   WK Autoloader (Port&nbsp;1022) und das
-  PS5 Cooling &amp; System Center (Port&nbsp;8086) und PS4Mount (Port&nbsp;8770) &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
+  PS5 Cooling &amp; System Center (Port&nbsp;8086), PS4Mount (Port&nbsp;8770) und NeoEnabler (Port&nbsp;8765) &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
   mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Die
   Version ist die der mitgelieferten Datei, die das Programm startet.
-  FTP-Server, Payload-Manager, das Cooling &amp; System Center, PS4Mount und ShadowMount+ nennen ihre laufende Version selbst (ShadowMount+ nur, wenn seine Schnittstelle von diesem PC aus erreichbar ist); weicht
+  FTP-Server, Payload-Manager, das Cooling &amp; System Center, PS4Mount, NeoEnabler und ShadowMount+ nennen ihre laufende Version selbst (ShadowMount+ nur, wenn seine Schnittstelle von diesem PC aus erreichbar ist); weicht
   sie ab, etwa weil ein älteres Payload von anderswo gestartet wurde, steht
   die mitgelieferte in Klammern dahinter. Bei ShadowMount+, dem zweiten ELF-Loader-Port (9020) und DPI&nbsp;v2 steht die Version der beiliegenden Datei, obwohl das Programm sie dort nicht startet. Alle übrigen Dienste verraten ihre
   Version nicht. Ports und Weboberflächen der acht am 2. Oktober 2026
@@ -2276,6 +2276,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </ol>
   <p>Danach läuft alles von allein: Die Adresse wird geprüft, die Datei eingeordnet, der Zielordner angelegt und der Download gestartet. Mehrere Adressen dürfen auf einmal eingefügt werden – über <strong>Adresse(n) einfügen</strong> untereinander in ein Textfeld.</p>
 
+  <h4>Sonys offizielle Liste – ohne Umweg (seit v1.9.81)</h4>
+  <p>Nennt die <code>sce_sys\param.json</code> des gewählten PS5-Spiels die Adresse der Updateliste (<code>versionFileUri</code>), zeigt <em>Spiel-Info</em> zusätzlich Zeilen <strong>PS5 · Sony</strong>: Sonys eigene Fassungen mit Größe und nötiger Firmware, die neueste mit Stern. Diese Adresse enthält eine Kennung je Titel und lässt sich aus der Title-ID nicht errechnen – sie steht deshalb nur im Spiel selbst. Die Abfrage läuft, wie die anderen, nur bei erlaubtem Online-Abruf.</p>
+  <p>Ein Klick auf <strong>Download</strong> in einer solchen Zeile öffnet ein eigenes Fenster und lädt das Paket <em>direkt</em> – ohne Browser, ohne Sicherheitsabfrage, ohne Adresse einfügen. Das Programm holt das Verzeichnis der Teile, lädt sie (drei gleichzeitig) in eine Datei <code>.teil</code> und hält <strong>jeden Teil gegen die SHA-256 von Sony</strong>; stimmt einer nicht, wird er einmal neu geladen, danach bricht der Lauf ab. Erst wenn alles stimmt, bekommt die Datei ihren Namen (<code>&lt;Content-ID&gt;_v&lt;Fassung&gt;.pkg</code>) im Ordner <em>PS5 Spiele Updates</em> (neueste) oder <em>Patches</em>. <strong>Abbrechen</strong> ist unkritisch: Der Stand bleibt liegen, der nächste Klick setzt fort. Vorher prüft das Programm, ob auf dem Laufwerk genug Platz frei ist.</p>
+  <p>Gesprochen wird nur mit Sonys Auslieferungsnetz (<code>sgst</code>/<code>gst</code>/<code>gs2.ww.prod.dl.playstation.net</code>), mit einem privaten Wurzelzertifikat von Sony, das das Programm mitbringt. Geladen wird auf den Rechner, <strong>nicht</strong> auf die Konsole und nichts wird installiert; ob die zusammengesetzte Datei an Ihrer Konsole installierbar ist, ist nicht geprüft.</p>
+  <div class="kasten warnung">
+    <span class="titel">Läuft nanoDNS auf der Konsole?</span>
+    <p>Dann nehmen Sie <code>sgst.prod.dl.playstation.net</code> und <code>gs2.ww.prod.dl.playstation.net</code> in den Abschnitt <code>[exceptions]</code> der <code>nanodns.ini</code> auf (ab Werk steht dort nur <code>gst.prod.dl.playstation.net</code>), sonst blockiert nanoDNS diese Hosts für alles, was auf der Konsole Updates holt, etwa PatchDL. Für dieses Programm am PC ist das ohne Belang.</p>
+  </div>
+
   <h4>Update oder Patch?</h4>
   <p>Die Einordnung folgt der Markierung im Spiel-Info-Fenster: Die dort mit einem Stern als neueste gekennzeichnete Version gilt als <strong>Update</strong>, jede ältere als <strong>Patch</strong>. Lässt sich das nicht feststellen, wird als Update behandelt. Liegt eine Datei danach im falschen Ordner, verschiebt der Knopf <strong>Als Update/Patch umsortieren</strong> sie mit einem Klick.</p>
 
@@ -2922,7 +2931,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.80), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.81), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -3123,8 +3132,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.80</strong></span>
-    <span>Stand 15. Oktober 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.81</strong></span>
+    <span>Stand 16. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

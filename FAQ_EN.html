@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.80</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.81</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.80</span>
-      <span class="marke">As of 15 October 2026</span>
+      <span class="marke">Version v1.9.81</span>
+      <span class="marke">As of 16 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -440,6 +440,12 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>How do I download an official PS5 update from Sony?</h3>
+    <p>Choose the game as the source and open <strong>Game Info</strong>. If the game's <code>sce_sys\param.json</code> names Sony's update list (<code>versionFileUri</code>), rows labelled <strong>PS5 · Sony (official)</strong> appear with version, size and required firmware (since v1.9.81). Clicking <strong>Download</strong> fetches the package straight to this computer: in parts, resumable, every part checked against Sony's SHA-256. It lands in <em>PS5 Spiele Updates</em> (newest version) or <em>Patches</em>. Nothing is installed, and the file is not sent to the console.</p>
+    <p>If nanoDNS runs on your PS5, <code>sgst.prod.dl.playstation.net</code> and <code>gs2.ww.prod.dl.playstation.net</code> belong in its <code>[exceptions]</code> – by default only <code>gst.prod.dl.playstation.net</code> is listed.</p>
+  </div>
+
+  <div class="frage">
     <h3>What does the “PlayGo” checkbox do?</h3>
     <p>It places a replacement for <code>libScePlayGo.sprx</code> in the game that reports all language and scenario packages as installed. Most games do not need this, so it is off by default. If a title declares PlayGo content and the checkbox is not set, the program asks at the beginning of the run – before anything is copied, unpacked or packed.</p>
   </div>
@@ -662,8 +668,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.80</strong></span>
-  <span>As of 15 October 2026 · Only for content you own and acquired legally</span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.81</strong></span>
+  <span>As of 16 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 
 </body>

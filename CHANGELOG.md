@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.80):** Drei neue ruhige Designs – „Ruhig Graphit“, „Mitternachtsblau“ und „Hell und klar“ –, Asset-Packs mit wählbarer LZ4-Stufe und einem Fenster zum Prüfen und Entpacken, ein eigener Arbeitsordner im Wurzelverzeichnis von C: ohne gewählten Temp-Ordner, sieben aktualisierte Payloads und vorsichtigeres Einlesen fremder Daten.
+> **Kurz zum aktuellen Stand (v1.9.81):** Offizielle PS5-Updates von Sony direkt aus Spiel-Info, dazu drei neue ruhige Designs – „Ruhig Graphit“, „Mitternachtsblau“ und „Hell und klar“ –, Asset-Packs mit wählbarer LZ4-Stufe und einem Fenster zum Prüfen und Entpacken, ein eigener Arbeitsordner im Wurzelverzeichnis von C: ohne gewählten Temp-Ordner, sieben aktualisierte Payloads und vorsichtigeres Einlesen fremder Daten.
 
 ---
+
+## v1.9.81 – 16.10.2026
+
+- **Neu:** Spiel-Info zeigt für PS5-Spiele Sonys offizielle Updateliste („PS5 · Sony“), wenn die param.json des Spiels ihre Adresse nennt; DOWNLOAD lädt das Paket direkt, fortsetzbar und mit Prüfung jedes Teils gegen Sonys SHA-256.
+- **Neu:** NeoEnabler 0.2.1 in der Payload-Sammlung (PS4-Spiele im PS4-Pro-Modus starten); in Konsole & Payloads mit Zeile für das Panel auf Port 8765. Es setzt voraus, dass ps-patch-system vorher geladen wurde.
+- **Aktualisiert:** nanoDNS 0.4 durch die Fassung der Freigabe ersetzt; die Engine im PS5-PKG-Tool (ps5-ultrapack) auf 2.2.5, Sonderzeichen in Spielnamen kommen jetzt richtig im Protokoll an.
 
 ## v1.9.80 – 15.10.2026
 
