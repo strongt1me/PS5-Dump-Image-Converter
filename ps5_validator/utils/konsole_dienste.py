@@ -246,7 +246,7 @@ KATALOG: tuple[Dienst, ...] = (
     # PS4-Spiele auf der PS5 im PS4-Pro-Modus starten (gasb07/NeoEnabler, GPL-3.0; ``neo-manager.elf``). Port 8765 und
     # Weboberflaeche laut README des Autors ("http://<PS5 IP>:8765", das Panel liegt auch im Medien-Tab) und aus dem ELF
     # selbst ("deeplinkUri": "http://127.0.0.1:8765/"; ``PORT`` in ``src/manager.c``, bindet auf INADDR_ANY). Die laufende
-    # Version nennt ``GET /status`` als erste Zeile ``build: NeoEnabler 0.2.1`` (Quelltext 0.2.1 gelesen, an der Konsole
+    # Version nennt ``GET /status`` als erste Zeile ``build: NeoEnabler 0.3.0`` (Quelltext 0.2.1 und 0.3.0 gelesen, an der Konsole
     # noch NICHT nachgemessen). Gestartet wird das ELF ueber den ELF-Loader (payload_muster) - aber erst NACH
     # ps-patch-system (illusionyy), das der Nutzer vorher selbst laden muss; ohne es meldet das Panel das. Ist der Port
     # belegt, bleibt alles unveraendert ("Web panel port %d unavailable"). Anlaufzeit geschaetzt.

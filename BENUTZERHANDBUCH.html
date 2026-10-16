@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.81</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.82</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.81</span>
+      <span class="marke">Version v1.9.82</span>
       <span class="marke">Stand 16. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -568,7 +568,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Senden richtet er sich ein, danach wählen Sie auf seiner Weboberfläche
   (Port&nbsp;1022 laut Autor) Payload Manager oder Elf Launcher und starten den
   Jailbreak; auf der Konsole erscheint er als App in der Reihe <em>Medien</em>.
-  PS4Mount (gasb07, mitgeliefert: 0.4.4) spielt PS4-Fake-PKGs direkt von einem USB-Laufwerk, ohne sie auf der
+  PS4Mount (gasb07, mitgeliefert: 0.5.1) spielt PS4-Fake-PKGs direkt von einem USB-Laufwerk, ohne sie auf der
   Konsole zu installieren: Die PKG-Dateien (Spiel, Update, Add-ons) gehören in den Hauptordner eines
   exFAT-Laufwerks; beim ersten Lauf legt PS4Mount sie je Spiel unter <code>/ps4/CUSAxxxxx</code> auf dem
   Laufwerk ab. Nach dem Senden (an den ELF-Loader) erscheinen die Spiele auf dem Startbildschirm. Seine
@@ -578,6 +578,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   sonst starten die Spiele nicht. Laut Autor läuft es auf jeder Firmware mit Fake-PKG-Unterstützung (getestet auf 13.20,
   unter 6.00 trägt es jedes Spiel einzeln ein); mehrere gleichzeitig
   angeschlossene Laufwerke können die Oberfläche der Konsole verlangsamen. Port und Weboberfläche stammen aus der
+  Beschreibung des Autors und sind an der Konsole noch nicht nachgemessen.
+  NeoEnabler (gasb07, mitgeliefert: 0.3.0) startet PS4-Spiele auf der PS5 im PS4-Pro-Modus, laut Autor bis zu
+  nativem 4K, aber nur für die Spiele, für die er Patches mitbringt. Er setzt <strong>ps-patch-system</strong>
+  voraus: Laden Sie es nach jedem Start der Konsole zuerst und senden Sie danach NeoEnabler (an den
+  ELF-Loader). Beim Start lädt NeoEnabler seine Spielpatches aus dem Projekt des Autors auf GitHub und trägt sie in
+  die Dateien von ps-patch-system ein; vorher sichert er diese unter <code>/data/neo-enabler/xml-backup</code>. Auf
+  seiner Weboberfläche (Port&nbsp;8765, ohne Anmeldung, also nicht im fremden Netz; auf der Konsole auch in der
+  Reihe <em>Medien</em>) wählen Sie je Spiel den Patch. Der 8-GiB-Speicher, den manche Patches brauchen, geht laut
+  Autor nur auf Firmware 13.20 (13.60 ist noch ungetestet) und mit freigeschaltetem Hypervisor; der Reiter
+  <em>GPU clock</em> erscheint nur auf Firmware 13.20 und ist ab Werk aus. Port und Weboberfläche stammen aus der
   Beschreibung des Autors und sind an der Konsole noch nicht nachgemessen.
   CheatRunner (Port&nbsp;9999) aktualisieren Sie laut Autor in dieser
   Reihenfolge, <strong>bevor</strong> Sie die neue Fassung senden: Erstens
@@ -2931,7 +2941,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.81), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.82), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -3132,7 +3142,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.81</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.82</strong></span>
     <span>Stand 16. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

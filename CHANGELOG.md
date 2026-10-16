@@ -2,9 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.81):** Offizielle PS5-Updates von Sony direkt aus Spiel-Info, dazu drei neue ruhige Designs – „Ruhig Graphit“, „Mitternachtsblau“ und „Hell und klar“ –, Asset-Packs mit wählbarer LZ4-Stufe und einem Fenster zum Prüfen und Entpacken, ein eigener Arbeitsordner im Wurzelverzeichnis von C: ohne gewählten Temp-Ordner, sieben aktualisierte Payloads und vorsichtigeres Einlesen fremder Daten.
+> **Kurz zum aktuellen Stand (v1.9.82):** Neue Fassungen von NeoEnabler, PS5 Cooling & System Center und PS5Upload in der Payload-Sammlung; davor offizielle PS5-Updates von Sony direkt aus Spiel-Info, dazu drei neue ruhige Designs – „Ruhig Graphit“, „Mitternachtsblau“ und „Hell und klar“ –, Asset-Packs mit wählbarer LZ4-Stufe und einem Fenster zum Prüfen und Entpacken, ein eigener Arbeitsordner im Wurzelverzeichnis von C: ohne gewählten Temp-Ordner, sieben aktualisierte Payloads und vorsichtigeres Einlesen fremder Daten.
 
 ---
+
+## v1.9.82 – 16.10.2026
+
+- **Aktualisiert:** NeoEnabler 0.3.0 (Seite „Games“, PS4-Pro-Modus und 8 GiB je Spiel automatisch), PS5 Cooling & System Center – Pro 1.68.1 und PS5Upload 7.0.26.
 
 ## v1.9.81 – 16.10.2026
 
