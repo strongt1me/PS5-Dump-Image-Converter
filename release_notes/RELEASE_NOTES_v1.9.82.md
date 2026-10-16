@@ -2,6 +2,10 @@
 
 - NeoEnabler 0.3.0 (Seite „Games“, PS4-Pro-Modus und 8 GiB je Spiel automatisch), PS5 Cooling & System Center – Pro 1.68.1 und PS5Upload 7.0.26.
 
+## Behoben
+
+- Eine unlesbare oder abgerissene Antwort von Server oder Konsole löst keinen rohen Fehler mehr aus, ein Sony-Download hält bei einem Fehler sofort an, und ein volles Laufwerk wird als solches gemeldet.
+
 ## Downloads
 
 - **Windows:** `PS5_Dump_Image_Converter_v1.9.82.exe` (benötigt Administratorrechte beim Start).

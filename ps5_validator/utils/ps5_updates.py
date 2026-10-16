@@ -27,7 +27,9 @@ Reine Logik ohne Oberflaeche - die Fenster rufen sie im Faden.
 """
 from __future__ import annotations
 
+import errno
 import hashlib
+import http.client
 import json
 import logging
 import os
@@ -213,7 +215,8 @@ def holen(url: str, max_bytes: int, timeout: float = 20.0,
         raise
     except urllib.error.HTTPError as exc:
         raise UpdateFehler("ps5upd.http|%d" % exc.code) from exc
-    except (urllib.error.URLError, OSError, ssl.SSLError) as exc:
+    except (urllib.error.URLError, OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        # HTTPException (BadStatusLine, IncompleteRead ...) ist kein OSError: urllib reicht es roh durch.
         raise UpdateFehler("ps5upd.netz|%s" % exc) from exc
 
 
@@ -462,7 +465,7 @@ def paket_laden(manifest: Manifest, ziel: str,
     def _teil_laden(i: int) -> None:
         stueck = manifest.teile[i]
         for versuch in range(versuche + 1):
-            if abbruch is not None and abbruch():
+            if (abbruch is not None and abbruch()) or fehler:
                 raise UpdateFehler("ps5upd.abgebrochen")
             try:
                 _teil_einmal(i, stueck)
@@ -478,7 +481,11 @@ def paket_laden(manifest: Manifest, ziel: str,
                     raise UpdateFehler("ps5upd.pruefsumme|%d" % (i + 1))
             except UpdateFehler:
                 raise
-            except (urllib.error.URLError, OSError, ssl.SSLError, ConnectionError) as exc:
+            except (urllib.error.URLError, OSError, ssl.SSLError, ConnectionError,
+                    http.client.HTTPException) as exc:
+                if getattr(exc, "errno", None) in (errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)):
+                    # Das Ziellaufwerk ist voll - das behebt kein neuer Versuch, und ein Netzfehler ist es nicht.
+                    raise UpdateFehler("ps5upd.platz|%s" % exc) from exc
                 if versuch >= versuche:
                     raise UpdateFehler("ps5upd.netz|%s" % exc) from exc
                 time.sleep(min(2.0 * (versuch + 1), 8.0))
@@ -500,8 +507,11 @@ def paket_laden(manifest: Manifest, ziel: str,
             with open(teil, "r+b") as datei:
                 datei.seek(stueck.versatz + ab)
                 while geladen[i] < stueck.groesse:
-                    if abbruch is not None and abbruch():
-                        _merk_schreiben(merk, kennung, geladen)
+                    # Auch wenn ein anderer Faden gescheitert ist: nicht erst das ganze Teil zu Ende laden.
+                    if (abbruch is not None and abbruch()) or fehler:
+                        datei.flush()
+                        with sperre:
+                            _merk_schreiben(merk, kennung, geladen)
                         raise UpdateFehler("ps5upd.abgebrochen")
                     block = antwort.read(min(_BLOCK, stueck.groesse - geladen[i]))
                     if not block:

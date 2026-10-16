@@ -23,6 +23,7 @@ auch fuer Projekte, die GitHub verlassen haben.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import os
@@ -234,8 +235,12 @@ def spiegel_holen(adresse: str = SPIEGEL_ADRESSE, zeitgrenze: float = 20.0) -> l
     Raises:
         OSError: Wenn die Liste nicht erreichbar oder nicht lesbar ist.
     """
-    with urllib.request.urlopen(adresse, timeout=zeitgrenze) as antwort:
-        roh = antwort.read().decode("utf-8", "replace")
+    try:
+        with urllib.request.urlopen(adresse, timeout=zeitgrenze) as antwort:
+            roh = antwort.read().decode("utf-8", "replace")
+    except http.client.HTTPException as exc:
+        # Kein OSError (BadStatusLine, IncompleteRead) - der Aufrufer faengt, wie dokumentiert, OSError.
+        raise OSError("Antwort nicht lesbar: %s" % (exc or type(exc).__name__)) from exc
     try:
         daten = json.loads(roh)
     except ValueError as exc:

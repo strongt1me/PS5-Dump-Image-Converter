@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import http.client
 import json
 import logging
 import os
@@ -240,8 +241,9 @@ def standard_holen(adresse: str, zeit: float = 20.0) -> bytes:
         if fehler.code == 404:
             raise UpdateFehler("nicht_gefunden", adresse) from fehler
         raise UpdateFehler("http", "HTTP %d: %s" % (fehler.code, adresse)) from fehler
-    except (urllib.error.URLError, OSError, TimeoutError) as fehler:
-        raise UpdateFehler("netz", str(fehler)) from fehler
+    except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as fehler:
+        # HTTPException (BadStatusLine, IncompleteRead) ist kein OSError: urllib reicht sie roh durch.
+        raise UpdateFehler("netz", str(fehler) or type(fehler).__name__) from fehler
 
 
 def nachsehen(title_id: str, holen: "Callable[[str], bytes | str]" = standard_holen) -> "UpdateInfo | None":
@@ -363,7 +365,10 @@ def herunterladen(info: UpdateInfo, ziel_ordner: str, *,
                             block = antwort.read(1024 * 1024)
                             if not block:
                                 break
-                            ausgabe.write(block)
+                            try:
+                                ausgabe.write(block)
+                            except OSError as fehler:
+                                raise UpdateFehler("schreiben", str(fehler)) from fehler
                             if pruefsumme is not None:
                                 pruefsumme.update(block)
                             geschrieben += len(block)
@@ -371,8 +376,8 @@ def herunterladen(info: UpdateInfo, ziel_ordner: str, *,
                                 fortschritt(geladen + geschrieben, gesamt)
                 except urllib.error.HTTPError as fehler:
                     raise UpdateFehler("http", "HTTP %d: %s" % (fehler.code, teil.url)) from fehler
-                except (urllib.error.URLError, OSError, TimeoutError) as fehler:
-                    raise UpdateFehler("netz", str(fehler)) from fehler
+                except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as fehler:
+                    raise UpdateFehler("netz", str(fehler) or type(fehler).__name__) from fehler
                 if teil.hash and pruefsumme is not None and pruefsumme.hexdigest() != teil.hash:
                     raise UpdateFehler("hash", "Teil %d: %s" % (nummer + 1, teil.url))
                 if teil.groesse and geschrieben != teil.groesse:

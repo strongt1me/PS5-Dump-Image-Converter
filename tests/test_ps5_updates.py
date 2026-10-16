@@ -9,6 +9,7 @@ YouTube: ein Paket, zwei Teile).
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import http.server
 import json
@@ -17,6 +18,7 @@ import socketserver
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -403,6 +405,143 @@ class HolenTests(unittest.TestCase):
             with self.assertRaises(pu.UpdateFehler) as ctx:
                 pu.holen(server.url("/x"), 10_000_000, abbruch=lambda: True)
         self.assertEqual("ps5upd.abgebrochen", str(ctx.exception))
+
+
+def _eigener_server(antwort) -> tuple:
+    """Ein Server, dessen Antwort ``antwort(handler)`` selbst schreibt. Gibt ``(httpd, port)`` zurueck."""
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_a):
+            pass
+
+        def do_GET(self):  # noqa: N802
+            antwort(self)
+
+    class Ruhig(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True
+
+    httpd = Ruhig(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, httpd.server_address[1]
+
+
+class RobustheitTests(unittest.TestCase):
+    """Antworten, die ``urllib`` nicht als ``URLError``/``OSError`` melden (``http.client.HTTPException``),
+    ein Fehler in einem Faden und ein volles Laufwerk."""
+
+    def setUp(self):
+        hosts = mock.patch.object(pu, "ERLAUBTE_HOSTS", ("127.0.0.1",))
+        hosts.start()
+        self.addCleanup(hosts.stop)
+        self.tmp = tempfile.TemporaryDirectory(prefix="ps5upd_robust_")
+        self.addCleanup(self.tmp.cleanup)
+        self.ziel = os.path.join(self.tmp.name, "Update", "Spiel.pkg")
+
+    def _starten(self, antwort) -> int:
+        httpd, port = _eigener_server(antwort)
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        return port
+
+    def test_abgerissene_chunked_antwort_wird_wiederholt(self):
+        daten = os.urandom(200_000)
+        zaehler = [0]
+
+        def antwort(h):
+            zaehler[0] += 1
+            h.send_response(200)
+            h.send_header("Transfer-Encoding", "chunked")
+            h.end_headers()
+            if zaehler[0] == 1:
+                h.wfile.write(b"%x\r\n" % 1000 + daten[:1000] + b"\r\n")   # ein Stueck, dann reisst es ab
+                return
+            h.wfile.write(b"%x\r\n" % len(daten) + daten + b"\r\n0\r\n\r\n")
+
+        port = self._starten(antwort)
+        manifest = pu.Manifest(len(daten), [pu.Teil("http://127.0.0.1:%d/t" % port, 0, len(daten),
+                                                    hashlib.sha256(daten).hexdigest())])
+        with mock.patch.object(pu.time, "sleep"):
+            pu.paket_laden(manifest, self.ziel, faeden=1, versuche=2)
+        self.assertEqual(daten, Path(self.ziel).read_bytes())
+        self.assertEqual(2, zaehler[0])
+
+    def test_kaputte_statuszeile_wird_zum_updatefehler(self):
+        port = self._starten(lambda h: h.wfile.write(b"KEIN HTTP\r\n\r\n"))
+        with self.assertRaises(pu.UpdateFehler) as ctx:
+            pu.holen("http://127.0.0.1:%d/x" % port, 1000)
+        self.assertTrue(str(ctx.exception).startswith("ps5upd.netz|"), str(ctx.exception))
+
+    def test_fehler_in_einem_teil_haelt_die_anderen_faeden_an(self):
+        gross = 24 * 1024 * 1024
+
+        def antwort(h):
+            if h.path == "/schnell":
+                h.send_error(404)
+                return
+            h.send_response(200)
+            h.send_header("Content-Length", str(gross))
+            h.end_headers()
+            block = b"x" * (1024 * 1024)
+            try:
+                for _ in range(gross // len(block)):
+                    h.wfile.write(block)
+                    h.wfile.flush()
+                    time.sleep(0.25)
+            except OSError:
+                pass
+
+        port = self._starten(antwort)
+        manifest = pu.Manifest(10 + gross, [
+            pu.Teil("http://127.0.0.1:%d/schnell" % port, 0, 10, "a" * 64),
+            pu.Teil("http://127.0.0.1:%d/langsam" % port, 10, gross, "b" * 64)])
+        start = time.monotonic()
+        with self.assertRaises(pu.UpdateFehler) as ctx:
+            pu.paket_laden(manifest, self.ziel, faeden=2, versuche=0)
+        dauer = time.monotonic() - start
+        self.assertTrue(str(ctx.exception).startswith(("ps5upd.netz|", "ps5upd.http|")), str(ctx.exception))
+        # Ohne den Halt liefe der zweite Faden die ganzen 24 Blocke zu Ende (rund 6 s).
+        self.assertLess(dauer, 3.0, "der zweite Faden lief weiter: %.1f s" % dauer)
+
+    def test_volles_laufwerk_ist_kein_netzfehler_und_wird_nicht_wiederholt(self):
+        daten = os.urandom(100_000)
+        port = self._starten(lambda h: (h.send_response(200),
+                                        h.send_header("Content-Length", str(len(daten))),
+                                        h.end_headers(), h.wfile.write(daten)))
+        manifest = pu.Manifest(len(daten), [pu.Teil("http://127.0.0.1:%d/t" % port, 0, len(daten),
+                                                    hashlib.sha256(daten).hexdigest())])
+        echt = open
+
+        class _Voll:
+            def __init__(self, datei):
+                self.datei = datei
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                self.datei.close()
+                return False
+
+            def seek(self, *a):
+                return self.datei.seek(*a)
+
+            def write(self, _block):
+                raise OSError(errno.ENOSPC, "No space left on device")
+
+            def flush(self):
+                self.datei.flush()
+
+        def falsches_open(pfad, modus="r", *a, **k):
+            if modus == "r+b":
+                return _Voll(echt(pfad, modus, *a, **k))
+            return echt(pfad, modus, *a, **k)
+
+        with mock.patch.object(pu, "open", falsches_open, create=True), \
+                mock.patch.object(pu.time, "sleep") as schlaf:
+            with self.assertRaises(pu.UpdateFehler) as ctx:
+                pu.paket_laden(manifest, self.ziel, faeden=1, versuche=3)
+        self.assertTrue(str(ctx.exception).startswith("ps5upd.platz"), str(ctx.exception))
+        schlaf.assert_not_called()
 
 
 if __name__ == "__main__":

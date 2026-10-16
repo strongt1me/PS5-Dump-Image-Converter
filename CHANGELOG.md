@@ -9,6 +9,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 ## v1.9.82 – 16.10.2026
 
 - **Aktualisiert:** NeoEnabler 0.3.0 (Seite „Games“, PS4-Pro-Modus und 8 GiB je Spiel automatisch), PS5 Cooling & System Center – Pro 1.68.1 und PS5Upload 7.0.26.
+- **Behoben:** Eine unlesbare oder abgerissene Antwort von Server oder Konsole löst keinen rohen Fehler mehr aus, ein Sony-Download hält bei einem Fehler sofort an, und ein volles Laufwerk wird als solches gemeldet.
 
 ## v1.9.81 – 16.10.2026
 

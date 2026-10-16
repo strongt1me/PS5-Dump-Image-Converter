@@ -42,6 +42,7 @@ kein ftpsrv, geht elfldr wie zuvor ueber die Weboberflaeche hinauf.
 from __future__ import annotations
 
 import ftplib
+import http.client
 import io
 import json
 import logging
@@ -186,8 +187,13 @@ def _pldmgr_ruf(host: str, pfad: str, koerper: bytes | None = None,
     ruf.add_header("X-PLDMGR-Request", "1")
     if koerper is not None:
         ruf.add_header("Content-Type", "application/octet-stream")
-    with urllib.request.urlopen(ruf, timeout=timeout) as antwort:
-        return antwort.read(8 * 1024 * 1024).decode("utf-8", "replace")
+    try:
+        with urllib.request.urlopen(ruf, timeout=timeout) as antwort:
+            return antwort.read(8 * 1024 * 1024).decode("utf-8", "replace")
+    except http.client.HTTPException as fehler:
+        # Unlesbare Statuszeile oder abgerissene Antwort ist kein OSError - die Aufrufer fangen OSError.
+        raise OSError("Antwort des Payload Managers nicht lesbar: %s"
+                      % (fehler or type(fehler).__name__)) from fehler
 
 
 def pldmgr_ablageort(host: str, name: str, port: int = PLDMGR_PORT) -> str:

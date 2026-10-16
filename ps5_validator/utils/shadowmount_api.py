@@ -30,6 +30,7 @@ hinweisen, bevor es dazu raet.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -116,6 +117,9 @@ def _fragen(pfad: str, nutzlast: dict | None = None, *,
         return Antwort(False, {}, "nicht erreichbar (%s)" % (fehler.reason,))
     except OSError as fehler:
         return Antwort(False, {}, "nicht erreichbar (%s)" % (fehler,))
+    except http.client.HTTPException as fehler:
+        # Unlesbare Statuszeile oder abgerissene Antwort: kein OSError, aber auch kein Grund zu werfen.
+        return Antwort(False, {}, "keine gueltige HTTP-Antwort (%s)" % (fehler or type(fehler).__name__,))
 
     if len(roh) > GROESSTE_ANTWORT:
         return Antwort(False, {}, "Antwort groesser als %d Bytes" % GROESSTE_ANTWORT)
