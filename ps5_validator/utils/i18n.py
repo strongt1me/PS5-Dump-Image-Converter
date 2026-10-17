@@ -423,7 +423,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'dialog.title.preflight_failed': {'de': 'Preflight fehlgeschlagen', 'en': 'Preflight check failed'},
     'dialog.msg.preflight_failed': {'de': 'Der Vorgang wurde vor dem Start gestoppt:\n\n- {errors}', 'en': 'The operation was stopped before starting:\n\n- {errors}'},
     'dialog.title.preflight_warnings': {'de': 'Preflight-Warnungen', 'en': 'Preflight warnings'},
-    'dialog.msg.preflight_warnings': {'de': 'Es wurden Risiken erkannt (Start wird fortgesetzt):\n\n- {warnings}', 'en': 'Risks were detected (start will continue anyway):\n\n- {warnings}'},
+    'dialog.msg.preflight_warnings': {'de': 'Es wurden Risiken erkannt:\n\n- {warnings}\n\nTrotzdem fortfahren?', 'en': 'Risks were detected:\n\n- {warnings}\n\nContinue anyway?'},
     'dialog.title.resume_found': {'de': 'Wiederaufnahme gefunden', 'en': 'Resume point found'},
     'dialog.msg.resume_found': {'de': 'Es wurde ein unterbrochener Lauf gefunden.\n\nStatus: {state}\nStage: {stage}\nLetzter Stand: {progress}\nZeitpunkt: {timestamp}\n\nSoll versucht werden, den Lauf wieder aufzunehmen?', 'en': 'An interrupted run was found.\n\nStatus: {state}\nStage: {stage}\nLast progress: {progress}\nTime: {timestamp}\n\nShould the run be resumed?'},
     'dialog.msg.target_dir_not_found': {'de': 'Zielverzeichnis existiert nicht:\n{path}', 'en': 'Target directory does not exist:\n{path}'},

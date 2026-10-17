@@ -25581,10 +25581,11 @@ class PS5ConverterGUI:
             return
         self._preflight_warnings = list(pf_warnings)
         if pf_warnings:
-            messagebox.showwarning(
+            if not messagebox.askokcancel(
                 self._t("dialog.title.preflight_warnings"),
                 self._t("dialog.msg.preflight_warnings", warnings="\n- ".join(pf_warnings)),
-            )
+            ):
+                return
 
         # Checkpoint/Resume: bei passendem Vorgängerlauf Wiederaufnahme anbieten.
         self._active_resume_checkpoint = None

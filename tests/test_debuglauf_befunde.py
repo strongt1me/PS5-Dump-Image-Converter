@@ -4017,6 +4017,59 @@ class FruehereEinbautenTests(_TempTest):
         self.assertNotIn("preflight.einbau_schon_im_dump", warnungen)
 
 
+class PreflightWarnungAbbruchTests(_TempTest):
+    """Preflight-Warnungen lassen seit dem 17.10.2026 abbrechen statt nur zu informieren.
+
+    Bis dahin war das Warnungs-Fenster ein reines OK-Fenster, dessen Text
+    sogar "Start wird fortgesetzt" sagte - wer beim gefundenen Rest eines
+    frueheren Einbaus lieber abgebrochen haette, hatte keine Wahl. Gemessen
+    am echten ``_launch_task``, mit ``_run_preflight_checks`` ersetzt (die
+    Fundlogik selbst haelt ``FruehereEinbautenTests`` fest) und
+    ``_platz_klaeren`` als Marke dafuer, ob der Lauf die Warnung ueberhaupt
+    hinter sich gelassen hat.
+    """
+
+    def _starten(self, antwort: bool) -> "tuple[bool, int]":
+        app = _app()
+        dump = os.path.join(self.basis, "PPSA00001-app")
+        os.makedirs(os.path.join(dump, "sce_sys"))
+        ziel = os.path.join(self.basis, "ziel")
+        vorher = (app.current_mode.get(), app.source_path.get(), app.dest_path.get())
+
+        def _zurueck():
+            app.current_mode.set(vorher[0])
+            app.source_path.set(vorher[1])
+            app.dest_path.set(vorher[2])
+        self.addCleanup(_zurueck)
+
+        app.current_mode.set("ampr_manager")
+        app.source_path.set(dump)
+        app.dest_path.set(ziel)
+        erreicht: list = []
+
+        def _platz(*_a, **_k):
+            erreicht.append(True)
+            return False
+
+        with mock.patch.object(app, "_run_preflight_checks",
+                               return_value=([], ["testwarnung"])), \
+                mock.patch.object(APP, "messagebox") as box, \
+                mock.patch.object(app, "_platz_klaeren", side_effect=_platz):
+            box.askokcancel.return_value = antwort
+            app._launch_task()
+        return bool(erreicht), box.askokcancel.call_count
+
+    def test_abbrechen_haelt_vor_dem_start_an(self) -> None:
+        erreicht, aufrufe = self._starten(False)
+        self.assertEqual(aufrufe, 1)
+        self.assertFalse(erreicht)
+
+    def test_ok_laesst_weiterlaufen(self) -> None:
+        erreicht, aufrufe = self._starten(True)
+        self.assertEqual(aufrufe, 1)
+        self.assertTrue(erreicht)
+
+
 class OhneOsfmountTests(_TempTest):
     """Die Vorabpruefung darf OSFMount nicht mehr verlangen (18.09.2026).
 
