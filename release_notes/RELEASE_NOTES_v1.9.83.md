@@ -12,7 +12,7 @@
 
 ## Behoben
 
-- Ein nicht mögliches Zielformat wird jetzt gemeldet statt klanglos zu wechseln, und verirrte Zwischendateien liegen jetzt im Arbeitsordner statt im System-Temp.
+- Ein nicht mögliches Zielformat wird jetzt gemeldet statt klanglos zu wechseln, verirrte Zwischendateien liegen jetzt im Arbeitsordner statt im System-Temp, und das Warnungs-Fenster vor dem Start lässt sich jetzt auch abbrechen statt nur zu informieren.
 - Eine unlesbare oder abgerissene Antwort von Server oder Konsole löst keinen rohen Fehler mehr aus, ein Sony-Download hält bei einem Fehler sofort an, und ein volles Laufwerk wird als solches gemeldet.
 
 ## Downloads

@@ -10,7 +10,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 - **Neu:** PKG/FPKG-Bereich deutlich erweitert: Pakete direkt bauen (zwei wählbare Baumeister) mit Backport, Mindest-Firmware, Patch-Modus und Kompressionsoptionen; dazu Spiel-Detail-Fenster, Datei-Browser für Pakete und ein eigener Temp-Ordner.
 - **Geändert:** PlayGo lässt sich jetzt auch ohne AMPR EMU einbauen, die Sammelkonvertierung erlaubt Dump-Ordner-Ziele jetzt auch mit Einbau, und AMPR EMU Manager ist über die Kommandozeile wieder erreichbar.
-- **Behoben:** Ein nicht mögliches Zielformat wird jetzt gemeldet statt klanglos zu wechseln, und verirrte Zwischendateien liegen jetzt im Arbeitsordner statt im System-Temp.
+- **Behoben:** Ein nicht mögliches Zielformat wird jetzt gemeldet statt klanglos zu wechseln, verirrte Zwischendateien liegen jetzt im Arbeitsordner statt im System-Temp, und das Warnungs-Fenster vor dem Start lässt sich jetzt auch abbrechen statt nur zu informieren.
 
 ## v1.9.82 – 16.10.2026
 
