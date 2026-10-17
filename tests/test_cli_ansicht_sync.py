@@ -14,11 +14,13 @@ Zwei Waechter:
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HAUPTDATEI = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -104,6 +106,56 @@ class RunCliNutztAnsichtsSync(unittest.TestCase):
             "_format_hinweis_setzen(" in rest or "_bauform_sichtbarkeit_setzen(" in rest,
             "Nach dem Setzen des Zielformats muss die BAUFORM-Sichtbarkeit "
             "nachgezogen werden.")
+
+    def test_warnt_wenn_das_format_still_wechselt(self) -> None:
+        """17.10.2026: '--format folder' ohne AMPR EMU/BACKPORT wurde klanglos zu '.ffpfsc'.
+
+        Gemessen an einem echten Dump (PPSA19015 Arcade Game Zone, 618 MB): ohne jede
+        Integration lief die Aufgabe durch, aber das Protokoll sagte nirgends, dass
+        statt "Dump-Ordner" tatsaechlich ".ffpfsc" entstand - erst die Ausgabedatei
+        verriet es. ``_on_integration_changed`` (ueber ``_refresh_target_format_options``)
+        wirft ein nicht mehr gueltiges Label auf den ersten Eintrag zurueck; _run_cli
+        muss das danach erkennen und melden, statt es durchzulassen (Projektregel
+        "keine stillen Aktionen").
+        """
+        pos_integration = self.rumpf.find("_on_integration_changed(")
+        self.assertGreater(pos_integration, -1, "_on_integration_changed fehlt in _run_cli")
+        vorher = self.rumpf[:pos_integration]
+        nachher = self.rumpf[pos_integration:]
+        self.assertIn("angefordertes_label", vorher,
+                     "Das angeforderte Format muss VOR der Aktualisierung gemerkt werden - "
+                     "sonst ist der Vergleich danach gegen sich selbst.")
+        self.assertIn("target_format.get() != angefordertes_label", nachher,
+                     "_run_cli muss nach _on_integration_changed pruefen, ob das "
+                     "Zielformat noch das angeforderte ist.")
+        self.assertIn("WARNUNG", nachher[nachher.find("target_format.get() != angefordertes_label"):],
+                     "Ein stiller Formatwechsel braucht eine gedruckte Meldung.")
+
+
+class AmprManagerUeberCliErreichbar(unittest.TestCase):
+    """17.10.2026: '--mode ampr_manager' war seit der Umbenennung von Aufgabe 7 (12.10.2026) nicht mehr
+    erreichbar - valid_modes kam nur noch aus _MODE_OPTIONS (den acht Aufgaben der Seitenleiste), und
+    ampr_manager steht seitdem nicht mehr darin (KONSOLE Knopf 9). Jeder --ampr-*-Aufruf endete mit
+    "[FEHLER] Unbekannter Modus: ampr_manager", bevor die eigentliche --ampr-action-Pruefung je lief -
+    echt am Programm gemessen, nicht nur am Quelltext."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+
+    def test_ampr_manager_kommt_bis_zur_aktionspruefung(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="ampr_cli_quelle_") as quelle:
+            args = self.haupt._build_cli_parser().parse_args(
+                ["--cli", "--mode", "ampr_manager", "--source", quelle])
+            ausgabe = io.StringIO()
+            with redirect_stderr(ausgabe):
+                rc = self.haupt._run_cli(args)
+        text = ausgabe.getvalue()
+        self.assertNotIn("Unbekannter Modus", text,
+                         "ampr_manager muss die Modus-Pruefung bestehen (nur ueber --mode waehlbar).")
+        self.assertIn("--ampr-action", text,
+                     "Ohne --ampr-action soll die Aktionspruefung des AMPR EMU Manager greifen.")
+        self.assertEqual(2, rc)
 
 
 if __name__ == "__main__":

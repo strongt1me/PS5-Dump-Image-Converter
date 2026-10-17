@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.82</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.83</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.82</span>
-      <span class="marke">As of 16 October 2026</span>
+      <span class="marke">Version v1.9.83</span>
+      <span class="marke">As of 17 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -486,6 +486,16 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Can I build a PKG myself from a game folder, and what does the "builder" do?</h3>
+    <p>Yes, in <strong>PS5 PKG Dump &amp; Image Converter</strong> (task 7 – PKG / FPKG, page FPKG): choose the game folder, the target folder, the <strong>Package</strong> tile, then <em>Start conversion</em>. In <strong>Options</strong>, the <strong>builder</strong> sets which tool builds it – <strong>LibProsperoPkg</strong> (default, with compression, firmware and backport options in the <em>Build</em> tab) or <strong>ProsperoPkgTool</strong> (second package builder, MIT license). The <em>Build</em> tab also lets you embed <strong>BACKPORT</strong> right before the build, set a <strong>minimum firmware</strong>, or check <strong>patch mode</strong> for an update PKG.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What do "Game Details" and "Show files" do?</h3>
+    <p><strong>Game Details</strong> (with a game folder selected) opens a window with the game's signed SELF/ELF files, the entries from <code>sce_sys/activity.json</code>, and the trophy sets found. <strong>Show files</strong> (with a package selected) shows the inner layout of the <code>.pkg</code> as an expandable tree and lets you extract single files or whole subtrees without unpacking the whole package.</p>
+  </div>
+
+  <div class="frage">
     <h3>What do Fast, Balanced, Maximum and Low RAM do?</h3>
     <p>The four buttons under <strong>PRESET</strong> (in the CONVERT view, next to the checkboxes at the bottom of the card) set the compression level and the core count in one go: <em>Fast</em> level 3 with all cores, <em>Balanced</em> level 6 and <em>Maximum</em> level 9 with half the cores, <em>Low RAM</em> level 3 with one core. The block size stays at 65536. Measured on a 664 MB dump, levels 1 and 9 differ by only about 5&nbsp;% in image size (PS5 game data hardly compresses); more cores shorten the time but need more memory. How much memory is free during a run is shown by the live display below the log.</p>
   </div>
@@ -668,8 +678,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.82</strong></span>
-  <span>As of 16 October 2026 · Only for content you own and acquired legally</span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.83</strong></span>
+  <span>As of 17 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 
 </body>

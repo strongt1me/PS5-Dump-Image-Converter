@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.82):** Neue Fassungen von NeoEnabler, PS5 Cooling & System Center und PS5Upload in der Payload-Sammlung; davor offizielle PS5-Updates von Sony direkt aus Spiel-Info, dazu drei neue ruhige Designs – „Ruhig Graphit“, „Mitternachtsblau“ und „Hell und klar“ –, Asset-Packs mit wählbarer LZ4-Stufe und einem Fenster zum Prüfen und Entpacken, ein eigener Arbeitsordner im Wurzelverzeichnis von C: ohne gewählten Temp-Ordner, sieben aktualisierte Payloads und vorsichtigeres Einlesen fremder Daten.
+> **Kurz zum aktuellen Stand (v1.9.83):** Der Bereich PKG/FPKG kann jetzt Pakete selbst bauen (mit Backport, Firmware- und Kompressionsoptionen, Spiel-Details und Datei-Browser), PlayGo und die Sammelkonvertierung wurden flexibler, und zwei stille Aussetzer beim Zielformat und bei Zwischendateien sind behoben.
 
 ---
+
+## v1.9.83 – 17.10.2026
+
+- **Neu:** PKG/FPKG-Bereich deutlich erweitert: Pakete direkt bauen (zwei wählbare Baumeister) mit Backport, Mindest-Firmware, Patch-Modus und Kompressionsoptionen; dazu Spiel-Detail-Fenster, Datei-Browser für Pakete und ein eigener Temp-Ordner.
+- **Geändert:** PlayGo lässt sich jetzt auch ohne AMPR EMU einbauen, die Sammelkonvertierung erlaubt Dump-Ordner-Ziele jetzt auch mit Einbau, und AMPR EMU Manager ist über die Kommandozeile wieder erreichbar.
+- **Behoben:** Ein nicht mögliches Zielformat wird jetzt gemeldet statt klanglos zu wechseln, und verirrte Zwischendateien liegen jetzt im Arbeitsordner statt im System-Temp.
 
 ## v1.9.82 – 16.10.2026
 

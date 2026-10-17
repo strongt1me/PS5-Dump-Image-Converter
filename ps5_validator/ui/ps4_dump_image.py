@@ -42,6 +42,7 @@ from ps5_validator.utils import ps4pkg_aufgaben as au
 from ps5_validator.utils import ps4pkg_bibliothek as bib
 from ps5_validator.utils import ps4pkg_ota as ota
 from ps5_validator.utils import ps4pkg_updates as upd
+from ps5_validator.utils import ps5_pkg_werkzeug as pkgwz
 
 logger = logging.getLogger("PS5Converter.ui.ps4_dump_image")
 
@@ -53,7 +54,6 @@ QUELLE_DATEIEN = "pkg_file"
 QUELLE_DUMP = "dump_dir"
 
 #: Die Einstellungen dieses Fensters (``_load_setting``/``_save_setting``).
-EINST_QUELLE = "ps4dib_quelle"
 EINST_ART = "ps4dib_quelle_art"
 EINST_ZIEL = "ps4dib_ziel"
 EINST_FORMAT = "ps4dib_format"
@@ -188,7 +188,7 @@ class Ps4DumpImageFenster:
         self.art_var = tk.StringVar(value=str(self._einstellung(EINST_ART, QUELLE_ORDNER)))
         if self.art_var.get() not in (QUELLE_ORDNER, QUELLE_DATEIEN, QUELLE_DUMP):
             self.art_var.set(QUELLE_ORDNER)
-        self.quelle_var = tk.StringVar(value=str(self._einstellung(EINST_QUELLE, "") or ""))
+        self.quelle_var = tk.StringVar(value="")
         if vorgabe:
             # Mehrere Pakete (aus der Bibliothek) kommen mit ``os.pathsep`` getrennt.
             self.art_var.set(QUELLE_DATEIEN)
@@ -237,6 +237,9 @@ class Ps4DumpImageFenster:
         rolle.pack(side="right", fill="y")
         self.liste.configure(yscrollcommand=rolle.set)
         self.liste.bind("<<TreeviewSelect>>", lambda _e: self._spielinfo_zeigen(), add="+")
+        self.playgo_hinweis = tk.Label(koerper, text="", font=(F, pt(9), "bold"), bg=c["bg_main"],
+                                       fg=c.get("fg_warning", "#f0a32e"), anchor="w")
+        self.playgo_hinweis.pack(fill="x", pady=(4, 0))
 
         # ── Ziel und Einstellungen ──────────────────────────────────────
         tk.Label(koerper, text=t("ps4pkg.output_label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
@@ -405,7 +408,6 @@ class Ps4DumpImageFenster:
             return
         art = self.art_var.get()
         self._merken(EINST_ART, art)
-        self._merken(EINST_QUELLE, self.quelle_var.get().strip())
         self.liste.delete(*self.liste.get_children())
         self.spiele = {}
         self.pakete = []
@@ -641,6 +643,13 @@ class Ps4DumpImageFenster:
         except Exception as exc:  # noqa: BLE001
             logger.debug("Spiel Info nicht anzeigbar: %s", exc)
         self._online_ergaenzen(s, meta, cover)
+        # PlayGo-Hinweis: nur pruefbar, wenn ein entpackter Dump-Ordner vorliegt.
+        try:
+            merkmal = pkgwz.playgo_erklaert_ordner(s.dump_ordner) if s.dump_ordner else ""
+        except Exception:  # noqa: BLE001
+            merkmal = ""
+        self.playgo_hinweis.configure(
+            text=self.t("pkg.playgo_hinweis", datei=merkmal) if merkmal else "")
 
     def _online_ergaenzen(self, s: "ab.Spiel", meta: dict, lokal_cover) -> None:
         """Fehlende Angaben (Hersteller, Genre, Erscheinungsdatum, Cover) online nachtragen - derselbe Weg wie bei den

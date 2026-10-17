@@ -224,6 +224,51 @@ def passcode_gueltig(passcode: str) -> bool:
     return passcode == "" or bool(PASSCODE_MUSTER.match(passcode))
 
 
+_FW_VERSION_MUSTER = re.compile(r"^(\d{1,2})[.,](\d{2})$")
+
+
+def fw_hex(version: str) -> str:
+    """Konvertiert eine FW-Versionsangabe in den Hex-Wert fuer param.json.
+
+    Beispiele: ``"9.00"`` -> ``"0x0900000000000000"``, ``"11.20"`` -> ``"0x0b14000000000000"``.
+    Gibt ``""`` zurueck, wenn ``version`` leer oder ungueltiges Format ist.
+    """
+    m = _FW_VERSION_MUSTER.match(str(version).strip())
+    if not m:
+        return ""
+    return "0x%02x%02x000000000000" % (int(m.group(1)), int(m.group(2)))
+
+
+def fw_version_gueltig(version: str) -> bool:
+    """``True``, wenn ``version`` leer (kein Override) oder eine gueltige FW-Version ist."""
+    v = str(version).strip()
+    return v == "" or bool(_FW_VERSION_MUSTER.match(v))
+
+
+def param_json_setzen(ordner: str, schluessel: str, wert: str) -> str:
+    """Aendert ein Feld in ``sce_sys/param.json`` des Spielordners in-place.
+
+    Gibt den alten Wert (als String) zurueck, damit er wiederhergestellt werden kann.
+    Wirft ``Fehler``, wenn die Datei nicht gelesen oder geschrieben werden kann.
+    """
+    pfad = os.path.join(ordner, "sce_sys", "param.json")
+    if not os.path.isfile(pfad):
+        raise Fehler("param.json nicht gefunden: %s" % pfad)
+    try:
+        with open(pfad, encoding="utf-8", errors="replace") as f:
+            daten = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise Fehler("param.json lesen fehlgeschlagen: %s" % exc) from exc
+    alt = str(daten.get(schluessel, ""))
+    daten[schluessel] = wert
+    try:
+        with open(pfad, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(daten, f, ensure_ascii=False, indent=2)
+    except OSError as exc:
+        raise Fehler("param.json schreiben fehlgeschlagen: %s" % exc) from exc
+    return alt
+
+
 def _passcode_args(passcode: str) -> list[str]:
     return ["--passcode", passcode] if passcode else []
 
@@ -411,8 +456,10 @@ TITLE_ID = re.compile(r"^[A-Z]{4}\d{5}$")
 
 
 def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: str, titel: str = "",
-          version: str = "01.000.000", stufe: int = 0, kerne: int = 0, fake_signieren: bool = True,
-          ampr_index: bool = True, passcode: str = "", temp: str | None = None, zeile: _Zeile | None = None,
+          version: str = "01.000.000", stufe: int = 0, kerne: int = 0, modus: str = "kraken",
+          playgo_chunks: int = 1, deterministisch: bool = False, regen_playgo: bool = False,
+          fake_signieren: bool = True, ampr_index: bool = True, passcode: str = "",
+          temp: str | None = None, zeile: _Zeile | None = None,
           fortschritt: Callable[[int, str], None] | None = None, abbruch: _Abbruch | None = None,
           popen_extra: dict | None = None) -> str:
     """Baut aus einem Spielordner ein Debug-Paket (``build``) und gibt den Pfad der ``.pkg`` zurueck.
@@ -431,15 +478,24 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: s
     if not TITLE_ID.match(title_id):
         raise Fehler("Ungueltige Title-ID: %r" % title_id)
     Path(ziel).mkdir(parents=True, exist_ok=True)
+    modus_norm = modus if modus in ("none", "zlib", "kraken") else "kraken"
     argumente = (["build", quelle, ziel, "--content-id", content_id, "--title-id", title_id, "--version", version,
-                 "--mode", "kraken", "--kraken-backend", "builtin", "--level", str(int(stufe))]
+                 "--mode", modus_norm, "--level", str(int(stufe))]
                 + _passcode_args(passcode))
+    if modus_norm == "kraken":
+        argumente += ["--kraken-backend", "builtin"]
     if titel:
         argumente += ["--title", titel]
     if temp:
         argumente += ["--temp", temp]
     if kerne and int(kerne) > 0:
         argumente += ["--parallelism", str(int(kerne))]
+    if playgo_chunks and int(playgo_chunks) > 1:
+        argumente += ["--playgo-chunks", str(int(playgo_chunks))]
+    if deterministisch:
+        argumente.append("--deterministic")
+    if regen_playgo:
+        argumente.append("--regen-playgo")
     if not fake_signieren:
         argumente.append("--no-fake-sign")
     if not ampr_index:
@@ -469,6 +525,44 @@ def baum(werkzeug: str, paket: str, popen_extra: dict | None = None, *, passcode
         raise Fehler(_fehlertext(aus))
     eintraege = _json_aus(aus).get("entries", [])
     return [e for e in eintraege if isinstance(e, dict) and e.get("path")]
+
+
+def mitglieder_extrahieren(werkzeug: str, paket: str, ziel: str, pfade: "list[str]", *,
+                            passcode: str = "", zeile: "_Zeile | None" = None,
+                            abbruch: "_Abbruch | None" = None,
+                            popen_extra: "dict | None" = None,
+                            arbeitsordner: str | None = None) -> None:
+    """Entpackt nur die genannten Pfade aus dem Paket (``extract-inner --members``).
+
+    ``pfade`` ist eine Liste relativer Pfade (wie von :func:`baum` geliefert), z. B.
+    ``["/app0/eboot.bin", "/sce_sys/param.json"]``. Ein Verzeichnispfad entpackt den
+    ganzen Teilbaum.
+
+    ``arbeitsordner``: wo die (sofort wieder geloeschte) Mitgliederliste entsteht - wie
+    bei den anderen Zwischendateien dieses Moduls der konfigurierte Arbeitsordner statt
+    des System-Temp, leer/``None`` faellt auf System-Temp zurueck (Nutzerwunsch
+    17.10.2026: alle temporaeren Dateien dorthin, nicht nur die groesseren).
+
+    Raises:
+        Fehler: Fehler des Werkzeugs oder beim Abbruch (Text ``"abgebrochen"``).
+    """
+    import tempfile
+    os.makedirs(ziel, exist_ok=True)
+    fd, liste = tempfile.mkstemp(prefix="ps5conv_mitglieder_", suffix=".txt", dir=arbeitsordner or None)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write("\n".join(pfade) + "\n")
+        rc, aus = laufen(werkzeug, ["extract-inner", paket, ziel, "--members", liste]
+                         + _passcode_args(passcode), zeile=zeile, abbruch=abbruch, popen_extra=popen_extra)
+    finally:
+        try:
+            os.unlink(liste)
+        except OSError:
+            pass
+    if rc == -1:
+        raise Fehler("abgebrochen")
+    if rc != 0:
+        raise Fehler(_fehlertext(aus))
 
 
 def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zeile: _Zeile | None = None,
@@ -614,3 +708,112 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zei
                 os.remove(liste)
             except OSError:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# PlayGo-Erkennung (seit v1.9.83)
+# ---------------------------------------------------------------------------
+
+_PLAYGO_MERKMALE: tuple[str, ...] = (
+    "sce_sys/playgo-scenario.json",
+    "sce_sys/playgo-chunk.dat",
+    "sce_sys/playgo_chunk.dat",
+)
+
+
+def playgo_erklaert_ordner(pfad: str) -> str:
+    """Prueft einen Dump-Ordner auf PlayGo-Abhaengigkeit.
+
+    Gibt das erste gefundene Merkmal zurueck (relativer Pfad),
+    oder "" wenn keines vorhanden ist.
+    """
+    for merkmal in _PLAYGO_MERKMALE:
+        kandidat = os.path.join(pfad, *merkmal.split("/"))
+        if os.path.isfile(kandidat):
+            return merkmal
+    return ""
+
+
+def _playgo_merkmal_in(pfade: "list[str]") -> str:
+    """Gibt das erste PlayGo-Merkmal zurueck, das in der Pfadliste enthalten ist."""
+    for merkmal in _PLAYGO_MERKMALE:
+        m = merkmal.lower()
+        for p in pfade:
+            p_norm = p.lstrip("/").replace("\\", "/").lower()
+            if p_norm == m or p_norm.endswith("/" + m.split("/")[-1]):
+                return merkmal
+    return ""
+
+
+def _playgo_in_baumtext(ausgabe: str) -> str:
+    """Sucht PlayGo-Merkmale in der Textausgabe von 'mkpfs tree'."""
+    ausgabe_lower = ausgabe.lower()
+    for merkmal in _PLAYGO_MERKMALE:
+        dateiname = merkmal.split("/")[-1].lower()
+        if dateiname in ausgabe_lower:
+            return merkmal
+    return ""
+
+
+def _playgo_in_ffpkg(pfad: str) -> str:
+    """Sucht PlayGo-Merkmale per Stichproben-Scan im Rohdaten-Strom einer .ffpkg-Datei.
+
+    Liest Fenster von 256 KB aus den ersten 64 MB - kein Mount/Dokan noetig.
+    Dateinamen der PlayGo-Merkmale tauchen als Byte-Strings in der UFS2-Struktur auf.
+    """
+    _FENSTER = 256 * 1024
+    _MAX_FRONT = 64 * 1024 * 1024
+    _SCHRITT = 2 * 1024 * 1024
+
+    merkmale_bytes = [m.split("/")[-1].encode() for m in _PLAYGO_MERKMALE]
+    try:
+        groesse = os.path.getsize(pfad)
+        with open(pfad, "rb") as fh:
+            versatz = 0
+            while versatz < min(groesse, _MAX_FRONT):
+                fh.seek(versatz)
+                chunk = fh.read(_FENSTER)
+                if not chunk:
+                    break
+                for i, dateiname in enumerate(merkmale_bytes):
+                    if dateiname in chunk:
+                        return _PLAYGO_MERKMALE[i]
+                versatz += _SCHRITT
+    except Exception:
+        pass
+    return ""
+
+
+def playgo_erklaert_archiv(
+    pfad: str,
+    werkzeug: str = "",
+    wurzeln: "list[str] | None" = None,
+) -> str:
+    """Prueft ein Archiv ohne Entpacken auf PlayGo-Abhaengigkeit.
+
+    Unterstuetzt .pkg (via list-inner), .ffpfsc/.ffpfs/.exfat (via mkpfs tree)
+    und .ffpkg (Raw-Byte-Scan, kein Dokan/Admin noetig).
+    Gibt das erste gefundene Merkmal zurueck, oder "" wenn nicht gefunden oder Fehler.
+    """
+    from ps5_validator.utils import exfat_werkzeuge as ewz
+
+    ext = os.path.splitext(pfad)[1].lower()
+    try:
+        if ext == ".pkg":
+            if not werkzeug or not os.path.isfile(werkzeug):
+                return ""
+            eintraege = baum(werkzeug, pfad)
+            return _playgo_merkmal_in([e.get("path", "") for e in eintraege])
+        if ext in (".ffpfsc", ".ffpfs", ".exfat"):
+            if not wurzeln:
+                return ""
+            eltern = ewz.mkpfs_eltern_suchen(wurzeln)
+            if not eltern:
+                return ""
+            _ok, ausgabe = ewz._mkpfs_ausfuehren(eltern, ["tree", pfad], timeout=15)
+            return _playgo_in_baumtext(ausgabe)
+        if ext == ".ffpkg":
+            return _playgo_in_ffpkg(pfad)
+    except Exception:
+        return ""
+    return ""

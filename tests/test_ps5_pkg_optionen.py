@@ -69,14 +69,27 @@ class RegelTests(unittest.TestCase):
 
     def test_falsche_werte_werden_abgelehnt(self) -> None:
         for schluessel, wert in ((opt.REKURSIV, "ja"), (opt.COVER, 1), (opt.SORTIERUNG, "alter"), (opt.AKTION, "bauen"),
-                                 (opt.FORMAT, "pkg"), (opt.ZIEL, 5), (opt.ORDNER, "C:/x"), (opt.ORDNER, [1, 2]),
-                                 (opt.BIBLIOTHEK, ["", "a"]), ("gibt_es_nicht", True)):
+                                 (opt.FORMAT, "pkg"), (opt.ZIEL, 5), (opt.TEMP_ORDNER, 5),
+                                 (opt.ORDNER, "C:/x"), (opt.ORDNER, [1, 2]),
+                                 (opt.BIBLIOTHEK, ["", "a"]), ("gibt_es_nicht", True),
+                                 (opt.PATCH_MODUS, "ja"), (opt.PATCH_MODUS, 1),
+                                 (opt.MIN_FW_VERSION, "9"), (opt.MIN_FW_VERSION, "abc")):
             with self.subTest(schluessel=schluessel, wert=wert):
                 self.assertIsNone(opt.normalisieren(schluessel, wert))
+
+    def test_patch_modus_und_min_fw_version(self) -> None:
+        self.assertEqual(False, opt.normalisieren(opt.PATCH_MODUS, False))
+        self.assertEqual(True, opt.normalisieren(opt.PATCH_MODUS, True))
+        self.assertEqual("", opt.normalisieren(opt.MIN_FW_VERSION, ""))
+        self.assertEqual("9.00", opt.normalisieren(opt.MIN_FW_VERSION, "9.00"))
+        self.assertEqual("9.00", opt.normalisieren(opt.MIN_FW_VERSION, " 9.00 "))
+        self.assertEqual("9,00", opt.normalisieren(opt.MIN_FW_VERSION, "9,00"))
 
     def test_listen_verlieren_doppelte_und_das_ziel_den_rand(self) -> None:
         self.assertEqual(["a", "b"], opt.normalisieren(opt.ORDNER, ["a", "b", "a"]))
         self.assertEqual("C:/x", opt.normalisieren(opt.ZIEL, "  C:/x "))
+        self.assertEqual("C:/y", opt.normalisieren(opt.TEMP_ORDNER, "  C:/y "))
+        self.assertEqual("", opt.normalisieren(opt.TEMP_ORDNER, ""))
 
     def test_passcode_leer_oder_genau_32_druckbare_zeichen(self) -> None:
         self.assertEqual("", opt.normalisieren(opt.PASSCODE, ""))
@@ -238,7 +251,7 @@ class DialogTests(unittest.TestCase):
 
     # ---------------- Aufbau ----------------
     def test_die_navigation_hat_den_eintrag_optionen(self) -> None:
-        self.assertEqual(["umwandeln", "bibliothek", "optionen"], list(self.f._nav))
+        self.assertEqual(["umwandeln", "bibliothek", "extras", "optionen"], list(self.f._nav))
         self.assertEqual("Optionen", self.f._nav["optionen"][2].cget("text"))
 
     def test_der_eintrag_optionen_ist_anklickbar_und_keine_seite(self) -> None:
@@ -248,10 +261,10 @@ class DialogTests(unittest.TestCase):
         self.assertNotIn("optionen", self.f.seiten, "Optionen ist ein Dialog, keine Seite")
         self.assertIn(self.f.aktuelle_seite, ("umwandeln", "bibliothek"))
 
-    def test_der_dialog_hat_vier_register_und_ein_zweiter_aufruf_holt_ihn_nach_vorn(self) -> None:
+    def test_der_dialog_hat_fuenf_register_und_ein_zweiter_aufruf_holt_ihn_nach_vorn(self) -> None:
         dialog = self._dialog()
-        self.assertEqual(["bibliothek", "darstellung", "ausgabe", "wartung"], list(dialog._register_tabs))
-        self.assertEqual(["Bibliothek", "Darstellung", "Ausgabe & Vorgaben", "Wartung"],
+        self.assertEqual(["bibliothek", "darstellung", "ausgabe", "bau", "wartung"], list(dialog._register_tabs))
+        self.assertEqual(["Bibliothek", "Darstellung", "Ausgabe & Vorgaben", "Bau", "Wartung"],
                          [t.cget("text") for t, _s in dialog._register_tabs.values()])
         self.assertIs(dialog, ui.oeffnen(self.f))
         for schluessel in dialog._register_tabs:
@@ -295,11 +308,29 @@ class DialogTests(unittest.TestCase):
         self.app._save_setting(opt.COVER, False)
         self.app._save_setting(opt.SORTIERUNG, "groesse")
         self.app._save_setting(opt.ORDNER, [self.ordner])
+        self.app._save_setting(opt.TEMP_ORDNER, self.ordner)
         dialog = self._dialog()
         self.assertFalse(dialog.cover_var.get())
         self.assertEqual("Größe", dialog.sort_var.get())
         self.assertEqual([self.ordner], dialog.ordner)
         self.assertEqual(1, dialog.ordner_liste.size())
+        self.assertEqual(self.ordner, dialog.temp_ordner_var.get())
+
+    def test_temp_ordner_ist_leer_solange_niemand_einen_waehlt(self) -> None:
+        """Nutzerwunsch: nur bei Bedarf gesetzt - leer aendert nichts am bisherigen Verhalten."""
+        dialog = self._dialog()
+        self.assertEqual("", dialog.temp_ordner_var.get())
+        dialog.speichern()
+        _pumpen(0.2)
+        self.assertEqual("", self._gespeichert(opt.TEMP_ORDNER))
+
+    def test_ein_gewaehlter_temp_ordner_wird_gespeichert_und_von_arbeitsordner_benutzt(self) -> None:
+        dialog = self._dialog()
+        dialog.temp_ordner_var.set(self.ordner)
+        dialog.speichern()
+        _pumpen(0.2)
+        self.assertEqual(self.ordner, self._gespeichert(opt.TEMP_ORDNER))
+        self.assertEqual(self.ordner, self.f._arbeitsordner())
 
     def test_die_quellenliste_zeigt_die_bibliothek(self) -> None:
         self._laden()

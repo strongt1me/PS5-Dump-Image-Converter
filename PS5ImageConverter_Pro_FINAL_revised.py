@@ -139,8 +139,6 @@ from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
 from ps5_validator.ui import ampr_seite
 from ps5_validator.ui import pkg_fpkg_seite
-from ps5_validator.ui import ps4_dump_image
-from ps5_validator.ui import ps5_pkg_fenster
 from ps5_validator.ui import updates_fenster
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
@@ -722,7 +720,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.82"
+APP_VERSION = "v1.9.83"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -5461,6 +5459,9 @@ class PS5ConverterGUI:
         # Abbild vorher nicht lesen liess.
         self._playgo_geklaert = False
         self._playgo_beim_einbau_fragen = False
+        # Sammelkonvertierung: Vorpruefung klaert Arbeitskopie-Frage fuer alle
+        # Ordner einmalig vorab (None = noch nicht entschieden/Einzellauf).
+        self._batch_arbeitskopie_vorab: bool | None = None
         # Ja in der Umhuell-Rueckfrage: Abbild entpacken, einbauen und wieder
         # zum gewaehlten Container packen (siehe _umhuellenden_weg_klaeren).
         self._umhuellt_neu_packen = False
@@ -8493,7 +8494,7 @@ class PS5ConverterGUI:
         """
         try:
             ampr_an = bool(self._tk_wert("ampr_integrate_var", False))
-            playgo_an = ampr_an and bool(self._tk_wert("ampr_playgo_var", False))
+            playgo_an = bool(self._tk_wert("ampr_playgo_var", False))
             backport_an = bool(self._tk_wert("backport_integrate_var", False))
             pack_an = self._assetpack_gewaehlt()
         except (tk.TclError, RuntimeError):
@@ -8709,9 +8710,20 @@ class PS5ConverterGUI:
             # Regel wie die Auswahlliste (_get_target_options): mit jedem
             # Einbau, nicht nur mit denen von _selbstziel_erlaubt.
             # _integration_gewaehlt liest im Arbeitsfaden den Stand vom Start.
+            #
+            # Kein "mode != batch_convert" hier (anders als in
+            # _get_target_options): Dort stuende es noch vor dem Start, ohne
+            # zu wissen, welchen Typ jede einzelne Quelle hat - die Liste
+            # duerfte sich also nicht nach der ersten richten. Hier dagegen
+            # steht "genau" (der tatsaechliche Typ DIESER Quelle) schon fest;
+            # die Sammelkonvertierung von einem Dump-Ordner mit Einbau in
+            # einen anderen Dump-Ordner war sonst nie erlaubt, obwohl
+            # Aufgabe 1 (pack_folder) denselben Fall anstandslos macht
+            # (Funktionspruefung 17.10.2026 am echten Spiel: "Crazy Chicken
+            # Shooter" mit BACKPORT, Ziel Dump-Ordner, in der
+            # Sammelkonvertierung -> "Quelle und Zielformat sind identisch").
             if genau == "folder":
                 erlaubt = (mode in self._MODE_TARGET_OPTIONS
-                           and mode != "batch_convert"
                            and self._integration_gewaehlt())
             else:
                 erlaubt = (mode in self._MODE_TARGET_OPTIONS
@@ -18409,8 +18421,10 @@ class PS5ConverterGUI:
           Aufgabe 4 (ffpkg_to_ffpfsc)     → .ffpkg Datei
           Aufgabe 5 (batch_convert)       → mehrere Dateien/Ordner beliebigen unterstützten Quelltyps
           Aufgabe 6 (universal_convert)   → Dump-Ordner, .ffpfsc/.ffpfs, .exfat oder .ffpkg
-          Aufgabe 7 (ampr_manager)        → Dump-Ordner, .ffpfsc, .exfat oder .ffpkg (von Aufgabe 1–6)
-          Aufgabe 8 (dump_validator)      → Dump-Ordner, .ffpfsc/.ffpfs, .exfat oder .ffpkg (von Aufgabe 1–7)
+          Aufgabe 8 (dump_validator)      → Dump-Ordner, .ffpfsc/.ffpfs, .exfat oder .ffpkg (von Aufgabe 1–6)
+          ampr_manager (KONSOLE Knopf 9, seit 12.10.2026 keine Aufgabe der Seitenleiste mehr)
+                                          → Dump-Ordner, .ffpfsc, .exfat oder .ffpkg (von Aufgabe 1–6)
+          Aufgabe 7 (pkg_fpkg) hat ihre eigene Seite - diese Quellauswahl betrifft sie nicht.
         """
         mode = self.current_mode.get()
         initial_dir = self._get_source_dialog_initial_dir()
@@ -30009,6 +30023,13 @@ class PS5ConverterGUI:
             # Was dieser Lauf schon geschrieben hat - siehe
             # _batch_ueberschreiben_klaeren.
             self._batch_erzeugte_ziele = set()
+            # Vorab-Antwort fuer die Arbeitskopie-Frage (Vorpruefung);
+            # None bedeutet: noch nicht entschieden (Einzellauf oder keine Ordner).
+            self._batch_arbeitskopie_vorab = None
+            # Vorpruefung: alle Rueckfragen vor dem ersten Byte Arbeit klaeren.
+            if len(sources) > 1 and not self._batch_vorpruefung(sources, dst, target_type):
+                self._param_batch_aktiv = False
+                return False
             # Die Cover der Spiele nebenher vorladen (nur lesen, Bildspeicher der
             # Bibliothek) - beim Wechsel zum naechsten Spiel liegt es dann bereit.
             threading.Thread(target=self._batch_cover_vorladen, args=(list(sources),),
@@ -31500,6 +31521,64 @@ class PS5ConverterGUI:
 
         self._hauptfaden_planen(_vorschau)
 
+    def _batch_vorpruefung(
+        self, sources: "list[str]", dst: str, target_type: str
+    ) -> bool:
+        """Klaert vor dem Batch-Lauf alle Rueckfragen einmalig vorab.
+
+        Gerufen bevor der erste Byte Arbeit beginnt. Gibt True zurueck, wenn
+        der Lauf starten darf; False bedeutet Abbruch durch den Nutzer.
+
+        Was geprueft wird:
+        1. Vorhandene Zieldateien  -> ``_batch_ueberschreiben`` einmalig setzen.
+        2. AMPR-EMU-/BACKPORT-Einbau in Ordner-Quellen ->
+           ``_batch_arbeitskopie_vorab`` einmalig setzen.
+        """
+        if getattr(self, "root", None) is None:
+            # Kein Fenster (z. B. --cli): alle Dialoge entfallen.
+            return True
+
+        # 1) Ueberschreiben-Frage vorab, wenn noch keine Antwort vorliegt und
+        #    mindestens ein Ziel existiert.  Endung-Mapping wie in
+        #    _batch_ueberschreiben_klaeren.
+        if self._batch_ueberschreiben is None:
+            endungen = {
+                "folder": "", "ffpfsc": ".ffpfsc", "ffpfs": ".ffpfs",
+                "exfat": ".exfat", "ffpkg": ".ffpkg",
+            }
+            endung = endungen.get(target_type)
+            if endung is not None:
+                for src in sources:
+                    name = os.path.splitext(os.path.basename(src))[0]
+                    ziel = os.path.join(dst, name + endung)
+                    if not os.path.exists(ziel):
+                        continue
+                    if os.path.normcase(os.path.abspath(ziel)) == \
+                            os.path.normcase(os.path.abspath(src)):
+                        continue
+                    antwort = self._ask_yesno_threadsafe(
+                        self._t("dialog.title.file_already_exists"),
+                        self._t("batch.ueberschreiben_frage", pfad=ziel))
+                    self._batch_ueberschreiben = bool(antwort)
+                    break
+
+        # 2) Arbeitskopie-Frage einmalig stellen, wenn AMPR EMU oder BACKPORT
+        #    aktiv sind, mindestens eine Quelle ein Ordner ist und die
+        #    Einstellung "Arbeitskopie vorher" nicht schon automatisch antwortet.
+        if self._batch_arbeitskopie_vorab is None and not self._arbeitskopie_vorher_aktiv():
+            ampr_an = bool(self._tk_wert("ampr_integrate_var", False))
+            backport_an = bool(self._tk_wert("backport_integrate_var", False))
+            ordner_quellen = [s for s in sources if os.path.isdir(s)]
+            if (ampr_an or backport_an) and ordner_quellen:
+                antwort = self._ask_yesno_threadsafe(
+                    self._t("dialog.title.integration_workcopy"),
+                    self._t("batch.vorpruef_arbeitskopie_frage",
+                            count=len(ordner_quellen)))
+                # False (Nein) = auf dem Originalordner arbeiten - kein Abbruch.
+                self._batch_arbeitskopie_vorab = bool(antwort)
+
+        return True
+
     def _batch_ueberschreiben_klaeren(self, quelle: str, ziel_ordner: str,
                                       zielformat: str) -> bool:
         """Fragt in der Sammelkonvertierung, ob eine vorhandene Datei weichen darf.
@@ -32809,7 +32888,7 @@ class PS5ConverterGUI:
         self.progress_engine.commit_task()
         return ok_final
     def _auto_generate_ampr_index(self, source_root: str) -> bool:
-        """Erzeugt bei Bedarf automatisch ``ampr_emu.index`` fuer Aufgabe 7.
+        """Erzeugt bei Bedarf automatisch ``ampr_emu.index`` fuer den AMPR EMU Manager.
 
         Die Generierung ist nicht-blockierend: Fehler werden protokolliert,
         aber der Gesamtvorgang laeuft weiter.
@@ -33337,7 +33416,7 @@ class PS5ConverterGUI:
             methode = getattr(self, "ampr_methode_combo", None)
             if methode is not None:
                 methode.configure(state="readonly" if ampr_an else "disabled")
-            self.ampr_playgo_check.configure(state="normal" if ampr_an else "disabled")
+            self.ampr_playgo_check.configure(state="normal" if hat_versionen else "disabled")
             self.backport_fw_combo.configure(state="readonly" if backport_an else "disabled")
             if not hat_versionen:
                 self.ampr_integrate_check.configure(state="disabled")
@@ -33407,14 +33486,14 @@ class PS5ConverterGUI:
         was beim Start galt.
         """
         if threading.current_thread() is threading.main_thread():
-            # PlayGo zaehlt nur mit AMPR EMU: Der Stub wird im selben Schritt
-            # eingebaut (_integration_ampr), ohne AMPR gar nicht. Das
-            # Kaestchen ist dann ausgegraut, kann aber gesetzt bleiben - bis
-            # zum 24.09.2026 gab es damit ein Selbst-Ziel frei, das nur eine
-            # Kopie derselben Datei baute (Durchsicht, H7-2).
-            ampr_an = bool(self._tk_wert("ampr_integrate_var", False))
+            # PlayGo baut seinen Stub seit der nur_playgo-Option von
+            # _integration_ampr auch ohne AMPR EMU ein (Kaestchen haengt nur
+            # noch am Versionsspeicher, nicht mehr am AMPR-Haken) - bis zum
+            # 24.09.2026 (vor dieser Option) war das Kaestchen sonst
+            # ausgegraut und blieb gesetzt, was ein Selbst-Ziel freigab, das
+            # nur eine Kopie derselben Datei baute (Durchsicht, H7-2).
             return (self._assetpack_gewaehlt()
-                    or (ampr_an and bool(self._tk_wert("ampr_playgo_var", False)))
+                    or bool(self._tk_wert("ampr_playgo_var", False))
                     or bool(self._tk_wert("backport_integrate_var", False)))
         return bool(getattr(self, "_umhuellt_neu_packen", False))
 
@@ -33630,6 +33709,10 @@ class PS5ConverterGUI:
             # ohne Rueckfrage die Kopie - das Original bleibt unveraendert.
             self._append_to_log(self._t("main.integrate_arbeitskopie_automatisch"))
             antwort = True
+        elif getattr(self, "_batch_arbeitskopie_vorab", None) is not None:
+            # Batch-Vorpruefung hat die Frage fuer alle Ordner einmalig vorab
+            # gestellt und die Antwort gespeichert - hier nicht nochmal fragen.
+            antwort = self._batch_arbeitskopie_vorab
         else:
             antwort = self._ask_yesno_threadsafe(
                 self._t("dialog.title.integration_workcopy"),
@@ -33923,8 +34006,10 @@ class PS5ConverterGUI:
         if self._tk_wert("backport_integrate_var", False):
             if not self._integration_backport(arbeitsordner):
                 return ""
-        if self._tk_wert("ampr_integrate_var", False):
-            if not self._integration_ampr(arbeitsordner):
+        ampr_an = bool(self._tk_wert("ampr_integrate_var", False))
+        playgo_an = bool(self._tk_wert("ampr_playgo_var", False))
+        if ampr_an or playgo_an:
+            if not self._integration_ampr(arbeitsordner, nur_playgo=not ampr_an):
                 return ""
         self._integration_erledigt = True
         return arbeitsordner
@@ -34028,12 +34113,16 @@ class PS5ConverterGUI:
         )
         return fehler == 0
 
-    def _integration_ampr(self, ordner: str) -> bool:
+    def _integration_ampr(self, ordner: str, nur_playgo: bool = False) -> bool:
         """Legt die gewaehlte AMPR-Bibliothek in den fakelib-Ordner.
 
         Danach entsteht der ``ampr_emu.index`` neu - ohne ihn findet das
         Modul auf der Konsole seine Dateien nicht. Dieselben Bausteine wie in
         Aufgabe 7, nur ohne deren Dialog.
+
+        ``nur_playgo=True`` ueberspringt die AMPR-Bibliothek selbst und baut
+        nur den PlayGo-Stub ein (plus Index-Neubau). Wird aufgerufen, wenn
+        der Anwender PlayGo aktiviert hat, aber AMPR EMU nicht.
         """
         gewaehlte_fassung = self._tk_wert("ampr_version_var", "")
         auswahl = self._ampr_auswahl_beim_start().get(gewaehlte_fassung)
@@ -34045,8 +34134,9 @@ class PS5ConverterGUI:
             self._t("main.integrate_ampr_start", version=gewaehlte_fassung))
         self._set_status(self._t("main.integrate_ampr_status"))
 
-        if not self._ampr_apply_library(ordner, auswahl["path"], "libSceAmpr.sprx"):
-            return False
+        if not nur_playgo:
+            if not self._ampr_apply_library(ordner, auswahl["path"], "libSceAmpr.sprx"):
+                return False
 
         playgo_an = bool(self._tk_wert("ampr_playgo_var", False))
         if not playgo_an:
@@ -51057,7 +51147,10 @@ class PS5ConverterGUI:
                        v0="\n  - ".join(meldungen))
 
     def _backport_fakelib_basis(self) -> str:
-        """Ordner mit den mitgelieferten Ersatzbibliotheken; leer, wenn keiner da ist."""
+        """Ordner mit den Ersatzbibliotheken; benutzerdefiniert (Einstellung) oder gebuendelt."""
+        gespeichert = str(self._load_setting("backport_fakelib_ordner", "")).strip()
+        if gespeichert and os.path.isdir(gespeichert):
+            return gespeichert
         return _bundled_resource("Backport_Fakelibs")
 
     def _backport_firmwares(self) -> tuple[int, ...]:
@@ -55230,6 +55323,51 @@ class PS5ConverterGUI:
                 selectcolor=c["bg_card"], activebackground=c["bg_main"],
                 activeforeground=c["fg_accent"], anchor="w",
             ).pack(side="left", padx=(0, 12))
+
+        fakelib_ordner_zeile = tk.Frame(win, bg=c["bg_main"])
+        fakelib_ordner_zeile.pack(fill="x", padx=16, pady=(6, 0))
+        tk.Label(fakelib_ordner_zeile, text=self._t("backport.fakelib_basis_label"),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        fakelib_basis_var = tk.StringVar(
+            value=str(self._load_setting("backport_fakelib_ordner", "")).strip())
+        fakelib_basis_feld = self._pw.Entry(
+            fakelib_ordner_zeile, textvariable=fakelib_basis_var,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+            insertbackground=c["fg_primary"], relief="flat", width=50)
+        fakelib_basis_feld.pack(side="left", padx=(8, 6), ipady=2)
+
+        def _fakelib_basis_speichern(*_: object) -> None:
+            wert = fakelib_basis_var.get().strip()
+            self._save_setting("backport_fakelib_ordner", wert)
+            if wert and not os.path.isdir(wert):
+                stand_var.set(self._t("backport.fakelib_basis_not_found", pfad=wert))
+            else:
+                # Firmware-Liste im Auswahlfeld aktualisieren
+                neu = list(self._backport_firmwares())
+                fw_box.configure(values=[
+                    self._t("backport.firmware_entry", fw=f"{fw}.00") for fw in neu])
+                try:
+                    fw_box.current(neu.index(ps5_backport.FIRMWARE_STANDARD))
+                except ValueError:
+                    fw_box.current(0)
+                stand_var.set(self._t("backport.state_idle"))
+
+        # Die Spur geht mit dem Fenster: Ihr Tcl-Befehl haelt sonst Fenster, Bilder und Zeichner fuer immer.
+        bibliothek_raster.spur_bis_zerstoert(win, fakelib_basis_var, _fakelib_basis_speichern)
+
+        def _fakelib_basis_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                parent=win, title=self._t("backport.fakelib_basis_label"),
+                initialdir=fakelib_basis_var.get() or None)
+            if gewaehlt:
+                fakelib_basis_var.set(os.path.normpath(gewaehlt))
+
+        self._pw.Button(fakelib_ordner_zeile, text=self._t("backport.fakelib_basis_choose"),
+                        command=_fakelib_basis_waehlen).pack(side="left")
+        tk.Label(fakelib_ordner_zeile, text=self._t("backport.fakelib_basis_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
 
         tk.Label(win, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
@@ -64410,9 +64548,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "Ohne diesen Schalter gilt die im Fenster gespeicherte Einstellung. "
              "Der Arbeitsordner muss den vollständigen Dump fassen.")
 
-    # Aufgabe 7 (AMPR EMU Manager) fragt die Aktion sonst über einen modalen
-    # Dialog ab und würde ohne Fenster endlos warten. Über diese Argumente wird
-    # derselbe Automations-Hook befüllt, den die Engine bereits auswertet.
+    # AMPR EMU Manager (seit 12.10.2026 KONSOLE Knopf 9, zuvor Aufgabe 7 der Seitenleiste) fragt die
+    # Aktion sonst über einen modalen Dialog ab und würde ohne Fenster endlos warten. Über diese
+    # Argumente wird derselbe Automations-Hook befüllt, den die Engine bereits auswertet.
     param = parser.add_argument_group("param.json")
     param.add_argument(
         "--param-json-reparieren", action="store_true",
@@ -64429,12 +64567,12 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "Dabei geht die Title-ID an prosperopatches.com.",
     )
 
-    ampr = parser.add_argument_group("Aufgabe 7 (AMPR EMU Manager)")
+    ampr = parser.add_argument_group("AMPR EMU Manager (--mode ampr_manager, KONSOLE Knopf 9)")
     ampr.add_argument(
         "--ampr-action",
         choices=("ampr_apply", "ampr_restore", "ampr_remove", "ampr_index",
                  "ampr_ftp_index", "ampr_assetpack"),
-        help="Auszuführende AMPR-Aktion (für Aufgabe 7 erforderlich). "
+        help="Auszuführende AMPR-Aktion (für --mode ampr_manager erforderlich). "
              "ampr_assetpack baut Asset-Pack-Bänder in ein fertiges Backup "
              "und braucht dazu eine pack-fähige Fassung (--ampr-variant "
              "test-pack oder test-debug-pack). Gepackte Originaldateien "
@@ -64471,7 +64609,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
 
 
 def _build_ampr_automation(args: argparse.Namespace) -> dict[str, Any]:
-    """Baut den Automations-Spec für Aufgabe 7 aus den CLI-Argumenten."""
+    """Baut den Automations-Spec für den AMPR EMU Manager aus den CLI-Argumenten."""
     spec: dict[str, Any] = {"action": args.ampr_action}
     if args.ampr_store:
         spec["ampr_store"] = os.path.normpath(args.ampr_store)
@@ -64516,11 +64654,11 @@ def _build_ampr_automation(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _validate_ampr_args(args: argparse.Namespace) -> str:
-    """Prüft die Aufgabe-7-Argumente. Rückgabe: Fehlertext oder leerer String."""
+    """Prüft die Argumente des AMPR EMU Manager. Rückgabe: Fehlertext oder leerer String."""
     action = args.ampr_action
     if not action:
         return (
-            "--ampr-action ist für Aufgabe 7 erforderlich "
+            "--ampr-action ist für --mode ampr_manager erforderlich "
             "(ampr_apply, ampr_restore, ampr_remove, ampr_index, "
             "ampr_ftp_index, ampr_assetpack)."
         )
@@ -64721,7 +64859,12 @@ def _run_cli(args: argparse.Namespace) -> int:
             return 2
         mode = PS5ConverterGUI._MODE_OPTIONS[args.task - 1][1]
 
-    valid_modes = {key for _label, key in PS5ConverterGUI._MODE_OPTIONS}
+    # "ampr_manager" steht seit dem 12.10.2026 nicht mehr unter den acht Aufgaben der Seite UMWANDELN
+    # (_MODE_OPTIONS) - AMPR EMU Manager zeigt seitdem KONSOLE Knopf 9. Die --ampr-*-Schalter weiter
+    # unten galten ihm schon vorher und wurden bei der Umbenennung nicht entfernt; ohne diese Ausnahme
+    # blockte dieselbe Pruefung "--mode ampr_manager" seither mit "Unbekannter Modus" (Durchsicht
+    # 17.10.2026) - ueber --task laesst er sich weiterhin nicht waehlen, nur ausdruecklich per --mode.
+    valid_modes = {key for _label, key in PS5ConverterGUI._MODE_OPTIONS} | {"ampr_manager"}
     if mode not in valid_modes:
         print(f"[FEHLER] Unbekannter Modus: {mode}", file=sys.stderr)
         return 2
@@ -64767,7 +64910,8 @@ def _run_cli(args: argparse.Namespace) -> int:
             print(f"[FEHLER] {ampr_error}", file=sys.stderr)
             return 2
     elif args.ampr_action:
-        print("[FEHLER] --ampr-* Argumente gelten nur für Aufgabe 7 (ampr_manager).", file=sys.stderr)
+        print("[FEHLER] --ampr-* Argumente gelten nur für --mode ampr_manager (AMPR EMU Manager).",
+              file=sys.stderr)
         return 2
 
     # Der Zielordner wie die Quellen VOR dem Start. Bis v1.9.24 fiel ein
@@ -64875,6 +65019,15 @@ def _run_cli(args: argparse.Namespace) -> int:
             print(f"[FEHLER] Unbekanntes Zielformat: {args.format}", file=sys.stderr)
             root.destroy()
             return 2
+    # Merken, was ausdruecklich angefordert war: _on_integration_changed frischt die
+    # Formatliste gleich noch einmal auf (AMPR-Vorrat kommt erst jetzt dazu) und wirft
+    # ein Label, das darin nicht mehr vorkommt, STILL auf den ersten Eintrag zurueck
+    # (_refresh_target_format_options). Im Fenster sieht der Anwender die Klappliste
+    # springen; auf der Kommandozeile gibt es sonst keinen Hinweis, dass "--format
+    # folder" (ohne AMPR EMU/BACKPORT) klanglos zu ".ffpfsc" wurde (Funktionspruefung
+    # 17.10.2026 mit einem echten Dump: --format folder ohne Einbau endete so,
+    # 0 Zeilen dazu im Protokoll).
+    angefordertes_label = app.target_format.get() if args.format else ""
 
     app._task_thread = None
     # Bis zum Abschlussbericht gilt die Aufgabe als nicht erfolgreich; bricht
@@ -64890,6 +65043,12 @@ def _run_cli(args: argparse.Namespace) -> int:
         app._on_integration_changed(speichern=False)
     except Exception as exc:  # noqa: BLE001
         logger.debug("AMPR-Vorrat im CLI-Modus nicht vorab lesbar: %s", exc)
+    if angefordertes_label and app.target_format.get() != angefordertes_label:
+        # Keine stille Aktion: das angeforderte Format gilt nicht mehr (z. B.
+        # "Dump-Ordner" ohne AMPR EMU/BACKPORT) - sagen, was stattdessen laeuft,
+        # statt den Anwender das Ergebnis selbst nachzaehlen zu lassen.
+        print("[WARNUNG] Zielformat '%s' nicht möglich (braucht z. B. AMPR EMU oder "
+              "BACKPORT) - stattdessen: '%s'." % (angefordertes_label, app.target_format.get()))
     app._launch_task()
 
     def _poll() -> None:

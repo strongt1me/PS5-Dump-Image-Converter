@@ -25,7 +25,9 @@ pruefumgebung.umlenken("ps5pkgfenster")
 
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 from ps5_validator.ui import ps5_pkg_fenster as fz          # noqa: E402
+from ps5_validator.utils import ps5_pkg_optionen as opt     # noqa: E402
 from ps5_validator.utils import ps5_pkg_werkzeug as wz      # noqa: E402
+from ps5_validator.utils import prospero_pkg_tool as ppt    # noqa: E402
 from ps5_validator.utils.i18n import STRINGS                # noqa: E402
 
 try:
@@ -138,9 +140,9 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(_warten(lambda: len(self.f.pakete) == len(pfade) and self.f.aktuell is not None))
 
     # ---------------- Aufbau ----------------
-    def test_das_fenster_hat_beide_seiten_und_fuenf_kacheln(self) -> None:
+    def test_das_fenster_hat_alle_seiten_und_fuenf_kacheln(self) -> None:
         f = self.f
-        self.assertEqual({"umwandeln", "bibliothek"}, set(f.seiten))
+        self.assertEqual({"umwandeln", "bibliothek", "extras"}, set(f.seiten))
         self.assertEqual(["ffpkg", "ffpfsc", "ffpfs", "exfat", "pkg"], list(f._kacheln))
         self.assertEqual("ffpfsc", f.format_schluessel)
         self.assertEqual("umwandeln", f.aktion_var.get())
@@ -148,6 +150,24 @@ class FensterTests(unittest.TestCase):
     def test_ein_zweites_oeffnen_holt_das_offene_fenster(self) -> None:
         zweites = fz.oeffnen(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)
         self.assertIs(self.f, zweites)
+
+    def test_arbeitsordner_ohne_eigene_einstellung_bleibt_wie_bisher(self) -> None:
+        """Nutzerwunsch: der Temp-Ordner der Optionen wirkt nur bei Bedarf - leer aendert nichts."""
+        self.app._save_setting(opt.TEMP_ORDNER, "")
+        with mock.patch.object(self.app, "_get_runtime_temp_dir", return_value=self.ordner):
+            self.assertEqual(self.ordner, self.f._arbeitsordner())
+
+    def test_arbeitsordner_nimmt_den_eigenen_temp_ordner_wenn_er_da_ist(self) -> None:
+        eigener = tempfile.mkdtemp(prefix="ps5pkg_eigenertemp_", dir=self.ordner)
+        self.app._save_setting(opt.TEMP_ORDNER, eigener)
+        with mock.patch.object(self.app, "_get_runtime_temp_dir", return_value=self.ordner):
+            self.assertEqual(eigener, self.f._arbeitsordner())
+
+    def test_arbeitsordner_faellt_zurueck_wenn_der_eigene_temp_ordner_fehlt(self) -> None:
+        """Z. B. ein abgezogener USB-Stick - der Temp-Ordner der Optionen darf nie einen Absturz ausloesen."""
+        self.app._save_setting(opt.TEMP_ORDNER, os.path.join(self.ordner, "gibt-es-nicht"))
+        with mock.patch.object(self.app, "_get_runtime_temp_dir", return_value=self.ordner):
+            self.assertEqual(self.ordner, self.f._arbeitsordner())
 
     def test_kein_menueeintrag_mehr_unter_weitere_tools(self) -> None:
         """Bis zum 12.10.2026 abends stand hier ein eigener Knopf; seitdem ist "FPKG" eine Unterseite von
@@ -684,6 +704,32 @@ class FensterTests(unittest.TestCase):
         self.assertIn("Debug-Paket (FPKG)", log)
         self.assertEqual(ziel, f._z.get("ausgabe"))
         self.assertEqual(100.0, float(f.balken_gesamt["value"]))
+
+    def test_ppt_baut_in_eine_datei_nicht_in_den_zielordner(self) -> None:
+        """17.10.2026 (Funktionspruefung an einem echten Spiel): ppt.bauen() erwartet in "ziel" den
+        vollstaendigen Dateipfad (anders als wz.bauen(), das selbst einen Namen im Zielordner waehlt) - der
+        blosse Zielordner endete beim echten ProsperoPkgTool immer mit "Access to the path '...' is denied",
+        weil es dort eine Datei zu OEFFNEN versuchte, wo ein Ordner lag."""
+        ordner, ziel = self._bauen_vorbereiten(None)
+        f = self.f
+        self.app._save_setting(opt.BUILDER, "ppt")
+        self.addCleanup(lambda: self.app._save_setting(opt.BUILDER, "lpp"))
+        aufrufe = {}
+
+        def bauen(werkzeug, quelle, ziel_datei, **kw):
+            aufrufe["ziel"] = ziel_datei
+            Path(ziel_datei).write_bytes(b"pkg")
+            return ziel_datei
+
+        with mock.patch.object(fz.Ps5PkgFenster, "_werkzeug_ppt", return_value="prospero"), \
+                mock.patch.object(ppt, "bauen", side_effect=bauen), mock.patch.object(wz, "pruefen", return_value={
+                "pass": 1, "warn": 0, "fail": 0, "results": []}):
+            f._starten()
+            self.assertTrue(_warten(lambda: f._job is None, 20))
+        self.assertNotEqual(ziel, aufrufe["ziel"], "ppt.bauen() darf nicht den blossen Zielordner bekommen")
+        self.assertEqual(ziel, os.path.dirname(aufrufe["ziel"]), "die Datei muss im Zielordner liegen")
+        self.assertTrue(aufrufe["ziel"].endswith(".pkg"))
+        self.assertTrue(os.path.isfile(aufrufe["ziel"]))
 
     def test_ein_gescheiterter_bau_raeumt_unfertiges_weg(self) -> None:
         ordner, ziel = self._bauen_vorbereiten(None)

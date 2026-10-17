@@ -150,9 +150,10 @@ class SelbstzielRegelTests(unittest.TestCase):
             (False, False, False, False, False),
             (True, True, False, False, True),      # Asset-Pack
             (False, True, True, False, True),      # PlayGo mit AMPR EMU
-            # PlayGo ohne AMPR baut nichts ein - der Stub kommt nur im
-            # AMPR-Schritt dazu (Durchsicht 23.09.2026, H7-2).
-            (False, False, True, False, False),
+            # Seit v1.9.83 (nur_playgo) baut PlayGo auch ohne AMPR EMU den Stub ein
+            # (_integration_ampr(nur_playgo=True)) - bis dahin galt hier False
+            # (Durchsicht 23.09.2026, H7-2; das Kaestchen war ohne AMPR nur ausgegraut).
+            (False, False, True, False, True),
             (False, False, False, True, True),     # BACKPORT allein
         ):
             p = _Probe()

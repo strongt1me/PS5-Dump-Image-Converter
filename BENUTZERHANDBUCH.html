@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.82</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.83</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.82</span>
-      <span class="marke">Stand 16. Oktober 2026</span>
+      <span class="marke">Version v1.9.83</span>
+      <span class="marke">Stand 17. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -2046,13 +2046,21 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     </tbody>
   </table>
   </div>
+  <p><strong>Details</strong> (nur bei Spielordnern) öffnet ein eigenes Fenster mit drei Reitern: alle
+  signierten SELF/ELF-Dateien des Spiels samt Auth-Kategorie und Typ, die Einträge aus
+  <code>sce_sys/activity.json</code> und die gefundenen Trophäen-Sets. <strong>Dateien anzeigen</strong> (nur bei
+  Paketen) öffnet einen Datei-Browser für den inneren Aufbau des <code>.pkg</code> (<code>list-inner</code> des
+  Werkzeugs): Ordner lassen sich aufklappen, einzelne Dateien oder ganze Teilbäume extrahieren – ohne das ganze
+  Paket zu entpacken.</p>
 
   <h4>Ein Paket bauen</h4>
   <p>Wählen Sie einen <strong>Spielordner</strong> (<code>eboot.bin</code> und <code>sce_sys/param.json</code>
   liegen darin), den Zielordner und die Kachel <strong>Paket</strong>. Das Programm baut daraus ein
-  <strong>Debug-Paket (FPKG)</strong> mit dem Werkzeug <code>ffpfsc-pkg-tool</code> und prüft es danach mit
-  derselben Prüfliste wie die Aktion <em>Prüfen</em>. Die Ausgabe trägt den Namen
-  <code>&lt;Content-ID&gt;-A…-V….pkg</code>; den Namen legt das Werkzeug fest.</p>
+  <strong>Debug-Paket (FPKG)</strong> und prüft es danach mit derselben Prüfliste wie die Aktion
+  <em>Prüfen</em>. Welches Werkzeug dabei baut, bestimmt der <strong>Baumeister</strong> in den Optionen
+  (siehe unten): mit <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, Vorgabe) legt das Werkzeug
+  den Namen der Ausgabe selbst fest (<code>&lt;Content-ID&gt;-A…-V….pkg</code>); mit
+  <strong>ProsperoPkgTool</strong> heißt sie <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.</p>
   <ul>
     <li><strong>Vorher geprüft</strong> werden Content-ID und Title-ID (aus der <code>param.json</code>) und die
     <code>param.json</code> selbst, mit derselben Prüfung wie in Aufgabe 1. Hat sie Beanstandungen, bietet das
@@ -2062,7 +2070,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     ohne Befund (38 von 38, ohne Reparatur 2 Befunde).</li>
     <li><strong>Voreinstellungen</strong> sind die, die der Autor des Werkzeugs an einer Konsole belegt hat: Kraken
     über dem inneren Abbild mit dem eingebauten Kodierer (gespeicherte Blöcke installieren sich, starten
-    aber nicht), Fake-Signatur der ausführbaren Dateien und neuer AMPR-Index, falls AMPR EMU im Spiel liegt.</li>
+    aber nicht), Fake-Signatur der ausführbaren Dateien und neuer AMPR-Index, falls AMPR EMU im Spiel liegt.
+    Kompressionsmodus und -stufe, die Zahl der Bau-Worker, PlayGo-Chunks, ein byte-reproduzierbarer Bau und ein
+    PlayGo-Neuaufbau lassen sich im Register <em>Bau</em> der Optionen ändern (nur LibProsperoPkg).</li>
+    <li><strong>Backport einbauen</strong> (Register <em>Bau</em>, nur LibProsperoPkg): patcht ELF/SELF-Dateien im
+    Spielordner <strong>vor</strong> dem Bau auf die gewählte Ziel-Firmware – derselbe Schritt wie beim
+    <a href="#k14">eigenständigen BACKPORT-Werkzeug</a>, nur ohne dessen Fenster. Dazu lassen sich eine
+    Mindest-Firmware (<code>requiredSystemSoftwareVersion</code> in <code>param.json</code>) setzen und der
+    <strong>Patch-Modus</strong> ankreuzen (<code>contentType</code> vorübergehend auf <code>PATCH</code>, für ein
+    Update-PKG; wird nach dem Bau zurückgesetzt).</li>
     <li><strong>Platz:</strong> Der Arbeitsordner liegt im Zielordner (dort entsteht auch das Paket) und wird danach
     entfernt. Auf Laufwerken ohne feste Verknüpfungen (zum Beispiel exFAT) legt das Werkzeug erst eine Kopie
     des Spiels an. Das Programm fragt nach, wenn weniger als das Doppelte der Spielgröße frei ist, und
@@ -2080,7 +2096,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h4>Optionen</h4>
-  <p>Der Knopf <strong>Optionen</strong> links öffnet die Einstellungen in vier Reitern, erst mit
+  <p>Der Knopf <strong>Optionen</strong> links öffnet die Einstellungen in fünf Reitern, erst mit
   <em>Speichern</em> übernommen:</p>
   <ul>
     <li><strong>Bibliothek:</strong> Bibliotheksordner, die beim Speichern (und wahlweise bei jedem Start) nach
@@ -2089,12 +2105,19 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     (nur aus der Liste, die Datei bleibt).</li>
     <li><strong>Darstellung:</strong> Cover anzeigen oder nicht, Sortierung der Bibliothek (Titel, Titel-ID,
     Größe).</li>
-    <li><strong>Ausgabe &amp; Vorgaben:</strong> Standard-Zielordner, -Aktion und -Zielformat für neue Aufträge;
-    <em>Ausgabeordner nach erfolgreichem Auftrag öffnen</em>; der <strong>Standard-Builder</strong>
-    (LibProsperoPkg oder ProsperoPkgTool, nur für „Paket bauen“); der <strong>Debug-Passcode</strong> – leer
-    verwendet den Standard des Werkzeugs (32 Nullen), andernfalls genau 32 druckbare ASCII-Zeichen. Er gilt fürs
-    Lesen, Prüfen, Entpacken und Bauen; ein Paket, das mit einem anderen Passcode gebaut wurde, lässt sich
-    ohne ihn nicht öffnen.</li>
+    <li><strong>Ausgabe &amp; Vorgaben:</strong> Standard-Zielordner; ein eigener <strong>Temp-Ordner</strong> für
+    Entpacken, Bauen und Extrahieren dieses Bereichs – leer lässt den bisherigen Arbeitsordner des Programms
+    gelten (nur bei Bedarf setzen, etwa wenn das Systemlaufwerk für große Pakete zu wenig Platz hat);
+    Standard-Aktion und -Zielformat für neue Aufträge; <em>Ausgabeordner nach erfolgreichem Auftrag öffnen</em>;
+    der <strong>Standard-Builder</strong> (LibProsperoPkg oder ProsperoPkgTool, nur für „Paket bauen“); der
+    <strong>Debug-Passcode</strong> – leer verwendet den Standard des Werkzeugs (32 Nullen), andernfalls genau
+    32 druckbare ASCII-Zeichen. Er gilt fürs Lesen, Prüfen, Entpacken und Bauen; ein Paket, das mit einem
+    anderen Passcode gebaut wurde, lässt sich ohne ihn nicht öffnen.</li>
+    <li><strong>Bau</strong> (nur für „Paket bauen“, meiste Felder nur bei LibProsperoPkg): Kompressionsmodus
+    (Kraken, zlib oder keine) und -stufe, Zahl der Bau-Worker, PlayGo-Chunks, ein byte-reproduzierbarer Bau und
+    ein erzwungener PlayGo-Neuaufbau; <strong>Backport einbauen</strong> mit Ziel-Firmware und einem eigenen
+    Fakelib-Ordner (leer = mitgelieferter Satz); eine <strong>Mindest-Firmware</strong> für
+    <code>param.json</code>; der <strong>Patch-Modus</strong> für ein Update-PKG.</li>
     <li><strong>Wartung:</strong> Optionen als Datei exportieren oder importieren (eine Vorschau der Änderungen
     fragt vor dem Einspielen nach) sowie auf die Vorgaben zurücksetzen – die Bibliothek und ihre Ordner
     bleiben dabei erhalten.</li>
@@ -2941,7 +2964,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.82), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.83), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -3142,8 +3165,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.82</strong></span>
-    <span>Stand 16. Oktober 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.83</strong></span>
+    <span>Stand 17. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

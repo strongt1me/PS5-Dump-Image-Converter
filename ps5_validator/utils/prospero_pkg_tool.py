@@ -2,11 +2,12 @@
 """Die Huelle um ``ProsperoPkgTool`` - den zweiten, waehlbaren Paketersteller (seit 12.10.2026).
 
 Nutzerwunsch: Die eigene Vorlagen-App des Nutzers bietet in ihren Optionen zwei Paketersteller zur Wahl
-("Standard-Builder": LibProsperoPkg 1.2.0 / ProsperoPkgTool). Dieses Modul bringt den zweiten dazu - nur fuer
-**Aufgabe "Paket bauen"**: Lesen, Pruefen und Entpacken bleiben beim bestehenden :mod:`ps5_pkg_werkzeug`
-(``ffpfsc-pkg-tool``), das ``--json`` kennt, die CNT-Metadaten (param.json, Cover, Trophaeen) automatisch dazuholt
-und einen Passcode durchreicht. ProsperoPkgTool kennt nur Klartext-Zeilen auf stdout/stderr, keine JSON-Ausgabe -
-dieses Modul liest sie deshalb mit Mustern, kein Umweg ueber eine Datenstruktur, die es nicht gibt.
+("Standard-Builder": LibProsperoPkg 1.2.0 / ProsperoPkgTool). Dieses Modul bringt den zweiten dazu - fuer
+**Aufgabe "Paket bauen"** und **Aufgabe "Extrahieren"**: Lesen und Pruefen bleiben beim bestehenden
+:mod:`ps5_pkg_werkzeug` (``ffpfsc-pkg-tool``), das ``--json`` kennt, die CNT-Metadaten (param.json, Cover,
+Trophaeen) automatisch dazuholt und einen Passcode durchreicht. ProsperoPkgTool kennt nur Klartext-Zeilen auf
+stdout/stderr, keine JSON-Ausgabe - dieses Modul liest sie deshalb mit Mustern, kein Umweg ueber eine
+Datenstruktur, die es nicht gibt.
 
 ProsperoPkgTool stammt aus dem Quelltext von **pearlxcore/ProsperoPkgTool 0.3.0** (MIT-Lizenz, Commit ``f2c91cd7``)
 und liegt, fuer jede Plattform einzeln gebaut, unter ``PS5-PKG-Tool/<Plattform>/`` - neben ``ffpfsc-pkg-tool``.
@@ -87,6 +88,12 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str = "", title_
     frischen Quellordner oder ein GP5-Projekt baut): Es erkennt bereits fake-signierte Module und laesst sie stehen,
     ersetzt nur rohe ELF-Dateien. Ohne ``content_id``/``title_id`` liest ``convert`` sie aus ``sce_sys/param.json``.
 
+    Args:
+        ziel: Der vollstaendige Pfad der entstehenden ``.pkg`` (**Datei**, nicht Ordner) - geht unveraendert als
+            ``--out`` an ProsperoPkgTool. Anders als bei ``ps5_pkg_werkzeug.bauen()`` (LibProsperoPkg, das selbst
+            einen Dateinamen in einem Zielordner waehlt): ein blosser Ordnerpfad hier endet mit "Access to the
+            path '...' is denied", und erst nach dem letzten Baustein (Durchsicht 17.10.2026).
+
     Raises:
         Fehler: ungueltige Werkzeugausgabe, Fehler des Werkzeugs, kein Ausgabepfad am Ende; ``abgebrochen`` beim
             Abbruch (Baufortschritt wird nicht unterbrochen - ``abbruch`` wird nur zwischen den Zeilen gefragt).
@@ -126,3 +133,28 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str = "", title_
     if not os.path.isfile(pfad):
         raise wz.Fehler("ProsperoPkgTool meldet Erfolg, aber die Ausgabedatei fehlt: %s" % pfad)
     return pfad
+
+
+def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "",
+                zeile: "_Zeile | None" = None, abbruch: "_Abbruch | None" = None,
+                popen_extra: "dict | None" = None) -> None:
+    """Entpackt alle inneren Dateien eines Pakets mit ``img_extract``.
+
+    Im Unterschied zu ``ffpfsc-pkg-tool extract-inner`` (das gezielt app0 und sce_sys liefert) gibt
+    ``img_extract`` alle Bereiche des PKG-Archivs aus. Hinweis: Bei FinalizedPatchDebug-Paketen
+    (Magic ``7F 4C 49 48``) kann ein OverflowException-Fehler auftreten - das ist ein bekannter Bug
+    in ProsperoPkgTool; in diesem Fall liefert ``ffpfsc-pkg-tool extract-inner`` (Aktion "Extrahieren"
+    ohne Builder-Wechsel) ein zuverlaessigeres Ergebnis.
+
+    Raises:
+        Fehler: Fehler des Werkzeugs oder beim Abbruch (Text ``"abgebrochen"``).
+    """
+    os.makedirs(ziel, exist_ok=True)
+    argumente = ["img_extract", paket, ziel]
+    if passcode:
+        argumente += ["--passcode", passcode]
+    rc, aus = wz.laufen(werkzeug, argumente, zeile=zeile, abbruch=abbruch, popen_extra=popen_extra)
+    if rc == -1:
+        raise wz.Fehler("abgebrochen")
+    if rc != 0:
+        raise wz.Fehler(wz._fehlertext(aus))  # noqa: SLF001

@@ -164,7 +164,15 @@ class RegelTests(unittest.TestCase):
         self.assertEqual("folder", optionen[-1])
 
     def test_startsperre_folgt_der_auswahl(self) -> None:
-        for mode in ("pack_folder", "universal_convert"):
+        # Seit dem 05.10.2026 hat auch die Sammelkonvertierung Ordner-Quellen
+        # (Nutzerwunsch: "Bei der Sammelkonvertierung fehlt die Auswahl
+        # Dump-Ordner als Quelle.") - die Startsperre muss dort also derselben
+        # Regel folgen wie bei Aufgabe 1/6, nicht der strengen Regel von
+        # vorher (Durchsicht 17.10.2026: ein echtes BACKPORT-Ziel "Dump-
+        # Ordner" in der Sammelkonvertierung scheiterte bis dahin immer an
+        # "Quelle und Zielformat sind identisch", obwohl Aufgabe 1 denselben
+        # Fall anstandslos machte).
+        for mode in ("pack_folder", "universal_convert", "batch_convert"):
             with self.subTest(aufgabe=mode):
                 self.assertIn("identisch", _pruefling(self)._conversion_block_reason(
                     "folder", "folder", mode, str(self.dump)))
@@ -172,9 +180,6 @@ class RegelTests(unittest.TestCase):
                     "folder", "folder", mode, str(self.dump)))
                 self.assertEqual("", _pruefling(self, backport=True)._conversion_block_reason(
                     "folder", "folder", mode, str(self.dump)))
-        # Die Sammelkonvertierung hat keine Ordner-Quellen.
-        self.assertIn("identisch", _pruefling(self, backport=True)._conversion_block_reason(
-            "folder", "folder", "batch_convert", str(self.dump)))
         # Ohne Aufgabe gilt die strenge Regel weiter.
         self.assertIn("identisch", _pruefling(self, backport=True)._conversion_block_reason(
             "folder", "folder"))

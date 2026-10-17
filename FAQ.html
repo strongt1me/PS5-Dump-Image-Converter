@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.82</title>
+<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.83</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Häufige Fragen (FAQ)</span></h1>
     <p class="unter">Kurze Antworten auf die Fragen, die bei der Arbeit mit dem Programm am häufigsten auftauchen – vom ersten Start über das Umwandeln bis zur PS5. Ausführlich steht alles im Benutzerhandbuch.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.82</span>
-      <span class="marke">Stand 16. Oktober 2026</span>
+      <span class="marke">Version v1.9.83</span>
+      <span class="marke">Stand 17. Oktober 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -486,6 +486,16 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Kann ich aus einem Spielordner selbst ein PKG bauen, und was macht der „Baumeister“?</h3>
+    <p>Ja, in <strong>PS5 PKG Dump &amp; Image Converter</strong> (Aufgabe 7 – PKG / FPKG, Seite FPKG): Spielordner wählen, Zielordner, Kachel <strong>Paket</strong>, <em>Umwandlung starten</em>. In den <strong>Optionen</strong> stellt der <strong>Baumeister</strong> ein, welches Werkzeug baut – <strong>LibProsperoPkg</strong> (Vorgabe, mit Kompressions-, Firmware- und Backport-Optionen im Register <em>Bau</em>) oder <strong>ProsperoPkgTool</strong> (zweiter Paketersteller, MIT-Lizenz). Das Register <em>Bau</em> erlaubt außerdem, <strong>BACKPORT</strong> direkt vor dem Bau einzubauen, eine <strong>Mindest-Firmware</strong> zu setzen oder den <strong>Patch-Modus</strong> für ein Update-PKG anzukreuzen.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Was zeigen „Details“ und „Dateien anzeigen“?</h3>
+    <p><strong>Details</strong> (bei einem gewählten Spielordner) öffnet ein Fenster mit den signierten SELF/ELF-Dateien des Spiels, den Einträgen aus <code>sce_sys/activity.json</code> und den gefundenen Trophäen-Sets. <strong>Dateien anzeigen</strong> (bei einem gewählten Paket) zeigt den inneren Aufbau des <code>.pkg</code> als aufklappbaren Baum und erlaubt, einzelne Dateien oder ganze Teilbäume zu extrahieren, ohne das ganze Paket zu entpacken.</p>
+  </div>
+
+  <div class="frage">
     <h3>Was bewirken Schnell, Ausgewogen, Maximal und Wenig RAM?</h3>
     <p>Die vier Knöpfe unter <strong>VOREINSTELLUNG</strong> (in der Ansicht UMWANDELN, rechts neben den Ankreuzfeldern am Fuß der Karte) setzen Kompressionsstufe und Kernzahl auf einen Schlag: <em>Schnell</em> Stufe 3 mit allen Kernen, <em>Ausgewogen</em> Stufe 6 und <em>Maximal</em> Stufe 9 mit der halben Kernzahl, <em>Wenig RAM</em> Stufe 3 mit einem Kern. Die Blockgröße bleibt bei 65536. Gemessen an einem 664-MB-Dump liegen zwischen Stufe 1 und 9 nur rund 5&nbsp;% Abbildgröße (PS5-Spieldaten sind kaum komprimierbar); mehr Kerne verkürzen die Zeit, brauchen aber mehr Arbeitsspeicher. Wie viel Speicher während eines Laufs frei ist, zeigt die Live-Anzeige unter dem Protokoll.</p>
   </div>
@@ -668,8 +678,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.82</strong></span>
-  <span>Stand 16. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
+  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.83</strong></span>
+  <span>Stand 17. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
 </footer>
 
 </body>

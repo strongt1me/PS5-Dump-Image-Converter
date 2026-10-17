@@ -99,8 +99,17 @@ class StartLeerTests(unittest.TestCase):
 
     def test_die_wahllisten_sind_bis_zum_ankreuzen_gesperrt(self) -> None:
         a = self.app
-        for widget in (a.ampr_version_combo, a.ampr_methode_combo, a.ampr_playgo_check, a.backport_fw_combo):
+        for widget in (a.ampr_version_combo, a.ampr_methode_combo, a.backport_fw_combo):
             self.assertEqual("disabled", str(widget.cget("state")))
+
+    def test_playgo_kaestchen_haengt_am_versionsspeicher_nicht_am_ampr_haken(self) -> None:
+        """Seit v1.9.83 (nur_playgo): PlayGo laesst sich auch ohne AMPR EMU ankreuzen.
+
+        Das Kaestchen ist also nicht mehr an ``ampr_integrate_var`` gekoppelt - nur noch daran, ob ueberhaupt
+        ein Versionsspeicher da ist (``_ampr_versionsauswahl``, hier real vom Bestand der Maschine)."""
+        a = self.app
+        erwartet = "normal" if a._ampr_versionsauswahl else "disabled"
+        self.assertEqual(erwartet, str(a.ampr_playgo_check.cget("state")))
 
     def test_ampr_emu_steht_auf_normal_ohne_pack(self) -> None:
         a = self.app

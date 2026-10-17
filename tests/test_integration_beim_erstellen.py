@@ -243,7 +243,7 @@ class IntegrationsablaufTests(unittest.TestCase):
         with mock.patch.object(g, "_integration_backport",
                                lambda _o: schritte.append("backport") or True), \
                 mock.patch.object(g, "_integration_ampr",
-                                  lambda _o: schritte.append("ampr") or True):
+                                  lambda _o, nur_playgo=False: schritte.append("ampr") or True):
             self.assertTrue(g._integration_anwenden(str(self.dump)))
         self.assertEqual(schritte, ["backport", "ampr"])
 

@@ -43,6 +43,8 @@ from ps5_validator.utils import ps5_pkg_optionen as opt
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
 from ps5_validator.utils import prospero_pkg_tool as ppt
 from ps5_validator.ui import ps5_pkg_optionen as optionen_ui
+from ps5_validator.ui import pkg_datei_browser as browser_ui
+from ps5_validator.ui import spiel_detail_fenster as detail_ui
 
 logger = logging.getLogger("PS5Converter.ui.ps5_pkg_fenster")
 
@@ -98,6 +100,21 @@ def anzeigename(info: "wz.PaketInfo") -> str:
 
 _GROESSE = re.compile(r"^(?:gr(?:ö|oe)(?:ß|ss)e|size):(<=|>=|<|>)?(\d+(?:[.,]\d+)?)\s*(kb|mb|gb|tb)?$", re.IGNORECASE)
 _EINHEIT = {"kb": 1024, "mb": 1024 ** 2, "gb": 1024 ** 3, "tb": 1024 ** 4, "": 1}
+_FW = re.compile(r"^(?:fw|firmware):(<=|>=|<|>)?(\d+(?:[.,]\d+)?)$", re.IGNORECASE)
+_SDK = re.compile(r"^sdk:(<=|>=|<|>)?(\d+(?:[.,]\d+)?)$", re.IGNORECASE)
+
+
+def _fw_als_zahl(text: str) -> float:
+    """'9.00' -> 9.0, '11.50' -> 11.5 fuer numerischen Vergleich."""
+    try:
+        return float(text.replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
+def _param_fw_zahl(info: "wz.PaketInfo", schluessel: str) -> float:
+    p = info.param if isinstance(info.param, dict) else {}
+    return _fw_als_zahl(firmware_text(p.get(schluessel, "")))
 
 
 def _wort_passt(info: "wz.PaketInfo", wort: str) -> bool:
@@ -114,19 +131,39 @@ def _wort_passt(info: "wz.PaketInfo", wort: str) -> bool:
         grenze = float(treffer.group(2).replace(",", ".")) * _EINHEIT[(treffer.group(3) or "").lower()]
         return {"<": info.groesse < grenze, "<=": info.groesse <= grenze, ">": info.groesse > grenze,
                 ">=": info.groesse >= grenze}[vergleich]
+    treffer = _FW.match(wort)
+    if treffer:
+        vergleich, grenze = treffer.group(1) or ">=", _fw_als_zahl(treffer.group(2))
+        wert = _param_fw_zahl(info, "requiredSystemSoftwareVersion")
+        return {"<": wert < grenze, "<=": wert <= grenze, ">": wert > grenze, ">=": wert >= grenze}[vergleich]
+    treffer = _SDK.match(wort)
+    if treffer:
+        vergleich, grenze = treffer.group(1) or ">=", _fw_als_zahl(treffer.group(2))
+        wert = _param_fw_zahl(info, "sdkVersion")
+        return {"<": wert < grenze, "<=": wert <= grenze, ">": wert > grenze, ">=": wert >= grenze}[vergleich]
     heu = " ".join([info.titel, info.title_id, info.content_id, os.path.basename(info.pfad)]).lower()
     return klein in heu
 
 
-def suche_passt(info: "wz.PaketInfo", suche: str) -> bool:
-    """Passt das Paket zur Suche? Mehrere Woerter gelten zusammen; ``-wort`` schliesst aus; ``titel:``, ``id:`` und
-    ``groesse:>50GB`` (auch ``<``, ``>=``, ``<=``) schraenken ein."""
-    for wort in suche.split():
+def _gruppe_passt(info: "wz.PaketInfo", gruppe: str) -> bool:
+    """Alle Woerter einer UND-Gruppe muessen passen; leere Gruppe passt immer."""
+    for wort in gruppe.split():
         ausschluss = wort.startswith("-") and len(wort) > 1
         passt = _wort_passt(info, wort[1:] if ausschluss else wort)
         if passt == ausschluss:
             return False
     return True
+
+
+def suche_passt(info: "wz.PaketInfo", suche: str) -> bool:
+    """Passt das Paket zur Suche? ``|`` trennt ODER-Gruppen (mindestens eine muss passen);
+    innerhalb einer Gruppe: UND; ``-wort`` schliesst aus; ``titel:``, ``id:``, ``fw:>9.00``,
+    ``sdk:>=5``, ``groesse:>50GB`` (auch ``<``, ``>=``, ``<=``) schraenken ein."""
+    gruppen = suche.split("|")
+    for gruppe in gruppen:
+        if _gruppe_passt(info, gruppe.strip()):
+            return True
+    return False
 
 
 def firmware_text(wert) -> str:
@@ -291,6 +328,15 @@ class Ps5PkgFenster:
             pass
 
     def _arbeitsordner(self) -> str:
+        """Ordner fuer Staging (Entpacken/Bauen/Extrahieren).
+
+        Seit v1.9.83 geht ein eigener, in den Optionen gesetzter Temp-Ordner (``opt.TEMP_ORDNER``) vor - nur
+        wenn er wirklich da ist, sonst wie bisher der Temp-Ordner aus den Haupteinstellungen bzw. System-Temp.
+        Leer (Vorgabe) aendert nichts am bisherigen Verhalten.
+        """
+        eigener = str(self._einstellung(opt.TEMP_ORDNER, "")).strip()
+        if eigener and os.path.isdir(eigener):
+            return eigener
         try:
             basis = self.g._get_runtime_temp_dir()
         except Exception:  # noqa: BLE001
@@ -370,11 +416,18 @@ class Ps5PkgFenster:
         self.abbrechen_knopf = self._pille(leiste, "action.cancel", self._abbrechen)
         self.abbrechen_knopf.pack(side="left", padx=(10, 0))
         self.abbrechen_knopf.configure(state="disabled")
-        self.seiten = {"umwandeln": tk.Frame(flaeche, bg=c["bg_main"]), "bibliothek": tk.Frame(flaeche, bg=c["bg_main"])}
+        self.browser_knopf = self._pille(leiste, "ps5pkg.browser_button", self._browser_oeffnen)
+        self.browser_knopf.pack(side="left", padx=(24, 0))
+        self.detail_knopf = self._pille(leiste, "ps5pkg.detail_button", self._detail_oeffnen)
+        self.detail_knopf.pack(side="left", padx=(10, 0))
+        self.seiten = {"umwandeln": tk.Frame(flaeche, bg=c["bg_main"]),
+                       "bibliothek": tk.Frame(flaeche, bg=c["bg_main"]),
+                       "extras": tk.Frame(flaeche, bg=c["bg_main"])}
         for seite in self.seiten.values():
             seite.grid(row=0, column=0, sticky="nsew")
         self._seite_umwandeln(self.seiten["umwandeln"])
         self._seite_bibliothek(self.seiten["bibliothek"])
+        self._seite_extras(self.seiten["extras"])
         self._seite_zeigen("umwandeln")
 
         self.win.bind("<Destroy>", self._bei_zerstoerung, add="+")
@@ -390,7 +443,7 @@ class Ps5PkgFenster:
         leiste.grid_propagate(False)
         self._nav: dict[str, tuple[tk.Frame, tk.Label, tk.Label]] = {}
         for schluessel, zeichen, text in (("umwandeln", "⇄", "ps5pkg.nav_convert"), ("bibliothek", "▥", "ps5pkg.nav_library"),
-                                          ("optionen", "⚙", "ps5pkg.nav_options")):
+                                          ("extras", "⚒", "ps5pkg.nav_extras"), ("optionen", "⚙", "ps5pkg.nav_options")):
             rahmen = tk.Frame(leiste, bg=c["bg_main"], cursor="hand2", pady=8)
             rahmen.pack(fill="x", pady=(0, 6))
             symbol = tk.Label(rahmen, text=zeichen, font=(F, pt(18)), bg=c["bg_main"], fg=c["fg_secondary"])
@@ -478,6 +531,9 @@ class Ps5PkgFenster:
         self.paket_pfad.pack(side="left", fill="x", expand=True)
         self.paket_typ = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_accent"], padx=10)
         self.paket_typ.pack(side="right")
+        self.paket_playgo = tk.Label(quelle, text="", font=(F, pt(9), "bold"), bg=c["bg_card"],
+                                     fg=c.get("fg_warning", "#f0a32e"), anchor="w")
+        self.paket_playgo.pack(fill="x")
         tk.Frame(quelle, height=1, bg=c["border"]).pack(fill="x", pady=(14, 0))
         # Vier Aktionen passen bei der Mindestbreite nicht mehr in eine Zeile: Die Zeile bricht um, statt abzuschneiden.
         aktion = raster.FlussZeile(quelle, g._bibliothek_zeichner(), grund="bg_card", abstand=(14, 4))
@@ -725,6 +781,331 @@ class Ps5PkgFenster:
 
         self._suche_hinweis_setzen(True)       # erst jetzt: die Liste existiert
 
+    # ---------------- Seite Extras (SDK-Werkzeuge) ----------------
+    def _seite_extras(self, seite) -> None:
+        g, t, c = self.g, self.t, self.c
+        F, pt = self.F, self.pt
+        pw = g._pw
+        seite.columnconfigure(0, weight=1)
+        kopf = tk.Frame(seite, bg=c["bg_main"])
+        kopf.grid(row=0, column=0, sticky="ew", pady=(8, 12))
+        tk.Label(kopf, text=t("ps5pkg.nav_extras"), font=(F, pt(20), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x")
+
+        karte = self._karte(seite, "ps5pkg.dds_title")
+        karte.grid(row=1, column=0, sticky="ew")
+
+        # Innerer Frame fuer grid (Karte-Titel wurde per pack gesetzt; grid-Kinder muessen in einem eigenen Frame)
+        inhalt = tk.Frame(karte, bg=c["bg_card"])
+        inhalt.pack(fill="both", expand=True)
+        inhalt.columnconfigure(1, weight=1)
+
+        tk.Label(inhalt, text=t("ps5pkg.dds_hint"), font=(F, pt(9)), bg=c["bg_card"],
+                 fg=c["fg_secondary"], wraplength=540, justify="left", anchor="w").grid(
+            row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+
+        tk.Label(inhalt, text=t("ps5pkg.dds_lbl_source"), font=(F, pt(10)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        self._dds_quelle_var = tk.StringVar()
+        pw.Entry(inhalt, textvariable=self._dds_quelle_var, font=(F, pt(10))).grid(
+            row=1, column=1, sticky="ew", padx=(0, 8))
+        self._pille(inhalt, "ps5pkg.dds_btn_source", self._dds_quelle_waehlen, klein=True).grid(row=1, column=2)
+
+        tk.Label(inhalt, text=t("ps5pkg.dds_lbl_target"), font=(F, pt(10)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(8, 0))
+        self._dds_ziel_var = tk.StringVar()
+        pw.Entry(inhalt, textvariable=self._dds_ziel_var, font=(F, pt(10))).grid(
+            row=2, column=1, sticky="ew", padx=(0, 8), pady=(8, 0))
+        self._pille(inhalt, "ps5pkg.dds_btn_target", self._dds_ziel_waehlen, klein=True).grid(row=2, column=2, pady=(8, 0))
+
+        self._dds_alpha_var = tk.BooleanVar()
+        pw.Checkbutton(inhalt, text=t("ps5pkg.dds_chk_alpha"), variable=self._dds_alpha_var,
+                       font=(F, pt(10))).grid(row=3, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        self._dds_status = tk.Label(inhalt, text="", font=(F, pt(9)), bg=c["bg_card"],
+                                    fg=c["fg_secondary"], anchor="w", wraplength=540)
+        self._dds_status.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+
+        self._pille(inhalt, "ps5pkg.dds_btn_run", self._dds_konvertieren, akzent=True).grid(
+            row=5, column=0, columnspan=3, pady=(12, 0), sticky="w")
+
+        # ---- exFAT Boot-Sektor reparieren (Nr. 3) ----
+        karte_rep = self._karte(seite, "ps5pkg.exfat_repair_title")
+        karte_rep.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        ir = tk.Frame(karte_rep, bg=c["bg_card"])
+        ir.pack(fill="both", expand=True)
+        ir.columnconfigure(1, weight=1)
+        tk.Label(ir, text=t("ps5pkg.exfat_repair_hint"), font=(F, pt(9)), bg=c["bg_card"],
+                 fg=c["fg_secondary"], wraplength=540, justify="left", anchor="w").grid(
+            row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        tk.Label(ir, text=t("ps5pkg.exfat_repair_lbl_file"), font=(F, pt(10)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        self._exfat_rep_pfad_var = tk.StringVar()
+        pw.Entry(ir, textvariable=self._exfat_rep_pfad_var, font=(F, pt(10))).grid(
+            row=1, column=1, sticky="ew", padx=(0, 8))
+        self._pille(ir, "ps5pkg.exfat_repair_btn_file", self._exfat_rep_waehlen, klein=True).grid(row=1, column=2)
+        self._exfat_rep_status = tk.Label(ir, text="", font=(F, pt(9)), bg=c["bg_card"],
+                                          fg=c["fg_secondary"], anchor="w", wraplength=540)
+        self._exfat_rep_status.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self._pille(ir, "ps5pkg.exfat_repair_btn_run", self._exfat_reparieren, akzent=True).grid(
+            row=3, column=0, columnspan=3, pady=(12, 0), sticky="w")
+
+        # ---- exFAT-Inhalt bearbeiten (Nr. 2) ----
+        karte_edit = self._karte(seite, "ps5pkg.exfat_edit_title")
+        karte_edit.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        ie = tk.Frame(karte_edit, bg=c["bg_card"])
+        ie.pack(fill="both", expand=True)
+        ie.columnconfigure(1, weight=1)
+        tk.Label(ie, text=t("ps5pkg.exfat_edit_hint"), font=(F, pt(9)), bg=c["bg_card"],
+                 fg=c["fg_secondary"], wraplength=540, justify="left", anchor="w").grid(
+            row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        # Entpacken-Bereich
+        tk.Label(ie, text=t("ps5pkg.exfat_edit_lbl_source"), font=(F, pt(10)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        self._exfat_edit_quelle_var = tk.StringVar()
+        pw.Entry(ie, textvariable=self._exfat_edit_quelle_var, font=(F, pt(10))).grid(
+            row=1, column=1, sticky="ew", padx=(0, 8))
+        self._pille(ie, "ps5pkg.exfat_edit_btn_source", self._exfat_edit_quelle_waehlen, klein=True).grid(row=1, column=2)
+        tk.Label(ie, text=t("ps5pkg.exfat_edit_lbl_folder"), font=(F, pt(10)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(8, 0))
+        self._exfat_edit_ordner_var = tk.StringVar()
+        pw.Entry(ie, textvariable=self._exfat_edit_ordner_var, font=(F, pt(10))).grid(
+            row=2, column=1, sticky="ew", padx=(0, 8), pady=(8, 0))
+        self._pille(ie, "ps5pkg.exfat_edit_btn_folder", self._exfat_edit_ordner_waehlen, klein=True).grid(row=2, column=2, pady=(8, 0))
+        self._exfat_edit_unpack_status = tk.Label(ie, text="", font=(F, pt(9)), bg=c["bg_card"],
+                                                  fg=c["fg_secondary"], anchor="w", wraplength=540)
+        self._exfat_edit_unpack_status.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self._pille(ie, "ps5pkg.exfat_edit_btn_unpack", self._exfat_entpacken, akzent=True).grid(
+            row=4, column=0, columnspan=3, pady=(8, 0), sticky="w")
+        # Aufbauen-Bereich
+        trennlinie = tk.Frame(ie, bg=c["border"], height=1)
+        trennlinie.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(14, 10))
+        tk.Label(ie, text=t("ps5pkg.exfat_edit_lbl_source2"), font=(F, pt(10)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").grid(row=6, column=0, sticky="w", padx=(0, 8))
+        self._exfat_edit_ordner2_var = tk.StringVar()
+        pw.Entry(ie, textvariable=self._exfat_edit_ordner2_var, font=(F, pt(10))).grid(
+            row=6, column=1, sticky="ew", padx=(0, 8))
+        self._pille(ie, "ps5pkg.exfat_edit_btn_source2", self._exfat_edit_ordner2_waehlen, klein=True).grid(row=6, column=2)
+        tk.Label(ie, text=t("ps5pkg.exfat_edit_lbl_target"), font=(F, pt(10)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").grid(row=7, column=0, sticky="w", padx=(0, 8), pady=(8, 0))
+        self._exfat_edit_ziel_var = tk.StringVar()
+        pw.Entry(ie, textvariable=self._exfat_edit_ziel_var, font=(F, pt(10))).grid(
+            row=7, column=1, sticky="ew", padx=(0, 8), pady=(8, 0))
+        self._pille(ie, "ps5pkg.exfat_edit_btn_target", self._exfat_edit_ziel_waehlen, klein=True).grid(row=7, column=2, pady=(8, 0))
+        self._exfat_edit_pack_status = tk.Label(ie, text="", font=(F, pt(9)), bg=c["bg_card"],
+                                                fg=c["fg_secondary"], anchor="w", wraplength=540)
+        self._exfat_edit_pack_status.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self._pille(ie, "ps5pkg.exfat_edit_btn_pack", self._exfat_aufbauen, akzent=True).grid(
+            row=9, column=0, columnspan=3, pady=(8, 0), sticky="w")
+
+        # ---- FFPKG-Metadaten reparieren (Nr. 4) ----
+        karte_ffpkg = self._karte(seite, "ps5pkg.ffpkg_repair_title")
+        karte_ffpkg.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        ifp = tk.Frame(karte_ffpkg, bg=c["bg_card"])
+        ifp.pack(fill="both", expand=True)
+        ifp.columnconfigure(1, weight=1)
+        tk.Label(ifp, text=t("ps5pkg.ffpkg_repair_hint"), font=(F, pt(9)), bg=c["bg_card"],
+                 fg=c["fg_secondary"], wraplength=540, justify="left", anchor="w").grid(
+            row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        tk.Label(ifp, text=t("ps5pkg.ffpkg_repair_lbl_file"), font=(F, pt(10)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        self._ffpkg_rep_pfad_var = tk.StringVar()
+        pw.Entry(ifp, textvariable=self._ffpkg_rep_pfad_var, font=(F, pt(10))).grid(
+            row=1, column=1, sticky="ew", padx=(0, 8))
+        self._pille(ifp, "ps5pkg.ffpkg_repair_btn_file", self._ffpkg_rep_waehlen, klein=True).grid(row=1, column=2)
+        self._ffpkg_rep_status = tk.Label(ifp, text="", font=(F, pt(9)), bg=c["bg_card"],
+                                          fg=c["fg_secondary"], anchor="w", wraplength=540)
+        self._ffpkg_rep_status.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self._pille(ifp, "ps5pkg.ffpkg_repair_btn_copy", self._ffpkg_befehl_kopieren, akzent=True).grid(
+            row=3, column=0, columnspan=3, pady=(12, 0), sticky="w")
+
+    def _dds_quelle_waehlen(self) -> None:
+        pfad = filedialog.askopenfilename(parent=self.win, title=self.t("ps5pkg.dds_btn_source"),
+                                          filetypes=[(self.t("ps5pkg.dds_filetype"), "*.dds"),
+                                                     (self.t("filetype.all_files"), "*.*")])
+        if pfad:
+            pfad = os.path.normpath(pfad)
+            self._dds_quelle_var.set(pfad)
+            if not self._dds_ziel_var.get():
+                basis = os.path.splitext(pfad)[0]
+                self._dds_ziel_var.set(basis + ".png")
+
+    def _dds_ziel_waehlen(self) -> None:
+        start = self._dds_ziel_var.get()
+        vorschlag = os.path.basename(start) if start else "ausgabe.png"
+        pfad = filedialog.asksaveasfilename(parent=self.win, title=self.t("ps5pkg.dds_btn_target"),
+                                             defaultextension=".png",
+                                             filetypes=[("PNG", "*.png"), (self.t("filetype.all_files"), "*.*")],
+                                             initialfile=vorschlag)
+        if pfad:
+            self._dds_ziel_var.set(os.path.normpath(pfad))
+
+    def _dds_konvertieren(self) -> None:
+        from ps5_validator.utils import sdk_werkzeuge as sdk
+        werkzeug = sdk.dds2png_suchen(self._wurzeln())
+        if not werkzeug:
+            self._dds_status.configure(fg=self.c["fg_error"] if "fg_error" in self.c else "red",
+                                       text=self.t("ps5pkg.dds_err_no_tool"))
+            return
+        quelle = self._dds_quelle_var.get().strip()
+        ziel = self._dds_ziel_var.get().strip()
+        if not quelle:
+            self._dds_status.configure(text=self.t("ps5pkg.dds_err_no_source"))
+            return
+        if not ziel:
+            self._dds_status.configure(text=self.t("ps5pkg.dds_err_no_target"))
+            return
+        self._dds_status.configure(text="…", fg=self.c["fg_secondary"])
+        self.win.update_idletasks()
+        try:
+            sdk.dds_zu_png(werkzeug, quelle, ziel,
+                           preserve_alpha=bool(self._dds_alpha_var.get()),
+                           zeile=lambda z: self._dds_status.configure(text=z))
+            self._dds_status.configure(fg=self.c["fg_secondary"],
+                                       text=self.t("ps5pkg.dds_ok", datei=os.path.basename(ziel)))
+        except sdk.Fehler as exc:
+            self._dds_status.configure(fg=self.c.get("fg_error", "red"), text=str(exc))
+
+    # -- exFAT Boot-Sektor reparieren (Nr. 3) --
+    def _exfat_rep_waehlen(self) -> None:
+        pfad = filedialog.askopenfilename(parent=self.win, title=self.t("ps5pkg.exfat_repair_lbl_file"),
+                                          filetypes=[("exFAT", "*.exfat"), (self.t("filetype.all_files"), "*.*")])
+        if pfad:
+            self._exfat_rep_pfad_var.set(os.path.normpath(pfad))
+
+    def _exfat_reparieren(self) -> None:
+        from ps5_validator.utils import exfat_werkzeuge as ew
+        pfad = self._exfat_rep_pfad_var.get().strip()
+        if not pfad:
+            self._exfat_rep_status.configure(text=self.t("ps5pkg.exfat_repair_err_no_file"),
+                                             fg=self.c.get("fg_error", "red"))
+            return
+        self._exfat_rep_status.configure(text="…", fg=self.c["fg_secondary"])
+        self.win.update_idletasks()
+        ok, marker = ew.exfat_boot_sektor_reparieren(pfad)
+        if ok:
+            msg = (self.t("ps5pkg.exfat_repair_ok_already") if marker == ew.MARKER_PRIMAER_OK
+                   else self.t("ps5pkg.exfat_repair_ok_done"))
+            self._exfat_rep_status.configure(text=msg, fg=self.c["fg_secondary"])
+        else:
+            self._exfat_rep_status.configure(text=self.t("ps5pkg.exfat_repair_err", fehler=marker),
+                                             fg=self.c.get("fg_error", "red"))
+
+    # -- exFAT-Inhalt bearbeiten (Nr. 2) --
+    def _exfat_edit_quelle_waehlen(self) -> None:
+        pfad = filedialog.askopenfilename(parent=self.win, title=self.t("ps5pkg.exfat_edit_lbl_source"),
+                                          filetypes=[("exFAT", "*.exfat"), (self.t("filetype.all_files"), "*.*")])
+        if pfad:
+            self._exfat_edit_quelle_var.set(os.path.normpath(pfad))
+
+    def _exfat_edit_ordner_waehlen(self) -> None:
+        ordner = filedialog.askdirectory(parent=self.win, title=self.t("ps5pkg.exfat_edit_lbl_folder"))
+        if ordner:
+            self._exfat_edit_ordner_var.set(os.path.normpath(ordner))
+            if not self._exfat_edit_ordner2_var.get():
+                self._exfat_edit_ordner2_var.set(os.path.normpath(ordner))
+
+    def _exfat_edit_ordner2_waehlen(self) -> None:
+        ordner = filedialog.askdirectory(parent=self.win, title=self.t("ps5pkg.exfat_edit_lbl_source2"))
+        if ordner:
+            self._exfat_edit_ordner2_var.set(os.path.normpath(ordner))
+
+    def _exfat_edit_ziel_waehlen(self) -> None:
+        pfad = filedialog.asksaveasfilename(parent=self.win, title=self.t("ps5pkg.exfat_edit_lbl_target"),
+                                            defaultextension=".exfat",
+                                            filetypes=[("exFAT", "*.exfat"), (self.t("filetype.all_files"), "*.*")])
+        if pfad:
+            self._exfat_edit_ziel_var.set(os.path.normpath(pfad))
+
+    def _exfat_entpacken(self) -> None:
+        from ps5_validator.utils import exfat_werkzeuge as ew
+        quelle = self._exfat_edit_quelle_var.get().strip()
+        ordner = self._exfat_edit_ordner_var.get().strip()
+        if not quelle:
+            self._exfat_edit_unpack_status.configure(text=self.t("ps5pkg.exfat_edit_err_no_source"),
+                                                     fg=self.c.get("fg_error", "red"))
+            return
+        if not ordner:
+            self._exfat_edit_unpack_status.configure(text=self.t("ps5pkg.exfat_edit_err_no_folder"),
+                                                     fg=self.c.get("fg_error", "red"))
+            return
+        if not ew.mkpfs_eltern_suchen(self._wurzeln()):
+            self._exfat_edit_unpack_status.configure(text=self.t("ps5pkg.exfat_edit_err_no_tool"),
+                                                     fg=self.c.get("fg_error", "red"))
+            return
+        self._exfat_edit_unpack_status.configure(text="…", fg=self.c["fg_secondary"])
+        self.win.update_idletasks()
+        ok, ausgabe = ew.exfat_entpacken(self._wurzeln(), quelle, ordner)
+        if ok:
+            self._exfat_edit_unpack_status.configure(
+                text=self.t("ps5pkg.exfat_edit_ok_unpack", pfad=ordner), fg=self.c["fg_secondary"])
+        else:
+            self._exfat_edit_unpack_status.configure(
+                text=self.t("ps5pkg.exfat_edit_err", fehler=ausgabe[:200]), fg=self.c.get("fg_error", "red"))
+
+    def _exfat_aufbauen(self) -> None:
+        from ps5_validator.utils import exfat_werkzeuge as ew
+        ordner = self._exfat_edit_ordner2_var.get().strip()
+        ziel = self._exfat_edit_ziel_var.get().strip()
+        if not ordner:
+            self._exfat_edit_pack_status.configure(text=self.t("ps5pkg.exfat_edit_err_no_folder"),
+                                                   fg=self.c.get("fg_error", "red"))
+            return
+        if not ziel:
+            self._exfat_edit_pack_status.configure(text=self.t("ps5pkg.exfat_edit_err_no_source"),
+                                                   fg=self.c.get("fg_error", "red"))
+            return
+        if not ew.mkpfs_eltern_suchen(self._wurzeln()):
+            self._exfat_edit_pack_status.configure(text=self.t("ps5pkg.exfat_edit_err_no_tool"),
+                                                   fg=self.c.get("fg_error", "red"))
+            return
+        self._exfat_edit_pack_status.configure(text="…", fg=self.c["fg_secondary"])
+        self.win.update_idletasks()
+        ok, ausgabe = ew.exfat_aufbauen(self._wurzeln(), ordner, ziel)
+        if ok:
+            self._exfat_edit_pack_status.configure(
+                text=self.t("ps5pkg.exfat_edit_ok_pack", pfad=ziel), fg=self.c["fg_secondary"])
+        else:
+            self._exfat_edit_pack_status.configure(
+                text=self.t("ps5pkg.exfat_edit_err", fehler=ausgabe[:200]), fg=self.c.get("fg_error", "red"))
+
+    # -- FFPKG-Metadaten reparieren (Nr. 4) --
+    def _ffpkg_rep_waehlen(self) -> None:
+        pfad = filedialog.askopenfilename(parent=self.win, title=self.t("ps5pkg.ffpkg_repair_lbl_file"),
+                                          filetypes=[("FFPKG", "*.ffpkg"), (self.t("filetype.all_files"), "*.*")])
+        if pfad:
+            self._ffpkg_rep_pfad_var.set(os.path.normpath(pfad))
+
+    def _ffpkg_befehl_kopieren(self) -> None:
+        from ps5_validator.utils import werkzeuge_bereitstellen as wb
+        pfad = self._ffpkg_rep_pfad_var.get().strip()
+        if not pfad:
+            self._ffpkg_rep_status.configure(text=self.t("ps5pkg.ffpkg_repair_err_no_file"),
+                                             fg=self.c.get("fg_error", "red"))
+            return
+        try:
+            wurzeln = self._wurzeln()
+            def _suche(ordner_name: str) -> str:
+                for w in wurzeln:
+                    if os.path.isdir(os.path.join(w, ordner_name)):
+                        return w
+                return ""
+            ufs2tool = wb.ufs2tool_bereitstellen(_suche)
+        except Exception:
+            ufs2tool = ""
+        if not ufs2tool:
+            self._ffpkg_rep_status.configure(text=self.t("ps5pkg.ffpkg_repair_err_no_tool"),
+                                             fg=self.c.get("fg_error", "red"))
+            return
+        befehl = f'"{ufs2tool}" fsck_ufs -y "{pfad}"'
+        try:
+            self.win.clipboard_clear()
+            self.win.clipboard_append(befehl)
+        except Exception:
+            pass
+        self._ffpkg_rep_status.configure(text=self.t("ps5pkg.ffpkg_repair_copied"),
+                                         fg=self.c["fg_secondary"])
+
     # ------------------------------------------------------------------
     # Quelle waehlen und lesen
     # ------------------------------------------------------------------
@@ -931,6 +1312,7 @@ class Ps5PkgFenster:
                 self.paket_titel.configure(text=self.t("ps5pkg.no_source"))
                 self.paket_pfad.configure(text="")
                 self.paket_typ.configure(text="")
+                self.paket_playgo.configure(text="")
                 self._cover = None
                 self.cover_label.configure(image="", text=self.t("ps5pkg.no_cover"))
                 spielinfo_zuruecksetzen(self.g)
@@ -1030,6 +1412,28 @@ class Ps5PkgFenster:
         self.paket_pfad.configure(text="%s · %s" % (info.pfad, self._fmt(info.groesse)))
         self.paket_typ.configure(text=self.t("ps5pkg.badge_folder") if info.ist_ordner
                                  else self.t("ps5pkg.badge_debug") if info.debug else (info.typ or ""))
+        # PlayGo-Hinweis: Ordner direkt, Archive im Hintergrund (Subprocess).
+        if info.ist_ordner:
+            merkmal = wz.playgo_erklaert_ordner(info.pfad)
+            self.paket_playgo.configure(
+                text=self.t("pkg.playgo_hinweis", datei=merkmal) if merkmal else "")
+        else:
+            self.paket_playgo.configure(text="")
+            ext = os.path.splitext(info.pfad)[1].lower()
+            if ext in (".pkg", ".ffpfsc", ".ffpfs", ".exfat", ".ffpkg"):
+                pfad_snap = info.pfad
+                def _pruefe_archiv_playgo(p=pfad_snap):
+                    merkmal = wz.playgo_erklaert_archiv(p, self._werkzeug(), self._wurzeln())
+                    def _ui():
+                        if hasattr(self, "paket_playgo") and self.aktuell and self.aktuell.pfad == p:
+                            self.paket_playgo.configure(
+                                text=self.t("pkg.playgo_hinweis", datei=merkmal) if merkmal else "")
+                    try:
+                        self.after(0, _ui)
+                    except Exception:
+                        pass
+                import threading as _threading
+                _threading.Thread(target=_pruefe_archiv_playgo, daemon=True).start()
         # Was fuer diese Quelle nicht geht, springt auf den Vorgabewert zurueck (ohne es zu speichern).
         if not self._aktion_moeglich(self.aktion_var.get()):
             self.aktion_var.set(AKTION_UMWANDELN)
@@ -1185,16 +1589,52 @@ class Ps5PkgFenster:
 
     def _knoepfe_pruefen(self) -> None:
         laeuft = self._job is not None or self._uebergabe is not None
+        # Datei-Browser nur fuer .pkg-Dateien (list-inner braucht ein Paket, keinen Ordner)
+        browser_ok = (self.aktuell is not None and not self.aktuell.ist_ordner
+                      and bool(self._werkzeug()))
+        # Detail-Fenster nur fuer Spielordner
+        detail_ok = self.aktuell is not None and bool(self.aktuell.ist_ordner)
         try:
             self.start_knopf.configure(state="disabled" if (laeuft or self.aktuell is None) else "normal")
             self.abbrechen_knopf.configure(state="normal" if laeuft else "disabled")
             self.cover_knopf.configure(state="normal" if self.aktuell is not None else "disabled")
+            self.browser_knopf.configure(state="normal" if browser_ok else "disabled")
+            self.detail_knopf.configure(state="normal" if detail_ok else "disabled")
         except tk.TclError:
             pass
 
     def _fehler(self, text: str) -> None:
         self._protokoll(text)
         messagebox.showerror(self.t("ps5pkg.window_title"), text, parent=self.win)
+
+    def _browser_oeffnen(self) -> None:
+        """Oeffnet den Datei-Browser fuer das aktuell gewaehlte .pkg-Paket."""
+        if self.aktuell is None or self.aktuell.ist_ordner:
+            return
+        vorh = getattr(self.win, browser_ui.FENSTER_ATTRIBUT, None)
+        if vorh is not None:
+            try:
+                vorh.win.lift()
+                vorh.win.focus_set()
+                return
+            except tk.TclError:
+                pass
+        browser_ui.PkgDateiBrowser(self.win, self, self._werkzeug(),
+                                    self.aktuell.pfad, passcode=self._passcode())
+
+    def _detail_oeffnen(self) -> None:
+        """Oeffnet das Spiel-Detail-Fenster fuer den aktuell gewaehlten Spielordner."""
+        if self.aktuell is None or not self.aktuell.ist_ordner:
+            return
+        vorh = getattr(self.win, detail_ui.FENSTER_ATTRIBUT, None)
+        if vorh is not None:
+            try:
+                vorh.win.lift()
+                vorh.win.focus_set()
+                return
+            except tk.TclError:
+                pass
+        detail_ui.SpielDetailFenster(self.win, self, self.aktuell.pfad, titel=self.aktuell.titel or "")
 
     def _zu_umwandeln(self) -> None:
         self._seite_zeigen("umwandeln")
@@ -1468,10 +1908,18 @@ class Ps5PkgFenster:
                 self._z["schritt_text"] = datei
 
         try:
-            schluss = wz.extrahieren(self._werkzeug(), info.pfad, ziel, passcode=self._passcode(), zeile=self._melden,
-                                     fortschritt=fortschritt, abbruch=lambda: self._abbruch,
-                                     popen_extra=self._popen_extra(),
-                                     platz_pruefen=lambda gesamt: self._platz_fuer_entpacken(ziel, gesamt))
+            if self._builder() == "ppt":
+                werkzeug_ppt = self._werkzeug_ppt()
+                if not werkzeug_ppt:
+                    raise wz.Fehler(self.t("ps5pkg.err_no_tool_ppt"))
+                ppt.extrahieren(werkzeug_ppt, info.pfad, ziel, passcode=self._passcode(), zeile=self._melden,
+                                abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
+                schluss = self.t("ps5pkg.log_extracted", anzahl="?")
+            else:
+                schluss = wz.extrahieren(self._werkzeug(), info.pfad, ziel, passcode=self._passcode(),
+                                         zeile=self._melden, fortschritt=fortschritt,
+                                         abbruch=lambda: self._abbruch, popen_extra=self._popen_extra(),
+                                         platz_pruefen=lambda gesamt: self._platz_fuer_entpacken(ziel, gesamt))
             ende = {"ok": True, "text": schluss, "ausgabe": ziel}
         except wz.Fehler as exc:
             ende = {"ok": False, "text": str(exc)}
@@ -1550,18 +1998,57 @@ class Ps5PkgFenster:
                 self._z["gesamt"] = prozent / 2.0
                 self._z["schritt_text"] = text
 
+        _min_fw_alt: "str | None" = None
+        _content_type_alt: "str | None" = None
         try:
             passcode = self._passcode()
             if self._builder() == "ppt":
                 werkzeug_ppt = self._werkzeug_ppt()
                 if not werkzeug_ppt:
                     raise wz.Fehler(self.t("ps5pkg.err_no_tool_ppt"))
-                pfad = ppt.bauen(werkzeug_ppt, info.pfad, ziel, content_id=info.content_id, title_id=info.title_id,
+                # Anders als wz.bauen() (LibProsperoPkg) nimmt ppt.bauen() keinen ZielORDNER - "ziel" geht
+                # unveraendert als --out an ProsperoPkgTool, das dort eine DATEI oeffnet. Ein Ordnerpfad endete
+                # deshalb immer mit "Access to the path '...' is denied" (das Werkzeug kam bis zum letzten
+                # Schritt durch und scheiterte erst beim Schreiben; Durchsicht 17.10.2026 an einem echten Bau).
+                ppt_datei = os.path.join(ziel, anzeigename(info) + ".pkg")
+                pfad = ppt.bauen(werkzeug_ppt, info.pfad, ppt_datei, content_id=info.content_id, title_id=info.title_id,
                                  passcode=passcode, zeile=self._melden, fortschritt=fortschritt,
                                  abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
             else:
+                min_fw_str = str(self._einstellung(opt.MIN_FW_VERSION, "")).strip()
+                min_fw_hex = wz.fw_hex(min_fw_str) if min_fw_str else ""
+                if min_fw_hex:
+                    try:
+                        _min_fw_alt = wz.param_json_setzen(
+                            info.pfad, "requiredSystemSoftwareVersion", min_fw_hex)
+                    except wz.Fehler as exc:
+                        raise wz.Fehler(self.t("ps5pkg.err_min_fw_write", error=str(exc))) from exc
+                if bool(self._einstellung(opt.PATCH_MODUS, False)):
+                    try:
+                        _content_type_alt = wz.param_json_setzen(info.pfad, "contentType", "PATCH")
+                    except wz.Fehler as exc:
+                        raise wz.Fehler(self.t("ps5pkg.err_patch_modus_write", error=str(exc))) from exc
+                backport_an = bool(self._einstellung(opt.BACKPORT_EINBAUEN, False))
+                if backport_an:
+                    from ps5_validator.utils import ps5_pkg_backport as bp_util
+                    fw = int(self._einstellung(opt.BACKPORT_FIRMWARE, 0))
+                    fakelib_konfiguriert = str(self._einstellung(opt.BACKPORT_FAKELIB_ORDNER, "")).strip()
+                    fakelib_basis = (fakelib_konfiguriert if fakelib_konfiguriert and os.path.isdir(fakelib_konfiguriert)
+                                     else getattr(self.g, "_backport_fakelib_basis", lambda: "")())
+                    erg, meldung = bp_util.backport_einbauen(
+                        info.pfad, fw, fakelib_basis, zeile=self._melden, abbruch=lambda: self._abbruch)
+                    if erg == bp_util.ERGEBNIS_ABGEBROCHEN:
+                        raise wz.Fehler("abgebrochen")
+                    if erg == bp_util.ERGEBNIS_FEHLER:
+                        raise wz.Fehler(self.t("ps5pkg.err_backport", error=meldung))
                 pfad = wz.bauen(self._werkzeug(), info.pfad, ziel, content_id=info.content_id, title_id=info.title_id,
                                 titel=info.titel, version=str(param.get("contentVersion", "") or "01.000.000"),
+                                modus=self._einstellung(opt.KRAKEN_MODUS, "kraken"),
+                                stufe=int(self._einstellung(opt.KRAKEN_STUFE, 7)),
+                                kerne=int(self._einstellung(opt.KRAKEN_KERNE, 0)),
+                                playgo_chunks=int(self._einstellung(opt.PLAYGO_CHUNKS, 1)),
+                                deterministisch=bool(self._einstellung(opt.DETERMINISTISCH, False)),
+                                regen_playgo=bool(self._einstellung(opt.REGEN_PLAYGO, False)),
                                 passcode=passcode, temp=bau.get("temp"), zeile=self._melden, fortschritt=fortschritt,
                                 abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
         except wz.Fehler as exc:
@@ -1589,6 +2076,17 @@ class Ps5PkgFenster:
             except wz.Fehler as exc:
                 pruef, befund = str(exc), True
             ende = {"ok": True, "text": pfad, "ausgabe": ziel, "pkg": pfad, "pruefung": pruef, "befund": befund}
+        finally:
+            if _min_fw_alt is not None:
+                try:
+                    wz.param_json_setzen(info.pfad, "requiredSystemSoftwareVersion", _min_fw_alt)
+                except wz.Fehler:
+                    pass
+            if _content_type_alt is not None:
+                try:
+                    wz.param_json_setzen(info.pfad, "contentType", _content_type_alt)
+                except wz.Fehler:
+                    pass
         with self._sperre:
             self._z["fertig"] = ende
 

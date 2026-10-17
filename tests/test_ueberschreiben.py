@@ -43,7 +43,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 PROJEKT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJEKT))
@@ -262,6 +261,114 @@ class SammelUeberschreibenTests(unittest.TestCase):
             eintrag = i18n.STRINGS[schluessel]
             self.assertTrue(eintrag.get("de"), schluessel)
             self.assertTrue(eintrag.get("en"), schluessel)
+
+
+class BatchVorpruefungTests(unittest.TestCase):
+    """_batch_vorpruefung klaert alle Rueckfragen vor dem ersten Byte Arbeit."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="vorpruef_")
+        self.ordner = Path(self.tmp.name)
+        # Quellordner (fuer Arbeitskopie-Pruefung)
+        self.src_ordner = self.ordner / "Spiel_A"
+        self.src_ordner.mkdir()
+        # Quelldatei (kein Ordner)
+        self.src_datei = self.ordner / "Spiel_B.exfat"
+        self.src_datei.write_bytes(b"X" * 32)
+        # Vorhandene Zieldatei fuer Ueberschreib-Test
+        self.vorhanden = self.ordner / "Spiel_B.ffpfsc"
+        self.vorhanden.write_bytes(b"alt")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _gui(self, antwort=True, ampr=False, backport=False, arbeitskopie_vorher=False):
+        gui = _gui()
+        gui.root = object()
+        gui._t = lambda s, **kw: s
+        gui._append_to_log = lambda _: None
+        self.gefragt: list[str] = []
+
+        def _fragen(_titel, _text):
+            self.gefragt.append(_titel)
+            return antwort
+        gui._ask_yesno_threadsafe = _fragen
+        gui._batch_ueberschreiben = None
+        gui._batch_arbeitskopie_vorab = None
+        gui._tk_wert = lambda k, dflt=None: (
+            ampr if k == "ampr_integrate_var" else
+            backport if k == "backport_integrate_var" else dflt)
+        gui._arbeitskopie_vorher_aktiv = lambda: arbeitskopie_vorher
+        return gui
+
+    def test_gibt_true_zurueck_wenn_kein_konflikt(self):
+        gui = self._gui()
+        self.assertTrue(gui._batch_vorpruefung(
+            [str(self.src_datei)], str(self.ordner), "ffpkg"))
+        self.assertEqual([], self.gefragt)
+
+    def test_vorhanden_zieldatei_loest_frage_aus(self):
+        """Zieldatei existiert bereits -> Ueberschreiben-Dialog vorab."""
+        gui = self._gui(antwort=True)
+        gui._batch_vorpruefung(
+            [str(self.src_datei)], str(self.ordner), "ffpfsc")
+        self.assertEqual(1, len(self.gefragt))
+        self.assertIs(True, gui._batch_ueberschreiben)
+
+    def test_nicht_vorhanden_keine_frage(self):
+        gui = self._gui()
+        gui._batch_vorpruefung(
+            [str(self.src_datei)], str(self.ordner), "ffpkg")
+        self.assertEqual([], self.gefragt)
+        self.assertIsNone(gui._batch_ueberschreiben)
+
+    def test_ohne_fenster_keine_dialoge(self):
+        gui = self._gui()
+        gui.root = None
+        self.assertTrue(gui._batch_vorpruefung(
+            [str(self.src_datei)], str(self.ordner), "ffpfsc"))
+        self.assertEqual([], self.gefragt)
+
+    def test_arbeitskopie_frage_bei_ampr_und_ordner(self):
+        """AMPR aktiv + Ordner-Quelle -> Arbeitskopie einmalig vorab fragen."""
+        gui = self._gui(antwort=True, ampr=True)
+        gui._batch_vorpruefung(
+            [str(self.src_ordner)], str(self.ordner), "ffpfsc")
+        self.assertEqual(1, len(self.gefragt))
+        self.assertIs(True, gui._batch_arbeitskopie_vorab)
+
+    def test_arbeitskopie_nein_wird_gespeichert(self):
+        gui = self._gui(antwort=False, backport=True)
+        gui._batch_vorpruefung(
+            [str(self.src_ordner)], str(self.ordner), "ffpfsc")
+        self.assertIs(False, gui._batch_arbeitskopie_vorab)
+
+    def test_arbeitskopie_nicht_gefragt_ohne_ordner_quelle(self):
+        """Nur Datei-Quellen -> Arbeitskopie-Frage entfallt."""
+        gui = self._gui(antwort=True, ampr=True)
+        gui._batch_vorpruefung(
+            [str(self.src_datei)], str(self.ordner), "ffpfsc")
+        # Nur Ueberschreiben-Dialog koennte kommen (Ziel existiert), kein 2. fuer Kopie.
+        self.assertIsNone(gui._batch_arbeitskopie_vorab)
+
+    def test_arbeitskopie_nicht_gefragt_wenn_einstellung_aktiv(self):
+        gui = self._gui(antwort=True, ampr=True, arbeitskopie_vorher=True)
+        gui._batch_vorpruefung(
+            [str(self.src_ordner)], str(self.ordner), "ffpfsc")
+        self.assertIsNone(gui._batch_arbeitskopie_vorab)
+
+    def test_arbeitskopie_nicht_gefragt_ohne_ampr_oder_backport(self):
+        gui = self._gui(antwort=True, ampr=False, backport=False)
+        gui._batch_vorpruefung(
+            [str(self.src_ordner)], str(self.ordner), "ffpfsc")
+        self.assertIsNone(gui._batch_arbeitskopie_vorab)
+
+    def test_i18n_schluessel_vorhanden(self):
+        from ps5_validator.utils import i18n
+        eintrag = i18n.STRINGS.get("batch.vorpruef_arbeitskopie_frage")
+        self.assertIsNotNone(eintrag, "i18n-Schluessel fehlt")
+        self.assertTrue(eintrag.get("de"))
+        self.assertTrue(eintrag.get("en"))
 
 
 class AmprManagerTests(unittest.TestCase):

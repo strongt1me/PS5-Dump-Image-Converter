@@ -497,6 +497,36 @@ class FensterHilfenTests(unittest.TestCase):
         self.assertEqual("", fz.firmware_text(0))
         self.assertEqual("abc", fz.firmware_text("abc"))
 
+    def test_fw_hex_und_fw_version_gueltig(self) -> None:
+        self.assertEqual("0x0900000000000000", wz.fw_hex("9.00"))
+        self.assertEqual("0x0b14000000000000", wz.fw_hex("11.20"))
+        self.assertEqual("0x0c00000000000000", wz.fw_hex("12.00"))
+        self.assertEqual("0x0100000000000000", wz.fw_hex("1.00"))
+        self.assertEqual("", wz.fw_hex(""))
+        self.assertEqual("", wz.fw_hex("abc"))
+        self.assertEqual("", wz.fw_hex("9"))
+        self.assertTrue(wz.fw_version_gueltig(""))
+        self.assertTrue(wz.fw_version_gueltig("9.00"))
+        self.assertTrue(wz.fw_version_gueltig("12,00"))
+        self.assertFalse(wz.fw_version_gueltig("9"))
+        self.assertFalse(wz.fw_version_gueltig("abc"))
+
+    def test_param_json_setzen_liest_und_schreibt(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            sce = os.path.join(td, "sce_sys")
+            os.makedirs(sce)
+            param_pfad = os.path.join(sce, "param.json")
+            daten = {"contentType": "GAME", "requiredSystemSoftwareVersion": "0x0900000000000000"}
+            with open(param_pfad, "w", encoding="utf-8") as f:
+                json.dump(daten, f)
+            alt = wz.param_json_setzen(td, "contentType", "PATCH")
+            self.assertEqual("GAME", alt)
+            geladen = json.loads(open(param_pfad, encoding="utf-8").read())
+            self.assertEqual("PATCH", geladen["contentType"])
+            wz.param_json_setzen(td, "contentType", alt)
+            geladen2 = json.loads(open(param_pfad, encoding="utf-8").read())
+            self.assertEqual("GAME", geladen2["contentType"])
+
     def test_sauberer_name_und_anzeigename(self) -> None:
         self.assertEqual("A b c d", fz.sauberer_name('A:b/c?d'))
         self.assertEqual("Asterix & Obelix Heroes", fz.sauberer_name("Asterix & Obelix Heroes."))
@@ -514,6 +544,20 @@ class FensterHilfenTests(unittest.TestCase):
                             ("-", True)):
             with self.subTest(suche=suche):
                 self.assertEqual(soll, fz.suche_passt(info, suche))
+
+    def test_die_suche_fw_sdk_und_oder(self) -> None:
+        info_fw = _info(param={"contentVersion": "01.000.000", "requiredSystemSoftwareVersion": "0x0900000000000000",
+                               "sdkVersion": "0x0700000000000000"})
+        for suche, soll in (
+            ("fw:>8.00", True), ("fw:>10.00", False), ("fw:9.00", True), ("fw:>=9.00", True), ("fw:<9.00", False),
+            ("fw:<=9.00", True), ("firmware:>8", True), ("firmware:10.00", False),
+            ("sdk:<8.00", True), ("sdk:>=7.00", True), ("sdk:>7.00", False), ("sdk:>=8", False),
+            ("Asterix | Zelda", True), ("Zelda | Mario", False), ("zelda | asterix", True),
+            ("titel:zelda | titel:obelix", True), ("titel:zelda | titel:batman", False),
+            ("fw:>8 | fw:>10", True),
+        ):
+            with self.subTest(suche=suche):
+                self.assertEqual(soll, fz.suche_passt(info_fw, suche))
 
     def test_die_uebersicht_hat_alle_zeilen(self) -> None:
         t = lambda k, **kw: k   # noqa: E731 - die Schluessel genuegen
@@ -602,6 +646,88 @@ class AnzeigeTests(unittest.TestCase):
         self.assertEqual("lese", lesbar("[info] Paketinhalt wird gelesen - bei einem grossen Paket ..."))
         self.assertEqual("etwas anderes", lesbar("[info] etwas anderes"), "nur die Kennung faellt weg")
         self.assertEqual("[warn] bleibt", lesbar("[warn] bleibt"))
+
+
+class PlayGoTests(unittest.TestCase):
+    """Tests fuer playgo_erklaert_ordner, _playgo_merkmal_in, _playgo_in_baumtext und playgo_erklaert_archiv."""
+
+    def _ordner_mit(self, *pfade: str) -> str:
+        tmp = tempfile.mkdtemp()
+        for p in pfade:
+            datei = os.path.join(tmp, *p.split("/"))
+            os.makedirs(os.path.dirname(datei), exist_ok=True)
+            open(datei, "wb").close()
+        return tmp
+
+    def test_erklaert_ordner_findet_scenario_json(self) -> None:
+        tmp = self._ordner_mit("sce_sys/playgo-scenario.json")
+        self.assertEqual("sce_sys/playgo-scenario.json", wz.playgo_erklaert_ordner(tmp))
+
+    def test_erklaert_ordner_findet_chunk_dat(self) -> None:
+        tmp = self._ordner_mit("sce_sys/playgo-chunk.dat")
+        self.assertEqual("sce_sys/playgo-chunk.dat", wz.playgo_erklaert_ordner(tmp))
+
+    def test_erklaert_ordner_ohne_playgo_gibt_leer(self) -> None:
+        tmp = self._ordner_mit("sce_sys/param.json", "app0/eboot.bin")
+        self.assertEqual("", wz.playgo_erklaert_ordner(tmp))
+
+    def test_playgo_merkmal_in_findet_normierten_pfad(self) -> None:
+        pfade = ["/app0/eboot.bin", "/sce_sys/playgo-scenario.json", "/sce_sys/param.json"]
+        self.assertEqual("sce_sys/playgo-scenario.json", wz._playgo_merkmal_in(pfade))
+
+    def test_playgo_merkmal_in_gibt_leer_wenn_fehlt(self) -> None:
+        pfade = ["/app0/eboot.bin", "/sce_sys/param.json"]
+        self.assertEqual("", wz._playgo_merkmal_in(pfade))
+
+    def test_playgo_in_baumtext_findet_dateinamen(self) -> None:
+        ausgabe = "MkPFS 1.1.0\n/\n|-- sce_sys\n|   |-- param.json\n|   `-- playgo-chunk.dat\n`-- app0\n"
+        self.assertEqual("sce_sys/playgo-chunk.dat", wz._playgo_in_baumtext(ausgabe))
+
+    def test_playgo_in_baumtext_gibt_leer_wenn_kein_merkmal(self) -> None:
+        ausgabe = "MkPFS 1.1.0\n/\n|-- sce_sys\n|   `-- param.json\n`-- app0\n"
+        self.assertEqual("", wz._playgo_in_baumtext(ausgabe))
+
+    def test_erklaert_archiv_pkg_ohne_werkzeug_gibt_leer(self) -> None:
+        self.assertEqual("", wz.playgo_erklaert_archiv("spiel.pkg", werkzeug=""))
+
+    def test_erklaert_archiv_pkg_mit_fehlendem_werkzeugpfad_gibt_leer(self) -> None:
+        self.assertEqual("", wz.playgo_erklaert_archiv("spiel.pkg", werkzeug="/nicht/vorhanden.exe"))
+
+    def test_erklaert_archiv_unbekannte_erweiterung_gibt_leer(self) -> None:
+        self.assertEqual("", wz.playgo_erklaert_archiv("spiel.xyz", werkzeug="x.exe", wurzeln=["."]))
+
+    def test_erklaert_archiv_ffpfsc_ohne_wurzeln_gibt_leer(self) -> None:
+        self.assertEqual("", wz.playgo_erklaert_archiv("spiel.ffpfsc", wurzeln=None))
+
+    def test_playgo_in_ffpkg_findet_dateinamen_als_bytes(self) -> None:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".ffpkg", delete=False)
+        try:
+            tmp.write(b"\x00" * 1024 + b"playgo-scenario.json" + b"\x00" * 512)
+            tmp.close()
+            self.assertEqual("sce_sys/playgo-scenario.json", wz._playgo_in_ffpkg(tmp.name))
+        finally:
+            os.unlink(tmp.name)
+
+    def test_playgo_in_ffpkg_gibt_leer_wenn_kein_merkmal(self) -> None:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".ffpkg", delete=False)
+        try:
+            tmp.write(b"\x00" * 4096 + b"param.json" + b"\x00" * 512)
+            tmp.close()
+            self.assertEqual("", wz._playgo_in_ffpkg(tmp.name))
+        finally:
+            os.unlink(tmp.name)
+
+    def test_erklaert_archiv_ffpkg_mit_playgo_bytes(self) -> None:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".ffpkg", delete=False)
+        try:
+            tmp.write(b"\x00" * 2048 + b"playgo-chunk.dat" + b"\x00" * 512)
+            tmp.close()
+            self.assertEqual("sce_sys/playgo-chunk.dat", wz.playgo_erklaert_archiv(tmp.name))
+        finally:
+            os.unlink(tmp.name)
 
 
 if __name__ == "__main__":
