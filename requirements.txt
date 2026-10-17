@@ -1,4 +1,4 @@
-Pillow==12.3.0
+Pillow==13.0.0
 cryptography==50.0.2
 zstandard==0.25.0
 zlib-ng
