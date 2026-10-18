@@ -922,8 +922,9 @@ class UrteilTests(unittest.TestCase):
     def test_zusammenfassung_zaehlt_je_status(self) -> None:
         zaehler = wu.zusammenfassung(self.befunde)
         self.assertEqual(len(self.befunde), sum(zaehler.values()))
-        # Drei Fassungen, die ihr Autor (noch) nicht so veroeffentlicht hat, dazu LibProsperoPkg 2.6.0 (Eigenbau).
-        self.assertEqual(4, zaehler.get(wu.STATUS_NEUER))
+        # Drei Fassungen, die ihr Autor (noch) nicht so veroeffentlicht hat, dazu LibProsperoPkg 2.6.0 (Eigenbau)
+        # und ps5-ultrapack 2.2.7 (echte Freigabe vom 17.10.2026 - neuer als der 15.10.2026-Stand in FakeNetz).
+        self.assertEqual(5, zaehler.get(wu.STATUS_NEUER))
         self.assertEqual(1, zaehler.get(wu.STATUS_UNKLAR))                 # DPI v2: keine Freigabe
         self.assertEqual(11, zaehler.get(wu.STATUS_OHNE_QUELLE))           # davon YT-Blocker (Sammlung, kein Einzel-ELF) + Byepervisor Reborn (kein Release)
         self.assertGreaterEqual(zaehler.get(wu.STATUS_NEU_HINWEIS, 0), 1)  # 7-Zip 26.04

@@ -12767,6 +12767,292 @@ class PS5ConverterGUI:
             variable = self._konsole_tafel_ip = tk.StringVar(value=self._ps5_ip())
         return variable
 
+    # --- Die Seite "Y2JB Updater" (Knopf 12 der Ansicht KONSOLE) -------------------
+    #
+    # Wunsch des Nutzers vom 18.10.2026: download0.dat waehlen (eigene Datei oder eine
+    # Freigabe von itsPLK/ps5-y2jb-autoloader laden) und per FTP in den Ordner der
+    # YouTube-App auf der Konsole legen. Das Werkzeug selbst (Fork von Gezine/Y2JB,
+    # GPL-3.0) nutzt eine Luecke im App-Aktualisierungsweg, um ein eigenes
+    # download0.dat einzuspielen - fuer die eigene, bereits gejailbreakte PS5.
+
+    def _konsole_y2jb_zeigen(self) -> None:
+        """Knopf "12. Y2JB Updater": rechts die Seite zeigen.
+
+        Zeigt nur; sendet nichts ins Netz und laedt nichts herunter - wie beim
+        WebKit Autoloader erst auf Knopfdruck.
+        """
+        self._konsole_seite_setzen("y2jbupdater")
+
+    def _konsole_y2jb_bauen(self) -> None:
+        """Baut die Seite "Y2JB Updater": download0.dat waehlen/holen, dann auf die PS5 legen.
+
+        Zwei Wege zur Datei (eigene waehlen oder eine Freigabe von itsPLK laden), dann ein
+        FTP-Hochladen in den Ordner der gewaehlten Titel-ID. Wie die uebrigen Seiten der
+        Ansicht KONSOLE einmal gebaut, danach nur ein-/ausgeblendet. Der Inhalt liegt in
+        einem rollbaren Bereich (:meth:`_build_scrollable_body`) - zwei Karten mit mehreren
+        Abschnitten reichten bei kleineren Fenstern sonst ueber den sichtbaren Bereich
+        hinaus (derselbe Fund wie bei der Seite "Extras" des PKG/FPKG-Fensters, 18.10.2026).
+        """
+        c = self._COLORS
+        seite = tk.Frame(self.root, bg=c["bg_main"], padx=24, pady=18)
+        self._konsole_y2jb = seite
+
+        # Kopf: dasselbe itsPLK-Bild wie beim WebKit Autoloader, Titel, Dank, zurueck.
+        kopf = tk.Frame(seite, bg=c["bg_main"])
+        kopf.pack(fill="x")
+        bild = self._webkit_bild_laden()
+        if bild is not None:
+            schild = tk.Label(kopf, image=bild, bg=c["bg_main"], bd=0)
+            schild._bild = bild            # Referenz halten, sonst raeumt der Sammler das Bild weg
+            schild.pack(side="left", padx=(0, 14))
+        zurueck = self._seitenpille(kopf, "konsole.btn_uebersicht",
+                                    lambda: self._konsole_seite_setzen("uebersicht"), klein=True)
+        zurueck.pack(side="right", anchor="n")
+        titelblock = tk.Frame(kopf, bg=c["bg_main"])
+        titelblock.pack(side="left", fill="x", expand=True)
+        titel = tk.Label(titelblock, text=self._t("y2jbupdater.title"), font=(UI_SCHRIFT, pt(15), "bold"),
+                         bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
+        titel.pack(fill="x")
+        self._register_translatable(titel, "y2jbupdater.title")
+        dank = tk.Label(titelblock, text=self._t("y2jbupdater.credit"), font=(UI_SCHRIFT, pt(9), "italic"),
+                        bg=c["bg_main"], fg=c["fg_secondary"], anchor="w", justify="left", wraplength=700)
+        dank.pack(fill="x", pady=(2, 0))
+        dank.bind("<Configure>", lambda e: dank.configure(wraplength=max(100, e.width - 8)))
+        self._register_translatable(dank, "y2jbupdater.credit")
+
+        self._konsole_hinweiszeile(seite, "y2jbupdater.hint", warnung=True)
+
+        aussen, innen = self._build_scrollable_body(seite)
+        aussen.pack(fill="both", expand=True, pady=(8, 0))
+        innen.columnconfigure(0, weight=1)
+
+        status_var = tk.StringVar(value="")
+
+        # ---- Karte 1: download0.dat waehlen ----------------------------------
+        karte_datei = self._pw.Karte(innen, bg=c["bg_card"], padx=14, pady=12)
+        karte_datei.grid(row=0, column=0, sticky="ew")
+        tk.Label(karte_datei, text=self._t("y2jbupdater.card_choose").upper(), font=(UI_SCHRIFT, pt(10), "bold"),
+                bg=c["bg_card"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(0, 8))
+
+        datei_var = tk.StringVar(value="")
+        zeile_datei = tk.Frame(karte_datei, bg=c["bg_card"])
+        zeile_datei.pack(fill="x")
+        zeile_datei.columnconfigure(0, weight=1)
+        feld_datei = ttk.Entry(zeile_datei, textvariable=datei_var, font=(UI_SCHRIFT, pt(10)), state="readonly")
+        feld_datei.grid(row=0, column=0, sticky="ew", padx=(0, 8), ipady=3)
+
+        def _eigene_waehlen() -> None:
+            pfad = filedialog.askopenfilename(
+                parent=self.root, title=self._t("y2jbupdater.btn_choose_file"),
+                filetypes=[(self._t("y2jbupdater.filetype_dat"), "*.dat"), (self._t("filetype.all_files"), "*.*")])
+            if pfad:
+                datei_var.set(os.path.normpath(pfad))
+                status_var.set(self._t("y2jbupdater.status_file_chosen", name=os.path.basename(pfad)))
+
+        waehlen_knopf = self._seitenpille(zeile_datei, "y2jbupdater.btn_choose_file", _eigene_waehlen, klein=True)
+        waehlen_knopf.grid(row=0, column=1)
+
+        trennlinie = tk.Frame(karte_datei, bg=c["border"], height=1)
+        trennlinie.pack(fill="x", pady=(12, 10))
+        tk.Label(karte_datei, text=self._t("y2jbupdater.lbl_releases"), font=(UI_SCHRIFT, pt(10)),
+                bg=c["bg_card"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+        zeile_rel = tk.Frame(karte_datei, bg=c["bg_card"])
+        zeile_rel.pack(fill="x", pady=(4, 0))
+        zeile_rel.columnconfigure(0, weight=1)
+        release_var = tk.StringVar(value="")
+        release_box = ttk.Combobox(zeile_rel, textvariable=release_var, state="disabled", font=(UI_SCHRIFT, pt(10)))
+        release_box.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        angebote_liste: list = []
+        fortschritt_var = tk.DoubleVar(value=0.0)
+        balken = self._pw.Progressbar(karte_datei, variable=fortschritt_var, mode="determinate", maximum=100.0)
+
+        def _releases_geladen(ergebnis) -> None:
+            nonlocal angebote_liste
+            fehler, angebote = ergebnis
+            release_laden_knopf.configure(state="normal")
+            if fehler:
+                status_var.set(self._t("y2jbupdater.status_releases_failed", fehler=fehler))
+                return
+            angebote_liste = angebote
+            if not angebote_liste:
+                status_var.set(self._t("y2jbupdater.status_releases_none"))
+                release_box.configure(values=[], state="disabled")
+                return
+            werte = ["%s (%s)%s" % (f.tag, f.datum, self._t("y2jbupdater.vorab_suffix") if f.vorab else "")
+                    for f, _a in angebote_liste]
+            release_box.configure(values=werte, state="readonly")
+            release_box.current(0)
+            herunterladen_knopf.configure(state="normal")
+            status_var.set(self._t("y2jbupdater.status_releases_ok", anzahl=len(angebote_liste)))
+
+        def _releases_laden() -> None:
+            release_laden_knopf.configure(state="disabled")
+            herunterladen_knopf.configure(state="disabled")
+            status_var.set(self._t("y2jbupdater.status_releases_loading"))
+
+            def _lauf() -> None:
+                try:
+                    netz = werkzeug_updates.Netz()
+                    adresse = werkzeug_updates.adresse_der_quelle(y2jb_updater.QUELLE)
+                    antwort = netz.abfragen(adresse)
+                    if antwort.status not in (200, 304):
+                        ergebnis = (self._t("y2jbupdater.status_netzfehler", code=antwort.status), [])
+                    else:
+                        freigaben = werkzeug_updates.freigaben_lesen(antwort.text)
+                        ergebnis = ("", y2jb_updater.angebote(freigaben))
+                except Exception as exc:                        # noqa: BLE001
+                    ergebnis = (str(exc)[:200], [])
+                self._spaeter_im_fenster(seite, _releases_geladen, ergebnis)
+
+            threading.Thread(target=_lauf, daemon=True, name="y2jb-releases").start()
+
+        release_laden_knopf = self._seitenpille(zeile_rel, "y2jbupdater.btn_load_releases", _releases_laden,
+                                                klein=True)
+        release_laden_knopf.grid(row=0, column=1)
+
+        def _download_fertig(ergebnis) -> None:
+            herunterladen_knopf.configure(state="normal")
+            balken.pack_forget()
+            fehler, pfad = ergebnis
+            if fehler:
+                status_var.set(self._t("y2jbupdater.status_download_failed", fehler=fehler))
+                return
+            datei_var.set(pfad)
+            status_var.set(self._t("y2jbupdater.status_download_ok", name=os.path.basename(pfad)))
+
+        def _herunterladen() -> None:
+            index = release_box.current()
+            if index < 0 or index >= len(angebote_liste):
+                return
+            freigabe, anhang = angebote_liste[index]
+            ziel_ordner = self._updates_payload_ordner() or self._get_runtime_temp_dir() or tempfile.gettempdir()
+            try:
+                os.makedirs(ziel_ordner, exist_ok=True)
+            except OSError:
+                pass
+            fassung = re.sub(r"[^A-Za-z0-9_.-]", "_", freigabe.tag)
+            ziel_pfad_lokal = os.path.join(ziel_ordner, "download0_%s.dat" % fassung)
+            herunterladen_knopf.configure(state="disabled")
+            release_laden_knopf.configure(state="disabled")
+            fortschritt_var.set(0.0)
+            balken.pack(fill="x", pady=(8, 0))
+            status_var.set(self._t("y2jbupdater.status_download_start", tag=freigabe.tag))
+
+            def _lauf() -> None:
+                try:
+                    def _fort(gelesen: int, gesamt: int) -> None:
+                        prozent = (gelesen / gesamt * 100.0) if gesamt else 0.0
+                        self._spaeter_im_fenster(seite, fortschritt_var.set, prozent)
+
+                    _groesse, digest = werkzeug_updates.Netz().laden(
+                        anhang.adresse, ziel_pfad_lokal, _fort, grenze=y2jb_updater.GRENZE_BYTES)
+                    erwartet = anhang.digest.split(":", 1)[-1] if ":" in anhang.digest else anhang.digest
+                    if erwartet and digest != erwartet:
+                        raise ValueError(self._t("y2jbupdater.err_digest"))
+                    ergebnis = ("", ziel_pfad_lokal)
+                except Exception as exc:                        # noqa: BLE001
+                    ergebnis = (str(exc)[:200], "")
+                self._spaeter_im_fenster(seite, _download_fertig, ergebnis)
+                self._spaeter_im_fenster(seite, release_laden_knopf.configure, {"state": "normal"})
+
+            threading.Thread(target=_lauf, daemon=True, name="y2jb-download").start()
+
+        herunterladen_knopf = self._seitenpille(karte_datei, "y2jbupdater.btn_download", _herunterladen, klein=True,
+                                                akzent=True)
+        herunterladen_knopf.configure(state="disabled")
+        herunterladen_knopf.pack(anchor="w", pady=(8, 0))
+
+        # ---- Karte 2: Auf die Konsole hochladen -------------------------------
+        karte_upload = self._pw.Karte(innen, bg=c["bg_card"], padx=14, pady=12)
+        karte_upload.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        tk.Label(karte_upload, text=self._t("y2jbupdater.card_upload").upper(), font=(UI_SCHRIFT, pt(10), "bold"),
+                bg=c["bg_card"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(0, 8))
+
+        self._konsole_ip_zeile(karte_upload, self._konsole_ip_var())
+
+        zeile_ziel = tk.Frame(karte_upload, bg=c["bg_card"])
+        zeile_ziel.pack(fill="x", pady=(8, 2))
+        tk.Label(zeile_ziel, text=self._t("y2jbupdater.lbl_target"), width=16, anchor="w",
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"]).pack(side="left")
+        ziel_var = tk.StringVar(value=y2jb_updater.ZIEL_STANDARD)
+        ziel_box = ttk.Combobox(zeile_ziel, textvariable=ziel_var, values=list(y2jb_updater.ZIEL_IDS),
+                                font=(UI_SCHRIFT, pt(10)), width=14)
+        ziel_box.pack(side="left")
+        self._konsole_hinweiszeile(karte_upload, "y2jbupdater.hint_target")
+
+        upload_fortschritt_var = tk.DoubleVar(value=0.0)
+        upload_balken = self._pw.Progressbar(karte_upload, variable=upload_fortschritt_var,
+                                             mode="determinate", maximum=100.0)
+
+        status_label = tk.Label(karte_upload, textvariable=status_var, font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"],
+                                fg=c["fg_secondary"], anchor="w", wraplength=700, justify="left")
+        status_label.pack(fill="x", pady=(10, 0))
+        status_label.bind("<Configure>", lambda e: status_label.configure(wraplength=max(100, e.width - 8)))
+
+        def _upload_fertig(fehler: str) -> None:
+            upload_knopf.configure(state="normal")
+            upload_balken.pack_forget()
+            if fehler:
+                status_var.set(self._t("y2jbupdater.status_upload_failed", fehler=fehler))
+                return
+            status_var.set(self._t("y2jbupdater.status_upload_ok", ordner=y2jb_updater.ziel_pfad(ziel_var.get())))
+
+        def _hochladen() -> None:
+            lokal = datei_var.get().strip()
+            if not lokal or not os.path.isfile(lokal):
+                status_var.set(self._t("y2jbupdater.err_no_file"))
+                return
+            ziel_ordner = y2jb_updater.ziel_pfad(ziel_var.get())
+            if not ziel_ordner:
+                status_var.set(self._t("y2jbupdater.err_bad_target"))
+                return
+            host = self._konsole_ip_var().get().strip()
+            if not host:
+                status_var.set(self._t("y2jbupdater.err_no_host"))
+                return
+            groesse_datei = os.path.getsize(lokal)
+            upload_knopf.configure(state="disabled")
+            upload_fortschritt_var.set(0.0)
+            upload_balken.pack(fill="x", pady=(8, 0))
+            status_var.set(self._t("y2jbupdater.status_upload_start"))
+
+            def _lauf() -> None:
+                ftp = None
+                try:
+                    if not self._konsole_ftp_bereit(
+                            host, lambda text: self._spaeter_im_fenster(seite, status_var.set, text)):
+                        raise OSError(self._t("y2jbupdater.err_ftp_not_ready"))
+                    ftp = self._ampr_ftp_connect(host)
+                    self._ampr_ftp_ensure_dir(ftp, ziel_ordner)
+                    gesendet = {"n": 0}
+
+                    def _block(block: bytes) -> None:
+                        gesendet["n"] += len(block)
+                        prozent = gesendet["n"] / groesse_datei * 100.0 if groesse_datei else 0.0
+                        self._spaeter_im_fenster(seite, upload_fortschritt_var.set, prozent)
+
+                    # Immer unter dem Namen, den die Konsolenseite der YouTube-App
+                    # erwartet - unabhaengig davon, wie die lokale Datei heisst
+                    # (eigene Wahl oder die versionsnamentragende Datei aus "Herunterladen").
+                    with open(lokal, "rb") as handle:
+                        konsole_ftp.datei_ablegen(
+                            ftp, handle, self._ampr_ftp_join(ziel_ordner, y2jb_updater.DATEINAME), _block)
+                    fehler = ""
+                except Exception as exc:                        # noqa: BLE001
+                    fehler = str(exc)[:200]
+                finally:
+                    if ftp is not None:
+                        try:
+                            ftp.quit()
+                        except Exception:                        # noqa: BLE001
+                            pass
+                self._spaeter_im_fenster(seite, _upload_fertig, fehler)
+
+            threading.Thread(target=_lauf, daemon=True, name="y2jb-upload").start()
+
+        upload_knopf = self._seitenpille(karte_upload, "y2jbupdater.btn_upload", _hochladen, klein=True, akzent=True)
+        upload_knopf.pack(anchor="w", pady=(8, 0))
+
     # --- Die Seite "WebKit Autoloader" (Knopf 2 der Ansicht KONSOLE) ---------------
     #
     # Wunsch des Nutzers vom 04.10.2026: unter den Fassungen 0.4.0 bis 0.5.2
