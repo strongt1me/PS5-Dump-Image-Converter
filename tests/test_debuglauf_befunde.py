@@ -574,8 +574,12 @@ class FormatwegeTests(unittest.TestCase):
         sprache = app._current_language
 
         def _zurueck() -> None:
+            # Direkt setzen statt erneut umzuschalten: Seit DE->EN->ES->IT->FR->DE
+            # (fuenf Sprachen, 18.10.2026) fuehrt ein einzelner weiterer Druck nicht
+            # mehr zuverlaessig zur Ausgangssprache zurueck.
             if app._current_language != sprache:
-                app._toggle_language()
+                app._current_language = sprache
+                app._apply_language()
             app._set_mode_from_sidebar(vorher_modus)
             app.target_format.set(vorher_format)
 

@@ -87,11 +87,11 @@ class _MitProgramm(unittest.TestCase):
 
     def setUp(self) -> None:
         if self.app._current_language != "de":
-            self._umschalten()
+            self._auf_deutsch_zuruecksetzen()
 
     def tearDown(self) -> None:
         if self.app._current_language != "de":
-            self._umschalten()
+            self._auf_deutsch_zuruecksetzen()
         self.app._ansicht_setzen("umwandeln")
         _WURZEL.update()
 
@@ -99,6 +99,17 @@ class _MitProgramm(unittest.TestCase):
         """Wie der Sprachknopf der Titelleiste - ohne die Wahl zu speichern."""
         with mock.patch.object(self.app, "_save_setting", lambda *_a: None):
             self.app._toggle_language()
+
+    def _auf_deutsch_zuruecksetzen(self) -> None:
+        """Direkt auf Deutsch zuruecksetzen, nicht ueber den Knopf.
+
+        Bis zum 18.10.2026 reichte dafuer ein weiterer Druck auf den
+        Sprachknopf (nur zwei Sprachen, zweimal druecken = zurueck). Seit
+        DE->EN->ES->IT->FR->DE (fuenf Sprachen) fuehrt ein einzelner weiterer
+        Druck nicht mehr zuverlaessig zu Deutsch zurueck.
+        """
+        self.app._current_language = "de"
+        self.app._apply_language()
 
 
 class SprachwechselTests(_MitProgramm):

@@ -416,6 +416,8 @@ class Ps5PkgFenster:
         self.abbrechen_knopf = self._pille(leiste, "action.cancel", self._abbrechen)
         self.abbrechen_knopf.pack(side="left", padx=(10, 0))
         self.abbrechen_knopf.configure(state="disabled")
+        self.update_knopf = self._pille(leiste, "ps5pkg.btn_update", self._updates_online)
+        self.update_knopf.pack(side="left", padx=(10, 0))
         self.browser_knopf = self._pille(leiste, "ps5pkg.browser_button", self._browser_oeffnen)
         self.browser_knopf.pack(side="left", padx=(24, 0))
         self.detail_knopf = self._pille(leiste, "ps5pkg.detail_button", self._detail_oeffnen)
@@ -1631,10 +1633,14 @@ class Ps5PkgFenster:
                       and bool(self._werkzeug()))
         # Detail-Fenster nur fuer Spielordner
         detail_ok = self.aktuell is not None and bool(self.aktuell.ist_ordner)
+        # Updates Online nur fuer PS5-Spielpakete (PPSA/PPSS)
+        update_ok = (self.aktuell is not None and bool(self.aktuell.title_id)
+                     and self.aktuell.title_id.upper().startswith(("PPSA", "PPSS")))
         try:
             self.start_knopf.configure(state="disabled" if (laeuft or self.aktuell is None) else "normal")
             self.abbrechen_knopf.configure(state="normal" if laeuft else "disabled")
             self.cover_knopf.configure(state="normal" if self.aktuell is not None else "disabled")
+            self.update_knopf.configure(state="normal" if update_ok else "disabled")
             self.browser_knopf.configure(state="normal" if browser_ok else "disabled")
             self.detail_knopf.configure(state="normal" if detail_ok else "disabled")
         except tk.TclError:
@@ -1658,6 +1664,24 @@ class Ps5PkgFenster:
                 pass
         browser_ui.PkgDateiBrowser(self.win, self, self._werkzeug(),
                                     self.aktuell.pfad, passcode=self._passcode())
+
+    def _updates_online(self) -> None:
+        """Oeffnet die Spielinfo-Box mit den PS5-Updates fuer das gewaehlte Paket."""
+        info = self.aktuell
+        if info is None or not info.title_id:
+            self._status(self.t("ps5pkg.kein_ps5_spiel"))
+            return
+        tid = info.title_id.upper()
+        if not tid.startswith(("PPSA", "PPSS")):
+            self._status(self.t("ps5pkg.kein_ps5_spiel"))
+            return
+        g = self.g
+        g._letzte_meta = {
+            "title_id": tid,
+            "version_file_uri": str(info.param.get("versionFileUri", "") or ""),
+        }
+        g._cached_title_id = tid
+        g._show_info_box()
 
     def _detail_oeffnen(self) -> None:
         """Oeffnet das Spiel-Detail-Fenster fuer den aktuell gewaehlten Spielordner."""

@@ -32,7 +32,9 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(translate("de", "kein.registrierter.schluessel"), "kein.registrierter.schluessel")
 
     def test_unknown_language_falls_back_to_german(self) -> None:
-        self.assertEqual(translate("fr", "action.start"), "STARTEN")
+        # "fr" ist seit dem 18.10.2026 eine echte unterstuetzte Sprache (ES/IT/FR
+        # ergaenzt) - eine wirklich unbekannte Kennung prueft denselben Rueckfall.
+        self.assertEqual(translate("xx", "action.start"), "STARTEN")
 
     def test_kwargs_are_formatted_into_the_translated_template(self) -> None:
         self.assertEqual(

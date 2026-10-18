@@ -244,8 +244,17 @@ class HauptfensterTests(unittest.TestCase):
 
     def test_nach_dem_sprachwechsel_weiter_gleich_breit(self) -> None:
         app = self.app
+        # addCleanup(_toggle_language) ging bis zum 18.10.2026 auf (zwei
+        # Sprachen, zweimal druecken = zurueck); seit DE->EN->ES->IT->FR->DE
+        # (fuenf Sprachen) muss gezielt zurueckgesetzt werden.
+        vorher = app._current_language
+
+        def _zuruecksetzen() -> None:
+            app._current_language = vorher
+            app._apply_language()
+
         app._toggle_language()
-        self.addCleanup(app._toggle_language)
+        self.addCleanup(_zuruecksetzen)
         self.assertEqual(1, len({int(k.winfo_reqwidth()) for k in app._seitenleiste_knoepfe()}))
 
     def test_die_seitenleiste_hat_zeilen_und_einen_umschalter(self) -> None:

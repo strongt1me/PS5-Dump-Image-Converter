@@ -32,6 +32,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import shutil
 import struct
 
 # --------------------------------------------------------------------------
@@ -1517,3 +1518,160 @@ def firmware_deckung(spieldateien, firmware_ordner: str) -> dict:
         "fehlend": fehlend,
         "ohne_datei": ohne_datei,
     }
+
+
+# --------------------------------------------------------------------------
+# Firmware-Analyse: fehlende Fakelibs ermitteln und kopieren
+# --------------------------------------------------------------------------
+#
+# deckung_pruefen fragt: Liefert der mitgelieferte Ersatzsatz, was das Spiel
+# braucht? Hier geht es einen Schritt weiter: Welche Datei im Firmware-Stand
+# deckt eine noch offene Bibliothek, und wie kopiert man sie in den Zielordner?
+#
+# Die Funktion fw_dateipfad_tabelle ist wie firmware_exporttabelle, traegt
+# aber auch den Quelldateipfad mit - noetig, weil zum Kopieren der Pfad,
+# nicht nur der Bibliotheksname, benoetigt wird.
+
+def fw_dateipfad_tabelle(fw_ordner: str) -> dict:
+    """Wie :func:`firmware_exporttabelle`, aber mit Quelldateipfad je Bibliothek.
+
+    Returns:
+        ``{bibliotheksname: (menge_nids, dateipfad)}``. Fuehrt eine Datei
+        mehrere Bibliotheken, erhaelt jede denselben Pfad.
+    """
+    tabelle: dict[str, tuple] = {}
+    for teile in FIRMWARE_LIB_PFADE:
+        pfad = os.path.join(str(fw_ordner or ""), *teile)
+        if not os.path.isdir(pfad):
+            continue
+        try:
+            namen = sorted(os.listdir(pfad))
+        except OSError:
+            continue
+        for name in namen:
+            if not name.lower().endswith((".sprx", ".prx")):
+                continue
+            voll = os.path.join(pfad, name)
+            symbole = symbole_aus_datei(voll)
+            for lib, nids in symbole["exporte"].items():
+                if not lib or lib == "?":
+                    continue
+                if lib not in tabelle:
+                    tabelle[lib] = (set(), voll)
+                bestehend, _ = tabelle[lib]
+                bestehend.update(nids)
+                tabelle[lib] = (bestehend, voll)
+    return tabelle
+
+
+def fehlende_libs_ermitteln(
+    spieldateien: list,
+    vorhandene_fakelibs: list,
+    fw_ordner: str,
+) -> list:
+    """Findet Firmware-Bibliotheken, die NIDs liefern, die das Spiel braucht
+    aber die vorhandenen Fakelibs noch nicht abdecken.
+
+    Gedacht als Vorstufe von :func:`fakelibs_aus_firmware_kopieren`.
+
+    Args:
+        spieldateien:        Pfade von eboot.bin und den Spielmodulen.
+        vorhandene_fakelibs: Bereits installierte Fakelib-Dateien.
+        fw_ordner:           Wurzel eines entpackten Firmware-Standes
+                             (enthaelt z.B. ``system/common/lib/``).
+
+    Returns:
+        Liste von ``(bibliotheksname, quelldatei)`` -- je Quelldatei hoechstens
+        ein Eintrag, auch wenn sie mehrere fehlende Bibliotheken abdeckt.
+        Bibliotheken, die das Spiel importiert aber der Firmware-Stand nicht
+        kennt, fehlen in der Liste (sie liefert die Konsole selbst).
+    """
+    # Schritt 1: Was liefern die vorhandenen Fakelibs?
+    geliefert: dict[str, set] = {}
+    for pfad in vorhandene_fakelibs:
+        symbole = symbole_aus_datei(pfad)
+        for lib, nids in symbole["exporte"].items():
+            if lib and lib != "?":
+                geliefert.setdefault(lib, set()).update(nids)
+        if not any(lib and lib != "?" for lib in symbole["exporte"]):
+            geliefert.setdefault(bibliotheksname(pfad), set()).update(
+                {n for m in symbole["exporte"].values() for n in m})
+
+    # Schritt 2: Was importiert das Spiel?
+    verlangt: dict[str, set] = {}
+    for pfad in spieldateien:
+        symbole = symbole_aus_datei(pfad)
+        for lib, nids in symbole["importe"].items():
+            if lib and lib != "?":
+                verlangt.setdefault(lib, set()).update(nids)
+
+    # Schritt 3: Welche Bibliotheken sind noch nicht vollstaendig abgedeckt?
+    fehlende_bibs: set[str] = set()
+    for lib, nids in verlangt.items():
+        vorh = geliefert.get(lib, set())
+        if nids - vorh:
+            fehlende_bibs.add(lib)
+
+    if not fehlende_bibs:
+        return []
+
+    # Schritt 4: Welche Quelldateien liefern diese Bibliotheken?
+    fw_tabelle = fw_dateipfad_tabelle(fw_ordner)
+    ergebnis: list[tuple] = []
+    gesehene_dateien: set[str] = set()
+    for lib in sorted(fehlende_bibs):
+        if lib not in fw_tabelle:
+            continue
+        _, dateipfad = fw_tabelle[lib]
+        if dateipfad not in gesehene_dateien:
+            gesehene_dateien.add(dateipfad)
+            ergebnis.append((lib, dateipfad))
+    return ergebnis
+
+
+def fakelibs_aus_firmware_kopieren(
+    spieldateien: list,
+    vorhandene_fakelibs: list,
+    fw_ordner: str,
+    ziel_ordner: str,
+) -> dict:
+    """Kopiert fehlende Fakelibs aus einem Firmware-Stand in ``ziel_ordner``.
+
+    Es werden nur Bibliotheken kopiert, die das Spiel importiert und die
+    durch ``vorhandene_fakelibs`` noch nicht abgedeckt sind. Dateien, die im
+    Zielordner bereits vorhanden sind, werden nicht ueberschrieben.
+
+    Args:
+        spieldateien:        Pfade von eboot.bin und den Spielmodulen.
+        vorhandene_fakelibs: Bereits installierte Fakelib-Dateien.
+        fw_ordner:           Wurzel eines entpackten Firmware-Standes.
+        ziel_ordner:         Wohin die Dateien kopiert werden (fakelib/).
+
+    Returns:
+        ``kopiert`` (int), ``uebersprungen`` (int), ``dateien`` (list[str]).
+    """
+    kandis = fehlende_libs_ermitteln(spieldateien, vorhandene_fakelibs, fw_ordner)
+    if not kandis:
+        return {"kopiert": 0, "uebersprungen": 0, "dateien": []}
+
+    os.makedirs(str(ziel_ordner), exist_ok=True)
+    kopiert = uebersprungen = 0
+    dateien: list[str] = []
+    bereits_kopiert: set[str] = set()
+
+    for _, quelldatei in kandis:
+        zieldatei = os.path.join(str(ziel_ordner), os.path.basename(quelldatei))
+        # Nicht zweimal kopieren, wenn eine Datei mehrere Bibliotheken abdeckt
+        if quelldatei in bereits_kopiert or os.path.exists(zieldatei):
+            uebersprungen += 1
+            continue
+        bereits_kopiert.add(quelldatei)
+        try:
+            shutil.copy2(quelldatei, zieldatei)
+            kopiert += 1
+            dateien.append(os.path.basename(zieldatei))
+        except OSError:
+            uebersprungen += 1
+
+    return {"kopiert": kopiert, "uebersprungen": uebersprungen,
+            "dateien": sorted(dateien)}

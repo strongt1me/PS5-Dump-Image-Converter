@@ -480,8 +480,18 @@ class SeitenTests(unittest.TestCase):
         self.assertEqual("neu", self.app._webkit_status_var.get(), "Neueres bleibt stehen")
 
     def test_die_seite_folgt_dem_sprachwechsel(self) -> None:
+        # addCleanup(_toggle_language) ging bis zum 18.10.2026 auf, weil der
+        # Knopf nur zwischen zwei Sprachen umschaltete (zweimal druecken = die
+        # alte Sprache). Seit DE->EN->ES->IT->FR->DE (fuenf Sprachen) landet
+        # ein zweiter Druck woanders - deshalb hier gezielt zuruecksetzen.
+        vorher = self.app._current_language
+
+        def _zuruecksetzen() -> None:
+            self.app._current_language = vorher
+            self.app._apply_language()
+
         self.app._toggle_language()
-        self.addCleanup(self.app._toggle_language)
+        self.addCleanup(_zuruecksetzen)
         _WURZEL.update()
         werte = list(self.app._webkit_fassung_box.cget("values"))
         self.assertEqual("v0.6.1 (latest)", werte[0])

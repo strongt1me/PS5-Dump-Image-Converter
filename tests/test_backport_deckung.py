@@ -161,5 +161,297 @@ class FakelibBestand(unittest.TestCase):
             self.assertNotIn(13, b.firmwares_mit_bestand(basis))
 
 
+class FwDateipfadTabelle(unittest.TestCase):
+    """``fw_dateipfad_tabelle`` -- Firmware-Bibliothek nach Datei."""
+
+    def _fw_stand(self, wurzel: Path, *dateinamen: str) -> Path:
+        """Legt einen minimalen FW-Stand an (system/common/lib/)."""
+        lib_dir = wurzel / "system" / "common" / "lib"
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        for name in dateinamen:
+            (lib_dir / name).write_bytes(b"\x7fELF" + b"\x00" * 60)
+        return wurzel
+
+    def test_leerer_ordner_gibt_leere_tabelle(self):
+        self.assertEqual(b.fw_dateipfad_tabelle(""), {})
+        self.assertEqual(b.fw_dateipfad_tabelle(r"X:\gibt-es-nicht"), {})
+
+    def test_tabelle_enthaelt_bibliotheksnamen_und_pfad(self):
+        with tempfile.TemporaryDirectory() as basis:
+            stand = self._fw_stand(Path(basis), "libSceAgc.sprx")
+            datei = str(stand / "system" / "common" / "lib" / "libSceAgc.sprx")
+
+            def _mock(pfad):
+                return {"importe": {}, "exporte": {"libSceAgc": {"AAAAAAAAAAA"}},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                tabelle = b.fw_dateipfad_tabelle(str(stand))
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertIn("libSceAgc", tabelle)
+            nids, pfad = tabelle["libSceAgc"]
+            self.assertIn("AAAAAAAAAAA", nids)
+            self.assertEqual(os.path.basename(pfad), "libSceAgc.sprx")
+
+    def test_keine_sprx_keine_eintraege(self):
+        with tempfile.TemporaryDirectory() as basis:
+            lib_dir = Path(basis) / "system" / "common" / "lib"
+            lib_dir.mkdir(parents=True)
+            (lib_dir / "liesmich.txt").write_text("x")
+            self.assertEqual(b.fw_dateipfad_tabelle(str(basis)), {})
+
+    def test_unbekannte_lib_wird_uebergangen(self):
+        """Exporte mit leerem oder '?'-Namen landen nicht in der Tabelle."""
+        with tempfile.TemporaryDirectory() as basis:
+            stand = self._fw_stand(Path(basis), "unbekannt.sprx")
+
+            def _mock(pfad):
+                return {"importe": {}, "exporte": {"?": {"AAAAAAAAAAA"}},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                tabelle = b.fw_dateipfad_tabelle(str(stand))
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertEqual(tabelle, {})
+
+    def test_zwei_dateien_verschiedene_bibliotheken(self):
+        with tempfile.TemporaryDirectory() as basis:
+            stand = self._fw_stand(Path(basis), "libA.sprx", "libB.sprx")
+
+            def _mock(pfad):
+                name = os.path.basename(pfad).replace(".sprx", "")
+                return {"importe": {}, "exporte": {name: {"NID%s" % name}},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                tabelle = b.fw_dateipfad_tabelle(str(stand))
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertIn("libA", tabelle)
+            self.assertIn("libB", tabelle)
+
+
+class FehlendeLibsErmitteln(unittest.TestCase):
+    """``fehlende_libs_ermitteln`` -- Luecken zwischen Spiel, Fakelibs und FW."""
+
+    def _fw_stand(self, wurzel: Path, dateiname: str) -> Path:
+        lib_dir = wurzel / "system" / "common" / "lib"
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        (lib_dir / dateiname).write_bytes(b"\x7fELF" + b"\x00" * 60)
+        return wurzel
+
+    def test_alles_abgedeckt_ergibt_leere_liste(self):
+        """Wenn die vorhandenen Fakelibs alle NIDs liefern, kein Ergebnis."""
+        def _mock(pfad):
+            if pfad == "spiel":
+                return {"importe": {"libSceAgc": {"AAAAAAAAAAA"}},
+                        "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+            return {"importe": {}, "exporte": {"libSceAgc": {"AAAAAAAAAAA"}},
+                    "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+        alt = b.symbole_aus_datei
+        b.symbole_aus_datei = _mock
+        try:
+            ergebnis = b.fehlende_libs_ermitteln(["spiel"], ["fakelib"], "")
+        finally:
+            b.symbole_aus_datei = alt
+
+        self.assertEqual(ergebnis, [])
+
+    def test_fehlende_lib_in_firmware_gefunden(self):
+        with tempfile.TemporaryDirectory() as basis:
+            stand = self._fw_stand(Path(basis), "libSceNet.sprx")
+
+            def _mock(pfad):
+                if pfad == "spiel":
+                    return {"importe": {"libSceNet": {"NNNNNNNNNNN"}},
+                            "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+                if os.path.basename(pfad) == "libSceNet.sprx":
+                    return {"importe": {}, "exporte": {"libSceNet": {"NNNNNNNNNNN"}},
+                            "import_bibliotheken": {}, "export_bibliotheken": {}}
+                return {"importe": {}, "exporte": {},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.fehlende_libs_ermitteln(["spiel"], [], str(stand))
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertEqual(len(ergebnis), 1)
+            lib, pfad = ergebnis[0]
+            self.assertEqual(lib, "libSceNet")
+            self.assertEqual(os.path.basename(pfad), "libSceNet.sprx")
+
+    def test_lib_nicht_in_firmware_wird_uebergangen(self):
+        """Die Konsole liefert manche Bibliotheken selbst – kein Fehler."""
+        with tempfile.TemporaryDirectory() as basis:
+            stand = self._fw_stand(Path(basis), "libSceOther.sprx")
+
+            def _mock(pfad):
+                if pfad == "spiel":
+                    return {"importe": {"libkernel": {"KKKKKKKKKKK"}},
+                            "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+                if os.path.basename(pfad) == "libSceOther.sprx":
+                    return {"importe": {}, "exporte": {"libSceOther": {"OOOOOOOOOOO"}},
+                            "import_bibliotheken": {}, "export_bibliotheken": {}}
+                return {"importe": {}, "exporte": {},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.fehlende_libs_ermitteln(["spiel"], [], str(stand))
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertEqual(ergebnis, [])
+
+    def test_eine_datei_mehrere_libs_nur_einmal(self):
+        """Eine FW-Datei, die zwei Libs abdeckt, erscheint nur einmal."""
+        with tempfile.TemporaryDirectory() as basis:
+            stand = self._fw_stand(Path(basis), "libSceCombo.sprx")
+
+            def _mock(pfad):
+                if pfad == "spiel":
+                    return {"importe": {"libSceA": {"AAAAAAAAAAA"},
+                                        "libSceB": {"BBBBBBBBBBB"}},
+                            "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+                if os.path.basename(pfad) == "libSceCombo.sprx":
+                    return {"importe": {}, "exporte": {
+                        "libSceA": {"AAAAAAAAAAA"}, "libSceB": {"BBBBBBBBBBB"}},
+                            "import_bibliotheken": {}, "export_bibliotheken": {}}
+                return {"importe": {}, "exporte": {},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.fehlende_libs_ermitteln(["spiel"], [], str(stand))
+            finally:
+                b.symbole_aus_datei = alt
+
+            # Nur eine Zeile, obwohl zwei Bibliotheken fehlen
+            self.assertEqual(len(ergebnis), 1)
+            _, pfad = ergebnis[0]
+            self.assertEqual(os.path.basename(pfad), "libSceCombo.sprx")
+
+
+class FakelibsAusFirmwareKopieren(unittest.TestCase):
+    """``fakelibs_aus_firmware_kopieren`` -- Kopiervorgang und Ergebnis-Dict."""
+
+    def _fw_stand(self, wurzel: Path, dateiname: str) -> Path:
+        lib_dir = wurzel / "system" / "common" / "lib"
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        (lib_dir / dateiname).write_bytes(b"\x7fELF" + b"\x00" * 60)
+        return wurzel
+
+    def test_keine_kandidaten_gibt_null_kopiert(self):
+        ergebnis = b.fakelibs_aus_firmware_kopieren([], [], "", "")
+        self.assertEqual(ergebnis["kopiert"], 0)
+        self.assertEqual(ergebnis["uebersprungen"], 0)
+        self.assertEqual(ergebnis["dateien"], [])
+
+    def test_datei_wird_kopiert(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wurzel = Path(tmp)
+            stand = self._fw_stand(wurzel / "fw", "libSceNet.sprx")
+            ziel = str(wurzel / "fakelib")
+
+            def _mock(pfad):
+                if pfad == "spiel":
+                    return {"importe": {"libSceNet": {"NNNNNNNNNNN"}},
+                            "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+                if os.path.basename(pfad) == "libSceNet.sprx":
+                    return {"importe": {}, "exporte": {"libSceNet": {"NNNNNNNNNNN"}},
+                            "import_bibliotheken": {}, "export_bibliotheken": {}}
+                return {"importe": {}, "exporte": {},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.fakelibs_aus_firmware_kopieren(
+                    ["spiel"], [], str(stand), ziel)
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertEqual(ergebnis["kopiert"], 1)
+            self.assertEqual(ergebnis["uebersprungen"], 0)
+            self.assertIn("libSceNet.sprx", ergebnis["dateien"])
+            self.assertTrue(os.path.isfile(os.path.join(ziel, "libSceNet.sprx")))
+
+    def test_vorhandene_zieldatei_wird_uebersprungen(self):
+        """Schon vorhandene Dateien werden nicht ueberschrieben."""
+        with tempfile.TemporaryDirectory() as tmp:
+            wurzel = Path(tmp)
+            stand = self._fw_stand(wurzel / "fw", "libSceNet.sprx")
+            ziel = wurzel / "fakelib"
+            ziel.mkdir()
+            (ziel / "libSceNet.sprx").write_bytes(b"vorhand")
+
+            def _mock(pfad):
+                if pfad == "spiel":
+                    return {"importe": {"libSceNet": {"NNNNNNNNNNN"}},
+                            "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+                if os.path.basename(pfad) == "libSceNet.sprx":
+                    return {"importe": {}, "exporte": {"libSceNet": {"NNNNNNNNNNN"}},
+                            "import_bibliotheken": {}, "export_bibliotheken": {}}
+                return {"importe": {}, "exporte": {},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.fakelibs_aus_firmware_kopieren(
+                    ["spiel"], [], str(stand), str(ziel))
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertEqual(ergebnis["kopiert"], 0)
+            self.assertEqual(ergebnis["uebersprungen"], 1)
+            # Originaldatei unberuehrt
+            self.assertEqual((ziel / "libSceNet.sprx").read_bytes(), b"vorhand")
+
+    def test_ergebnis_dateinamen_sortiert(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wurzel = Path(tmp)
+            lib_dir = wurzel / "fw" / "system" / "common" / "lib"
+            lib_dir.mkdir(parents=True)
+            for name in ("libZ.sprx", "libA.sprx"):
+                (lib_dir / name).write_bytes(b"\x7fELF" + b"\x00" * 60)
+            ziel = str(wurzel / "fakelib")
+
+            def _mock(pfad):
+                if pfad == "spiel":
+                    return {"importe": {"libZ": {"ZZZZZZZZZZZ"}, "libA": {"AAAAAAAAAAA"}},
+                            "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+                bname = os.path.basename(pfad).replace(".sprx", "")
+                return {"importe": {}, "exporte": {bname: {"NIDNIDNIDNI"}},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.fakelibs_aus_firmware_kopieren(
+                    ["spiel"], [], str(wurzel / "fw"), ziel)
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertEqual(ergebnis["dateien"], sorted(ergebnis["dateien"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

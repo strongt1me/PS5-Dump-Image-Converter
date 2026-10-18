@@ -1219,7 +1219,7 @@ class TexteTests(unittest.TestCase):
         self.assertEqual([], fehlend)
         gleich_erlaubt = {"ps5pkg.window_title", "ps5pkg.src_debug_short", "ps5pkg.lib_title",
                           "ps5pkg.card_cover", "ps5pkg.col_version", "ps5pkg.prop_title_id", "ps5pkg.start_button",
-                          "ps5pkg.meta_method"}
+                          "ps5pkg.meta_method", "ps5pkg.btn_update"}
         for s in sorted(schluessel):
             with self.subTest(schluessel=s):
                 self.assertTrue(STRINGS[s]["de"].strip() and STRINGS[s]["en"].strip())

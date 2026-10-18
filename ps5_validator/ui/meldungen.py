@@ -36,13 +36,13 @@ ARTEN: dict[str, tuple[tuple[tuple[str, str], ...], str, str]] = {
 
 #: Knopftexte - hier statt in i18n, weil sie zu diesem Baustein gehoeren.
 TEXTE = {
-    "ok": {"de": "OK", "en": "OK"},
-    "ja": {"de": "Ja", "en": "Yes"},
-    "nein": {"de": "Nein", "en": "No"},
-    "abbrechen": {"de": "Abbrechen", "en": "Cancel"},
-    "ja_alle": {"de": "Ja, für alle", "en": "Yes, for all"},
-    "nein_alle": {"de": "Nein, für alle", "en": "No, for all"},
-    "wiederholen": {"de": "Wiederholen", "en": "Retry"},
+    "ok": {"de": "OK", "en": "OK", "es": "Aceptar", "it": "OK", "fr": "OK"},
+    "ja": {"de": "Ja", "en": "Yes", "es": "Sí", "it": "Sì", "fr": "Oui"},
+    "nein": {"de": "Nein", "en": "No", "es": "No", "it": "No", "fr": "Non"},
+    "abbrechen": {"de": "Abbrechen", "en": "Cancel", "es": "Cancelar", "it": "Annulla", "fr": "Annuler"},
+    "ja_alle": {"de": "Ja, für alle", "en": "Yes, for all", "es": "Sí, para todos", "it": "Sì, per tutti", "fr": "Oui, pour tous"},
+    "nein_alle": {"de": "Nein, für alle", "en": "No, for all", "es": "No, para todos", "it": "No, per tutti", "fr": "Non, pour tous"},
+    "wiederholen": {"de": "Wiederholen", "en": "Retry", "es": "Reintentar", "it": "Riprova", "fr": "Réessayer"},
 }
 
 #: Die Originale aus ``tkinter.messagebox`` - fuer den Rueckfall und :func:`aufheben`.
@@ -96,7 +96,7 @@ class Meldung:
         if knoepfe_eigen is not None:
             knoepfe = knoepfe_eigen
         c = gui._COLORS
-        sprache = "de" if getattr(gui, "_current_language", "de") == "de" else "en"
+        sprache = getattr(gui, "_current_language", "de") or "de"
         eltern = eltern if eltern is not None else gui.root
         # Schrift und Mass des Programms aus seinem Pillen-Kit - ein Import des Hauptmoduls fuehrte es,
         # als __main__ gestartet, ein zweites Mal aus.
@@ -142,7 +142,7 @@ class Meldung:
         self._vorgabe = vorgabe
         self.knoepfe: dict[str, object] = {}
         for antwort, schluessel in reversed(knoepfe):
-            knopf = gui._pw.Button(reihe, text=TEXTE[schluessel][sprache],
+            knopf = gui._pw.Button(reihe, text=TEXTE[schluessel].get(sprache, TEXTE[schluessel]["de"]),
                                    command=lambda a=antwort: self._fertig(a),
                                    style="Accent.TButton" if antwort == vorgabe else "")
             knopf.pack(side="right", padx=(8, 0))

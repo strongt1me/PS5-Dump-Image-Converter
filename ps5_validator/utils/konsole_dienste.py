@@ -252,6 +252,14 @@ KATALOG: tuple[Dienst, ...] = (
     # belegt, bleibt alles unveraendert ("Web panel port %d unavailable"). Anlaufzeit geschaetzt.
     Dienst("neo_manager", 8765, "neo-manager_v*.elf", web="/", anlaufzeit=3.0,
            version_muster=r'build:\s*NeoEnabler\s+(\S+)', version_pfad="/status"),
+    # --- exFAT2AMPR (seit 18.10.2026) ------------------------------------------
+    # Konvertiert exFAT-Dumps auf der PS5 selbst ins AMPR-LZ4-Format (V-10, GPL-3.0).
+    # Port 6972 laut README ("Une notification affiche l'adresse, par exemple http://192.168.1.20:6972/").
+    # Die laufende Version nennt ``GET /api/state`` als ``"version"`` im JSON-Objekt - aus dem
+    # Quelltext (app/src/api.c: json_str(d.root, "version", "?")) gelesen, an der Konsole
+    # noch NICHT nachgemessen. Anlaufzeit geschaetzt (Scanner der Speicherlaufwerke + HTTP-Server).
+    Dienst("exfat2ampr", 6972, "exfat2ampr*.elf", web="/", anlaufzeit=4.0,
+           version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/state"),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,

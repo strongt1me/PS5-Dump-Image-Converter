@@ -191,7 +191,8 @@ from ps5_validator.utils.param_manifest import (
 )
 from ps5_validator.utils.i18n import (AMPR_METHODE_ASSETPACK, AMPR_METHODE_KEYS,
                                       AMPR_METHODE_NORMAL, BAUFORM_KEYS,
-                                      DEFAULT_LANGUAGE, VERIFY_STUFEN,
+                                      DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES,
+                                      VERIFY_STUFEN,
                                       ZSTD_LEVEL_KEYS, translate as i18n_translate)
 from ps5_validator.utils.ini_config import (
     MEHRFACH_TRENNER,
@@ -4877,9 +4878,9 @@ class PS5ConverterGUI:
         # Aktive Palette auf Instanzebene setzen (überschreibt Klassenvariable)
         self._COLORS = self._palette_bauen(self._current_theme)
 
-        # 1c. Sprache aus Konfiguration laden (Grundgerüst: Deutsch/Englisch)
+        # 1c. Sprache aus Konfiguration laden (DE/EN/ES/IT/FR)
         _saved_language = self._load_setting_static("language", DEFAULT_LANGUAGE)
-        self._current_language: str = str(_saved_language) if _saved_language in ("de", "en") else DEFAULT_LANGUAGE
+        self._current_language: str = str(_saved_language) if _saved_language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
 
         # 1d. Offene Werkzeugfenster, damit derselbe Knopf sie wieder
         # schliesst. Der Schluessel ist der Methodenname des Knopfes.
@@ -5268,10 +5269,11 @@ class PS5ConverterGUI:
         self._btn_more_tools_title.bind("<Enter>", _more_tools_enter)
         self._btn_more_tools_title.bind("<Leave>", _more_tools_leave)
 
-        # Sprachumschalter Button (Grundgerüst: Deutsch/Englisch)
+        # Sprachumschalter Button - zeigt die aktive Sprache, ein Klick
+        # geht zur naechsten in SUPPORTED_LANGUAGES (DE -> EN -> ES -> IT -> FR -> DE).
         self._btn_language_title = flach_knopf(
             self._titlebar_right,
-            text="EN" if self._current_language == "de" else "DE",
+            text=self._current_language.upper(),
             font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
@@ -6319,7 +6321,7 @@ class PS5ConverterGUI:
         self._oeffnen_oder_melden(pfad)
 
     def _toggle_language(self) -> None:
-        """Wechselt zwischen Deutsch und Englisch und übersetzt die erfassten Widgets live neu."""
+        """Wechselt zur naechsten Sprache (DE -> EN -> ES -> IT -> FR -> DE) und übersetzt die erfassten Widgets live neu."""
         # Das Zielformat noch im ALTEN Sprachstand lesen. Die Liste bekommt
         # gleich neue Beschriftungen, und ein Label der alten Sprache kommt
         # darin nicht mehr vor - bis v1.9.24 sprang die Auswahl deshalb auf den
@@ -6331,7 +6333,11 @@ class PS5ConverterGUI:
                 zielformat = self._get_selected_target_type()
         except tk.TclError:
             zielformat = ""
-        self._current_language = "en" if self._current_language == "de" else "de"
+        try:
+            index = SUPPORTED_LANGUAGES.index(self._current_language)
+        except ValueError:
+            index = -1
+        self._current_language = SUPPORTED_LANGUAGES[(index + 1) % len(SUPPORTED_LANGUAGES)]
         self._save_setting("language", self._current_language)
         if zielformat:
             try:
@@ -6450,7 +6456,7 @@ class PS5ConverterGUI:
             if widget is not None:
                 widget.config(text=self._t(key))
         if hasattr(self, "_btn_language_title"):
-            self._btn_language_title.config(text="EN" if self._current_language == "de" else "DE")
+            self._btn_language_title.config(text=self._current_language.upper())
 
         # Menueeintraege von "WEITERE TOOLS": tk.Menu-Eintraege sind keine Widgets
         # und werden von der generischen Registrierung nicht erfasst - sie blieben
@@ -51641,6 +51647,10 @@ class PS5ConverterGUI:
             return gespeichert
         return _bundled_resource("Backport_Fakelibs")
 
+    def _backport_fw_analyse_basis(self) -> str:
+        """Firmware-Ordner fuer die NID-Analyse; leer, wenn nicht konfiguriert."""
+        return str(self._load_setting("backport_fw_analyse_ordner", "")).strip()
+
     def _backport_firmwares(self) -> tuple[int, ...]:
         """Die Firmware-Staende, die im Auswahlfeld stehen duerfen.
 
@@ -55873,6 +55883,43 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
 
+        # ---- Firmware-Analyse-Ordner ----
+        fw_analyse_zeile = tk.Frame(win, bg=c["bg_main"])
+        fw_analyse_zeile.pack(fill="x", padx=16, pady=(4, 0))
+        tk.Label(fw_analyse_zeile, text=self._t("backport.fw_analyse_label"),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        fw_analyse_var = tk.StringVar(
+            value=str(self._load_setting("backport_fw_analyse_ordner", "")).strip())
+        fw_analyse_feld = self._pw.Entry(
+            fw_analyse_zeile, textvariable=fw_analyse_var,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+            insertbackground=c["fg_primary"], relief="flat", width=50)
+        fw_analyse_feld.pack(side="left", padx=(8, 6), ipady=2)
+
+        def _fw_analyse_speichern(*_: object) -> None:
+            wert = fw_analyse_var.get().strip()
+            self._save_setting("backport_fw_analyse_ordner", wert)
+            if wert and not os.path.isdir(wert):
+                stand_var.set(self._t("backport.fw_analyse_not_found", pfad=wert))
+            else:
+                stand_var.set(self._t("backport.state_idle"))
+
+        bibliothek_raster.spur_bis_zerstoert(win, fw_analyse_var, _fw_analyse_speichern)
+
+        def _fw_analyse_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                parent=win, title=self._t("backport.fw_analyse_label"),
+                initialdir=fw_analyse_var.get() or None)
+            if gewaehlt:
+                fw_analyse_var.set(os.path.normpath(gewaehlt))
+
+        self._pw.Button(fw_analyse_zeile, text=self._t("backport.fw_analyse_choose"),
+                        command=_fw_analyse_waehlen).pack(side="left")
+        tk.Label(fw_analyse_zeile, text=self._t("backport.fw_analyse_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
+
         tk.Label(win, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
                  wraplength=920, justify="left").pack(fill="x", padx=16, pady=(6, 0))
@@ -56509,6 +56556,46 @@ class PS5ConverterGUI:
                                        for q in quellen]
                         self._backport_deckung_melden(
                             ps5_backport.kandidaten(ordner), installiert)
+
+            # ---- Firmware-Analyse: fehlende Bibliotheken ergaenzen ----
+            fw_basis = self._backport_fw_analyse_basis()
+            if fw_basis and os.path.isdir(fw_basis):
+                fw_stand = ps5_backport.firmware_ordner_fuer(fw_basis, firmware)
+                if fw_stand:
+                    self._append_to_log(self._t(
+                        "backport.log_fw_analyse_start", fw=fw_stand) + "\n")
+                    # Fakelib-Zielordner bestimmen (unabhaengig davon ob libs=True)
+                    _ziel_fw = ps5_backport.fakelib_ziel(
+                        ordner, self._fakelib_ordnername())
+                    # Was von der normalen Fakelib-Quelle kommt
+                    _basis_fw = self._backport_fakelib_basis()
+                    installierte = list(ps5_backport.fakelib_dateien(_basis_fw, firmware))
+                    # Auch bereits im Zielordner liegende Dateien beruecksichtigen
+                    extra: list[str] = []
+                    if os.path.isdir(_ziel_fw):
+                        extra = [os.path.join(_ziel_fw, n)
+                                 for n in os.listdir(_ziel_fw)
+                                 if n.lower().endswith((".sprx", ".prx"))]
+                    ergebnis_fw = ps5_backport.fakelibs_aus_firmware_kopieren(
+                        spieldateien=ps5_backport.kandidaten(ordner),
+                        vorhandene_fakelibs=installierte + extra,
+                        fw_ordner=fw_stand,
+                        ziel_ordner=_ziel_fw,
+                    )
+                    if ergebnis_fw["kopiert"]:
+                        kopiert += ergebnis_fw["kopiert"]
+                        self._append_to_log(self._t(
+                            "backport.log_fw_analyse_kopiert",
+                            kopiert=ergebnis_fw["kopiert"],
+                            fw=firmware,
+                            namen=", ".join(ergebnis_fw["dateien"])) + "\n")
+                    else:
+                        self._append_to_log(
+                            self._t("backport.log_fw_analyse_keine") + "\n")
+                else:
+                    self._append_to_log(self._t(
+                        "backport.log_fw_analyse_kein_stand",
+                        fw=firmware, basis=fw_basis) + "\n")
 
             dauer = time.time() - beginn
             zusammenfassung = self._t(

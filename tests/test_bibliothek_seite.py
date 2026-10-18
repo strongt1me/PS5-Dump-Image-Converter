@@ -44,7 +44,7 @@ pruefumgebung.umlenken("bibliothek_seite")
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 from ps5_validator.utils import bibliothek as bib           # noqa: E402
 from ps5_validator.utils import plattform                   # noqa: E402
-from ps5_validator.utils.i18n import STRINGS                # noqa: E402
+from ps5_validator.utils.i18n import STRINGS, SUPPORTED_LANGUAGES  # noqa: E402
 
 try:
     import tkinter as tk
@@ -339,7 +339,7 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         self.assertNotIn("self._btn_library_title =",
                          HAUPTDATEI.read_text(encoding="utf-8"))
 
-    def test_die_ansicht_konsole_hat_neun_knoepfe(self) -> None:
+    def test_die_ansicht_konsole_hat_zwoelf_knoepfe(self) -> None:
         """Sechs am 25.09.2026, am Abend kurz fuenf, dann drei (Remote Play
         samt ActRemoteLink und ProsperoLight ganz heraus), seit dem
         30.09.2026 vier ("4. Prospero Manager" dazu), seit dem 04.10.2026
@@ -348,17 +348,20 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         acht: "8. Direct Stream", seit dem 07.10.2026 "8. BFpilot", seit dem
         12.10.2026 neun: "9. AMPR EMU Manager" (zuvor Aufgabe 7 der Seitenleiste
         UMWANDELN, siehe test_pkg_fpkg_seite.py), seit dem 14.10.2026 zehn:
-        "10. AMPR-Mitschnitt" (zuvor unter WEITERE TOOLS)."""
+        "10. AMPR-Mitschnitt" (zuvor unter WEITERE TOOLS), seit dem 18.10.2026
+        zwoelf: "11. Asset-Pack" (zuvor WEITERE TOOLS) und "12. Y2JB Updater"
+        (neu)."""
         kennungen = [k for _s, k in APP.PS5ConverterGUI._KONSOLE_KNOEPFE]
         self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
                           "coolsyscent", "shadowmount", "smplusgui",
-                          "bfpilot", "amprmgr", "amprmitschnitt"], kennungen)
+                          "bfpilot", "amprmgr", "amprmitschnitt",
+                          "assetpack", "y2jbupdater"], kennungen)
         for weg in ("konsole.btn_actremotelink", "konsole.btn_remoteplay",
                     "konsole.btn_prosperolight"):
             self.assertNotIn(weg, STRINGS)
         for nummer, (schluessel, _k) in enumerate(APP.PS5ConverterGUI._KONSOLE_KNOEPFE,
                                                   start=1):
-            for sprache in ("de", "en"):
+            for sprache in SUPPORTED_LANGUAGES:
                 with self.subTest(schluessel=schluessel, sprache=sprache):
                     self.assertTrue(STRINGS[schluessel][sprache].startswith("%d. " % nummer))
 
@@ -380,7 +383,10 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         # 12.10.2026 kommt "amprmgr" dazu (AMPR EMU Manager, Knopf 9).
         # Seit dem 14.10.2026 "amprmitschnitt" (AMPR-Mitschnitt, Knopf 10).
         # Dazu seit dem 26.09.2026 die Seite einer Weboberflaeche - ohne Knopf.
-        self.assertEqual({"uebersicht", "webkit", "bibliothek", "amprmgr", "amprmitschnitt", "web"},
+        # Seit dem 18.10.2026 "y2jbupdater" (Knopf 12); "assetpack" (Knopf 11)
+        # ist dagegen ein Fenster (_KONSOLE_FENSTER), keine Seite.
+        self.assertEqual({"uebersicht", "webkit", "bibliothek", "amprmgr",
+                          "amprmitschnitt", "y2jbupdater", "web"},
                          set(klasse._KONSOLE_SEITENBAU))
         self.assertEqual("", klasse._KONSOLE_SEITENBAU["web"][2])
         for seite, (_attr, bauen, _knopf) in klasse._KONSOLE_SEITENBAU.items():
@@ -390,9 +396,10 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
                           "webkit": "_konsole_webkit_zeigen",
                           "bibliothek": "_konsole_bibliothek_umschalten",
                           "amprmgr": "_konsole_amprmgr_zeigen",
-                          "amprmitschnitt": "_show_ampr_mitschnitt_assistent"},
+                          "amprmitschnitt": "_show_ampr_mitschnitt_assistent",
+                          "y2jbupdater": "_konsole_y2jb_zeigen"},
                          klasse._KONSOLE_SEITEN)
-        self.assertEqual({}, klasse._KONSOLE_FENSTER)
+        self.assertEqual({"assetpack": "_show_asset_pack_werkzeug"}, klasse._KONSOLE_FENSTER)
         self.assertFalse(hasattr(klasse, "_show_konsole_remoteplay"))
 
     def test_kein_text_nennt_einen_alten_knopf(self) -> None:
