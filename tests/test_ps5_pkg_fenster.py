@@ -55,6 +55,22 @@ def _warten(bedingung, grenze: float = 15.0) -> bool:
     return bool(bedingung())
 
 
+def _rollbares_canvas(widget) -> "tk.Canvas | None":
+    """Sucht rekursiv das Canvas aus ``_build_scrollable_body`` (erkennbar an ``yscrollcommand``).
+
+    Eine runde Karte (``pw.Karte``) zeichnet ihre Ecken selbst oft ueber ein eigenes,
+    viel kleineres Canvas - ohne den Filter auf ``yscrollcommand`` faende eine
+    Tiefensuche zuerst eines von denen.
+    """
+    if isinstance(widget, tk.Canvas) and str(widget.cget("yscrollcommand")):
+        return widget
+    for kind in widget.winfo_children():
+        treffer = _rollbares_canvas(kind)
+        if treffer is not None:
+            return treffer
+    return None
+
+
 def _schleife(grenze: float, bis=None) -> None:
     """Eine echte Hauptschleife fuer hoechstens ``grenze`` Sekunden.
 
@@ -160,15 +176,54 @@ class FensterTests(unittest.TestCase):
         f._seite_zeigen("extras")
         _pumpen(0.05)
         seite = f.seiten["extras"]
-        canvas = next((enkel for kind in seite.winfo_children()
-                       for enkel in kind.winfo_children()
-                       if isinstance(enkel, tk.Canvas)), None)
+        canvas = _rollbares_canvas(seite)
         self.assertIsNotNone(canvas, "Die Seite Extras hat kein rollbares Canvas.")
         seite.update_idletasks()
         region = canvas.bbox("all")
         self.assertIsNotNone(region)
         self.assertGreater(region[3] - region[1], canvas.winfo_height(),
                            "Vier Karten sollten den sichtbaren Bereich im Testfenster ueberragen.")
+
+    def test_die_seite_umwandeln_rollt_statt_abzuschneiden(self) -> None:
+        """Nutzerbefund 18.10.2026, erweiterte Suche: QUELLE+ZIELFORMAT+AUFTRAG reichten
+
+        bei knapper Fensterhoehe ebenso ueber den sichtbaren Bereich hinaus. Nur die linke
+        Spalte bekam ein Canvas - die rechte (ERGEBNIS+Protokoll) soll unveraendert ueber
+        die volle Zeilenhoehe von "seite" mitwachsen, nicht auf ihre Inhaltsgroesse
+        schrumpfen.
+        """
+        f = self.f
+        f._seite_zeigen("umwandeln")
+        _pumpen(0.05)
+        seite = f.seiten["umwandeln"]
+        seite.update_idletasks()
+        canvas = _rollbares_canvas(seite)
+        self.assertIsNotNone(canvas, "Die Seite Umwandeln hat kein rollbares Canvas.")
+        region = canvas.bbox("all")
+        self.assertIsNotNone(region)
+        self.assertGreater(region[3] - region[1], canvas.winfo_height(),
+                           "QUELLE+ZIELFORMAT+AUFTRAG sollten den sichtbaren Bereich im Testfenster ueberragen.")
+        self.assertEqual(seite.winfo_height(), f.spalte_rechts.winfo_height(),
+                         "Die rechte Spalte soll weiterhin die volle Zeilenhoehe einnehmen.")
+        self.assertTrue(f.ergebnis_karte.winfo_ismapped())
+        self.assertTrue(f.protokoll.winfo_ismapped())
+
+    def test_die_seite_bibliothek_rollt_statt_abzuschneiden(self) -> None:
+        """Nutzerbefund 18.10.2026, erweiterte Suche: COVER+TECH in der schmalen rechten
+
+        Spalte (420 px) reichten ebenso ueber den sichtbaren Bereich hinaus.
+        """
+        f = self.f
+        f._seite_zeigen("bibliothek")
+        _pumpen(0.05)
+        seite = f.seiten["bibliothek"]
+        seite.update_idletasks()
+        canvas = _rollbares_canvas(seite)
+        self.assertIsNotNone(canvas, "Die Seite Bibliothek hat kein rollbares Canvas.")
+        region = canvas.bbox("all")
+        self.assertIsNotNone(region)
+        self.assertGreater(region[3] - region[1], canvas.winfo_height(),
+                           "COVER+TECH sollten den sichtbaren Bereich im Testfenster ueberragen.")
 
     def test_ein_zweites_oeffnen_holt_das_offene_fenster(self) -> None:
         zweites = fz.oeffnen(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)

@@ -480,10 +480,15 @@ class Ps5PkgFenster:
         # Seit dem 12.10.2026 (Nutzerwunsch) kein eigener Seitentitel mehr: Die Seite liegt eingebettet unter
         # "7. PKG / FPKG" (Knopf "FPKG"), die schon eine Ueberschrift traegt - und der Platz fehlte sonst der
         # Karte AUFTRAG (Schrittfortschritt/Auftragsschritte waren bei kleiner Fensterhoehe kaum noch zu sehen).
-        links = tk.Frame(seite, bg=c["bg_main"])
-        links.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        # QUELLE+ZIELFORMAT+AUFTRAG stapeln sich hier; bei knapper Fensterhoehe reichten
+        # sie ueber den sichtbaren Bereich hinaus, ohne jede Moeglichkeit zu rollen
+        # (derselbe Fund wie bei den Seiten Extras und Bibliothek, 18.10.2026: gemessen
+        # 901 px Inhalt gegen 750 px sichtbar). Nur diese Spalte wird eingepackt - die
+        # rechte Spalte bleibt direkt in "seite", damit sie weiter ueber die Zeilenhoehe
+        # von "seite" mitwaechst statt auf ihre eigene Inhaltsgroesse zu schrumpfen.
+        links_aussen, links = g._build_scrollable_body(seite)
+        links_aussen.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         links.columnconfigure(0, weight=1)
-        links.rowconfigure(2, weight=1)
         rechts = tk.Frame(seite, bg=c["bg_main"], width=380)
         rechts.grid(row=0, column=1, sticky="ns")
         # Die Kinder werden gepackt, nicht gegridet: Erst pack_propagate(False) haelt die Breite von 380 fest (bis
@@ -730,9 +735,14 @@ class Ps5PkgFenster:
                  anchor="w").pack(fill="x")
         links = self._karte(seite, "ps5pkg.card_library")
         links.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
-        rechts = tk.Frame(seite, bg=c["bg_main"], width=420)
-        rechts.grid(row=1, column=1, sticky="ns")
-        rechts.grid_propagate(False)
+        # Die Karten COVER+TECH liefen bei knapper Fensterhoehe ueber den sichtbaren
+        # Bereich hinaus, ohne jede Moeglichkeit zu rollen (derselbe Fund wie bei der
+        # Seite Extras, 18.10.2026: gemessen 835 px Inhalt gegen 750 px sichtbar).
+        rechts_rahmen = tk.Frame(seite, bg=c["bg_main"], width=420)
+        rechts_rahmen.grid(row=1, column=1, sticky="ns")
+        rechts_rahmen.grid_propagate(False)
+        rechts_aussen, rechts = g._build_scrollable_body(rechts_rahmen)
+        rechts_aussen.pack(fill="both", expand=True)
 
         zeile = tk.Frame(links, bg=c["bg_card"])
         zeile.pack(fill="x")
