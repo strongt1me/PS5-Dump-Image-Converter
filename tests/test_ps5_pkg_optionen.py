@@ -55,6 +55,17 @@ def _warten(bedingung, grenze: float = 15.0) -> bool:
     return bool(bedingung())
 
 
+def _rollbares_canvas(widget) -> "tk.Canvas | None":
+    """Sucht rekursiv das Canvas aus ``_build_scrollable_body`` (erkennbar an ``yscrollcommand``)."""
+    if isinstance(widget, tk.Canvas) and str(widget.cget("yscrollcommand")):
+        return widget
+    for kind in widget.winfo_children():
+        treffer = _rollbares_canvas(kind)
+        if treffer is not None:
+            return treffer
+    return None
+
+
 class RegelTests(unittest.TestCase):
     def test_die_schluessel_stimmen_mit_denen_des_fensters_ueberein(self) -> None:
         self.assertEqual(fz.EINST_ZIEL, opt.ZIEL)
@@ -269,6 +280,32 @@ class DialogTests(unittest.TestCase):
         self.assertIs(dialog, ui.oeffnen(self.f))
         for schluessel in dialog._register_tabs:
             dialog.zeigen(schluessel)                      # keines wirft
+
+    def test_register_bau_rollt_statt_abzuschneiden(self) -> None:
+        """Nutzerfrage 18.10.2026 nach dem Extras-Fund im Fenster "PS5 PKG Dump & Image
+
+        Converter": gibt es noch weitere solche Stellen? Gemessen: Das Register "Bau"
+        (~10 Abschnitte) reichte 948 px gegen 845 px sichtbar ueber den Rand hinaus - selbst
+        nachdem sich der Dialog schon auf seinen Inhalt vergroessert hatte. Die anderen
+        Register (z. B. "Ausgabe & Vorgaben": 805 px gegen 845 px) passten und bleiben
+        unveraendert ohne Canvas.
+        """
+        dialog = self._dialog()
+        dialog.zeigen("bau")
+        _pumpen(0.1)
+        rahmen = dialog._register_rahmen["bau"]
+        canvas = _rollbares_canvas(rahmen)
+        self.assertIsNotNone(canvas, "Das Register Bau hat kein rollbares Canvas.")
+        rahmen.update_idletasks()
+        region = canvas.bbox("all")
+        self.assertIsNotNone(region)
+        self.assertGreater(region[3] - region[1], canvas.winfo_height(),
+                           "Die rund zehn Abschnitte sollten den sichtbaren Bereich ueberragen.")
+        for schluessel in ("ausgabe", "bibliothek"):
+            dialog.zeigen(schluessel)
+            _pumpen(0.05)
+            self.assertIsNone(_rollbares_canvas(dialog._register_rahmen[schluessel]),
+                              "Register %s brauchte bislang kein Canvas." % schluessel)
 
     def test_das_passcode_feld_ist_verdeckt_und_laesst_sich_anzeigen(self) -> None:
         dialog = self._dialog()

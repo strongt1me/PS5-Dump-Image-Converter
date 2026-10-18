@@ -267,6 +267,14 @@ class Optionen:
     # --- Bau-Einstellungen ----------------------------------------------
     def _register_bau(self, karte) -> None:
         c, F, pt, t = self.c, self.F, self.pt, self.t
+        # Das Register haengt am meisten Abschnitte aneinander (~10) und reichte dadurch
+        # ueber den sichtbaren Bereich hinaus, ohne jede Moeglichkeit zu rollen - gemessen
+        # 948 px Inhalt gegen 845 px sichtbar, selbst nachdem sich das Fenster schon auf
+        # seinen Inhalt vergroessert hatte (18.10.2026, derselbe Fund wie im Fenster
+        # "PS5 PKG Dump & Image Converter"). Die anderen Register passen (z. B. "Ausgabe
+        # & Vorgaben": 805 px gegen 845 px) und bleiben unveraendert.
+        aussen, karte = self.f.g._build_scrollable_body(karte)
+        aussen.pack(fill="both", expand=True)
         self._info(karte, "ps5pkg.opt_build_info")
 
         # Kompressionsmodus
