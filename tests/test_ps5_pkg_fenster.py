@@ -147,6 +147,29 @@ class FensterTests(unittest.TestCase):
         self.assertEqual("ffpfsc", f.format_schluessel)
         self.assertEqual("umwandeln", f.aktion_var.get())
 
+    def test_die_seite_extras_rollt_statt_abzuschneiden(self) -> None:
+        """Nutzerbefund 18.10.2026: vier Karten stapeln sich auf "Extras" - bei
+
+        kleineren Fenstern reichten sie ueber den sichtbaren Bereich hinaus,
+        ohne jede Moeglichkeit zu rollen (der Entpacken-Knopf, der ganze
+        Aufbauen-Bereich der dritten Karte und die vierte Karte waren nicht
+        erreichbar). Seitdem baut ``_seite_extras`` den Inhalt in ein Canvas
+        aus ``_build_scrollable_body``.
+        """
+        f = self.f
+        f._seite_zeigen("extras")
+        _pumpen(0.05)
+        seite = f.seiten["extras"]
+        canvas = next((enkel for kind in seite.winfo_children()
+                       for enkel in kind.winfo_children()
+                       if isinstance(enkel, tk.Canvas)), None)
+        self.assertIsNotNone(canvas, "Die Seite Extras hat kein rollbares Canvas.")
+        seite.update_idletasks()
+        region = canvas.bbox("all")
+        self.assertIsNotNone(region)
+        self.assertGreater(region[3] - region[1], canvas.winfo_height(),
+                           "Vier Karten sollten den sichtbaren Bereich im Testfenster ueberragen.")
+
     def test_ein_zweites_oeffnen_holt_das_offene_fenster(self) -> None:
         zweites = fz.oeffnen(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)
         self.assertIs(self.f, zweites)

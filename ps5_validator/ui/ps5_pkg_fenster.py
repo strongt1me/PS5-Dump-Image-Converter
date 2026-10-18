@@ -787,13 +787,22 @@ class Ps5PkgFenster:
         F, pt = self.F, self.pt
         pw = g._pw
         seite.columnconfigure(0, weight=1)
+        seite.rowconfigure(1, weight=1)
         kopf = tk.Frame(seite, bg=c["bg_main"])
         kopf.grid(row=0, column=0, sticky="ew", pady=(8, 12))
         tk.Label(kopf, text=t("ps5pkg.nav_extras"), font=(F, pt(20), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w").pack(fill="x")
 
-        karte = self._karte(seite, "ps5pkg.dds_title")
-        karte.grid(row=1, column=0, sticky="ew")
+        # Vier Karten stapeln sich hier - bei kleineren Fenstern reichten sie
+        # ueber den sichtbaren Bereich hinaus, ohne jede Moeglichkeit zu
+        # rollen: der Entpacken-Knopf, der ganze Aufbauen-Bereich der dritten
+        # Karte und die vierte Karte waren schlicht nicht erreichbar.
+        aussen, innen = g._build_scrollable_body(seite)
+        aussen.grid(row=1, column=0, sticky="nsew")
+        innen.columnconfigure(0, weight=1)
+
+        karte = self._karte(innen, "ps5pkg.dds_title")
+        karte.grid(row=0, column=0, sticky="ew")
 
         # Innerer Frame fuer grid (Karte-Titel wurde per pack gesetzt; grid-Kinder muessen in einem eigenen Frame)
         inhalt = tk.Frame(karte, bg=c["bg_card"])
@@ -830,8 +839,8 @@ class Ps5PkgFenster:
             row=5, column=0, columnspan=3, pady=(12, 0), sticky="w")
 
         # ---- exFAT Boot-Sektor reparieren (Nr. 3) ----
-        karte_rep = self._karte(seite, "ps5pkg.exfat_repair_title")
-        karte_rep.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        karte_rep = self._karte(innen, "ps5pkg.exfat_repair_title")
+        karte_rep.grid(row=1, column=0, sticky="ew", pady=(12, 0))
         ir = tk.Frame(karte_rep, bg=c["bg_card"])
         ir.pack(fill="both", expand=True)
         ir.columnconfigure(1, weight=1)
@@ -851,8 +860,8 @@ class Ps5PkgFenster:
             row=3, column=0, columnspan=3, pady=(12, 0), sticky="w")
 
         # ---- exFAT-Inhalt bearbeiten (Nr. 2) ----
-        karte_edit = self._karte(seite, "ps5pkg.exfat_edit_title")
-        karte_edit.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        karte_edit = self._karte(innen, "ps5pkg.exfat_edit_title")
+        karte_edit.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         ie = tk.Frame(karte_edit, bg=c["bg_card"])
         ie.pack(fill="both", expand=True)
         ie.columnconfigure(1, weight=1)
@@ -899,8 +908,8 @@ class Ps5PkgFenster:
             row=9, column=0, columnspan=3, pady=(8, 0), sticky="w")
 
         # ---- FFPKG-Metadaten reparieren (Nr. 4) ----
-        karte_ffpkg = self._karte(seite, "ps5pkg.ffpkg_repair_title")
-        karte_ffpkg.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        karte_ffpkg = self._karte(innen, "ps5pkg.ffpkg_repair_title")
+        karte_ffpkg.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         ifp = tk.Frame(karte_ffpkg, bg=c["bg_card"])
         ifp.pack(fill="both", expand=True)
         ifp.columnconfigure(1, weight=1)
