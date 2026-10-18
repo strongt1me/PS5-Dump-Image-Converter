@@ -43,6 +43,27 @@ class ZielIdTests(unittest.TestCase):
         self.assertEqual(yu.ZIEL_IDS[0], yu.ZIEL_STANDARD)
 
 
+class UsbZielTests(unittest.TestCase):
+    def test_alle_acht_einhaengepunkte_sind_gueltig(self) -> None:
+        for ziel in yu.USB_ZIELE:
+            with self.subTest(ziel=ziel):
+                self.assertTrue(yu.usb_ziel_gueltig(ziel))
+        self.assertEqual(8, len(yu.USB_ZIELE))
+
+    def test_ein_abschliessender_schraegstrich_wird_toleriert(self) -> None:
+        self.assertTrue(yu.usb_ziel_gueltig("/mnt/usb0/"))
+        self.assertEqual("/mnt/usb0", yu.usb_ziel_pfad("/mnt/usb0/"))
+
+    def test_falsche_nummer_oder_unterordner_sind_ungueltig(self) -> None:
+        for pfad in ("", "/mnt/usb8", "/mnt/usb", "/mnt/usb0/y2jb_update.zip", "/mnt/ext0", "../../etc"):
+            with self.subTest(pfad=pfad):
+                self.assertFalse(yu.usb_ziel_gueltig(pfad))
+                self.assertEqual("", yu.usb_ziel_pfad(pfad))
+
+    def test_standard_ist_der_erste_einhaengepunkt(self) -> None:
+        self.assertEqual(yu.USB_ZIELE[0], yu.USB_ZIEL_STANDARD)
+
+
 class AngeboteTests(unittest.TestCase):
     def _anhang(self, name: str, adresse: str = "https://github.com/x/y/releases/download/v1/" ) -> Anhang:
         return Anhang(name=name, groesse=336789504, digest="sha256:abc", adresse=adresse + name)
@@ -75,6 +96,16 @@ class AngeboteTests(unittest.TestCase):
         alt = Freigabe(tag="v0.9.1", anhaenge=(self._anhang("download0.dat"),))
         erg = yu.angebote([neu, alt])
         self.assertEqual(["v1.0.2", "v0.9.1"], [f.tag for f, _a in erg])
+
+    def test_dateiname_waehlt_den_anderen_anhang_aus_derselben_freigabe(self) -> None:
+        """Beide Anhaenge kommen aus demselben geladenen Freigaben-Satz - ein Netzzugriff reicht."""
+        f = Freigabe(tag="v1.0.2", anhaenge=(self._anhang("download0.dat"), self._anhang("y2jb_update.zip")))
+        self.assertEqual([(f, f.anhaenge[0])], yu.angebote([f]))
+        self.assertEqual([(f, f.anhaenge[1])], yu.angebote([f], dateiname=yu.UPDATE_DATEINAME))
+
+    def test_eine_freigabe_ohne_update_zip_faellt_bei_dem_dateinamen_heraus(self) -> None:
+        nur_dat = Freigabe(tag="v0.1", anhaenge=(self._anhang("download0.dat"),))
+        self.assertEqual([], yu.angebote([nur_dat], dateiname=yu.UPDATE_DATEINAME))
 
 
 class QuelleTests(unittest.TestCase):

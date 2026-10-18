@@ -1801,6 +1801,26 @@ STRINGS: dict[str, dict[str, str]] = {
                                 'en': 'Please enter the console address first.'},
     'y2jbupdater.err_ftp_not_ready': {'de': 'FTP auf der Konsole antwortet nicht.',
                                       'en': 'FTP on the console is not responding.'},
+    'y2jbupdater.card_autoloader': {'de': 'Autoloader aktualisieren', 'en': 'Update autoloader'},
+    'y2jbupdater.hint_autoloader': {'de': 'y2jb_update.zip aktualisiert den schon laufenden Autoloader selbst - '
+                                          'sie gehört auf die Wurzel eines USB-Sticks, nicht in den App-Ordner. '
+                                          'Angewendet wird sie erst, wenn der Autoloader auf der Konsole neu '
+                                          'startet (Stick einstecken, Konsole neu starten oder den Autoloader '
+                                          'selbst neu auslösen) - das macht dieses Fenster nicht automatisch.',
+                                    'en': 'y2jb_update.zip updates the already running autoloader itself - it '
+                                          'belongs on the root of a USB stick, not in the app folder. It only '
+                                          'takes effect once the autoloader restarts on the console (plug in the '
+                                          'stick, restart the console, or re-trigger the autoloader yourself) - '
+                                          'this window does not do that automatically.'},
+    'y2jbupdater.filetype_zip': {'de': 'y2jb_update.zip', 'en': 'y2jb_update.zip'},
+    'y2jbupdater.lbl_usb': {'de': 'USB-Stick:', 'en': 'USB stick:'},
+    'y2jbupdater.err_bad_usb': {'de': 'Ungültiges Ziel - bitte einen USB-Einhängepunkt wählen.',
+                                'en': 'Invalid target - please choose a USB mount point.'},
+    'y2jbupdater.status_autoloader_ok': {'de': 'Hochgeladen. Jetzt den Autoloader auf der Konsole neu starten, '
+                                               'damit er sich aktualisiert.',
+                                         'en': 'Uploaded. Now restart the autoloader on the console so it '
+                                               'updates itself.'},
+    'y2jbupdater.btn_upload_autoloader': {'de': 'Auf den USB-Stick hochladen', 'en': 'Upload to USB stick'},
     'pkg_fpkg_seite.tab_pkg': {'de': 'PKG', 'en': 'PKG'},
     'pkg_fpkg_seite.tab_fpkg': {'de': 'FPKG', 'en': 'FPKG'},
     'konsole.btn_uebersicht': {'de': '‹ Konsole & Payloads', 'en': '‹ Console & payloads'},

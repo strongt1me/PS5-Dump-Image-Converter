@@ -385,7 +385,7 @@ class FakeNetz:
             return wu.Antwort(304, "", etag)
         return wu.Antwort(200, text, marke)
 
-    def laden(self, adresse, pfad, fortschritt=None, abbruch=None):
+    def laden(self, adresse, pfad, fortschritt=None, abbruch=None, grenze=None):
         self.geladen.append(adresse)
         if abbruch is not None and abbruch.is_set():
             raise wu.Abgebrochen()
