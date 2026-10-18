@@ -52089,8 +52089,11 @@ class PS5ConverterGUI:
         Getrennt von ``_ampr_gen_fassungen_dialog``, damit ein Test das Fenster
         bedienen kann, ohne dass ``wait_window`` ihn aufhaelt.
 
-        Zwei Auswahllisten, je Bibliothek eine: AMPR EMU und - nur auf
-        ausdruecklichen Haken - der PlayGo-Stub. Jede Liste steht **neueste
+        Zwei Auswahllisten, je Bibliothek eine: AMPR EMU und der PlayGo-Stub -
+        beide mit eigenem Haken. AMPR EMU ist vorangehakt (der uebliche Fall,
+        bis 17.10.2026 die einzige Moeglichkeit), PlayGo nur auf ausdruecklichen
+        Haken. So laesst sich seit 18.10.2026 auch nur PlayGo erneuern, ohne
+        AMPR EMU ein zweites Mal aufzuspielen. Jede Liste steht **neueste
         Fassung oben** und hat die neueste vorgewaehlt. Sortiert wird hier noch
         einmal: Das Fenster verspricht "neueste oben" und soll sich dabei nicht
         auf die Reihenfolge des Aufrufers verlassen.
@@ -52099,11 +52102,11 @@ class PS5ConverterGUI:
             ``fenster`` (das Toplevel), ``ampr_liste`` und ``playgo_liste`` (die
             Eintraege in Anzeigereihenfolge), ``ampr_box`` und ``playgo_box``
             (die Auswahlfelder oder ``None``), ``ampr_hinweis`` und
-            ``playgo_hinweis`` (die Saetze darunter), ``playgo_haken`` und
-            ``playgo_an`` (der Haken und seine Variable), ``ok`` und
-            ``abbrechen`` (was die Knoepfe tun), ``abbrechen_knopf`` und
-            ``eingabe`` (die Enter-Weiche des Fensters) und ``antwort``
-            (``{"wert": ...}`` - ``None`` bei Abbruch, sonst
+            ``playgo_hinweis`` (die Saetze darunter), ``ampr_haken`` und
+            ``ampr_an`` sowie ``playgo_haken`` und ``playgo_an`` (die Haken und
+            ihre Variablen), ``ok`` und ``abbrechen`` (was die Knoepfe tun),
+            ``abbrechen_knopf`` und ``eingabe`` (die Enter-Weiche des Fensters)
+            und ``antwort`` (``{"wert": ...}`` - ``None`` bei Abbruch, sonst
             ``{"ampr": Eintrag | None, "playgo": Eintrag | None}``).
         """
         c = self._COLORS
@@ -52150,22 +52153,34 @@ class PS5ConverterGUI:
             _zeigen()
             return box, hinweis
 
-        # ── AMPR EMU ───────────────────────────────────────────────────
+        # ── AMPR EMU: vorangehakt (der uebliche Fall), aber abwaehlbar - wer nur
+        # PlayGo erneuern will, braucht AMPR EMU selbst nicht nochmal (18.10.2026).
         karte_a = self._pw.Karte(innen, bg=c["bg_card"], padx=12, pady=10)
         karte_a.pack(fill="x", pady=(0, 8))
-        tk.Label(karte_a, text=self._t("amprgen.fassung_ampr"),
-                 font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_card"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x")
+        ampr_an = tk.BooleanVar(value=True)
         ampr_box = ampr_hinweis = None
+
+        def _ampr_schalten() -> None:
+            if ampr_box is not None:
+                ampr_box.configure(state="readonly" if ampr_an.get() else "disabled")
+
+        ampr_haken = self._pw.Checkbutton(
+            karte_a, text=self._t("amprgen.fassung_ampr"), variable=ampr_an,
+            command=_ampr_schalten, font=(UI_SCHRIFT, pt(10), "bold"),
+            bg=c["bg_card"], fg=c["fg_primary"], selectcolor=c["bg_main"],
+            activebackground=c["bg_card"], activeforeground=c["fg_primary"],
+            anchor="w", bd=0, highlightthickness=0, padx=0)
+        ampr_haken.pack(fill="x")
         if ampr:
             ampr_box, ampr_hinweis = _liste(karte_a, ampr)
             ampr_box.pack(fill="x", pady=(6, 0))
             ampr_hinweis.pack(fill="x", pady=(4, 0))
         else:
+            ampr_haken.configure(state="disabled")
             tk.Label(karte_a, text=self._t("amprgen.fassung_ampr_fehlt"),
                      font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_warning"],
                      anchor="w", justify="left",
-                     wraplength=umbruch).pack(fill="x", pady=(6, 0))
+                     wraplength=umbruch).pack(fill="x", pady=(2, 0))
 
         # ── PlayGo: nur auf ausdruecklichen Haken ──────────────────────
         karte_p = self._pw.Karte(innen, bg=c["bg_card"], padx=12, pady=10)
@@ -52202,7 +52217,7 @@ class PS5ConverterGUI:
 
         def _ok() -> None:
             wahl: dict[str, Any] = {"ampr": None, "playgo": None}
-            if ampr and ampr_box is not None:
+            if ampr and ampr_box is not None and ampr_an.get():
                 wahl["ampr"] = ampr[max(0, min(ampr_box.current(), len(ampr) - 1))]
             if playgo and playgo_box is not None and playgo_an.get():
                 wahl["playgo"] = playgo[max(0, min(playgo_box.current(), len(playgo) - 1))]
@@ -52245,6 +52260,7 @@ class PS5ConverterGUI:
         return {"fenster": dlg, "ampr_liste": ampr, "playgo_liste": playgo,
                 "ampr_box": ampr_box, "playgo_box": playgo_box,
                 "ampr_hinweis": ampr_hinweis, "playgo_hinweis": playgo_hinweis,
+                "ampr_haken": ampr_haken, "ampr_an": ampr_an,
                 "playgo_haken": haken, "playgo_an": playgo_an,
                 "ok": _ok, "abbrechen": _abbrechen, "abbrechen_knopf": abbrechen_knopf,
                 "eingabe": _eingabe, "antwort": antwort}

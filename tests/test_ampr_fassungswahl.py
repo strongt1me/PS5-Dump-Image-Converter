@@ -258,6 +258,29 @@ class FensterTests(unittest.TestCase):
         f["playgo_haken"].invoke()
         self.assertEqual("disabled", str(f["playgo_box"]["state"]))
 
+    def test_ampr_ist_vorangehakt(self) -> None:
+        """AMPR EMU bleibt der uebliche Fall - anders als PlayGo von selbst an."""
+        f = self._bauen()
+        self.assertTrue(f["ampr_an"].get())
+        self.assertEqual("readonly", str(f["ampr_box"]["state"]))
+
+    def test_der_ampr_haken_laesst_sich_abwaehlen_fuer_nur_playgo(self) -> None:
+        """Seit 18.10.2026: AMPR EMU abwaehlbar - wer nur PlayGo erneuern will,
+        muss AMPR EMU nicht mehr ein zweites Mal mit aufspielen."""
+        f = self._bauen()
+        f["ampr_haken"].invoke()
+        self.assertFalse(f["ampr_an"].get())
+        self.assertEqual("disabled", str(f["ampr_box"]["state"]))
+        f["playgo_haken"].invoke()
+        f["ok"]()
+        self.assertEqual({"ampr": None, "playgo": f["playgo_liste"][0]}, f["antwort"]["wert"])
+
+    def test_beide_haken_abgewaehlt_legt_nichts_ab(self) -> None:
+        f = self._bauen()
+        f["ampr_haken"].invoke()
+        f["ok"]()
+        self.assertEqual({"ampr": None, "playgo": None}, f["antwort"]["wert"])
+
     def test_pack_bauten_stehen_nie_in_der_liste(self) -> None:
         """Wunsch des Nutzers (03.10.2026): "diese zwei mit pack duerfen nicht mit in die Liste"."""
         f = self._bauen()
