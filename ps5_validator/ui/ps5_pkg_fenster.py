@@ -1248,11 +1248,17 @@ class Ps5PkgFenster:
         self._merken(EINST_BIBLIOTHEK, [i.pfad for i in self.pakete])
 
     def _bibliothek_laden(self) -> None:
-        pfade = self._einstellung(EINST_BIBLIOTHEK, [])
-        if isinstance(pfade, list):
-            vorhanden = [p for p in pfade if isinstance(p, str) and os.path.exists(p)]
-            if vorhanden and self._werkzeug():
-                self._lesen_starten(vorhanden)
+        """Beim Oeffnen des Fensters gerufen - liest die gemerkte Bibliothek NICHT von selbst.
+
+        Nutzerwunsch (18.10.2026): "Beim Oeffnen ... soll bitte nicht ... bereits
+        etwas gescannt werden. Man soll bitte zuerst manuell waehlen muessen,
+        erst dann soll gescannt werden." Bis dahin las ``_lesen_starten`` hier
+        ungefragt jede gemerkte Paketdatei neu ein (Kopfdaten, ``param.json``,
+        Cover) - bei vielen oder grossen Paketen sichtbar spuerbar, noch bevor
+        irgendetwas gewaehlt wurde. Die gemerkte Liste bleibt gespeichert; ein
+        Klick auf "Aktualisieren" (:meth:`_bibliothek_aktualisieren`) holt sie
+        bei Bedarf nach - das ist die manuelle Wahl.
+        """
         # Option "Bibliothek beim Start aktualisieren": die Bibliotheksordner neu durchsuchen
         if self._einstellung(opt.START_SCAN, False) is True:
             ordner = self._einstellung(opt.ORDNER, [])
@@ -1354,10 +1360,22 @@ class Ps5PkgFenster:
             self._ausgabe_oeffnen()
 
     def _bibliothek_aktualisieren(self) -> None:
-        pfade = [i.pfad for i in self.pakete if os.path.exists(i.pfad)]
-        self.pakete = []
-        self._liste_fuellen()
-        if pfade:
+        """Der Knopf AKTUALISIEREN - die manuelle Wahl, die das Lesen auslöst.
+
+        Steht noch nichts in der Liste (frischer Fensterstart, siehe
+        :meth:`_bibliothek_laden`), kommt die zuletzt gemerkte Bibliothek von
+        hier zurueck - ein bewusster Klick statt eines ungefragten Lesens beim
+        Oeffnen.
+        """
+        if self.pakete:
+            pfade = [i.pfad for i in self.pakete if os.path.exists(i.pfad)]
+            self.pakete = []
+            self._liste_fuellen()
+        else:
+            gemerkt = self._einstellung(EINST_BIBLIOTHEK, [])
+            pfade = [p for p in gemerkt if isinstance(p, str) and os.path.exists(p)] \
+                if isinstance(gemerkt, list) else []
+        if pfade and self._werkzeug():
             self._lesen_starten(pfade)
 
     # ------------------------------------------------------------------

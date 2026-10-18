@@ -301,6 +301,29 @@ class FensterTests(unittest.TestCase):
         gemerkt = self.app._load_setting(fz.EINST_BIBLIOTHEK, [])
         self.assertEqual(sorted(self.pakete), sorted(gemerkt))
 
+    def test_oeffnen_scannt_die_gemerkte_bibliothek_nicht_von_selbst(self) -> None:
+        """Nutzerwunsch 18.10.2026: "Beim Oeffnen ... soll bitte nicht ... bereits etwas
+
+        gescannt werden. Man soll bitte zuerst manuell waehlen muessen, erst dann soll
+        gescannt werden." Ein frisches Fenster mit gemerkter Bibliothek las die Pakete
+        bis dahin ungefragt neu ein.
+        """
+        self.app._save_setting(fz.EINST_BIBLIOTHEK, list(self.pakete))
+        neu = fz.Ps5PkgFenster(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)
+        try:
+            _pumpen(0.3)
+            self.assertEqual([], neu.pakete, "Das blosse Oeffnen hat von selbst gelesen.")
+            self.assertEqual(0, len(neu.liste.get_children()))
+            # Der Knopf AKTUALISIEREN ist die manuelle Wahl - er holt die gemerkte Bibliothek nach.
+            neu._bibliothek_aktualisieren()
+            self.assertTrue(_warten(lambda: len(neu.pakete) == len(self.pakete)))
+            self.assertEqual(2, len(neu.liste.get_children()))
+        finally:
+            neu._job = None
+            neu._uebergabe = None
+            neu.win.destroy()
+            _pumpen(0.05)
+
     def test_die_suche_filtert_und_zeigt_einen_hinweis(self) -> None:
         self._laden()
         f = self.f
