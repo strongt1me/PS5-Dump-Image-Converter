@@ -1051,13 +1051,21 @@ class Netz:
                 fehler.close()
 
     def laden(self, adresse: str, pfad: str, fortschritt: "Callable[[int, int], None] | None" = None,
-              abbruch: "threading.Event | None" = None) -> tuple[int, str]:
+              abbruch: "threading.Event | None" = None, grenze: "int | None" = None) -> tuple[int, str]:
         """Laedt eine Datei nach ``pfad`` und liefert ``(Groesse, SHA-256)``. Bricht ab, wenn ``abbruch`` gesetzt ist.
+
+        Args:
+            grenze: eigene Obergrenze statt :data:`GRENZE_BYTES` - fuer Anhaenge, die das uebliche Mass
+                bewusst ueberschreiten (z. B. ``download0.dat`` des Y2JB-Updaters, ~321 MiB). ``None``
+                liest :data:`GRENZE_BYTES` zum Zeitpunkt des Aufrufs, nicht beim Import (Tests setzen den
+                Modulwert versuchsweise herauf/herunter).
 
         Raises:
             Abgebrochen: ``abbruch`` wurde gesetzt.
-            ValueError: Die Datei ist groesser als :data:`GRENZE_BYTES`.
+            ValueError: Die Datei ist groesser als ``grenze``.
         """
+        if grenze is None:
+            grenze = GRENZE_BYTES
         anfrage = urllib.request.Request(adresse, headers={"User-Agent": self.AGENT,
                                                             "Accept": "application/octet-stream"})
         summe = hashlib.sha256()
@@ -1067,7 +1075,7 @@ class Netz:
                 gesamt = int(antwort.headers.get("Content-Length") or 0)
             except (TypeError, ValueError):
                 gesamt = 0
-            if gesamt > GRENZE_BYTES:
+            if gesamt > grenze:
                 raise ValueError("Datei zu gross: %d Bytes" % gesamt)
             while True:
                 if abbruch is not None and abbruch.is_set():
@@ -1076,8 +1084,8 @@ class Netz:
                 if not block:
                     break
                 gelesen += len(block)
-                if gelesen > GRENZE_BYTES:
-                    raise ValueError("Datei zu gross: ueber %d Bytes" % GRENZE_BYTES)
+                if gelesen > grenze:
+                    raise ValueError("Datei zu gross: ueber %d Bytes" % grenze)
                 ziel.write(block)
                 summe.update(block)
                 if fortschritt is not None:

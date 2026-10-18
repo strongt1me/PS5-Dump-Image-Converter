@@ -1747,6 +1747,8 @@ STRINGS: dict[str, dict[str, str]] = {
     'konsole.btn_bfpilot': {'de': '8. BFpilot', 'en': '8. BFpilot'},
     'konsole.btn_amprmgr': {'de': '9. AMPR EMU Manager', 'en': '9. AMPR EMU Manager'},
     'konsole.btn_amprmitschnitt': {'de': '10. AMPR-Mitschnitt', 'en': '10. AMPR trace'},
+    'konsole.btn_assetpack': {'de': '11. Asset-Pack', 'en': '11. Asset Pack'},
+    'konsole.btn_y2jbupdater': {'de': '12. Y2JB Updater', 'en': '12. Y2JB Updater'},
     'pkg_fpkg_seite.tab_pkg': {'de': 'PKG', 'en': 'PKG'},
     'pkg_fpkg_seite.tab_fpkg': {'de': 'FPKG', 'en': 'FPKG'},
     'konsole.btn_uebersicht': {'de': '‹ Konsole & Payloads', 'en': '‹ Console & payloads'},

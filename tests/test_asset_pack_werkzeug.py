@@ -723,9 +723,13 @@ class FensterTests(unittest.TestCase):
         ap.bestand_aufraeumen(str(raus), baender, ganz=True)
         return app0
 
-    def test_eintrag_im_werkzeugmenue(self):
-        self.assertIn(("titlebar.asset_pack", "_show_asset_pack_werkzeug"),
-                      self.haupt.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
+    def test_eintrag_ist_seit_18_10_2026_ein_konsole_knopf_statt_weitere_tools(self):
+        """Verlegt (Nutzerwunsch): Knopf 11 der Ansicht KONSOLE statt WEITERE TOOLS."""
+        self.assertNotIn(("titlebar.asset_pack", "_show_asset_pack_werkzeug"),
+                         self.haupt.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
+        self.assertIn(("konsole.btn_assetpack", "assetpack"), self.haupt.PS5ConverterGUI._KONSOLE_KNOEPFE)
+        self.assertEqual("_show_asset_pack_werkzeug",
+                         self.haupt.PS5ConverterGUI._KONSOLE_FENSTER.get("assetpack"))
 
     def test_fenster_oeffnet_mit_beiden_knoepfen(self):
         fenster = self._oeffnen()

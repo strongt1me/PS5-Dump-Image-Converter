@@ -161,6 +161,7 @@ from ps5_validator.utils import archiv_quelle
 from ps5_validator.utils import fenster_titelfarbe
 from ps5_validator.utils import qr_klein
 from ps5_validator.utils import konsole_ftp
+from ps5_validator.utils import y2jb_updater
 from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
 from ps5_validator.utils import webansicht
@@ -4660,10 +4661,8 @@ class PS5ConverterGUI:
         ("titlebar.pkg_merger", "_show_pkg_merger_dialog"),
         ("titlebar.param_manifest", "_show_param_manifest_editor"),
         ("titlebar.ampr_index", "_show_ampr_index_builder"),
-        # Fertige Asset-Packs ansehen, pruefen, entpacken (seit v1.9.80) - das
-        # Gegenstueck zu "Compress with LZ4" / "Verify" / "Uncompress" der
-        # Konsolen-App LZ4 Compression, am PC.
-        ("titlebar.asset_pack", "_show_asset_pack_werkzeug"),
+        # "Asset-Pack pruefen/entpacken" stand hier bis zum 18.10.2026; seitdem ist es Knopf 11 der Ansicht
+        # KONSOLE (Nutzerwunsch) - oeffnet dasselbe Fenster weiter ueber _KONSOLE_FENSTER.
         # Der AMPR-Mitschnitt-Assistent stand hier bis zum 14.10.2026; seitdem ist er Knopf 10 der Ansicht KONSOLE und
         # zeigt sich rechts als Seite (Nutzerwunsch) - siehe _KONSOLE_KNOEPFE und _konsole_mitschnitt_bauen.
         ("titlebar.self_inspector", "_show_self_inspector"),
@@ -4726,6 +4725,13 @@ class PS5ConverterGUI:
         ("konsole.btn_amprmgr", "amprmgr"),
         # Seit dem 14.10.2026 (Nutzerwunsch): der AMPR-Mitschnitt-Assistent, bis dahin ein Fenster unter WEITERE TOOLS.
         ("konsole.btn_amprmitschnitt", "amprmitschnitt"),
+        # Seit dem 18.10.2026 (Nutzerwunsch): Asset-Pack pruefen/entpacken, bis dahin ein Fenster unter
+        # WEITERE TOOLS - oeffnet weiter dasselbe Fenster (_show_asset_pack_werkzeug), nur ueber diesen
+        # Knopf statt das Sammelmenue (siehe _KONSOLE_FENSTER unten).
+        ("konsole.btn_assetpack", "assetpack"),
+        # Seit dem 18.10.2026 (Nutzerwunsch): der Y2JB Updater - download0.dat waehlen/holen und auf die
+        # PS5 legen (siehe _KONSOLE_SEITEN/_KONSOLE_SEITENBAU unten).
+        ("konsole.btn_y2jbupdater", "y2jbupdater"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -12097,8 +12103,11 @@ class PS5ConverterGUI:
     #: leer: "Konsole & Payloads" und der WebKit Autoloader (damals noch die
     #: Spielstaende) sind Seiten rechts geworden. Die Karte bleibt fuer ein
     #: kuenftiges Fenster; "5. CoolSysCent-Pro" ist seit dem 05.10.2026 eine
-    #: Direktaktion (_KONSOLE_AKTIONEN).
-    _KONSOLE_FENSTER: dict[str, str] = {}
+    #: Direktaktion (_KONSOLE_AKTIONEN). Seit dem 18.10.2026: Asset-Pack
+    #: pruefen/entpacken - dasselbe Fenster, das bis dahin ueber WEITERE TOOLS lief.
+    _KONSOLE_FENSTER: dict[str, str] = {
+        "assetpack": "_show_asset_pack_werkzeug",
+    }
 
     #: Kennungen, die kein Fenster oeffnen, sondern rechts in der Ansicht
     #: eine Seite zeigen: seit dem 25.09.2026 die Bibliothek, seit dem
@@ -12114,6 +12123,8 @@ class PS5ConverterGUI:
         "bibliothek": "_konsole_bibliothek_umschalten",
         "amprmgr": "_konsole_amprmgr_zeigen",
         "amprmitschnitt": "_show_ampr_mitschnitt_assistent",
+        # Seit dem 18.10.2026: der Y2JB Updater (Knopf 12).
+        "y2jbupdater": "_konsole_y2jb_zeigen",
     }
 
     #: Die Seiten rechts in der Ansicht KONSOLE: je Seite das Attribut, unter
@@ -12130,6 +12141,8 @@ class PS5ConverterGUI:
         "amprmgr": ("_konsole_amprmgr", "_konsole_amprmgr_bauen", "konsole.btn_amprmgr"),
         # Seit dem 14.10.2026: der AMPR-Mitschnitt-Assistent (bis dahin ein Fenster unter WEITERE TOOLS).
         "amprmitschnitt": ("_konsole_mitschnitt", "_konsole_mitschnitt_bauen", "konsole.btn_amprmitschnitt"),
+        # Seit dem 18.10.2026: der Y2JB Updater - download0.dat waehlen/holen und auf die PS5 legen.
+        "y2jbupdater": ("_konsole_y2jb", "_konsole_y2jb_bauen", "konsole.btn_y2jbupdater"),
         # Eine Weboberflaeche der Konsole (seit 26.09.2026) - ohne eigenen
         # Knopf: Sie kommt von einer der drei Seiten und fuehrt dorthin
         # zurueck; hervorgehoben bleibt deren Knopf (_webseite_herkunft).
