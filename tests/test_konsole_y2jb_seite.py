@@ -151,6 +151,14 @@ class SeiteTests(unittest.TestCase):
             dl_knopf = self._knopf("Herunterladen", 0)         # Karte 1: download0.dat
             dl_knopf._command()
             self.assertTrue(_warten(lambda: str(dl_knopf.cget("state")) == "normal"))
+            # Regressionstest (19.10.2026): Der Download-Hintergrundfaden rief am Ende
+            # ``release_laden_knopf.configure({"state": "normal"})`` auf - ein Diktat als
+            # erstes Argument statt eines Schluesselworts. RoundedButton.configure() nimmt
+            # aber nur Schluesselworte, nicht einen einzelnen positionsgebundenen Diktat-Wert
+            # (anders als ttk-Widgets). Das flog nur als unbehandelte Ausnahme im Tk-Ereignis
+            # auf - "Fassungen laden" blieb gesperrt, ohne dass ein Test das bisher bemerkte.
+            self.assertTrue(_warten(lambda: str(laden_knopf.cget("state")) == "normal"),
+                            "„Fassungen laden“ blieb nach dem Download gesperrt.")
 
         eintraege = [p for p in Path(self.ordner).rglob("download0_*.dat")]
         self.assertEqual(1, len(eintraege), "Es sollte genau eine heruntergeladene download0.dat liegen.")

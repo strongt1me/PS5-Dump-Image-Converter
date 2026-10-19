@@ -157,6 +157,7 @@ from ps5_validator.utils import ps4_werkzeug
 from ps5_validator.utils import pkg_entpacken
 from ps5_validator.utils import pkg_reader
 from ps5_validator.utils import konsole_dienste
+from ps5_validator.utils import werkzeugstaende
 from ps5_validator.utils import archiv_quelle
 from ps5_validator.utils import fenster_titelfarbe
 from ps5_validator.utils import qr_klein
@@ -3008,6 +3009,7 @@ class RoundedButton(tk.Canvas):
         kopfzeile: str = "",
         kopf_font: "tuple | None" = None,
         kopf_farbe: str = "",
+        icon: "ImageTk.PhotoImage | None" = None,
         **kwargs,
     ) -> None:
         parent_bg = kwargs.pop("parent_bg", None) or master.cget("bg")
@@ -3065,6 +3067,9 @@ class RoundedButton(tk.Canvas):
         self._kopfzeile = str(kopfzeile or "")
         self._kopf_font = kopf_font
         self._kopf_farbe = str(kopf_farbe or "")
+        #: Zeilenform mit Icon am rechten Rand (Konsole-&-Payloads-Seitenknoepfe, 19.10.2026) -
+        #: dieselbe Stelle wie ``zeile_pfeil``, beide zusammen zeigt das Icon links vom Pfeil.
+        self._icon = icon
         if self._zeile:
             self._pille = True
         self._grund_merker: "tuple | None" = None
@@ -3314,8 +3319,12 @@ class RoundedButton(tk.Canvas):
             self.create_text(x_rest, h / 2, text=rest, fill=text_farbe, font=self._font, anchor="w")
         else:
             self.create_text(rand, h / 2, text=text, fill=text_farbe, font=self._font, anchor="w")
+        x_rechts = w - rand
+        if self._icon is not None:
+            self.create_image(x_rechts, h / 2, image=self._icon, anchor="e")
+            x_rechts -= self._icon.width() + max(6, int(round(7 * faktor)))
         if self._zeile_pfeil:
-            self.create_text(w - rand, h / 2, text="\u203a", fill=pfeil_hex, font=self._font, anchor="e")
+            self.create_text(x_rechts, h / 2, text="\u203a", fill=pfeil_hex, font=self._font, anchor="e")
         self._gezeichnet = self._zeichen_stand(w, h)
 
     def _textbreite_von(self, text: str) -> int:
@@ -3394,7 +3403,8 @@ class RoundedButton(tk.Canvas):
                 gesperrt, str(self._text), str(self._font), skalierung, grund,
                 bool(getattr(self, "_zeile", False)), str(getattr(self, "_zeile_farben", None)), str(self._bg),
                 bool(getattr(self, "_zeile_pfeil", False)), str(getattr(self, "_kopfzeile", "")),
-                str(getattr(self, "_kopf_farbe", "")), str(getattr(self, "_kopf_font", "")))
+                str(getattr(self, "_kopf_farbe", "")), str(getattr(self, "_kopf_font", "")),
+                id(getattr(self, "_icon", None)))
 
     def nachziehen(self) -> None:
         """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel.
@@ -3475,6 +3485,9 @@ class RoundedButton(tk.Canvas):
             neu_farben = kwargs.pop("zeile_farben")
             self._zeile_farben = dict(neu_farben) if neu_farben else None
             redraw_needed = True
+        if "icon" in kwargs:
+            self._icon = kwargs.pop("icon")
+            redraw_needed = True
         if "command" in kwargs:
             self._command = kwargs.pop("command")
         if breite_neu and getattr(self, "_breite_nach_text", False):
@@ -3505,6 +3518,7 @@ class RoundedButton(tk.Canvas):
         "disabledbackground": "_disabledbackground",
         "disabledforeground": "_disabledforeground",
         "disabledoutline": "_disabledoutline",
+        "icon": "_icon",
     }
 
     def cget(self, key: str):  # noqa: A003 - bewusst tk-kompatibler Name
@@ -9481,6 +9495,12 @@ class PS5ConverterGUI:
         self._konsole_webdienst_knoepfe = [
             knopf for knopf, schluessel in self._konsole_knoepfe
             if _kennung_zu_text.get(schluessel) in self._KONSOLE_WEBDIENSTE]
+        # Zeigt gleich die Icons aus einem fruehren Lauf von "Icons laden" - nur aus dem lokalen
+        # Zwischenspeicher (siehe _payload_icon_foto), kein Netzzugriff beim Fensteraufbau.
+        try:
+            self._konsole_seitenknoepfe_icons_setzen()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Seitenknopf-Icons beim Aufbau nicht setzbar: %s", exc)
 
         # icon0.png Vorschau-Bereich (zwischen Buttons und Footer)
         # Kein eigener Rahmen: Ein tk.Frame zeichnet immer seine Hintergrundfarbe
@@ -10257,6 +10277,30 @@ class PS5ConverterGUI:
         self._register_translatable(self.shutdown_check, "main.shutdown_after_success")
         self.shutdown_check.grid(row=12, column=0, columnspan=3, sticky="w", pady=(16, 0))
 
+        # Ergebnis nach erfolgreichem Abschluss an die PS5 senden.
+        # In der Karte statt auf dem Hintergrundbild (kein Farbkasten).
+        self.senden_nach_erfolg_var = tk.BooleanVar(
+            value=bool(self._load_setting("senden_nach_erfolg", False))
+        )
+        self.senden_check = RunderHaken(
+            path_card,
+            text=self._t("main.senden_nach_erfolg"),
+            variable=self.senden_nach_erfolg_var,
+            command=self._on_senden_nach_erfolg_changed,
+            font=(UI_SCHRIFT, pt(9)),
+            bg=self._COLORS["bg_card"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            selectcolor=self._COLORS["bg_main"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground=self._COLORS["fg_primary"],
+            anchor="w",
+            bd=0,
+            highlightthickness=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
+        )
+        self._register_translatable(self.senden_check, "main.senden_nach_erfolg")
+        self.senden_check.grid(row=13, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
         # Dump-Ordner-Speicherort. Normalerweise legen die Umpack-Wege den
         # voruebergehenden Dump-Ordner beim Ziel an (schnelles Umbenennen auf
         # demselben Laufwerk, geerbte Rechte). Wer das Ziel-Laufwerk frei
@@ -10867,6 +10911,13 @@ class PS5ConverterGUI:
                                         lambda: self._werkzeugfenster_umschalten("_updates_oeffnen"), klein=True)
         updates_btn.pack(side="right")
         self._konsole_tafel_updates_knopf = updates_btn
+        # "Icons laden" (Nutzerwunsch 19.10.2026): holt die Original-Icons bekannter Payloads vom itsPLK-Spiegel
+        # (derselbe, den "Updates"/--werkzeuge-pruefen schon kennt) - eigener Knopf, eigener Netzzugriff, nur auf
+        # Klick (Regel seit v1.8.74: der Druck ist der Netzzugriff).
+        icons_btn = self._seitenpille(kopf, "dienste.icons_button",
+                                      lambda: self._payload_icons_laden(), klein=True)
+        icons_btn.pack(side="right", padx=(0, 6))
+        self._konsole_tafel_icons_knopf = icons_btn
         self._konsole_tafel_kopf = kopf
 
         zustand_var = tk.StringVar(value=self._t("tafel.unbekannt"))
@@ -10983,7 +11034,11 @@ class PS5ConverterGUI:
         tabellen_karte.pack(fill="both", expand=True)
         rahmen = tabellen_karte.innen
         tabelle = ttk.Treeview(rahmen, columns=[s[0] for s in self._KONSOLE_TAFEL_SPALTEN],
-                               show="headings", height=11, selectmode="browse")
+                               show="tree headings", height=11, selectmode="browse")
+        # "#0" traegt seit 19.10.2026 nur das Original-Icon des Payloads (keine eigene Beschriftung,
+        # kein Auf-/Zuklapp-Dreieck noetig - die Zeilen haben keine Kinder).
+        tabelle.heading("#0", text="", anchor="w")
+        tabelle.column("#0", width=knopfmass(28, rahmen), minwidth=knopfmass(28, rahmen), stretch=False)
         for spalte, schluessel, breite, dehnen in self._KONSOLE_TAFEL_SPALTEN:
             ausrichtung = "center" if spalte == "fav" else "w"
             tabelle.heading(spalte, text=self._t(schluessel), anchor=ausrichtung)
@@ -11144,6 +11199,138 @@ class PS5ConverterGUI:
 
         threading.Thread(target=_arbeit, daemon=True, name="konsole-plugin").start()
 
+    #: Seitenknoepfe der Ansicht KONSOLE, die genau eine mitgelieferte Datei vertreten (19.10.2026) -
+    #: ihr Icon kommt aus demselben Spiegel wie die Tabelle. Die Uebersichtsseite selbst ("dienste") und
+    #: reine Programmfunktionen ohne eigene externe Payload-Datei (AMPR Manager, AMPR-Mitschnitt,
+    #: Asset-Pack, Y2JB Updater) bleiben aussen vor - fuer sie gibt es kein sinnvolles Einzel-Icon.
+    _KONSOLE_KNOPF_PAYLOAD_MUSTER: dict[str, str] = {
+        "webkit": "webkit-autoloader-installer_v*.elf",
+        "prosperomgr": "ProsperoMgr_v*.elf",
+        "coolsyscent": "PS5_Cooling_System_Center_v*.elf",
+        "shadowmount": "shadowmountplus_v*.elf",
+        "smplusgui": "SMPlusGui_v*.elf",
+        "bfpilot": "bfpilot_v*.elf",
+    }
+
+    def _payload_icon_ordner(self) -> str:
+        """Ordner mit den gecachten Original-Icons der Payloads.
+
+        Nur ausdruecklich befuellt (:meth:`_payload_icons_laden`) - ein
+        Diagnoselauf oder ein Seitenaufruf geht dafuer nie selbst ins Netz,
+        dieselbe Regel wie beim Metadaten-Nachschlag und dem Knopf "Updates".
+        """
+        return os.path.join(_system_konfigurationsordner(), "Payload-Icons")
+
+    def _payload_icon_foto(self, kennung: str, groesse: int = 18) -> "ImageTk.PhotoImage | None":
+        """Das gecachte Original-Icon einer mitgelieferten Datei - ``None`` ohne Treffer.
+
+        Liest nur, was :meth:`_payload_icons_laden` schon abgelegt hat. Je
+        Kennung und Groesse genau einmal geladen (``_konsole_icon_fotos``) -
+        sonst entstuende bei jedem Neuzeichnen der Tabelle ein neues Tk-Bild,
+        das Tk nie von selbst wieder freigibt (siehe Diagnose "Tk haelt Bilder").
+        """
+        if not kennung:
+            return None
+        merker = getattr(self, "_konsole_icon_fotos", None)
+        if merker is None:
+            merker = self._konsole_icon_fotos = {}
+        schluessel = (kennung, int(groesse))
+        if schluessel in merker:
+            return merker[schluessel]
+        pfad = os.path.join(self._payload_icon_ordner(), "%s.png" % kennung)
+        foto = None
+        if os.path.isfile(pfad):
+            try:
+                bild = Image.open(pfad).convert("RGBA").resize((int(groesse), int(groesse)), _LANCZOS)
+                foto = ImageTk.PhotoImage(bild, master=self.root)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Icon %s nicht ladbar: %s", pfad, exc)
+        merker[schluessel] = foto
+        return foto
+
+    def _konsole_dienst_icon_foto(self, dienst, groesse: int = 18) -> "ImageTk.PhotoImage | None":
+        """Das Icon-Bild zu einem Dienst der Tabelle "Konsole & Payloads" - ``None`` ohne Treffer."""
+        try:
+            datei = self._konsole_payload_datei(dienst.payload_muster or dienst.datei_muster)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Payload-Datei fuer Icon nicht ermittelbar (%s): %s", dienst.schluessel, exc)
+            return None
+        if not datei:
+            return None
+        kennung = werkzeugstaende.kennung_aus_name(os.path.basename(datei))
+        return self._payload_icon_foto(kennung, groesse) if kennung else None
+
+    def _payload_icons_laden(self) -> None:
+        """Holt die Original-Icons bekannter Payloads vom itsPLK-Spiegel und legt sie ab.
+
+        Ausdruecklich auf Knopfdruck ("Icons laden"), nie von selbst - dieselbe
+        Regel wie beim Metadaten-Nachschlag und dem Knopf "Updates". Nicht
+        jede mitgelieferte Datei ist dem Spiegel bekannt (Stand 19.10.2026: um
+        die 27 von 63) - wo nichts passt, bleibt die Zeile ohne Icon.
+        """
+        knopf = getattr(self, "_konsole_tafel_icons_knopf", None)
+        if knopf is not None:
+            try:
+                knopf.configure(state="disabled", text=self._t("dienste.icons_laufend"))
+            except tk.TclError:
+                pass
+        self._konsole_tafel_status.set(self._t("dienste.icons_laufend"))
+
+        def _arbeit() -> None:
+            try:
+                liste = werkzeugstaende.spiegel_holen()
+                icons = werkzeugstaende.icons_holen()
+                payloads = werkzeugstaende.payloads_lesen(
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), "helloworld"))
+                geschrieben = werkzeugstaende.icons_ablegen(
+                    self._payload_icon_ordner(), payloads, liste, icons)
+                fehler = ""
+            except Exception as exc:  # noqa: BLE001
+                geschrieben = {}
+                fehler = str(exc)[:200]
+            self.root.after(0, lambda: self._payload_icons_geladen(geschrieben, fehler))
+
+        threading.Thread(target=_arbeit, daemon=True, name="payload-icons").start()
+
+    def _payload_icons_geladen(self, geschrieben: dict, fehler: str) -> None:
+        """Im Hauptfaden: Knopf freigeben, Zwischenspeicher leeren, Tabelle und Seitenknoepfe neu zeichnen."""
+        knopf = getattr(self, "_konsole_tafel_icons_knopf", None)
+        if knopf is not None:
+            try:
+                knopf.configure(state="normal", text=self._t("dienste.icons_button"))
+            except tk.TclError:
+                pass
+        if fehler:
+            self._konsole_tafel_status.set(self._t("dienste.icons_fehler", fehler=fehler))
+            return
+        self._konsole_icon_fotos = {}
+        self._konsole_tafel_status.set(self._t("dienste.icons_fertig", anzahl=len(geschrieben)))
+        stand = getattr(self, "_konsole_tafel_stand", None) or {}
+        self._konsole_tafel_fuellen(stand.get("uebersicht") or konsole_dienste.pruefen(""))
+        self._konsole_seitenknoepfe_icons_setzen()
+
+    def _konsole_seitenknoepfe_icons_setzen(self) -> None:
+        """Setzt an den Seitenknoepfen der Ansicht KONSOLE das Icon ihres Dienstes (soweit bekannt)."""
+        for knopf, schluessel_text in getattr(self, "_konsole_knoepfe", []):
+            kennung = next((k for s, k in self._KONSOLE_KNOEPFE if s == schluessel_text), "")
+            muster = self._KONSOLE_KNOPF_PAYLOAD_MUSTER.get(kennung)
+            if not muster:
+                continue
+            try:
+                datei = self._konsole_payload_datei(muster)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Payload-Datei fuer Seitenknopf-Icon nicht ermittelbar (%s): %s", kennung, exc)
+                continue
+            if not datei:
+                continue
+            icon_kennung = werkzeugstaende.kennung_aus_name(os.path.basename(datei))
+            foto = self._payload_icon_foto(icon_kennung, 16) if icon_kennung else None
+            if foto is not None:
+                try:
+                    knopf.configure(icon=foto)
+                except tk.TclError:
+                    pass
+
     def _konsole_tafel_fuellen(self, uebersicht) -> None:
         """Traegt eine Uebersicht in die Tabelle - nur aus dem Hauptfaden.
 
@@ -11166,6 +11353,7 @@ class PS5ConverterGUI:
             else:
                 zustand = "dienste.zustand_aus"
             tabelle.insert("", "end", iid=stand.dienst.schluessel,
+                           image=self._konsole_dienst_icon_foto(stand.dienst) or "",
                            values=(self._konsole_favorit_zeichen(stand.dienst, favoriten),
                                    self._t(stand.dienst.name_schluessel),
                                    stand.dienst.port,
@@ -12972,7 +13160,7 @@ class PS5ConverterGUI:
                 except Exception as exc:                        # noqa: BLE001
                     ergebnis = (str(exc)[:200], "")
                 self._spaeter_im_fenster(seite, _download_fertig, ergebnis)
-                self._spaeter_im_fenster(seite, release_laden_knopf.configure, {"state": "normal"})
+                self._spaeter_im_fenster(seite, lambda: release_laden_knopf.configure(state="normal"))
 
             threading.Thread(target=_lauf, daemon=True, name="y2jb-download").start()
 
@@ -23519,7 +23707,7 @@ class PS5ConverterGUI:
                 req = urllib.request.Request(url, data=b"{}", method="POST",
                                              headers={"Content-Type": "application/json"})
                 with urllib.request.urlopen(req, timeout=10) as resp:
-                    raw = resp.read()
+                    raw = resp.read(NETZ_MAX_SEITE)
                 try:
                     antwort = json.loads(raw)
                     nachricht = antwort.get("message") or antwort.get("status") or "ok"
@@ -25679,6 +25867,161 @@ class PS5ConverterGUI:
             )
         except Exception as exc:
             logger.debug("Herunterfahr-Einstellung nicht speicherbar: %s", exc)
+
+    def _on_senden_nach_erfolg_changed(self) -> None:
+        """Merkt die Wahl des Ankreuzfeldes 'Senden nach Erfolg' dauerhaft."""
+        try:
+            aktiv = bool(self.senden_nach_erfolg_var.get())
+            self._save_setting("senden_nach_erfolg", aktiv)
+        except Exception as exc:
+            logger.debug("Senden-nach-Erfolg-Einstellung nicht speicherbar: %s", exc)
+
+    def _senden_nach_erfolg_enabled(self) -> bool:
+        """Ist 'Ergebnis senden' aktiv?"""
+        var = getattr(self, "senden_nach_erfolg_var", None)
+        if var is not None:
+            try:
+                return bool(var.get())
+            except Exception as exc:
+                logger.debug("Senden-nach-Erfolg-Einstellung nicht lesbar: %s", exc)
+        return False
+
+    def _nach_erfolg_senden_fragen(self) -> None:
+        """Fragt nach Erfolg, ob das Ergebnis an die PS5 gesendet werden soll.
+
+        Wird nur aufgerufen wenn weder Herunterfahren noch kein Ergebnis
+        vorliegt. Die eigentliche Sperre gegen unbeaufsichtigten Lauf liegt
+        in _finish_success.
+        """
+        batch = list(getattr(self, "task_batch_results", []) or [])
+        if batch:
+            ergebnisse = [item["output"] for item in batch
+                          if item.get("ok") and item.get("output")]
+        else:
+            ausgabe = str(getattr(self, "task_final_output_path", "") or "")
+            ergebnisse = [ausgabe] if ausgabe else []
+        if not ergebnisse:
+            return
+        if len(ergebnisse) == 1:
+            name = os.path.basename(os.path.normpath(ergebnisse[0]))
+            if not messagebox.askyesno(
+                self._t("dialog.title.nach_erfolg_senden"),
+                self._t("dialog.msg.nach_erfolg_senden_frage", name=name),
+            ):
+                return
+            ausgewaehlt = ergebnisse
+        else:
+            ausgewaehlt = self._nach_erfolg_auswahl_fenster(ergebnisse)
+            if not ausgewaehlt:
+                return
+        self._nach_erfolg_senden_starten(ausgewaehlt)
+
+    def _nach_erfolg_auswahl_fenster(self, ergebnisse: list) -> list:
+        """Zeigt eine Auswahlliste aller Ergebnisse – alle vorausgewaehlt."""
+        c = self._COLORS
+        fenster = self._build_modern_toplevel(
+            self._t("dialog.title.nach_erfolg_senden"), 560, 360,
+            min_width=460, min_height=280)
+        self._build_modern_header(fenster, self._t("dialog.title.nach_erfolg_senden"))
+        ergebnis: dict = {"ausgewaehlt": []}
+        koerper = tk.Frame(fenster, bg=c["bg_main"], padx=16, pady=8)
+        tk.Label(koerper, text=self._t("dialog.msg.nach_erfolg_senden_auswahl"),
+                 bg=c["bg_main"], fg=c["fg_secondary"],
+                 font=(UI_SCHRIFT, pt(9)), justify="left",
+                 wraplength=pt(420)).pack(anchor="w", pady=(0, 8))
+        vars_: list = []
+        for pfad in ergebnisse:
+            v = tk.BooleanVar(value=True)
+            vars_.append((v, pfad))
+            self._pw.Checkbutton(
+                koerper, text=os.path.basename(os.path.normpath(pfad)),
+                variable=v).pack(anchor="w", pady=1)
+        knopfreihe = tk.Frame(fenster, bg=c["bg_main"], padx=16, pady=12)
+
+        def _uebernehmen() -> None:
+            ergebnis["ausgewaehlt"] = [p for v, p in vars_ if v.get()]
+            fenster.destroy()
+
+        self._pw.Button(knopfreihe, text=self._t("action.cancel"),
+                   command=fenster.destroy).pack(side="right")
+        self._pw.Button(knopfreihe, text=self._t("action.apply"),
+                   style="Accent.TButton",
+                   command=_uebernehmen).pack(side="right", padx=(0, 8))
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper.pack(fill="both", expand=True)
+        fenster.grab_set()
+        fenster.wait_window()
+        return ergebnis["ausgewaehlt"]
+
+    def _nach_erfolg_senden_starten(self, ergebnisse: list) -> None:
+        """Verbindet mit der PS5 und uebertraegt die Ergebnisse nacheinander."""
+        host = self._bibliothek_ps5_adresse()
+        if not host:
+            messagebox.showerror(
+                self._t("dialog.title.nach_erfolg_senden"),
+                self._t("library.ps5_keine_adresse"),
+            )
+            return
+        port = self._ps5_ftp_port()
+
+        def _verbinden() -> None:
+            ziele: list = []
+            fehler = None
+            try:
+                ftp = self._ampr_ftp_connect(host, port)
+                try:
+                    ziele = self._bibliothek_ziele_auf_ps5(ftp)
+                finally:
+                    try:
+                        ftp.quit()
+                    except Exception:  # noqa: BLE001
+                        pass
+            except Exception as exc:  # noqa: BLE001
+                fehler = exc
+            self._hauptfaden_planen(lambda: _gefunden(ziele, fehler))
+
+        def _gefunden(ziele: list, fehler) -> None:
+            if fehler is not None:
+                messagebox.showerror(
+                    self._t("dialog.title.nach_erfolg_senden"),
+                    self._t("library.ps5_keine_verbindung", host=host, error=fehler),
+                )
+                return
+            if not ziele:
+                messagebox.showerror(
+                    self._t("dialog.title.nach_erfolg_senden"),
+                    self._t("library.upload_kein_ziel"),
+                )
+                return
+            ziel = self._bibliothek_ziel_waehlen(self.root, ziele)
+            if not ziel:
+                return
+            _sende_naechstes(list(ergebnisse), ziel)
+
+        def _sende_naechstes(rest: list, ziel: str) -> None:
+            if not rest:
+                return
+            pfad = rest[0]
+            verbleibend = rest[1:]
+            name = os.path.basename(os.path.normpath(pfad))
+            entfernt = "%s/%s" % (ziel.rstrip("/"), name)
+            weiter = lambda: _sende_naechstes(verbleibend, ziel)
+            if os.path.isdir(pfad):
+                self._bibliothek_ordner_uebertragen(
+                    self.root, richtung="hoch", oertlich=pfad,
+                    entfernt=entfernt, nachher=weiter)
+            else:
+                try:
+                    groesse = os.path.getsize(pfad)
+                except OSError:
+                    weiter()
+                    return
+                self._bibliothek_uebertragen(
+                    self.root, richtung="hoch", oertlich=pfad,
+                    entfernt=entfernt, groesse=groesse, nachher=weiter)
+
+        threading.Thread(target=_verbinden, daemon=True,
+                         name="nach-erfolg-senden").start()
 
     def _on_dump_ordner_setting_changed(self) -> None:
         """Merkt die Wahl des Dump-Ordner-Speicherorts dauerhaft."""
@@ -30384,6 +30727,8 @@ class PS5ConverterGUI:
                         messagebox.showinfo(
                             self._t("dialog.title.success"), _msg
                         )
+                        if self._senden_nach_erfolg_enabled():
+                            self._nach_erfolg_senden_fragen()
                 self._hauptfaden_planen(_finish_success, ms=max(PROGRESS_POLL_MS * 3, 300))
 
             elif not self.is_running:
@@ -45109,7 +45454,8 @@ class PS5ConverterGUI:
             entfernt=pfad, groesse=int(eintrag.get("size") or 0))
 
     def _bibliothek_uebertragen(self, eltern, *, richtung: str, oertlich: str,
-                                entfernt: str, groesse: int) -> None:
+                                entfernt: str, groesse: int,
+                                nachher=None) -> None:
         """Uebertraegt eine Datei und zeigt dabei, wie weit es ist.
 
         **Zum Abbrechen eines Downloads:** Ein abgebrochener ``RETR`` legt
@@ -45337,6 +45683,11 @@ class PS5ConverterGUI:
                 self._t("library.uebertragung_fertig",
                         size=self._fmt_bytes(int(lauf["getan"]))),
                 parent=oben)
+            if nachher is not None:
+                try:
+                    nachher()
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Bibliothek: Nachgang der Dateiuebertragung (%s)", exc)
 
         _anzeigen()
         self._bibliothek_uebertragungen += 1
@@ -56330,6 +56681,16 @@ class PS5ConverterGUI:
                 "backport.coverage_console",
                 namen=", ".join(bericht["unbeteiligt"][:12])
                 + (" \u2026" if len(bericht["unbeteiligt"]) > 12 else "")))
+            # Audio-Bibliotheken gesondert melden: Sie sind in keinem
+            # mitgelieferten Fakelib-Satz enthalten, deshalb laueft ein Spiel,
+            # das sie importiert, nach dem Backport stumm. Die Meldung nennt
+            # den Workaround (Firmware-Quelle angeben).
+            audio_fehlend = sorted(
+                ps5_backport.AUDIO_BIBLIOTHEKEN & set(bericht["unbeteiligt"]))
+            if audio_fehlend:
+                self._append_to_log(self._t(
+                    "backport.audio_warnung",
+                    namen=", ".join(audio_fehlend)))
         self._append_to_log("")
 
     def _backport_platz_pruefen(self, ordner: str, win) -> "bool | None":

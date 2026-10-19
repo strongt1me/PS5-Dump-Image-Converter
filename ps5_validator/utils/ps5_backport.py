@@ -1379,6 +1379,22 @@ def deckung_pruefen(spieldateien, fakelibs) -> dict:
 # keine eigene Datei; sie stecken in ``libkernel`` beziehungsweise einem
 # Nachbarmodul. Gezaehlt wird deshalb hier auf NID-Ebene.
 
+#: Bibliotheksnamen, die fuer die Tonausgabe benoetigt werden.
+#: Sie sind in keinem mitgelieferten Fakelib-Satz enthalten - ein Spiel, das
+#: eine davon importiert, laueft nach dem Backport stumm. Die Deckungspruefung
+#: meldet fehlende Eintraege explizit, damit der Nutzer die Bibliotheken
+#: manuell aus seinem Firmware-Baum nachkopieren kann.
+AUDIO_BIBLIOTHEKEN: frozenset[str] = frozenset({
+    "libSceAudioOut",
+    "libSceAudioOut2",
+    "libSceAjm",
+    "libSceAudiodec",
+    "libSceAudio3d",
+    "libSceNgs2",
+    "libSceAudioDeviceControl",
+    "libSceAudioLatencyEstimation",
+})
+
 #: Unterordner eines entpackten Firmware-Baums, in denen Module liegen.
 FIRMWARE_LIB_PFADE: tuple[tuple[str, ...], ...] = (
     ("system", "common", "lib"),

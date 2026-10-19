@@ -23,6 +23,8 @@ auch fuer Projekte, die GitHub verlassen haben.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import http.client
 import json
 import logging
@@ -246,3 +248,134 @@ def spiegel_holen(adresse: str = SPIEGEL_ADRESSE, zeitgrenze: float = 20.0) -> l
     except ValueError as exc:
         raise OSError("Liste nicht lesbar: %s" % exc) from exc
     return daten if isinstance(daten, list) else []
+
+
+# ---------------------------------------------------------------------------
+# Icons (Konsole & Payloads, 19.10.2026): dieselbe Spiegelliste nennt zu einem
+# Teil der Payloads einen "icon_key" - das Original-Icon (wie es der
+# Payload Manager im eigenen Dashboard zeigt). Eine zweite Datei des Spiegels
+# (icons.json) loest den Schluessel in eine data-URI (PNG, base64) auf. Nicht
+# jede mitgelieferte Datei ist dem Spiegel bekannt - wo nichts passt, bleibt
+# die Zeile ohne Icon, es wird nichts erfunden.
+# ---------------------------------------------------------------------------
+
+#: Woher die Icon-Daten kommen, wenn jemand ausdruecklich danach fragt.
+ICONS_ADRESSE = ("https://raw.githubusercontent.com/itsPLK/"
+                 "ps5-payloads-mirror/main/icons.json")
+
+
+def icon_schluessel_je_kennung(liste: list) -> dict[str, str]:
+    """Aus der Spiegelliste: ``{Kennung: icon_key}`` - nur wo ein Icon hinterlegt ist.
+
+    Dieselbe :func:`kennung_aus_name`-Zuordnung wie :func:`rueckstaende`, damit
+    ein Icon an derselben mitgelieferten Datei haengt, die auch beim
+    Fassungsvergleich gemeint ist.
+    """
+    ergebnis: dict[str, str] = {}
+    for eintrag in liste or []:
+        if not isinstance(eintrag, dict):
+            continue
+        icon_key = str(eintrag.get("icon_key") or "")
+        if not icon_key:
+            continue
+        for feld in ("filename", "name"):
+            kennung = kennung_aus_name(str(eintrag.get(feld) or ""))
+            if kennung and kennung not in ergebnis:
+                ergebnis[kennung] = icon_key
+    return ergebnis
+
+
+def icons_holen(adresse: str = ICONS_ADRESSE, zeitgrenze: float = 20.0) -> dict[str, str]:
+    """Holt ``{icon_key: data-URI}`` - **nur** aus einem ausdruecklichen Aufruf heraus.
+
+    Raises:
+        OSError: Wenn die Liste nicht erreichbar oder nicht lesbar ist.
+    """
+    try:
+        with urllib.request.urlopen(adresse, timeout=zeitgrenze) as antwort:
+            roh = antwort.read().decode("utf-8", "replace")
+    except http.client.HTTPException as exc:
+        raise OSError("Antwort nicht lesbar: %s" % (exc or type(exc).__name__)) from exc
+    try:
+        daten = json.loads(roh)
+    except ValueError as exc:
+        raise OSError("Liste nicht lesbar: %s" % exc) from exc
+    icons = daten.get("icons") if isinstance(daten, dict) else None
+    return icons if isinstance(icons, dict) else {}
+
+
+#: Bildformate, die Pillow/Tk ohne Zusatzpaket oeffnen koennen. Ein Teil der
+#: Spiegel-Icons liegt als ``image/svg+xml`` vor (Vektorgrafik) - ohne eigenen
+#: Renderer (nicht in requirements.txt) bliebe daraus nur eine Datei, die sich
+#: nie oeffnen laesst; also lieber gar nicht erst ablegen.
+_RASTER_MIMES = frozenset({"image/png", "image/jpeg", "image/gif", "image/bmp", "image/webp"})
+
+
+def icon_ist_raster(data_uri: str) -> bool:
+    """Ob eine data-URI ein Rasterbild traegt (PNG/JPEG/...), kein SVG."""
+    kopf, _, _ = str(data_uri or "").partition(",")
+    mime = kopf[len("data:"):].split(";", 1)[0].strip().lower() if kopf.startswith("data:") else ""
+    return mime in _RASTER_MIMES
+
+
+def icon_bytes_aus_data_uri(data_uri: str) -> bytes:
+    """Entschluesselt ``data:image/...;base64,...`` zu rohen Bildbytes.
+
+    Raises:
+        ValueError: Keine data-URI oder kein gueltiges Base64.
+    """
+    if not str(data_uri or "").startswith("data:"):
+        raise ValueError("Keine data-URI")
+    _, _, roh = data_uri.partition(",")
+    try:
+        return base64.b64decode(roh, validate=True)
+    except binascii.Error as exc:
+        raise ValueError("Ungueltiges Base64 in der data-URI: %s" % exc) from exc
+
+
+def icons_ablegen(ordner: str, payloads: dict[str, str], liste: list,
+                  icons: dict[str, str]) -> dict[str, str]:
+    """Legt zu jeder passenden mitgelieferten Datei ihr Icon als ``<Kennung>.png`` ab.
+
+    Args:
+        ordner: Zielordner (wird bei Bedarf angelegt), z. B.
+            ``<Einstellungsordner>/Payload-Icons``.
+        payloads: Ergebnis von :func:`payloads_lesen`.
+        liste: Die schon geholte Spiegelliste (:func:`spiegel_holen`).
+        icons: Die schon geholten Icon-Daten (:func:`icons_holen`).
+
+    Returns:
+        ``{Kennung: Pfad}`` - nur was tatsaechlich geschrieben wurde; eine
+        mitgelieferte Datei ohne Treffer in der Spiegelliste oder ohne
+        hinterlegtes Icon bleibt aussen vor.
+    """
+    je_kennung = icon_schluessel_je_kennung(liste)
+    ergebnis: dict[str, str] = {}
+    geschriebene_kennungen: set[str] = set()
+    for datei in payloads:
+        kennung = kennung_aus_name(datei)
+        if not kennung or kennung in geschriebene_kennungen:
+            continue
+        icon_key = je_kennung.get(kennung)
+        data_uri = icons.get(icon_key) if icon_key else None
+        if not data_uri:
+            continue
+        if not icon_ist_raster(data_uri):
+            logger.debug("Icon fuer %s ist kein Rasterbild (SVG o.ae.) - uebersprungen", datei)
+            continue
+        try:
+            roh = icon_bytes_aus_data_uri(data_uri)
+        except ValueError as exc:
+            logger.debug("Icon fuer %s nicht lesbar: %s", datei, exc)
+            continue
+        try:
+            os.makedirs(ordner, exist_ok=True)
+            ziel = os.path.join(ordner, "%s.png" % kennung)
+            with open(ziel, "wb") as datei_fh:
+                datei_fh.write(roh)
+        except OSError as exc:
+            logger.debug("Icon fuer %s nicht ablegbar: %s", datei, exc)
+            continue
+        ergebnis[kennung] = ziel
+        geschriebene_kennungen.add(kennung)
+    return ergebnis

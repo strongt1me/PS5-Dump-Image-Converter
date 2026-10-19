@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -195,6 +196,84 @@ class RueckstandTests(unittest.TestCase):
         self.assertEqual(ws.rueckstaende({"pkgmgr_v1.2.4.elf": "1.2.4"}, liste), [])
 
 
+class IconTests(unittest.TestCase):
+    """Icons aus der Spiegelliste (19.10.2026) - ohne Netz, mit fester Liste."""
+
+    #: 1x1-PNG (transparent), echte Bytes - taugt fuer eine echte Dekodierprobe.
+    _MINI_PNG_B64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42"
+        "YAAAAASUVORK5CYII=")
+
+    def _liste(self) -> list:
+        return [
+            {"name": "ps5upload", "filename": "ps5upload_v7.1.8.elf",
+             "icon_key": "schluessel-upload"},
+            {"name": "PKG-Manager", "filename": "PKG-Manager_v1.5.1.elf",
+             "icon_key": "schluessel-pkgmgr"},
+            {"name": "onionHEN", "filename": "onionHEN_v0.9.0.elf"},  # ohne icon_key
+        ]
+
+    def test_icon_schluessel_je_kennung(self) -> None:
+        zuordnung = ws.icon_schluessel_je_kennung(self._liste())
+        self.assertEqual(zuordnung.get("ps5upload"), "schluessel-upload")
+        self.assertEqual(zuordnung.get("pkgmgr"), "schluessel-pkgmgr")
+        self.assertNotIn("onionhen", zuordnung)
+
+    def test_icon_bytes_aus_data_uri(self) -> None:
+        roh = ws.icon_bytes_aus_data_uri("data:image/png;base64,%s" % self._MINI_PNG_B64)
+        self.assertTrue(roh.startswith(b"\x89PNG"))
+
+    def test_icon_bytes_ohne_data_uri_meldet_fehler(self) -> None:
+        with self.assertRaises(ValueError):
+            ws.icon_bytes_aus_data_uri("https://example.com/bild.png")
+
+    def test_icon_bytes_mit_kaputtem_base64_meldet_fehler(self) -> None:
+        with self.assertRaises(ValueError):
+            ws.icon_bytes_aus_data_uri("data:image/png;base64,***nicht_base64***")
+
+    def test_icon_ist_raster_unterscheidet_png_von_svg(self) -> None:
+        """Fund 19.10.2026: ein Teil der Spiegel-Icons liegt als SVG vor - Pillow/Tk
+        koennen das nicht oeffnen (ohne cairosvg, nicht in requirements.txt). Eine
+        solche Datei darf nie als ``.png`` abgelegt werden, nur um dann nie zu laden."""
+        self.assertTrue(ws.icon_ist_raster("data:image/png;base64,%s" % self._MINI_PNG_B64))
+        self.assertFalse(ws.icon_ist_raster("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="))
+        self.assertFalse(ws.icon_ist_raster("nicht-einmal-eine-data-uri"))
+
+    def test_icons_ablegen_ueberspringt_svg(self) -> None:
+        ordner = tempfile.mkdtemp(prefix="icons_test_svg_")
+        self.addCleanup(shutil.rmtree, ordner, ignore_errors=True)
+        liste = [{"name": "webkit", "filename": "webkit-autoloader-installer_v0.6.1.elf",
+                 "icon_key": "schluessel-svg"}]
+        icons = {"schluessel-svg": "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="}
+        ergebnis = ws.icons_ablegen(
+            ordner, {"webkit-autoloader-installer_v0.6.1.elf": "0.6.1"}, liste, icons)
+        self.assertEqual(ergebnis, {})
+
+    def test_icons_ablegen_schreibt_nur_passende_dateien(self) -> None:
+        ordner = tempfile.mkdtemp(prefix="icons_test_")
+        self.addCleanup(shutil.rmtree, ordner, ignore_errors=True)
+        icons = {"schluessel-upload": "data:image/png;base64,%s" % self._MINI_PNG_B64}
+        payloads = {"ps5upload-7.1.8.elf": "7.1.8", "pkgmgr_v1.5.1.elf": "1.5.1",
+                    "ps5-syslang-de-v0.3.elf": "0.3"}
+        ergebnis = ws.icons_ablegen(ordner, payloads, self._liste(), icons)
+        # ps5upload: Treffer in der Liste UND Icon vorhanden -> geschrieben.
+        self.assertEqual(set(ergebnis), {"ps5upload"})
+        self.assertTrue(os.path.isfile(ergebnis["ps5upload"]))
+        with open(ergebnis["ps5upload"], "rb") as datei:
+            self.assertTrue(datei.read().startswith(b"\x89PNG"))
+        # pkgmgr: Treffer in der Liste, aber kein Icon in icons.json -> nichts geschrieben.
+        # ps5-syslang-de: kein Treffer in der Liste ueberhaupt -> nichts geschrieben.
+        self.assertFalse(os.path.exists(os.path.join(ordner, "pkgmgr.png")))
+
+    def test_icons_ablegen_ohne_treffer_legt_nichts_an(self) -> None:
+        basis = tempfile.mkdtemp(prefix="icons_test_leer_")
+        self.addCleanup(shutil.rmtree, basis, ignore_errors=True)
+        ordner = os.path.join(basis, "Payload-Icons")  # bewusst noch nicht angelegt
+        ergebnis = ws.icons_ablegen(ordner, {"unbekannt_v1.0.elf": "1.0"}, self._liste(), {})
+        self.assertEqual(ergebnis, {})
+        self.assertFalse(os.path.isdir(ordner), "Ein leerer Treffer soll den Ordner nicht erst anlegen.")
+
+
 class EchterBestandTests(unittest.TestCase):
     """Der wirkliche Bestand dieses Projekts, nicht nur ein Nachbau.
 
@@ -279,8 +358,13 @@ class EingehaengtTests(unittest.TestCase):
         stelle = text.index('"--werkzeuge-pruefen"')
         self.assertIn("_run_werkzeugpflege", text[stelle:stelle + 200])
 
+    #: Nur diese beiden Funktionen duerfen ins Netz - beide nur aus einem
+    #: ausdruecklichen Aufruf heraus (Knopf "Updates" bzw. "Icons laden"),
+    #: nie von einem Diagnoselauf oder Programmstart.
+    _NETZFUNKTIONEN = frozenset({"spiegel_holen", "icons_holen"})
+
     def test_ohne_schalter_kein_netz(self) -> None:
-        """Nur ``spiegel_holen`` darf ins Netz - und nur von dort gerufen."""
+        """Nur die bekannten Netzfunktionen duerfen ins Netz - und nur von dort gerufen."""
         quelle = (PROJEKT / "ps5_validator" / "utils" / "werkzeugstaende.py").read_text(
             encoding="utf-8")
         baum = ast.parse(quelle)
@@ -288,7 +372,7 @@ class EingehaengtTests(unittest.TestCase):
             if not isinstance(knoten, ast.FunctionDef):
                 continue
             text = ast.unparse(knoten)
-            if knoten.name == "spiegel_holen":
+            if knoten.name in self._NETZFUNKTIONEN:
                 self.assertIn("urlopen", text)
             else:
                 self.assertNotIn("urlopen", text,
@@ -305,7 +389,7 @@ class EingehaengtTests(unittest.TestCase):
         gerufen = {k.func.attr for k in ast.walk(abschnitt)
                    if isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)}
         self.assertTrue(gerufen, "Keine Aufrufe gefunden - der Test misst nichts")
-        for netz in ("spiegel_holen", "urlopen", "urlretrieve"):
+        for netz in ("spiegel_holen", "icons_holen", "urlopen", "urlretrieve"):
             with self.subTest(aufruf=netz):
                 self.assertNotIn(netz, gerufen,
                                  "Der Diagnosebericht geht von selbst ins Netz")
