@@ -1,5 +1,6 @@
 ## Neu
 
+- PatchDL 0.3.0 eingebunden – lädt offizielle PS5/PS4-Updates direkt von Sony-Servern; neuer Knopf „Per PatchDL herunterladen" unter Spiel Info – Updates & Patches.
 - exfat2ampr 1.104 eingebunden – Konsole & Payloads zeigt den Eintrag mit Weboberfläche auf dem eigenen Port.
 
 ## Geändert
