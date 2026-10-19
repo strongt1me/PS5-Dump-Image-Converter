@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.83):** Der Bereich PKG/FPKG kann jetzt Pakete selbst bauen (mit Backport, Firmware- und Kompressionsoptionen, Spiel-Details und Datei-Browser), PlayGo und die Sammelkonvertierung wurden flexibler, und zwei stille Aussetzer beim Zielformat und bei Zwischendateien sind behoben.
+> **Kurz zum aktuellen Stand (v1.9.84):** Werkzeug exfat2ampr 1.104 ist neu eingebunden, PKG/FPKG zeigt jetzt verfügbare Updates per Knopf, und die Oberfläche ist nun auch auf Spanisch, Italienisch und Französisch verfügbar.
 
 ---
+
+## v1.9.84 – 18.10.2026
+
+- **Neu:** exfat2ampr 1.104 eingebunden – Konsole & Payloads zeigt den Eintrag mit Weboberfläche auf dem eigenen Port.
+- **Geändert:** Der Knopf „Updates Online" im PS4 PKG-Fenster öffnet jetzt das Fenster „Spiel Info – Updates & Patches" statt einem eigenen Dialog (PS4- und PS5-Titel werden so gleich behandelt).
+- **Aktualisiert:** Die Oberfläche ist jetzt vollständig auf Spanisch, Italienisch und Französisch verfügbar (neben Deutsch und Englisch).
 
 ## v1.9.83 – 17.10.2026
 

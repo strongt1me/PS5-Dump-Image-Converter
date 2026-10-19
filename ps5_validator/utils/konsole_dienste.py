@@ -260,6 +260,13 @@ KATALOG: tuple[Dienst, ...] = (
     # noch NICHT nachgemessen. Anlaufzeit geschaetzt (Scanner der Speicherlaufwerke + HTTP-Server).
     Dienst("exfat2ampr", 6972, "exfat2ampr*.elf", web="/", anlaufzeit=4.0,
            version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/state"),
+    # --- PatchDL (seit 19.10.2026) ----------------------------------------------
+    # Laedt offizielle PS5/PS4-Updates direkt von Sony-CDN-Servern herunter.
+    # Port 12880 laut Quelltext (src/main.go: ":12880"). Statusabfrage: GET /api/status.
+    # Titelabfrage: GET /api/titles. Download: POST /api/titles/{titleId}/download.
+    # SHA-256: 60f9b91efe87fb65a8daaafd73b72417f0164d69ef8f6152fbb4647baf594d66
+    Dienst("patchdl", 12880, "patchdl_*.elf", web="/", anlaufzeit=3.0,
+           version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/status"),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,

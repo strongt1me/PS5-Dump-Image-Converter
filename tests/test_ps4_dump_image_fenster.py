@@ -46,6 +46,9 @@ class _Probe:
         self.log: list[str] = []
         self._z: dict = {}
         self.t = lambda schluessel, **w: STRINGS[schluessel]["de"].format(**w)
+        self.g = mock.MagicMock()
+        self.g._letzte_meta = {}
+        self.g._cached_title_id = ""
 
     def _frei(self) -> bool:
         return True
@@ -68,23 +71,23 @@ class _Probe:
 
 class Ps5UpdateTests(unittest.TestCase):
 
-    def test_bei_ps5_wird_nicht_im_netz_gefragt(self) -> None:
+    def test_oeffnet_info_popup_fuer_ps5_titel(self) -> None:
+        """PS5-Titel oeffnen das gemeinsame Spiel-Info-Popup (kein eigener Dialog mehr)."""
         f = _Probe("PPSA01284")
         with mock.patch.object(fenster_modul.upd, "nachsehen") as netz, \
                 mock.patch.object(fenster_modul.threading, "Thread") as faden:
             fenster_modul.Ps4DumpImageFenster._update_online(f)   # type: ignore[arg-type]
         netz.assert_not_called()
         faden.assert_not_called()
-        self.assertEqual(f.status, f.log)
-        self.assertIn("PS5-Titel", f.log[0])
+        f.g._show_info_box.assert_called_once()
 
-    def test_ps4_titel_fragen_weiter_im_netz(self) -> None:
+    def test_oeffnet_info_popup_fuer_ps4_titel(self) -> None:
+        """PS4-Titel oeffnen ebenfalls das gemeinsame Spiel-Info-Popup."""
         f = _Probe("CUSA03877")
         with mock.patch.object(fenster_modul.threading, "Thread") as faden:
             fenster_modul.Ps4DumpImageFenster._update_online(f)   # type: ignore[arg-type]
-        faden.assert_called_once()
-        self.assertTrue(f._z["update_laeuft"])
-        self.assertNotIn("PS5-Titel", " ".join(f.log))
+        faden.assert_not_called()
+        f.g._show_info_box.assert_called_once()
 
     def test_texte_sind_zweisprachig_und_nennen_den_grund(self) -> None:
         text = STRINGS["ps4ota.update_ps5_hinweis"]

@@ -219,7 +219,7 @@ class EchterBestandTests(unittest.TestCase):
         # garlic-worker (Freigabe "latest", benannt nach dem Datum) und MemDBG
         # (Nachtbau, benannt nach dem Datum). Ein kaputter Fassungsleser lieferte
         # fuer fast alle 53 Dateien nichts - das faengt die Grenze weiter ab.
-        self.assertLessEqual(len(ohne_fassung), 8,
+        self.assertLessEqual(len(ohne_fassung), 9,
                              "Mehr Dateien ohne Fassung im Namen als erwartet: %s"
                              % ohne_fassung)
 

@@ -280,6 +280,14 @@ RELEASES = {
         ('v0.8.1-beta', False, '2026-10-09', ['AnyPad-PS5-0.8.1-beta.elf', 'AnyPad-PS5-0.8.1-beta.elf.sha256']),
         ('v0.7.0-beta', False, '2026-10-08', ['AnyPad-PS5-0.7.0-beta.elf', 'AnyPad-PS5-0.7.0-beta.elf.sha256']),
     ],
+    'exFAT2AMPR/exfat2ampr': [
+        ('v1.104', False, '2026-09-28', ['exfat2ampr.elf']),
+        ('v1.103', False, '2026-09-10', ['exfat2ampr.elf']),
+    ],
+    'knutwurst/ps5-patchdl': [
+        ('v0.3.0', False, '2026-09-30', ['patchdl_0.3.0.elf']),
+        ('v0.2.0', False, '2026-09-15', ['patchdl_0.2.0.elf']),
+    ],
     'knutwurst/ps5-ultrapack': [
         ('v2.2.5', False, '2026-10-15', ['PS5-UltraPack-2.2.5-macos-arm64.zip',
                                          'PS5-UltraPack-2.2.5-macos-arm64.zip.sha256']),
@@ -309,7 +317,7 @@ HELLOWORLD = [
     "game-compressor_v1.1.1.elf", "garlic-savemgr_v1.13.1.elf", "garlic-worker-ps5_2026-04-09.elf",
     "gdbsrv-ps5_v0.9.elf", "klogsrv-ps5_v0.9.elf", "kstuff_lite_v1.11_Beta_EchoStretch.elf",
     "kstuff_v1.13-fpkg-dr-test5.elf", "lapy_jb_daemon-v1.2.elf", "nanodns_v0.4.elf", "neo-manager_v0.2.1.elf", "np-fake-signin-v1.3.elf",
-    "pkgmgr_v1.5.0.elf", "pldmgr_v0.6.0.elf", "ps4mount_v0.4.4.elf", "ps5-app-dumper_v2.10.elf", "ps5-backpork_v0.1.elf",
+    "patchdl_0.3.0.elf", "pkgmgr_v1.5.0.elf", "pldmgr_v0.6.0.elf", "ps4mount_v0.4.4.elf", "ps5-app-dumper_v2.10.elf", "ps5-backpork_v0.1.elf",
     "ps5-hwinfo-bench_v0.1.elf", "ps5-hwinfo-sysinfo_v0.1.elf", "ps5-self-pager-full-system_v1.2.elf",
     "ps5-self-pager-game_v1.2.elf", "ps5-self-pager-shellcore_v1.2.elf", "ps5-self-pager-system-common-lib_v1.2.elf",
     "ps5-syslang-de-v0.2.1.elf", "ps5-unified-autoloader-v0.1.5-915a65e.elf", "ps5debug-NG_v1.3.2.elf",
@@ -630,7 +638,7 @@ class TabelleTests(unittest.TestCase):
             repo = seite.split("github.com/", 1)[1].rsplit("/releases", 1)[0]
             self.assertNotIn(repo, zu_fragen)
         # Eine vollstaendige Pruefung braucht rund 50 Anfragen; GitHub erlaubt ohne Anmeldung 60 je Stunde.
-        self.assertLessEqual(len(zu_fragen), 55, "Die Anfragegrenze von GitHub liegt bei 60 je Stunde")
+        self.assertLessEqual(len(zu_fragen), 58, "Die Anfragegrenze von GitHub liegt bei 60 je Stunde")
 
     def test_jede_quelle_der_tabelle_steht_in_den_festen_freigaben(self) -> None:
         # Sonst belegt der Rest dieser Datei nichts fuer sie.

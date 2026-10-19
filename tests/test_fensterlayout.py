@@ -163,8 +163,9 @@ class FensterLayoutTests(unittest.TestCase):
             zu_klein = _gequetschte_knoepfe(fenster)
             self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
             knoepfe = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
-            self.assertEqual(len(knoepfe), 4,
-                             "Erwartet: Starten, Nur prüfen, Schließen, Fakelib-Ordner wählen")
+            self.assertEqual(len(knoepfe), 5,
+                             "Erwartet: Starten, Nur prüfen, Schließen, Fakelib-Ordner wählen, "
+                             "Firmware-Analyse-Ordner wählen")
             for knopf in knoepfe:
                 self.assertTrue(str(knopf.cget("text")).strip(),
                                 "Knopf ohne Beschriftung")

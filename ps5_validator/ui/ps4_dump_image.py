@@ -995,37 +995,20 @@ class Ps4DumpImageFenster:
     # Updates online
     # ------------------------------------------------------------------
     def _update_online(self) -> None:
-        if not self._frei():
-            return
         gewaehlt = self._gewaehlt()
         if not gewaehlt:
             self._warnung("ps4pkg.no_game")
             return
         s = gewaehlt[0]
-        if upd.ist_ps5(s.title_id):
-            self._status(self.t("ps4ota.update_ps5_hinweis"))
-            self._protokoll(self.t("ps4ota.update_ps5_hinweis"))
-            return
-        if not upd.title_id_gueltig(s.title_id):
+        if not s.title_id:
             self._warnung("ps4ota.update_keine_title_id")
             return
-        self._status(self.t("ps4ota.update_frage", title_id=s.title_id))
-        self._z["update"] = None
-        self._z["update_laeuft"] = True
-        self._knoepfe_pruefen()
-        title_id = s.title_id
-
-        def arbeit() -> None:
-            try:
-                self._z["update"] = (title_id, upd.nachsehen(title_id), "")
-            except upd.UpdateFehler as fehler:
-                self._z["update"] = (title_id, None, fehler.schluessel + ": " + fehler.text)
-            except ValueError as fehler:
-                self._z["update"] = (title_id, None, str(fehler))
-            finally:
-                self._z["update_laeuft"] = False
-
-        threading.Thread(target=arbeit, daemon=True, name="ps4dib-update").start()
+        g = self.g
+        if not getattr(g, "_letzte_meta", None):
+            g._letzte_meta = {"title_id": s.title_id.upper(), "version_file_uri": ""}
+        if not getattr(g, "_cached_title_id", ""):
+            g._cached_title_id = s.title_id.upper()
+        g._show_info_box()
 
     def _update_ergebnis(self) -> None:
         roh = self._z.get("update")

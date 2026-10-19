@@ -722,7 +722,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.83"
+APP_VERSION = "v1.9.84"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -22529,6 +22529,13 @@ class PS5ConverterGUI:
         self._register_translatable(self._patch_abruf_knopf,
                                     "info_popup.fetch_button")
 
+        self._patchdl_knopf = self._pw.Button(
+            self._patch_hinweis_rahmen,
+            text=self._t("info_popup.patchdl_button"),
+            command=self._patchdl_herunterladen)
+        self._patchdl_knopf.pack(anchor="w", pady=(4, 0))
+        self._register_translatable(self._patchdl_knopf, "info_popup.patchdl_button")
+
         # ── Schließen-Button ───────────────────────────────────────────────────────────────────────────
         # Vor der Tabelle gepackt, unten: Die Pillen sind hoeher als die frueheren flachen Knoepfe, und was zuletzt
         # gepackt wird, bekommt bei knappem Platz zuerst zu wenig - der Knopf stuende sonst halb im Fenster.
@@ -23474,6 +23481,63 @@ class PS5ConverterGUI:
                              text=self._t("info_popup.fetch_button"))
         except Exception as exc:
             logger.debug("Abrufknopf nicht zurücksetzbar: %s", exc)
+
+    def _patchdl_herunterladen(self) -> None:
+        """Loest per PatchDL (Port 12880) den Update-Download fuer den aktuellen Titel aus.
+
+        Prueft zuerst ob PatchDL laeuft (GET /api/status), dann POST /api/titles/{titleId}/download.
+        Ergebnis (Meldung oder Fehler) landet im Patch-Status-Label.
+        """
+        tid = getattr(self, "_cached_title_id", "")
+        if not tid:
+            self._patch_status_var.set(self._t("info_popup.patchdl_no_title_id"))
+            return
+
+        try:
+            konsole_ip = self._konsole_ip_var().get().strip()
+        except Exception:
+            konsole_ip = ""
+        basis = ("http://%s:12880" % konsole_ip) if konsole_ip else "http://localhost:12880"
+
+        def _arbeit() -> None:
+            # Schritt 1: Laeuft PatchDL ueberhaupt?
+            try:
+                with urllib.request.urlopen(basis + "/api/status", timeout=4) as _r:
+                    pass
+            except Exception:
+                def _nicht_da():
+                    self._patch_status_var.set(self._t("info_popup.patchdl_not_running"))
+                try:
+                    self.root.after(0, _nicht_da)
+                except Exception:
+                    pass
+                return
+
+            # Schritt 2: Download-Auftrag
+            url = "%s/api/titles/%s/download" % (basis, urllib.parse.quote(tid, safe=""))
+            try:
+                req = urllib.request.Request(url, data=b"{}", method="POST",
+                                             headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    raw = resp.read()
+                try:
+                    antwort = json.loads(raw)
+                    nachricht = antwort.get("message") or antwort.get("status") or "ok"
+                except Exception:
+                    nachricht = "ok"
+                meldung = self._t("info_popup.patchdl_started", title_id=tid) + " " + str(nachricht)
+            except Exception as exc:
+                fehler = str(exc)
+                meldung = self._t("info_popup.patchdl_error", fehler=fehler)
+
+            def _aktualisieren(m=meldung):
+                self._patch_status_var.set(m)
+            try:
+                self.root.after(0, _aktualisieren)
+            except Exception:
+                pass
+
+        threading.Thread(target=_arbeit, daemon=True).start()
 
     def _prepare_patch_lookup_ui(self, title_id: str) -> None:
         """Setzt Platzhalter und Status für die Patch-Suche.

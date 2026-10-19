@@ -536,6 +536,12 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     _ohne("bfpilot", "BFpilot", "bfpilot_v*.elf", "updates.hinweis_ohne_quelle"),
     _ohne("yt-blocker", "YT-Blocker", "YT-Blocker_v*.elf", "updates.hinweis_paket",
           seite=_SEITEN["github"] % "MasterPS0/PS5HostPayloads"),
+    # Keine Versionsnummer im Dateinamen; Fassung nur zur Laufzeit per GET /api/state -> "version".
+    _hinweis("exfat2ampr", "exFAT2AMPR", "exFAT2AMPR/exfat2ampr", "exfat2ampr.elf",
+             "updates.hinweis_laufzeit_fassung", lokal="fest:1.104"),
+    # Keine Versionsnummer im Dateinamen; Fassung nur zur Laufzeit per GET /api/status -> "version".
+    _p("patchdl", "PatchDL", "knutwurst/ps5-patchdl",
+       "patchdl_*.elf", _d("patchdl_{f}.elf")),
     _p("cooling", "PS5 Cooling & System Center - Pro", "strongt1me/ps5-cooling-system-center-pro",
        "PS5_Cooling_System_Center_v*.elf", _d("PS5_Cooling_System_Center_v{f}.elf"), hinweis="updates.hinweis_eigen"),
     # --- WebKit Autoloader: drei Dateien, der Installer zusaetzlich in helloworld/ ------------------------------
