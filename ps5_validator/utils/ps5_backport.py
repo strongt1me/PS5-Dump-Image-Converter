@@ -34,6 +34,7 @@ import hashlib
 import os
 import shutil
 import struct
+from typing import Any
 
 # --------------------------------------------------------------------------
 # Dateikennungen
@@ -1129,7 +1130,7 @@ def _programmkoepfe(elf: bytes) -> list[tuple[int, int, int, int]]:
     return koepfe
 
 
-def prx_symbole(elf: bytes) -> dict:
+def prx_symbole(elf: bytes) -> dict[str, Any]:
     """Liest Importe und Exporte eines PRX/ELF aus seiner Dynamiktabelle.
 
     Ein PRX traegt keine Abschnittstabelle; alles Noetige steht in PT_DYNAMIC
@@ -1251,14 +1252,14 @@ def prx_symbole(elf: bytes) -> dict:
             "import_bibliotheken": import_namen, "export_bibliotheken": export_namen}
 
 
-def symbole_aus_datei(pfad: str) -> dict:
+def symbole_aus_datei(pfad: str) -> dict[str, Any]:
     """Wie :func:`prx_symbole`, packt ein SELF vorher aus."""
     with open(pfad, "rb") as fh:
         roh = fh.read()
     if dateityp(roh) == "self":
         try:
             roh = self_zu_elf(roh)
-        except Exception:
+        except Exception:  # noqa: BLE001 - verschluesseltes/beschaedigtes SELF bleibt ohne Symbole
             return {"importe": {}, "exporte": {},
                     "import_bibliotheken": {}, "export_bibliotheken": {}}
     return prx_symbole(roh)
@@ -1277,7 +1278,7 @@ def bibliotheksname(dateiname: str) -> str:
     return name
 
 
-def deckung_pruefen(spieldateien, fakelibs) -> dict:
+def deckung_pruefen(spieldateien: list[str], fakelibs: list[str]) -> dict[str, Any]:
     """Haelt die Importe eines Spiels gegen die Exporte der Ersatzbibliotheken.
 
     Args:
@@ -1375,25 +1376,19 @@ def deckung_pruefen(spieldateien, fakelibs) -> dict:
 #
 # Ein Vergleich auf Ebene ganzer Bibliotheken taugt dafuer **nicht**: Er
 # meldet fuer 12.00 dieselbe Liste wie fuer 7.01, obwohl ein SDK-10-Spiel auf
-# 12.00 laeuft. Namen wie ``libScePosix`` oder ``libSceAudioOut2`` haben gar
-# keine eigene Datei; sie stecken in ``libkernel`` beziehungsweise einem
-# Nachbarmodul. Gezaehlt wird deshalb hier auf NID-Ebene.
+# 12.00 laeuft. Namen wie ``libScePosix`` haben gar keine eigene Datei; sie
+# stecken in ``libkernel``. ``libSceAudioOut2`` dagegen ist ein Neben-Export
+# von ``libSceAudioOut.sprx`` und damit abgedeckt. Gezaehlt wird deshalb hier
+# auf NID-Ebene.
 
-#: Bibliotheksnamen, die fuer die Tonausgabe benoetigt werden.
-#: Sie sind in keinem mitgelieferten Fakelib-Satz enthalten - ein Spiel, das
-#: eine davon importiert, laueft nach dem Backport stumm. Die Deckungspruefung
-#: meldet fehlende Eintraege explizit, damit der Nutzer die Bibliotheken
-#: manuell aus seinem Firmware-Baum nachkopieren kann.
-AUDIO_BIBLIOTHEKEN: frozenset[str] = frozenset({
-    "libSceAudioOut",
-    "libSceAudioOut2",
-    "libSceAjm",
-    "libSceAudiodec",
-    "libSceAudio3d",
-    "libSceNgs2",
-    "libSceAudioDeviceControl",
-    "libSceAudioLatencyEstimation",
-})
+#: Bibliotheksnamen fuer Tonausgabe, die in keinem mitgelieferten Fakelib-Satz
+#: enthalten sind. ``libSceAudioOut``, ``libSceAudioOut2``, ``libSceAjm``,
+#: ``libSceAudiodec``, ``libSceAudio3d``, ``libSceNgs2``,
+#: ``libSceAudioDeviceControl`` (Stub mit 2 NIDs aus FW 4.x) und
+#: ``libSceAudioLatencyEstimation`` (Stub mit 2 berechneten NIDs, kein
+#: FW-Dump verfuegbar) sind abgedeckt. Leer = alle bekannten Audio-
+#: Bibliotheken haben einen Stub; fehlende NIDs erscheinen als 'fehlend'.
+AUDIO_BIBLIOTHEKEN: frozenset[str] = frozenset()
 
 #: Unterordner eines entpackten Firmware-Baums, in denen Module liegen.
 FIRMWARE_LIB_PFADE: tuple[tuple[str, ...], ...] = (
@@ -1487,7 +1482,7 @@ def firmware_ordner_fuer(basis: str, hauptversion: int) -> str:
     return bester
 
 
-def firmware_deckung(spieldateien, firmware_ordner: str) -> dict:
+def firmware_deckung(spieldateien: list[str], firmware_ordner: str) -> dict[str, Any]:
     """Welche Funktionen findet das Spiel auf dieser Firmware nicht?
 
     Args:
@@ -1548,7 +1543,7 @@ def firmware_deckung(spieldateien, firmware_ordner: str) -> dict:
 # aber auch den Quelldateipfad mit - noetig, weil zum Kopieren der Pfad,
 # nicht nur der Bibliotheksname, benoetigt wird.
 
-def fw_dateipfad_tabelle(fw_ordner: str) -> dict:
+def fw_dateipfad_tabelle(fw_ordner: str) -> dict[str, Any]:
     """Wie :func:`firmware_exporttabelle`, aber mit Quelldateipfad je Bibliothek.
 
     Returns:
@@ -1581,10 +1576,10 @@ def fw_dateipfad_tabelle(fw_ordner: str) -> dict:
 
 
 def fehlende_libs_ermitteln(
-    spieldateien: list,
-    vorhandene_fakelibs: list,
+    spieldateien: list[str],
+    vorhandene_fakelibs: list[str],
     fw_ordner: str,
-) -> list:
+) -> list[tuple[str, str]]:
     """Findet Firmware-Bibliotheken, die NIDs liefern, die das Spiel braucht
     aber die vorhandenen Fakelibs noch nicht abdecken.
 
@@ -1646,11 +1641,11 @@ def fehlende_libs_ermitteln(
 
 
 def fakelibs_aus_firmware_kopieren(
-    spieldateien: list,
-    vorhandene_fakelibs: list,
+    spieldateien: list[str],
+    vorhandene_fakelibs: list[str],
     fw_ordner: str,
     ziel_ordner: str,
-) -> dict:
+) -> dict[str, Any]:
     """Kopiert fehlende Fakelibs aus einem Firmware-Stand in ``ziel_ordner``.
 
     Es werden nur Bibliotheken kopiert, die das Spiel importiert und die
