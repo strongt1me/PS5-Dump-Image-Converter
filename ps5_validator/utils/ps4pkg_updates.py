@@ -279,7 +279,7 @@ def nachsehen(title_id: str, holen: "Callable[[str], bytes | str]" = standard_ho
 
 def ist_neuer(online: str, lokal: str) -> bool:
     """Ist die Online-Fassung hoeher als die lokale? Verglichen Stelle fuer Stelle als Zahl."""
-    def zahlen(text: str) -> tuple:
+    def zahlen(text: str) -> tuple[int, ...]:
         teile = re.findall(r"\d+", text or "")
         return tuple(int(t) for t in teile) if teile else (0,)
     return zahlen(online) > zahlen(lokal)

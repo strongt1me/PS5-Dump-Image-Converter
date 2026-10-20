@@ -482,7 +482,7 @@ class Metadatenleser:
                 except Exception:
                     pass
 
-    def _read_game_meta(self, src: str, deep_scan: bool = True) -> dict:
+    def _read_game_meta(self, src: str, deep_scan: bool = True) -> dict[str, Any]:
         """Liest Spielmetadaten aus param.json oder param.sfo.
 
         Sucht zuerst nach param.json, dann als Fallback nach param.sfo.

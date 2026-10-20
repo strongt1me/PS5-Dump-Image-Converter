@@ -494,7 +494,7 @@ class Diagnosebericht:
             logger.debug("DPI-Bewusstsein nicht auslesbar: %s", exc)
             return None
 
-    def _bestandteile_sammeln(self) -> list:
+    def _bestandteile_sammeln(self) -> list[Any]:
         """Stellt zusammen, was das Programm mitbringt und benutzt.
 
         Returns:

@@ -12,7 +12,7 @@ tragen alle den Vorsatz ``ps5pkg_``. Dieses Modul kennt kein Tk - die Oberflaech
 from __future__ import annotations
 
 import os
-from typing import Callable
+from typing import Any, Callable
 
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
 
@@ -168,7 +168,7 @@ def normalisieren(schluessel: str, wert):
     return None
 
 
-def lesen(einstellung: Callable[[str, object], object]) -> dict:
+def lesen(einstellung: Callable[[str, object], object]) -> dict[str, Any]:
     """Die gespeicherten Optionen samt Bibliothek; Unbrauchbares wird durch die Vorgabe ersetzt."""
     ergebnis: dict = {}
     for schluessel in BEKANNT:
@@ -221,7 +221,7 @@ def _kurz(schluessel: str, wert) -> str:
     return text if len(text) <= 40 else text[:37] + "…"
 
 
-def zuruecksetzen_werte() -> dict:
+def zuruecksetzen_werte() -> dict[str, Any]:
     """Die Vorgaben fuer \"Einstellungen zuruecksetzen\" - Bibliothek und Bibliotheksordner bleiben unberuehrt."""
     return dict(STANDARD)
 

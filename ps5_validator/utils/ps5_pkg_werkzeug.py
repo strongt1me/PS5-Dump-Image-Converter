@@ -24,7 +24,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 #: Ordner im Projekt (und im Bau), darin je Plattform ein Unterordner.
 ORDNER = "PS5-PKG-Tool"
@@ -198,7 +198,7 @@ def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, 
             _beenden(prozess)
 
 
-def _json_aus(ausgabe: str) -> dict:
+def _json_aus(ausgabe: str) -> dict[str, Any]:
     anfang = ausgabe.find("{")
     ende = ausgabe.rfind("}")
     if anfang < 0 or ende < anfang:
@@ -273,7 +273,7 @@ def _passcode_args(passcode: str) -> list[str]:
     return ["--passcode", passcode] if passcode else []
 
 
-def inspect(werkzeug: str, paket: str, popen_extra: dict | None = None) -> dict:
+def inspect(werkzeug: str, paket: str, popen_extra: dict | None = None) -> dict[str, Any]:
     """Kopfdaten eines Pakets (``inspect --json``): Typ, Content-ID, Title-ID, Eintraege.
 
     Liest nur den aeusseren Kopf (unverschluesselt) - kennt deshalb keinen Passcode, anders als die Befehle unten,
@@ -286,7 +286,7 @@ def inspect(werkzeug: str, paket: str, popen_extra: dict | None = None) -> dict:
 
 
 def pruefen(werkzeug: str, paket: str, *, passcode: str = "", zeile: _Zeile | None = None,
-            abbruch: _Abbruch | None = None, popen_extra: dict | None = None) -> dict:
+            abbruch: _Abbruch | None = None, popen_extra: dict | None = None) -> dict[str, Any]:
     """Die Pruefliste des Werkzeugs (``validate --json``): ``{"pass": n, "warn": n, "fail": n, "results": [...]}``."""
     rc, aus = laufen(werkzeug, ["validate", paket, "--json"] + _passcode_args(passcode), zeile=zeile, abbruch=abbruch,
                      popen_extra=popen_extra)
@@ -779,7 +779,7 @@ def _playgo_in_ffpkg(pfad: str) -> str:
                     if dateiname in chunk:
                         return _PLAYGO_MERKMALE[i]
                 versatz += _SCHRITT
-    except Exception:
+    except Exception:  # noqa: BLE001 - Lesefehler heisst "kein PlayGo-Merkmal gefunden"
         pass
     return ""
 
@@ -814,6 +814,6 @@ def playgo_erklaert_archiv(
             return _playgo_in_baumtext(ausgabe)
         if ext == ".ffpkg":
             return _playgo_in_ffpkg(pfad)
-    except Exception:
+    except Exception:  # noqa: BLE001 - Archivfehler heisst "kein PlayGo-Merkmal gefunden"
         return ""
     return ""

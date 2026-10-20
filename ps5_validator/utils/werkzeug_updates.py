@@ -170,7 +170,7 @@ def _zerlegen(fassung: str) -> tuple[tuple, str]:
     return (tuple(zahlen), stufe, nummer, fix, bau), rest.strip().lstrip("-_.+").lower()
 
 
-def fassungsschluessel(fassung: str) -> tuple:
+def fassungsschluessel(fassung: str) -> tuple[Any, ...]:
     """Vergleichsschluessel einer Fassung: ``(Zahlen, Stufe, Stufennummer, fix, Bauzahl)``.
 
     Zahlenweise und aufgefuellt (``0.4`` gegen ``0.4.1``), eine Vorabstufe liegt unter der fertigen Fassung
@@ -234,7 +234,7 @@ def fassung_aus_tag(tag: str, modus: str = "zahl", datum: str = "") -> str:
     return treffer.group(1) if treffer else ""
 
 
-def _schluessel(fassung: str, modus: str) -> tuple:
+def _schluessel(fassung: str, modus: str) -> tuple[Any, ...]:
     if modus in ("rc", "datum8"):
         zahl = re.sub(r"\D", "", fassung or "")
         return (int(zahl),) if zahl else ()
@@ -260,7 +260,7 @@ def vergleichen(lokal: str, neu: str, modus: str = "zahl") -> str:
     return "aktuell" if _zerlegen(lokal)[1] == _zerlegen(neu)[1] else "unklar"
 
 
-def datei_schluessel(dateiname: str) -> tuple:
+def datei_schluessel(dateiname: str) -> tuple[Any, ...]:
     """Sortierschluessel fuer Dateien desselben Musters - die neueste liegt am Ende.
 
     Ersetzt die Sortierung nach ``_v<Zahl>``: Auch ``ps5upload-6.7.3.elf`` (kein ``_v``), ``1.7beta4`` und
@@ -847,7 +847,7 @@ class Befund:
         return sum(t.groesse for t in self.teile) + sum(int(getattr(a, "groesse", 0) or 0) for a in self.ampr)
 
 
-def _kandidat(w: Werkzeug, freigaben: Sequence[Freigabe]):
+def _kandidat(w: Werkzeug, freigaben: Sequence[Freigabe]) -> "tuple[Freigabe, str, tuple[Teil, ...]] | None":
     """Die Freigabe, gegen die verglichen wird: ``(Freigabe, Fassung, Teile)`` oder ``None``.
 
     Die oberste ohne Entwurf; ohne ``vorab`` zuerst eine fertige - gibt es nur Vorabfassungen (``latest`` bei
@@ -970,7 +970,7 @@ def zusammenfassung(befunde: Sequence[Befund]) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 # Zwischenspeicher
 # ---------------------------------------------------------------------------
-def speicher_lesen(basis: str) -> dict:
+def speicher_lesen(basis: str) -> dict[str, Any]:
     """Der Zwischenspeicher ``{quelle: {etag, stand, freigaben}}``; leer, wenn es ihn nicht gibt oder er kaputt ist."""
     pfad = os.path.join(update_ordner(basis), SPEICHER_DATEI)
     try:

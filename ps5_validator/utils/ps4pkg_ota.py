@@ -41,7 +41,7 @@ import time
 import urllib.parse
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 
 logger = logging.getLogger("PS5Converter.ps4pkg_ota")
 
@@ -351,7 +351,7 @@ def _anfrage(ip: str, port: int, methode: str, pfad: str, *, daten: "bytes | Non
         verbindung.close()
 
 
-def _json(roh: bytes) -> dict:
+def _json(roh: bytes) -> dict[str, Any]:
     try:
         wert = json.loads(roh.decode("utf-8", "replace"))
     except ValueError as fehler:
@@ -392,7 +392,7 @@ class RpiClient:
         self.port = port
         self.zeit = zeit
 
-    def _aufruf(self, endpunkt: str, daten: dict) -> dict:
+    def _aufruf(self, endpunkt: str, daten: dict) -> dict[str, Any]:
         status, roh = _anfrage(self.ip, self.port, "POST", "/api/" + endpunkt,
                                daten=json.dumps(daten).encode("utf-8"),
                                kopf={"Content-Type": "application/json"}, zeit=self.zeit)
@@ -440,7 +440,7 @@ class RpiClient:
         antwort = self._aufruf("is_exists", {"title_id": title_id})
         return str(antwort.get("exists", "")).lower() == "true"
 
-    def deinstallieren(self, art: str, kennung: str) -> dict:
+    def deinstallieren(self, art: str, kennung: str) -> dict[str, Any]:
         """``art``: ``game``/``patch`` (Title-ID) oder ``ac``/``theme`` (Content-ID)."""
         if art in ("game", "patch"):
             return self._aufruf("uninstall_" + art, {"title_id": kennung})
@@ -558,7 +558,7 @@ class DpiClient:
         self.zeit = zeit
 
     # -- kurze Abfragen --------------------------------------------------
-    def ping(self) -> dict:
+    def ping(self) -> dict[str, Any]:
         """``GET /ping`` am API-Port: ``{"ok":true,"name":"pkg-server","version":..,"fw":..,"busy":..}``."""
         status, roh = _anfrage(self.ip, self.api_port, "GET", "/ping", zeit=self.zeit)
         if status != 200:
@@ -568,7 +568,7 @@ class DpiClient:
             raise OtaFehler("fremd", "Dort antwortet kein OnionHEN-Paketmanager: %s" % json.dumps(antwort)[:120])
         return antwort
 
-    def konfiguration(self) -> dict:
+    def konfiguration(self) -> dict[str, Any]:
         """``GET /api/config`` am Web-Port: unter anderem ``api_port``."""
         if not self.web_port:
             raise OtaFehler("ohne_web_port")
@@ -626,7 +626,7 @@ class DpiClient:
 
     def hochladen(self, pfad: str, *, name: str = "",
                   fortschritt: "Callable[[int, int], None] | None" = None,
-                  abbruch: "Callable[[], bool] | None" = None, versuche: int = 3) -> dict:
+                  abbruch: "Callable[[], bool] | None" = None, versuche: int = 3) -> dict[str, Any]:
         """Schickt eine ``.pkg`` in Bloecken und schliesst den Versand ab.
 
         Liegt unter diesem Namen schon eine Datei der richtigen Groesse auf der
@@ -690,7 +690,7 @@ class DpiClient:
 
     def warten(self, *, abbruch: "Callable[[], bool] | None" = None, zeitgrenze: float = 1800.0,
                abfrage_sekunden: float = 2.0,
-               bei_ping: "Callable[[dict], None] | None" = None) -> dict:
+               bei_ping: "Callable[[dict], None] | None" = None) -> dict[str, Any]:
         """Wartet, bis der Manager nicht mehr beschaeftigt ist (``busy`` im ``/ping``).
 
         Die Weboberflaeche des Managers verfolgt den Fortschritt mit einem

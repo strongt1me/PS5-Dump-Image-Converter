@@ -40,7 +40,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import IO, Callable, Iterator
 
 logger = logging.getLogger("PS5Converter.konsole.ftp")
 
@@ -541,7 +541,7 @@ def ordner_sichern(verbindung: ftplib.FTP, pfad: str, angelegt: "set[str]") -> N
         angelegt.add(teil)
 
 
-def datei_senden(verbindung: ftplib.FTP, eingabe, groesse: int, ziel: str, start: int = 0,
+def datei_senden(verbindung: ftplib.FTP, eingabe: IO[bytes], groesse: int, ziel: str, start: int = 0,
                  callback: "Callable[[bytes], None] | None" = None, pruefen: bool = True) -> None:
     """Schickt ``groesse - start`` Byte aus ``eingabe`` an ``ziel``: ab ``start`` angehaengt (``APPE``), sonst neu (``STOR``).
 
@@ -816,7 +816,7 @@ def umbenennen(verbindung: ftplib.FTP, alt: str, neu: str) -> None:
     _still_loeschen(verbindung, beiseite)
 
 
-def datei_ablegen(verbindung: ftplib.FTP, eingabe, ziel: str,
+def datei_ablegen(verbindung: ftplib.FTP, eingabe: IO[bytes], ziel: str,
                   callback: "Callable[[bytes], None] | None" = None) -> None:
     """Legt eine Datei auf der Konsole ab - nie halb, und nie gar nicht.
 
@@ -933,8 +933,8 @@ def ordner_anlegen(verbindung: ftplib.FTP, pfad: str) -> None:
             verbindung.mkd(teil)
         except ftplib.error_perm:
             pass  # Gibt es schon.
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as _err:  # noqa: BLE001
+            logger.debug("ordner_anlegen: %s - %s", teil, _err)
 
 
 def schliessen(verbindung: ftplib.FTP) -> None:

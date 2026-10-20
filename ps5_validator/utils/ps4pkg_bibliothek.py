@@ -26,7 +26,7 @@ import re
 import struct
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 
 logger = logging.getLogger("PS5Converter.ps4pkg_bibliothek")
 
@@ -105,7 +105,7 @@ class PkgEintrag:
 # param.sfo
 # ---------------------------------------------------------------------------
 
-def sfo_lesen(daten: bytes) -> dict:
+def sfo_lesen(daten: bytes) -> dict[str, str | int]:
     """Liest eine ``param.sfo`` in ein ``{Schluessel: Wert}``-Verzeichnis.
 
     Zeichenketten kommen als ``str`` (UTF-8, ohne NUL), Zahlen als ``int``.
@@ -232,7 +232,7 @@ def _namen_aufloesen(datei, eintraege: "list[_Eintragsrecord]") -> "dict[int, st
     return namen
 
 
-def _kopf(datei) -> dict:
+def _kopf(datei) -> dict[str, Any]:
     kopf = datei.read(KOPF_GROESSE)
     if len(kopf) < KOPF_GROESSE or kopf[:4] != CNT_MAGIC:
         raise ValueError("kein PS4-Paket (Kennung fehlt)")
@@ -481,7 +481,7 @@ def einlesen(quellen: Iterable[str], *, rekursiv: bool = True,
 # Filtern und Gruppieren
 # ---------------------------------------------------------------------------
 
-def fassung_zahlen(text: str) -> tuple:
+def fassung_zahlen(text: str) -> tuple[int, ...]:
     """``"01.09"`` -> ``(1, 9)`` - zum Ordnen; Unlesbares ordnet nach vorn."""
     teile = re.findall(r"\d+", text or "")
     return tuple(int(t) for t in teile) if teile else (-1,)

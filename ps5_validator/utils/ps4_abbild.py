@@ -22,7 +22,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 from ps5_validator.utils import orbispkg, ps4_fortschritt, ps4_werkzeug
 from ps5_validator.utils import ps4pkg_aufgaben as au
@@ -88,7 +88,7 @@ class Spiel:
             return self.updates[-1].app_ver or self.updates[-1].version or "-"
         return (self.basis.app_ver or self.basis.version or "-") if self.basis else "-"
 
-    def pakete(self, mit_zusaetzen: bool = False) -> list:
+    def pakete(self, mit_zusaetzen: bool = False) -> list[Any]:
         """Die Pakete in Einspielreihenfolge: Basis, Updates, auf Wunsch DLC."""
         erg = ([self.basis] if self.basis is not None else []) + list(self.updates)
         if mit_zusaetzen:

@@ -26,7 +26,7 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Callable
+from typing import Any, Callable
 
 MAGIC_PS4 = b"\x7fCNT"
 MAGIC_PS5 = b"\x7fFIH"
@@ -74,7 +74,7 @@ def paket_art(pfad: str) -> str:
     return ""
 
 
-def _anlauf() -> dict:
+def _anlauf() -> dict[str, Any]:
     """Gemeinsame Popen-Einstellungen: Zeilen als Text, kein Konsolenfenster."""
     anlauf: dict = {
         "stdout": subprocess.PIPE,
@@ -101,7 +101,7 @@ def _json_zeile(zeile: str) -> dict | None:
     return wert if isinstance(wert, dict) else None
 
 
-def pruefen(entpacker: str, paket: str, zeitgrenze: float = 300.0) -> dict:
+def pruefen(entpacker: str, paket: str, zeitgrenze: float = 300.0) -> dict[str, Any]:
     """Fragt den Entpacker, was in dem Paket steckt - ohne zu entpacken.
 
     Returns:
@@ -173,7 +173,7 @@ def entpacken(entpacker: str, paket: str, ziel: str,
               melden: Callable[[str], None] | None = None,
               fortschritt: Callable[[dict], None] | None = None,
               prozess_ablage: dict | None = None,
-              abbruch: Callable[[], bool] | None = None) -> dict:
+              abbruch: Callable[[], bool] | None = None) -> dict[str, Any]:
     """Entpackt ein PS4-Paket nach ``ziel``.
 
     Der Entpacker schreibt zuerst nach ``<ziel>.partial``; erst ein

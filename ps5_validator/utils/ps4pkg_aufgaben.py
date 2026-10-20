@@ -27,7 +27,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 from ps5_validator.utils import orbispkg, ps4pkg_ota, ps4pkg_updates, prozess_beenden
 from ps5_validator.utils.ps4pkg_bibliothek import PkgEintrag, TYP_UPDATE, TYP_ZUSATZ, dateiname_bereinigen
@@ -423,7 +423,7 @@ def _verschmelzen(quelle: str, ziel: str, melden: "Callable[[int], None] | None"
 
 
 def dump_ordner_machen(roh: str, melden: "Callable[[int], None] | None" = None,
-                       pruefen: "Callable[[], None] | None" = None) -> dict:
+                       pruefen: "Callable[[], None] | None" = None) -> dict[str, Any]:
     """Macht aus ``Image0/`` und ``Sc0/`` einen Dump-Ordner: Spieldateien in die Wurzel, Systemdateien nach ``sce_sys/``.
 
     So sieht ein entpacktes PS4-Spiel ueberall aus - auch das Ergebnis von

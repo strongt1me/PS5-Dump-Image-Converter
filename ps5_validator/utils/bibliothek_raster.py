@@ -107,21 +107,21 @@ class Zeichner:
         "eingabe": (10, "normal"), "filter": (9, "bold"),
     }
 
-    def __init__(self, wurzel: tk.Misc, palette: Callable[[], dict], familie: str,
+    def __init__(self, wurzel: tk.Misc, palette: Callable[[], dict[str, str]], familie: str,
                  pt: Callable[[float], float] | None = None) -> None:
         self.wurzel = wurzel
         self._palette = palette
         self.familie = familie
         self._pt = pt or (lambda p: p)
         self._schriften: dict[str, tkfont.Font] = {}
-        self._fotos: dict[tuple, Any] = {}
+        self._fotos: OrderedDict[tuple, Any] = OrderedDict()
         self._poster: OrderedDict[tuple, tuple[Any, int]] = OrderedDict()
         self._poster_bytes = 0
         self._faktor: float | None = None
 
     # --- Masse ---------------------------------------------------------------------------------------
     @property
-    def palette(self) -> dict:
+    def palette(self) -> dict[str, str]:
         return self._palette()
 
     @property
@@ -148,7 +148,7 @@ class Zeichner:
         return int(round(wert * self.faktor))
 
     # --- Schriften -------------------------------------------------------------------------------------
-    def schrift_angabe(self, rolle: str) -> tuple:
+    def schrift_angabe(self, rolle: str) -> tuple[str, int, str]:
         groesse, gewicht = self.SCHRIFTEN[rolle]
         return (self.familie, int(self._pt(groesse)), gewicht)
 
@@ -166,11 +166,11 @@ class Zeichner:
         return int(self.schrift(rolle).metrics("linespace"))
 
     # --- Fotos -----------------------------------------------------------------------------------------
-    def _farben_schluessel(self) -> tuple:
+    def _farben_schluessel(self) -> tuple[str, ...]:
         palette = self.palette
         return tuple(str(palette.get(rolle, "")) for rolle in _PALETTE_ROLLEN)
 
-    def foto(self, schluessel: tuple, erzeuger: Callable[[], "Image.Image"]) -> "ImageTk.PhotoImage":
+    def foto(self, schluessel: tuple[Any, ...], erzeuger: Callable[[], "Image.Image"]) -> "ImageTk.PhotoImage":
         """Ein Tk-Foto aus dem Bildspeicher - gebaut, wenn es fehlt.
 
         Der Schluessel bekommt die Palette angehaengt; nach einem Designwechsel
@@ -181,7 +181,10 @@ class Zeichner:
         foto = self._fotos.get(voll)
         if foto is None:
             if len(self._fotos) > 600:                  # Sicherung gegen unbegrenztes Wachstum
-                self._fotos.clear()
+                for _ in range(200):                    # aelteste 200 verdraengen statt alles loeschen
+                    if not self._fotos:
+                        break
+                    self._fotos.popitem(last=False)
             foto = ImageTk.PhotoImage(erzeuger(), master=self.wurzel)
             self._fotos[voll] = foto
         return foto
@@ -675,7 +678,7 @@ class ChipGruppe(tk.Frame):
             ein Rueckruf ``() -> str`` sein (Sprachwechsel).
     """
 
-    def __init__(self, master: tk.Misc, zeichner: Zeichner, optionen: list, variable: tk.StringVar,
+    def __init__(self, master: tk.Misc, zeichner: Zeichner, optionen: list[tuple[str, str | Callable[[], str]]], variable: tk.StringVar,
                  befehl: Callable | None = None, *, grund: str = "bg_card", abstand: int = 6,
                  hoehe: float = 30) -> None:
         super().__init__(master, bg=zeichner.palette.get(grund, "#000000"), bd=0, highlightthickness=0)
@@ -721,7 +724,7 @@ class ChipGruppe(tk.Frame):
             chip.neu_faerben()
 
     @property
-    def chips(self) -> list:
+    def chips(self) -> list[KartenKnopf]:
         return [chip for _w, _t, chip in self._chips]
 
 
@@ -918,7 +921,7 @@ class FlussZeile(tk.Frame):
             pass
 
     @staticmethod
-    def _setzen(kind: dict, x: int, y: int, breite: int, zeilenhoehe: int) -> None:
+    def _setzen(kind: dict[str, Any], x: int, y: int, breite: int, zeilenhoehe: int) -> None:
         widget = kind["w"]
         hoehe = int(widget.winfo_reqheight())
         try:
@@ -1003,7 +1006,7 @@ class SuchFeld(RundeKarte):
 class Karte:
     """Eine Karte des Rasters: ihr Eintrag, ihr Platz und ihre Tk-Elemente."""
 
-    eintrag: dict
+    eintrag: dict[str, Any]
     nummer: int
     x: int = 0
     y: int = 0
@@ -1413,7 +1416,7 @@ class KartenRaster:
         _knopf("konvertieren", x0 + halb + gap, karte.y + a.aktion_y, b - halb - gap, a.aktion_hoehe)
 
     # --- Bilder und Marken -------------------------------------------------------------------------------
-    def bild_setzen(self, eintrag: dict, datei: str) -> None:
+    def bild_setzen(self, eintrag: dict[str, Any], datei: str) -> None:
         """Setzt das Titelbild einer Karte; ``""`` heisst "kein Titelbild"."""
         karte = self.karte_von(eintrag)
         if karte is None or not self.lebt():
@@ -1674,7 +1677,7 @@ class KartenRaster:
             pass
 
     # --- Lage fuer Aufrufer --------------------------------------------------------------------------------
-    def knopf_lage(self, eintrag: dict, name: str) -> tuple[int, int, int, int] | None:
+    def knopf_lage(self, eintrag: dict[str, Any], name: str) -> tuple[int, int, int, int] | None:
         """Bildschirmlage (x, y, breite, hoehe) eines Knopfs - dort verankert sich das Infofenster."""
         karte = self.karte_von(eintrag)
         if karte is None:

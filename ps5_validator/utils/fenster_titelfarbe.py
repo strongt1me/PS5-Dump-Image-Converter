@@ -18,7 +18,7 @@ import ctypes
 import logging
 import sys
 import weakref
-from typing import Callable
+from typing import Any, Callable
 
 logger = logging.getLogger("PS5Converter.fenster_titelfarbe")
 
@@ -118,7 +118,7 @@ def anwenden(widget, dunkel: bool) -> bool:
         return False
 
 
-def _fenster_unter(wurzel) -> list:
+def _fenster_unter(wurzel) -> list[Any]:
     """Die Wurzel und alle Toplevel-Fenster darunter."""
     gefunden = [wurzel]
     wartend = list(wurzel.winfo_children())

@@ -31,6 +31,7 @@ import logging
 import os
 import re
 import urllib.request
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ def bestand_abgleichen(payload_ordner: str, lizenzdatei: str) -> dict[str, list[
     }
 
 
-def _stueckeln(fassung: str) -> tuple:
+def _stueckeln(fassung: str) -> tuple[int | str, ...]:
     """Eine Fassung in vergleichbare Teile zerlegen (Zahlen als Zahlen)."""
     teile: list = []
     for stueck in re.split(r"[.\-_]", str(fassung or "")):
@@ -227,7 +228,7 @@ def rueckstaende(payloads: dict[str, str],
     return befunde
 
 
-def spiegel_holen(adresse: str = SPIEGEL_ADRESSE, zeitgrenze: float = 20.0) -> list:
+def spiegel_holen(adresse: str = SPIEGEL_ADRESSE, zeitgrenze: float = 20.0) -> list[Any]:
     """Holt die Liste - **nur** aus einem ausdruecklichen Aufruf heraus.
 
     Kein Diagnoselauf und kein Programmstart ruft das von selbst. Die
@@ -264,7 +265,7 @@ ICONS_ADRESSE = ("https://raw.githubusercontent.com/itsPLK/"
                  "ps5-payloads-mirror/main/icons.json")
 
 
-def icon_schluessel_je_kennung(liste: list) -> dict[str, str]:
+def icon_schluessel_je_kennung(liste: list[Any]) -> dict[str, str]:
     """Aus der Spiegelliste: ``{Kennung: icon_key}`` - nur wo ein Icon hinterlegt ist.
 
     Dieselbe :func:`kennung_aus_name`-Zuordnung wie :func:`rueckstaende`, damit
@@ -333,7 +334,7 @@ def icon_bytes_aus_data_uri(data_uri: str) -> bytes:
         raise ValueError("Ungueltiges Base64 in der data-URI: %s" % exc) from exc
 
 
-def icons_ablegen(ordner: str, payloads: dict[str, str], liste: list,
+def icons_ablegen(ordner: str, payloads: dict[str, str], liste: list[Any],
                   icons: dict[str, str]) -> dict[str, str]:
     """Legt zu jeder passenden mitgelieferten Datei ihr Icon als ``<Kennung>.png`` ab.
 

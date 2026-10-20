@@ -25,7 +25,7 @@ import pathlib
 import struct
 import subprocess
 import sys
-from typing import Callable
+from typing import Any, Callable
 
 from ps5_validator.utils.plattform import prozess_flags
 from ps5_validator.utils.prozess_beenden import baum_beenden
@@ -72,7 +72,7 @@ RC_KEIN_PLATZ = 5
 
 
 def quellen_sichten(eingabe: str, art: str,
-                    konsole_erkennen: Callable[[str], str]) -> dict:
+                    konsole_erkennen: Callable[[str], str]) -> dict[str, Any]:
     """Zaehlt in der gewaehlten Quelle die Pakete je Konsole.
 
     Args:
@@ -200,7 +200,7 @@ def _mkpfs_bereitstellen() -> None:
 
 
 def abbild_pruefen(pfad: str,
-                   texte: "dict[str, str] | None" = None) -> dict:
+                   texte: "dict[str, str] | None" = None) -> dict[str, Any]:
     """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
 
     Gelesen werden nur die Verzeichnisbloecke des inneren exFAT, nicht

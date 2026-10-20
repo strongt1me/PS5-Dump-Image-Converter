@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +314,7 @@ def bewerte_hochrechnung(faktor: float, verlust: float | None) -> str | None:
     return None
 
 
-def messe_hochrechnungsverlust(bild, faktor: float) -> float | None:
+def messe_hochrechnungsverlust(bild: Any, faktor: float) -> float | None:
     """Wie viel Feinzeichnung fehlt einem Bild, das um ``faktor`` hochgerechnet wird?
 
     Gemessen wird der Rundlauf: das Bild um ``faktor`` verkleinern und wieder

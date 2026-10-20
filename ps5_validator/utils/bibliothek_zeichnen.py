@@ -33,6 +33,7 @@ import functools
 import math
 import threading
 from dataclasses import dataclass
+from typing import Callable
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
@@ -93,7 +94,7 @@ def helligkeit(farbe: str) -> float:
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
 
 
-def ist_dunkel(palette: dict) -> bool:
+def ist_dunkel(palette: dict[str, str]) -> bool:
     """Ob das Design eine dunkle Kartenflaeche hat (``bg_card``)."""
     return helligkeit(str(palette.get("bg_card", "#000000"))) < 0.5
 
@@ -133,7 +134,7 @@ def lesbar_auf(text: str, fuellung: str, richtung: str, mindest: float = 4.5) ->
     return fuellung
 
 
-def chip_farben(palette: dict, art: str) -> dict:
+def chip_farben(palette: dict[str, str], art: str) -> dict[str, str | bool]:
     """Farben eines Chips: ``fuellung``, ``rand``, ``text`` und ``gestrichelt``.
 
     Arten: ``neutral`` (Format), ``ampr``, ``playgo``, ``backport``,
@@ -163,7 +164,7 @@ def chip_farben(palette: dict, art: str) -> dict:
             "rand": mischen(karte, sekundaer, 0.34), "text": text, "gestrichelt": False}
 
 
-def knopf_farben(palette: dict, stil: str, zustand: str = "normal") -> dict:
+def knopf_farben(palette: dict[str, str], stil: str, zustand: str = "normal") -> dict[str, str | bool]:
     """Farben eines Knopfs in einem Zustand.
 
     ``stil``: ``akzent`` (Verlauf, "Starten"), ``flaeche`` und ``auswahl``
@@ -262,7 +263,7 @@ def _rundpfad(breite: float, hoehe: float, radius: float, schritte: int = 12) ->
     return punkte
 
 
-def _gestrichelt_zeichnen(bild: "Image.Image", breite: int, hoehe: int, radius: float, farbe: tuple,
+def _gestrichelt_zeichnen(bild: "Image.Image", breite: int, hoehe: int, radius: float, farbe: tuple[int, int, int, int],
                           strich: float, luecke: float, staerke: float, ueber: int) -> None:
     """Zeichnet die Randlinie als Strichfolge (auf das vierfach grosse Bild)."""
     zeichner = ImageDraw.Draw(bild)
@@ -492,7 +493,7 @@ def spalten_berechnen(breite: int, mindest_karte: int, abstand: int, rand: int) 
     return spalten, max(1, karte)
 
 
-def text_umbrechen(text: str, messen, breite: int, max_zeilen: int = 2) -> list[str]:
+def text_umbrechen(text: str, messen: Callable[[str], int], breite: int, max_zeilen: int = 2) -> list[str]:
     """Bricht ``text`` auf ``breite`` Pixel um - hoechstens ``max_zeilen`` Zeilen.
 
     ``messen(text) -> int`` ist die Breite in Pixeln (``tkfont.Font.measure``).

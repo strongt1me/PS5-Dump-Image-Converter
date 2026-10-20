@@ -49,7 +49,6 @@ import string
 import struct
 import subprocess
 import traceback
-import sys
 import tempfile
 import threading
 import time
@@ -6742,6 +6741,10 @@ class PS5ConverterGUI:
         Returns:
             Geladener Wert oder Standardwert.
         """
+        with self._settings_lock:
+            cache = self.__dict__.get("_settings_cache")
+            if cache is not None:
+                return cache.get(key, default)
         cfg_path = self._get_config_path()
         # Während eines Speichervorgangs kann die Datei kurz belegt sein.
         # Ein einzelner Fehlversuch würde sonst den Standardwert liefern und
@@ -6757,6 +6760,9 @@ class PS5ConverterGUI:
                 # verlangte Integration.
                 with open(cfg_path, "r", encoding="utf-8-sig") as f:
                     data = json.load(f)
+                with self._settings_lock:
+                    if self.__dict__.get("_settings_cache") is None:
+                        self.__dict__["_settings_cache"] = dict(data)
                 return data.get(key, default)
             except (PermissionError, json.JSONDecodeError) as exc:
                 last_error = exc
@@ -6836,6 +6842,7 @@ class PS5ConverterGUI:
                         if attempt == 5:
                             raise
                         time.sleep(0.05)
+                self.__dict__["_settings_cache"] = dict(existing)
             except Exception as exc:
                 logger.warning("Einstellung konnte nicht gespeichert werden: %s", exc)
                 # Die Zwischendatei traegt jetzt die Prozessnummer, sammelte
@@ -44401,13 +44408,19 @@ class PS5ConverterGUI:
 
         ordner = [n for n, fund in enumerate(funde) if fund["art"] == "folder"]
         dateien = [n for n, fund in enumerate(funde) if fund["art"] != "folder"]
-        if len(ordner) > 1:
-            # Die Abbilder derweil einzeln, hier im Faden; ein Fehler kommt danach heraus.
-            self._nebenlaeufig([lambda n=n: _lesen(n) for n in ordner], self._SCAN_FAEDEN,
-                               "bibliothek-lesen", nebenher=lambda: [_lesen(n) for n in dateien])
-        else:
-            for n in ordner + dateien:
-                _lesen(n)
+        if speicher is not None:
+            speicher.puffern(True)
+        try:
+            if len(ordner) > 1:
+                # Die Abbilder derweil einzeln, hier im Faden; ein Fehler kommt danach heraus.
+                self._nebenlaeufig([lambda n=n: _lesen(n) for n in ordner], self._SCAN_FAEDEN,
+                                   "bibliothek-lesen", nebenher=lambda: [_lesen(n) for n in dateien])
+            else:
+                for n in ordner + dateien:
+                    _lesen(n)
+        finally:
+            if speicher is not None:
+                speicher.puffern(False)
         return [eintrag for eintrag in ergebnis if eintrag is not None]
 
     @staticmethod

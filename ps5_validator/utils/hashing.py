@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Callable
+from typing import IO, Callable
 
 CHUNK_SIZE = 16 * 1024 * 1024  # 16 MB
 
@@ -53,7 +53,7 @@ def sha256_file(
 
 
 def sha256_stream(
-    fh,
+    fh: IO[bytes],
     total_size: int = 0,
     progress_cb: Callable[[int, int], None] | None = None,
     cancel_cb: Callable[[], bool] | None = None,

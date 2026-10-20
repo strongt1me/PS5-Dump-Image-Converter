@@ -407,13 +407,13 @@ _REGION_AUS_NAMEN: dict[str, str] = {
 }
 
 
-def _wert(angaben: dict, schluessel: str) -> str:
+def _wert(angaben: dict[str, Any], schluessel: str) -> str:
     """Ein Feld der Angaben - Platzhalter wie "–" gelten als leer."""
     wert = str((angaben or {}).get(schluessel) or "").strip()
     return "" if wert.lower() in _LEER else wert
 
 
-def region_kurz(angaben: dict) -> str:
+def region_kurz(angaben: dict[str, Any]) -> str:
     """Die Region als Kuerzel ("EU", "US", ...), oder "" wenn unbekannt.
 
     Zuerst aus der Content-ID ("EP0001-PPSA01234_00-..." -> "EU"): Sie traegt
@@ -528,7 +528,7 @@ AUF_KONSOLE = "konsole"
 FEHLT = "fehlt"
 
 
-def neuer_name(angaben: dict, form: str) -> str:
+def neuer_name(angaben: dict[str, Any], form: str) -> str:
     """Der neue Name **ohne Endung** - oder "", wenn die Angaben nicht reichen.
 
     Ohne Title-ID gibt es keinen Namen: Sie ist das Einzige, was jede Form
@@ -867,7 +867,7 @@ def einbauten_auf_konsole(ftp: Any, pfad: str, *,
     Returns:
         Das Ergebnis, oder ``None``, wenn die Wurzel nicht lesbar ist.
     """
-    def _namen(eintraege) -> list[str]:
+    def _namen(eintraege: list[Any]) -> list[str]:
         return [str(e[0] if isinstance(e, (tuple, list)) else e) for e in eintraege]
 
     try:
@@ -949,6 +949,8 @@ class Bildspeicher:
         self._verzeichnis = os.path.join(ordner, "index.json")
         self._index: dict[str, dict[str, Any]] = {}
         self._geladen = False
+        self._aufgeschoben = False
+        self._aufgeschoben_schmutzig = False
         # Die Bildlader der Bibliothek laufen in Faeden. Bis v1.9.24 schrieben
         # zeitweise zwei zugleich (Rechner und Konsole) ohne Sperre in dasselbe
         # Verzeichnis und ueber dieselbe .tmp-Datei.
@@ -969,6 +971,9 @@ class Bildspeicher:
             self._index = {}
 
     def _schreiben(self) -> None:
+        if self._aufgeschoben:
+            self._aufgeschoben_schmutzig = True
+            return
         try:
             os.makedirs(self._ordner, exist_ok=True)
             zwischen = self._verzeichnis + ".tmp"
@@ -977,6 +982,19 @@ class Bildspeicher:
             os.replace(zwischen, self._verzeichnis)
         except OSError as exc:
             log.debug("Bildspeicher: Verzeichnis nicht schreibbar (%s)", exc)
+
+    def puffern(self, an: bool = True) -> None:
+        """Schaltet den Schreib-Puffer ein oder aus.
+
+        Beim Ausschalten wird einmal geschrieben, falls sich der Index
+        geaendert hat. Damit reicht bei einem Suchlauf ueber N Spiele ein
+        einziger Schreibvorgang statt N einzelner JSON-Uebertraege.
+        """
+        with self._sperre:
+            self._aufgeschoben = an
+            if not an and self._aufgeschoben_schmutzig:
+                self._aufgeschoben_schmutzig = False
+                self._schreiben()
 
     @staticmethod
     def schluessel(pfad: str) -> str:

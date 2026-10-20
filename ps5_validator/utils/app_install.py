@@ -46,9 +46,13 @@ laesst sich damit ohne laufendes Programm pruefen.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
+from typing import Any
+
+logger = logging.getLogger("PS5Converter.utils.app_install")
 
 from . import payload_versand, self_reader
 
@@ -185,7 +189,7 @@ def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
 
 
 def param_lesen(pfad: str,
-                texte: "dict[str, str] | None" = None) -> dict:
+                texte: "dict[str, str] | None" = None) -> dict[str, Any]:
     """Liest param.json; wirft mit klarem Text, wenn das misslingt."""
     try:
         with open(pfad, "rb") as fh:
@@ -203,7 +207,7 @@ def param_lesen(pfad: str,
     return daten
 
 
-def titelname(param: dict, ersatz: str = "") -> str:
+def titelname(param: dict[str, Any], ersatz: str = "") -> str:
     """Holt den angezeigten Namen aus den localizedParameters."""
     lokal = param.get("localizedParameters")
     if isinstance(lokal, dict):
@@ -221,13 +225,13 @@ def titelname(param: dict, ersatz: str = "") -> str:
     return ersatz
 
 
-def _mit_kategorie(param: dict, kategorie: int) -> dict:
+def _mit_kategorie(param: dict[str, Any], kategorie: int) -> dict[str, Any]:
     kopie = dict(param)
     kopie["applicationCategoryType"] = kategorie
     return kopie
 
 
-def installfassung(param: dict, kategorie: int = KATEGORIE_INSTALL) -> dict:
+def installfassung(param: dict[str, Any], kategorie: int = KATEGORIE_INSTALL) -> dict[str, Any]:
     """param.json fuer den Registrierungsschritt.
 
     Die Kategorie wird bewusst gesetzt statt uebernommen: Steht in der
@@ -241,19 +245,19 @@ def installfassung(param: dict, kategorie: int = KATEGORIE_INSTALL) -> dict:
     return _mit_kategorie(param, kategorie)
 
 
-def deeplink_fassung(param: dict, kategorie: int = KATEGORIE_DEEPLINK) -> dict:
+def deeplink_fassung(param: dict[str, Any], kategorie: int = KATEGORIE_DEEPLINK) -> dict[str, Any]:
     """param.json einer Deeplink-Kachel mit der Kategorie aus dem Fenster (seit v1.9.62)."""
     if kategorie == KATEGORIE_SYSTEM:
         raise ValueError("Eine Deeplink-Kachel traegt nie die Systemkategorie.")
     return _mit_kategorie(param, kategorie)
 
 
-def systemfassung(param: dict) -> dict:
+def systemfassung(param: dict[str, Any]) -> dict[str, Any]:
     """param.json, das hinterher nach /system_ex nachgereicht wird."""
     return _mit_kategorie(param, KATEGORIE_SYSTEM)
 
 
-def als_json(param: dict) -> bytes:
+def als_json(param: dict[str, Any]) -> bytes:
     """Formt die Vorlage so, wie die Konsole sie erwartet (UTF-8, ohne BOM)."""
     text = json.dumps(param, indent=4, ensure_ascii=False, sort_keys=True)
     return (text + "\n").encode("utf-8")
@@ -366,7 +370,7 @@ def pruefen(ordner: str,
     return angaben, fehler, hinweise
 
 
-def deeplink_param(kennung: str, name: str, uri: str) -> dict:
+def deeplink_param(kennung: str, name: str, uri: str) -> dict[str, Any]:
     """Baut die param.json einer Deeplink-Kachel.
 
     Der Aufbau ist keiner Vorlage entnommen, sondern den Kacheln
@@ -471,7 +475,8 @@ def protokoll_lesen(ftp) -> str:
     puffer = _io.BytesIO()
     try:
         ftp.retrbinary("RETR " + PROTOKOLLDATEI, puffer.write)
-    except Exception:
+    except Exception as _exc:  # noqa: BLE001 - Protokolldatei fehlt oft noch
+        logger.debug("protokoll_lesen: RETR fehlgeschlagen: %s", _exc)
         return ""
     return puffer.getvalue().decode("utf-8", "replace").strip()
 
@@ -512,7 +517,8 @@ def protokoll_marke_setzen(ftp) -> str:
     try:
         ftp.storbinary("STOR " + PROTOKOLLDATEI,
                        _io.BytesIO((marke + "\n").encode("ascii")))
-    except Exception:
+    except Exception as _exc:  # noqa: BLE001 - STOR kann scheitern wenn ftpsrv noch startet
+        logger.debug("protokoll_marke_setzen: STOR fehlgeschlagen: %s", _exc)
         return ""
     return marke
 

@@ -23,7 +23,7 @@ import platform
 import subprocess
 import sys
 import threading
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 
 logger = logging.getLogger("PS5Converter.prosperopkg")
 
@@ -241,7 +241,7 @@ KEINE_PKG = "NOT_A_PS5_PKG"
 
 
 def paket_lesen(datei: str,
-                melden: Callable[[str], None] | None = None) -> dict:
+                melden: Callable[[str], None] | None = None) -> dict[str, Any]:
     """Liest den aeusseren Container einer PS5-PKG-Datei.
 
     Das eigene Entpackwerk des Programms kommt an PS5-Pakete nicht heran -

@@ -32,6 +32,7 @@ import ctypes
 import logging
 import os
 import uuid
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ def verfuegbar() -> bool:
 _API: dict = {}
 
 
-def _api() -> dict:
+def _api() -> dict[str, Any]:
     """Eigene Funktionszeiger mit festen Typen.
 
     Ueber eigene ``WinDLL``-Objekte, nicht ``ctypes.windll``: Dessen

@@ -18,6 +18,7 @@ import logging
 import os
 import re
 from collections import OrderedDict
+from typing import Any
 
 #: Beide Lesefunktionen fangen OSError ab und schreiben dorthin.
 #: Ohne diese Zeile stuerzte der Fehlerbehandler selbst mit einem
@@ -314,7 +315,7 @@ def load_json(path: str) -> "OrderedDict[str, object]":
         return json.load(f, object_pairs_hook=OrderedDict)
 
 
-def dokumenttyp_erkennen(daten: dict, dateiname: str = "") -> str:
+def dokumenttyp_erkennen(daten: dict[str, Any], dateiname: str = "") -> str:
     """Ist das ein ``param.json`` oder ein ``manifest.json``?
 
     Entschieden wird am **Inhalt**, nicht am Dateinamen. Die beiden
@@ -349,17 +350,17 @@ def dokumenttyp_erkennen(daten: dict, dateiname: str = "") -> str:
     return "manifest" if "manifest" in os.path.basename(dateiname).lower() else "param"
 
 
-def save_param_json(data: dict, path: str) -> None:
+def save_param_json(data: dict[str, Any], path: str) -> None:
     """Schreibt ein param.json-Dokument: UTF-8 ohne BOM, 2-Leerzeichen-Einrückung."""
     _save_json(data, path, indent=2)
 
 
-def save_manifest_json(data: dict, path: str) -> None:
+def save_manifest_json(data: dict[str, Any], path: str) -> None:
     """Schreibt ein manifest.json-Dokument: UTF-8 ohne BOM, 4-Leerzeichen-Einrückung."""
     _save_json(data, path, indent=4)
 
 
-def _save_json(data: dict, path: str, indent: int) -> None:
+def _save_json(data: dict[str, Any], path: str, indent: int) -> None:
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=indent, ensure_ascii=False)
         f.write("\n")

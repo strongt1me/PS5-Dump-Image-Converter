@@ -37,6 +37,7 @@ import ctypes
 import importlib.util
 import os
 import sys
+from typing import Any
 
 #: Textschluessel fuer "warum nicht eingebettet".
 GRUND_PLATTFORM = "webseite.grund_plattform"
@@ -125,7 +126,7 @@ def verfuegbar() -> "tuple[bool, str]":
     return True, ""
 
 
-def _net_laden(ordner: str) -> dict:
+def _net_laden(ordner: str) -> dict[str, Any]:
     """Laedt .NET und die WebView2-Typen - einmal je Prozess, im Hauptfaden.
 
     Der Faden wird dabei STA. War er schon MTA, geht es nicht
