@@ -7,7 +7,7 @@
 **PS5-Dumps und Abbilder umwandeln, entpacken und prüfen, PS4- und PS5-Pakete bauen
 und die Konsole gleich mit bedienen – unter Windows, Linux und macOS.**
 
-![Version](https://img.shields.io/badge/Version-v1.9.84-blue)
+![Version](https://img.shields.io/badge/Version-v1.9.85-blue)
 ![Tests](https://img.shields.io/badge/Tests-6654%20gr%C3%BCn-brightgreen)
 ![Lizenz](https://img.shields.io/badge/Lizenz-GPL--3.0--or--later-blue)
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)

@@ -161,6 +161,7 @@ class PlatzKlaerenTests(unittest.TestCase):
     def setUpClass(cls):
         cls.haupt = _lade_hauptprogramm()
         cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
+        cls.app._current_language = "de"
 
     def setUp(self):
         self.app._cli_mode = False

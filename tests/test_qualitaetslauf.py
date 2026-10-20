@@ -1385,7 +1385,7 @@ class SpracheImPruefstandTests(unittest.TestCase):
         "test_dump_ordner_speicherort.py",
         "test_ffpfsc_asset_umhuellen.py", "test_integration_beim_erstellen.py",
         "test_kartenecken.py", "test_metadaten_online.py",
-        "test_metadaten_vorgabe.py", "test_platzpruefung.py",
+        "test_metadaten_vorgabe.py",
         "test_ps4_einblendung.py", "test_randlos.py", "test_rollflaeche.py",
         "test_sidebar_vorschau.py", "test_startpfade.py",
         "test_teilschritt_fortschritt.py", "test_unjail_sender.py",

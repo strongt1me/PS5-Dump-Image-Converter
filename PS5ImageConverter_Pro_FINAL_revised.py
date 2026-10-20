@@ -722,7 +722,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.84"
+APP_VERSION = "v1.9.85"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -780,7 +780,9 @@ PS5_FTP_DEFAULT_PORT: int = PS5_FTP_PORTS[0]
 #:
 #: 1245 gibt die 15 px der Leiste zurueck; die Reserve ist damit wieder
 #: die 14 px, mit denen der Gruppenabstand ausgelegt wurde.
-WINDOW_MIN_WIDTH = 1245
+#: 1260 (20.10.2026): Pruefstufe bei 125 % DPI breiter geworden
+#: (12 vs 8 Zeichenpixel); Reserve ohne diesen Zuschlag nur 2 px.
+WINDOW_MIN_WIDTH = 1260
 WINDOW_MIN_HEIGHT = 700
 # Zuschlag fuer alle Punktgroessen unter macOS - siehe
 # PS5ConverterGUI._macos_schrift_skalieren.

@@ -87,6 +87,12 @@ def _warten(bedingung, grenze: float = 20.0) -> bool:
 
     _WURZEL.after(0, _takt)
     _WURZEL.mainloop()
+    # Verbleibende _takt-Rueckrufe aus der Queue abarbeiten, damit ihr
+    # quit() nicht die mainloop() des naechsten Tests sofort beendet.
+    try:
+        _WURZEL.update()
+    except Exception:
+        pass
     return bool(bedingung())
 
 
@@ -96,6 +102,8 @@ class SeiteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = KLASSE(_WURZEL)
+        cls.app._current_language = "de"
+        cls.app._ansicht_beschriften()
 
     def setUp(self) -> None:
         self.app._ansicht_setzen("konsole")

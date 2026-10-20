@@ -2,9 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.84):** Werkzeug exfat2ampr 1.104 ist neu eingebunden, PKG/FPKG zeigt jetzt verfügbare Updates per Knopf, und die Oberfläche ist nun auch auf Spanisch, Italienisch und Französisch verfügbar.
+> **Kurz zum aktuellen Stand (v1.9.85):** Nach einem erfolgreichen BACKPORT-Lauf lässt sich das Ergebnis jetzt direkt an die PS5 senden – ein neuer Haken im Fenster steuert den Dialog.
 
 ---
+
+## v1.9.85 – 20.10.2026
+
+- **Neu:** Nach erfolgreichem Lauf kann das Ergebnis direkt an die PS5 gesendet werden – neuer Haken unterhalb von „Herunterfahren". Beim Einzellauf Ja/Nein-Dialog, beim Stapellauf Auswahlliste der erzeugten Abbilder; bei aktivem „Herunterfahren" entfällt der Dialog.
 
 ## v1.9.84 – 18.10.2026
 

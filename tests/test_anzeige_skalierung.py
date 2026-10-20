@@ -843,6 +843,8 @@ class EinstellungsfensterTests(unittest.TestCase):
     def setUpClass(cls):
         cls.wurzel = _wurzel()
         cls.app = GUI(cls.wurzel)
+        cls.app._current_language = "de"
+        cls.app._ansicht_beschriften()
 
     def setUp(self):
         self.arbeit = tempfile.TemporaryDirectory()
@@ -851,7 +853,7 @@ class EinstellungsfensterTests(unittest.TestCase):
         self.app._get_config_path = lambda: self.konfig
         # Was diese Sitzung beim Start hatte, steht auf "automatisch" - und wird nach dem Test zurueckgesetzt.
         for name, wert in (("_skalierung_manuell", None), ("_aufloesung_manuell", None),
-                           ("_skalierung_system", 125)):
+                           ("_skalierung_system", 125), ("_settings_cache", None)):
             alt = self.app.__dict__.get(name, mock.sentinel.fehlt)
             setattr(self.app, name, wert)
             self.addCleanup(self._zurueck, name, alt)

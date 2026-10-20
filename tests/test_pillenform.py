@@ -222,6 +222,7 @@ class HauptfensterTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = APP.PS5ConverterGUI(_WURZEL)
         cls.app._current_language = "de"
+        cls.app._ansicht_beschriften()
 
     def test_die_seitenleiste_behaelt_ihre_breite(self) -> None:
         app = self.app

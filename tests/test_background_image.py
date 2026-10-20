@@ -227,6 +227,7 @@ class SpeichernKnopfTests(unittest.TestCase):
         self.addCleanup(self.arbeit.cleanup)
         self.konfig = os.path.join(self.arbeit.name, "paths.json")
         self.app._get_config_path = lambda: self.konfig
+        self.app.__dict__["_settings_cache"] = None
 
     def _schreibe(self, inhalt):
         import json
