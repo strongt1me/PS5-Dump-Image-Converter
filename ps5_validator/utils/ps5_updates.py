@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import hmac
 import http.client
 import json
 import logging
@@ -51,7 +52,17 @@ ERLAUBTE_HOSTS: tuple[str, ...] = (
     "sgst.prod.dl.playstation.net",
     "gst.prod.dl.playstation.net",
     "gs2.ww.prod.dl.playstation.net",
+    "gs-sec.ww.np.dl.playstation.net",
 )
+
+# HMAC-Schluessel fuer PS4-Update-URL-Ableitung.
+# Oeffentlich bekannter PS4-Systemschluessel; Verfahren aus PatchDL
+# (knutwurst/ps5-patchdl, GPL-3.0-or-later, src/patchdl_resolve.c).
+_PS4_UPDATE_KEY = bytes([
+    0xAD, 0x62, 0xE3, 0x7F, 0x90, 0x5E, 0x06, 0xBC, 0x19, 0x59, 0x31, 0x42,
+    0x28, 0x1C, 0x11, 0x2C, 0xEC, 0x0E, 0x7E, 0xC3, 0xE9, 0x7E, 0xFD, 0xCA,
+    0xEF, 0xCD, 0xBA, 0xAF, 0xA6, 0x37, 0x8D, 0x84,
+])
 
 #: SCEI DNAS Root 05 - die private Wurzel, die Sonys PS5-Auslieferungsnetz
 #: signiert. Oeffentliches Zertifikat (gueltig 2004-2037), aus PatchDL
@@ -109,10 +120,11 @@ class Fassung:
     inhalt: str                 # content_ver, z. B. "01.009.371"
     system_ver: int = 0         # noetige Firmware, gepackt (0x13600007)
     firmware: str = ""          # "13.60"
-    manifest_url: str = ""
+    manifest_url: str = ""      # PS5: JSON-Manifest-Adresse
     delta_url: str = ""
     digest: str = ""
     pflicht: bool = False
+    pkg_url: str = ""           # PS4: direkte .pkg-Adresse
 
 
 @dataclass
@@ -252,6 +264,23 @@ def verxml_url_gueltig(url: str) -> bool:
     return url_erlaubt(url) and str(url).strip().lower().endswith(".xml")
 
 
+def ps4_verxml_url(title_id: str) -> str:
+    """Leitet die ver.xml-Adresse eines PS4-Titels ab (HMAC-SHA256).
+
+    ``title_id``: 9-Zeichen-Kuerzel wie ``CUSA12345``.
+    Verfahren aus PatchDL (knutwurst/ps5-patchdl, GPL-3.0-or-later,
+    ``src/patchdl_resolve.c``).
+    """
+    if len(title_id) != 9:
+        raise UpdateFehler("ps5upd.title_id_ungueltig")
+    msg = ("np_" + title_id).encode("ascii")
+    digest = hmac.new(_PS4_UPDATE_KEY, msg, hashlib.sha256).hexdigest()
+    return (
+        "https://gs-sec.ww.np.dl.playstation.net/plo/np/"
+        f"{title_id}/{digest}/{title_id}-ver.xml"
+    )
+
+
 def fassungen_lesen(xml_text: str | bytes) -> list[Fassung]:
     """Liest die ``<package>``-Eintraege einer ``version.xml``.
 
@@ -272,13 +301,15 @@ def fassungen_lesen(xml_text: str | bytes) -> list[Fassung]:
         if not inhalt:
             continue
         system = _zahl(paket.get("system_ver", ""))
+        pkg_url = (paket.get("url") or "").strip()
         fassungen.append(Fassung(
             inhalt=inhalt.strip(), system_ver=system,
             firmware=firmware_text(system) if system else "",
             manifest_url=(paket.get("manifest_url") or "").strip(),
             delta_url=(paket.get("delta_url") or "").strip(),
             digest=(paket.get("digest") or "").strip(),
-            pflicht=str(paket.get("mandatory", "")).lower() == "true"))
+            pflicht=str(paket.get("mandatory", "")).lower() == "true",
+            pkg_url=pkg_url if url_erlaubt(pkg_url) else ""))
     fassungen.sort(key=lambda f: _fassung_schluessel(f.inhalt), reverse=True)
     return fassungen
 
@@ -363,6 +394,76 @@ def teildatei(ziel: str) -> str:
 
 def merkdatei(ziel: str) -> str:
     return ziel + ".teil.json"
+
+
+def datei_laden(url: str, ziel: str,
+                fortschritt: Callable[[int, int], None] | None = None,
+                abbruch: Callable[[], bool] | None = None,
+                versuche: int = 4) -> str:
+    """Laedt eine einzelne Datei von Sonys CDN (PS4-Update-Paket).
+
+    Setzt bei unterbrochenen Downloads fort (Range-Request).
+    Schreibt erst in ``<ziel>.teil``, benennt nach Fertigstellung um.
+
+    Args:
+        fortschritt: ``f(geladen_bytes, gesamt_bytes)`` - thread-sicher.
+        abbruch: ``True`` -> ``UpdateFehler("ps5upd.abgebrochen")``.
+
+    Returns:
+        ``ziel``.
+
+    Raises:
+        UpdateFehler: ``ps5upd.host_fremd``, ``ps5upd.http|<code>``,
+            ``ps5upd.netz|<exc>``, ``ps5upd.abgebrochen``.
+    """
+    if not url_erlaubt(url):
+        raise UpdateFehler("ps5upd.host_fremd")
+    teil = teildatei(ziel)
+    os.makedirs(os.path.dirname(os.path.abspath(ziel)), exist_ok=True)
+    geladen = os.path.getsize(teil) if os.path.isfile(teil) else 0
+    gesamt = 0
+    for versuch in range(versuche + 1):
+        if abbruch is not None and abbruch():
+            raise UpdateFehler("ps5upd.abgebrochen")
+        try:
+            with _oeffner().open(_anfrage(url, geladen), timeout=30) as antwort:
+                status = getattr(antwort, "status", 200)
+                if geladen > 0 and status != 206:
+                    geladen = 0
+                try:
+                    cl = int(antwort.headers.get("Content-Length") or 0)
+                    if cl > 0:
+                        gesamt = geladen + cl
+                except (TypeError, ValueError):
+                    pass
+                if fortschritt is not None:
+                    fortschritt(geladen, gesamt)
+                mode = "r+b" if (geladen > 0 and os.path.isfile(teil)) else "wb"
+                with open(teil, mode) as datei:
+                    if geladen > 0:
+                        datei.seek(0, 2)
+                    while True:
+                        if abbruch is not None and abbruch():
+                            raise UpdateFehler("ps5upd.abgebrochen")
+                        block = antwort.read(_BLOCK)
+                        if not block:
+                            break
+                        datei.write(block)
+                        geladen += len(block)
+                        if fortschritt is not None:
+                            fortschritt(geladen, gesamt)
+            break
+        except UpdateFehler:
+            raise
+        except urllib.error.HTTPError as exc:
+            raise UpdateFehler("ps5upd.http|%d" % exc.code) from exc
+        except (urllib.error.URLError, OSError, ssl.SSLError,
+                http.client.HTTPException) as exc:
+            if versuch >= versuche:
+                raise UpdateFehler("ps5upd.netz|%s" % exc) from exc
+            time.sleep(min(2.0 * (versuch + 1), 8.0))
+    os.replace(teil, ziel)
+    return ziel
 
 
 def _kennung(manifest: Manifest) -> str:
