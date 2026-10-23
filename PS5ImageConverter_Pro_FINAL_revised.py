@@ -113,6 +113,7 @@ from ps5_validator.utils.self_reader import (
     read_self,
 )
 from ps5_validator.utils import ampr_updates
+from ps5_validator.utils import dlc_emu
 from ps5_validator.utils import werkzeug_updates
 from ps5_validator.utils.dump_rename import (
     CONFIDENCE_FAILED as dump_rename_fehlgeschlagen,
@@ -161,6 +162,8 @@ from ps5_validator.utils import archiv_quelle
 from ps5_validator.utils import fenster_titelfarbe
 from ps5_validator.utils import qr_klein
 from ps5_validator.utils import konsole_ftp
+from ps5_validator.utils import fenster_vorn
+from ps5_validator.utils import streaming_pruefung
 from ps5_validator.utils import y2jb_updater
 from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
@@ -722,7 +725,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.85"
+APP_VERSION = "v1.9.86"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -5505,6 +5508,7 @@ class PS5ConverterGUI:
         # Verhindert wiederholtes Laden derselben Patches in einer Session.
         # Cache-Eintrag: (timestamp_float, results_list)
         self._patch_cache: dict[str, tuple] = {}  # title_id -> (ts, results)
+        self._patch_cache_seiten: dict[str, tuple] = {}  # nur Seiten (Bibliothek)
         # Pakete aus Sonys offizieller Liste (manifest_url -> Angaben); die
         # Tabellenzeile traegt nur "sony-update:<manifest_url>".
         self._sony_pakete: dict[str, dict] = {}
@@ -7922,7 +7926,7 @@ class PS5ConverterGUI:
         Beides legt vor dem Packen eine vollstaendige Arbeitskopie des Dumps
         im Temp-Ordner an - der Unterschied im Platzbedarf ist erheblich.
         """
-        for name in ("ampr_integrate_var", "backport_integrate_var"):
+        for name in ("ampr_integrate_var", "backport_integrate_var", "dlc_integrate_var"):
             var = getattr(self, name, None)
             try:
                 if var is not None and bool(var.get()):
@@ -8512,6 +8516,165 @@ class PS5ConverterGUI:
                                         dateien=", ".join(reste)))
 
         return errors, warnings
+
+    #: Zielformate, bei denen vor dem Erstellen auf viele Daten und Texture-Streaming
+    #: geprueft wird (Nutzerauftrag 21.10.2026): Dort sind Ruckler moeglich.
+    _RUCKLER_ZIELE: tuple[str, ...] = ("ffpfsc", "ffpfs")
+
+    #: Aufgaben, die ein .ffpfsc/.ffpfs bauen koennen.
+    _RUCKLER_AUFGABEN: tuple[str, ...] = (
+        "pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
+        "batch_convert", "universal_convert")
+
+    def _ruckler_befund(self, pfad: str, zeit: float) -> "streaming_pruefung.Befund":
+        """Prueft eine Quelle - Ordner und .exfat ohne Entpacken, sonst nach der Dateigroesse."""
+        if os.path.isdir(pfad):
+            return streaming_pruefung.ordner_pruefen(pfad, zeit=zeit)
+        if os.path.splitext(pfad)[1].lower() == ".exfat":
+            return streaming_pruefung.exfat_pruefen(
+                pfad, str(getattr(self, "mkpfs_dir", "") or ""), zeit=zeit)
+        return streaming_pruefung.datei_pruefen(pfad)
+
+    def _ruckler_gruende_text(self, befund: "streaming_pruefung.Befund") -> str:
+        """Die Gruende eines auffaelligen Spiels als ein Satzteil."""
+        teile: list[str] = []
+        for schluessel, werte in befund.gruende():
+            if schluessel == "viele_daten":
+                groesse = self._fmt_bytes(int(werte["groesse"]))  # type: ignore[call-overload]
+                if not befund.vollstaendig:
+                    groesse = self._t("streaming.mindestens", groesse=groesse)
+                teile.append(self._t("streaming.grund_viele_daten", groesse=groesse))
+            else:
+                teile.append(self._t("streaming.grund_streaming", merkmale=werte["merkmale"]))
+        return "; ".join(teile)
+
+    def _ruckler_rueckfrage(self, mode: str, src: str, target_type: str) -> tuple[str, str]:
+        """Fragt vor einem .ffpfsc/.ffpfs nach, wenn das Spiel viele Daten oder Texture-Streaming hat.
+
+        Bei solchen Spielen sind in einem .ffpfsc/.ffpfs Ruckler moeglich (Nutzerauftrag
+        21.10.2026). Geprueft wird jede Quelle, gleich in welchem Format (:mod:`streaming_pruefung`);
+        bei der Sammelkonvertierung kommt **eine** Frage mit allen betroffenen Spielen. Die Frage hat drei
+        Wege: trotzdem erstellen, ein anderes Format waehlen (Nutzerwunsch 21.10.2026) oder abbrechen.
+
+        Returns:
+            ``("weiter", "")``: wie gewohnt weiter (nichts aufgefallen, nicht noetig oder bestaetigt);
+            ``("abbruch", "")``: der Anwender hat abgebrochen;
+            ``("anderes", <Format>)``: der Anwender will stattdessen dieses Format (Schluessel wie
+            ``"exfat"``) - der Aufrufer stellt es ein und beginnt von vorn.
+        """
+        if target_type not in self._RUCKLER_ZIELE or mode not in self._RUCKLER_AUFGABEN:
+            return ("weiter", "")
+        if getattr(self, "_cli_mode", False):
+            return ("weiter", "")                    # auf der Kommandozeile gibt es keine Rueckfragen
+        if mode == "batch_convert":
+            quellen = [q for q in (getattr(self, "_batch_sources", []) or []) if os.path.exists(str(q))]
+        else:
+            quellen = [src] if src and os.path.exists(src) else []
+        if not quellen:
+            return ("weiter", "")
+        self._set_status_fluechtig(self._t("streaming.status_pruefe"))
+        try:
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
+        beginn = time.monotonic()
+        treffer: list[tuple[str, "streaming_pruefung.Befund"]] = []
+        for quelle in quellen:
+            # Je Quelle 10 s (eine) bzw. 4 s (viele), insgesamt hoechstens 25 s: Eine Sammelkonvertierung mit
+            # hundert Spielen auf einer langsamen Platte soll nicht minutenlang vor dem Start stehen.
+            if len(quellen) > 1 and time.monotonic() - beginn > 25:
+                break
+            befund = self._ruckler_befund(str(quelle), 10.0 if len(quellen) == 1 else 4.0)
+            if befund.auffaellig:
+                treffer.append((os.path.basename(str(quelle).rstrip("\\/")) or str(quelle), befund))
+        if not treffer:
+            return ("weiter", "")
+        return self._ruckler_fragen(
+            treffer, len(quellen), target_type,
+            alternativen=self._ruckler_alternativen(mode, src, quellen))
+
+    def _ruckler_alternativen(self, mode: str, src: str, quellen: list) -> "list[tuple[str, str]]":
+        """Die Zielformate, die statt .ffpfsc/.ffpfs angeboten werden: ``(Schluessel, Beschriftung)``.
+
+        Es kommen nur Formate in Frage, die diese Aufgabe fuer die gewaehlte Quelle anbietet und die den
+        Start-Pruefungen genuegen (``_validate_requested_conversion``).
+        """
+        alternativen: list[tuple[str, str]] = []
+        try:
+            optionen = self._get_target_options(mode, "" if mode == "batch_convert" else src)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Alternativen zum Streaming-Hinweis nicht ermittelbar: %s", exc)
+            return []
+        for schluessel in optionen:
+            if schluessel in self._RUCKLER_ZIELE:
+                continue
+            try:
+                if self._validate_requested_conversion(mode, src, schluessel):
+                    continue
+                alternativen.append((schluessel, self._zielformat_label(schluessel, mode, src)))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Format %s nicht anbietbar: %s", schluessel, exc)
+        return alternativen
+
+    def _ruckler_rueckfrage_groessen(self, spiele: "list[tuple[str, int]]", target_type: str,
+                                       parent: "tk.Misc | None" = None,
+                                       alternativen: "list[tuple[str, str]] | None" = None) -> tuple[str, str]:
+        """Wie :meth:`_ruckler_rueckfrage`, fuer Fenster, die nur Paketgroessen kennen (PS4-PKG-Fenster).
+
+        Args:
+            spiele: ``(Name, Groesse in Bytes)`` je Spiel. Nur die Groesse zaehlt - in ein Paket wird nicht
+                hineingesehen; die echte Datenmenge liegt darueber.
+            alternativen: ``(Schluessel, Beschriftung)`` der Formate, die das Fenster stattdessen anbietet.
+        """
+        if target_type not in self._RUCKLER_ZIELE or getattr(self, "_cli_mode", False):
+            return ("weiter", "")
+        treffer = []
+        for name, groesse in spiele:
+            befund = streaming_pruefung.Befund(groesse=int(groesse), vollstaendig=False, nur_dateigroesse=True)
+            if befund.auffaellig:
+                treffer.append((name, befund))
+        if not treffer:
+            return ("weiter", "")
+        return self._ruckler_fragen(treffer, len(spiele), target_type, parent, alternativen)
+
+    def _ruckler_fragen(self, treffer: "list[tuple[str, streaming_pruefung.Befund]]", gesamt: int,
+                          target_type: str, parent: "tk.Misc | None" = None,
+                          alternativen: "list[tuple[str, str]] | None" = None) -> tuple[str, str]:
+        """Zeigt die Frage zu den auffaelligen Spielen: trotzdem, anderes Format oder abbrechen.
+
+        Waehlt der Anwender "anderes Format" und bricht die Formatwahl ab, kommt er zur Frage zurueck -
+        nichts passiert ohne eine ausdrueckliche Antwort.
+        """
+        format_name = "." + target_type
+        if len(treffer) == 1 and gesamt == 1:
+            text = self._t("streaming.frage_einzeln", format=format_name, spiel=treffer[0][0],
+                           gruende=self._ruckler_gruende_text(treffer[0][1]))
+        else:
+            zeilen = [self._t("streaming.liste_zeile", spiel=name, gruende=self._ruckler_gruende_text(b))
+                      for name, b in treffer[:12]]
+            if len(treffer) > 12:
+                zeilen.append("...")
+            text = self._t("streaming.frage_mehrere", format=format_name, anzahl=len(treffer),
+                           gesamt=gesamt, liste="\n".join(zeilen))
+        alternativen = list(alternativen or [])
+        while True:
+            antwort = meldungen.frage_streaming(
+                self, self._t("streaming.titel"), text, mit_alternative=bool(alternativen), eltern=parent)
+            if antwort == meldungen.STREAMING_TROTZDEM:
+                self._append_to_log(self._t("streaming.log_weiter", format=format_name))
+                return ("weiter", "")
+            if antwort == meldungen.STREAMING_ANDERES and alternativen:
+                beschriftungen = {label: key for key, label in alternativen}
+                wahl = self._auswahl_dialog(
+                    self._t("streaming.format_wahl_titel"), self._t("streaming.format_wahl_frage"),
+                    list(beschriftungen), parent)
+                if wahl in beschriftungen:
+                    neu = beschriftungen[wahl]
+                    self._append_to_log(self._t("streaming.log_anderes", format=format_name, neu="." + neu))
+                    return ("anderes", neu)
+                continue                                  # Auswahl abgebrochen: zurueck zur Frage
+            self._append_to_log(self._t("streaming.log_abbruch", format=format_name))
+            return ("abbruch", "")
 
     def _fruehere_einbauten(self, ordner: str) -> list[str]:
         """Was aus einem frueheren Einbau im Ordner liegt und ohne Haken mitginge.
@@ -9984,6 +10147,9 @@ class PS5ConverterGUI:
         self.backport_integrate_var = tk.BooleanVar(
             value=bool(self._load_setting("integrate_backport", False))
         )
+        self.dlc_integrate_var = tk.BooleanVar(
+            value=bool(self._load_setting("integrate_dlc", False))
+        )
 
         self.ampr_integrate_check = RunderHaken(
             path_card,
@@ -10070,6 +10236,24 @@ class PS5ConverterGUI:
         )
         self._register_translatable(self.ampr_playgo_check, "main.integrate_playgo")
         self._tooltip(self.ampr_playgo_check, "ampr.lib_hint",
+                      delay_ms=900, wraplength=430)
+
+        self.dlc_integrate_check = RunderHaken(
+            path_card,
+            text=self._t("main.integrate_dlc"),
+            variable=self.dlc_integrate_var,
+            command=self._on_integration_changed,
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["bg_card"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            selectcolor=self._COLORS["bg_main"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground=self._COLORS["fg_primary"],
+            anchor="w", bd=0, highlightthickness=0, padx=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
+        )
+        self._register_translatable(self.dlc_integrate_check, "main.integrate_dlc")
+        self._tooltip(self.dlc_integrate_check, "main.integrate_dlc_hint",
                       delay_ms=900, wraplength=430)
 
         self.backport_integrate_check = RunderHaken(
@@ -10554,6 +10738,7 @@ class PS5ConverterGUI:
             # sonst faerben sie sich beim Design-Wechsel nicht mit.
             (self.ampr_integrate_check, self._KARTEN_TEXT_ROLLE),
             (self.ampr_playgo_check, self._KARTEN_TEXT_ROLLE),
+            (self.dlc_integrate_check, self._KARTEN_TEXT_ROLLE),
             (self.backport_integrate_check, self._KARTEN_TEXT_ROLLE),
             # Das Kaestchen ist ein tk.Checkbutton, kein Label - "foreground"
             # ist dort der Zweitname von "fg" und wirkt genauso.
@@ -10922,13 +11107,6 @@ class PS5ConverterGUI:
                                         lambda: self._werkzeugfenster_umschalten("_updates_oeffnen"), klein=True)
         updates_btn.pack(side="right")
         self._konsole_tafel_updates_knopf = updates_btn
-        # "Icons laden" (Nutzerwunsch 19.10.2026): holt die Original-Icons bekannter Payloads vom itsPLK-Spiegel
-        # (derselbe, den "Updates"/--werkzeuge-pruefen schon kennt) - eigener Knopf, eigener Netzzugriff, nur auf
-        # Klick (Regel seit v1.8.74: der Druck ist der Netzzugriff).
-        icons_btn = self._seitenpille(kopf, "dienste.icons_button",
-                                      lambda: self._payload_icons_laden(), klein=True)
-        icons_btn.pack(side="right", padx=(0, 6))
-        self._konsole_tafel_icons_knopf = icons_btn
         self._konsole_tafel_kopf = kopf
 
         zustand_var = tk.StringVar(value=self._t("tafel.unbekannt"))
@@ -11223,124 +11401,13 @@ class PS5ConverterGUI:
         "bfpilot": "bfpilot_v*.elf",
     }
 
-    def _payload_icon_ordner(self) -> str:
-        """Ordner mit den gecachten Original-Icons der Payloads.
-
-        Nur ausdruecklich befuellt (:meth:`_payload_icons_laden`) - ein
-        Diagnoselauf oder ein Seitenaufruf geht dafuer nie selbst ins Netz,
-        dieselbe Regel wie beim Metadaten-Nachschlag und dem Knopf "Updates".
-        """
-        return os.path.join(_system_konfigurationsordner(), "Payload-Icons")
-
-    def _payload_icon_foto(self, kennung: str, groesse: int = 18) -> "ImageTk.PhotoImage | None":
-        """Das gecachte Original-Icon einer mitgelieferten Datei - ``None`` ohne Treffer.
-
-        Liest nur, was :meth:`_payload_icons_laden` schon abgelegt hat. Je
-        Kennung und Groesse genau einmal geladen (``_konsole_icon_fotos``) -
-        sonst entstuende bei jedem Neuzeichnen der Tabelle ein neues Tk-Bild,
-        das Tk nie von selbst wieder freigibt (siehe Diagnose "Tk haelt Bilder").
-        """
-        if not kennung:
-            return None
-        merker = getattr(self, "_konsole_icon_fotos", None)
-        if merker is None:
-            merker = self._konsole_icon_fotos = {}
-        schluessel = (kennung, int(groesse))
-        if schluessel in merker:
-            return merker[schluessel]
-        pfad = os.path.join(self._payload_icon_ordner(), "%s.png" % kennung)
-        foto = None
-        if os.path.isfile(pfad):
-            try:
-                bild = Image.open(pfad).convert("RGBA").resize((int(groesse), int(groesse)), _LANCZOS)
-                foto = ImageTk.PhotoImage(bild, master=self.root)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Icon %s nicht ladbar: %s", pfad, exc)
-        merker[schluessel] = foto
-        return foto
-
-    def _konsole_dienst_icon_foto(self, dienst, groesse: int = 18) -> "ImageTk.PhotoImage | None":
-        """Das Icon-Bild zu einem Dienst der Tabelle "Konsole & Payloads" - ``None`` ohne Treffer."""
-        try:
-            datei = self._konsole_payload_datei(dienst.payload_muster or dienst.datei_muster)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Payload-Datei fuer Icon nicht ermittelbar (%s): %s", dienst.schluessel, exc)
-            return None
-        if not datei:
-            return None
-        kennung = werkzeugstaende.kennung_aus_name(os.path.basename(datei))
-        return self._payload_icon_foto(kennung, groesse) if kennung else None
-
-    def _payload_icons_laden(self) -> None:
-        """Holt die Original-Icons bekannter Payloads vom itsPLK-Spiegel und legt sie ab.
-
-        Ausdruecklich auf Knopfdruck ("Icons laden"), nie von selbst - dieselbe
-        Regel wie beim Metadaten-Nachschlag und dem Knopf "Updates". Nicht
-        jede mitgelieferte Datei ist dem Spiegel bekannt (Stand 19.10.2026: um
-        die 27 von 63) - wo nichts passt, bleibt die Zeile ohne Icon.
-        """
-        knopf = getattr(self, "_konsole_tafel_icons_knopf", None)
-        if knopf is not None:
-            try:
-                knopf.configure(state="disabled", text=self._t("dienste.icons_laufend"))
-            except tk.TclError:
-                pass
-        self._konsole_tafel_status.set(self._t("dienste.icons_laufend"))
-
-        def _arbeit() -> None:
-            try:
-                liste = werkzeugstaende.spiegel_holen()
-                icons = werkzeugstaende.icons_holen()
-                payloads = werkzeugstaende.payloads_lesen(
-                    os.path.join(os.path.dirname(os.path.abspath(__file__)), "helloworld"))
-                geschrieben = werkzeugstaende.icons_ablegen(
-                    self._payload_icon_ordner(), payloads, liste, icons)
-                fehler = ""
-            except Exception as exc:  # noqa: BLE001
-                geschrieben = {}
-                fehler = str(exc)[:200]
-            self.root.after(0, lambda: self._payload_icons_geladen(geschrieben, fehler))
-
-        threading.Thread(target=_arbeit, daemon=True, name="payload-icons").start()
-
-    def _payload_icons_geladen(self, geschrieben: dict, fehler: str) -> None:
-        """Im Hauptfaden: Knopf freigeben, Zwischenspeicher leeren, Tabelle und Seitenknoepfe neu zeichnen."""
-        knopf = getattr(self, "_konsole_tafel_icons_knopf", None)
-        if knopf is not None:
-            try:
-                knopf.configure(state="normal", text=self._t("dienste.icons_button"))
-            except tk.TclError:
-                pass
-        if fehler:
-            self._konsole_tafel_status.set(self._t("dienste.icons_fehler", fehler=fehler))
-            return
-        self._konsole_icon_fotos = {}
-        self._konsole_tafel_status.set(self._t("dienste.icons_fertig", anzahl=len(geschrieben)))
-        stand = getattr(self, "_konsole_tafel_stand", None) or {}
-        self._konsole_tafel_fuellen(stand.get("uebersicht") or konsole_dienste.pruefen(""))
-        self._konsole_seitenknoepfe_icons_setzen()
-
     def _konsole_seitenknoepfe_icons_setzen(self) -> None:
-        """Setzt an den Seitenknoepfen der Ansicht KONSOLE das Icon ihres Dienstes (soweit bekannt)."""
-        for knopf, schluessel_text in getattr(self, "_konsole_knoepfe", []):
-            kennung = next((k for s, k in self._KONSOLE_KNOEPFE if s == schluessel_text), "")
-            muster = self._KONSOLE_KNOPF_PAYLOAD_MUSTER.get(kennung)
-            if not muster:
-                continue
+        """Icons an Seitenknoepfen werden nicht mehr angezeigt."""
+        for knopf, _ in getattr(self, "_konsole_knoepfe", []):
             try:
-                datei = self._konsole_payload_datei(muster)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Payload-Datei fuer Seitenknopf-Icon nicht ermittelbar (%s): %s", kennung, exc)
-                continue
-            if not datei:
-                continue
-            icon_kennung = werkzeugstaende.kennung_aus_name(os.path.basename(datei))
-            foto = self._payload_icon_foto(icon_kennung, 16) if icon_kennung else None
-            if foto is not None:
-                try:
-                    knopf.configure(icon=foto)
-                except tk.TclError:
-                    pass
+                knopf.configure(icon=None)
+            except tk.TclError:
+                pass
 
     def _konsole_tafel_fuellen(self, uebersicht) -> None:
         """Traegt eine Uebersicht in die Tabelle - nur aus dem Hauptfaden.
@@ -11364,7 +11431,6 @@ class PS5ConverterGUI:
             else:
                 zustand = "dienste.zustand_aus"
             tabelle.insert("", "end", iid=stand.dienst.schluessel,
-                           image=self._konsole_dienst_icon_foto(stand.dienst) or "",
                            values=(self._konsole_favorit_zeichen(stand.dienst, favoriten),
                                    self._t(stand.dienst.name_schluessel),
                                    stand.dienst.port,
@@ -15414,6 +15480,20 @@ class PS5ConverterGUI:
             self._taskleisteneintrag_zurueckholen(win)
         marke = win.bind("<Map>", _beim_anzeigen)
 
+    def _rahmenlos_vorn_halten(self, win: "tk.Toplevel",
+                               eltern: "tk.Misc | None" = None) -> None:
+        """Haelt ein rahmenloses Fenster (``overrideredirect``) vor seinem Eltern-Fenster.
+
+        ``transient()`` allein genuegt dort nicht: Gemessen am 21.10.2026 faellt ein
+        rahmenloses Fenster nach einem Klick aufs Hauptfenster dahinter, ein normales
+        mit ``transient`` bleibt oben. Unter Windows bekommt es deshalb einen
+        Win32-Besitzer (``fenster_vorn``). Kein Taskleisten-Eintrag: Das Fenster hat
+        keinen Rahmen und soll auch keinen bekommen.
+        """
+        try:
+            fenster_vorn.rahmenlos_vorn_halten(win, eltern or self.root)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Rahmenloses Fenster nicht vorn haltbar: %s", exc)
 
     def _build_modern_toplevel(
         self,
@@ -16644,6 +16724,7 @@ class PS5ConverterGUI:
             if nachmessen:
                 self._einbauzeile_setzen(self._einbauzeile_passt_daneben())
             self._kartenzeile_ausrichten(einbau, nachmessen=nachmessen)
+            self._dlc_zeile_setzen()
             if getattr(self, "_einbauzeile_daneben", False):
                 self._kartenbeschriftung_setzen(
                     getattr(self, "integrate_title", None), None,
@@ -16714,6 +16795,36 @@ class PS5ConverterGUI:
             logger.debug("Platz der Einbauzeile nicht messbar: %s", exc)
             return False
 
+    #: Abstand zwischen der Einbauzeile und der Zeile mit DLC EMU darunter.
+    _DLC_ZEILE_ABSTAND = 10
+
+    def _dlc_zeile_hoehe(self) -> int:
+        """Hoehe, die die zweite Einbauzeile (DLC EMU) in der Karte braucht - 0 ohne das Kaestchen."""
+        kaestchen = getattr(self, "dlc_integrate_check", None)
+        if kaestchen is None:
+            return 0
+        try:
+            return int(kaestchen.winfo_reqheight()) + self._DLC_ZEILE_ABSTAND
+        except tk.TclError:
+            return 0
+
+    def _dlc_zeile_setzen(self) -> None:
+        """Stellt DLC EMU in eine zweite Zeile, buendig unter das AMPR-EMU-Kaestchen.
+
+        In der ersten Zeile war kein Platz mehr: Mit dem Kaestchen braucht sie bei Mindestbreite 755 px, die
+        Karte ist dort 672 px breit - das Ende der Kette stuende ausserhalb und waere nicht anklickbar.
+        """
+        erstes = getattr(self, "ampr_integrate_check", None)
+        dlc = getattr(self, "dlc_integrate_check", None)
+        if erstes is None or dlc is None:
+            return
+        try:
+            dlc.place(in_=erstes, relx=0.0, x=0, rely=1.0, y=self._DLC_ZEILE_ABSTAND, anchor="nw")
+            erstes.master.grid_rowconfigure(5, minsize=max(
+                int(erstes.master.grid_rowconfigure(5)["minsize"]), self._dlc_zeile_hoehe()))
+        except (tk.TclError, KeyError, ValueError) as exc:
+            logger.debug("DLC-EMU-Zeile nicht setzbar: %s", exc)
+
     def _einbauzeile_setzen(self, daneben: bool) -> None:
         """Haengt die Einbauzeile neben die Pruefstufe oder unter sie."""
         if getattr(self, "_einbauzeile_daneben", None) == daneben:
@@ -16734,7 +16845,7 @@ class PS5ConverterGUI:
                     x=self._ZEILE_ABSTAND_GRUPPE)
                 # Die beiden Rasterzeilen sind jetzt leer und duerfen
                 # zusammenfallen, sonst bleibt ein Loch ueber dem Hinweis.
-                kaestchen.master.grid_rowconfigure(5, minsize=0)
+                kaestchen.master.grid_rowconfigure(5, minsize=self._dlc_zeile_hoehe())
             else:
                 kaestchen.place_forget()
                 titel.place_forget()
@@ -16805,10 +16916,10 @@ class PS5ConverterGUI:
         try:
             hoehe = max(w.winfo_reqheight() for w in (
                 self.ampr_integrate_check, self.ampr_version_combo,
-                self.ampr_playgo_check, self.backport_integrate_check,
-                self.backport_fw_combo))
+                self.ampr_playgo_check,
+                self.backport_integrate_check, self.backport_fw_combo))
             self.ampr_integrate_check.master.grid_rowconfigure(
-                5, minsize=max(1, int(hoehe)))
+                5, minsize=max(1, int(hoehe)) + self._dlc_zeile_hoehe())
         except Exception as exc:
             logger.debug("Höhe der Integrationszeile nicht setzbar: %s", exc)
 
@@ -19331,6 +19442,10 @@ class PS5ConverterGUI:
         self._archiv_laeuft = True
         if not passwort:
             self._append_to_log(self._t("quelle.archiv_start", name=name, ziel=ziel))
+            # Waehrend des Entpackens steht das Archiv im Feld QUELLE (bis 21.10.2026 blieb es leer, und es sah aus,
+            # als passiere nichts). Danach ersetzt es der entpackte Spielordner; scheitert es, kommt der alte Stand zurueck.
+            self._archiv_quelle_vorher = self.source_path.get()
+        self.source_path.set(archiv)
         if hasattr(self, "status_label"):
             self.status_label.config(text=self._t("quelle.archiv_status", name=name, prozent="0%"))
         popen_extra = ({"creationflags": _NO_WIN_FLAGS, "startupinfo": _silent_startupinfo()}
@@ -19379,8 +19494,16 @@ class PS5ConverterGUI:
                                         self._t("quelle.archiv_passwort_frage", name=name), self.root)
         if not eingabe:
             self._append_to_log(self._t("quelle.archiv_passwort_abgebrochen"))
+            self._archiv_quelle_zurueck()
             return
         self._archiv_als_quelle(archiv, passwort=eingabe)
+
+    def _archiv_quelle_zurueck(self) -> None:
+        """Stellt das Feld QUELLE auf den Stand vor dem Entpacken zurueck (Abbruch oder Fehler)."""
+        vorher = getattr(self, "_archiv_quelle_vorher", None)
+        if vorher is not None:
+            self.source_path.set(vorher)
+            self._archiv_quelle_vorher = None
 
     def _passwort_dialog(self, titel: str, frage: str, parent) -> str:
         """Kleines Fenster mit verdecktem Eingabefeld; liefert das Passwort oder "" bei Abbruch.
@@ -19432,6 +19555,7 @@ class PS5ConverterGUI:
         if hasattr(self, "status_label"):
             self.status_label.config(text="")
         if fehler:
+            self._archiv_quelle_zurueck()
             self._append_to_log(self._t("quelle.archiv_fehler", grund=fehler))
             messagebox.showerror(self._t("dialog.title.invalid_source"),
                                  self._t("quelle.archiv_fehler", grund=fehler), parent=self.root)
@@ -19440,10 +19564,12 @@ class PS5ConverterGUI:
         if not meldung and not archiv_quelle.hat_spiel(wurzel):
             meldung = "sce_sys/param.json"
         if meldung:
+            self._archiv_quelle_zurueck()
             self._append_to_log(self._t("quelle.archiv_kein_spiel", grund=meldung))
             messagebox.showerror(self._t("dialog.title.invalid_source"),
                                  self._t("quelle.archiv_kein_spiel", grund=meldung), parent=self.root)
             return
+        self._archiv_quelle_vorher = None
         self._batch_sources = []
         self._remember_source_dialog_path(archiv)
         self.source_path.set(wurzel)
@@ -22544,8 +22670,8 @@ class PS5ConverterGUI:
         """Erstellt das Info-Popup-Fenster: rahmenlos, feste Grösse, kein Scroll-Canvas."""
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        pw = 780
-        ph = 660
+        pw = min(980, sw - 40)
+        ph = min(780, sh - 80)
         px = (sw - pw) // 2
         py = (sh - ph) // 2
 
@@ -22554,6 +22680,8 @@ class PS5ConverterGUI:
         popup.overrideredirect(True)
         popup.geometry(f"{pw}x{ph}+{px}+{py}")
         popup.resizable(True, True)
+        # Rahmenlos: ohne Besitzer faellt es nach einem Klick aufs Hauptfenster dahinter.
+        self._rahmenlos_vorn_halten(popup)
         self._apply_icon_to_toplevel(popup)
 
         def _on_close():
@@ -22776,12 +22904,12 @@ class PS5ConverterGUI:
             style="Patch.Treeview", selectmode="browse",
         )
         for col, heading, w, anchor in [
-            ("platform", self._t("info_popup.col.platform"), 75,  "center"),
-            ("version",  self._t("info_popup.col.version"),   120, "center"),
-            ("size",     self._t("info_popup.col.size"),    80,  "e"),
+            ("platform", self._t("info_popup.col.platform"), 120, "center"),
+            ("version",  self._t("info_popup.col.version"),   130, "center"),
+            ("size",     self._t("info_popup.col.size"),    90,  "e"),
             ("firmware", self._t("info_popup.col.firmware"),  110, "center"),
             ("date",     self._t("info_popup.col.date"),     95,  "center"),
-            ("link",     self._t("info_popup.col.link"),      120, "center"),
+            ("link",     self._t("info_popup.col.link"),      150, "center"),
         ]:
             _anchor = cast(
                 Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"],
@@ -23872,8 +24000,8 @@ class PS5ConverterGUI:
                     site_results, fehlgeschlagen = self._sony_updates_lesen(
                         base_url[len("sony:"):], tid_upper)
                 elif base_url.startswith("ps4-sony:"):
-                    site_results, fehlgeschlagen = self._ps4_updates_lesen(
-                        base_url[len("ps4-sony:"):], tid_upper)
+                    site_results, fehlgeschlagen = self._sony_updates_lesen(
+                        base_url[len("ps4-sony:"):], tid_upper, "PS4")
                 else:
                     site_results, fehlgeschlagen = self._patchseite_lesen(
                         base_url, platform, tid_upper)
@@ -23937,6 +24065,29 @@ class PS5ConverterGUI:
                     self._patch_cache[tid_upper] = (_time_save.time(), list(_all_results))
         threading.Thread(target=_worker, daemon=True).start()
 
+    @staticmethod
+    def _patchzeilen_zusammenfuehren(results: list) -> list:
+        """Sonys Zeilen (Direktdownload) zuerst; gleiche Version von der Seite entfaellt.
+
+        Eine Seitenzeile oeffnet nur den Browser. Steht dieselbe Fassung bei
+        Sony, ersetzt Sonys Zeile sie, damit der Klick wirklich laedt.
+        """
+        def _schluessel(ver: object) -> tuple:
+            text = str(ver).replace("*", "").strip()
+            teile = []
+            for stueck in re.split(r"[.\-]", text):
+                teile.append(int(stueck) if stueck.isdigit() else stueck)
+            while teile and teile[-1] == 0:
+                teile.pop()
+            return tuple(teile)
+
+        sony = [z for z in results if str(z[6]).startswith(("sony-update:", "ps4-update:"))]
+        if not sony:
+            return list(results)
+        vorhanden = {_schluessel(z[1]) for z in sony}
+        rest = [z for z in results if z not in sony and _schluessel(z[1]) not in vorhanden]
+        return sony + rest
+
     def _display_patches(
         self,
         results: list,
@@ -23962,6 +24113,8 @@ class PS5ConverterGUI:
                          title_id, erwartet or "-")
             return
 
+        results = self._patchzeilen_zusammenfuehren(results)
+
         # Alle bestehenden Einträge löschen
         for item in self._patch_tree.get_children():
             self._patch_tree.delete(item)
@@ -23985,9 +24138,25 @@ class PS5ConverterGUI:
             return
 
         # Nicht "platform" - siehe Modulimport in Zeile 39.
+        _direkt = lambda u: str(u).startswith(("sony-update:", "ps4-update:"))  # noqa: E731
+        _hat_direkt = any(_direkt(z[6]) for z in results)
+        _abschnitt = None
         for konsole, ver, size, fw, date, is_latest, page_url in results:
             ver_text = f"* {ver}" if is_latest else ver
-            link_text = self._t("info_popup.download_link")
+            if _direkt(page_url):
+                link_text = self._t("info_popup.download_direct")
+            elif str(konsole).upper().startswith("PS4"):
+                link_text = self._t("info_popup.download_orbis")
+            else:
+                link_text = self._t("info_popup.download_prospero")
+            # Klare Trennung: Abschnittszeile vor Direkt- und vor Seiten-Downloads
+            if _hat_direkt:
+                _art = "direkt" if _direkt(page_url) else "seite"
+                if _art != _abschnitt:
+                    _abschnitt = _art
+                    self._patch_tree.insert(
+                        "", "end", tags=("section_row",),
+                        values=("", self._t("info_popup.section_" + _art), "", "", "", ""))
             # Jede Zeile bekommt einen normalen Tag (für Farbe der neuesten Version)
             row_tag = "latest_row" if is_latest else "normal_row"
             iid = self._patch_tree.insert("", "end",
@@ -24015,6 +24184,10 @@ class PS5ConverterGUI:
         self._patch_tree.tag_configure("latest_row",
             foreground=_accent,
             font=(UI_SCHRIFT, pt(9), "bold"))
+        self._patch_tree.tag_configure("section_row",
+            background=self._COLORS["bg_main"],
+            foreground=self._COLORS["fg_secondary"],
+            font=(UI_SCHRIFT, pt(8), "bold"))
         # Klick auf Link-Spalte öffnet Browser
         def _on_tree_click(event):
             region = self._patch_tree.identify_region(event.x, event.y)
@@ -24031,7 +24204,7 @@ class PS5ConverterGUI:
             col = self._patch_tree.identify_column(event.x)
             region = self._patch_tree.identify_region(event.x, event.y)
             iid = self._patch_tree.identify_row(event.y)
-            if region == "cell" and col == "#6" and iid:
+            if region == "cell" and col == "#6" and iid and iid in self._patch_urls:
                 self._patch_tree.configure(cursor="hand2")
                 if _hover_iid[0] != iid:
                     # Vorherige Hervorhebung zurücksetzen
@@ -26443,6 +26616,10 @@ class PS5ConverterGUI:
 
     def _launch_task(self) -> None:
         """Validiert Eingaben und startet den Konvertierungs-Thread."""
+        if getattr(self, "_archiv_laeuft", False):
+            # Das Feld QUELLE zeigt noch das Archiv: Erst wenn der Spielordner dort steht, geht es los.
+            messagebox.showinfo(self._t("dialog.title.aufgabe_laeuft"), self._t("quelle.archiv_noch_aktiv"))
+            return
         if self._vorgang_laeuft_noch():
             messagebox.showinfo(self._t("dialog.title.aufgabe_laeuft"),
                                 self._t("dialog.msg.aufgabe_laeuft"))
@@ -26509,6 +26686,17 @@ class PS5ConverterGUI:
         # Asset-Pack: Originale behalten oder weglassen - vor dem Start, damit
         # ein stundenlanger Lauf nicht mittendrin auf eine Antwort wartet.
         self._ampr_originale_klaeren(mode)
+
+        # Viele Daten oder Texture-Streaming: In einem .ffpfsc/.ffpfs sind Ruckler moeglich -
+        # vor dem Start fragen, nicht mittendrin. Nein = Abbruch, Ja = wie gewohnt weiter.
+        aktion, anderes_format = self._ruckler_rueckfrage(mode, src, target_type)
+        if aktion == "abbruch":
+            return
+        if aktion == "anderes":
+            # Das andere Format einstellen und von vorn beginnen: Alle Pruefungen oben gelten dann fuer das neue Ziel.
+            self.target_format.set(self._zielformat_label(anderes_format, mode, src))
+            self._launch_task()
+            return
 
         # Release-Test-Gate (entfernt)
         pass
@@ -26732,6 +26920,7 @@ class PS5ConverterGUI:
         self._task_report_path       = ""
         self._checkpoint_last_save_ts = self.task_start_time
         self._mkpfs_zero_compress_count = 0
+        self._mkpfs_letzte_zeilen = deque(maxlen=12)
         # Der Rueckgabewert der Packmaschine gehoert zu EINEM Lauf. Bis v1.9.24
         # blieb er stehen, und jeder spaetere Fehlschlag der Sitzung nannte
         # "Packmaschine endete mit Rueckgabewert ..." - auch Wege ganz ohne mkpfs.
@@ -28067,6 +28256,14 @@ class PS5ConverterGUI:
         ln_s = ln.strip()
         if not ln_s:
             return False
+        # Die letzten Textzeilen (ohne Fortschrittsbalken) fuer den Fall merken, dass mkpfs mit einem Fehlercode
+        # endet: Das Protokoll nennt sie dann (``_mkpfs_exit_zeilen_melden``). Gemeldet am 21.10.2026: Bei einem
+        # gepackten Spiel stand nur "mkpfs beendet mit Exit-Code 1" da - die eigentliche Meldung fehlte.
+        if not re.match(r'^\[[#\-\s]*\]\s*\d', ln_s):
+            _letzte = getattr(self, "_mkpfs_letzte_zeilen", None)
+            if _letzte is None:
+                _letzte = self._mkpfs_letzte_zeilen = deque(maxlen=12)
+            _letzte.append(ln_s[:400])
         # Wiederholte 0%-Compress-Zeilen stark drosseln (Keep-Alive alle ~250 Zeilen),
         # sonst kann die GUI bei sehr langen Läufen unresponsiv werden.
         if re.search(r'^\[[#\-\s]*\]\s*0(?:\.0+)?%\s+compress\b', ln_s):
@@ -28100,9 +28297,13 @@ class PS5ConverterGUI:
         if ln_s.endswith(" not found"):
             return False
         # Reine Temp-Pfad-Zeilen unterdrücken (z.B. C:\Users\...\Temp\ps5conv_...)
+        # Aber nie eine Fehlermeldung: Liegt die Quelle im Arbeitsordner (ein entpacktes Archiv), beginnt auch die
+        # Meldung ueber die Quelldatei mit diesem Pfad und ging bis 21.10.2026 mit verloren.
         _tmp = self._get_runtime_temp_dir().lower()
         if ln_s.lower().startswith(_tmp) and os.sep in ln_s:
-            return False
+            return bool(re.search(
+                r"error|fehler|exception|denied|errno|failed|cannot|unable|invalid|no such|zugriff|traceback",
+                ln_s, re.IGNORECASE))
         return True
 
     @staticmethod
@@ -30315,6 +30516,10 @@ class PS5ConverterGUI:
         self._letzter_mkpfs_exitcode = int(exit_code) if isinstance(exit_code, int) else -1
         if exit_code != 0 and self.is_running:
             self._append_to_log(self._t('log.auto.0074', v0=exit_code))
+            letzte = list(getattr(self, "_mkpfs_letzte_zeilen", None) or [])
+            if letzte:
+                self._append_to_log(self._t(
+                    "mkpfs.letzte_zeilen", zeilen="\n".join("  " + z for z in letzte[-6:])))
 
         self._suppress_pulse_creep = prev_suppress_pulse
         return self.is_running and exit_code == 0
@@ -30485,6 +30690,7 @@ class PS5ConverterGUI:
                 # soll - nicht erst, nachdem stundenlang kopiert oder
                 # entpackt wurde.
                 self._playgo_vor_dem_lauf_klaeren(mode, src)
+                self._dlc_vor_dem_lauf_klaeren(mode, src)
                 success = self._run_flexible_conversion(mode, src, dst)
             elif mode == "inspect":
                 success = self._mode_inspect(src)
@@ -34153,6 +34359,148 @@ class PS5ConverterGUI:
         except (AttributeError, RuntimeError, tk.TclError) as exc:
             logger.debug("PlayGo-Kaestchen nicht nachziehbar: %s", exc)
 
+    # ------------------------------------------------------------------
+    # DLC EMU: Hinweis, wenn das Spiel Zusatzinhalte hat (wie bei PlayGo)
+    # ------------------------------------------------------------------
+    #: Name der Konfiguration von DLC EMU im Spielordner; liegt sie schon da, hat jemand sie bewusst angelegt.
+    _DLC_INI_NAME = "dlc_emu.ini"
+
+    #: Die Karte, die manche Spiele selbst neben die eboot.bin legen (``{"dlcmap": {"<Content-ID>": "<Name>"}}``;
+    #: gesehen bei Double Dragon Revive, einem Unreal-Engine-Titel). Der PS5-App-Dumper schreibt sie nicht - sein
+    #: Quelltext kennt den Namen nicht. Mafia The Old Country hat nur ``contentids.json`` (die IDs des Spiels selbst).
+    _DLC_KARTE_NAME = "dlcmap.json"
+
+    #: Ordner im Wurzelverzeichnis, in denen Zusatzinhalte liegen (``addcont`` wie beim PS4-Aufbau, ``addcont0`` wie
+    #: der Einhaengepunkt in der README von DLC EMU).
+    _DLC_ORDNER_PRAEFIX = "addcont"
+
+    @classmethod
+    def _titel_hat_dlc(cls, ordner: str) -> str:
+        """Enthaelt der Dump-Ordner Zusatzinhalte? Liefert das gefundene Merkmal.
+
+        Drei Merkmale, das erste gefundene zaehlt:
+
+        * ``dlc_emu.ini`` im Wurzelordner - jemand hat DLC EMU schon vorbereitet;
+        * ``dlcmap.json`` im Wurzelordner mit mindestens einem Eintrag - die Karte, die das Spiel selbst mitbringt;
+        * ein DLC-Ordner des PS5-App-Dumpers (``<Region>-<TITEL-ID>_00-<LABEL>-ac``) neben dem Spielordner;
+        * ein nicht leerer Ordner ``addcont*`` im Wurzelordner - dort liegen die Inhalte selbst;
+
+        Bewusst **kein** Merkmal: ``addcont.serviceIdForSharing`` in der ``param.json``. Gemessen an 48 Dumps
+        (22.10.2026): Dort stehen bei Crash Bandicoot 4, Fallout 4 und Street Fighter 6 PS4-Kennungen
+        (``CUSA...``) fuer die Weitergabe von der PS4-Fassung - keine Zusatzinhalte.
+
+        Returns:
+            Das Merkmal als kurzer Pfad oder "".
+        """
+        wurzel = str(ordner or "")
+        if os.path.isfile(os.path.join(wurzel, cls._DLC_INI_NAME)):
+            return cls._DLC_INI_NAME
+        if dlc_emu.content_ids_aus_dlcmap(wurzel):
+            return cls._DLC_KARTE_NAME
+        nachbarn = dlc_emu.nachbar_dlc(wurzel) if wurzel else []
+        if nachbarn:
+            return os.path.basename(nachbarn[0][1])
+        try:
+            namen = sorted(os.listdir(wurzel))
+        except OSError:
+            namen = []
+        for name in namen:
+            pfad = os.path.join(wurzel, name)
+            if name.lower().startswith(cls._DLC_ORDNER_PRAEFIX) and os.path.isdir(pfad):
+                try:
+                    if any(os.scandir(pfad)):
+                        return name + "/"
+                except OSError:
+                    continue
+        return ""
+
+    @classmethod
+    def _dlc_merkmal_in(cls, pfade) -> str:
+        """Das erste Zusatzinhalt-Merkmal in einer Liste relativer Pfade (Abbild), oder "".
+
+        Im Abbild gibt es keine Dateien zum Lesen, nur die Liste aus dem Verzeichnis: Dort zaehlen ``dlc_emu.ini``,
+        ``dlcmap.json`` (ob sie Eintraege hat, laesst sich nicht sehen) und Dateien unter ``addcont*/``.
+        """
+        gesehen = [str(p or "").replace("\\", "/").lstrip("/") for p in pfade]
+        for pfad in gesehen:
+            teile = [t for t in pfad.split("/") if t]
+            if not teile:
+                continue
+            for tiefe in (0, 1):    # im Wurzelordner oder eine Ebene tiefer ("PPSA26344/addcont0/...")
+                if len(teile) > tiefe and teile[tiefe].lower() == cls._DLC_INI_NAME and len(teile) == tiefe + 1:
+                    return cls._DLC_INI_NAME
+                if len(teile) > tiefe and teile[tiefe].lower() == cls._DLC_KARTE_NAME and len(teile) == tiefe + 1:
+                    return cls._DLC_KARTE_NAME
+                if (len(teile) > tiefe + 1
+                        and teile[tiefe].lower().startswith(cls._DLC_ORDNER_PRAEFIX)):
+                    return teile[tiefe] + "/"
+        return ""
+
+    def _dlc_merkmal_der_quelle(self, src: str) -> "str | None":
+        """Hat die Quelle Zusatzinhalte - Ordner wie Abbild? ``None``, wenn nicht hineinzusehen war (etwa .ffpkg)."""
+        if os.path.isdir(src):
+            return self._titel_hat_dlc(src)
+        if os.path.isfile(src):
+            pfade = self._abbild_eintraege(src)
+            return None if pfade is None else self._dlc_merkmal_in(pfade)
+        return None
+
+    def _dlc_vor_dem_lauf_klaeren(self, mode: str, src: str) -> None:
+        """Fragt vor der eigentlichen Arbeit, ob DLC EMU mit hinein soll - wenn das Spiel Zusatzinhalte hat.
+
+        Dasselbe Muster wie :meth:`_playgo_vor_dem_lauf_klaeren` (Nutzerwunsch 22.10.2026): Wer die Kaestchen
+        beim Erstellen nicht kennt, soll genau dann einen Hinweis bekommen, wenn DLC EMU gebraucht wird - gefragt
+        wird im Aufgabenfaden, bevor kopiert, entpackt oder gepackt wird. Fuer Ordner und fuer Abbilder; ein
+        ``.ffpkg`` laesst sich nicht einsehen, dort steht nur ein Hinweis im Protokoll. DLC EMU kommt nie von selbst
+        dazu. Auf der Kommandozeile und bei der Sammelkonvertierung wird nicht gefragt.
+        """
+        if mode not in self._MODE_TARGET_OPTIONS or mode == "batch_convert":
+            return
+        if self._tk_wert("dlc_integrate_var", False):
+            return
+        self._set_status(self._t("status.dlc_pruefen"))
+        merkmal = self._dlc_merkmal_der_quelle(src)
+        if merkmal is None:
+            self._append_to_log(self._t("main.dlc_nicht_pruefbar"))
+            return
+        if not merkmal or not getattr(self, "is_running", True):
+            return
+        if getattr(self, "_cli_mode", False):
+            self._append_to_log(self._t("main.integrate_dlc_empfohlen", merkmal=merkmal))
+            return
+        ja = self._ask_yesno_threadsafe(
+            self._t("dialog.title.dlc_empfohlen"),
+            self._t("dialog.msg.dlc_empfohlen", merkmal=merkmal),
+            default_yes=True)
+        if not ja:
+            self._append_to_log(self._t("main.dlc_bleibt_aus", merkmal=merkmal))
+            return
+        self._dlc_einschalten()
+        self._append_to_log(self._t("main.dlc_eingeschaltet", merkmal=merkmal))
+
+    def _dlc_einschalten(self) -> None:
+        """Hakt DLC EMU an - fuer den laufenden Auftrag und im Fenster (wie :meth:`_playgo_einschalten`)."""
+        stand = getattr(self, "_lauf_variablen", None)
+        if stand is None:
+            stand = {}
+            self._lauf_variablen = stand
+        stand["dlc_integrate_var"] = True
+
+        def _im_fenster() -> None:
+            try:
+                self.dlc_integrate_var.set(True)
+                self._save_setting("integrate_dlc", True)
+            except (AttributeError, RuntimeError, tk.TclError) as exc:
+                logger.debug("DLC-Kaestchen nicht nachziehbar: %s", exc)
+
+        if threading.current_thread() is threading.main_thread():
+            _im_fenster()
+            return
+        try:
+            self.root.after(0, _im_fenster)
+        except (AttributeError, RuntimeError, tk.TclError) as exc:
+            logger.debug("DLC-Kaestchen nicht nachziehbar: %s", exc)
+
     # ==================================================================
     # Integration beim Erstellen: AMPR EMU und BACKPORT
     #
@@ -34373,6 +34721,7 @@ class PS5ConverterGUI:
             self._save_setting("integrate_ampr", ampr_an)
             self._save_setting("integrate_playgo", bool(self.ampr_playgo_var.get()))
             self._save_setting("integrate_backport", backport_an)
+            self._save_setting("integrate_dlc", bool(self.dlc_integrate_var.get()))
 
         # Die ffpfsc -> ffpfsc-Option von Aufgabe 2 haengt am Asset-Pack. Wird
         # der AMPR-Haken umgelegt, muss die Zielformat-Liste neu bewertet werden,
@@ -34440,7 +34789,8 @@ class PS5ConverterGUI:
             # nur eine Kopie derselben Datei baute (Durchsicht, H7-2).
             return (self._assetpack_gewaehlt()
                     or bool(self._tk_wert("ampr_playgo_var", False))
-                    or bool(self._tk_wert("backport_integrate_var", False)))
+                    or bool(self._tk_wert("backport_integrate_var", False))
+                    or bool(self._tk_wert("dlc_integrate_var", False)))
         return bool(getattr(self, "_umhuellt_neu_packen", False))
 
     def _assetpack_gewaehlt(self) -> bool:
@@ -34543,7 +34893,7 @@ class PS5ConverterGUI:
 
     #: Tk-Variablen, deren Stand ein Aufgabenlauf beim Start festhaelt.
     _LAUF_VARIABLEN: tuple[str, ...] = (
-        "ampr_integrate_var", "backport_integrate_var", "backport_fw_var",
+        "ampr_integrate_var", "backport_integrate_var", "backport_fw_var", "dlc_integrate_var",
         "ampr_version_var", "ampr_playgo_var", "ampr_methode_var",
         "worker_count_var",
     )
@@ -34607,9 +34957,10 @@ class PS5ConverterGUI:
         return var.get()
 
     def _integration_gewaehlt(self) -> bool:
-        """True, wenn mindestens eines der beiden Kaestchen gesetzt ist."""
+        """True, wenn mindestens eines der Kaestchen (AMPR EMU, BACKPORT, DLC EMU) gesetzt ist."""
         return bool(self._tk_wert("ampr_integrate_var", False)) or bool(
-            self._tk_wert("backport_integrate_var", False))
+            self._tk_wert("backport_integrate_var", False)) or bool(
+            self._tk_wert("dlc_integrate_var", False))
 
     def _integration_arbeitskopie(self, quelle: str) -> str:
         """Legt auf Nachfrage eine Arbeitskopie des Quellordners an.
@@ -34952,6 +35303,11 @@ class PS5ConverterGUI:
         if self._tk_wert("backport_integrate_var", False):
             if not self._integration_backport(arbeitsordner):
                 return ""
+        # DLC EMU vor AMPR EMU: Dessen Index zaehlt den Ordner auf und muss die
+        # neuen Bibliotheken und die dlc_emu.ini schon kennen.
+        if self._tk_wert("dlc_integrate_var", False):
+            if not self._integration_dlc(arbeitsordner):
+                return ""
         ampr_an = bool(self._tk_wert("ampr_integrate_var", False))
         playgo_an = bool(self._tk_wert("ampr_playgo_var", False))
         if ampr_an or playgo_an:
@@ -34959,6 +35315,25 @@ class PS5ConverterGUI:
                 return ""
         self._integration_erledigt = True
         return arbeitsordner
+
+    def _backport_param_json(self, ordner: str, firmware: int) -> int:
+        """Setzt in ``sce_sys/param.json`` die verlangte Firmware und die SDK-Hauptversion herab (wie der PS5-App-Dumper).
+
+        Ein Fehler hier kippt den Backport nicht: Die ELF-Dateien sind dann schon herabgesetzt, nur die param.json
+        bleibt, wie sie war - das Protokoll sagt es.
+
+        Returns:
+            Die Zahl der geaenderten Felder.
+        """
+        try:
+            aenderungen = ps5_backport.param_json_anpassen(ordner, firmware)
+        except (OSError, ps5_backport.BackportFehler) as exc:
+            logger.debug("param.json nicht herabgesetzt: %s", exc)
+            self._append_to_log(self._t("backport.log_failed", name="sce_sys/param.json", error=exc))
+            return 0
+        for feld, alt, neu in aenderungen:
+            self._append_to_log(self._t("backport.log_param", feld=feld, alt=alt, neu=neu))
+        return len(aenderungen)
 
     def _integration_backport(self, ordner: str) -> bool:
         """Setzt die SDK-Angaben im Ordner auf die gewaehlte Firmware herab.
@@ -35053,11 +35428,50 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t("main.integrate_backport_libs_failed", error=exc))
                     return False
 
+        self._backport_param_json(ordner, firmware)
         self._append_to_log(
             self._t("main.integrate_backport_done",
                     patched=gepatcht, libs=kopiert, errors=fehler)
         )
         return fehler == 0
+
+    def _integration_dlc(self, ordner: str) -> bool:
+        """Baut DLC EMU in den Dump-Ordner ein: drei Bibliotheken in den fakelib-Ordner, dazu die dlc_emu.ini.
+
+        Fehlt der mitgelieferte Satz, bleibt es bei einer Warnung - der Lauf geht ohne DLC EMU weiter, wie bei
+        PlayGo. Ein Fehler beim Kopieren dagegen bricht ab: Ein halber Satz waere schlimmer als keiner.
+        """
+        self._append_to_log(self._t("main.integrate_dlc_start"))
+        self._set_status(self._t("main.integrate_dlc_status"))
+        quelle = dlc_emu.bibliotheksordner(self._ampr_resolve_store())
+        if not quelle:
+            self._append_to_log(self._t("main.integrate_dlc_missing"))
+            return True
+        try:
+            namen = dlc_emu.bibliotheken_einbauen(
+                quelle, self._fakelib_pfad(ordner),
+                lambda name: self._append_to_log(self._t("main.integrate_dlc_backup", name=name)))
+            # DLC-Ordner neben dem Spiel (PS5-App-Dumper, ``dump_dlc``) kommen als addcont<N> ins Spiel; ihr Eintrag
+            # in der dlc_emu.ini bekommt den Einhaengepunkt. Nur bei einem Ordner als Quelle, nicht bei einem Abbild.
+            einhaengen: list[tuple[str, int]] = []
+            herkunft = str(getattr(self, "_ampr_quelle_original", "") or "")
+            if herkunft and os.path.isdir(herkunft) and not os.path.isfile(os.path.join(ordner, dlc_emu.INI_NAME)):
+                nachbarn = dlc_emu.nachbar_dlc(herkunft)
+                if nachbarn:
+                    einhaengen = dlc_emu.nachbarn_einbauen(
+                        ordner, nachbarn,
+                        lambda name, ziel, n: self._append_to_log(self._t(
+                            "main.integrate_dlc_nachbar", name=name, ziel=ziel)),
+                        melden_beginn=lambda name, ziel, n: self._append_to_log(self._t(
+                            "main.integrate_dlc_nachbar_start", name=name, ziel=ziel)))
+            stand, anzahl = dlc_emu.ini_anlegen(ordner, einhaengen)
+        except OSError as exc:
+            self._append_to_log(self._t("main.integrate_dlc_failed", error=exc))
+            return False
+        self._append_to_log(self._t("main.integrate_dlc_done", count=len(namen),
+                                    version=dlc_emu.fassung_aus_ordner(quelle)))
+        self._append_to_log(self._t("main.integrate_dlc_ini_" + stand, count=anzahl))
+        return True
 
     def _integration_ampr(self, ordner: str, nur_playgo: bool = False) -> bool:
         """Legt die gewaehlte AMPR-Bibliothek in den fakelib-Ordner.
@@ -41480,6 +41894,20 @@ class PS5ConverterGUI:
             return
         self.root.after(self._BANNER_NACH_MS, self._banner_zeigen, self._BANNER_VERSUCHE)
 
+    def _banner_rechte_kante(self, leiste) -> int:
+        """Rechte Kante fuer das Banner: buendig mit der Karte darunter (QUELLE usw.), sonst wie die Leiste.
+
+        Der Nutzer sah das Banner rechts ueber die Karte hinausragen (21.10.2026): Es sass 12 Pixel vor dem
+        Fensterrand, die Karte endet aber am Innenrand des Inhaltsbereichs.
+        """
+        karte = getattr(self, "path_card", None)
+        try:
+            if karte is not None and karte.winfo_ismapped() and karte.winfo_width() > 1:
+                return karte.winfo_rootx() + karte.winfo_width()
+        except tk.TclError:
+            pass
+        return leiste.winfo_rootx() + leiste.winfo_width() - 12
+
     def _banner_zeigen(self, versuche: int = 1) -> None:
         """Blendet das Banner ein, zeigt es und blendet es wieder aus (:meth:`_banner_planen`).
 
@@ -41514,13 +41942,14 @@ class PS5ConverterGUI:
                 hoehe = round(roh.height * breite / roh.width)
                 foto = ImageTk.PhotoImage(roh.convert("RGB").resize((breite, hoehe), _LANCZOS),  # type: ignore[arg-type]
                                           master=self.root)
-            x = leiste.winfo_rootx() + leiste.winfo_width() - breite - 12
+            x = self._banner_rechte_kante(leiste) - breite
             y = leiste.winfo_rooty() + leiste.winfo_height() + 8
             fenster = tk.Toplevel(self.root, bg="#000000", highlightthickness=1,
                                   highlightbackground=self._COLORS["fg_accent"])
             fenster.withdraw()
             fenster.overrideredirect(True)
             fenster.transient(self.root)
+            self._rahmenlos_vorn_halten(fenster)
             fenster.geometry("%dx%d+%d+%d" % (breite + 2, hoehe + 2, x, y))
             bild = tk.Label(fenster, image=foto, bd=0, cursor="hand2")
             bild.image = foto  # type: ignore[attr-defined]  # Referenz halten
@@ -41544,7 +41973,7 @@ class PS5ConverterGUI:
             try:
                 if zustand["aus"] or not fenster.winfo_exists():
                     return
-                neu_x = leiste.winfo_rootx() + leiste.winfo_width() - breite - 12
+                neu_x = self._banner_rechte_kante(leiste) - breite
                 neu_y = leiste.winfo_rooty() + leiste.winfo_height() + 8
                 if (neu_x, neu_y) != (zustand["x"], zustand["y"]):
                     zustand["x"], zustand["y"] = neu_x, neu_y
@@ -41770,6 +42199,7 @@ class PS5ConverterGUI:
         win.overrideredirect(True)
         win.geometry(f"{rw}x{rh}+{rx}+{ry}")
         win.resizable(True, True)
+        self._rahmenlos_vorn_halten(win)
 
         def _on_close():
             self._res_win = None
@@ -43216,7 +43646,8 @@ class PS5ConverterGUI:
         text = self._t(schluessel, detail=einzelheit, nr=einzelheit)
         return str(fehler) if text == schluessel else text
 
-    def _sony_updates_lesen(self, adresse: str, kennung: str) -> tuple[list, bool]:
+    def _sony_updates_lesen(self, adresse: str, kennung: str,
+                            plattform_name: str = "") -> tuple[list, bool]:
         """Sonys offizielle Updateliste eines PS5-Titels - im Faden.
 
         ``adresse`` ist die ``versionFileUri`` aus der ``param.json`` des
@@ -43241,7 +43672,7 @@ class PS5ConverterGUI:
             return [], True
         self._hauptfaden_planen(lambda n=len(fassungen): self._append_to_log(
             self._t("ps5upd.log_liste", count=n, title_id=kennung)))
-        plattform = self._t("ps5upd.plattform")
+        plattform = plattform_name or self._t("ps5upd.plattform")
         zeilen: list = []
         for nr, fassung in enumerate(fassungen[:8]):
             if not fassung.manifest_url:
@@ -43426,47 +43857,6 @@ class PS5ConverterGUI:
         threading.Thread(target=_arbeit, daemon=True, name="ps5-update-laden").start()
         _takt()
 
-    def _ps4_updates_lesen(self, adresse: str, kennung: str) -> tuple[list, bool]:
-        """Sonys offizielle Updateliste eines PS4-Titels - im Faden.
-
-        ``adresse`` ist die per HMAC-SHA256 abgeleitete ver.xml-Adresse.
-        Ein 4xx von Sonys Server heisst "kein Update", nicht "gescheitert".
-
-        Returns:
-            ``(zeilen, gescheitert)`` im Format von :meth:`_patchseite_lesen`;
-            die Adresse zum Laden ist ``ps4-update:<pkg_url>``.
-        """
-        try:
-            fassungen = ps5_updates.verxml_holen(adresse)
-        except ps5_updates.UpdateFehler as exc:
-            grund = str(exc)
-            if grund.startswith("ps5upd.http|4"):
-                return [], False
-            logger.debug("Sonys PS4-Updateliste fuer %s: %s", kennung, grund)
-            text = self._t("ps5upd.log_fehler", title_id=kennung,
-                           error=self._ps5upd_text(grund))
-            self._hauptfaden_planen(lambda t=text: self._append_to_log(t))
-            return [], True
-        self._hauptfaden_planen(lambda n=len(fassungen): self._append_to_log(
-            self._t("ps5upd.log_liste", count=n, title_id=kennung)))
-        plattform = "PS4"
-        zeilen: list = []
-        for nr, fassung in enumerate(fassungen[:8]):
-            if not fassung.pkg_url:
-                continue
-            dateiname = fassung.pkg_url.rsplit("/", 1)[-1]
-            dateiname = re.sub(r"[^A-Za-z0-9._-]", "_", dateiname or
-                               "%s_v%s.pkg" % (kennung, fassung.inhalt))
-            self._ps4_pakete[fassung.pkg_url] = {
-                "title_id": kennung, "version": fassung.inhalt,
-                "pkg_url": fassung.pkg_url, "dateiname": dateiname,
-                "name": kennung,
-            }
-            zeilen.append((plattform, fassung.inhalt, "-",
-                           fassung.firmware or "-", "-", nr == 0,
-                           "ps4-update:" + fassung.pkg_url))
-        return zeilen, False
-
     def _ps4_update_laden(self, pkg_url: str, ist_neueste: "bool | None") -> None:
         """Klick auf DOWNLOAD bei einer Zeile von Sonys PS4-Direktliste."""
         info = self._ps4_pakete.get(pkg_url)
@@ -43647,7 +44037,8 @@ class PS5ConverterGUI:
             ``(ergebnisse, vollstaendig)``.
         """
         kennung = self._sanitize_title_id(title_id)
-        zwischen = self._patch_cache.get(kennung)
+        zwischen = (self._patch_cache.get(kennung)
+                    or self._patch_cache_seiten.get(kennung))
         if zwischen is not None and time.time() - zwischen[0] < self._PATCH_CACHE_TTL:
             return list(zwischen[1]), True
         if not online:
@@ -43666,7 +44057,9 @@ class PS5ConverterGUI:
             ergebnisse.extend(teil)
             gescheitert = gescheitert or fehlgeschlagen
         if not gescheitert:
-            self._patch_cache[kennung] = (time.time(), list(ergebnisse))
+            # Eigener Speicher: Diese Liste kennt nur die Seiten, nicht Sonys
+            # Direktdownloads - das Spiel-Info-Fenster darf sie nicht anzeigen.
+            self._patch_cache_seiten[kennung] = (time.time(), list(ergebnisse))
         return ergebnisse, not gescheitert
 
     @staticmethod
@@ -52097,8 +52490,8 @@ class PS5ConverterGUI:
           wirkt, solange kein ``fakelib2`` daneben liegt;
         * alpha8 bis alpha13fix1 lesen im Spielordner ausschliesslich
           ``fakelib``;
-        * ab 1.7beta1 (gemessen bis 1.7beta4; die beiliegende 1.7beta5fix1 seit
-          dem 12.10.2026 nicht erneut gegen den Quelltext geprueft) wieder wie bis alpha6.
+        * ab 1.7beta1 (gemessen bis 1.7beta4 und am Diff bis zur beiliegenden
+          1.7beta7, 21.10.2026) wieder wie bis alpha6.
 
         Nur ``fakelib`` wirkt also in allen Fassungen. Die frueher waehlbare
         Einstellung ``fakelib_variante`` entschied das noch von Hand; stand sie
@@ -53899,6 +54292,20 @@ class PS5ConverterGUI:
                                          title_id=title_id, scanpath=scanpath,
                                          texte=smgen_texte)
                 ort = sm_gen.ORT_BACKPORT
+                # Ab 1.7beta6 liest ShadowMount+ auch "backports/<ID> Zusatz".
+                # Ein neuer blanker Ordner <ID> wuerde ihn verdecken (der
+                # genaue Name gewinnt) - also den vorhandenen weiterbenutzen.
+                try:
+                    wurzel_bp = "%s/backports" % scanpath.rstrip("/")
+                    if not self._ampr_ftp_is_dir(ftp, "%s/%s" % (wurzel_bp, title_id)):
+                        namen_bp = [n for n, fakten in self._ampr_ftp_list_entries(ftp, wurzel_bp)
+                                    if fakten.get("type", "dir") == "dir"]
+                        vorhanden_bp = sm_gen.backport_ordner_waehlen(title_id, namen_bp)
+                        if vorhanden_bp:
+                            ziel = dict(ziel, pfad=posixpath.join(
+                                wurzel_bp, vorhanden_bp, ziel["ordner"]))
+                except Exception as exc:                          # noqa: BLE001
+                    logger.debug("Backport-Ordner mit Zusatz nicht ermittelbar: %s", exc)
             elif not lokal and herkunft == "appmeta":
                 # Ein Spiel, das die Konsole nur aus appmeta kennt (ein
                 # eingehaengtes Abbild), hat keinen eigenen Ordner. Ohne
@@ -54683,7 +55090,20 @@ class PS5ConverterGUI:
             gesehen.add(scanpath)
             ordner = "%s/backports/%s" % (scanpath, title_id)
             if not self._ampr_ftp_is_dir(ftp, ordner):
-                continue
+                # Ab 1.7beta6 darf ein Zusatz hinter der Title-ID stehen
+                # ("PPSA12345 Spielname"); der genaue Name gewinnt, sonst der
+                # erste in Byte-Reihenfolge.
+                try:
+                    namen = [n for n, fakten in self._ampr_ftp_list_entries(
+                        ftp, "%s/backports" % scanpath)
+                        if fakten.get("type", "dir") == "dir"]
+                except Exception as exc:                  # noqa: BLE001
+                    logger.debug("backports in %s nicht lesbar: %s", scanpath, exc)
+                    continue
+                gewaehlt = sm_gen.backport_ordner_waehlen(title_id, namen)
+                if not gewaehlt:
+                    continue
+                ordner = "%s/backports/%s" % (scanpath, gewaehlt)
             da = self._ampr_gen_ordner_ftp(ftp, ordner)
             if da:
                 return ordner, da
@@ -57191,6 +57611,9 @@ class PS5ConverterGUI:
                     uebersprungen += 1
                     melde(pfad, "status", self._t("backport.row_skipped", detail=grund))
 
+            # ---- 2b) param.json: verlangte Firmware und SDK-Hauptversion herabsetzen ----
+            self._backport_param_json(ordner, firmware)
+
             # ---- 3) Ersatzbibliotheken danebenlegen ----
             #
             # Der Ordnername kommt aus _fakelib_ordnername, nicht mehr aus
@@ -57850,6 +58273,7 @@ class PS5ConverterGUI:
             karte.withdraw()
             karte.overrideredirect(True)
             karte.transient(fenster)
+            self._rahmenlos_vorn_halten(karte, fenster)
         except Exception as exc:
             logger.debug("Hinweisfenster nicht erstellbar: %s", exc)
             return

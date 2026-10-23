@@ -68,8 +68,9 @@ def _paar(*, ampr: bool, backport: bool) -> PS5ConverterGUI:
     g.ampr_integrate_var = _Var(ampr)
     g.ampr_playgo_var = _Var(True)
     g.backport_integrate_var = _Var(backport)
+    g.dlc_integrate_var = _Var(False)
     g._ampr_versionsauswahl = {"0.3.5 no debug": {}}
-    for name in ("ampr_version_combo", "ampr_playgo_check",
+    for name in ("ampr_version_combo", "ampr_playgo_check", "dlc_integrate_check",
                  "backport_fw_combo", "ampr_integrate_check"):
         setattr(g, name, _Kaestchen())
     return g
@@ -105,6 +106,7 @@ def _gui(*, ampr: bool, backport: bool, arbeitskopie: bool = False) -> PS5Conver
     g.ampr_integrate_var = _Var(ampr)
     g.ampr_playgo_var = _Var(True)
     g.backport_integrate_var = _Var(backport)
+    g.dlc_integrate_var = _Var(False)
     g.backport_fw_var = _Var(str(ps5_backport.FIRMWARE_STANDARD))
     g.ampr_version_var = _Var("")
     g._integration_erledigt = False
@@ -752,6 +754,7 @@ class UmhuellenderWegTests(unittest.TestCase):
             "%s=%s" % (k, v) for k, v in sorted(w.items()))).strip()
         g.ampr_integrate_var = _Var(ampr)
         g.backport_integrate_var = _Var(backport)
+        g.dlc_integrate_var = _Var(False)
         g.target_format = _Var("format.%s" % zielformat)
         g._gefragt = []
 

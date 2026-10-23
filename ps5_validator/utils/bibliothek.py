@@ -738,8 +738,10 @@ def rueckgaengig(protokoll: str,
 #: eingehaengt - liegt es neben ``fakelib``, wird ``fakelib`` gar nicht
 #: gelesen. 1.7alpha8 bis alpha13fix1 lasen im Spielordner nur ``fakelib``;
 #: zwischen 1.7beta3 und 1.7beta4 unveraendert (am Diff nachgesehen, 04.10.2026);
-#: die Fassung, die dem Programm beiliegt, ist seit dem 12.10.2026 1.7beta5fix1 -
-#: das Verhalten dort nicht erneut gegen den Quelltext geprueft.
+#: die Fassung, die dem Programm beiliegt, ist seit dem 21.10.2026 1.7beta7 -
+#: am Diff 1.7-beta5fix1 bis 1.7beta7 nachgesehen: Reihenfolge unveraendert
+#: (``backport_source`` kam nur als Kennzeichen dazu). Neu: der Backport-Ordner
+#: darf einen Zusatz hinter der Title-ID tragen, siehe ``backport_ordner_waehlen``.
 #:
 #: Seit 28.09.2026 aus ``shadowmount_generation`` statt als eigene Zeile:
 #: Anzeige und Warnungen beim Einbau lesen dieselbe Regel und koennen nicht
@@ -763,6 +765,8 @@ BACKPORT_ORDNER = re.compile(r"fw\d+", re.IGNORECASE)
 #: Der Ordner neben den Spielen, den ShadowMount+ ab 1.7beta2 ueber das
 #: Spiel legt - auch ueber installierte Pakete: ``<Suchpfad>/backports/<ID>``.
 BACKPORTS_ORDNER = "backports"
+#: Die Title-ID am Anfang eines Ordnernamens in ``backports`` (Zusatz erlaubt).
+_TITEL_ID_ANFANG = re.compile(r"([A-Za-z]{4}\d{5})")
 
 #: Huellen vor der Spielwurzel, wie sie manche Abbilder tragen
 #: (``app0/fakelib/...`` - diese Form kannte schon die fruehere AMPR-Regel
@@ -916,9 +920,17 @@ def backports_auf_konsole(ftp: Any, scanpfade: Iterable[str], *,
         except Exception as exc:  # noqa: BLE001
             log.debug("Einbauten: %s nicht lesbar (%s)", wurzel, exc)
             continue
-        for name in inhalt.get("dirs", []):
-            kennung = str(name).strip().upper()
-            if kennung:
+        namen = [str(n) for n in inhalt.get("dirs", [])]
+        # Ab 1.7beta6 darf ein Zusatz hinter der Title-ID stehen; je Suchpfad
+        # gilt nur der Ordner, den ShadowMount+ waehlt.
+        kennungen = dict.fromkeys(
+            m.group(1).upper() for m in (_TITEL_ID_ANFANG.match(n.strip()) for n in namen) if m)
+        for kennung in kennungen:
+            name = _smgen.backport_ordner_waehlen(kennung, namen)
+            if not name:
+                # Ordner in anderer Schreibung (frueher gross geschrieben gelesen)
+                name = next((n for n in namen if n.strip().upper() == kennung), "")
+            if name:
                 funde.setdefault(kennung, []).append("%s/%s" % (wurzel, name))
     return funde
 

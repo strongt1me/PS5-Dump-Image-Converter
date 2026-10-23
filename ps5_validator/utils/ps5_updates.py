@@ -332,7 +332,8 @@ def verxml_holen(url: str, abbruch: Callable[[], bool] | None = None) -> list[Fa
 # ---------------------------------------------------------------------------
 def _hex64(wert: Any) -> str:
     text = str(wert or "").strip().lower()
-    if len(text) != 64 or any(z not in "0123456789abcdef" for z in text):
+    # PS5-Manifeste tragen SHA-256 (64 Hex), PS4-Manifeste SHA-1 (40 Hex).
+    if len(text) not in (40, 64) or any(z not in "0123456789abcdef" for z in text):
         return ""
     return text
 
@@ -473,8 +474,9 @@ def _kennung(manifest: Manifest) -> str:
 
 
 def _bereich_pruefsumme(dateipfad: str, versatz: int, groesse: int,
-                        abbruch: Callable[[], bool] | None) -> str:
-    h = hashlib.sha256()
+                        abbruch: Callable[[], bool] | None,
+                        erwartet: str = "") -> str:
+    h = hashlib.sha1() if len(erwartet) == 40 else hashlib.sha256()
     with open(dateipfad, "rb") as datei:
         datei.seek(versatz)
         rest = groesse
@@ -572,7 +574,7 @@ def paket_laden(manifest: Manifest, ziel: str,
                 _teil_einmal(i, stueck)
                 # Pruefen - bei Abweichung einmal komplett neu laden.
                 if _bereich_pruefsumme(teil, stueck.versatz, stueck.groesse,
-                                       abbruch) == stueck.sha256:
+                                       abbruch, stueck.sha256) == stueck.sha256:
                     return
                 with sperre:
                     stand["summe"] -= geladen[i]

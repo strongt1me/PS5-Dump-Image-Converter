@@ -95,6 +95,13 @@ def backport_einbauen(ordner: str, firmware: int, fakelib_basis: str, *,
                 pass
             melden("[BACKPORT] Schreibfehler: %s — %s" % (os.path.relpath(pfad, ordner), exc))
 
+    # param.json: verlangte Firmware und SDK-Hauptversion herabsetzen
+    try:
+        for feld, alt, neu_wert in ps5_backport.param_json_anpassen(ordner, firmware):
+            melden("[BACKPORT] param.json %s: %s -> %s" % (feld, alt, neu_wert))
+    except (OSError, ps5_backport.BackportFehler) as exc:
+        melden("[BACKPORT] param.json nicht herabgesetzt: %s" % exc)
+
     # Ersatzbibliotheken
     kopiert = 0
     if fakelib_basis and os.path.isdir(fakelib_basis):

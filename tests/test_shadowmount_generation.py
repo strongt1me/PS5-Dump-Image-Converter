@@ -114,6 +114,26 @@ class SuchreihenfolgeTests(unittest.TestCase):
         self.assertTrue(all(w.startswith("<Spielquelle>/") for w in wege[2:]))
 
 
+class BackportOrdnerWahlTests(unittest.TestCase):
+    """1.7beta6: ``<scanpath>/backports/<TITLE_ID><Zusatz>`` (sm_path_utils.c)."""
+
+    def test_genauer_name_gewinnt(self):
+        self.assertEqual("PPSA12345", sg.backport_ordner_waehlen(
+            "PPSA12345", ["PPSA12345 Spiel", "PPSA12345", "PPSA123456"]))
+
+    def test_sonst_der_erste_in_byte_reihenfolge(self):
+        self.assertEqual("PPSA12345 A", sg.backport_ordner_waehlen(
+            "PPSA12345", ["PPSA12345 b", "PPSA12345 A", "PPSA99999"]))
+        # Gross vor klein, wie strcmp - nicht wie ein Woerterbuch.
+        self.assertEqual("PPSA12345 Z", sg.backport_ordner_waehlen(
+            "PPSA12345", ["PPSA12345 a", "PPSA12345 Z"]))
+
+    def test_ohne_treffer_und_gross_klein(self):
+        self.assertEqual("", sg.backport_ordner_waehlen("PPSA12345", ["PPSA99999"]))
+        self.assertEqual("", sg.backport_ordner_waehlen("PPSA12345", ["ppsa12345 x"]))
+        self.assertEqual("", sg.backport_ordner_waehlen("", ["PPSA12345"]))
+
+
 class AblagezielTests(unittest.TestCase):
     """Wohin die Bibliotheken tatsaechlich gehoeren."""
 

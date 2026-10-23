@@ -572,6 +572,7 @@ class PatchlisteTests(unittest.TestCase):
         gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
         gui._current_language = "de"
         gui._patch_cache = {}
+        gui._patch_cache_seiten = {}
         gui._PATCH_CACHE_TTL = 3600          # wie im Konstruktor
         return gui
 
@@ -593,7 +594,15 @@ class PatchlisteTests(unittest.TestCase):
         gui = self._gui()
         with mock.patch.object(APP.urllib.request, "urlopen", side_effect=OSError("weg")):
             self.assertEqual(([], False), gui._patchliste_holen("PPSA01234", online=True))
-        self.assertNotIn("PPSA01234", gui._patch_cache)
+        self.assertNotIn("PPSA01234", gui._patch_cache_seiten)
+
+    def test_bibliothek_schreibt_nicht_in_den_speicher_des_info_fensters(self) -> None:
+        gui = self._gui()
+        antwort = mock.MagicMock()
+        antwort.__enter__.return_value.read.return_value = b"<html>404 - not here</html>"
+        with mock.patch.object(APP.urllib.request, "urlopen", return_value=antwort):
+            gui._patchliste_holen("PPSA01234", online=True)
+        self.assertEqual({}, gui._patch_cache)
 
     def test_keine_updates_ist_eine_antwort(self) -> None:
         gui = self._gui()
@@ -601,7 +610,7 @@ class PatchlisteTests(unittest.TestCase):
         antwort.__enter__.return_value.read.return_value = b"<html>404 - not here</html>"
         with mock.patch.object(APP.urllib.request, "urlopen", return_value=antwort):
             self.assertEqual(([], True), gui._patchliste_holen("PPSA01234", online=True))
-        self.assertEqual([], gui._patch_cache["PPSA01234"][1])
+        self.assertEqual([], gui._patch_cache_seiten["PPSA01234"][1])
 
     def test_die_neueste_fassung(self) -> None:
         liste = [("PS5", "01.010.000", "", "", "", False, ""),

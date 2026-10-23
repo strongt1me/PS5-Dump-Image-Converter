@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.85</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.86</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.85</span>
-      <span class="marke">Stand 20. Oktober 2026</span>
+      <span class="marke">Version v1.9.86</span>
+      <span class="marke">Stand 23. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -825,7 +825,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <em>Anpassungen unbekannt</em>, und passen nicht alle Marken in zwei Zeilen,
   zählt ein <em>+N</em>, wie viele fehlen. Nachgesehen wird dort, wo ShadowMount+ sucht, und
   in seiner Reihenfolge: zuerst ein Ordner <code>backports/&lt;Title-ID&gt;</code>
-  neben den Spielen, dann das Spiel selbst &ndash; jeweils zuerst
+  neben den Spielen (ab 1.7beta6 darf hinter der Title-ID ein Zusatz stehen,
+  etwa <code>PPSA12345 Spielname</code>: im selben Suchpfad gewinnt der Ordner
+  mit genau dem Namen der Title-ID, sonst der erste in Byte-Reihenfolge, der mit
+  ihr beginnt), dann das Spiel selbst &ndash; jeweils zuerst
   <code>fakelib2</code>, dann <code>fakelib</code>. Liegen beide im Spiel,
   steht der Hinweis „fakelib2 verdeckt fakelib“: ShadowMount+ liest dann nur
   <code>fakelib2</code>. In ein <code>.ffpkg</code>, in ein Abbild auf der PS5
@@ -992,6 +995,41 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Auf der Kommandozeile gibt es kein Fenster: Dort wird der Befund
   gemeldet, und <code>--yes</code> entscheidet wie bei jeder anderen
   R&uuml;ckfrage.</p>
+
+  <h3>3.4 Viele Daten oder Texture-Streaming: Ruckler m&ouml;glich</h3>
+  <p>Bei Spielen mit sehr vielen Daten oder Texture-Streaming sind in einem
+  <code>.ffpfsc</code> oder <code>.ffpfs</code> Ruckler m&ouml;glich. Bevor
+  eines von beiden erstellt wird, pr&uuml;ft das Programm deshalb die Quelle
+  &ndash; gleich in welchem Format &ndash; und fragt nach, wenn das Spiel
+  auff&auml;llt:</p>
+  <ul>
+    <li><strong>Viele Daten:</strong> ab 50&nbsp;GiB.</li>
+    <li><strong>Texture-Streaming:</strong> Dateien, die typische
+    Streaming-Engines anlegen (zum Beispiel <code>.ubulk</code>,
+    <code>.ucas</code>, <code>.utoc</code>, <code>.streamdb</code>,
+    <code>.resS</code>, <code>.cas</code>), gro&szlig;e Dateien mit
+    &bdquo;stream&ldquo; oder &bdquo;texture&ldquo; im Namen und Ordner wie
+    <code>StreamingAssets</code> &ndash; sie z&auml;hlen ab 20&nbsp;GiB.</li>
+  </ul>
+  <p>Ordner und <code>.exFAT</code>-Abbilder werden dazu durchgesehen, ohne
+  etwas zu entpacken. Bei <code>.ffpfsc</code>, <code>.ffpfs</code>,
+  <code>.ffpkg</code> und Paketen z&auml;hlt nur die Dateigr&ouml;&szlig;e; bei
+  einer komprimierten Datei liegt die echte Datenmenge dar&uuml;ber, die
+  Meldung sagt dann &bdquo;mindestens&ldquo;.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Ihre Wahl</th><th>Was dann passiert</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Trotzdem erstellen</strong></td><td>Es wird normal weitergearbeitet.</td></tr>
+      <tr><td><strong>Anderes Format w&auml;hlen</strong></td><td>Sie w&auml;hlen ein anderes Zielformat, das diese Aufgabe anbietet; die Aufgabe beginnt mit den Pr&uuml;fungen von vorn. Brechen Sie die Formatwahl ab, kommen Sie zur Frage zur&uuml;ck.</td></tr>
+      <tr><td><strong>Abbrechen</strong></td><td>Der Vorgang wird nicht gestartet.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Bei der Sammelkonvertierung kommt <strong>eine</strong> Frage mit allen
+  betroffenen Spielen. Das PS4-PKG-Fenster fragt vor dem Bau eines
+  <code>.ffpfsc</code> nach den Paketgr&ouml;&szlig;en. Auf der Kommandozeile
+  gibt es diese Frage nicht.</p>
 </section>
 
 <section class="kapitel" id="k4">
@@ -1468,7 +1506,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Zur&uuml;ckstellen und schlie&szlig;t danach von selbst.
     Eine ausf&uuml;hrliche, bebilderte Anleitung zum ganzen Ablauf (Mitschnitt,
     Profil pr&uuml;fen, Bauen, Originale weglassen) &ouml;ffnet der Knopf
-    <strong>Asset Packs Anleitung</strong> oben in der Titelleiste, links
+    <strong>LZ4 &amp; Asset Pack Anleitung</strong> oben in der Titelleiste, links
     neben <strong>BENUTZERHANDBUCH</strong> &ndash; genauso bedient wie
     dieses Handbuch hier. Die Datei liegt auch im Ordner
     <code>Anleitungen</code> neben dem Programm:
@@ -1543,7 +1581,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
         zuletzt g&uuml;ltige Eintrag eines Titels gewinnt, und <code>full</code>
         oder <code>emulators</code> mit der Title-ID hebt die Vorgabe auf.
         Nicht zu verwechseln mit <code>global_fakelib_exclude</code>, das nur
-        die globale <code>fakelib</code> abschaltet.</td></tr>
+        die globale <code>fakelib</code> abschaltet. Ab 1.7beta6 setzt die
+        Weboberfl&auml;che von ShadowMount+ diese Ausnahme je Spiel &uuml;ber
+        &bdquo;Globale fakelib ignorieren&ldquo; (gilt ab dem n&auml;chsten Start
+        des Spiels; der Modus der eigenen <code>fakelib</code> bleibt
+        unver&auml;ndert).</td></tr>
       <tr><td>Film- und Videoordner<br>(seit v1.9.32 automatisch)</td>
         <td>Das Programm liest die Namen <strong>aus Ihrem Spielordner</strong>
         und schließt sie in genau dieser Schreibweise aus &ndash; das
@@ -1659,6 +1701,21 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Frage, sobald die Dateien ausgepackt daliegen, und immer noch vor dem Bau
   des Ergebnisses. Auf der Kommandozeile wird nicht gefragt: Dort steht ein
   Hinweis im Protokoll, und es gilt die gespeicherte Einstellung.</p>
+
+  <p><strong>DLC EMU.</strong> Unter dem K&auml;stchen <strong>AMPR EMU</strong>
+  steht <strong>DLC EMU</strong> (drakmor/dlc_emu 0.3). Es legt drei
+  Ersatzbibliotheken &ndash; <code>libSceAppContent</code>,
+  <code>libSceNpEntitlementAccess</code> und <code>libSceGameUpdate</code> &ndash;
+  in den <code>fakelib</code>-Ordner und meldet damit Zusatzinhalte als vorhanden.
+  Welche, steht in der <code>dlc_emu.ini</code> im Spielordner. Eine vorhandene
+  Datei bleibt unver&auml;ndert; fehlt sie, legt das Programm sie aus den
+  Content-IDs der <code>dlcmap.json</code> an, ersatzweise aus den vollst&auml;ndigen der <code>eboot.bin</code> (ohne die ID des
+  Spiels selbst) und weist im Protokoll darauf hin, dass die Eintr&auml;ge zu
+  pr&uuml;fen sind. Ohne passende Datei melden die Bibliotheken keine
+  Zusatzinhalte. Ein Spielori&shy;ginal einer dieser Bibliotheken wird einmalig als
+  <code>.orig</code> gesichert. Hat das Spiel Zusatzinhalte &ndash; eine <code>dlcmap.json</code> des Spiels mit Eintr&auml;gen, ein DLC-Ordner des PS5-App-Dumpers (<code>&hellip;_00-&hellip;-ac</code>) neben dem Spielordner, eine <code>dlc_emu.ini</code> oder einen gef&uuml;llten Ordner <code>addcont&hellip;</code> &ndash; und ist DLC EMU nicht angehakt, fragt das Programm wie bei PlayGo vor der Arbeit, ob es eingeschaltet werden soll. Das gilt f&uuml;r Dump-Ordner und Abbilder (bei Abbildern z&auml;hlen die Namen <code>dlcmap.json</code>, <code>dlc_emu.ini</code> und <code>addcont&hellip;</code>); bei einem <code>.ffpkg</code> l&auml;sst sich nicht hineinsehen, dort steht nur ein Hinweis im Protokoll. Solche DLC-Ordner kopiert das Programm als <code>addcont0</code>, <code>addcont1</code> &hellip; ins Spiel und tr&auml;gt sie mit Einh&auml;ngepunkt in die <code>dlc_emu.ini</code> ein; alle anderen Zusatzinhalte, die nur etwas freischalten, stehen als reine Berechtigung darin. Wie AMPR EMU und BACKPORT arbeitet der Einbau auf
+  dem Dump-Ordner und gilt damit f&uuml;r alle Zielformate; er kommt vor dem AMPR EMU,
+  damit dessen Index die neuen Dateien kennt.</p>
 
   <h3>11.4 Ein fertiges Asset-Pack pr&uuml;fen und entpacken</h3>
   <p>Seit v1.9.80 gibt es dazu ein eigenes Fenster: <strong>WEITERE TOOLS
@@ -2175,7 +2232,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>EN / DE</strong></td><td>Schaltet die komplette Oberfläche zwischen Deutsch und Englisch um – Hauptfenster, alle Dialoge und sämtliche Protokollmeldungen.</td></tr>
       <tr><td><strong>FAQ</strong></td><td>Links neben BENUTZERHANDBUCH: Öffnet die häufigen Fragen mit kurzen Antworten in Ihrem Browser – auf Englisch, wenn die Oberfläche auf EN steht. Sie liegen dem Programm bei; eine Internetverbindung ist nicht nötig. Als PDF liegen sie neben der Programmdatei.</td></tr>
       <tr><td><strong>BENUTZERHANDBUCH</strong></td><td>Öffnet dieses Handbuch in Ihrem Browser. Es liegt dem Programm bei; eine Internetverbindung ist nicht nötig.</td></tr>
-      <tr><td><strong>Asset Packs Anleitung</strong></td><td>Öffnet, genauso wie der Knopf daneben, die ausführliche Anleitung zu AMPR-Assetpaketen und dem Mitschnitt-Assistenten (siehe Abschnitt 11.1) – ebenfalls im Programm enthalten, keine Internetverbindung nötig.</td></tr>
+      <tr><td><strong>LZ4 &amp; Asset Pack Anleitung</strong></td><td>Öffnet, genauso wie der Knopf daneben, die ausführliche Anleitung zu AMPR-Assetpaketen und dem Mitschnitt-Assistenten (siehe Abschnitt 11.1) – ebenfalls im Programm enthalten, keine Internetverbindung nötig.</td></tr>
     </tbody>
   </table>
   </div>
@@ -2482,7 +2539,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <thead><tr><th></th><th>alte Methode (bis alpha6)</th><th>neue Methode (ab alpha8)</th></tr></thead>
     <tbody>
       <tr><td><strong>Wo gesucht wird</strong></td><td><code>app0/fakelib2</code>, sonst <code>app0/fakelib</code></td><td>feste Reihenfolge: <code>backports/&lt;ID&gt;/fakelib2</code> &rarr; <code>backports/&lt;ID&gt;/fakelib</code> &rarr; <code>&lt;Spiel&gt;/fakelib2</code> &rarr; <code>&lt;Spiel&gt;/fakelib</code></td></tr>
-      <tr><td><strong><code>fakelib2</code> im Spielordner</strong></td><td>wirkt</td><td>1.7 alpha8 bis alpha13fix1: <strong>wird ignoriert</strong>; ab 1.7beta1 (beiliegend: 1.7beta5fix1) wirkt es wieder und verdeckt ein <code>fakelib</code> daneben</td></tr>
+      <tr><td><strong><code>fakelib2</code> im Spielordner</strong></td><td>wirkt</td><td>1.7 alpha8 bis alpha13fix1: <strong>wird ignoriert</strong>; ab 1.7beta1 (beiliegend: 1.7beta7) wirkt es wieder und verdeckt ein <code>fakelib</code> daneben</td></tr>
+      <tr><td><strong>Ordnername in <code>backports</code></strong></td><td>gibt es nicht</td><td><code>&lt;ID&gt;</code>; ab 1.7beta6 auch <code>&lt;ID&gt; Zusatz</code> (genauer Name gewinnt, sonst der erste in Byte-Reihenfolge)</td></tr>
       <tr><td><strong>global + spieleigen</strong></td><td>zwei Schichten &uuml;bereinander</td><td>vorher in einen Cache zusammenkopiert</td></tr>
       <tr><td><strong>Emulator-Dateien</strong></td><td>gibt es nicht</td><td>aus <code>/data/shadowmount/emus/</code></td></tr>
     </tbody>
@@ -2964,7 +3022,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.85), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.86), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -3165,8 +3223,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.85</strong></span>
-    <span>Stand 20. Oktober 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.86</strong></span>
+    <span>Stand 23. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

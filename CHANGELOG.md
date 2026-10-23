@@ -2,9 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.85):** Nach einem erfolgreichen BACKPORT-Lauf lässt sich das Ergebnis jetzt direkt an die PS5 senden – ein neuer Haken im Fenster steuert den Dialog.
+> **Kurz zum aktuellen Stand (v1.9.86):** DLC EMU lässt sich jetzt beim Erstellen einbauen – das Programm fragt vorab, wenn ein Spiel Zusatzinhalte hat.
 
 ---
+
+## v1.9.86 – 23.10.2026
+
+- **Neu:** DLC EMU als Kästchen beim Erstellen. Hat das Spiel Zusatzinhalte (`dlcmap.json`, DLC-Ordner, `dlc_emu.ini`), fragt das Programm vorab, ob es eingeschaltet werden soll, und legt die `dlc_emu.ini` an.
+- **Neu:** Vor einem .ffpfsc/.ffpfs bei sehr großen Spielen fragt das Programm, ob stattdessen ein anderes Format gebaut werden soll; im PKG-Bereich lässt sich der Temp-Ordner wählen; PS4- und PS5-Updates lassen sich direkt laden.
+- **Aktualisiert:** ShadowMount+ 1.7beta7, neun Konsolen-Payloads und ps5-ultrapack 2.2.10; der Knopf heißt „LZ4 & Asset Pack Anleitung", die Anleitung folgt AMPR EMU 0.4.2.1.
+- **Behoben:** Ein .zip/.rar als Quelle erscheint beim Entpacken im Feld, STARTEN wartet darauf, und mkpfs nennt bei einem Fehler seine letzten Zeilen; rahmenlose Fenster bleiben vor dem Hauptfenster, das Werbebanner schließt bündig mit der Karte ab.
 
 ## v1.9.85 – 20.10.2026
 

@@ -5,12 +5,17 @@
 Bibliothek **LibProsperoPkg 1.2.0** (GPL-3.0-or-later; als fertige Datei `src/ffpfsc-pkg-tool/lib/`, die Quelle
 dazu liegt nicht bei - siehe `src/ffpfsc-pkg-tool/lib/README.md`).
 
-Seit 18.10.2026 steht die Versionskonstante auf **2.2.7** (ps5-ultrapack 2.2.5 bis 2.2.7 aendern am C#-Teil nur die
-Versionskonstante; `lib/` und `patches/` sind gleich geblieben) und `ffpfsc-pkg-tool.dll` ist in allen vier Ordnern neu gebaut.
-Ersetzt wurde nur diese eine Datei je Ordner; der Neubau liefert auch eine andere `LibOrbisPkg.dll` und `ffpfsc-pkg-tool.exe`
-(Quelle unveraendert), die bleiben, wie sie waren.
+Seit 21.10.2026 steht die Versionskonstante auf **2.2.10**. ps5-ultrapack 2.2.8 bis 2.2.10 aendern am C#-Teil
+`Program.cs` (u. a. festes Zahlenformat fuer das geparste Baulog, Dateien werden per Umbenennen ersetzt statt durchschrieben,
+ein unvollstaendiges Entpacken schlaegt jetzt fehl) und `Ps4.cs`; `lib/` und `patches/` sind gleich geblieben. Beide Dateien
+sind per Dreiwege-Zusammenfuehrung uebernommen (Basis Upstream 2.2.7, unsere Fassung mit dem Befehl `stream-inner`, Ziel
+Upstream 2.2.10), ohne Konflikte; `ffpfsc-pkg-tool.dll` ist in allen vier Ordnern neu gebaut. Ersetzt wurde nur diese eine
+Datei je Ordner; der Neubau liefert auch eine andere `LibOrbisPkg.dll` und `ffpfsc-pkg-tool.exe` (Quelle unveraendert), die
+bleiben, wie sie waren.
 
-Gebaut am 18.10.2026 mit .NET SDK 10.0.401, **framework-abhaengig** (net10.0; das Programm braucht die .NET-
+Davor (18.10.2026): Versionskonstante 2.2.7 (ps5-ultrapack 2.2.5 bis 2.2.7 aenderten am C#-Teil nur die Konstante).
+
+Gebaut am 21.10.2026 mit .NET SDK 10.0.401, **framework-abhaengig** (net10.0; das Programm braucht die .NET-
 Laufzeit 10 ohnehin), je Plattform ein Ordner:
 
 ```

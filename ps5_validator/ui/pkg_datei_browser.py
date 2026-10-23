@@ -103,6 +103,10 @@ class PkgDateiBrowser:
 
         win = tk.Toplevel(eltern)
         self.win = win
+        # Besitzer setzen, sonst faellt das Fenster nach einem Klick aufs Hauptfenster dahinter.
+        binden = getattr(g, "_fenster_an_hauptfenster_binden", None)
+        if callable(binden):
+            binden(win, eltern)
         win.title(g.t("ps5pkg.browser_title", name=os.path.basename(paket)))
         win.configure(bg=c["bg_main"])
         win.minsize(680, 460)

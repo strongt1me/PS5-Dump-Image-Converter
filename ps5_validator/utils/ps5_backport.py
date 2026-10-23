@@ -32,6 +32,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 import shutil
 import struct
 from typing import Any
@@ -210,6 +211,12 @@ MODUL_ENDUNGEN = (".prx", ".sprx")
 LIBC_ALT = b"4h6F1LLbTiw#A#B"
 LIBC_NEU = b"IWIBBdTHit4#A#B"
 
+#: Bis zu dieser Ziel-Firmware (einschliesslich) wird der libc-Patch angewendet. Darueber nimmt Auto-Backpork
+#: (Nazky, ``Backport.py``: ``if sdk_pair <= 6: apply_libc_patch ... elif auto_revert_for_high_sdk: revert``) ihn
+#: zurueck, und ein Ziel von 7 oder hoeher bekommt die Datei unveraendert. Bis zum 22.10.2026 wurde er hier auf
+#: jedes Ziel angewendet, obwohl er nur fuer 6.xx und darunter gedacht ist.
+LIBC_PATCH_BIS = 6
+
 #: Ordner, in den die Ersatzbibliotheken im Spiel gelegt werden.
 FAKELIB_ORDNER = "fakelib"
 
@@ -302,8 +309,25 @@ def ist_kandidat(name: str) -> bool:
     return klein == EBOOT_NAME or klein.endswith(MODUL_ENDUNGEN)
 
 
+#: Die ersten vier Bytes einer ELF-Datei und der beiden SELF-Behaelter (PS4 und PS5).
+_KENNUNGEN = (b"\x7fELF", b"\x4f\x15\x3d\x1d", b"\x54\x14\xf5\xee")
+
+
+def _hat_programmkennung(pfad: str) -> bool:
+    """Beginnt die Datei mit der Kennung eines ELF oder SELF? (Auto-Backpork prueft jede Datei so.)"""
+    try:
+        with open(pfad, "rb") as datei:
+            return datei.read(4) in _KENNUNGEN
+    except OSError:
+        return False
+
+
+# Gesucht wird nach dem Namen (``eboot.bin``, ``*.prx``, ``*.sprx``) **und** nach der Kennung am Dateianfang:
+# Auto-Backpork behandelt jede Datei, die ein ELF oder SELF ist, gleich welchen Namens. Eine Programmdatei mit
+# anderem Namen (``.elf``, ``.self``, andere ``.bin``) blieb hier bis zum 22.10.2026 auf der hohen Firmware.
+# Datensicherungen (``.bak``) zaehlen nicht.
 def kandidaten(ordner: str) -> list[str]:
-    """Sammelt alle patchbaren Dateien eines Dump-Ordners.
+    """Sammelt alle patchbaren Dateien eines Dump-Ordners (Namen und ELF/SELF-Kennung).
 
     Der Ordner ``fakelib`` bleibt aussen vor: Er enthaelt die mitgelieferten
     Ersatzbibliotheken, die bereits auf die Zielfirmware passen.
@@ -315,9 +339,81 @@ def kandidaten(ordner: str) -> list[str]:
         ordnernamen[:] = [d for d in ordnernamen
                           if d.lower() not in FAKELIB_ORDNERNAMEN]
         for name in sorted(dateinamen):
-            if ist_kandidat(name):
-                gefunden.append(os.path.join(wurzel, name))
+            pfad = os.path.join(wurzel, name)
+            if ist_kandidat(name) or (not name.lower().endswith(".bak") and _hat_programmkennung(pfad)):
+                gefunden.append(pfad)
     return sorted(gefunden)
+
+
+#: Die zwei Felder der ``sce_sys/param.json``, die der PS5-App-Dumper (EchoStretch, ``ps5_backport_param_json``) beim
+#: Backport herabsetzt: die Firmware, die das Spiel verlangt, und die SDK-Hauptversion. Beide stehen als 18-stelliger
+#: Hex-Text, die ersten zwei Ziffern nach ``0x`` sind die Hauptversion (``0x1160...`` = 11.60, ``0x1000...`` = SDK 10).
+PARAM_FELDER = ("requiredSystemSoftwareVersion", "sdkVersion")
+
+_PARAM_MUSTER = {
+    feld: re.compile(rb'("' + feld.encode("ascii") + rb'"\s*:\s*")(0[xX][0-9A-Fa-f]{16})(")')
+    for feld in PARAM_FELDER
+}
+
+
+def param_json_herabsetzen(daten: bytes, firmware: int) -> tuple[bytes, list[tuple[str, str, str]]]:
+    """Setzt ``requiredSystemSoftwareVersion`` und ``sdkVersion`` auf ``0xMM00000000000000``, wenn ihre Hauptversion
+    ueber dem Ziel liegt (Auto: wie der PS5-App-Dumper).
+
+    Es wird nur der Wert ersetzt, der Rest der Datei bleibt Byte fuer Byte; je Feld zaehlt das erste Vorkommen. Ein
+    Wert auf oder unter der Zielversion bleibt, auch mit hoeherer Nebenversion - wie beim Dumper.
+
+    Returns:
+        ``(neue Bytes, [(Feld, alt, neu), ...])``; die Liste ist leer, wenn nichts zu aendern war.
+
+    Raises:
+        BackportFehler: unbekannte Firmware.
+    """
+    ziel = (sdk_paar(firmware)[0] >> 24) & 0xFF
+    neu_wert = "0x%02X00000000000000" % ziel
+    aenderungen: list[tuple[str, str, str]] = []
+    for feld in PARAM_FELDER:
+        treffer = _PARAM_MUSTER[feld].search(daten)
+        if not treffer:
+            continue
+        alt = treffer.group(2).decode("ascii")
+        if int(alt[2:4], 16) <= ziel:
+            continue
+        daten = daten[:treffer.start(2)] + neu_wert.encode("ascii") + daten[treffer.end(2):]
+        aenderungen.append((feld, alt, neu_wert))
+    return daten, aenderungen
+
+
+def param_json_anpassen(ordner: str, firmware: int) -> list[tuple[str, str, str]]:
+    """Wendet :func:`param_json_herabsetzen` auf ``<ordner>/sce_sys/param.json`` an - atomar, ueber eine Zwischendatei.
+
+    Returns:
+        Die Aenderungen (leer, wenn es die Datei nicht gibt oder nichts zu aendern war).
+
+    Raises:
+        OSError: Lesen oder Schreiben scheitert - die Datei ist dann unveraendert.
+    """
+    pfad = os.path.join(str(ordner or ""), "sce_sys", "param.json")
+    if not os.path.isfile(pfad):
+        return []
+    with open(pfad, "rb") as datei:
+        roh = datei.read()
+    neu, aenderungen = param_json_herabsetzen(roh, firmware)
+    if not aenderungen:
+        return []
+    zwischen = pfad + ".bp_neu"
+    try:
+        with open(zwischen, "wb") as datei:
+            datei.write(neu)
+        os.replace(zwischen, pfad)
+    except OSError:
+        try:
+            if os.path.isfile(zwischen):
+                os.remove(zwischen)
+        except OSError:
+            pass
+        raise
+    return aenderungen
 
 
 def firmware_text(ps5_sdk: int) -> str:
@@ -805,6 +901,34 @@ def libc_patchen(daten: bytes) -> tuple[bytes, int]:
     return bytes(puffer), stelle
 
 
+def libc_zuruecksetzen(daten: bytes) -> tuple[bytes, int]:
+    """Macht :func:`libc_patchen` rueckgaengig (Auto-Backpork: ``revert_libc_patch``).
+
+    Returns:
+        (Bytes, Fundstelle). Fundstelle ist ``-1``, wenn die gepatchte Folge nicht vorkommt - dann ist nichts zu tun.
+    """
+    stelle = daten.find(LIBC_NEU)
+    if stelle < 0:
+        return daten, -1
+    puffer = bytearray(daten)
+    puffer[stelle:stelle + len(LIBC_ALT)] = LIBC_ALT
+    return bytes(puffer), stelle
+
+
+#: Ergebnisse von :func:`libc_regel` (Kennungen, keine Anzeigetexte).
+LIBC_PATCHEN = "patchen"
+LIBC_ZURUECK = "zuruecksetzen"
+
+
+def libc_regel(ziel_ps5: int) -> str:
+    """Was mit der ``libc.prx`` zu tun ist: ``"patchen"`` bis Ziel 6, darueber ``"zuruecksetzen"``."""
+    try:
+        haupt = int(firmware_text(ziel_ps5).split(".")[0])
+    except ValueError:
+        return LIBC_PATCHEN
+    return LIBC_PATCHEN if haupt <= LIBC_PATCH_BIS else LIBC_ZURUECK
+
+
 # --------------------------------------------------------------------------
 # Gesamtablauf je Datei
 # --------------------------------------------------------------------------
@@ -844,6 +968,8 @@ MELDUNGEN: dict[str, str] = {
         ', libc bereits gepatcht',
     'libc_muster_fehlt':
         ', libc-Muster nicht gefunden',
+    'libc_zurueckgesetzt':
+        ', libc-Patch bei 0x{stelle} zurückgenommen',
 }
 
 
@@ -904,13 +1030,19 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
 
     zusatz = ""
     if libc_zusatz and ist_libc_datei:
-        elf, stelle = libc_patchen(elf)
-        if stelle >= 0:
-            zusatz = _satz(texte, "libc_patch_bei", stelle="%X" % stelle)
-        elif stelle == -2:
-            zusatz = _satz(texte, "libc_bereits_gepatcht")
+        if libc_regel(ziel_ps5) == LIBC_PATCHEN:
+            elf, stelle = libc_patchen(elf)
+            if stelle >= 0:
+                zusatz = _satz(texte, "libc_patch_bei", stelle="%X" % stelle)
+            elif stelle == -2:
+                zusatz = _satz(texte, "libc_bereits_gepatcht")
+            else:
+                zusatz = _satz(texte, "libc_muster_fehlt")
         else:
-            zusatz = _satz(texte, "libc_muster_fehlt")
+            # Ziel 7 und hoeher: wie Auto-Backpork - ein frueher gesetzter Patch geht zurueck, sonst bleibt es.
+            elf, stelle = libc_zuruecksetzen(elf)
+            if stelle >= 0:
+                zusatz = _satz(texte, "libc_zurueckgesetzt", stelle="%X" % stelle)
 
     # Signieren ist Pflicht - eine unsignierte Datei darf nie zurueckgegeben werden.
     try:

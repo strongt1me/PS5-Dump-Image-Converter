@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.85</title>
+<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.86</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Häufige Fragen (FAQ)</span></h1>
     <p class="unter">Kurze Antworten auf die Fragen, die bei der Arbeit mit dem Programm am häufigsten auftauchen – vom ersten Start über das Umwandeln bis zur PS5. Ausführlich steht alles im Benutzerhandbuch.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.85</span>
-      <span class="marke">Stand 20. Oktober 2026</span>
+      <span class="marke">Version v1.9.86</span>
+      <span class="marke">Stand 23. Oktober 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -429,7 +429,7 @@ footer{
   <div class="frage">
     <h3>Was sind Asset-Packs?</h3>
     <p>Bei der Methode <strong>Asset-Pack</strong> werden die Spieldateien zusätzlich in gepackte Bänder (<code>ampr_assets-*.pak</code>) gelegt, die der AMPR EMU ab Fassung 0.4.2.1 blockweise liest. Das spart Platz und Dateideskriptoren auf der Konsole. Dafür müssen <strong>beide</strong> Klapplisten stimmen: AMPR-Fassung <code>test-pack</code> (oder <code>test-debug-pack</code> zur Fehlersuche) und Methode <em>Asset-Pack</em> – die oben vorgewählte Fassung <code>test-nopack</code> kann es nicht.</p>
-    <p>Jeder gepackte Block wird Byte für Byte gegen die Originaldatei geprüft. Ihre Originaldateien bleiben liegen, wenn Sie nichts anderes wählen; lassen Sie sie erst nach einem erfolgreichen Konsolentest weg. Die ausführliche Anleitung öffnet der Knopf <strong>Asset Packs Anleitung</strong>.</p>
+    <p>Jeder gepackte Block wird Byte für Byte gegen die Originaldatei geprüft. Ihre Originaldateien bleiben liegen, wenn Sie nichts anderes wählen; lassen Sie sie erst nach einem erfolgreichen Konsolentest weg. Die ausführliche Anleitung öffnet der Knopf <strong>LZ4 &amp; Asset Pack Anleitung</strong>.</p>
     <p>Für <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> sowie Spiele der <em>Unity</em>- und der <em>Insomniac</em>-Engine legt das Programm automatisch ein getestetes Packprofil an (seit v1.9.78). Ein eigenes Profil neben dem Dump-Ordner (<code>&lt;Ordnername&gt;_ampr_pack.toml</code>) hat immer Vorrang.</p>
   </div>
 
@@ -448,6 +448,11 @@ footer{
   <div class="frage">
     <h3>Was macht der Haken „PlayGo“?</h3>
     <p>Er legt einen Ersatz für <code>libScePlayGo.sprx</code> ins Spiel, der alle Sprach- und Szenariopakete als installiert meldet. Die meisten Spiele brauchen das nicht, deshalb ist er ab Werk aus. Erklärt ein Titel PlayGo-Inhalte und ist der Haken nicht gesetzt, fragt das Programm am Anfang des Laufs nach – bevor kopiert, entpackt oder gepackt wird.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Was macht der Haken „DLC EMU“?</h3>
+    <p>Er legt drei Ersatzbibliotheken (<code>libSceAppContent</code>, <code>libSceNpEntitlementAccess</code> und <code>libSceGameUpdate</code>) ins Spiel, damit die Konsole Zusatzinhalte als vorhanden meldet. Welche, steht in der <code>dlc_emu.ini</code> im Spielordner; fehlt sie, legt das Programm sie aus der <code>dlcmap.json</code> des Spiels an. Zusatzinhalte, die nur etwas freischalten, trägt es als reine Berechtigung ein. Ab Werk ist der Haken aus. Hat das Spiel Zusatzinhalte (<code>dlcmap.json</code>, ein DLC-Ordner neben dem Spiel oder eine <code>dlc_emu.ini</code>) und ist er nicht gesetzt, fragt das Programm am Anfang des Laufs nach. Ohne passende <code>dlc_emu.ini</code> meldet DLC EMU keine Zusatzinhalte.</p>
   </div>
 
   <div class="frage">
@@ -669,7 +674,7 @@ footer{
     <ul>
       <li>Diese <strong>FAQ</strong> öffnet der Knopf <strong>FAQ</strong> oben links neben <strong>BENUTZERHANDBUCH</strong> – auf Deutsch oder Englisch, je nach eingestellter Sprache.</li>
       <li>Das <strong>Benutzerhandbuch</strong> öffnet der gleichnamige Knopf – es liegt dem Programm bei, eine Internetverbindung ist nicht nötig. Handbuch und FAQ liegen außerdem als PDF neben der Programmdatei.</li>
-      <li>Die Anleitungen zu Asset-Packs und zu ShadowMount+ (alte und neue Methode) öffnen die Knöpfe <strong>Anleitung</strong> bzw. <strong>Asset Packs Anleitung</strong>.</li>
+      <li>Die Anleitungen zu Asset-Packs und zu ShadowMount+ (alte und neue Methode) öffnen die Knöpfe <strong>Anleitung</strong> bzw. <strong>LZ4 &amp; Asset Pack Anleitung</strong>.</li>
       <li>Was sich je Version geändert hat, steht in <code>CHANGELOG.md</code>.</li>
     </ul>
   </div>
@@ -678,8 +683,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.85</strong></span>
-  <span>Stand 20. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
+  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.86</strong></span>
+  <span>Stand 23. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
 </footer>
 
 </body>

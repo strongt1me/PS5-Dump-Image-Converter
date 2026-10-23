@@ -140,6 +140,23 @@ class FensterTests(unittest.TestCase):
         self.assertEqual(set(ab.FORMATE), set(f._formate))
         self.assertEqual(len(f._formate), len(tuple(f.format_box.cget("values"))))
 
+    def test_eigener_temp_ordner_bestimmt_den_arbeitsordner(self) -> None:
+        """21.10.2026: Wie bei FPKG waehlbar; leer oder nicht vorhanden = wie bisher beim Ziel."""
+        import os
+        import tempfile
+        f = self._fenster()
+        with tempfile.TemporaryDirectory() as ziel, tempfile.TemporaryDirectory() as eigener, \
+                mock.patch.object(self.haupt, "_PS4FFPSC_MAX_ARBEITSPFAD", 500):
+            f.temp_var.set("")
+            self.assertEqual(os.path.join(ziel, "ps4dib_arbeit"), f._arbeitsbasis(ziel))
+            f.temp_var.set(os.path.join(eigener, "gibt_es_nicht"))
+            self.assertEqual(os.path.join(ziel, "ps4dib_arbeit"), f._arbeitsbasis(ziel))
+            f.temp_var.set(eigener)
+            self.assertEqual(os.path.join(eigener, "ps4dib_arbeit"), f._arbeitsbasis(ziel))
+        with mock.patch.object(fenster_modul.filedialog, "askdirectory", return_value="C:/Temp/X"):
+            f._temp_waehlen()
+        self.assertEqual(os.path.normpath("C:/Temp/X"), f.temp_var.get())
+
     def test_ein_druck_auf_einen_quellknopf_oeffnet_die_wahl(self) -> None:
         f = self._fenster()
         for art, dialog in ((fenster_modul.QUELLE_ORDNER, "askdirectory"), (fenster_modul.QUELLE_DATEIEN, "askopenfilenames"),

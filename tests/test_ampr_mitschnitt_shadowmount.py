@@ -510,6 +510,20 @@ class AblaufTests(_KonsolenTest):
         self.assertEqual(eigener, self.app._ampr_mitschnitt_backport_finden(
             self.ftp, spiel, TITEL, config)[0])
 
+    def test_backport_ordner_mit_namenszusatz_ab_1_7beta6(self) -> None:
+        """Ab 1.7beta6 nimmt ShadowMount+ ``backports/<ID> Zusatz``; der genaue Name gewinnt."""
+        spiel = {"pfad": SPIEL, "title_id": TITEL, "scanpath": "/data/homebrew",
+                 "quelle": "Ordner"}
+        mit_zusatz = "/data/homebrew/backports/%s Spielname" % TITEL
+        self._ablegen(mit_zusatz + "/fakelib/libSceAmpr.sprx", b"X")
+        ordner, da = self.app._ampr_mitschnitt_backport_finden(self.ftp, spiel, TITEL, VORLAGE)
+        self.assertEqual(mit_zusatz, ordner)
+        self.assertIn("fakelib", da)
+        genau = "/data/homebrew/backports/%s" % TITEL
+        self._ablegen(genau + "/fakelib2/libSceRtc.sprx", b"R")
+        self.assertEqual(genau, self.app._ampr_mitschnitt_backport_finden(
+            self.ftp, spiel, TITEL, VORLAGE)[0])
+
     def test_neu_angelegter_ordner_wird_stillgelegt(self) -> None:
         """Den fakelib-Ordner gab es vorher nicht: Er wird am Ende umbenannt.
 

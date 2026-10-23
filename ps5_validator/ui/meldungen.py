@@ -18,7 +18,9 @@ from __future__ import annotations
 import logging
 import threading
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
+
+from ps5_validator.utils import fenster_vorn
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,10 @@ TEXTE = {
     "ja_alle": {"de": "Ja, für alle", "en": "Yes, for all", "es": "Sí, para todos", "it": "Sì, per tutti", "fr": "Oui, pour tous"},
     "nein_alle": {"de": "Nein, für alle", "en": "No, for all", "es": "No, para todos", "it": "No, per tutti", "fr": "Non, pour tous"},
     "wiederholen": {"de": "Wiederholen", "en": "Retry", "es": "Reintentar", "it": "Riprova", "fr": "Réessayer"},
+    "trotzdem": {"de": "Trotzdem erstellen", "en": "Create anyway", "es": "Crear de todos modos",
+                 "it": "Crea comunque", "fr": "Créer quand même"},
+    "anderes_format": {"de": "Anderes Format wählen", "en": "Choose another format", "es": "Elegir otro formato",
+                       "it": "Scegli un altro formato", "fr": "Choisir un autre format"},
 }
 
 #: Die Originale aus ``tkinter.messagebox`` - fuer den Rueckfall und :func:`aufheben`.
@@ -135,7 +141,6 @@ class Meldung:
         tk.Label(rechts, text=str(text or ""), font=(UI_SCHRIFT, pt(10)), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w", justify="left",
                  wraplength=pt(440)).pack(fill="x", pady=(6 if titel else 0, 0))
-
         reihe = tk.Frame(koerper, bg=c["bg_main"])
         reihe.pack(fill="x", pady=(18, 0))
         vorgabe = vorgabe if vorgabe in [a for a, _t in knoepfe] else knoepfe[0][0]
@@ -237,6 +242,39 @@ def frage_fuer_alle(gui, titel: str, text: str, vorgabe: str = "yes") -> str:
     return meldung.zeigen()
 
 
+#: Antworten von :func:`frage_streaming`.
+STREAMING_TROTZDEM = "yes"
+STREAMING_ANDERES = "other"
+STREAMING_ABBRUCH = "cancel"
+
+
+def frage_streaming(gui, titel: str, text: str, mit_alternative: bool = True, eltern=None) -> str:
+    """Die Frage vor einem .ffpfsc/.ffpfs bei Spielen mit vielen Daten oder Texture-Streaming - nur im Hauptfaden.
+
+    Drei Wege statt Ja/Nein: trotzdem erstellen, ein anderes Format waehlen oder abbrechen (Nutzerwunsch
+    21.10.2026). Ohne waehlbare Alternative entfaellt die mittlere Antwort. Vorgabe (Enter) ist "anderes Format"
+    bzw. - ohne Alternative - Abbrechen; Fenster-X und Esc gelten als Abbruch.
+
+    Returns:
+        :data:`STREAMING_TROTZDEM`, :data:`STREAMING_ANDERES` oder :data:`STREAMING_ABBRUCH`.
+    """
+    knoepfe = ((STREAMING_TROTZDEM, "trotzdem"), (STREAMING_ANDERES, "anderes_format"),
+               (STREAMING_ABBRUCH, "abbrechen"))
+    if not mit_alternative:
+        knoepfe = (knoepfe[0], knoepfe[2])
+    try:
+        if eltern is None:
+            eltern = fenster_vorn.aktives_fenster(gui.root)
+        meldung = Meldung(gui, "askyesnocancel", titel, text, eltern=eltern,
+                          vorgabe=STREAMING_ANDERES if mit_alternative else STREAMING_ABBRUCH,
+                          knoepfe_eigen=knoepfe)
+    except Exception as exc:  # noqa: BLE001 - lieber eine einfache Ja/Nein-Frage als gar keine
+        logger.debug("Streaming-Frage in Pillenoptik nicht moeglich (%s) - Ja/Nein", exc)
+        return STREAMING_TROTZDEM if messagebox.askyesno(titel, text) else STREAMING_ABBRUCH
+    antwort = meldung.zeigen()
+    return antwort if antwort in (STREAMING_TROTZDEM, STREAMING_ANDERES) else STREAMING_ABBRUCH
+
+
 def _blinken(fenster) -> None:
     """Die Taskleistenschaltflaeche des Hauptfensters blinken lassen (nur Windows); ohne Wirkung sonst."""
     import sys
@@ -266,12 +304,36 @@ def zeigen(gui, art: str, title=None, message=None, **optionen):
         if gui is None or not gui.root.winfo_exists():
             return original(title, message, **optionen)
         vorgabe = str(optionen.get("default") or "")
-        meldung = Meldung(gui, art, title or "", message or "", eltern=optionen.get("parent"),
-                          vorgabe=vorgabe)
+        # Ohne Angabe gehoert die Meldung dem Fenster, das gerade den Fokus hat - nicht stets dem Hauptfenster.
+        eltern = optionen.get("parent") or fenster_vorn.aktives_fenster(gui.root)
+        meldung = Meldung(gui, art, title or "", message or "", eltern=eltern, vorgabe=vorgabe)
     except Exception as exc:  # noqa: BLE001 - lieber der Systemdialog als gar keine Meldung
         logger.debug("Meldung in Pillenoptik nicht moeglich (%s) - Systemdialog", exc)
         return original(title, message, **optionen)
     return meldung.zeigen()
+
+
+#: Die Datei- und Ordnerdialoge von ``tkinter.filedialog``. Sie bleiben die Dialoge von Windows, bekommen aber ohne
+#: Angabe das Fenster mit dem Fokus als Besitzer - sonst haengen sie am Hauptfenster und fallen hinter das
+#: Werkzeugfenster, das sie geoeffnet hat, sobald man dieses anklickt.
+DATEIDIALOGE = ("askdirectory", "askopenfilename", "askopenfilenames", "asksaveasfilename",
+                "askopenfile", "askopenfiles", "asksaveasfile")
+
+_DATEI_ORIGINALE: dict[str, object] = {}
+
+
+def _datei_ersatz(gui, name: str, original):
+    def _ersatz(*args, **optionen):
+        if optionen.get("parent") is None and threading.current_thread() is threading.main_thread():
+            try:
+                if gui is not None and gui.root.winfo_exists():
+                    optionen["parent"] = fenster_vorn.aktives_fenster(gui.root)
+            except Exception as exc:  # noqa: BLE001 - ohne Besitzer geht der Dialog trotzdem
+                logger.debug("Dateidialog ohne aktiven Besitzer: %s", exc)
+        return original(*args, **optionen)
+
+    _ersatz.__name__ = name
+    return _ersatz
 
 
 def einrichten(gui) -> None:
@@ -285,9 +347,18 @@ def einrichten(gui) -> None:
 
         _ersatz.__name__ = art
         setattr(messagebox, art, _ersatz)
+    for name in DATEIDIALOGE:
+        original = _DATEI_ORIGINALE.get(name) or getattr(filedialog, name, None)
+        if original is None:
+            continue
+        _DATEI_ORIGINALE[name] = original
+        setattr(filedialog, name, _datei_ersatz(gui, name, original))
 
 
 def aufheben() -> None:
     """Stellt die Systemdialoge wieder her."""
     for art, original in _ORIGINALE.items():
         setattr(messagebox, art, original)
+    for name, original in _DATEI_ORIGINALE.items():
+        setattr(filedialog, name, original)
+    _DATEI_ORIGINALE.clear()

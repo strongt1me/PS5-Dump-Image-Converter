@@ -178,6 +178,7 @@ footer b{color:#fff}
       <a href="#konsole">Konsolentest</a>
       <a href="#probleme">Probleme</a>
       <a href="#regeln">Regeln</a>
+      <a href="#lz4">LZ4 &amp; neueste Fassungen</a>
     </nav>
   </div>
 </header>
@@ -193,7 +194,8 @@ footer b{color:#fff}
       <span class="badge on">Mit Mitschnitt-Assistent, seit v1.9.54</span>
       <span class="badge">AMPR_PackTools-4.0, GPL-3.0</span>
       <span class="badge">drakmor/ampr_emu, GPL-3.0</span>
-      <span class="badge">Stand: 1. Oktober 2026</span>
+      <span class="badge">AMPR EMU 0.4.2.1 mit LZ4</span>
+      <span class="badge">Stand: 21. Oktober 2026</span>
     </div>
 
     <div class="alert">
@@ -412,6 +414,32 @@ footer b{color:#fff}
         <li>Aufgabe 7 (AMPR EMU Manager) baut und entfernt keine Asset-Pack-Bänder – das geschieht ausschließlich beim Erstellen eines Abbilds (Aufgaben 1–6) mit Methode „Asset-Pack".</li>
       </ul>
     </div>
+  </section>
+
+  <!-- 11 -->
+  <section id="lz4">
+    <div class="sec-head"><span class="sec-mark">11</span><h2>LZ4 und die neuesten Fassungen (Stand 21. Oktober 2026)</h2></div>
+    <p class="lede">Seit AMPR EMU 0.4.2.1 können Asset-Packs mit LZ4 komprimiert werden. Nach der Dokumentation des Herstellers werden Spiele dadurch etwa halb so groß und laden 30 bis 40&nbsp;% schneller.</p>
+    <div class="card">
+      <ul class="checklist">
+        <li><b style="color:#fff">Modi:</b> <code class="inline">compress</code> (LZ4, Standard), <code class="inline">store</code> (ohne Kompression gebündelt) und <code class="inline">loose</code> (Dateien bleiben lose). Blöcke, die sich nicht verkleinern lassen, werden unverändert (RAW) abgelegt.</li>
+        <li><b style="color:#fff">Kompressionsstufe:</b> LZ4 HC; hohe Stufen brauchen deutlich mehr Zeit beim Packen, das Laden auf der Konsole wird dadurch nicht langsamer.</li>
+        <li><b style="color:#fff">Ein Satz:</b> Index, Laufzeitdatei und alle Bänder gehören zusammen und werden nie einzeln ausgetauscht.</li>
+        <li><b style="color:#fff">Fehlermeldung zur Laufzeit</b> (LZ4-/Dekodierfehler im Protokoll): Das Pack ist unvollständig oder beschädigt – neu bauen und gegen das Original prüfen, nicht von Hand ausbessern.</li>
+      </ul>
+    </div>
+    <h3 style="margin:22px 0 8px">Direkt auf der Konsole umwandeln: exFAT2AMPR</h3>
+    <div class="card">
+      <p style="margin:0 0 12px;font-size:14.5px">Die freie Konsolen-App <b style="color:#fff">exFAT2AMPR</b> (V-10, GPL-3.0; LZ4-Format von DLPSGAME) wandelt ein Spiel mit dem Controller direkt auf der PS5 in ein AMPR-LZ4-Spiel um – auf interne SSD, M.2-SSD oder USB. Kein PC nötig. Aktueller Stand: Version 1.104.</p>
+      <ul class="checklist">
+        <li>Voraussetzungen: gejailbreakte PS5 mit kstuff, ein ELF-Lader auf Port 9021 und ShadowMountPlus ab 1.7.</li>
+        <li>Jeder Block wird geprüft, unterbrochene Umwandlungen setzen sich fort, das Originalspiel bleibt erhalten.</li>
+        <li>Seit 1.104: <b style="color:#fff">Start-Prüfung</b> nach der Umwandlung (fehlender oder überschriebener AMPR-Emulator u.&nbsp;a.), Reparatur über das Spielmenü, Zeitschätzung je LZ4-Stufe und Musik der Spiele auf dem Startbildschirm.</li>
+        <li>Behalte das Original, bis das umgewandelte Spiel einmal gestartet ist; einzelne Spiele (etwa Unity-Titel) laufen umgewandelt nicht.</li>
+      </ul>
+      <p class="note" style="margin:14px 0 0">Das ist ein anderer Weg als die Packs dieses Programms: Dort entsteht das Pack am PC beim Erstellen eines Abbilds, hier auf der Konsole aus einem fertigen Spiel. Beide Wege nutzen LZ4 und denselben AMPR-Emulator.</p>
+    </div>
+    <p class="note">Quellen: <code class="inline">drakmor/ampr_emu</code> (Veröffentlichung 0.4.2.1, <code class="inline">docs/ASSET_PACK_WORKFLOW_EN.md</code>) und <code class="inline">exFAT2AMPR/exfat2ampr</code> (README und Veröffentlichungen), abgerufen am 21.&nbsp;Oktober 2026.</p>
   </section>
 
   <footer>

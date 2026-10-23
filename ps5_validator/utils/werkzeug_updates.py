@@ -133,11 +133,11 @@ _SICHER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,40}")
 # ---------------------------------------------------------------------------
 _STUFEN = {"alpha": 0, "beta": 1, "rc": 2}
 #: Nach der Zahl: Stufe (``beta4``, ``-beta2``, ``alpha13fix1``) oder Bauzahl (``-3``).
-_NACHSILBE = r"(?:[-_.]?(?:alpha|beta|rc)\d*(?:fix\d+)?|-\d+(?![\w]))"
+_NACHSILBE = r"(?:[-_.]?(?:alpha|beta|rc)\d*(?:[-_.]?fix\d+)?|-\d+(?![\w]))"
 _DATEI_FASSUNG = re.compile(r"[-_]v?(\d+(?:\.\d+)+%s?)" % _NACHSILBE, re.IGNORECASE)
 _TAG_FASSUNG = re.compile(r"^[vV]?(\d+(?:\.\d+)*%s?)" % _NACHSILBE, re.IGNORECASE)
 _ZAHLEN = re.compile(r"(\d+(?:\.\d+)*)")
-_STUFE = re.compile(r"[-_.]?(alpha|beta|rc)(\d*)(?:fix(\d+))?", re.IGNORECASE)
+_STUFE = re.compile(r"[-_.]?(alpha|beta|rc)(\d*)(?:[-_.]?fix(\d+))?", re.IGNORECASE)
 _BAU = re.compile(r"-(\d+)$")
 _RC = re.compile(r"rc(\d+)", re.IGNORECASE)
 _ACHT_ZIFFERN = re.compile(r"(?<!\d)(\d{8})(?!\d)")
@@ -566,7 +566,7 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     Werkzeug("ps5-pkg-tool", "PS5-PKG-Tool (ps5-fpkg-converter)", GRUPPE_WERKZEUG, "sub0x00001/ps5-fpkg-converter",
              ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:0.0.2"),
     Werkzeug("ps5-ultrapack", "ps5-ultrapack (Engine im PS5-PKG-Tool)", GRUPPE_WERKZEUG, "knutwurst/ps5-ultrapack",
-             ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:2.2.7"),
+             ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:2.2.10"),
     Werkzeug("wee-tools", "PS5 Wee Tools", GRUPPE_WERKZEUG, "andy-man/ps5-wee-tools", ordner="PS5-Wee-Tools-*",
              art=ART_HINWEIS, hinweis="updates.hinweis_festgelegt", lokal="ordnername"),
     Werkzeug("7zip", "7-Zip", GRUPPE_WERKZEUG, "ip7z/7zip", ordner="7-Zip-*", art=ART_HINWEIS,

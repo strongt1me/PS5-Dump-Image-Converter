@@ -447,6 +447,14 @@ class FassungsTests(unittest.TestCase):
         for text in ("", "latest", "beta", "nightly"):
             self.assertEqual((), wu.fassungsschluessel(text), text)
 
+    def test_fix_mit_bindestrich_wie_im_tag_von_shadowmount(self) -> None:
+        """Tag ``1.7beta6-fix2`` und Dateiname ``1.7beta6fix2`` sind dieselbe Fassung."""
+        self.assertEqual(wu.fassungsschluessel("1.7beta6-fix2"), wu.fassungsschluessel("1.7beta6fix2"))
+        kette = ["1.7beta5fix1", "1.7beta6", "1.7beta6-fix1", "1.7beta6-fix2", "1.7"]
+        schluessel = [wu.fassungsschluessel(f) for f in kette]
+        self.assertEqual(sorted(schluessel), schluessel)
+        self.assertEqual(len(set(schluessel)), len(schluessel))
+
     def test_v_vorn_und_abschlussnullen_zaehlen_nicht(self) -> None:
         self.assertEqual(wu.fassungsschluessel("v1.2"), wu.fassungsschluessel("1.2.0"))
         self.assertEqual(wu.fassungsschluessel("V3"), wu.fassungsschluessel("3.0.0.0"))

@@ -103,6 +103,10 @@ class SpielDetailFenster:
 
         win = tk.Toplevel(eltern)
         self.win = win
+        # Besitzer setzen, sonst faellt das Fenster nach einem Klick aufs Hauptfenster dahinter.
+        binden = getattr(g, "_fenster_an_hauptfenster_binden", None)
+        if callable(binden):
+            binden(win, eltern)
         fenstertitel = titel or os.path.basename(spielordner)
         win.title(t("ps5pkg.detail_title", name=fenstertitel))
         win.configure(bg=c["bg_main"])

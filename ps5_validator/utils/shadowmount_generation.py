@@ -64,7 +64,7 @@ die am Quellcode von alpha6 bzw. alpha8 geprueft wurden
 from __future__ import annotations
 
 import posixpath
-from typing import Any
+from typing import Any, Iterable
 
 #: Die beiden Generationen.
 ALT = "alt"
@@ -109,6 +109,30 @@ CONFIG_PFAD = "/data/shadowmount/config.ini"
 #: Ab 1.7beta3 der letzte Ort, an dem ein Backport-Ordner gesucht wird -
 #: auch mit eigenen ``scanpath``-Eintraegen (``DEFAULT_BACKPORT_SCAN_PATH``).
 BACKPORT_RUECKFALL = "/data/homebrew"
+
+
+def backport_ordner_waehlen(title_id: str, namen: Iterable[str]) -> str:
+    """Welchen Ordner unter ``<scanpath>/backports`` ShadowMount+ nimmt.
+
+    Ab 1.7beta6 darf der Ordner hinter der Title-ID einen Zusatz tragen
+    (``PPSA12345 Spielname``). Im selben Suchpfad gewinnt der Ordner, der
+    genau ``<TITLE_ID>`` heisst; sonst der erste Name in Byte-Reihenfolge, der
+    mit der ganzen Title-ID beginnt (``backport_name_matches_title``:
+    ``strncmp``, also gross/klein beachtet). Dateien zaehlen nicht - der
+    Aufrufer reicht nur Ordnernamen herein.
+
+    Returns:
+        Der Ordnername, oder ein leerer String ohne Treffer.
+    """
+    kennung = str(title_id or "").strip()
+    if not kennung:
+        return ""
+    liste = [str(n) for n in namen if "/" not in str(n)]
+    if kennung in liste:
+        return kennung
+    treffer = sorted((n for n in liste if n.startswith(kennung)),
+                     key=lambda n: n.encode("utf-8"))
+    return treffer[0] if treffer else ""
 DEBUG_LOG = "/data/shadowmount/debug.log"
 
 #: Schluessel, die es **nur** ab alpha8 gibt. Steht einer davon in der

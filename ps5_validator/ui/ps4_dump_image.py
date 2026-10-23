@@ -56,6 +56,7 @@ QUELLE_DUMP = "dump_dir"
 #: Die Einstellungen dieses Fensters (``_load_setting``/``_save_setting``).
 EINST_ART = "ps4dib_quelle_art"
 EINST_ZIEL = "ps4dib_ziel"
+EINST_TEMP = "ps4dib_temp_ordner"
 EINST_FORMAT = "ps4dib_format"
 EINST_STUFE = "ps4dib_stufe"
 EINST_WORKER = "ps4dib_worker"
@@ -197,6 +198,7 @@ class Ps4DumpImageFenster:
         if not ziel and hasattr(g, "dest_path"):
             ziel = g.dest_path.get().strip()
         self.ziel_var = tk.StringVar(value=ziel)
+        self.temp_var = tk.StringVar(value=str(self._einstellung(EINST_TEMP, "") or ""))
         self._formate = {ab.FORMAT_DUMP: t("ps4dib.format_dump"), ab.FORMAT_FFPFSC: t("ps4dib.format_ffpfsc"),
                          ab.FORMAT_EXFAT: t("ps4dib.format_exfat"), ab.FORMAT_PKG: t("ps4dib.format_pkg")}
         gespeichert = str(self._einstellung(EINST_FORMAT, ab.FORMAT_FFPFSC))
@@ -249,6 +251,13 @@ class Ps4DumpImageFenster:
         pw.Entry(ziel_reihe, textvariable=self.ziel_var, font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"], relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
         pw.Button(ziel_reihe, text="…", width=3, command=self._ziel_waehlen).pack(side="left", padx=(6, 0))
+        tk.Label(koerper, text=t("ps4pkg.temp_label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
+        temp_reihe = tk.Frame(koerper, bg=c["bg_main"])
+        temp_reihe.pack(fill="x")
+        pw.Entry(temp_reihe, textvariable=self.temp_var, font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+                 insertbackground=c["fg_primary"], relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
+        pw.Button(temp_reihe, text="…", width=3, command=self._temp_waehlen).pack(side="left", padx=(6, 0))
 
         einstell = tk.Frame(koerper, bg=c["bg_main"])
         einstell.pack(fill="x", pady=(8, 0))
@@ -377,6 +386,12 @@ class Ps4DumpImageFenster:
         ordner = filedialog.askdirectory(title=self.t("ps4pkg.choose_output"), parent=self.win)
         if ordner:
             self.ziel_var.set(os.path.normpath(ordner))
+
+    def _temp_waehlen(self) -> None:
+        ordner = filedialog.askdirectory(title=self.t("ps4pkg.choose_temp"), parent=self.win,
+                                         initialdir=self.temp_var.get().strip() or None)
+        if ordner:
+            self.temp_var.set(os.path.normpath(ordner))
 
     def _quellen(self) -> "list[str] | None":
         """Die gewaehlten Quellen als Liste; ``None`` (mit Warnung) bei ungueltiger Eingabe."""
@@ -714,7 +729,8 @@ class Ps4DumpImageFenster:
 
     def _arbeitsbasis(self, ziel: str) -> str:
         """Wo der Arbeitsordner hin soll: beim Ziel; unter Windows bei zu langem Pfad im Wurzelverzeichnis."""
-        basis = os.path.join(ziel, "ps4dib_arbeit")
+        eigener = self.temp_var.get().strip()
+        basis = os.path.join(eigener if eigener and os.path.isdir(eigener) else ziel, "ps4dib_arbeit")
         haupt = _haupt(self.g)
         kurz = getattr(haupt, "_ps4ffpsc_kurzer_arbeitsordner", None)
         grenze = int(getattr(haupt, "_PS4FFPSC_MAX_ARBEITSPFAD", MAX_ARBEITSPFAD))
@@ -754,7 +770,23 @@ class Ps4DumpImageFenster:
         if mit_dlc and kennung in ab.ABBILD_FORMATE and not messagebox.askyesno(
                 t("ps4pkg.window_title"), t("ps4pkg.dlc_confirm"), parent=self.win):
             return
+        # Viele Daten oder Texture-Streaming: In einem .ffpfsc sind Ruckler moeglich - vor dem Start fragen.
+        if kennung == ab.FORMAT_FFPFSC:
+            groessen = [(s.titel or s.title_id, self._spiel_groesse(s)) for s in gewaehlt]
+            nur_abbild = self.art_var.get() == QUELLE_DUMP     # ein entpacktes Spiel wird nur zu einem Abbild
+            alternativen = [(k, text) for k, text in self._formate.items()
+                            if k != ab.FORMAT_FFPFSC and (not nur_abbild or k in ab.ABBILD_FORMATE)]
+            aktion, neu = self.g._ruckler_rueckfrage_groessen(
+                groessen, "ffpfsc", parent=self.win, alternativen=alternativen)
+            if aktion == "abbruch":
+                return
+            if aktion == "anderes":
+                # Das andere Format einstellen und von vorn beginnen: Alle Pruefungen gelten dann dafuer.
+                self.format_var.set(self._formate[neu])
+                self._starten()
+                return
         self._merken(EINST_ZIEL, ziel)
+        self._merken(EINST_TEMP, self.temp_var.get().strip())
         self._merken(EINST_STUFE, stufe)
         self._merken(EINST_WORKER, worker)
         haupt = _haupt(self.g)
@@ -794,6 +826,14 @@ class Ps4DumpImageFenster:
             self.g._ps4_hinweis_stand = self._batch_hinweis
             self.g._ps4_hinweis_zeit_starten(self.win)
         self._knoepfe_pruefen()
+
+    @staticmethod
+    def _spiel_groesse(s: "ab.Spiel") -> int:
+        """Die Groesse eines Spiels aus seinen Paketen (Basis und Updates) oder, bei einem Ordner, 0 (unbekannt)."""
+        if s.dump_ordner:
+            return 0
+        pakete = ([s.basis] if s.basis is not None else []) + list(s.updates or [])
+        return sum(int(getattr(p, "groesse", 0) or 0) for p in pakete)
 
     def _lauf_fuer(self, aufgabe: au.Aufgabe):
         """Ein ``lauf`` fuer PS4 FFPFSC, der den Prozess der Aufgabe zum Abbrechen ablegt."""

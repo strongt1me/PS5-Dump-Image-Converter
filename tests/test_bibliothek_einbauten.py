@@ -200,6 +200,26 @@ class KonsoleTests(unittest.TestCase):
                                           auflisten=self._auflisten)
         self.assertEqual({"PPSA00001": ["/data/homebrew/backports/PPSA00001"]}, funde)
 
+    def test_backports_mit_namenszusatz_ab_1_7beta6(self) -> None:
+        fs = {
+            "/data/homebrew/backports": {
+                "dirs": ["PPSA00001 Zweiter", "PPSA00001 Erster", "PPSA00002", "PPSA00002 Name"],
+                "files": []},
+        }
+
+        def auflisten(_ftp, pfad):
+            if pfad not in fs:
+                raise OSError("550")
+            return fs[pfad]
+
+        funde = bib.backports_auf_konsole(None, ["/data/homebrew"],
+                                          ist_ordner=lambda _f, p: p in fs,
+                                          auflisten=auflisten)
+        # Kein genauer Name: erster in Byte-Reihenfolge; genauer Name gewinnt.
+        self.assertEqual({
+            "PPSA00001": ["/data/homebrew/backports/PPSA00001 Erster"],
+            "PPSA00002": ["/data/homebrew/backports/PPSA00002"]}, funde)
+
     def test_die_seite_nimmt_backports_vor_dem_spiel(self) -> None:
         gui = _bare_gui()
         eintraege = [

@@ -194,6 +194,17 @@ class BannerTests(_MitFenster):
             self.app._banner_planen()
         nach.assert_not_called()
 
+    def test_rechte_kante_ist_die_der_karte(self) -> None:
+        """Meldung 21.10.2026: Das Banner ragte rechts ueber die Karte (QUELLE usw.) hinaus."""
+        self.root.update()
+        karte = self.app.path_card
+        if not (karte.winfo_ismapped() and karte.winfo_width() > 1):
+            self.skipTest("Karte nicht sichtbar")
+        leiste = self.app._main_titlebar
+        self.assertEqual(karte.winfo_rootx() + karte.winfo_width(), self.app._banner_rechte_kante(leiste))
+        with mock.patch.object(karte, "winfo_ismapped", return_value=False):
+            self.assertEqual(leiste.winfo_rootx() + leiste.winfo_width() - 12, self.app._banner_rechte_kante(leiste))
+
     def test_die_zeiten(self) -> None:
         """Nutzerwunsch 10.10.2026: nach 2 Minuten, 5 Minuten lang, alle 30 Minuten (vom Beginn zu Beginn)."""
         self.assertEqual(120_000, self.app._BANNER_NACH_MS)

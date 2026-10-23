@@ -8,6 +8,7 @@ wird das Ergebnis pro Sitzung im Arbeitsspeicher gehalten.
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import tempfile
@@ -67,12 +68,6 @@ def version_uri_lesen(title_id: str, adresse: str, port: int = 2121,
     return mapping.get(tid, "")
 
 
-def cache_leeren() -> None:
-    """Verwirft alle gecachten app.db-Inhalte."""
-    with _CACHE_SPERRE:
-        _CACHE.clear()
-
-
 # ---------------------------------------------------------------------------
 # Interne Hilfsfunktionen
 # ---------------------------------------------------------------------------
@@ -105,15 +100,30 @@ def _app_db_auslesen(db_inhalt: bytes) -> dict[str, str]:
     try:
         con = sqlite3.connect(tmp_pfad)
         try:
-            cur = con.execute(
-                "SELECT TITLE_ID, VERSION_FILE_URI FROM tbl_appbrowse"
-                " WHERE VERSION_FILE_URI IS NOT NULL AND VERSION_FILE_URI != ''"
-            )
-            for zeile in cur:
-                tid = str(zeile[0]).strip().upper()
-                uri = str(zeile[1]).strip()
-                if tid and uri:
-                    mapping[tid] = uri
+            tabellen = {r[0] for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            if "tbl_appbrowse" in tabellen:
+                cur = con.execute(
+                    "SELECT TITLE_ID, VERSION_FILE_URI FROM tbl_appbrowse"
+                    " WHERE VERSION_FILE_URI IS NOT NULL AND VERSION_FILE_URI != ''"
+                )
+                for zeile in cur:
+                    tid = str(zeile[0]).strip().upper()
+                    uri = str(zeile[1]).strip()
+                    if tid and uri:
+                        mapping[tid] = uri
+            if "tbl_contentinfo" in tabellen:
+                # Neuere Firmware: die Adresse steckt im JSON-Feld AppInfoJson.
+                for tid_roh, roh in con.execute(
+                        "SELECT titleId, AppInfoJson FROM tbl_contentinfo"
+                        " WHERE AppInfoJson LIKE '%VERSION_FILE_URI%'"):
+                    try:
+                        uri = str(json.loads(roh).get("VERSION_FILE_URI", "") or "").strip()
+                    except (ValueError, TypeError, AttributeError):
+                        continue
+                    tid = str(tid_roh or "").strip().upper()
+                    if tid and uri:
+                        mapping.setdefault(tid, uri)
         finally:
             con.close()
     except sqlite3.Error as fehler:

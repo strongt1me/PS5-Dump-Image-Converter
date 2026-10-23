@@ -11,7 +11,7 @@ Large parts of `engine/backend/` are vendored verbatim from
 `engine/NOTICES-ps5-ultrapack.md`). Its backend implements the conversion
 chain used here: PS5 fake package decoding, PFS/`.ffpfs`/`.ffpfsc` image
 building, exFAT image writing, executable fake-signing and backporting.
-Vendored as of upstream **v2.2.7** (2026-10-17).
+Vendored as of upstream **v2.2.10** (2026-10-19).
 
 ## LibProsperoPkg (GPL-3.0-or-later)
 

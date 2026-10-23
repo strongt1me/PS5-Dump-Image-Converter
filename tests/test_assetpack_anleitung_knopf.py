@@ -47,8 +47,8 @@ def _tk_verfuegbar() -> bool:
 class UebersetzungTests(unittest.TestCase):
     def test_knopfbeschriftung_in_beiden_sprachen(self):
         self.assertIn("titlebar.assetpack_anleitung", STRINGS)
-        self.assertEqual(translate("de", "titlebar.assetpack_anleitung"), "Asset Packs Anleitung")
-        self.assertEqual(translate("en", "titlebar.assetpack_anleitung"), "Asset Packs Guide")
+        self.assertEqual(translate("de", "titlebar.assetpack_anleitung"), "LZ4 & Asset Pack Anleitung")
+        self.assertEqual(translate("en", "titlebar.assetpack_anleitung"), "LZ4 & Asset Pack Guide")
 
     def test_fehlermeldung_in_beiden_sprachen(self):
         self.assertIn("dialog.msg.assetpack_guide_missing", STRINGS)
@@ -165,7 +165,7 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(hasattr(self.app, "_btn_assetpack_anleitung_title"))
         erwartet = translate(self.app._current_language, "titlebar.assetpack_anleitung")
         self.assertEqual(self.app._btn_assetpack_anleitung_title.cget("text"), erwartet)
-        self.assertIn(erwartet, ("Asset Packs Anleitung", "Asset Packs Guide"),
+        self.assertIn(erwartet, ("LZ4 & Asset Pack Anleitung", "LZ4 & Asset Pack Guide", "Guía de LZ4 y Asset Packs", "Guida a LZ4 e Asset Pack", "Guide LZ4 et Asset Packs"),
                       "Unerwartete Beschriftung fuer Sprache %r"
                       % self.app._current_language)
 
@@ -195,10 +195,10 @@ class FensterTests(unittest.TestCase):
     def test_beschriftung_folgt_der_sprache(self):
         self.app._current_language = "en"
         self.app._apply_language()
-        self.assertEqual(self.app._btn_assetpack_anleitung_title.cget("text"), "Asset Packs Guide")
+        self.assertEqual(self.app._btn_assetpack_anleitung_title.cget("text"), "LZ4 & Asset Pack Guide")
         self.app._current_language = "de"
         self.app._apply_language()
-        self.assertEqual(self.app._btn_assetpack_anleitung_title.cget("text"), "Asset Packs Anleitung")
+        self.assertEqual(self.app._btn_assetpack_anleitung_title.cget("text"), "LZ4 & Asset Pack Anleitung")
 
     def test_designwechsel_faerbt_den_knopf_um(self):
         """Gegenprobe zur Farbtabelle oben - am echten Knopf gemessen."""

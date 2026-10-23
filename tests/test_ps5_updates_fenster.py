@@ -105,7 +105,7 @@ class ListeTests(unittest.TestCase):
         self.assertFalse(gescheitert)
         self.assertEqual(2, len(zeilen))
         plattform, fassung, groesse, firmware, datum, neueste, adresse = zeilen[0]
-        self.assertEqual("PS5 · Sony", plattform)
+        self.assertEqual("PS5", plattform)
         self.assertEqual("01.010.002", fassung)
         self.assertEqual("13.60", firmware)
         self.assertTrue(neueste)
@@ -174,9 +174,14 @@ class ListeTests(unittest.TestCase):
                 gui = self._suche(meta)
                 gui._sony_updates_lesen.assert_not_called()
 
-    def test_ps4_titel_fragen_sony_nie(self):
+    def test_ps4_titel_fragen_sony_mit_abgeleiteter_adresse(self):
         gui = self._suche({"title_id": "CUSA00001", "version_file_uri": URI}, titel="CUSA00001")
-        gui._sony_updates_lesen.assert_not_called()
+        gui._sony_updates_lesen.assert_called_once()
+        adresse, kennung, name = gui._sony_updates_lesen.call_args.args
+        self.assertTrue(adresse.startswith("https://gs-sec.ww.np.dl.playstation.net/plo/np/CUSA00001/"))
+        self.assertTrue(adresse.endswith("/CUSA00001-ver.xml"))
+        self.assertNotEqual(URI, adresse)
+        self.assertEqual("PS4", name)
 
     def test_ohne_freigabe_geht_nichts_ins_netz(self):
         gui = _gui(self.haupt)
@@ -187,6 +192,19 @@ class ListeTests(unittest.TestCase):
         with mock.patch.object(self.haupt.threading, "Thread", _SofortFaden):
             gui._fetch_patches_async("PPSA01650")
         gui._sony_updates_lesen.assert_not_called()
+
+    def test_zusammenfuehren_sony_zuerst_gleiche_version_der_seite_entfaellt(self):
+        gui = _gui(self.haupt)
+        seite_neu = ("PS5", "06.005.000", "50 GB", "12.00", "2026", True, "https://prosperopatches.com/X")
+        seite_alt = ("PS5", "06.004.000", "50 GB", "12.00", "2026", False, "https://prosperopatches.com/X")
+        sony = ("PS5", "06.005", "49 GB", "12.00", "-", True, "sony-update:" + MANIFEST_URL)
+        ergebnis = gui._patchzeilen_zusammenfuehren([seite_neu, seite_alt, sony])
+        self.assertEqual([sony, seite_alt], ergebnis)
+
+    def test_zusammenfuehren_ohne_sony_bleibt_unveraendert(self):
+        gui = _gui(self.haupt)
+        zeilen = [("PS5", "1.0", "-", "-", "-", True, "https://prosperopatches.com/X")]
+        self.assertEqual(zeilen, gui._patchzeilen_zusammenfuehren(zeilen))
 
     def test_download_klick_geht_an_den_neuen_weg(self):
         gui = _gui(self.haupt)

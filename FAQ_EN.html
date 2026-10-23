@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.85</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.86</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.85</span>
-      <span class="marke">As of 20 October 2026</span>
+      <span class="marke">Version v1.9.86</span>
+      <span class="marke">As of 23 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -429,7 +429,7 @@ footer{
   <div class="frage">
     <h3>What are asset packs?</h3>
     <p>With the method <strong>Asset pack</strong>, the game files are additionally put into packed bands (<code>ampr_assets-*.pak</code>) that AMPR EMU reads block by block from version 0.4.2.1 on. This saves space and file descriptors on the console. For this, <strong>both</strong> drop-down lists must be right: AMPR version <code>test-pack</code> (or <code>test-debug-pack</code> for troubleshooting) and method <em>Asset pack</em> – the version <code>test-nopack</code> that is preselected at the top cannot do it.</p>
-    <p>Every packed block is checked byte by byte against the original file. Your original files stay in place unless you choose otherwise; only leave them out after a successful test on the console. The detailed guide opens with the <strong>Asset Packs Guide</strong> button.</p>
+    <p>Every packed block is checked byte by byte against the original file. Your original files stay in place unless you choose otherwise; only leave them out after a successful test on the console. The detailed guide opens with the <strong>LZ4 &amp; Asset Pack Guide</strong> button.</p>
     <p>For <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> and games built on the <em>Unity</em> or <em>Insomniac</em> engine, the program automatically sets up a tested pack profile (since v1.9.78). A profile of your own next to the dump folder (<code>&lt;folder name&gt;_ampr_pack.toml</code>) always takes precedence.</p>
   </div>
 
@@ -448,6 +448,11 @@ footer{
   <div class="frage">
     <h3>What does the “PlayGo” checkbox do?</h3>
     <p>It places a replacement for <code>libScePlayGo.sprx</code> in the game that reports all language and scenario packages as installed. Most games do not need this, so it is off by default. If a title declares PlayGo content and the checkbox is not set, the program asks at the beginning of the run – before anything is copied, unpacked or packed.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What does the “DLC EMU” checkbox do?</h3>
+    <p>It places three replacement libraries (<code>libSceAppContent</code>, <code>libSceNpEntitlementAccess</code> and <code>libSceGameUpdate</code>) in the game so that the console reports add-on content as present. Which content counts is listed in <code>dlc_emu.ini</code> in the game folder; if it is missing, the program creates it from the game’s <code>dlcmap.json</code>. Add-on content that only unlocks something is entered as a plain entitlement. The checkbox is off by default. If the game has add-on content (<code>dlcmap.json</code>, a DLC folder next to the game or a <code>dlc_emu.ini</code>) and the checkbox is not set, the program asks at the beginning of the run. Without a matching <code>dlc_emu.ini</code>, DLC EMU reports no add-on content.</p>
   </div>
 
   <div class="frage">
@@ -669,7 +674,7 @@ footer{
     <ul>
       <li>This <strong>FAQ</strong> opens with the <strong>FAQ</strong> button at the top, left of <strong>USER MANUAL</strong> – in English or German, depending on the selected language.</li>
       <li>The <strong>user manual</strong> opens with the button of that name – it is bundled with the program, no internet connection is needed. The manual is currently written in German. Manual and FAQ are also included as PDF next to the program file.</li>
-      <li>The guides on asset packs and on ShadowMount+ (old and new method) open with the <strong>Guide</strong> and <strong>Asset Packs Guide</strong> buttons.</li>
+      <li>The guides on asset packs and on ShadowMount+ (old and new method) open with the <strong>Guide</strong> and <strong>LZ4 &amp; Asset Pack Guide</strong> buttons.</li>
       <li>What changed in each version is listed in <code>CHANGELOG.md</code>.</li>
     </ul>
   </div>
@@ -678,8 +683,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.85</strong></span>
-  <span>As of 20 October 2026 · Only for content you own and acquired legally</span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.86</strong></span>
+  <span>As of 23 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 
 </body>
