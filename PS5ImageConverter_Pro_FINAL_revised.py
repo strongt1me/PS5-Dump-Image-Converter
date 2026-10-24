@@ -725,7 +725,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.86"
+APP_VERSION = "v1.9.87"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -7926,7 +7926,7 @@ class PS5ConverterGUI:
         Beides legt vor dem Packen eine vollstaendige Arbeitskopie des Dumps
         im Temp-Ordner an - der Unterschied im Platzbedarf ist erheblich.
         """
-        for name in ("ampr_integrate_var", "backport_integrate_var", "dlc_integrate_var"):
+        for name in ("ampr_integrate_var", "ampr_playgo_var", "backport_integrate_var", "dlc_integrate_var"):
             var = getattr(self, name, None)
             try:
                 if var is not None and bool(var.get()):
@@ -10522,7 +10522,7 @@ class PS5ConverterGUI:
             hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
         )
         self._register_translatable(self.dump_ordner_check, "main.dump_in_workdir")
-        self.dump_ordner_check.grid(row=13, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.dump_ordner_check.grid(row=14, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         # Arbeitskopie ohne Rueckfrage (Nutzer 06.10.2026): Muss in einem
         # vorhandenen Dump-Ordner etwas eingebaut werden, wird vorher eine Kopie
@@ -10547,7 +10547,7 @@ class PS5ConverterGUI:
             hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
         )
         self._register_translatable(self.arbeitskopie_check, "main.arbeitskopie_vorher")
-        self.arbeitskopie_check.grid(row=14, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.arbeitskopie_check.grid(row=15, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         self._register_drag_drop()
         self._register_keyboard_shortcuts()
@@ -16725,6 +16725,7 @@ class PS5ConverterGUI:
                 self._einbauzeile_setzen(self._einbauzeile_passt_daneben())
             self._kartenzeile_ausrichten(einbau, nachmessen=nachmessen)
             self._dlc_zeile_setzen()
+            self._optionskaesten_ordnen()
             if getattr(self, "_einbauzeile_daneben", False):
                 self._kartenbeschriftung_setzen(
                     getattr(self, "integrate_title", None), None,
@@ -16824,6 +16825,38 @@ class PS5ConverterGUI:
                 int(erstes.master.grid_rowconfigure(5)["minsize"]), self._dlc_zeile_hoehe()))
         except (tk.TclError, KeyError, ValueError) as exc:
             logger.debug("DLC-EMU-Zeile nicht setzbar: %s", exc)
+
+    #: Luft zwischen den beiden Spalten der Optionskaesten unter der Pfad-Karte.
+    _OPTIONEN_LUECKE = 32
+
+    def _optionskaesten_ordnen(self) -> None:
+        """Stellt die beiden Dump-Haken rechts neben "herunterfahren" und "an PS5 senden" - wenn die Karte breit genug ist.
+
+        Wunsch des Anwenders (23.10.2026): zwei Spalten statt vier Zeilen. Reicht die Breite nicht, stehen sie wie
+        vorher darunter; sonst ragte der rechte Haken aus der Karte. Die Haken sitzen nicht in einem Rahmen (der
+        deckte das Hintergrundbild), sondern per ``place`` am jeweiligen linken Haken.
+        """
+        links = [getattr(self, n, None) for n in ("shutdown_check", "senden_check")]
+        rechts = [getattr(self, n, None) for n in ("dump_ordner_check", "arbeitskopie_check")]
+        if None in links or None in rechts:
+            return
+        try:
+            karte = self.path_card
+            links_breite = max(int(w.winfo_reqwidth()) for w in links)
+            rechts_breite = max(int(w.winfo_reqwidth()) for w in rechts)
+            frei = int(karte.winfo_width()) - 2 * self._KARTEN_INNENRAND
+            daneben = int(karte.winfo_width()) > 1 and links_breite + self._OPTIONEN_LUECKE + rechts_breite <= frei
+            if daneben:
+                for haken, bezug in zip(rechts, links):
+                    haken.grid_remove()
+                    haken.place(in_=bezug, relx=0.0, x=links_breite + self._OPTIONEN_LUECKE, rely=0.5, anchor="w")
+            elif getattr(self, "_optionen_daneben", None):
+                for haken in rechts:
+                    haken.place_forget()
+                    haken.grid()
+            self._optionen_daneben = daneben
+        except tk.TclError as exc:
+            logger.debug("Optionskaesten nicht ordenbar: %s", exc)
 
     def _einbauzeile_setzen(self, daneben: bool) -> None:
         """Haengt die Einbauzeile neben die Pruefstufe oder unter sie."""
@@ -34292,8 +34325,9 @@ class PS5ConverterGUI:
         self._playgo_beim_einbau_fragen = False
         if mode not in self._MODE_TARGET_OPTIONS or mode == "batch_convert":
             return
-        if not self._tk_wert("ampr_integrate_var", False) \
-                or self._tk_wert("ampr_playgo_var", False):
+        # Gefragt wird, sobald das Spiel PlayGo-Inhalte hat und PlayGo nicht angehakt ist - auch ohne AMPR EMU
+        # (Nutzerwunsch 23.10.2026, wie bei DLC EMU).
+        if self._tk_wert("ampr_playgo_var", False):
             return
         self._set_status(self._t("status.playgo_pruefen"))
         merkmal = self._playgo_merkmal_der_quelle(src)
@@ -34957,8 +34991,9 @@ class PS5ConverterGUI:
         return var.get()
 
     def _integration_gewaehlt(self) -> bool:
-        """True, wenn mindestens eines der Kaestchen (AMPR EMU, BACKPORT, DLC EMU) gesetzt ist."""
+        """True, wenn mindestens eines der Kaestchen (AMPR EMU, PlayGo, BACKPORT, DLC EMU) gesetzt ist."""
         return bool(self._tk_wert("ampr_integrate_var", False)) or bool(
+            self._tk_wert("ampr_playgo_var", False)) or bool(
             self._tk_wert("backport_integrate_var", False)) or bool(
             self._tk_wert("dlc_integrate_var", False))
 
@@ -40775,7 +40810,7 @@ class PS5ConverterGUI:
             self._append_to_log(
                 self._t('log.manual.param_json_finding_line', v0=zeile))
 
-    def _offer_repair_param_json(self, quellordner: str, befund) -> bool:
+    def _offer_repair_param_json(self, quellordner: str, befund, paketbau: bool = False) -> bool:
         """Bietet an, eine vorhandene, fehlerhafte param.json zu reparieren.
 
         Warum reparieren statt ersetzen: Eine vorhandene Datei traegt fast
@@ -40825,7 +40860,7 @@ class PS5ConverterGUI:
                 daten, title_id=title_id, content_id=ersatz_id,
                 titel=lokal.get("titleName", ""),
                 inhaltsversion=lokal.get("contentVersion", ""),
-                texte=self._param_check_texte())
+                texte=self._param_check_texte(), paketbau=paketbau)
             if ersatz_id and neu.get("contentId") == ersatz_id:
                 self._append_to_log(self._t(
                     'log.manual.param_json_content_id_placeholder', v0=ersatz_id))

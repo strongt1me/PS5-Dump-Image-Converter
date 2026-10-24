@@ -113,8 +113,50 @@ class FehlerfaelleTests(unittest.TestCase):
         # Referenz bildet sie auf 'standard' bzw. 'free' ab.
         for falsch, gemeint in (("upgradable", "standard"), ("demo", "free")):
             with self.subTest(wert=falsch):
-                fehler = self._fehler(applicationDrmType=falsch)
+                fehler = pc.pruefe_daten(_gueltiges_dokument(applicationDrmType=falsch), paketbau=True).fehler
                 self.assertTrue(any(gemeint in f for f in fehler), fehler)
+
+    def test_upgradable_ist_bei_einem_dump_nur_ein_hinweis(self):
+        """Dirt 5 und Terminator Resistance tragen den Wert im echten Dump (2 von 35) - der Dump bleibt unveraendert."""
+        befund = pc.pruefe_daten(_gueltiges_dokument(applicationDrmType="upgradable"))
+        self.assertTrue(befund.ok, befund.fehler)
+        self.assertTrue(any("upgradable" in h for h in befund.hinweise), befund.hinweise)
+
+    def test_demo_bleibt_auch_beim_dump_ein_fehler(self):
+        self.assertFalse(pc.pruefe_daten(_gueltiges_dokument(applicationDrmType="demo")).ok)
+
+    def test_reparatur_laesst_upgradable_im_dump_stehen_und_ersetzt_es_fuer_den_paketbau(self):
+        doc = _gueltiges_dokument(applicationDrmType="upgradable")
+        neu, _a = pc.repariere(doc)
+        self.assertEqual("upgradable", neu["applicationDrmType"])
+        neu, aenderungen = pc.repariere(doc, paketbau=True)
+        self.assertEqual("standard", neu["applicationDrmType"])
+        self.assertTrue(aenderungen)
+
+    def test_target_unter_content_ist_bei_einem_patch_der_normalfall(self):
+        """Alle 26 gemessenen Dumps mit targetContentVersion haben sie unter contentVersion."""
+        doc = _gueltiges_dokument(contentVersion="01.006.000", targetContentVersion="01.005.000",
+                                  originContentVersion="01.000.000")
+        befund = pc.pruefe_daten(doc)
+        self.assertFalse([w for w in befund.warnungen if "targetContentVersion" in w], befund.warnungen)
+
+    def test_ukrainisch_ist_ein_bekannter_sprachcode(self):
+        """Mafia The Old Country (Handelsspiel) traegt einen uk-UA-Block."""
+        self.assertIn("uk-UA", pc.SPRACHEN)
+
+    def test_patch_ohne_origin_ist_nur_ein_hinweis(self):
+        """Crash Bandicoot 4 laeuft und hat targetContentVersion, aber keine originContentVersion (1 von 26)."""
+        doc = _gueltiges_dokument(contentVersion="01.000.002", targetContentVersion="01.000.001")
+        doc.pop("originContentVersion", None)
+        befund = pc.pruefe_daten(doc)
+        self.assertFalse([w for w in befund.warnungen if "originContentVersion" in w], befund.warnungen)
+        self.assertTrue([h for h in befund.hinweise if "originContentVersion" in h], befund.hinweise)
+
+    def test_target_ueber_content_bleibt_eine_warnung(self):
+        doc = _gueltiges_dokument(contentVersion="01.005.000", targetContentVersion="01.006.000",
+                                  originContentVersion="01.000.000")
+        befund = pc.pruefe_daten(doc)
+        self.assertTrue([w for w in befund.warnungen if "targetContentVersion" in w], befund.warnungen)
 
     def test_unbekannter_drm_wert(self):
         fehler = self._fehler(applicationDrmType="irgendwas")

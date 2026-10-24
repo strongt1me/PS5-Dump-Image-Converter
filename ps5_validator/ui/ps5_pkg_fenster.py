@@ -1886,7 +1886,7 @@ class Ps5PkgFenster:
         try:
             from ps5_validator.utils import param_check
             befund = param_check.pruefe_datei(os.path.join(info.pfad, "sce_sys", "param.json"),
-                                              texte=self.g._param_check_texte())
+                                              texte=self.g._param_check_texte(), paketbau=True)
             zeilen = befund.als_text(mit_hinweisen=False)
         except Exception as exc:  # noqa: BLE001 - die Pruefung ist eine Hilfe, kein Hindernis
             logger.debug("param.json-Pruefung vor dem Bauen: %s", exc)
@@ -1898,7 +1898,7 @@ class Ps5PkgFenster:
             # applicationDrmType "upgradable" bekommt sonst kein license.dat und zeigt an der Konsole ein Schloss.
             repariert = False
             try:
-                repariert = bool(self.g._offer_repair_param_json(info.pfad, befund))
+                repariert = bool(self.g._offer_repair_param_json(info.pfad, befund, paketbau=True))
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Reparatur der param.json: %s", exc)
             if repariert:

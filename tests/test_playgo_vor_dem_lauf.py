@@ -284,7 +284,6 @@ class RueckfrageVorDemLaufTests(_FrageTest):
         ohne = _spielordner(self.basis / "ohne", mit_playgo=False)
         faelle = (
             ("PlayGo schon an", dict(playgo=True), "pack_folder", mit),
-            ("AMPR aus", dict(ampr=False), "pack_folder", mit),
             ("kein Merkmal", {}, "pack_folder", ohne),
             ("Sammelkonvertierung", {}, "batch_convert", mit),
             ("keine Zielaufgabe", {}, "inspect", mit),
@@ -295,6 +294,14 @@ class RueckfrageVorDemLaufTests(_FrageTest):
                 gui._playgo_vor_dem_lauf_klaeren(mode, str(quelle))
                 self.assertEqual([], self.fragen)
                 self.assertNotIn("main.playgo_eingeschaltet", self.protokoll)
+
+    def test_gefragt_wird_auch_ohne_ampr_emu(self) -> None:
+        """Nutzerwunsch 23.10.2026: Wie bei DLC EMU kommt die Frage, sobald das Spiel PlayGo-Inhalte hat."""
+        mit = _spielordner(self.basis / "mit_ohne_ampr", mit_playgo=True)
+        gui = self._gui(ampr=False)
+        gui._playgo_vor_dem_lauf_klaeren("pack_folder", str(mit))
+        self.assertEqual(1, len(self.fragen))
+        self.assertIn("main.playgo_eingeschaltet", self.protokoll)
 
     def test_kommandozeile_fragt_nicht_und_schaltet_nicht_ein(self) -> None:
         """PlayGo kommt nie von selbst dazu - dort gilt die Einstellung."""

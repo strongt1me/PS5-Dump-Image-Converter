@@ -2,9 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.86):** DLC EMU lässt sich jetzt beim Erstellen einbauen – das Programm fragt vorab, wenn ein Spiel Zusatzinhalte hat.
+> **Kurz zum aktuellen Stand (v1.9.87):** Das Programm fragt jetzt auch ohne AMPR EMU nach PlayGo, wenn ein Spiel PlayGo-Inhalte hat, und die param.json-Prüfung meldet nur noch echte Auffälligkeiten.
 
 ---
+
+## v1.9.87 – 24.10.2026
+
+- **Neu:** Hat ein Spiel PlayGo-Inhalte und ist PlayGo nicht angehakt, fragt das Programm vorab, ob es eingeschaltet werden soll – wie bei DLC EMU, auch ohne AMPR EMU.
+- **Geändert:** Die param.json-Prüfung meldet fehlende optionale Felder (conceptId, gameIntent, originContentVersion), den Wert `upgradable` und ein niedrigeres targetContentVersion nur noch als Hinweis; Ukrainisch (uk-UA) gilt als bekannter Sprachcode.
+- **Geändert:** Die Haken unter der Pfad-Karte stehen zweispaltig nebeneinander, solange die Karte breit genug ist.
+- **Behoben:** Der Haken „Ergebnis nach erfolgreichem Abschluss an PS5 senden“ war von einem anderen Haken verdeckt; PlayGo allein ohne AMPR EMU wird jetzt tatsächlich eingebaut.
 
 ## v1.9.86 – 23.10.2026
 

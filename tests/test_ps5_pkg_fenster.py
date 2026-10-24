@@ -913,7 +913,7 @@ class FensterTests(unittest.TestCase):
             def als_text(self, mit_hinweisen=False):
                 return ["[FEHLER] applicationDrmType 'upgradable' ist ein Anwendungstyp"]
 
-        def reparieren(quellordner, befund) -> bool:
+        def reparieren(quellordner, befund, paketbau=False) -> bool:
             import json
             daten = json.loads(Path(param_pfad).read_text(encoding="utf-8"))
             daten["applicationDrmType"] = "standard"

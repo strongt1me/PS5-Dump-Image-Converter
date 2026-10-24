@@ -68,8 +68,8 @@ class ArbeitskopieTests(unittest.TestCase):
                 self.assertNotEqual(STRINGS[schluessel]["de"], STRINGS[schluessel]["en"])
 
     def test_das_kaestchen_steht_unter_dem_dump_ordner_kaestchen(self) -> None:
-        self.assertLess(QUELLE.index("self.dump_ordner_check.grid(row=13"),
-                        QUELLE.index("self.arbeitskopie_check.grid(row=14"))
+        self.assertLess(QUELLE.index("self.dump_ordner_check.grid(row=14"),
+                        QUELLE.index("self.arbeitskopie_check.grid(row=15"))
 
 
 if __name__ == "__main__":

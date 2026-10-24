@@ -85,7 +85,7 @@ def _dump_anlegen(ziel: Path) -> None:
     (ziel / "sce_module" / "libc.prx").write_bytes(os.urandom(1024))
 
 
-def _gui(*, ampr: bool, backport: bool, arbeitskopie: bool = False) -> PS5ConverterGUI:
+def _gui(*, ampr: bool, backport: bool, arbeitskopie: bool = False, playgo: bool = True) -> PS5ConverterGUI:
     """Baut eine Prüflings-Instanz mit gesetzten Kästchen, ohne Tk."""
     g = PS5ConverterGUI.__new__(PS5ConverterGUI)
     protokoll: list[str] = []
@@ -104,7 +104,7 @@ def _gui(*, ampr: bool, backport: bool, arbeitskopie: bool = False) -> PS5Conver
     g.engine_output_queue = queue.Queue()
     g._embedded_mkpfs_lock = threading.RLock()
     g.ampr_integrate_var = _Var(ampr)
-    g.ampr_playgo_var = _Var(True)
+    g.ampr_playgo_var = _Var(playgo)
     g.backport_integrate_var = _Var(backport)
     g.dlc_integrate_var = _Var(False)
     g.backport_fw_var = _Var(str(ps5_backport.FIRMWARE_STANDARD))
@@ -178,10 +178,20 @@ class IntegrationsablaufTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_ohne_haekchen_bleibt_alles_wie_es_war(self) -> None:
-        g = _gui(ampr=False, backport=False)
+        g = _gui(ampr=False, backport=False, playgo=False)
         vorher = sorted(p.name for p in self.dump.rglob("*"))
         self.assertEqual(g._integration_anwenden(str(self.dump)), str(self.dump))
         self.assertEqual(sorted(p.name for p in self.dump.rglob("*")), vorher)
+
+    def test_playgo_allein_wird_eingebaut(self) -> None:
+        """23.10.2026: PlayGo zaehlt als Einbau, auch ohne AMPR EMU - sonst waere das Kaestchen wirkungslos."""
+        g = _gui(ampr=False, backport=False, playgo=True)
+        self.assertTrue(g._integration_gewaehlt())
+        if not g._ampr_versionsauswahl:
+            self.skipTest("kein AMPR-Versionsspeicher vorhanden")
+        self.assertEqual(g._integration_anwenden(str(self.dump)), str(self.dump))
+        self.assertTrue(list(self.dump.rglob("libScePlayGo.sprx")), "Der PlayGo-Stub fehlt.")
+        self.assertFalse(list(self.dump.rglob("libSceAmpr.sprx")), "AMPR EMU war nicht angehakt.")
 
     def test_ampr_legt_bibliothek_und_index_an(self) -> None:
         g = _gui(ampr=True, backport=False)

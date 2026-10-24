@@ -65,6 +65,13 @@ DRM_TYPEN = frozenset(APPLICATION_DRM_TYPES)
 #: Haeufige Verwechslung: Anwendungstyp statt DRM-Token. Der Wert nennt das
 #: Token, auf das die Referenz den Typ abbildet - damit kann die Reparatur den
 #: Eintrag geradeziehen, statt ihn nur zu bemaengeln.
+#: Verwechslungen, die in echten Dumps vorkommen (gemessen am 22.10.2026: ``upgradable`` bei Dirt 5 und Terminator
+#: Resistance, 2 von 35). Dort ist es ein Hinweis, kein Fehler; nur ein Paketbau braucht den Ersatzwert.
+#: Nachgemessen am 24.10.2026 an 43 echten Dateien (35 Dump-Ordner, 3 weitere aus exFAT-Abbildern, LEGO Batman aus
+#: dem PKG, 4 Pakete ohne param.json): 41 x standard, 2 x upgradable - ``demo``, ``paid``, ``standalone``, ``free`` und
+#: ``freemium`` kommen in keiner vor. Ohne Messwert bleiben die uebrigen Verwechslungen Fehler.
+DRM_AUS_ECHTEN_DUMPS = frozenset({"upgradable"})
+
 DRM_VERWECHSLUNGEN = {
     "upgradable": "standard",
     "demo": "free",
@@ -110,6 +117,9 @@ SPRACHEN = frozenset({
     "ru-RU", "ko-KR", "zh-Hant", "zh-Hans", "fi-FI", "sv-SE", "da-DK", "no-NO",
     "pl-PL", "pt-BR", "es-419", "tr-TR", "en-GB", "ar-AE", "fr-CA", "cs-CZ",
     "hu-HU", "el-GR", "ro-RO", "th-TH", "vi-VN", "id-ID",
+    # Gemessen am 22.10.2026: Mafia The Old Country (Handelsspiel) traegt einen Block fuer Ukrainisch. Das Laendercodes-
+    # Verzeichnis unten kennt UA schon; nur die Referenzliste von LibProsperoPKG 2.5 ist aelter.
+    "uk-UA",
 })
 
 #: Laendercodes fuer ``ageLevel`` (ohne den Sonderschluessel ``default``).
@@ -152,6 +162,11 @@ WEICHE_PFLICHTFELDER: dict[str, type] = {
     "attribute3": int,
     "ageLevel": dict,
 }
+
+#: Weiche Pflichtfelder, deren Fehlen nur ein Hinweis ist: Gemessen am 22.10.2026 fehlt ``conceptId`` bei einem
+#: veroeffentlichten Spiel (Arkanoid Eternal Battle, 2 von 39 Dumps). Der Wert ist eine Kennung des PlayStation-
+#: Katalogs und laesst sich nicht aus der Datei ableiten - repariert wird er nie.
+OHNE_WARNUNG = frozenset({"conceptId"})
 
 # ---------------------------------------------------------------------------
 # Muster
@@ -208,12 +223,13 @@ MELDUNGEN: dict[str, str] = {
     "versionen_fehler_2": "{name}: erwartet Zeichenkette, gefunden {typ}",
     "versionen_fehler_3": "{name} '{wert}' passt nicht auf das Format {form}",
     "versionen_fehler_4": "originContentVersion ({originContentVersion}) ist neuer als contentVersion ({contentVersion})",
-    "versionen_warnung_1": "targetContentVersion ({targetContentVersion}) liegt unter contentVersion ({contentVersion}) - typische Ursache für Update-Schleifen",
+    "versionen_warnung_1": "targetContentVersion ({targetContentVersion}) liegt über contentVersion ({contentVersion}) - bei echten Dumps liegt sie darunter",
     "versionen_warnung_2": "originContentVersion weicht bei einem Basisspiel von contentVersion ab - ist das in Wahrheit ein Patch?",
     "wertelisten_warnung_1": "applicationCategoryType {kategorie} ist kein dokumentierter Wert (0 = natives Spiel)",
     "wertelisten_fehler_1": "applicationDrmType '{drm}' ist ein Anwendungstyp, kein DRM-Wert - gemeint ist '{ersatz}'",
     "wertelisten_fehler_2": "applicationDrmType '{drm}' ist unbekannt - erlaubt sind {wert}",
     "wertelisten_warnung_2": "contentBadgeType {abzeichen} ist unbekannt - erlaubt: 0, 1, 2",
+    "wertelisten_hinweis_2": "applicationDrmType '{drm}' steht in echten Dumps (Dirt 5, Terminator Resistance) - die Paket-Werkzeuge kennen nur standard und free, ein Dump wird deshalb nicht verändert",
     "wertelisten_hinweis_1": "{name} = {wert} steht in keiner Dokumentation - es ist ein Bitfeld und kann trotzdem stimmen",
     "sprachen_fehler_1": "localizedParameters.defaultLanguage fehlt",
     "sprachen_fehler_2": "localizedParameters.defaultLanguage muss ein Sprachcode als Zeichenkette sein (z. B. \"en-US\")",
@@ -227,7 +243,7 @@ MELDUNGEN: dict[str, str] = {
     "altersfreigaben_warnung_1": "ageLevel['{name}'] ist kein bekannter Ländercode",
     "altersfreigaben_fehler_2": "ageLevel['{name}'] muss eine Ganzzahl sein, ist {wert!r}",
     "altersfreigaben_warnung_2": "ageLevel['{name}'] = {wert} liegt außerhalb von 0 bis 21",
-    "absichten_warnung_1": "gameIntent fehlt - Spiele führen dort ihre permittedIntents",
+    "absichten_hinweis_1": "gameIntent fehlt - gesehen bei veröffentlichten Spielen ohne Aktivitäten, nichts zu tun",
     "absichten_fehler_1": "gameIntent muss ein Objekt sein",
     "absichten_fehler_2": "gameIntent.permittedIntents fehlt oder ist leer",
     "absichten_fehler_3": "permittedIntents[{nummer}] muss ein Objekt sein",
@@ -277,8 +293,9 @@ MELDUNGEN: dict[str, str] = {
     "inhalt_fehler_1": "Pflichtfeld '{name}' fehlt",
     "inhalt_warnung_1": "Feld '{name}' fehlt - vollständige Pakete führen es, Homebrew kommt ohne aus",
     "inhalt_hinweis_1": "versionFileUri fehlt - laut Dokumentation Pflicht, bei einfachen Anwendungen darf es aber leer bleiben",
-    "inhalt_warnung_2": "originContentVersion fehlt bei einem Patch",
+    "inhalt_hinweis_4": "originContentVersion fehlt bei einem Patch - gesehen bei einem veröffentlichten Spiel, nichts zu tun",
     "inhalt_hinweis_2": "Der Schlüssel disc ist vorhanden, aber leer",
+    "inhalt_hinweis_3": "Feld '{name}' fehlt - gesehen bei veröffentlichten Spielen, nichts zu tun",
     "rep_aenderung_1": "titleId auf '{title_id}' gesetzt",
     "rep_aenderung_2": "titleId von '{vorhandene_id}' auf '{title_id}' berichtigt",
     "rep_aenderung_3": "titleId von {kennung!r} auf '{aus_inhalt}' berichtigt (aus der contentId)",
@@ -586,7 +603,10 @@ def _versionen_pruefen(befund: Befund, daten: dict, art: str) -> None:
             befund.fehler_melden(
                 befund.satz("versionen_fehler_4", originContentVersion=daten['originContentVersion'], contentVersion=daten['contentVersion'])
             )
-        if ziel and inhalt and ziel < inhalt:
+        # Gemessen am 22.10.2026 an 35 Dumps: Alle 26 mit targetContentVersion haben sie UNTER contentVersion (die Version, auf
+        # die der Patch aufsetzt) - das ist der Normalfall eines gepatchten Spiels. Bis dahin meldete die Pruefung genau
+        # das als Warnung. Auffaellig ist nur das Gegenteil, das in echten Dumps nie vorkommt.
+        if ziel and inhalt and ziel > inhalt:
             befund.warnen(
                 befund.satz("versionen_warnung_1", targetContentVersion=daten['targetContentVersion'], contentVersion=daten['contentVersion'])
             )
@@ -596,7 +616,7 @@ def _versionen_pruefen(befund: Befund, daten: dict, art: str) -> None:
         )
 
 
-def _wertelisten_pruefen(befund: Befund, daten: dict) -> None:
+def _wertelisten_pruefen(befund: Befund, daten: dict, paketbau: bool = False) -> None:
     kategorie = daten.get("applicationCategoryType")
     if isinstance(kategorie, int) and not isinstance(kategorie, bool):
         if kategorie not in APP_KATEGORIEN:
@@ -607,7 +627,9 @@ def _wertelisten_pruefen(befund: Befund, daten: dict) -> None:
     drm = daten.get("applicationDrmType")
     if isinstance(drm, str) and drm not in DRM_TYPEN:
         ersatz = DRM_VERWECHSLUNGEN.get(drm.lower())
-        if ersatz:
+        if ersatz and drm.lower() in DRM_AUS_ECHTEN_DUMPS and not paketbau:
+            befund.hinweis(befund.satz("wertelisten_hinweis_2", drm=drm))
+        elif ersatz:
             befund.fehler_melden(
                 befund.satz("wertelisten_fehler_1", drm=drm, ersatz=ersatz)
             )
@@ -693,8 +715,11 @@ def _absichten_pruefen(befund: Befund, daten: dict, art: str) -> None:
     absicht = daten.get("gameIntent")
     if absicht is None:
         if art in ("base", "disc") and daten.get("applicationCategoryType") == 0:
-            befund.warnen(
-                befund.satz("absichten_warnung_1")
+            # Nur ein Hinweis: 10 von 39 gemessenen Dumps (22.10.2026) haben kein gameIntent, darunter lauffaehige
+            # Handelsspiele (Mafia The Old Country, Mortal Kombat Legacy Kollection, Tetris Forever). Ein erfundener
+            # Eintrag wuerde die Aktivitaeten des Spiels veraendern - repariert wird hier nichts.
+            befund.hinweis(
+                befund.satz("absichten_hinweis_1")
             )
         return
     if not isinstance(absicht, dict):
@@ -943,7 +968,8 @@ def laden(pfad: str, befund: Befund) -> dict | None:
 # ---------------------------------------------------------------------------
 def pruefe_datei(pfad: str, hoechste_firmware: str | None = None,
                  nachbarn_pruefen: bool = True,
-                 texte: "dict[str, str] | None" = None) -> Befund:
+                 texte: "dict[str, str] | None" = None,
+                 paketbau: bool = False) -> Befund:
     """Prueft eine ``param.json`` auf dem Datentraeger.
 
     Args:
@@ -952,6 +978,7 @@ def pruefe_datei(pfad: str, hoechste_firmware: str | None = None,
             angegeben, wird ``requiredSystemSoftwareVersion`` dagegen gehalten.
         nachbarn_pruefen: Auch ``icon0.png`` und ``eboot.bin`` ansehen.
         texte: Uebersetzte Vorlagen (:data:`MELDUNGEN`) fuer die Befunde.
+        paketbau: ``True`` vor dem Bau eines PKG: Dort gilt ``applicationDrmType`` streng (nur ``standard``/``free``).
 
     Returns:
         Befund mit Fehlern, Warnungen, Hinweisen und Eckdaten.
@@ -960,7 +987,7 @@ def pruefe_datei(pfad: str, hoechste_firmware: str | None = None,
     daten = laden(pfad, befund)
     if daten is None:
         return befund
-    _inhalt_pruefen(befund, daten, pfad, hoechste_firmware)
+    _inhalt_pruefen(befund, daten, pfad, hoechste_firmware, paketbau)
     if nachbarn_pruefen:
         _nachbarn_pruefen(befund, pfad)
     return befund
@@ -968,19 +995,20 @@ def pruefe_datei(pfad: str, hoechste_firmware: str | None = None,
 
 def pruefe_daten(daten: dict, pfad: str = "",
                  hoechste_firmware: str | None = None,
-                 texte: "dict[str, str] | None" = None) -> Befund:
+                 texte: "dict[str, str] | None" = None,
+                 paketbau: bool = False) -> Befund:
     """Prueft ein bereits geladenes Dokument.
 
     Fuer Quellen, die keine Datei sind - etwa eine ``param.json`` aus einem
     ``.ffpfsc``, die ueber die mkpfs-Schnittstelle gelesen wurde.
     """
     befund = Befund(pfad, texte=texte)
-    _inhalt_pruefen(befund, daten, pfad, hoechste_firmware)
+    _inhalt_pruefen(befund, daten, pfad, hoechste_firmware, paketbau)
     return befund
 
 
 def _inhalt_pruefen(befund: Befund, daten: dict, pfad: str,
-                    hoechste_firmware: str | None) -> None:
+                    hoechste_firmware: str | None, paketbau: bool = False) -> None:
     art = art_erkennen(daten)
     befund.art = art
     befund.info["Art"] = {
@@ -998,7 +1026,9 @@ def _inhalt_pruefen(befund: Befund, daten: dict, pfad: str,
             _typ_pruefen(befund, daten, name, typ)
 
     for name, typ in WEICHE_PFLICHTFELDER.items():
-        if name not in daten:
+        if name not in daten and name in OHNE_WARNUNG:
+            befund.hinweis(befund.satz("inhalt_hinweis_3", name=name))
+        elif name not in daten:
             befund.warnen(
                 befund.satz("inhalt_warnung_1", name=name)
             )
@@ -1014,11 +1044,13 @@ def _inhalt_pruefen(befund: Befund, daten: dict, pfad: str,
         )
 
     if art == "patch" and "originContentVersion" not in daten:
-        befund.warnen(befund.satz("inhalt_warnung_2"))
+        # Nur ein Hinweis: Crash Bandicoot 4 (veroeffentlicht, laeuft) hat targetContentVersion, aber keine
+        # originContentVersion - 1 von 26 gemessenen Patch-Dumps (22.10.2026).
+        befund.hinweis(befund.satz("inhalt_hinweis_4"))
 
     _ids_pruefen(befund, daten, pfad)
     _versionen_pruefen(befund, daten, art)
-    _wertelisten_pruefen(befund, daten)
+    _wertelisten_pruefen(befund, daten, paketbau)
     _sprachen_pruefen(befund, daten)
     _altersfreigaben_pruefen(befund, daten)
     _absichten_pruefen(befund, daten, art)
@@ -1224,7 +1256,8 @@ def _als_hex64(wert: object) -> str:
 def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
               titel: str = "",
               inhaltsversion: str = "",
-              texte: "dict[str, str] | None" = None) -> tuple["OrderedDict[str, Any]", list[str]]:
+              texte: "dict[str, str] | None" = None,
+              paketbau: bool = False) -> tuple["OrderedDict[str, Any]", list[str]]:
     """Zieht ein geladenes Dokument gerade, ohne vorhandene Angaben zu verwerfen.
 
     Der Unterschied zum Neuanlegen ist der Punkt der ganzen Uebung: Eine
@@ -1238,6 +1271,7 @@ def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
             damit gesetzt.
         content_id: Ergaenzt eine fehlende ``contentId``.
         titel: Ergaenzt einen fehlenden Anzeigenamen.
+        paketbau: ``True`` vor dem Bau eines PKG: Dann wird auch ``upgradable`` zu ``standard``; ein Dump behaelt den Wert.
         texte: Uebersetzte Vorlagen fuer die Aenderungsliste - sie steht im
             Protokoll (Durchsicht, Runde 18). Ein fehlender Titel wird
             weiterhin als "Unbekannt" in die Datei geschrieben: Das ist
@@ -1330,7 +1364,8 @@ def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
 
     # -- DRM-Wert ----------------------------------------------------------
     drm = neu.get("applicationDrmType")
-    if isinstance(drm, str) and drm not in DRM_TYPEN:
+    if (isinstance(drm, str) and drm not in DRM_TYPEN
+            and not (drm.lower() in DRM_AUS_ECHTEN_DUMPS and not paketbau)):
         ersatz = DRM_VERWECHSLUNGEN.get(drm.lower(), "standard")
         neu["applicationDrmType"] = ersatz
         aenderungen.append(_satz(texte, "rep_aenderung_9", drm=drm, ersatz=ersatz))

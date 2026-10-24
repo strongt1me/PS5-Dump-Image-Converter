@@ -332,6 +332,43 @@ class KartenzeilenTests(unittest.TestCase):
         finally:
             self.wurzel.withdraw()
 
+    def test_dump_haken_stehen_bei_platz_rechts_neben_den_ersten_beiden(self):
+        """Wunsch 23.10.2026: zwei Spalten - herunterfahren/senden links, Arbeitsordner/Arbeitskopie rechts."""
+        self._fenster_auf(BREIT_GENUG)
+        try:
+            a = self.app
+            self.assertTrue(a._optionen_daneben)
+            for links, rechts in ((a.shutdown_check, a.dump_ordner_check), (a.senden_check, a.arbeitskopie_check)):
+                self.assertLessEqual(abs(links.winfo_rooty() - rechts.winfo_rooty()), 2,
+                                     "Die Haken stehen nicht auf einer Linie.")
+                self.assertGreater(rechts.winfo_rootx(), links.winfo_rootx() + links.winfo_reqwidth())
+            karte = a.path_card
+            self.assertLessEqual(a.arbeitskopie_check.winfo_rootx() + a.arbeitskopie_check.winfo_width(),
+                                 karte.winfo_rootx() + karte.winfo_width())
+            self.assertEqual(a.dump_ordner_check.winfo_rootx(), a.arbeitskopie_check.winfo_rootx(),
+                             "Die rechte Spalte ist schief.")
+        finally:
+            self.wurzel.withdraw()
+
+    def test_dump_haken_fallen_bei_schmaler_karte_unter_die_ersten_zwei(self):
+        from unittest import mock
+        self._fenster_auf(BREIT_GENUG)
+        try:
+            a = self.app
+            with mock.patch.object(a.path_card, "winfo_width", return_value=700):
+                a._optionskaesten_ordnen()
+                self.wurzel.update()
+                self.assertFalse(a._optionen_daneben)
+                zeilen = [w.winfo_rooty() for w in (a.shutdown_check, a.senden_check, a.dump_ordner_check,
+                                                    a.arbeitskopie_check)]
+                self.assertEqual(sorted(zeilen), zeilen, "Reihenfolge von oben nach unten")
+                self.assertEqual(4, len(set(zeilen)), "Vier Zeilen, keine Ueberlappung")
+            a._optionskaesten_ordnen()
+            self.wurzel.update()
+            self.assertTrue(a._optionen_daneben)
+        finally:
+            self.wurzel.withdraw()
+
     def _fenster_auf(self, breite):
         """Stellt das Fenster auf eine Breite und laesst es zur Ruhe kommen."""
         self.wurzel.deiconify()
