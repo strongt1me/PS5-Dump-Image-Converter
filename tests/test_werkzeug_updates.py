@@ -942,7 +942,7 @@ class UrteilTests(unittest.TestCase):
         # und ps5-ultrapack 2.2.7 (echte Freigabe vom 17.10.2026 - neuer als der 15.10.2026-Stand in FakeNetz).
         self.assertEqual(5, zaehler.get(wu.STATUS_NEUER))
         self.assertEqual(1, zaehler.get(wu.STATUS_UNKLAR))                 # DPI v2: keine Freigabe
-        self.assertEqual(11, zaehler.get(wu.STATUS_OHNE_QUELLE))           # davon YT-Blocker (Sammlung, kein Einzel-ELF) + Byepervisor Reborn (kein Release)
+        self.assertEqual(12, zaehler.get(wu.STATUS_OHNE_QUELLE))           # davon YT-Blocker (Sammlung, kein Einzel-ELF) + Byepervisor Reborn (kein Release)
         self.assertGreaterEqual(zaehler.get(wu.STATUS_NEU_HINWEIS, 0), 1)  # 7-Zip 26.04
         self.assertNotIn(wu.STATUS_FEHLER, zaehler)
         self.assertNotIn(wu.STATUS_NEU, zaehler)

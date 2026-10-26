@@ -7,7 +7,7 @@ entpackten Dump-Ordner wie mit jedem anderen. Die Idee stammt aus PS5 FFPFSC PRO
 
 * ``.zip`` entpackt die Standardbibliothek (``zipfile``), mit Pfadpruefung gegen ``..`` und absolute Pfade.
 * ``.7z`` und ``.rar`` entpackt **7-Zip** (LGPL; fuer RAR gilt zusaetzlich die unRAR-Einschraenkung, die nur das
-  Nachbauen des RAR-Packers verbietet): das mitgelieferte (``7-Zip-26.04/``) oder, wenn das fehlt, eines im
+  Nachbauen des RAR-Packers verbietet): das mitgelieferte (``7-Zip-26.05/``) oder, wenn das fehlt, eines im
   Suchpfad bzw. unter ``C:\\Program Files\\7-Zip``.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import Callable
 
 ENDUNGEN = (".zip", ".7z", ".rar")
 #: Name des mitgelieferten 7-Zip-Ordners.
-ORDNER = "7-Zip-26.04"
+ORDNER = "7-Zip-26.05"
 
 _Melder = Callable[[str], None]
 

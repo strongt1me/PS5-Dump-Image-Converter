@@ -131,10 +131,10 @@ if os.path.isdir(_helloworld):
 
 # 7-Zip fuer .7z und .rar als Quelle von Aufgabe 1 (seit v1.9.70; LGPL, Lizenztext liegt bei).
 # Nur die Fassung dieser Plattform - siehe ps5_validator/utils/archiv_quelle.py.
-_siebenzip = os.path.join(_here, '7-Zip-26.04')
+_siebenzip = os.path.join(_here, '7-Zip-26.05')
 if os.path.isdir(os.path.join(_siebenzip, 'macos')):
-    _datas.append((os.path.join(_siebenzip, 'macos'), '7-Zip-26.04/macos'))
-    _datas.append((os.path.join(_siebenzip, 'License.txt'), '7-Zip-26.04'))
+    _datas.append((os.path.join(_siebenzip, 'macos'), '7-Zip-26.05/macos'))
+    _datas.append((os.path.join(_siebenzip, 'License.txt'), '7-Zip-26.05'))
 
 # ffpfsc-pkg-tool fuer „PS5 PKG Dump & Image Converter“ (seit v1.9.71; GPL-3.0-or-later, Quelle und
 # Lizenz liegen in PS5-PKG-Tool/). Nur der Bau dieser Plattform.

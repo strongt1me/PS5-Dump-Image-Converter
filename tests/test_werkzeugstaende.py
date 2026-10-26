@@ -51,7 +51,7 @@ class FassungAusNamenTests(unittest.TestCase):
 
     def test_uebliche_schreibweisen(self) -> None:
         for name, erwartet in (
-                ("elfldr-ps5_v0.26.elf", "0.26"),
+                ("elfldr-ps5_v0.27.elf", "0.27"),
                 ("ps5upload-5.28.0.elf", "5.28.0"),
                 ("game-compressor_v1.0.4.elf", "1.0.4"),
                 ("shadowmountplus_v1.7alpha13fix1.elf", "1.7alpha13fix1"),
@@ -80,7 +80,7 @@ class KennungTests(unittest.TestCase):
                          ws.kennung_aus_name("ps5-app-dumper_v1.11.elf"))
 
     def test_schreibweise_des_spiegels_trifft_unsere(self) -> None:
-        for spiegel, unser in (("elfldr", "elfldr-ps5_v0.26.elf"),
+        for spiegel, unser in (("elfldr", "elfldr-ps5_v0.27.elf"),
                                ("ftpsrv", "ftpsrv-ps5_v0.21.elf"),
                                ("klogsrv", "klogsrv-ps5_v0.9.elf"),
                                ("websrv", "websrv-ps5_v0.34.elf"),
@@ -408,7 +408,7 @@ class NennungTests(unittest.TestCase):
     #: Fremdbestand: Ordner -> ein Text, der dafuer in der Lizenzdatei steht.
     FREMD = {
         # Seit v1.9.70: 7-Zip fuer Archive als Quelle (Zip, 7z, RAR). Fiel erst im Volllauf von v1.9.71 auf.
-        "7-Zip-26.04": "7-Zip",
+        "7-Zip-26.05": "7-Zip",
         "AMPR_PackTools-4.0": "AMPR PackTools",
         "Backport_Fakelibs": "Backport_Fakelibs",
         "MkPFS-1.1.0": "MkPFS 1.1.0",

@@ -5,7 +5,16 @@
 Bibliothek **LibProsperoPkg 1.2.0** (GPL-3.0-or-later; als fertige Datei `src/ffpfsc-pkg-tool/lib/`, die Quelle
 dazu liegt nicht bei - siehe `src/ffpfsc-pkg-tool/lib/README.md`).
 
-Seit 21.10.2026 steht die Versionskonstante auf **2.2.10**. ps5-ultrapack 2.2.8 bis 2.2.10 aendern am C#-Teil
+Seit 24.10.2026 steht die Versionskonstante auf **2.3.1**. ps5-ultrapack 2.3.0 und 2.3.1 bringen im C#-Teil neue Dateien
+`Ps4Keystone.cs` (`ps4-keystone`), `Ps4Rebind.cs` (`ps4-rebind`), `Ps4Sfo.cs` (`ps4-sfo`) und `SafeConsole.cs` und aendern
+`Program.cs` (`build --keystone`, Zielpfade) und `Ps4.cs`; `lib/` und `patches/` sind gleich geblieben. `Program.cs` und die README
+des Werkzeugs sind per Dreiwege-Zusammenfuehrung uebernommen (Basis Upstream 2.2.10, unsere Fassung mit dem Befehl
+`stream-inner`, Ziel Upstream 2.3.1), ohne Konflikte; `Ps4.cs` und die vier neuen Dateien sind die Upstream-Fassung.
+`ffpfsc-pkg-tool.dll` ist in allen vier Ordnern neu gebaut (nur diese Datei je Ordner); `dotnet ... version` zeigt 2.3.1 und
+LibProsperoPkg 1.2.0. Das Fenster im Programm nutzt die neuen Befehle nicht - sie sind nur im Werkzeug. An keinem echten
+Paket gemessen.
+
+Davor (21.10.2026): **2.2.10**. ps5-ultrapack 2.2.8 bis 2.2.10 aendern am C#-Teil
 `Program.cs` (u. a. festes Zahlenformat fuer das geparste Baulog, Dateien werden per Umbenennen ersetzt statt durchschrieben,
 ein unvollstaendiges Entpacken schlaegt jetzt fehl) und `Ps4.cs`; `lib/` und `patches/` sind gleich geblieben. Beide Dateien
 sind per Dreiwege-Zusammenfuehrung uebernommen (Basis Upstream 2.2.7, unsere Fassung mit dem Befehl `stream-inner`, Ziel

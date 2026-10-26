@@ -267,6 +267,15 @@ KATALOG: tuple[Dienst, ...] = (
     # SHA-256: 60f9b91efe87fb65a8daaafd73b72417f0164d69ef8f6152fbb4647baf594d66
     Dienst("patchdl", 12880, "patchdl_*.elf", web="/", anlaufzeit=3.0,
            version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/status"),
+    # --- Home Hider (seit 24.10.2026) --------------------------------------------
+    # Startbildschirm der PS5 anpassen: Kacheln verstecken, Ordner, Namen/Bilder/Hintergruende, Live-Hintergrund (Euphoric-Dev/
+    # HomeHider, GPL-3.0; mit eingebauter LiveShell Engine von ZiZc3, die auf Port 9050 lauscht - der eigene Dienst von
+    # Home Hider ist 8090). Port 8090 und Weboberflaeche laut README ("http://<PS5-IP>:8090") und Quelltext (src/main.c:
+    # ``HH_PORT 8090``). Die laufende Version nennt ``GET /api/status`` als ``"version"`` (``handle_status``; Quelltext 2.0.0
+    # gelesen, an der Konsole noch NICHT nachgemessen). Gestartet wird das ELF ueber den ELF-Loader (payload_muster); der
+    # Autor beschreibt den Start ueber den Payload-Manager. Anlaufzeit geschaetzt.
+    Dienst("homehider", 8090, "HomeHider_v*.elf", web="/", anlaufzeit=3.0,
+           version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/status"),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,

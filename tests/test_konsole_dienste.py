@@ -267,6 +267,35 @@ class WeitereDiensteTests(unittest.TestCase):
         self.assertEqual(1, sum(1 for d in kd.KATALOG if d.port == 9020))
 
 
+class HomeHiderTests(unittest.TestCase):
+    """Home Hider (Euphoric-Dev/HomeHider, seit 24.10.2026): Port, Seite und Version aus dem Quelltext 2.0.0 gelesen,
+    an der Konsole noch nicht nachgemessen."""
+
+    def test_der_katalog_kennt_den_dienst(self):
+        eintrag = kd.dienst("homehider")
+        self.assertIsNotNone(eintrag)
+        self.assertEqual((8090, "/", "HomeHider_v*.elf"), (eintrag.port, eintrag.web, eintrag.payload_muster))
+        self.assertEqual(("/api/status", "http://10.0.0.5:8090/"),
+                         (eintrag.version_pfad, kd.web_adresse(eintrag, "10.0.0.5")))
+
+    def test_die_version_wird_aus_der_antwort_gelesen(self):
+        import re
+        eintrag = kd.dienst("homehider")
+        antwort = '{"ok":true,"version":"2.0.0","port":8090,"ip":"10.0.0.5","settings":{}}'
+        self.assertEqual("2.0.0", re.search(eintrag.version_muster, antwort).group(1))
+
+    def test_die_datei_liegt_bei_und_nennt_ihre_fassung_und_ihren_port(self):
+        dateien = sorted((PROJEKT / "helloworld").glob("HomeHider_v*.elf"))
+        self.assertEqual(1, len(dateien), dateien)
+        roh = dateien[0].read_bytes()
+        fassung = kd.version_aus_dateiname(dateien[0].name)
+        self.assertEqual("2.0.0", fassung)
+        self.assertIn(b"HOMEHIDER-ELF-VERSION=" + fassung.encode() + b";", roh)
+        # Den Port setzt der Quelltext (``HH_PORT``) per Formatzeichen ein; die Seite steht im ELF.
+        self.assertIn(b"http://127.0.0.1:%d/", roh)
+        self.assertIn(b"Home Hider %s running on port %d", roh)
+
+
 class AnyPadTests(unittest.TestCase):
     """AnyPad PS5 (04.10.2026): Bluetooth-Controller an der PS5, Weboberflaeche auf 8095.
 
@@ -554,7 +583,7 @@ class VersionTests(unittest.TestCase):
 
     def test_version_aus_dem_dateinamen(self):
         faelle = {
-            "elfldr-ps5_v0.26.elf": "0.26",
+            "elfldr-ps5_v0.27.elf": "0.27",
             "ftpsrv-ps5_v1.16-ng-stable.elf": "1.16-ng-stable",
             "ftpsrv-ps5_v0.21.1.elf": "0.21.1",
             "klogsrv-ps5_v0.9.elf": "0.9",
@@ -774,8 +803,8 @@ class VersionOhneStartenTests(unittest.TestCase):
         modul = _lade_hauptprogramm()
         app = modul.PS5ConverterGUI.__new__(modul.PS5ConverterGUI)
         app._t = lambda schluessel, **werte: STRINGS[schluessel]["de"].format(**werte)
-        erwartet = {"shadowmount": "1.7beta7", "elfldr9020": "0.26", "dpiv2": "1.00",
-                    "elfldr9021": "0.26"}
+        erwartet = {"shadowmount": "1.7beta7", "elfldr9020": "0.27", "dpiv2": "1.00",
+                    "elfldr9021": "0.27"}
         for schluessel, version in erwartet.items():
             with self.subTest(dienst=schluessel):
                 stand = kd.Stand(kd.dienst(schluessel))

@@ -534,16 +534,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   selbst ein und drücken <em>Konsole prüfen</em>.</p>
   <p>Oben nennt die Seite Name, Zustand und Firmware der Konsole &ndash; die
   Firmware so, wie die Konsole sie selbst schreibt (12.00, 12.02, 12.70 &hellip;).
-  Darunter fragt sie alle siebenundzwanzig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
+  Darunter fragt sie alle dreißig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
   und 9020), Payload-Manager, FTP-Server, Kernel-Protokoll, PKG Manager,
   Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver, ShadowMount+,
   Prospero Manager, ps5upload, CheatRunner, App Dumper, Game Compressor,
   SMPlusGui, aria2, zftpd, gdbsrv, ps5debug-NG, AnyPad PS5, DPI&nbsp;v2, den
   WK Autoloader (Port&nbsp;1022) und das
-  PS5 Cooling &amp; System Center (Port&nbsp;8086), PS4Mount (Port&nbsp;8770) und NeoEnabler (Port&nbsp;8765) &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
+  PS5 Cooling &amp; System Center (Port&nbsp;8086), PS4Mount (Port&nbsp;8770), NeoEnabler (Port&nbsp;8765), exFAT2AMPR (Port&nbsp;6972), PatchDL (Port&nbsp;12880) und Home Hider (Port&nbsp;8090) &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
   mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Die
   Version ist die der mitgelieferten Datei, die das Programm startet.
-  FTP-Server, Payload-Manager, das Cooling &amp; System Center, PS4Mount, NeoEnabler und ShadowMount+ nennen ihre laufende Version selbst (ShadowMount+ nur, wenn seine Schnittstelle von diesem PC aus erreichbar ist); weicht
+  FTP-Server, Payload-Manager, das Cooling &amp; System Center, PS4Mount, NeoEnabler, exFAT2AMPR, PatchDL, Home Hider und ShadowMount+ nennen ihre laufende Version selbst (ShadowMount+ nur, wenn seine Schnittstelle von diesem PC aus erreichbar ist); weicht
   sie ab, etwa weil ein älteres Payload von anderswo gestartet wurde, steht
   die mitgelieferte in Klammern dahinter. Bei ShadowMount+, dem zweiten ELF-Loader-Port (9020) und DPI&nbsp;v2 steht die Version der beiliegenden Datei, obwohl das Programm sie dort nicht startet. Alle übrigen Dienste verraten ihre
   Version nicht. Ports und Weboberflächen der acht am 2. Oktober 2026
@@ -627,7 +627,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Ist der ELF-Loader (Port&nbsp;9021) zu, lädt die Seite ihn nach dem
   Suchen und nach <em>Konsole prüfen</em> selbst über den Payload-Manager: Fehlt auf
   der PS5 der Ordner <code>/data/pldmgr/payloads/elfldr</code>, kommt er per
-  FTP dorthin (<code>elfldr-ps5_v0.26.elf</code> samt Begleitdatei
+  FTP dorthin (<code>elfldr-ps5_v0.27.elf</code> samt Begleitdatei
   <code>.json</code>, wie sie der Payload-Manager selbst anlegt); liegt er
   schon da, wird nichts hochgeladen, nur geladen. Läuft kein FTP-Server,
   geht elfldr wie bisher über die Weboberfläche des Payload-Managers. Eine
@@ -1083,7 +1083,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Programm vor dem Bau mit einer Meldung ab (bei <code>.ffpfsc</code>,
   <code>.ffpfs</code>, <code>.exFAT</code> und <code>.ffpkg</code> gleichermaßen),
   statt dass es erst an der Konsole auffällt.</p>
-  <p><strong>Archiv als Quelle.</strong> Bei Aufgabe 1 steht links neben <strong>Dump Ordner</strong> der Knopf <strong>Archiv&hellip;</strong>: Er w&auml;hlt ein Archiv (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>), <strong>Dump Ordner</strong> w&auml;hlt wie gewohnt den Ordner; ein Archiv l&auml;sst sich auch auf das Quellfeld ziehen. Das Programm entpackt es in den Arbeitsordner (<code>ps5conv_archiv_&hellip;</code>, dort muss mindestens so viel Platz frei sein, wie das Archiv gro&szlig; ist) und nimmt den Spielordner darin &ndash; mit <code>sce_sys/param.json</code> &ndash; als Quelle. Fortschritt und Ergebnis stehen im Protokoll. <code>.zip</code> entpackt das Programm selbst, <code>.7z</code> und <code>.rar</code> entpackt das beiliegende <strong>7-Zip</strong> (Ordner <code>7-Zip-26.04</code>; fehlt es, sucht das Programm ein installiertes). Der Entpackordner wird beim n&auml;chsten Archiv ersetzt, ein Rest nach zw&ouml;lf Stunden wie jeder andere Arbeitsordner abger&auml;umt. <strong>Ist das Archiv mit einem Passwort gesch&uuml;tzt,</strong> probiert das Programm zuerst ohne Passwort und dann die verbreiteten Passw&ouml;rter <code>pippo</code> und <code>DLPSGAME.COM</code>; passt keines, fragt es nach dem Passwort (das Eingabefeld zeigt Sternchen, das Passwort steht nicht im Protokoll) und fragt bei einem falschen noch einmal.</p>
+  <p><strong>Archiv als Quelle.</strong> Bei Aufgabe 1 steht links neben <strong>Dump Ordner</strong> der Knopf <strong>Archiv&hellip;</strong>: Er w&auml;hlt ein Archiv (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>), <strong>Dump Ordner</strong> w&auml;hlt wie gewohnt den Ordner; ein Archiv l&auml;sst sich auch auf das Quellfeld ziehen. Das Programm entpackt es in den Arbeitsordner (<code>ps5conv_archiv_&hellip;</code>, dort muss mindestens so viel Platz frei sein, wie das Archiv gro&szlig; ist) und nimmt den Spielordner darin &ndash; mit <code>sce_sys/param.json</code> &ndash; als Quelle. Fortschritt und Ergebnis stehen im Protokoll. <code>.zip</code> entpackt das Programm selbst, <code>.7z</code> und <code>.rar</code> entpackt das beiliegende <strong>7-Zip</strong> (Ordner <code>7-Zip-26.05</code>; fehlt es, sucht das Programm ein installiertes). Der Entpackordner wird beim n&auml;chsten Archiv ersetzt, ein Rest nach zw&ouml;lf Stunden wie jeder andere Arbeitsordner abger&auml;umt. <strong>Ist das Archiv mit einem Passwort gesch&uuml;tzt,</strong> probiert das Programm zuerst ohne Passwort und dann die verbreiteten Passw&ouml;rter <code>pippo</code> und <code>DLPSGAME.COM</code>; passt keines, fragt es nach dem Passwort (das Eingabefeld zeigt Sternchen, das Passwort steht nicht im Protokoll) und fragt bei einem falschen noch einmal.</p>
   <p><strong>Geht der Arbeitsspeicher aus,</strong> startet das Programm den Lauf selbst neu &ndash; mit halb so vielen Kernen, bis zu dreimal &ndash; und schreibt es ins Protokoll. Erkannt wird das nur, wenn die Engine selbst <code>MemoryError</code> meldet. Hilft auch ein Kern nicht, bleibt der Hinweis auf zu wenig Arbeitsspeicher.</p>
   <div class="kasten">
     <span class="titel">Wenn Sie unsicher sind</span>

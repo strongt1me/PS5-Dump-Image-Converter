@@ -73,9 +73,9 @@ PLDMGR_ABLAGE = "/data/pldmgr/payloads"
 ELFLDR_ORDNER = "elfldr"
 
 #: Name des mitgelieferten elfldr-Payloads (in helloworld/).
-#: Am 17.09.2026 von 0.23 auf 0.26 gehoben. Aendert sich der Dateiname, muss er
+#: Am 17.09.2026 von 0.23 auf 0.26, am 24.10.2026 auf 0.27 gehoben. Aendert sich der Dateiname, muss er
 #: hier mit - test_payload_versand prueft, dass die Datei wirklich daliegt.
-ELFLDR_NAME = "elfldr-ps5_v0.26.elf"
+ELFLDR_NAME = "elfldr-ps5_v0.27.elf"
 
 #: Wie lange nach dem Start von elfldr auf Port 9021 gewartet wird.
 ELFLDR_WARTEN = 45.0
