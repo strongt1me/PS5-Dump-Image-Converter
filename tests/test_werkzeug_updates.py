@@ -195,10 +195,6 @@ RELEASES = {
         ('v1.0.4', False, '2026-08-21', ['game-compressor.elf']),
         ('v1.0.3', False, '2026-06-20', ['game-compressor.elf']),
     ],
-    'X-F1REBALL-X/wk-autoloader': [
-        ('v1.0.16', False, '2026-10-06', ['installer.elf', 'wk-dual-payload.elf']),
-        ('v1.0.14', False, '2026-10-06', ['installer.elf', 'wk-dual-payload.elf']),
-    ],
     'gasb07/ps4mount': [
         ('v0.4.4', False, '2026-10-14', ['ps4mount.elf', 'ps4mount.elf.sha256']),
         ('v0.4.1', False, '2026-10-12', ['ps4mount.elf', 'ps4mount.elf.sha256']),
@@ -310,7 +306,7 @@ HELLOWORLD = [
     "AnyPad-PS5-0.8.1-beta.elf", "CheatRunner_v0.17.2.elf", "MemDBG-ps5_nightly-20260930.elf", "OffAct_v0.4.2.elf",
     "OnionHEN_v0.0.13.elf", "OnionHEN_v0.9.0-beta2.elf", "PIZZA-HEN-v2.00.elf",
     "PS5_Cooling_System_Center_v1.56.0.elf", "PoorDS4-status_rc51.elf", "PoorDS4-stop_rc51.elf", "PoorDS4_rc51.elf",
-    "ProsperoMgr_v1.1.elf", "SMPlusGui_v1.0.1.elf", "WK-AutoLoader_v1.0.16.elf", "actremotelink_agent_v2.0.elf",
+    "ProsperoMgr_v1.1.elf", "SMPlusGui_v1.0.1.elf", "actremotelink_agent_v2.0.elf",
     "actremotelink_pin_notify_v2.0.elf", "aria2-v1.37.0-3.elf", "bdj_unpatch_1340.elf",
     "bfpilot_v0.4.4-multilang.elf", "dpiv2-13.60-1.00.elf", "dump_installer_v1.07.elf", "elfldr-ps5_v0.26.elf",
     "ftpsrv-ps5_v0.21.1.elf", "ftpsrv-ps5_v1.15-ng.elf", "ftpsrv-ps5_v1.16-ng-stable.elf",

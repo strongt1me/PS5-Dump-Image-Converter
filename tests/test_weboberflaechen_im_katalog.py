@@ -32,9 +32,10 @@ from ps5_validator.utils import konsole_dienste as kd      # noqa: E402
 #: Eine vollstaendige eingebettete Seite - nicht die Fehlerseiten von libmicrohttpd.
 HTML_SEITE = re.compile(rb"<!doctype html", re.IGNORECASE)
 #: Zweites Merkmal (seit 07.10.2026): die Startadresse einer Medien-App der Konsole, die auf eine
-#: eigene Seite des Payloads zeigt. Der WK Autoloader 1.0.16 traegt seine Seiten nicht als Klartext
-#: (kein "<!DOCTYPE html"), aber ``"deeplinkUri": "http://127.0.0.1:1022/app/index.html"`` - mit dem
-#: ersten Merkmal allein blieb er ohne Zeile, obwohl er eine Weboberflaeche hat.
+#: eigene Seite des Payloads zeigt. Der Web File Manager 1.12 traegt seine Seiten nicht als Klartext
+#: (kein "<!DOCTYPE html"), aber ``"deeplinkUri": "http://127.0.0.1:8888/"`` - mit dem
+#: ersten Merkmal allein bliebe er ohne Zeile, obwohl er eine Weboberflaeche hat (so war es beim WK Autoloader,
+#: der am 25.10.2026 aus dem Programm genommen wurde).
 STARTADRESSE = re.compile(rb'"deeplinkUri"\s*:\s*"http://127\.0\.0\.1:\d+')
 
 #: Dateimuster -> Grund, warum die ELF keine eigene Zeile hat, obwohl sie eine Seite traegt.
@@ -118,13 +119,13 @@ class WeboberflaechenImKatalogTests(unittest.TestCase):
                      if not _abgedeckt(d.name) and not _ausnahme(d.name) and _hat_seite(d)]
         self.assertEqual(["dpiv2-13.60-1.00.elf"], offen)
 
-    def test_ohne_zeile_wuerde_der_wk_autoloader_auffallen(self) -> None:
-        """Gegenprobe zum zweiten Merkmal: Der WK Autoloader (1.0.16) hat keine Klartextseite, aber
+    def test_ohne_zeile_wuerde_der_web_file_manager_auffallen(self) -> None:
+        """Gegenprobe zum zweiten Merkmal: Der Web File Manager (1.12) hat keine Klartextseite, aber
         eine Startadresse - ohne seine Zeile muss er in der Liste der Offenen stehen."""
         from unittest import mock
-        ohne = tuple(d for d in kd.KATALOG if d.schluessel != "wkautoloader")
+        ohne = tuple(d for d in kd.KATALOG if d.schluessel != "webfm")
         self.assertEqual(len(kd.KATALOG) - 1, len(ohne))
-        wk = [d for d in self.elfs if fnmatch.fnmatch(d.name, "WK-AutoLoader_v*.elf")]
+        wk = [d for d in self.elfs if fnmatch.fnmatch(d.name, "web-file-mgr-v*.elf")]
         self.assertTrue(wk)
         self.assertFalse(HTML_SEITE.search(wk[-1].read_bytes()), "Anker: ohne Klartextseite")
         with mock.patch.object(kd, "KATALOG", ohne):

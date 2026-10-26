@@ -35,7 +35,7 @@ Den Wortlaut der GNU General Public License 3.0 enthält
 `helloworld/LICENSE-GPL-3.0.txt` – der unveränderte Text der Free Software
 Foundation. Er gilt für die Zeilen unten, die GPL-3.0 oder GPL-3.0-or-later
 nennen: PS5 PKG Manager, ActRemoteLink (Agent und PIN-Anzeige), OnionHEN, DPI v2 (OnionHEN-Plugin),
-unjail-ps5app-payload, WK Autoloader, Prospero Manager, WebKit Autoloader (Installer), CheatRunner,
+unjail-ps5app-payload, Prospero Manager, WebKit Autoloader (Installer), CheatRunner,
 BackPork, shsrv, gdbsrv, MemDBG, ps5-hwinfo, ps5-syslang, ps5-unified-autoloader, PoorDS4,
 garlic-worker, PS5 Cooling & System Center – Pro und Home Hider (mit der eingebauten LiveShell Engine). Wo der Quelltext des jeweiligen Projekts zu finden ist, steht in seiner Zeile.
 
@@ -66,7 +66,6 @@ die MIT-Lizenz; ihre Texte stehen unten, wie bei zftpd. ps5-self-pager steht unt
 | `elfldr-ps5_v0.27.elf` | elfldr | ps5-payload-dev (John Törnblom) | Quelldateiname `elfldr.c` im ELF; geladen aus dem Release v0.27 |
 | `web-file-mgr-v1.12.elf` | PS5 Web File Manager | owendswang | „v1.12“ und die eigene Seite `http://127.0.0.1:8888/` im ELF; `github.com/owendswang/ps5-web-file-manager`, Release v1.12 („Manage Paths“ statt „Manage SMB“; SHA-256 gegen den Release-Anhang geprüft; den dort zusätzlich angebotenen `wfm-7zip-helper` liefert das Programm nicht mit) |
 | `webkit-autoloader-installer_v0.6.1.elf` | PS5 WebKit Autoloader (Installer) | itsPLK | „WebKit Autoloader v0.6.1“ im ELF; Original-Release v0.6.1 von itsPLK (GPL-3.0); SHA-256 gegen den Release-Anhang geprüft; die Datei heißt beim Autor genauso |
-| `WK-AutoLoader_v1.1.2.elf` | WK Autoloader | X-F1REBALL-X | „PS5-WebKit-Autoloader Installer … by X-F1REBALL-X“, Pfade `/app/1.1.2/…` im ELF; GPL-3.0 (LICENSE im Projekt); `github.com/X-F1REBALL-X/wk-autoloader` (am 05.10.2026 samt Verlauf aus GitLab zurückgeholt, nachdem das Konto zeitweise nicht erreichbar war), Release v1.1.2; beim Autor heißt die Datei „wk-autoloader.elf“ (bis 1.0.16 „wk-dual-payload.elf“); SHA-256 gegen den Release-Anhang geprüft; nutzt umtx2 (idlesauce) und Relapse, dazu Payload Manager bzw. Elf Launcher |
 | `ProsperoMgr_v1.1.elf` | Prospero Manager | notmaj0r | `github.com/notmaj0r/ProsperoMgr`, Release v1.1, GPL-3.0 (LICENSE im Quellarchiv); SHA-256 gegen den Release-Anhang geprüft. Vorherige Datei (unversioniert, ohne Autorenzuordnung) war dieselbe Software in einer älteren Bauart - ersetzt. Achtung: `Phoenixx1202/ProsperoMgr` ist nur ein Fork von notmaj0r, nicht die Quelle. |
 | `CheatRunner_v0.18.elf` | CheatRunner | maj0r | „CheatRunner v0.18 by maj0r“ im ELF; `github.com/notmaj0r/CheatRunner`, Release v0.18, GPL-3.0; SHA-256 gegen den Release-Anhang geprüft |
 | `ps4mount_v0.7.0.elf` | PS4Mount | gasb07 | „PS4Mount 0.7.0” und die eigene Seite `http://127.0.0.1:8770/` im ELF; `github.com/gasb07/ps4mount`, Release v0.7.0, GPL-3.0-or-later (README und LICENSE im Quellarchiv des Projekts; Quelltext: Tag `v0.7.0`); das ELF verwendet das PS5 Payload SDK von John Törnblom (GPL-3.0-or-later), Schlüsseldaten aus LibOrbisPkg von maxton (LGPL-3.0) und SQLite (gemeinfrei); SHA-256 gegen den Release-Anhang geprüft; beim Autor heißt die Datei „ps4mount.elf” |

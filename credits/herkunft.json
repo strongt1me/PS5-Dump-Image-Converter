@@ -122,11 +122,6 @@
    "quelle": "https://avatars.githubusercontent.com/u/26504139?v=4&s=160",
    "sha256": "525fa141be4c4931c4a46ca515510bcceae3e8ca179837b2d6f87f0395bd8135"
   },
-  "x-f1reball-x.png": {
-   "login": "X-F1REBALL-X",
-   "quelle": "https://avatars.githubusercontent.com/u/55192632?v=4&s=160",
-   "sha256": "3eabde66dc4b093a725193fe3e0e2c518777de2e37587d3a7c46e07cea633df2"
-  },
   "phantomptr.png": {
    "login": "phantomptr",
    "quelle": "https://avatars.githubusercontent.com/u/254021847?v=4&s=160",
@@ -211,6 +206,16 @@
    "login": "Phoenixx1202",
    "quelle": "https://avatars.githubusercontent.com/u/26288409?v=4&s=160",
    "sha256": "d2ad088c64b1abfbb947d1eb7035ca0646847e12b2a7c91af3001c1ef86e6309"
+  },
+  "euphoric-dev.png": {
+   "login": "Euphoric-Dev",
+   "quelle": "https://avatars.githubusercontent.com/u/347142401?v=4&s=160",
+   "sha256": "095c2f17e324093989647bed24805f8025b949d1362e41ab98b1b9a5de6077ed"
+  },
+  "zizc3.png": {
+   "login": "ZiZc3",
+   "quelle": "https://avatars.githubusercontent.com/u/60833584?v=4&s=160",
+   "sha256": "74568beeb9a4575eb9da9e3d9ab88b84819981cff1612de9d0a4554db20816b6"
   },
   "gasb07.png": {
    "login": "gasb07",

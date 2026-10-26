@@ -497,8 +497,6 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
          for teil in ("full-system", "game", "shellcore", "system-common-lib")]),
     _p("game-compressor", "Game Compressor", "juma-sayeh/PS5-Game-Compressor", "game-compressor_v*.elf",
        _d("game-compressor.elf", "game-compressor_v{f}.elf")),
-    _p("wk-autoloader", "WK AutoLoader", "X-F1REBALL-X/wk-autoloader", "WK-AutoLoader_v*.elf",
-       _d("wk-dual-payload.elf", "WK-AutoLoader_v{f}.elf")),
     _p("ps4mount", "PS4Mount", "gasb07/ps4mount", "ps4mount_v*.elf", _d("ps4mount.elf", "ps4mount_v{f}.elf")),
     _p("neo-manager", "NeoEnabler", "gasb07/NeoEnabler", "neo-manager_v*.elf",
        _d("neo-manager.elf", "neo-manager_v{f}.elf")),
