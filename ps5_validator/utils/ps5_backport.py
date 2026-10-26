@@ -1129,6 +1129,46 @@ def fakelib_vorhandene_ordner(spielordner: str) -> list[str]:
     return da
 
 
+#: Die beiden Bibliotheken, die AMPR EMU und der PlayGo-Stub ersetzen (Kleinschreibung).
+AMPR_PLAYGO_BIBLIOTHEKEN = ("libsceampr.sprx", "libsceplaygo.sprx")
+
+#: Woran ein AMPR EMU oder PlayGo-Stub zu erkennen ist (gemessen am 18.09.2026, siehe ``_ist_ersatzbibliothek`` im
+#: Hauptmodul): in allen EMU-Fassungen und beiden Stubs, in keiner Sony-Bibliothek.
+EMU_KENNZEICHEN = (b"[AMPR_EMU]", b"playgo_stub.dat")
+
+
+def fremde_ampr_playgo(spielordner: str) -> list[str]:
+    """Nennt die AMPR- und PlayGo-Bibliotheken im Dump, die weder AMPR EMU noch der PlayGo-Stub sind.
+
+    Gedacht fuer den Hinweis beim Backport: Hat der Dump ``libSceAmpr.sprx`` oder ``libScePlayGo.sprx`` schon im
+    ``fakelib``-Ordner (von einem anderen Werkzeug, oder die Originale eines frueheren Backports), bleiben sie bei
+    ``Ersatzbibliotheken kopieren`` unberuehrt - der mitgelieferte Satz hat keine von beiden. Gemessen an Hollow Knight
+    (PPSA34971, Firmware 4.03, 25.10.2026): Mit und ohne die Ersatzbibliotheken derselbe Absturz ``0xa0020104`` direkt nach
+    ``libSceSysmodule``; behoben hat ihn erst das Ersetzen dieser zwei Dateien durch die aus AMPR EMU.
+
+    Returns:
+        Relative Pfade wie ``fakelib/libSceAmpr.sprx``, Reihenfolge der Ordner, leer ohne Befund.
+    """
+    gefunden: list[str] = []
+    for ordnername in FAKELIB_ORDNERNAMEN:
+        ordner = os.path.join(str(spielordner or ""), ordnername)
+        try:
+            namen = sorted(os.listdir(ordner))
+        except OSError:
+            continue
+        for name in namen:
+            if name.lower() not in AMPR_PLAYGO_BIBLIOTHEKEN:
+                continue
+            try:
+                with open(os.path.join(ordner, name), "rb") as fh:
+                    daten = fh.read()
+            except OSError:
+                continue
+            if not any(k in daten for k in EMU_KENNZEICHEN):
+                gefunden.append(ordnername + "/" + name)
+    return gefunden
+
+
 #: Endungen, die als Ersatzbibliothek in das Spiel gehoeren.
 #:
 #: Der mitgelieferte Satz ist wortgleich von PS5 BACKPORK KITCHEN 2.3.1

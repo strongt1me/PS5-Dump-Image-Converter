@@ -35307,6 +35307,8 @@ class PS5ConverterGUI:
         # schon steht, samt erneuter Frage nach der Arbeitskopie.
         if getattr(self, "_integration_erledigt", False):
             return ordner
+        # Die Behebung fremder AMPR-/PlayGo-Bibliotheken (_backport_fremdlibs_klaeren) gilt nur fuer diesen Lauf.
+        self._fremdlibs_beheben = False
         if not os.path.isdir(ordner):
             self._append_to_log(self._t("main.integrate_no_folder", path=ordner))
             return ""
@@ -35343,8 +35345,8 @@ class PS5ConverterGUI:
         if self._tk_wert("dlc_integrate_var", False):
             if not self._integration_dlc(arbeitsordner):
                 return ""
-        ampr_an = bool(self._tk_wert("ampr_integrate_var", False))
-        playgo_an = bool(self._tk_wert("ampr_playgo_var", False))
+        ampr_an = self._ampr_wird_eingebaut()
+        playgo_an = self._playgo_wird_eingebaut()
         if ampr_an or playgo_an:
             if not self._integration_ampr(arbeitsordner, nur_playgo=not ampr_an):
                 return ""
@@ -35463,6 +35465,8 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t("main.integrate_backport_libs_failed", error=exc))
                     return False
 
+        self._backport_fremdlibs_klaeren(ordner, bool(self._tk_wert("ampr_integrate_var", False)),
+                                         bool(self._tk_wert("ampr_playgo_var", False)))
         self._backport_param_json(ordner, firmware)
         self._append_to_log(
             self._t("main.integrate_backport_done",
@@ -35533,7 +35537,7 @@ class PS5ConverterGUI:
             if not self._ampr_apply_library(ordner, auswahl["path"], "libSceAmpr.sprx"):
                 return False
 
-        playgo_an = bool(self._tk_wert("ampr_playgo_var", False))
+        playgo_an = self._playgo_wird_eingebaut()
         if not playgo_an:
             # PlayGo kommt nie von selbst dazu (eigenes Kaestchen). Verschweigen
             # darf das Protokoll aber nicht, wenn der Titel PlayGo-Inhalte
@@ -52739,6 +52743,100 @@ class PS5ConverterGUI:
         return self._t("fakelib.collision_warning",
                        v0="\n  - ".join(meldungen))
 
+    def _ampr_wird_eingebaut(self) -> bool:
+        """AMPR EMU kommt in diesen Lauf: per Kaestchen oder, weil der Anwender die fremde Bibliothek beheben liess."""
+        return bool(self._tk_wert("ampr_integrate_var", False)) or bool(getattr(self, "_fremdlibs_beheben", False))
+
+    def _playgo_wird_eingebaut(self) -> bool:
+        """Der PlayGo-Stub kommt in diesen Lauf (Kaestchen oder Behebung der fremden Bibliothek)."""
+        return bool(self._tk_wert("ampr_playgo_var", False)) or bool(getattr(self, "_fremdlibs_beheben", False))
+
+    def _backport_fremdlibs_klaeren(self, ordner, ampr_an: bool = False, playgo_an: bool = False,
+                                    fassung: "str | None" = None) -> list[str]:
+        """Fragt, ob fremde AMPR-/PlayGo-Bibliotheken im Dump durch AMPR EMU und den PlayGo-Stub ersetzt werden sollen.
+
+        Hat der Dump ``libSceAmpr.sprx`` oder ``libScePlayGo.sprx`` schon im ``fakelib``-Ordner (von einem anderen
+        Werkzeug), fasst der Backport sie nicht an - der mitgelieferte Satz hat keine von beiden. Das Spiel stuerzt dann
+        beim Start ab (``0xa0020104``; gemessen an Hollow Knight, Firmware 4.03). Behoben hat es das Ersetzen durch die
+        Dateien aus AMPR EMU. Ersetzt wird eine der beiden nicht, wenn der Lauf AMPR EMU (``ampr_an``) bzw. PlayGo
+        (``playgo_an``) ohnehin einbaut.
+
+        Zwei Wege, je nach Aufrufer:
+
+        * **Einbau beim Erstellen** (``fassung`` ist ``None``): "Ja" schaltet AMPR EMU und PlayGo **fuer diesen Lauf** an
+          (die Kaestchen bleiben, wie sie sind). Der Einbau laeuft danach in seiner gewohnten Reihenfolge - nach DLC EMU,
+          mit Index-Neubau.
+        * **BACKPORT-Fenster** (``fassung`` ist die gewaehlte AMPR-Fassung, im Hauptfaden gelesen): Dort gibt es keinen
+          Einbau, "Ja" ersetzt die Dateien gleich und baut den Index neu.
+
+        Ohne wahlbare AMPR-Fassung oder ohne Dialog (Kommandozeile) bleibt es beim Hinweis im Protokoll.
+
+        Returns:
+            Die Dateien, die unveraendert bleiben (leer: nichts zu tun oder behoben).
+        """
+        try:
+            fremd = ps5_backport.fremde_ampr_playgo(str(ordner))
+        except OSError as exc:
+            logger.debug("Fremde Bibliotheken nicht pruefbar: %s", exc)
+            return []
+        bleiben = [n for n in fremd
+                   if not (ampr_an and n.lower().endswith("libsceampr.sprx"))
+                   and not (playgo_an and n.lower().endswith("libsceplaygo.sprx"))]
+        if not bleiben:
+            return []
+        namen = ", ".join(bleiben)
+        version = self._tk_wert("ampr_version_var", "") if fassung is None else fassung
+        auswahl = self._ampr_auswahl_beim_start().get(version) if version else None
+        ja = False
+        if auswahl and not getattr(self, "_cli_mode", False):
+            ja = self._ask_yesno_threadsafe(
+                self._t("dialog.title.backport_fremd"),
+                self._t("dialog.msg.backport_fremd", namen=namen), default_yes=True)
+        if ja and fassung is None:
+            self._fremdlibs_beheben = True
+            self._append_to_log(self._t("main.integrate_backport_fremd_an", namen=namen))
+            return []
+        if ja and self._fremdlibs_ersetzen(ordner, auswahl):
+            self._append_to_log(self._t("backport.log_fremd_behoben", namen=namen))
+            return []
+        self._append_to_log(self._t("main.integrate_backport_fremd", namen=namen))
+        return bleiben
+
+    def _fremdlibs_ersetzen(self, ordner, auswahl: dict) -> bool:
+        """Ersetzt die fremden AMPR-/PlayGo-Bibliotheken im Dump durch AMPR EMU und den PlayGo-Stub (Index neu).
+
+        Dieselben Bausteine wie der Einbau (:meth:`_integration_ampr`): ``_ampr_apply_library`` sichert die vorhandene
+        Datei als ``.orig`` und legt die neue in den fakelib-Ordner; danach entsteht der ``ampr_emu.index`` neu.
+
+        Returns:
+            ``True``, wenn alles ersetzt wurde; sonst steht der Grund im Protokoll.
+        """
+        gesehen: set[str] = set()
+        for rel in ps5_backport.fremde_ampr_playgo(str(ordner)):
+            name = rel.rsplit("/", 1)[-1].lower()
+            if name in gesehen:
+                continue
+            gesehen.add(name)
+            if name == "libsceampr.sprx":
+                if not self._ampr_apply_library(str(ordner), auswahl["path"], "libSceAmpr.sprx"):
+                    return False
+                continue
+            playgo = self._ampr_playgo_zur_version(auswahl)
+            if not playgo:
+                self._append_to_log(self._t("main.integrate_playgo_missing"))
+                return False
+            if not self._ampr_apply_library(str(ordner), playgo, "libScePlayGo.sprx"):
+                return False
+        try:
+            index_pfad = Path(ordner) / self._AMPR_INDEX_NAME
+            if self._ampr_index_neubau_erlaubt(ordner):
+                anzahl, _doppelte = self._build_ampr_index_local(Path(ordner), index_pfad)
+                self._append_to_log(self._t("main.integrate_ampr_index", count=anzahl))
+        except Exception as exc:  # noqa: BLE001 - der Index ist Teil der Behebung; der Grund gehoert ins Protokoll
+            self._append_to_log(self._t("main.integrate_ampr_index_failed", error=exc))
+            return False
+        return True
+
     def _backport_fakelib_basis(self) -> str:
         """Ordner mit den Ersatzbibliotheken; benutzerdefiniert (Einstellung) oder gebuendelt."""
         gespeichert = str(self._load_setting("backport_fakelib_ordner", "")).strip()
@@ -57294,6 +57392,8 @@ class PS5ConverterGUI:
             laeuft["abbruch"] = False
             start_btn.configure(state="disabled")
             analyse_btn.configure(state="disabled")
+            # Im Hauptfaden lesen: Der Arbeitsfaden darf keine Tk-Variable anfassen.
+            self._backport_ampr_fassung = str(self._tk_wert("ampr_version_var", "") or "")
             threading.Thread(
                 target=self._backport_worker,
                 args=(ordner, firmware, sichern, libs_var.get(),
@@ -57695,6 +57795,10 @@ class PS5ConverterGUI:
                                        for q in quellen]
                         self._backport_deckung_melden(
                             ps5_backport.kandidaten(ordner), installiert)
+
+            # Fremde AMPR-/PlayGo-Bibliotheken im Dump bleiben sonst unberuehrt - das Fenster baut kein AMPR EMU ein.
+            # Die AMPR-Fassung ist im Hauptfaden gelesen (siehe _backport_starten); hier laeuft der Arbeitsfaden.
+            self._backport_fremdlibs_klaeren(ordner, fassung=str(getattr(self, "_backport_ampr_fassung", "") or ""))
 
             # ---- Firmware-Analyse: fehlende Bibliotheken ergaenzen ----
             fw_basis = self._backport_fw_analyse_basis()
