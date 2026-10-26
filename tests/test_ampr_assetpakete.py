@@ -1423,8 +1423,9 @@ class KlapplisteTests(unittest.TestCase):
         self.addCleanup(self._umschalten, "ampr_pack.methode_normal")
         self.assertEqual(normal & pack, set(),
                          "Diese Fassungen stehen in beiden Listen")
+        # Die Beschriftung der Liste, nicht "Fassung Variante": test-nopack steht seit 25.10.2026 nur als Nummer da.
         alle = {
-            "%s %s" % (e["version"], e["variant"])
+            self.app._ampr_beschriftung(e)
             for e in self.app._ampr_alle_fassungen()
             if e.get("lib") == "libSceAmpr.sprx"
         }

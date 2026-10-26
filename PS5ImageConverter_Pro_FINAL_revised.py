@@ -34680,7 +34680,7 @@ class PS5ConverterGUI:
                 str(eintrag.get("variant", "")))
             if kann_packen != nur_packfaehig:
                 continue
-            beschriftung = f"{eintrag['version']} {eintrag['variant']}".strip()
+            beschriftung = self._ampr_beschriftung(eintrag)
             if beschriftung in self._ampr_versionsauswahl:
                 continue
             self._ampr_versionsauswahl[beschriftung] = eintrag
@@ -34688,6 +34688,8 @@ class PS5ConverterGUI:
 
         self.ampr_version_combo.configure(values=beschriftungen)
         gemerkt = str(self._load_setting("integrate_ampr_version", "") or "")
+        # Bis v1.9.87 hiess die normale 0.4.2.1 hier "0.4.2.1 test-nopack"; die gemerkte Wahl bleibt gueltig.
+        gemerkt = self._AMPR_ALTE_BESCHRIFTUNGEN.get(gemerkt, gemerkt)
         if gemerkt in self._ampr_versionsauswahl:
             self.ampr_version_var.set(gemerkt)
         elif beschriftungen:
@@ -34700,6 +34702,24 @@ class PS5ConverterGUI:
             self._append_to_log(self._t(
                 "ampr_pack.keine_packfaehige" if nur_packfaehig
                 else "ampr_pack.keine_normale"))
+
+    #: Gemerkte Beschriftungen der Klappliste aus frueheren Fassungen -> die heutige.
+    _AMPR_ALTE_BESCHRIFTUNGEN: dict[str, str] = {"0.4.2.1 test-nopack": "0.4.2.1"}
+
+    @staticmethod
+    def _ampr_beschriftung(eintrag: dict[str, Any]) -> str:
+        """Die Zeile der Klappliste neben dem Kaestchen AMPR EMU: Fassung und Variante.
+
+        ``test-nopack`` ist die normale Fassung des AMPR EMU (ohne Asset-Pack-Bau) und steht deshalb nur als Nummer da
+        - "0.4.2.1" statt "0.4.2.1 test-nopack" (Nutzerwunsch 25.10.2026). Die Packbauten (``test-pack``,
+        ``test-debug-pack``) stehen in der Liste der Methode Asset-Pack und behalten ihre Variante. Nur die Anzeige
+        aendert sich: Ordner, Dateien und ``--ampr-version`` heissen weiter wie bisher.
+        """
+        version = str(eintrag.get("version", "") or "")
+        variante = str(eintrag.get("variant", "") or "").strip()
+        if variante.lower() == "test-nopack":
+            return version.strip()
+        return f"{version} {variante}".strip()
 
     def _on_integration_changed(self, speichern: bool = True) -> None:
         """Haelt die Auswahllisten im Takt mit ihren Kaestchen.
