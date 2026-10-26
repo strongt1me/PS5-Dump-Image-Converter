@@ -139,10 +139,10 @@ KATALOG: tuple[Dienst, ...] = (
     # dauerhaft aus dem Autoload, nicht auf Knopfdruck. Ein blosser TCP-Check
     # kann "aus, weil api_bind_address=127.0.0.1" nicht von "laeuft wirklich
     # nicht" unterscheiden - "Ausgewaehltes starten" haette sonst leicht eine
-    # zweite Instanz riskiert. Die API/Weboberflaeche lauscht ab Werk nur auf
-    # 127.0.0.1; von diesem PC aus ist sie erst erreichbar, wenn
-    # api_bind_address in der config.ini auf die PS5-Adresse oder 0.0.0.0
-    # zeigt (ShadowMount+-Editor in "WEITERE TOOLS").
+    # zweite Instanz riskiert. Die API/Weboberflaeche lauschte bis 1.7beta7 ab Werk
+    # nur auf 127.0.0.1 (seit 1.7beta8 auf 0.0.0.0); lauscht sie nur dort, ist sie von
+    # diesem PC aus erst erreichbar, wenn api_bind_address in der config.ini auf die
+    # PS5-Adresse oder 0.0.0.0 zeigt (ShadowMount+-Editor in "WEITERE TOOLS").
     #
     # Version seit dem 05.10.2026 (der Nutzer: "bei ShadowMount+ steht nie die Version"):
     # Ist die Schnittstelle von diesem PC aus erreichbar, nennt ShadowMount+ sie selbst -

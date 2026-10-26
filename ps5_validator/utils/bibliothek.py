@@ -738,8 +738,9 @@ def rueckgaengig(protokoll: str,
 #: eingehaengt - liegt es neben ``fakelib``, wird ``fakelib`` gar nicht
 #: gelesen. 1.7alpha8 bis alpha13fix1 lasen im Spielordner nur ``fakelib``;
 #: zwischen 1.7beta3 und 1.7beta4 unveraendert (am Diff nachgesehen, 04.10.2026);
-#: die Fassung, die dem Programm beiliegt, ist seit dem 21.10.2026 1.7beta7 -
-#: am Diff 1.7-beta5fix1 bis 1.7beta7 nachgesehen: Reihenfolge unveraendert
+#: die Fassung, die dem Programm beiliegt, ist seit dem 26.10.2026 1.7beta8 -
+#: am Diff 1.7-beta5fix1 bis 1.7beta8 nachgesehen (``sm_fakelib.c`` kommt im
+#: Vergleich 1.7beta7 bis 1.7beta8 nicht vor): Reihenfolge unveraendert
 #: (``backport_source`` kam nur als Kennzeichen dazu). Neu: der Backport-Ordner
 #: darf einen Zusatz hinter der Title-ID tragen, siehe ``backport_ordner_waehlen``.
 #:

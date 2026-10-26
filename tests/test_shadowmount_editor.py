@@ -472,7 +472,7 @@ class FremdeSchluesselUeberlebenTests(unittest.TestCase):
         """
         from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
         vorgaben = PS5ConverterGUI._SHADOWMOUNT_DEFAULTS
-        self.assertEqual("127.0.0.1", vorgaben.get("api_bind_address"))
+        self.assertEqual("0.0.0.0", vorgaben.get("api_bind_address"))
         self.assertEqual("10101", vorgaben.get("api_port"))
 
     def test_web_port_stimmt_mit_dem_katalog_ueberein(self):

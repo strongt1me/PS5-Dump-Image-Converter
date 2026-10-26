@@ -725,7 +725,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.87"
+APP_VERSION = "v1.9.88"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -48917,13 +48917,14 @@ class PS5ConverterGUI:
         # --- neu in 1.7 (Release 4102fa7a, am 21.09.2026 uebernommen) -------
         # Die HTTP/JSON-API, die shadowmount_api.py liest - darueber laeuft
         # auch die Weboberflaeche, die "Konsole & Payloads" wie bei PKG-/
-        # Payload-Manager verlinkt. Ab Werk lauscht sie nur auf 127.0.0.1: von
-        # diesem PC aus ist sie erst erreichbar, wenn api_bind_address hier
-        # auf die PS5-Adresse oder 0.0.0.0 gesetzt wird - ohne
-        # Authentifizierung, also nie im fremden Netz. Ab 1.7beta3 legt
+        # Payload-Manager verlinkt. Bis 1.7beta7 lauschte sie ab Werk nur auf
+        # 127.0.0.1 (von diesem PC aus erst erreichbar, wenn api_bind_address
+        # auf die PS5-Adresse oder 0.0.0.0 stand); seit 1.7beta8 (beiliegend)
+        # ist die Vorgabe 0.0.0.0 - ohne Authentifizierung, also nie im
+        # fremden Netz. Ab 1.7beta3 legt
         # api_enabled=0 beim Start auch keine Kachel im PS5-Menue mehr an.
         "api_enabled": "1",
-        "api_bind_address": "127.0.0.1",
+        "api_bind_address": "0.0.0.0",
         "api_port": "10101",
         # Fehlende Spiele aus der Systembibliothek austragen. Ab Werk aus, und
         # das bleibt hier so: Ein abgezogener USB-Stick ist kein Loeschauftrag.

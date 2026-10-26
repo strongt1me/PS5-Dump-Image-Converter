@@ -2,9 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.87):** Das Programm fragt jetzt auch ohne AMPR EMU nach PlayGo, wenn ein Spiel PlayGo-Inhalte hat, und die param.json-Prüfung meldet nur noch echte Auffälligkeiten.
+> **Kurz zum aktuellen Stand (v1.9.88):** Neue und aktualisierte Konsolen-Payloads sind eingebaut, der WK-Autoloader ist entfernt, und die AMPR-EMU-Liste zeigt eine Fassung jetzt mit ihrer gewohnten Nummer an.
 
 ---
+
+## v1.9.88 – 26.10.2026
+
+- **Neu:** Home Hider 2.0.0 als neuer Payload in Konsole & Payloads, mit eigenem Dienst auf Port 8090.
+- **Aktualisiert:** ShadowMount+ 1.7beta8 (Vorabfassung; die Schnittstelle lauscht jetzt ab Werk im Netz), PS5Upload 8.2.0, sechs weitere Konsolen-Payloads (elfldr, Web File Manager, PS4Mount, NeoEnabler, PatchDL, Cooling Center), ps5-ultrapack im PS5-PKG-Tool und 7-Zip auf 26.05.
+- **Entfernt:** Der WK-Autoloader (ausgebaut).
+- **Behoben:** Die AMPR-EMU-Fassungsliste zeigt die normale Fassung jetzt mit ihrer gewohnten Nummer statt einem technischen Zusatz.
 
 ## v1.9.87 – 24.10.2026
 

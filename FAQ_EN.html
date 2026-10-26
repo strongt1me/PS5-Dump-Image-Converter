@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.87</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.88</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.87</span>
-      <span class="marke">As of 24 October 2026</span>
+      <span class="marke">Version v1.9.88</span>
+      <span class="marke">As of 26 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -585,7 +585,7 @@ footer{
 
   <div class="frage">
     <h3>The ShadowMount+ button does not open a web interface. Why?</h3>
-    <p>By default ShadowMount+ listens only on the PS5 itself (<code>api_bind_address=127.0.0.1</code>). From your PC, port 10101 is then closed even though ShadowMount+ is running – and the button still sends the payload once more. If the port does not answer afterwards, the log states the reason. So set the key <code>api_bind_address</code> in the ShadowMount+ editor (<em>MORE TOOLS</em>) to the PS5 address or <code>0.0.0.0</code>. The interface has no login – do not use this on a network you do not control.</p>
+    <p>Up to 1.7beta7, ShadowMount+ listened by default only on the PS5 itself (<code>api_bind_address=127.0.0.1</code>); since 1.7beta8 it is <code>0.0.0.0</code>. If it listens only on the PS5, port 10101 is closed from your PC even though ShadowMount+ is running – and the button still sends the payload once more. If the port does not answer afterwards, the log states the reason. So set the key <code>api_bind_address</code> in the ShadowMount+ editor (<em>MORE TOOLS</em>) to the PS5 address or <code>0.0.0.0</code>. The interface has no login – do not use this on a network you do not control.</p>
   </div>
 
   <div class="frage">
@@ -683,8 +683,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.87</strong></span>
-  <span>As of 24 October 2026 · Only for content you own and acquired legally</span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.88</strong></span>
+  <span>As of 26 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 
 </body>
