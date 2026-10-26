@@ -2,16 +2,18 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.88):** Neue und aktualisierte Konsolen-Payloads sind eingebaut, der WK-Autoloader ist entfernt, und die AMPR-EMU-Liste zeigt eine Fassung jetzt mit ihrer gewohnten Nummer an.
+> **Kurz zum aktuellen Stand (v1.9.88):** Neue und aktualisierte Konsolen-Payloads sind eingebaut, der WK-Autoloader ist entfernt, BACKPORT setzt signierte Ersatzbibliotheken ein (auf Wunsch nur die benötigten), und die AMPR-EMU-Liste zeigt eine Fassung jetzt mit ihrer gewohnten Nummer an.
 
 ---
 
 ## v1.9.88 – 26.10.2026
 
 - **Neu:** Home Hider 2.0.0 als neuer Payload in Konsole & Payloads, mit eigenem Dienst auf Port 8090.
+- **Neu:** BACKPORT hat den Haken „Nur benötigte Bibliotheken“: Dann werden nur die Ersatzbibliotheken eingesetzt, die das Spiel tatsächlich einbindet.
 - **Aktualisiert:** ShadowMount+ 1.7beta8 (Vorabfassung; die Schnittstelle lauscht jetzt ab Werk im Netz), PS5Upload 8.2.0, sechs weitere Konsolen-Payloads (elfldr, Web File Manager, PS4Mount, NeoEnabler, PatchDL, Cooling Center), ps5-ultrapack im PS5-PKG-Tool und 7-Zip auf 26.05.
 - **Entfernt:** Der WK-Autoloader (ausgebaut).
 - **Behoben:** Die AMPR-EMU-Fassungsliste zeigt die normale Fassung jetzt mit ihrer gewohnten Nummer statt einem technischen Zusatz.
+- **Behoben:** Die mitgelieferten BACKPORT-Ersatzbibliotheken liegen jetzt signiert (wie die Originale) statt als rohe Datei im Spiel – die Konsole lehnte die rohe Form beim Start ab. Enthält ein Dump bereits eine fremde AMPR- oder PlayGo-Bibliothek, fragt BACKPORT nach und räumt sie auf.
 
 ## v1.9.87 – 24.10.2026
 

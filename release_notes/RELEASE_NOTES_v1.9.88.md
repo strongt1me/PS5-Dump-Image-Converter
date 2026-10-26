@@ -1,6 +1,7 @@
 ## Neu
 
 - Home Hider 2.0.0 als neuer Payload in Konsole & Payloads, mit eigenem Dienst auf Port 8090.
+- BACKPORT hat den Haken „Nur benötigte Bibliotheken“: Dann werden nur die Ersatzbibliotheken eingesetzt, die das Spiel tatsächlich einbindet.
 
 ## Aktualisiert
 
@@ -9,6 +10,7 @@
 ## Behoben
 
 - Die AMPR-EMU-Fassungsliste zeigt die normale Fassung jetzt mit ihrer gewohnten Nummer statt einem technischen Zusatz.
+- Die mitgelieferten BACKPORT-Ersatzbibliotheken liegen jetzt signiert (wie die Originale) statt als rohe Datei im Spiel – die Konsole lehnte die rohe Form beim Start ab. Enthält ein Dump bereits eine fremde AMPR- oder PlayGo-Bibliothek, fragt BACKPORT nach und räumt sie auf.
 
 ## Entfernt
 
