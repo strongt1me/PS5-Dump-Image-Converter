@@ -1004,11 +1004,14 @@ class DeckungVerdrahtungTests(unittest.TestCase):
         with io.open(HAUPTDATEI, encoding="utf-8") as fh:
             cls.quelle = fh.read()
 
-    def test_haken_vorhanden(self):
-        self.assertIn('(deckung_var, "backport.option_coverage")', self.quelle)
+    def test_keine_wahl_mehr_im_fenster(self):
+        # Seit v1.9.89 laeuft die Deckungspruefung immer mit (wie Bibliotheken
+        # und libc-Anpassung): Es gibt keinen Haken mehr dafuer.
+        self.assertNotIn("deckung_var", self.quelle)
+        self.assertNotIn("backport.option_coverage", self.quelle)
 
     def test_wert_wird_an_den_worker_gereicht(self):
-        self.assertIn("win, deckung_var.get()", self.quelle)
+        self.assertIn("start_btn, analyse_btn, win, True, minimal_var.get()", self.quelle)
 
     def test_geprueft_wird_was_im_zielordner_liegt(self):
         # Gegen die Quellen zu pruefen waere wertlos: Aussagen soll der
@@ -1017,7 +1020,8 @@ class DeckungVerdrahtungTests(unittest.TestCase):
                       self.quelle)
 
     def test_alle_texte_uebersetzt(self):
-        for schluessel in ("backport.option_coverage", "backport.coverage_start",
+        for schluessel in ("backport.options_auto", "backport.option_backup_hint",
+                           "backport.coverage_start",
                            "backport.coverage_files", "backport.coverage_line",
                            "backport.coverage_ok", "backport.coverage_none",
                            "backport.coverage_console", "backport.coverage_unreadable",

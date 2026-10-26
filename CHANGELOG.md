@@ -6,6 +6,10 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ---
 
+## Nächste Version (in Arbeit)
+
+- **Geändert:** Das BACKPORT-Fenster ist einfacher: Es gibt nur noch die Haken „Sicherung anlegen“ und „Nur benötigte Bibliotheken“. Ersatzbibliotheken, libc-Anpassung und Deckungsprüfung laufen immer mit, wie beim Einbau während des Erstellens.
+
 ## v1.9.88 – 26.10.2026
 
 - **Neu:** Home Hider 2.0.0 als neuer Payload in Konsole & Payloads, mit eigenem Dienst auf Port 8090.

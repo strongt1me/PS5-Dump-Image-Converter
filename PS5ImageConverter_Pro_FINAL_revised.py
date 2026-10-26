@@ -57091,37 +57091,43 @@ class PS5ConverterGUI:
                  fg=c["fg_secondary"], wraplength=420,
                  justify="left").pack(side="left", padx=(0, 16))
 
+        # Bis v1.9.88 standen hier fuenf Haken in der Zeile der Zielfirmware,
+        # der letzte war abgeschnitten. Ersatzbibliotheken, libc-Anpassung und
+        # Deckungspruefung sind keine Wahl mehr: Das Erstellen-Fenster macht
+        # sie ohnehin immer (_integration_backport), und ohne die Bibliotheken
+        # startet ein herabgesetztes Spiel nicht. Es bleiben die Sicherung und
+        # die Auswahl der Bibliotheken - in einer eigenen Zeile.
+        optionen_zeile = tk.Frame(win, bg=c["bg_main"], padx=16)
+        optionen_zeile.pack(fill="x", pady=(6, 0))
         sicherung_var = tk.BooleanVar(value=True)
-        libs_var = tk.BooleanVar(value=True)
-        libc_var = tk.BooleanVar(value=False)
-        deckung_var = tk.BooleanVar(value=True)
         minimal_var = tk.BooleanVar(value=self._backport_fakelib_minimal())
-        for var, schluessel in ((sicherung_var, "backport.option_backup"),
-                                (libs_var, "backport.option_fakelibs"),
-                                (libc_var, "backport.option_libc"),
-                                (deckung_var, "backport.option_coverage")):
-            self._pw.Checkbutton(
-                einstellungen, text=self._t(schluessel), variable=var,
-                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
-                selectcolor=c["bg_card"], activebackground=c["bg_main"],
-                activeforeground=c["fg_accent"], anchor="w",
-            ).pack(side="left", padx=(0, 12))
+        sicherung_check = self._pw.Checkbutton(
+            optionen_zeile, text=self._t("backport.option_backup"), variable=sicherung_var,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
+            selectcolor=c["bg_card"], activebackground=c["bg_main"],
+            activeforeground=c["fg_accent"], anchor="w",
+        )
+        sicherung_check.pack(side="left", padx=(0, 16))
+        self._tooltip(sicherung_check, "backport.option_backup_hint",
+                      delay_ms=900, wraplength=430)
 
-        # Eigenes Haekchen (statt im selben Durchlauf): es speichert sich beim
-        # Umschalten, weil es auch den Einbau waehrend des Erstellens steuert
-        # (_backport_fakelib_minimal) - die anderen vier gelten nur fuer
-        # diesen einen Lauf im Fenster.
+        # Eigenes Haekchen: es speichert sich beim Umschalten, weil es auch den
+        # Einbau waehrend des Erstellens steuert (_backport_fakelib_minimal) -
+        # die Sicherung gilt nur fuer diesen einen Lauf im Fenster.
         minimal_check = self._pw.Checkbutton(
-            einstellungen, text=self._t("backport.option_minimal"), variable=minimal_var,
+            optionen_zeile, text=self._t("backport.option_minimal"), variable=minimal_var,
             command=lambda: self._save_setting(
                 "backport_fakelib_nur_benoetigt", minimal_var.get()),
             font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
             selectcolor=c["bg_card"], activebackground=c["bg_main"],
             activeforeground=c["fg_accent"], anchor="w",
         )
-        minimal_check.pack(side="left", padx=(0, 12))
+        minimal_check.pack(side="left", padx=(0, 16))
         self._tooltip(minimal_check, "backport.option_minimal_hint",
                       delay_ms=900, wraplength=430)
+        tk.Label(optionen_zeile, text=self._t("backport.options_auto"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_secondary"],
+                 anchor="w", justify="left", wraplength=520).pack(side="left", fill="x", expand=True)
 
         fakelib_ordner_zeile = tk.Frame(win, bg=c["bg_main"])
         fakelib_ordner_zeile.pack(fill="x", padx=16, pady=(6, 0))
@@ -57372,7 +57378,7 @@ class PS5ConverterGUI:
                 return
             firmware = _ziel_firmware()
             basis = self._backport_fakelib_basis()
-            if libs_var.get() and not ps5_backport.fakelib_dateien(basis, firmware):
+            if not ps5_backport.fakelib_dateien(basis, firmware):
                 if not messagebox.askyesno(
                         self._t("backport.no_libs_title"),
                         self._t("backport.no_libs_message", fw=f"{firmware}.00"),
@@ -57457,9 +57463,9 @@ class PS5ConverterGUI:
             self._backport_ampr_fassung = str(self._tk_wert("ampr_version_var", "") or "")
             threading.Thread(
                 target=self._backport_worker,
-                args=(ordner, firmware, sichern, libs_var.get(),
-                      libc_var.get(), baum, zeilen, stand_var, laeuft,
-                      start_btn, analyse_btn, win, deckung_var.get(), minimal_var.get()),
+                args=(ordner, firmware, sichern, True,
+                      True, baum, zeilen, stand_var, laeuft,
+                      start_btn, analyse_btn, win, True, minimal_var.get()),
                 daemon=True).start()
 
         def _beim_schliessen() -> None:

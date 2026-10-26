@@ -2411,13 +2411,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <table>
     <thead><tr><th>Ankreuzfeld</th><th>Bedeutung</th></tr></thead>
     <tbody>
-      <tr><td><strong>Sicherung anlegen</strong></td><td>Legt vor dem ersten Zugriff eine vollständige Kopie des Ordners mit Zeitstempel daneben. Standardmäßig an – bitte anlassen.</td></tr>
-      <tr><td><strong>Ersatzbibliotheken kopieren</strong></td><td>Legt die zur Zielfirmware passenden Bibliotheken in einen Ordner <code>fakelib</code> neben das Spiel. Ohne sie erwartet das Spiel Funktionen, die es auf der älteren Firmware nicht gibt. Standardmäßig an.</td></tr>
-      <tr><td><strong>Nur benötigte Bibliotheken</strong></td><td>Kopiert von diesem Satz nur die Bibliotheken, die das Spiel laut seiner Importtabelle tatsächlich verwendet, statt immer den ganzen Satz. Standardmäßig aus; ohne lesbare Importtabelle bleibt es beim vollen Satz.</td></tr>
-      <tr><td><strong>libc-Patch (6.xx, experimentell)</strong></td><td>Ein zusätzlicher Eingriff in <code>libc.prx</code>, der bei manchen Spielen für 6.xx nötig ist. Standardmäßig aus; nur einschalten, wenn es ohne nicht geht.</td></tr>
+      <tr><td><strong>Sicherung anlegen (empfohlen)</strong></td><td>Legt vor dem ersten Zugriff eine vollständige Kopie des Ordners mit Zeitstempel daneben. Standardmäßig an – bitte anlassen.</td></tr>
+      <tr><td><strong>Nur benötigte Bibliotheken (experimentell)</strong></td><td>Kopiert vom Ersatzsatz nur die Bibliotheken, die das Spiel laut seiner Importtabelle tatsächlich verwendet, statt immer den ganzen Satz. Standardmäßig aus; ohne lesbare Importtabelle bleibt es beim vollen Satz. Die Wahl gilt auch beim Einbau während des Erstellens.</td></tr>
     </tbody>
   </table>
   </div>
+  <p>Alles Weitere stellen Sie nicht ein, es läuft von selbst mit: Die zur Zielfirmware passenden Ersatzbibliotheken kommen in einen Ordner <code>fakelib</code> neben das Spiel (ohne sie erwartet das Spiel Funktionen, die es auf der älteren Firmware nicht gibt), die libc-Anpassung folgt der Zielfirmware, und die Deckungsprüfung steht anschließend im Protokoll.</p>
 
   <h4>Was in der Liste steht</h4>
   <p>Bearbeitet werden <code>eboot.bin</code> sowie alle <code>.prx</code>- und <code>.sprx</code>-Dateien. Der Ordner <code>fakelib</code> bleibt außen vor – die Bibliotheken darin passen bereits.</p>
@@ -2436,7 +2435,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h4>Deckung prüfen</h4>
-  <p>Der Haken <strong>Deckung prüfen</strong> ist voreingestellt. Nach dem Kopieren der Ersatzbibliotheken liest das Programm, welche Funktionen das Spiel von ihnen verlangt, und hält das gegen das, was sie tatsächlich anbieten. Das Ergebnis steht im Protokoll:</p>
+  <p>Die Deckungsprüfung läuft immer mit. Nach dem Kopieren der Ersatzbibliotheken liest das Programm, welche Funktionen das Spiel von ihnen verlangt, und hält das gegen das, was sie tatsächlich anbieten. Das Ergebnis steht im Protokoll:</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Zeile</th><th>Bedeutung</th></tr></thead>
