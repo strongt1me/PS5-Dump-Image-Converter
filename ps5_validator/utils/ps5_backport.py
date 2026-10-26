@@ -1223,6 +1223,62 @@ def fakelib_uebersprungene(basis: str, firmware: int) -> list[str]:
             if os.path.isfile(os.path.join(ordner, n)) and n not in genommen]
 
 
+def fakelib_dateien_benoetigt(basis: str, firmware: int,
+                               spieldateien: list[str]) -> list[str]:
+    """Wie :func:`fakelib_dateien`, aber nur die Bibliotheken, die eine der
+    ``spieldateien`` (eboot.bin und Spielmodule) tatsaechlich importiert.
+
+    Grund: Mehrere unabhaengige Befunde in der Szene (drakmor/ShadowMountPlus
+    Issues #169 und #173) zeigen Spiele, die mit dem vollen Ersatzsatz beim
+    Start abstuerzen oder haengen und erst nach Beschraenkung auf die wirklich
+    gebrauchten Bibliotheken ("Emulators only" statt "Full") starten. Eine
+    Bibliothek, die keine Spieldatei importiert, kann auf der Konsole ohnehin
+    nie geladen werden - sie liegt dann nur als unnoetiger, womoeglich
+    schaedlicher Ballast im Zielordner.
+
+    Die Markierungsdatei ``FW<n>`` bleibt immer erhalten, da sie keine
+    Bibliothek ist. Laesst sich aus keiner ``spieldatei`` eine Importtabelle
+    lesen (z.B. weil die Liste leer ist oder alle Dateien verschluesselt
+    sind), bleibt der volle Satz stehen - eine Einschraenkung ohne Grundlage
+    waere schlimmer als gar keine.
+    """
+    voll = fakelib_dateien(basis, firmware)
+    verlangt: set = set()
+    gelesen = False
+    for pfad in spieldateien:
+        symbole = symbole_aus_datei(pfad)
+        if symbole["importe"]:
+            gelesen = True
+        verlangt.update(name for name in symbole["importe"] if name and name != "?")
+    if not gelesen:
+        return voll
+
+    markierung = f"FW{int(firmware)}".lower()
+    ergebnis: list[str] = []
+    for pfad in voll:
+        if os.path.basename(pfad).lower() == markierung:
+            ergebnis.append(pfad)
+            continue
+        symbole = symbole_aus_datei(pfad)
+        exportiert = {name for name in symbole["exporte"] if name and name != "?"}
+        if not exportiert:
+            exportiert = {bibliotheksname(pfad)}
+        if exportiert & verlangt:
+            ergebnis.append(pfad)
+    return ergebnis
+
+
+def fakelib_unnoetige(basis: str, firmware: int,
+                       spieldateien: list[str]) -> list[str]:
+    """Nennt die Bibliotheken aus dem Satz, die keine ``spieldatei``
+    importiert - Grundlage fuer die Protokollzeile zu
+    :func:`fakelib_dateien_benoetigt`."""
+    voll = {os.path.basename(p) for p in fakelib_dateien(basis, firmware)}
+    noetig = {os.path.basename(p)
+              for p in fakelib_dateien_benoetigt(basis, firmware, spieldateien)}
+    return sorted(voll - noetig)
+
+
 # --------------------------------------------------------------------------
 # Deckungspruefung: Was importiert das Spiel, was liefert die Ersatzbibliothek
 # --------------------------------------------------------------------------

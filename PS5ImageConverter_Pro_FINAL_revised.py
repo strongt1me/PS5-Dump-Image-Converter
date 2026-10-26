@@ -35468,7 +35468,17 @@ class PS5ConverterGUI:
         kopiert = 0
         basis = self._backport_fakelib_basis()
         if basis:
-            quellen = ps5_backport.fakelib_dateien(basis, firmware)
+            if self._backport_fakelib_minimal():
+                quellen = ps5_backport.fakelib_dateien_benoetigt(
+                    basis, firmware, ps5_backport.kandidaten(ordner))
+                unnoetig = ps5_backport.fakelib_unnoetige(
+                    basis, firmware, ps5_backport.kandidaten(ordner))
+                if unnoetig:
+                    self._append_to_log(self._t(
+                        "backport.log_libs_unnoetig",
+                        count=len(unnoetig), names=", ".join(unnoetig)))
+            else:
+                quellen = ps5_backport.fakelib_dateien(basis, firmware)
             ziel = ps5_backport.fakelib_ziel(ordner, self._fakelib_ordnername())
             if not quellen:
                 # Das Fenster fragt in diesem Fall nach; beim Einbau lief es
@@ -52864,6 +52874,19 @@ class PS5ConverterGUI:
             return gespeichert
         return _bundled_resource("Backport_Fakelibs")
 
+    def _backport_fakelib_minimal(self) -> bool:
+        """Ob nur die vom Spiel tatsaechlich importierten Ersatzbibliotheken
+        eingebaut werden, statt immer dem kompletten Firmware-Satz.
+
+        Einstellbar ueber das Haekchen im BACKPORT-Fenster, wirkt aber auch
+        beim Einbau waehrend des Erstellens - wie ``backport_fakelib_ordner``.
+        Vorgabe Nein: ein voller Satz ist seit jeher das gewohnte Verhalten,
+        und ob die Einschraenkung auf der eigenen Konsole etwas aendert, ist
+        unbekannt (gemessen am 26.10.2026 nur anhand fremder Befunde, siehe
+        ``backport.option_minimal_hint``).
+        """
+        return bool(self._load_setting("backport_fakelib_nur_benoetigt", False))
+
     def _backport_fw_analyse_basis(self) -> str:
         """Firmware-Ordner fuer die NID-Analyse; leer, wenn nicht konfiguriert."""
         return str(self._load_setting("backport_fw_analyse_ordner", "")).strip()
@@ -57071,6 +57094,7 @@ class PS5ConverterGUI:
         libs_var = tk.BooleanVar(value=True)
         libc_var = tk.BooleanVar(value=False)
         deckung_var = tk.BooleanVar(value=True)
+        minimal_var = tk.BooleanVar(value=self._backport_fakelib_minimal())
         for var, schluessel in ((sicherung_var, "backport.option_backup"),
                                 (libs_var, "backport.option_fakelibs"),
                                 (libc_var, "backport.option_libc"),
@@ -57081,6 +57105,22 @@ class PS5ConverterGUI:
                 selectcolor=c["bg_card"], activebackground=c["bg_main"],
                 activeforeground=c["fg_accent"], anchor="w",
             ).pack(side="left", padx=(0, 12))
+
+        # Eigenes Haekchen (statt im selben Durchlauf): es speichert sich beim
+        # Umschalten, weil es auch den Einbau waehrend des Erstellens steuert
+        # (_backport_fakelib_minimal) - die anderen vier gelten nur fuer
+        # diesen einen Lauf im Fenster.
+        minimal_check = self._pw.Checkbutton(
+            einstellungen, text=self._t("backport.option_minimal"), variable=minimal_var,
+            command=lambda: self._save_setting(
+                "backport_fakelib_nur_benoetigt", minimal_var.get()),
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
+            selectcolor=c["bg_card"], activebackground=c["bg_main"],
+            activeforeground=c["fg_accent"], anchor="w",
+        )
+        minimal_check.pack(side="left", padx=(0, 12))
+        self._tooltip(minimal_check, "backport.option_minimal_hint",
+                      delay_ms=900, wraplength=430)
 
         fakelib_ordner_zeile = tk.Frame(win, bg=c["bg_main"])
         fakelib_ordner_zeile.pack(fill="x", padx=16, pady=(6, 0))
@@ -57418,7 +57458,7 @@ class PS5ConverterGUI:
                 target=self._backport_worker,
                 args=(ordner, firmware, sichern, libs_var.get(),
                       libc_var.get(), baum, zeilen, stand_var, laeuft,
-                      start_btn, analyse_btn, win, deckung_var.get()),
+                      start_btn, analyse_btn, win, deckung_var.get(), minimal_var.get()),
                 daemon=True).start()
 
         def _beim_schliessen() -> None:
@@ -57630,7 +57670,7 @@ class PS5ConverterGUI:
     def _backport_worker(self, ordner: str, firmware: int, sicherung: bool,
                          libs: bool, libc: bool, baum, zeilen: dict,
                          stand_var, laeuft: dict, start_btn, analyse_btn,
-                         win, deckung: bool = False) -> None:
+                         win, deckung: bool = False, minimal: bool = False) -> None:
         """Führt den Backport durch. Läuft im Hintergrund, meldet über after()."""
         beginn = time.time()
         gepatcht = uebersprungen = fehler = 0
@@ -57785,7 +57825,16 @@ class PS5ConverterGUI:
             kopiert = 0
             if libs:
                 basis = self._backport_fakelib_basis()
-                quellen = ps5_backport.fakelib_dateien(basis, firmware)
+                if minimal:
+                    spieldateien = ps5_backport.kandidaten(ordner)
+                    quellen = ps5_backport.fakelib_dateien_benoetigt(basis, firmware, spieldateien)
+                    unnoetig = ps5_backport.fakelib_unnoetige(basis, firmware, spieldateien)
+                    if unnoetig:
+                        self._append_to_log(self._t(
+                            "backport.log_libs_unnoetig",
+                            count=len(unnoetig), names=", ".join(unnoetig)))
+                else:
+                    quellen = ps5_backport.fakelib_dateien(basis, firmware)
                 ziel = ps5_backport.fakelib_ziel(ordner, self._fakelib_ordnername())
                 if quellen:
                     stand(self._t("backport.state_libs", count=len(quellen)))
