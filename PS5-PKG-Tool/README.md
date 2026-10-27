@@ -5,7 +5,13 @@
 Bibliothek **LibProsperoPkg 1.2.0** (GPL-3.0-or-later; als fertige Datei `src/ffpfsc-pkg-tool/lib/`, die Quelle
 dazu liegt nicht bei - siehe `src/ffpfsc-pkg-tool/lib/README.md`).
 
-Seit 24.10.2026 steht die Versionskonstante auf **2.3.1**. ps5-ultrapack 2.3.0 und 2.3.1 bringen im C#-Teil neue Dateien
+Seit 27.10.2026 steht die Versionskonstante auf **2.3.2**. ps5-ultrapack 2.3.2 aendert am C#-Teil nur Kommentare und
+Leerraum (Vergleich der Dateien ohne Kommentare und Leerzeichen: Program.cs und Ps4Keystone.cs je nur Zeilenende-Leerraum, alle
+anderen gleich; `lib/` und `patches/` unveraendert); Upstream selbst haelt die Konstante noch auf 2.3.1. Unsere Konstante ist
+auf 2.3.2 gehoben, `ffpfsc-pkg-tool.dll` in allen vier Ordnern neu gebaut (nur diese Datei je Ordner); `dotnet ... version`
+zeigt 2.3.2 und LibProsperoPkg 1.2.0.
+
+Davor (24.10.2026): **2.3.1**. ps5-ultrapack 2.3.0 und 2.3.1 bringen im C#-Teil neue Dateien
 `Ps4Keystone.cs` (`ps4-keystone`), `Ps4Rebind.cs` (`ps4-rebind`), `Ps4Sfo.cs` (`ps4-sfo`) und `SafeConsole.cs` und aendern
 `Program.cs` (`build --keystone`, Zielpfade) und `Ps4.cs`; `lib/` und `patches/` sind gleich geblieben. `Program.cs` und die README
 des Werkzeugs sind per Dreiwege-Zusammenfuehrung uebernommen (Basis Upstream 2.2.10, unsere Fassung mit dem Befehl

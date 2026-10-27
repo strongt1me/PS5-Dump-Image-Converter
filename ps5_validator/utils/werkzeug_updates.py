@@ -568,7 +568,7 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     Werkzeug("ps5-pkg-tool", "PS5-PKG-Tool (ps5-fpkg-converter)", GRUPPE_WERKZEUG, "sub0x00001/ps5-fpkg-converter",
              ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:0.0.2"),
     Werkzeug("ps5-ultrapack", "ps5-ultrapack (Engine im PS5-PKG-Tool)", GRUPPE_WERKZEUG, "knutwurst/ps5-ultrapack",
-             ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:2.3.1"),
+             ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:2.3.2"),
     Werkzeug("wee-tools", "PS5 Wee Tools", GRUPPE_WERKZEUG, "andy-man/ps5-wee-tools", ordner="PS5-Wee-Tools-*",
              art=ART_HINWEIS, hinweis="updates.hinweis_festgelegt", lokal="ordnername"),
     Werkzeug("7zip", "7-Zip", GRUPPE_WERKZEUG, "ip7z/7zip", ordner="7-Zip-*", art=ART_HINWEIS,
