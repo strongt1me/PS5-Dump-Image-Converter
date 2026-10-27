@@ -194,6 +194,41 @@ class BannerTests(_MitFenster):
             self.app._banner_planen()
         nach.assert_not_called()
 
+    def test_banner_nur_unter_windows_und_nicht_nach_dem_kreuz(self) -> None:
+        """Wunsch 27.10.2026: auf macOS/Linux nicht zeigen; nach dem Kreuz nie wieder."""
+        with mock.patch.object(APP, "IST_WINDOWS", True), mock.patch.object(self.app, "_load_setting", return_value=False):
+            self.assertTrue(self.app._banner_erlaubt())
+        with mock.patch.object(APP, "IST_WINDOWS", True), mock.patch.object(self.app, "_load_setting", return_value=True):
+            self.assertFalse(self.app._banner_erlaubt())
+        with mock.patch.object(APP, "IST_WINDOWS", False), mock.patch.object(self.app, "_load_setting", return_value=False):
+            self.assertFalse(self.app._banner_erlaubt())
+
+    def test_banner_wird_nicht_gezeigt_wenn_es_etwas_verdeckt(self) -> None:
+        """Wunsch 27.10.2026: nur zeigen, wenn nichts darunter liegt."""
+        self.root.geometry("800x600+-4000+100")
+        self.root.deiconify()
+        self.addCleanup(self.root.withdraw)
+        self.ruhen(0.3)
+        vorher = set(self.root.winfo_children())
+        with mock.patch.object(self.app, "_banner_verdeckt_etwas", return_value=True),                 mock.patch.object(self.app, "_banner_naechstes") as naechstes:
+            self.app._banner_zeigen(1)
+        self.assertEqual(vorher, set(self.root.winfo_children()))
+        naechstes.assert_called_once()
+
+    def test_verdeckung_erkennt_bedienelement(self) -> None:
+        """Ein sichtbares Bedienelement im Rechteck zaehlt, ein leeres Rechteck nicht."""
+        self.root.geometry("800x600+-4000+100")
+        self.root.deiconify()
+        self.addCleanup(self.root.withdraw)
+        self.ruhen(0.3)
+        knopf = tk.Button(self.root, text="x")
+        knopf.place(x=500, y=300, width=60, height=30)
+        self.addCleanup(knopf.destroy)
+        self.ruhen(0.2)
+        kx, ky = knopf.winfo_rootx(), knopf.winfo_rooty()
+        self.assertTrue(self.app._banner_verdeckt_etwas(kx - 5, ky - 5, 100, 50))
+        self.assertFalse(self.app._banner_verdeckt_etwas(kx + 10_000, ky + 10_000, 100, 50))
+
     def test_rechte_kante_ist_die_der_karte(self) -> None:
         """Meldung 21.10.2026: Das Banner ragte rechts ueber die Karte (QUELLE usw.) hinaus."""
         self.root.update()
@@ -264,7 +299,7 @@ class BannerTests(_MitFenster):
         self.ruhen(0.3)
         vorher = set(self.root.winfo_children())
         with mock.patch.object(self.app, "_BANNER_ZEIGEN_MS", 200), mock.patch("webbrowser.open") as offen, \
-                mock.patch.object(self.app, "_banner_naechstes") as naechstes:
+                mock.patch.object(self.app, "_banner_naechstes") as naechstes,                 mock.patch.object(self.app, "_banner_verdeckt_etwas", return_value=False):
             self.app._banner_zeigen()
             neu = [w for w in self.root.winfo_children() if w not in vorher and isinstance(w, tk.Toplevel)]
             self.assertEqual(1, len(neu))
@@ -283,7 +318,9 @@ class BannerTests(_MitFenster):
         self.addCleanup(self.root.withdraw)
         self.ruhen(0.3)
         vorher = set(self.root.winfo_children())
-        self.app._banner_zeigen()
+        # Im kleinen Testfenster laege das Banner ueber Bedienelementen - hier geht es um die Anzeige selbst.
+        with mock.patch.object(self.app, "_banner_verdeckt_etwas", return_value=False):
+            self.app._banner_zeigen()
         neu = [w for w in self.root.winfo_children() if w not in vorher and isinstance(w, tk.Toplevel)]
         self.assertEqual(1, len(neu))
         return neu[0]

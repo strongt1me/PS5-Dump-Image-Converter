@@ -41959,9 +41959,22 @@ class PS5ConverterGUI:
         als fuenf Minuten, und ein echtes Fenster mitten in einem Test stoert dort
         (wie eine Rueckfrage, siehe ``conftest.py``).
         """
-        if "pytest" in sys.modules:
+        if "pytest" in sys.modules or not self._banner_erlaubt():
             return
         self.root.after(self._BANNER_NACH_MS, self._banner_zeigen, self._BANNER_VERSUCHE)
+
+    #: Einstellung: der Nutzer hat das Banner ueber das Kreuz geschlossen - dann nie wieder zeigen.
+    _BANNER_GESCHLOSSEN_SETTING = "banner_geschlossen"
+
+    def _banner_erlaubt(self) -> bool:
+        """Nur unter Windows (macOS/Linux: randloses Toplevel sass falsch, Wunsch des Nutzers 27.10.2026) und nur,
+        solange der Nutzer es nicht ueber das Kreuz geschlossen hat."""
+        if not IST_WINDOWS:
+            return False
+        try:
+            return not bool(self._load_setting(self._BANNER_GESCHLOSSEN_SETTING, False))
+        except Exception:
+            return True
 
     def _banner_rechte_kante(self, leiste) -> int:
         """Rechte Kante fuer das Banner: buendig mit der Karte darunter (QUELLE usw.), sonst wie die Leiste.
@@ -41977,6 +41990,43 @@ class PS5ConverterGUI:
             pass
         return leiste.winfo_rootx() + leiste.winfo_width() - 12
 
+    def _banner_verdeckt_etwas(self, x: int, y: int, breite: int, hoehe: int, ausser=None) -> bool:
+        """Ob das Banner an dieser Stelle etwas zudecken wuerde (Wunsch des Nutzers 27.10.2026).
+
+        Zaehlt jedes sichtbare Bedienelement, jede Karte und jedes weitere Fenster des Programms im Rechteck;
+        nur die ganzflaechigen Hintergrundschichten (mindestens 60 % der Fensterbreite und 50 % der -hoehe)
+        zaehlen nicht. ``ausser``: das Banner selbst.
+        """
+        try:
+            wurzel_b = max(1, self.root.winfo_width())
+            wurzel_h = max(1, self.root.winfo_height())
+            stapel = list(self.root.winfo_children())
+            while stapel:
+                w = stapel.pop()
+                if w is ausser:
+                    continue
+                try:
+                    if not w.winfo_ismapped():
+                        continue
+                    links, oben = w.winfo_rootx(), w.winfo_rooty()
+                    rechts, unten = links + w.winfo_width(), oben + w.winfo_height()
+                    kinder = w.winfo_children()
+                except tk.TclError:
+                    continue
+                if isinstance(w, tk.Toplevel):
+                    if rechts > x and links < x + breite and unten > y and oben < y + hoehe:
+                        return True
+                    stapel.extend(kinder)
+                    continue
+                hintergrund = (w.winfo_width() >= 0.6 * wurzel_b and w.winfo_height() >= 0.5 * wurzel_h)
+                if (not hintergrund and rechts > x and links < x + breite and unten > y and oben < y + hoehe
+                        and w.winfo_width() > 1 and w.winfo_height() > 1):
+                    return True
+                stapel.extend(kinder)
+        except tk.TclError:
+            return True
+        return False
+
     def _banner_zeigen(self, versuche: int = 1) -> None:
         """Blendet das Banner ein, zeigt es und blendet es wieder aus (:meth:`_banner_planen`).
 
@@ -41986,6 +42036,8 @@ class PS5ConverterGUI:
         (hoechstens ``versuche`` Mal, dann erst wieder zum naechsten Abstand). Die
         naechste Einblendung folgt :data:`_BANNER_ABSTAND_MS` nach dem Beginn dieser.
         """
+        if not self._banner_erlaubt():
+            return
         try:
             if not self.root.winfo_exists():
                 return
@@ -42013,6 +42065,13 @@ class PS5ConverterGUI:
                                           master=self.root)
             x = self._banner_rechte_kante(leiste) - breite
             y = leiste.winfo_rooty() + leiste.winfo_height() + 8
+            if self._banner_verdeckt_etwas(x, y, breite + 2, hoehe + 2):
+                # Nur zeigen, wenn nichts verdeckt wird: spaeter noch einmal versuchen (Fenster/Ansicht aendert sich).
+                if versuche > 1:
+                    self.root.after(60_000, self._banner_zeigen, versuche - 1)
+                else:
+                    self._banner_naechstes()
+                return
             fenster = tk.Toplevel(self.root, bg="#000000", highlightthickness=1,
                                   highlightbackground=self._COLORS["fg_accent"])
             fenster.withdraw()
@@ -42034,7 +42093,7 @@ class PS5ConverterGUI:
             self._banner_naechstes()
             return
         schritte = max(1, self._BANNER_BLENDE_MS // 40)
-        zustand = {"aus": False, "x": x, "y": y}
+        zustand = {"aus": False, "x": x, "y": y, "takt": 0}
         beginn = time.monotonic()
 
         def _folgen() -> None:
@@ -42044,6 +42103,11 @@ class PS5ConverterGUI:
                     return
                 neu_x = self._banner_rechte_kante(leiste) - breite
                 neu_y = leiste.winfo_rooty() + leiste.winfo_height() + 8
+                zustand["takt"] += 1
+                if zustand["takt"] % 4 == 0 and self._banner_verdeckt_etwas(neu_x, neu_y, breite + 2, hoehe + 2,
+                                                                          ausser=fenster):
+                    _aus()      # Fenster verkleinert/Ansicht gewechselt: sofort weg, wenn es etwas zudeckt
+                    return
                 if (neu_x, neu_y) != (zustand["x"], zustand["y"]):
                     zustand["x"], zustand["y"] = neu_x, neu_y
                     fenster.geometry("+%d+%d" % (neu_x, neu_y))
@@ -42092,6 +42156,19 @@ class PS5ConverterGUI:
 
         bild.bind("<Button-1>", _klick)
         bild.bind("<Button-3>", lambda _e=None: _aus())     # nur schliessen, ohne die Seite zu oeffnen
+
+        def _dauerhaft_schliessen(_e=None) -> None:
+            """Das Kreuz: Banner weg und nie wieder zeigen (gespeichert)."""
+            try:
+                self._save_setting(self._BANNER_GESCHLOSSEN_SETTING, True)
+            except Exception as exc:
+                logger.debug("Banner-Schliessen nicht gespeichert: %s", exc)
+            _aus()
+
+        kreuz = tk.Label(fenster, text="✕", font=(UI_SCHRIFT, pt(9), "bold"), fg="#ffffff", bg="#000000",
+                         cursor="hand2", padx=5, pady=0, bd=0)
+        kreuz.place(relx=1.0, x=-1, y=1, anchor="ne")
+        kreuz.bind("<Button-1>", _dauerhaft_schliessen)
         _ein()
         fenster.after(self._BANNER_FOLGEN_MS, _folgen)
 
