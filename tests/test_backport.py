@@ -430,6 +430,38 @@ class FakelibTests(unittest.TestCase):
                  for p in bp.fakelib_dateien(self.BASIS, 7)]
         self.assertNotIn("ps5-backpork.elf", namen)
 
+    def test_ampr_und_playgo_standard_sind_in_jeder_firmwarestufe(self):
+        """Seit 28.10.2026 (Konsolentest Mordhau PPSA08087, FW4.xx bestaetigt den Fix):
+
+        Drei unabhaengige echte FW4.xx-Backports (Trackmania, LEGO Batman, Mordhau)
+        zeigen libSceAmpr.sprx + libScePlayGo.sprx als nicht-titelspezifischen,
+        immer vorhandenen Bestandteil - der mitgelieferte Satz hatte bis dahin
+        keine von beiden, das BACKPORT-Fenster fasst AMPR/PlayGo sonst nicht an.
+        Statt eines dritten, unlizenzierten Bytefunds werden die bereits im
+        Projekt mitgelieferten, an der Konsole verifizierten eigenen Dateien
+        (AMPR EMU 0.4.2.1 nopack, PlayGo-Stub 0.6 nolog) verwendet - sie tragen
+        bereits das EMU_KENNZEICHEN und werden deshalb von fremde_ampr_playgo()
+        nicht als fremd gemeldet.
+        """
+        for fw in bp.FIRMWARE_MIT_FAKELIBS:
+            with self.subTest(firmware=fw):
+                ordner = bp.fakelib_quelle(self.BASIS, fw)
+                ampr = os.path.join(ordner, "libSceAmpr.sprx")
+                playgo = os.path.join(ordner, "libScePlayGo.sprx")
+                self.assertTrue(os.path.isfile(ampr), ampr)
+                self.assertTrue(os.path.isfile(playgo), playgo)
+                namen = [os.path.basename(p) for p in bp.fakelib_dateien(self.BASIS, fw)]
+                self.assertIn("libSceAmpr.sprx", namen)
+                self.assertIn("libScePlayGo.sprx", namen)
+                with open(ampr, "rb") as fh:
+                    ampr_daten = fh.read()
+                with open(playgo, "rb") as fh:
+                    playgo_daten = fh.read()
+                self.assertEqual(bp.dateityp(ampr_daten), bp.TYP_SELF, ampr)
+                self.assertEqual(bp.dateityp(playgo_daten), bp.TYP_SELF, playgo)
+                self.assertIn(bp.EMU_KENNZEICHEN[0], ampr_daten)
+                self.assertIn(bp.EMU_KENNZEICHEN[1], playgo_daten)
+
 
 class VerdrahtungTests(unittest.TestCase):
     """Einbindung im Hauptprogramm."""

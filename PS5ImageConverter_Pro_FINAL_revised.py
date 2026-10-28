@@ -57949,8 +57949,11 @@ class PS5ConverterGUI:
                         self._backport_deckung_melden(
                             ps5_backport.kandidaten(ordner), installiert)
 
-            # Fremde AMPR-/PlayGo-Bibliotheken im Dump bleiben sonst unberuehrt - das Fenster baut kein AMPR EMU ein.
-            # Die AMPR-Fassung ist im Hauptfaden gelesen (siehe _backport_starten); hier laeuft der Arbeitsfaden.
+            # Seit 28.10.2026 bringt der mitgelieferte Satz selbst AMPR EMU + PlayGo-Stub mit (markiert,
+            # siehe EMU_KENNZEICHEN) - der ueberschreibt eine fremde Datei gleichen Namens beim Kopieren
+            # bereits. Dieser Aufruf faengt nur noch den Rest ab: eine fremde, unmarkierte Datei, die den
+            # Kopierschritt ueberlebt (z.B. "Nur benoetigte Bibliotheken" filtert unsere eigene Datei heraus,
+            # weil das Spiel laut Importtabelle keine braucht - die fremde im Dump bleibt dann unberuehrt).
             self._backport_fremdlibs_klaeren(ordner, fassung=str(getattr(self, "_backport_ampr_fassung", "") or ""))
 
             # ---- Firmware-Analyse: fehlende Bibliotheken ergaenzen ----

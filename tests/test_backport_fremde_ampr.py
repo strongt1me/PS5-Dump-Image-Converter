@@ -83,13 +83,23 @@ class FindenTests(unittest.TestCase):
         d.lege("fakelib2/LIBSCEAMPR.SPRX", SONY)
         self.assertEqual(["fakelib2/LIBSCEAMPR.SPRX"], bp.fremde_ampr_playgo(d.wurzel))
 
-    def test_der_mitgelieferte_satz_hat_beide_nicht(self) -> None:
-        """Die Voraussetzung des Hinweises: Der Satz ersetzt Ampr/PlayGo nie - sonst waere der Hinweis falsch."""
+    def test_der_mitgelieferte_satz_bringt_nur_die_eigenen_markierten_mit(self) -> None:
+        """Seit 28.10.2026 bringt der Satz selbst AMPR EMU + PlayGo-Stub mit (Mordhau-Fund, drei unabhaengige
+        echte FW4.xx-Backports zeigen beide als nicht-titelspezifischen Standardbestandteil). Die Voraussetzung
+        des Hinweises bleibt trotzdem erfuellt, weil es die EIGENEN markierten Dateien sind (EMU_KENNZEICHEN) -
+        fremde_ampr_playgo() meldet sie deshalb nicht als fremd (siehe test_amprs_emu_und_playgo_stub_sind_nicht_fremd).
+        Fremde, unmarkierte Dateien aus dem Dump selbst werden weiterhin erkannt, sofern sie den Lauf ueberleben
+        (z.B. bei "Nur benoetigte Bibliotheken", wenn der Import-Filter unsere eigenen Dateien ausschliesst)."""
         basis = PROJEKT / "Backport_Fakelibs"
         for stand in bp.firmwares_mit_bestand(str(basis)):
             with self.subTest(firmware=stand):
-                namen = {os.path.basename(p).lower() for p in bp.fakelib_dateien(str(basis), stand)}
-                self.assertFalse(namen & set(bp.AMPR_PLAYGO_BIBLIOTHEKEN), namen)
+                dateien = {os.path.basename(p).lower(): p for p in bp.fakelib_dateien(str(basis), stand)}
+                vorhanden = set(dateien) & set(bp.AMPR_PLAYGO_BIBLIOTHEKEN)
+                self.assertEqual(vorhanden, set(bp.AMPR_PLAYGO_BIBLIOTHEKEN), dateien)
+                for name in vorhanden:
+                    with open(dateien[name], "rb") as fh:
+                        daten = fh.read()
+                    self.assertTrue(any(k in daten for k in bp.EMU_KENNZEICHEN), name)
 
 
 class KlaerenTests(unittest.TestCase):

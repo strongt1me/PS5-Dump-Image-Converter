@@ -33,7 +33,11 @@ GUI = APP.PS5ConverterGUI
 BESTAND = PROJEKT / "PlayGo & AMPR_EMU"
 EMUS = sorted((BESTAND / "AMPR_EMU").rglob("libSceAmpr.sprx"))
 STUBS = sorted(BESTAND.rglob("libScePlayGo.sprx"))
-SONY = sorted((PROJEKT / "Backport_Fakelibs").rglob("*.sprx"))
+# Seit 28.10.2026 bringt jeder BACKPORT-Satz selbst AMPR EMU + PlayGo-Stub mit (Mordhau-Fund) - die zwei
+# Dateien sind dort absichtlich kein "Sony-Original", sondern genau dieselben markierten Dateien wie in
+# EMUS/STUBS, also hier ausgenommen statt faelschlich als "kein Ersatz" erwartet.
+SONY = sorted(p for p in (PROJEKT / "Backport_Fakelibs").rglob("*.sprx")
+              if p.name.lower() not in ("libsceampr.sprx", "libsceplaygo.sprx"))
 EMU_PACK = BESTAND / "AMPR_EMU" / "0.4.2.1 test-pack" / "libSceAmpr.sprx"
 EMU_DEBUG = BESTAND / "AMPR_EMU" / "0.4.2.1 test-debug-pack" / "libSceAmpr.sprx"
 

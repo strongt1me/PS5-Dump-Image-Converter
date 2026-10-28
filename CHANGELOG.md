@@ -9,6 +9,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 ## Nächste Version (in Arbeit)
 
 - **Geändert:** Das BACKPORT-Fenster ist einfacher: Es gibt nur noch die Haken „Sicherung anlegen“ und „Nur benötigte Bibliotheken“. Ersatzbibliotheken, libc-Anpassung und Deckungsprüfung laufen immer mit, wie beim Einbau während des Erstellens.
+- **Behoben:** BACKPORT bringt jetzt für jede Firmware-Stufe auch die Kompatibilitäts-Bausteine für AMPR und PlayGo mit. An der echten Konsole bestätigt: Ein Spiel mit PlayGo-Inhalten startete ohne sie gar nicht erst.
 
 ## v1.9.88 – 26.10.2026
 
