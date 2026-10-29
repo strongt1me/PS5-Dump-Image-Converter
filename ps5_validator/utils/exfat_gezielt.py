@@ -207,16 +207,18 @@ def metadaten(pfad: str, engine: Any) -> Any | None:
     """
     if os.path.splitext(str(pfad))[1].lower() not in (".exfat", ".ffpfs", ".ffpfsc"):
         return None
-    original = getattr(engine, "_fill_from_exfat_reader", None)
     lesen = getattr(engine, "read_game_metadata", None)
-    if (original is None or lesen is None or not hasattr(engine, "_fill_from_param_json")
-            or not hasattr(engine, "_is_png")):
+    if (getattr(engine, "_fill_from_exfat_reader", None) is None or lesen is None
+            or not hasattr(engine, "_fill_from_param_json") or not hasattr(engine, "_is_png")):
         return None
 
     def _gezielt(leser: Any, meta: Any) -> None:
         fuellen(leser, meta, engine)
 
     with _SPERRE:
+        # Das Original wird erst unter der Sperre gelesen: Davor haelt ein anderer Faden gerade seine eigene
+        # Austausch-Funktion in der Engine, und wer die fuer das Original nimmt, stellt sie dauerhaft zurueck.
+        original = engine._fill_from_exfat_reader
         engine._fill_from_exfat_reader = _gezielt
         try:
             return lesen(Path(pfad))

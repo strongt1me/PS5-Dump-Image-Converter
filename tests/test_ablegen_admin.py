@@ -41,8 +41,9 @@ class ZielwahlTests(unittest.TestCase):
 
     def test_pfade_mit_leerzeichen_bleiben_beim_zerlegen_heil(self):
         import tkinter as tk
-        wurzel = tk.Tk()
-        self.addCleanup(wurzel.destroy)
+        # Die gemeinsame Wurzel der Testreihe: eine eigene zu zerstoeren nimmt den anderen Tests die Standardwurzel.
+        wurzel = tk._default_root or tk.Tk()
+        wurzel.withdraw()
         daten = ab.pfade_in_liste(["C:/Mein Spiel", "C:/a"], wurzel.tk)
         self.assertEqual(("C:/Mein Spiel", "C:/a"), tuple(wurzel.tk.splitlist(daten)))
 

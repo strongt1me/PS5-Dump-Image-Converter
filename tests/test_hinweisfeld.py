@@ -25,11 +25,14 @@ class HinweisfeldTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.var = tk.StringVar(master=self.wurzel)
-        self.feld = ttk.Entry(self.wurzel, textvariable=self.var)
+        # Ein eigenes Fenster: In die gemeinsame Wurzel zu packen stoert Tests, die dort mit grid arbeiten.
+        self.fenster = tk.Toplevel(self.wurzel)
+        self.addCleanup(self.fenster.destroy)
+        self.feld = ttk.Entry(self.fenster, textvariable=self.var)
         self.feld.pack()
+        self.fenster.update_idletasks()
         self.text = "hierher ziehen"
         self.h = hf.Hinweisfeld(self.feld, self.var, lambda: self.text)
-        self.addCleanup(self.feld.destroy)
 
     def test_leeres_feld_zeigt_den_hinweis_ohne_den_inhalt_zu_beruehren(self) -> None:
         self.assertEqual("hierher ziehen", self.h.etikett.cget("text"))

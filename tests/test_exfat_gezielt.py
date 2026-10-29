@@ -19,6 +19,7 @@ import json
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -373,6 +374,36 @@ class EinbauParitaetTests(_Basis):
         kaputt = self.basis / "kein_exfat.exfat"
         kaputt.write_bytes(b"\0" * 4096)
         self.assertIsNone(self.gui._container_dateien(str(kaputt), roh_exfat=True, gezielt=True))
+
+
+class AustauschSperreTests(unittest.TestCase):
+    """``metadaten`` tauscht die Engine-Funktion unter einer Sperre aus - und nimmt sie immer wieder zurueck."""
+
+    def test_gleichzeitige_aufrufe_lassen_die_engine_funktion_nicht_vertauscht_zurueck(self) -> None:
+        def original(leser, meta):
+            return None
+
+        engine = mock.Mock(spec=["_fill_from_exfat_reader", "read_game_metadata", "_fill_from_param_json",
+                                 "_is_png"])
+        engine._fill_from_exfat_reader = original
+        engine.read_game_metadata = lambda pfad: time.sleep(0)   # gibt den Faden mitten im Austausch ab
+
+        def _lauf() -> None:
+            for _ in range(300):
+                eg.metadaten("x.exfat", engine)
+
+        faeden = [threading.Thread(target=_lauf) for _ in range(4)]
+        # Der Wettlauf braucht einen Wechsel zwischen den Faeden mitten in ``metadaten``.
+        alt = sys.getswitchinterval()
+        sys.setswitchinterval(1e-6)
+        try:
+            for faden in faeden:
+                faden.start()
+            for faden in faeden:
+                faden.join()
+        finally:
+            sys.setswitchinterval(alt)
+        self.assertIs(original, engine._fill_from_exfat_reader)
 
 
 if __name__ == "__main__":
