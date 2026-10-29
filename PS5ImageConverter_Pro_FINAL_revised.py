@@ -13493,7 +13493,7 @@ class PS5ConverterGUI:
                         gesendet["n"] += len(block)
                         prozent = gesendet["n"] / groesse_datei * 100.0 if groesse_datei else 0.0
                         self._spaeter_im_fenster(
-                            seite, update_ul_balken.configure, {"value": prozent})
+                            seite, lambda: update_ul_balken.configure(value=prozent))
 
                     # Immer unter dem Namen, den der Autoloader beim Start auf der Konsole
                     # sucht - unabhaengig davon, wie die lokale Datei heisst.

@@ -17,6 +17,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Geändert:** Im BACKPORT-Fenster stehen der eigene Bibliotheksordner und der Firmware-Ordner für die Analyse jetzt eingeklappt unter „Erweiterte Einstellungen“ (aufgeklappt, sobald dort schon etwas eingestellt ist), und neben der Zielfirmware steht, was das Spiel selbst verlangt.
 - **Behoben:** BACKPORT bringt jetzt für jede Firmware-Stufe auch die Kompatibilitäts-Bausteine für AMPR und PlayGo mit. An der echten Konsole bestätigt: Ein Spiel mit PlayGo-Inhalten startete ohne sie gar nicht erst.
 - **Behoben:** Ziehen und Ablegen von Ordnern und Dateien in die Felder Quelle, Ziel und Temp funktioniert wieder, obwohl das Programm als Administrator läuft: Windows ließ die Ablage aus dem normal gestarteten Explorer sonst ohne Meldung nicht durch. Das Programm nimmt sie jetzt über den älteren Weg an, den Windows für diesen Fall zulässt.
+- **Geändert:** Die beiden Knöpfe in Aufgabe 7 heißen jetzt „PS4 PKG“ und „PS5 PKG“ (vorher „PKG“ und „FPKG“).
 - **Neu:** Die leeren Felder Quelle, Ziel und Temp zeigen einen grauen Hinweis, dass man einen Ordner oder eine Datei hineinziehen kann – bei der Quelle passend zur gewählten Aufgabe (Dump-Ordner, .ffpfsc, .exFAT, .ffpkg).
 - **Neu:** Update-Pakete (Delta) zeigen in der Bibliothek einen Titel sowie Content-ID und Title-ID aus dem Dateinamen statt gar nichts.
 

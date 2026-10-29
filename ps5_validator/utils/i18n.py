@@ -1913,8 +1913,8 @@ STRINGS: dict[str, dict[str, str]] = {
                                          'en': 'Uploaded. Now restart the autoloader on the console so it '
                                                'updates itself.', 'es': 'Subido. Ahora reinicia el Autoloader en la consola para que se actualice.', 'it': "Caricato. Ora riavvia l'Autoloader sulla console affinché si aggiorni.", 'fr': "Envoyé. Redémarrez maintenant l'Autoloader sur la console pour qu'il se mette à jour."},
     'y2jbupdater.btn_upload_autoloader': {'de': 'Auf den USB-Stick hochladen', 'en': 'Upload to USB stick', 'es': 'Subir a la memoria USB', 'it': 'Caricare sulla chiavetta USB', 'fr': 'Envoyer vers la clé USB'},
-    'pkg_fpkg_seite.tab_pkg': {'de': 'PKG', 'en': 'PKG', 'es': 'PKG', 'it': 'PKG', 'fr': 'PKG'},
-    'pkg_fpkg_seite.tab_fpkg': {'de': 'FPKG', 'en': 'FPKG', 'es': 'FPKG', 'it': 'FPKG', 'fr': 'FPKG'},
+    'pkg_fpkg_seite.tab_pkg': {'de': 'PS4 PKG', 'en': 'PS4 PKG', 'es': 'PS4 PKG', 'it': 'PS4 PKG', 'fr': 'PS4 PKG'},
+    'pkg_fpkg_seite.tab_fpkg': {'de': 'PS5 PKG', 'en': 'PS5 PKG', 'es': 'PS5 PKG', 'it': 'PS5 PKG', 'fr': 'PS5 PKG'},
     'konsole.btn_uebersicht': {'de': '‹ Konsole & Payloads', 'en': '‹ Console & payloads', 'es': '‹ Consola y payloads', 'it': '‹ Console e payload', 'fr': '‹ Console et payloads'},
     # Verbinden beim Programmstart (seit 26.09.2026) - im Hauptprotokoll.
     'konsole.start_suche': {'de': '[SCHRITT] Suche die PS5 und verbinde (ELF-Loader, FTP) …', 'en': '[STEP] Looking for the PS5 and connecting (ELF loader, FTP) …', 'es': '[PASO] Buscando la PS5 y conectando (cargador ELF, FTP) …', 'it': '[PASSO] Ricerca della PS5 e connessione in corso (caricatore ELF, FTP) …', 'fr': '[ÉTAPE] Recherche de la PS5 et connexion (chargeur ELF, FTP) …'},
