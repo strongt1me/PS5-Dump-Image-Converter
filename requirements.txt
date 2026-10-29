@@ -2,7 +2,7 @@ Pillow==13.0.0
 cryptography==50.0.2
 zstandard==0.25.0
 zlib-ng
-tkinterdnd2==0.6.4
+tkinterdnd2==0.7.0
 psutil==7.2.2
 # AMPR-EMU-Assetpakete (AMPR_PackTools-4.0/ampr_pack.py packt damit die Baender)
 lz4==4.4.5
