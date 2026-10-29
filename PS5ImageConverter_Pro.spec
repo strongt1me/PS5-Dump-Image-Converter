@@ -371,6 +371,8 @@ a = Analysis(
         'ps5_validator.utils.bibliothek_fortschritt',
         'ps5_validator.utils.bibliothek_paket',
         'ps5_validator.utils.ufs2_leser',
+        'ps5_validator.utils.ablegen_admin',
+        'ps5_validator.utils.hinweisfeld',
         'ps5_validator.utils.exfat_gezielt',
         'ps5_validator.utils.aktualisierungen',
         'ps5_validator.utils.ini_config',

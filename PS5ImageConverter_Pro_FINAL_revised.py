@@ -129,6 +129,8 @@ from ps5_validator.utils.dump_rename import (
 from ps5_validator.utils import anleitung
 from ps5_validator.utils import bibliothek as bibliothek_bestand
 from ps5_validator.utils import ufs2_leser
+from ps5_validator.utils import ablegen_admin
+from ps5_validator.utils import hinweisfeld
 from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import ps5_updates
 from ps5_validator.utils import prosperopkg
@@ -6450,6 +6452,7 @@ class PS5ConverterGUI:
 
     def _apply_language(self) -> None:
         """Setzt den Text aller registrierten und der Sprach-Grundgerüst-Widgets neu."""
+        self._hinweisfelder_aktualisieren()
         for btn, mode in getattr(self, "mode_buttons", []):
             btn.config(text=self._t(f"mode.{mode}"))
         for btn, schluessel in getattr(self, "_konsole_knoepfe", []):
@@ -10550,6 +10553,7 @@ class PS5ConverterGUI:
         self._register_translatable(self.arbeitskopie_check, "main.arbeitskopie_vorher")
         self.arbeitskopie_check.grid(row=15, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
+        self._hinweisfelder_anlegen()
         self._register_drag_drop()
         self._register_keyboard_shortcuts()
 
@@ -18725,8 +18729,44 @@ class PS5ConverterGUI:
             if cw <= 1: cw = 600
             self._cred_win.geometry(f"{cw}x{rh}+{rx - cw - 2}+{ry}")
 
+    def _quell_hinweis(self) -> str:
+        """Hinweistext fuer das leere Quellfeld - je nach Aufgabe ein Ordner, eine bestimmte Datei oder beides."""
+        arten = self._MODE_SOURCE_TYPES.get(str(self.current_mode.get() or ""), ())
+        if arten == ("folder",):
+            return self._t("main.hint_src_folder")
+        if len(arten) == 1:
+            return self._t("main.hint_src_file", art=self._FORMAT_LABELS.get(arten[0], arten[0]))
+        return self._t("main.hint_src_any")
+
+    def _hinweisfelder_anlegen(self) -> None:
+        """Grauer Hinweis in Quelle, Ziel und Temp, solange das Feld leer ist (Nutzerwunsch 29.10.2026)."""
+        self._hinweisfelder = [
+            hinweisfeld.Hinweisfeld(self.src_entry, self.source_path, self._quell_hinweis),
+            hinweisfeld.Hinweisfeld(self.dest_entry, self.dest_path, lambda: self._t("main.hint_dest")),
+            hinweisfeld.Hinweisfeld(self.temp_entry, self.temp_path, lambda: self._t("main.hint_temp")),
+        ]
+        self.current_mode.trace_add("write", lambda *_a: self._hinweisfelder_aktualisieren())
+
+    def _hinweisfelder_aktualisieren(self) -> None:
+        """Zieht Text und Farben nach - nach Aufgaben-, Sprach- und Designwechsel."""
+        for feld in getattr(self, "_hinweisfelder", []):
+            feld.aktualisieren()
+
     def _register_drag_drop(self) -> None:
         """Aktiviert Drag & Drop für Quelle/Ziel/Temp, falls tkinterdnd2 verfügbar ist."""
+        if IST_WINDOWS and _is_admin():
+            # Der Explorer laeuft normal, wir als Administrator: Windows laesst die OLE-Ablage von
+            # tkinterdnd2 dann nicht durch. Der aeltere Weg WM_DROPFILES mit Nachrichtenfilter geht.
+            try:
+                ziele = [(self.src_entry, self._on_source_dropped),
+                         (self.dest_entry, self._on_dest_dropped),
+                         (self.temp_entry, self._on_temp_dropped)]
+                # Der Hinweistext liegt als Etikett im Feld - auch darauf muss das Ablegen gehen.
+                ziele += [(h.etikett, z[1]) for h, z in zip(getattr(self, "_hinweisfelder", []), ziele)]
+                if ablegen_admin.installieren(self.root, ziele):
+                    return
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Ablage als Administrator nicht eingerichtet: %s", exc)
         if not _DND_AVAILABLE:
             return
         try:
@@ -18736,6 +18776,10 @@ class PS5ConverterGUI:
             self.dest_entry.dnd_bind("<<Drop>>", self._on_dest_dropped)
             self.temp_entry.drop_target_register(DND_FILES)
             self.temp_entry.dnd_bind("<<Drop>>", self._on_temp_dropped)
+            for hinweis, behandler in zip(getattr(self, "_hinweisfelder", []),
+                                          (self._on_source_dropped, self._on_dest_dropped, self._on_temp_dropped)):
+                hinweis.etikett.drop_target_register(DND_FILES)
+                hinweis.etikett.dnd_bind("<<Drop>>", behandler)
         except Exception as exc:
             logger.debug("Drag & Drop konnte nicht aktiviert werden: %s", exc)
 
@@ -45128,7 +45172,7 @@ class PS5ConverterGUI:
         """
         teile = bibliothek_paket.paket_lesen(pfad)
         if teile is None:
-            return {}, None
+            return self._bibliothek_delta_angaben(pfad), None
         roh: dict = {}
         try:
             if teile["sfo"]:
@@ -45147,6 +45191,26 @@ class PS5ConverterGUI:
                 angaben.setdefault("title_id", treffer.group(0))
         bild = teile.get("icon")
         return angaben, (bytes(bild) if bild else None)
+
+    def _bibliothek_delta_angaben(self, pfad: str) -> dict:
+        """Angaben zu einem Update-Paket (Delta, ``LIH``) aus dem **Dateinamen**.
+
+        Der Kopf eines Deltas ist nicht gelesen (``pkg_reader``): kein Titel, kein Bild, keine
+        Firmware. Der Name ``UP0000-PPSA12345_00-XXXXXXXXXXXXXXXX-A0100-V0100.pkg`` traegt aber die
+        Content-ID, daraus die Title-ID. Ohne erkennbare ID bleibt es leer wie bisher; ein Paket,
+        das gar kein Delta ist, ebenfalls.
+        """
+        if not self._pkg_ist_delta(pfad):
+            return {}
+        treffer = re.search(r"[A-Z]{2}\d{4}-(?:PPSA|CUSA)\d{5}_\d{2}-[A-Z0-9]{16}",
+                            os.path.basename(pfad).upper())
+        angaben = {"title": self._t("library.delta_titel")}
+        if treffer:
+            angaben["content_id"] = treffer.group(0)
+            titel_id = _TITLE_ID_RE.search(treffer.group(0))
+            if titel_id:
+                angaben["title_id"] = titel_id.group(0)
+        return angaben
 
     def _bibliothek_cover_datei(self, pfad: str) -> str:
         """Liefert eine Titelbilddatei zu einem Eintrag - notfalls durch Oeffnen.
@@ -65704,6 +65768,7 @@ class PS5ConverterGUI:
             return
         self._current_theme = theme_key
         self._COLORS = self._palette_bauen(theme_key)
+        self.root.after(100, self._hinweisfelder_aktualisieren)
         self._fenster_titelfarben_aktualisieren()
         # Hintergrundbild(er) neu mit der Hintergrundfarbe des NEUEN Designs
         # blenden. Ohne das blieben die Caches dauerhaft auf die Toenung des

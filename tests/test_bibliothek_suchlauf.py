@@ -334,6 +334,21 @@ class EintraegeLesenTests(unittest.TestCase):
             self.assertEqual("", self.gui._bibliothek_cover_datei(str(pfad)))
         self.assertFalse(self.gui._bibliothek_bilder.kennt_ohne_bild(str(pfad)))
 
+    def test_ein_delta_paket_zeigt_content_id_und_title_id_aus_dem_dateinamen(self) -> None:
+        name = "UP0000-PPSA16833_00-LEGOBATMAN000000-A0100-V0100.pkg"
+        pfad = self.wurzel / name
+        pfad.write_bytes(b"\x7fLIH" + b"\0" * 0x400)
+        angaben, bild = self.gui._bibliothek_paket_angaben(str(pfad))
+        self.assertIsNone(bild)
+        self.assertEqual("UP0000-PPSA16833_00-LEGOBATMAN000000", angaben["content_id"])
+        self.assertEqual("PPSA16833", angaben["title_id"])
+        self.assertTrue(angaben["title"])
+
+    def test_eine_unlesbare_datei_mit_paketnamen_bleibt_ohne_angaben(self) -> None:
+        pfad = self.wurzel / "UP0000-PPSA16833_00-LEGOBATMAN000000-A0100-V0100.pkg"
+        pfad.write_bytes(b"\0" * 0x400)
+        self.assertEqual(({}, None), self.gui._bibliothek_paket_angaben(str(pfad)))
+
     def test_gemischter_bestand_behaelt_die_reihenfolge_der_funde(self) -> None:
         _dump(self.wurzel / "A Dump")
         _paket(self.wurzel, "B Paket.pkg", {"TITLE": "B", "TITLE_ID": "CUSA00002"}, None)
