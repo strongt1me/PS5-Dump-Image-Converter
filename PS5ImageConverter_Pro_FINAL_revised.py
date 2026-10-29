@@ -10134,7 +10134,7 @@ class PS5ConverterGUI:
             compound="center",
         )
         self._register_translatable(self.integrate_title, "main.integrate_label")
-        self.integrate_title.grid(row=4, column=0, columnspan=3, sticky="w",
+        self.integrate_title.grid(row=5, column=0, columnspan=3, sticky="w",
                                   pady=(12, 0))
         self._card_caption_labels.append(self.integrate_title)
 
@@ -10170,7 +10170,7 @@ class PS5ConverterGUI:
         # noetig, weil die Klapplisten daneben hoeher sind als das Kaestchen
         # und sich an dessen Mitte ausrichten - saesse es oben, ragten sie
         # unten heraus.
-        self.ampr_integrate_check.grid(row=5, column=0, sticky="w",
+        self.ampr_integrate_check.grid(row=6, column=0, sticky="w",
                                        pady=(5, 2))
         self._tooltip(self.ampr_integrate_check, "main.integrate_ampr_hint",
                       delay_ms=900, wraplength=430)
@@ -10331,8 +10331,8 @@ class PS5ConverterGUI:
         # 14 px oben: Der Hinweis klebte mit einem einzigen Pixel Abstand an
         # den Kaestchen darueber (gemessen 21.08.2026: Kaestchen enden bei
         # y=249, der Hinweis begann bei y=250).
-        self.format_info_label.grid(row=6, column=0, columnspan=3, sticky="w",
-                                    pady=(14, 15))
+        self.format_info_label.grid(row=4, column=0, columnspan=3, sticky="w",
+                                    pady=(4, 6))
         # Der Hinweis steht mitten zwischen den randlosen Beschriftungen und
         # bekommt deshalb dieselbe Behandlung – sonst bliebe genau hier als
         # einziges eine deckende bg_card-Fläche auf dem Hintergrundbild stehen.
@@ -14096,6 +14096,11 @@ class PS5ConverterGUI:
         wundern.
         """
         teile: list[str] = []
+        gewaehlt = self._format_label_to_key(self.target_format.get().strip())
+        if gewaehlt in ("ffpfsc", "ffpfs"):
+            # Kurz gehalten (Nutzerwunsch 29.10.2026): Ziel und ein Satz zu Tempo und Empfehlung.
+            return "\n".join((self._t("main.ziel_hint", formats="ffpfsc/ffpfs"),
+                              self._t("main.pfs_speed_hint")))
         erlaubt = self._MODE_SOURCE_TYPES.get(selected_mode, ())
         if erlaubt:
             quellen = ", ".join(self._t(f"format.{key}") for key in erlaubt)
@@ -14103,9 +14108,6 @@ class PS5ConverterGUI:
         else:
             teile.append(self._t("main.format_options_hint_default"))
 
-        gewaehlt = self._format_label_to_key(self.target_format.get().strip())
-        if gewaehlt in ("ffpfsc", "ffpfs"):
-            teile.append(self._t("main.pfs_speed_hint"))
         # Die Einstufung des Engine-Autors nennen, nicht nur die eigene
         # Vorgabe. Die ShadowMountPlus-Anleitung fuehrt eine Rangfolge
         # (1.7alpha13, Zeilen 32-35 und 40): .ffpkg "Recommended", .exfat
@@ -16821,8 +16823,8 @@ class PS5ConverterGUI:
             return
         try:
             dlc.place(in_=erstes, relx=0.0, x=0, rely=1.0, y=self._DLC_ZEILE_ABSTAND, anchor="nw")
-            erstes.master.grid_rowconfigure(5, minsize=max(
-                int(erstes.master.grid_rowconfigure(5)["minsize"]), self._dlc_zeile_hoehe()))
+            erstes.master.grid_rowconfigure(6, minsize=max(
+                int(erstes.master.grid_rowconfigure(6)["minsize"]), self._dlc_zeile_hoehe()))
         except (tk.TclError, KeyError, ValueError) as exc:
             logger.debug("DLC-EMU-Zeile nicht setzbar: %s", exc)
 
@@ -16878,7 +16880,7 @@ class PS5ConverterGUI:
                     x=self._ZEILE_ABSTAND_GRUPPE)
                 # Die beiden Rasterzeilen sind jetzt leer und duerfen
                 # zusammenfallen, sonst bleibt ein Loch ueber dem Hinweis.
-                kaestchen.master.grid_rowconfigure(5, minsize=self._dlc_zeile_hoehe())
+                kaestchen.master.grid_rowconfigure(6, minsize=self._dlc_zeile_hoehe())
             else:
                 kaestchen.place_forget()
                 titel.place_forget()

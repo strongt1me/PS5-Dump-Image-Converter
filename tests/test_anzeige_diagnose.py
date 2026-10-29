@@ -669,7 +669,7 @@ class QuelltextTests(unittest.TestCase):
         der Karte, bei der damaligen Mindestbreite 1100 sogar 618 px - der
         Teil war weder sichtbar noch bedienbar.
         """
-        self.assertIn("self.ampr_integrate_check.grid(row=5, column=0,",
+        self.assertIn("self.ampr_integrate_check.grid(row=6, column=0,",
                       self.quelltext)
         self.assertNotIn('self.ampr_integrate_check.place(in_=self.verify_combo',
                          self.quelltext)
@@ -682,9 +682,11 @@ class QuelltextTests(unittest.TestCase):
         derselben Zelle waeren kein Fehler, den Tk meldet - sie laegen
         einfach uebereinander.
         """
-        for widget, zeile in (("integrate_title", 4),
-                              ("ampr_integrate_check", 5),
-                              ("format_info_label", 6),
+        # Seit 29.10.2026 steht der Hinweis direkt unter dem Zielformat (Zeile 4), die Einbauzeilen sind um eine
+        # Zeile gerutscht.
+        for widget, zeile in (("format_info_label", 4),
+                              ("integrate_title", 5),
+                              ("ampr_integrate_check", 6),
                               ("bauform_title", 7), ("bauform_combo", 7),
                               ("dest_title", 8),
                               ("dest_entry", 9), ("dest_btn", 9),

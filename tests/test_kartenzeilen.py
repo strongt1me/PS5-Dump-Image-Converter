@@ -256,14 +256,18 @@ class KartenzeilenTests(unittest.TestCase):
                 "%s laeuft in %s hinein" % (links_name, rechts_name))
 
     def test_hinweistext_klebt_nicht_an_den_kaestchen(self):
-        kaestchen = self.app.ampr_integrate_check
+        # Seit 29.10.2026 steht der Hinweis direkt unter dem Zielformat; Luft braucht er jetzt zur
+        # Ueberschrift der Einbauzeile darunter.
+        # (Die Einbauzeile liegt per place neben der Zielformat-Liste, darunter folgt die Bauform.)
         hinweis = self.app.format_info_label
-        abstand = hinweis.winfo_rooty() - (kaestchen.winfo_rooty()
-                                           + kaestchen.winfo_height())
-        self.assertGreaterEqual(
-            abstand, 8,
-            "Nur %d px zwischen den Kaestchen und dem Hinweis darunter "
-            "(gemessener Ausgangszustand: 1 px)." % abstand)
+        combo = self.app.format_combo
+        self.assertGreaterEqual(hinweis.winfo_rooty(), combo.winfo_rooty() + combo.winfo_height(),
+                                "Der Hinweis steht unter der Zielformat-Liste.")
+        self.assertLessEqual(hinweis.winfo_rooty() - (combo.winfo_rooty() + combo.winfo_height()), 12,
+                             "Der Hinweis steht gleich unter der Liste, nicht weit darunter.")
+        titel = self.app.bauform_title
+        abstand = titel.winfo_rooty() - (hinweis.winfo_rooty() + hinweis.winfo_height())
+        self.assertGreaterEqual(abstand, 8, "Nur %d px zwischen dem Hinweis und der Zeile darunter." % abstand)
 
     def test_beide_zeilen_passen_bei_mindestbreite(self):
         """Bei ``WINDOW_MIN_WIDTH`` darf nichts ueber die Karte hinausragen.

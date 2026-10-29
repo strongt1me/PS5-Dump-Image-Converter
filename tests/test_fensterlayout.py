@@ -1365,7 +1365,9 @@ class HinweiszeilenHoeheTests(unittest.TestCase):
                 app._format_hinweis_setzen(modus)
                 _WURZEL.update_idletasks()
                 text = app.format_info_label.cget("text")
-                rang = app._t(app._SMP_EINSTUFUNG[schluessel])
+                # PFS-Ziele tragen seit 29.10.2026 nur noch Ziel- und eine Tempo-/Empfehlungszeile.
+                rang = app._t("main.pfs_speed_hint" if schluessel in ("ffpfsc", "ffpfs")
+                              else app._SMP_EINSTUFUNG[schluessel])
                 with self.subTest(sprache=sprache, ziel=schluessel):
                     self.assertIn(rang, text, "Die Zielwahl kam im Hinweis nicht an.")
                     self.assertLessEqual(text.count("\n") + 1, 3, text)
