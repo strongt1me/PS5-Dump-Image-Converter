@@ -2,30 +2,18 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.88):** Neue und aktualisierte Konsolen-Payloads sind eingebaut, der WK-Autoloader ist entfernt, BACKPORT setzt signierte Ersatzbibliotheken ein (auf Wunsch nur die benötigten), und die AMPR-EMU-Liste zeigt eine Fassung jetzt mit ihrer gewohnten Nummer an.
+> **Kurz zum aktuellen Stand (v1.9.89):** Ziehen und Ablegen geht auch als Administrator, die Backport-Funktion ist verbessert, und die Oberfläche springt nicht mehr.
 
 ---
 
-## Nächste Version (in Arbeit)
+## v1.9.89 – 29.10.2026
 
-- **Geändert:** Das BACKPORT-Fenster ist einfacher: Es gibt nur noch die Haken „Sicherung anlegen“ und „Nur benötigte Bibliotheken“. Ersatzbibliotheken, libc-Anpassung und Deckungsprüfung laufen immer mit, wie beim Einbau während des Erstellens.
-- **Neu:** Ein `.ffpkg` zeigt in der Bibliothek jetzt Titelbild, Titel, Fassung, verlangte Firmware und seine Einbauten (AMPR EMU, PlayGo, BACKPORT). Das Programm liest dafür das UFS2-Abbild selbst, ohne Einhängen und ohne Administratorrechte; es liest nur wenige hundert KB, auch bei einem Abbild von 40 GB.
-- **Neu:** Bei „Nur Backport-Ordner erstellen …“ ist die Zielfirmware passend zur Konsole vorgewählt (die höchste Stufe, die nicht über ihrer Firmware liegt).
-- **Neu:** Die Bibliothek erkennt einen Ordner `backports/<Title-ID>` neben den Spielen und zeigt ihn als BACKPORT mit seiner Firmware. Ein von diesem Programm gebauter Backport trägt die Marke jetzt auch dann, wenn die Bibliotheken direkt im Ordner `fakelib` liegen (vorher blieb sie aus). Die verlangte Firmware von Abbildern liest die Bibliothek nun im Hintergrund nach, ohne Anklicken.
-- **Neu:** Die Bibliothek zeigt auf jeder Karte links über dem Titelbild, welche Firmware das Spiel verlangt – und bei einem Backport dahinter, für welche Firmware er gemacht wurde. In der Listenansicht gibt es dafür die neue Spalte „Firmware“.
-- **Neu:** Im BACKPORT-Fenster erstellt „Nur Backport-Ordner erstellen …“ einen Ordner `<Title-ID> Backport FW<n>`, dessen Inhalt man in den Spielordner kopiert („Dateien ersetzen“) – dasselbe Ergebnis wie beim Backport im Spielordner, das Spiel selbst bleibt unverändert. Der Bibliotheksordner heißt wie dort (`fakelib` oder `fakelib2`). An einer echten Konsole (FW 12.00, ShadowMount+ 1.7beta10) startet das Spiel so; der Weg über `backports/<Title-ID>` scheiterte dort beim Einhängen (Operation not permitted).
-- **Geändert:** Im BACKPORT-Fenster stehen der eigene Bibliotheksordner und der Firmware-Ordner für die Analyse jetzt eingeklappt unter „Erweiterte Einstellungen“ (aufgeklappt, sobald dort schon etwas eingestellt ist), und neben der Zielfirmware steht, was das Spiel selbst verlangt.
-- **Behoben:** BACKPORT bringt jetzt für jede Firmware-Stufe auch die Kompatibilitäts-Bausteine für AMPR und PlayGo mit. An der echten Konsole bestätigt: Ein Spiel mit PlayGo-Inhalten startete ohne sie gar nicht erst.
-- **Behoben:** Gleichzeitiges Lesen von Abbild-Angaben in der Bibliothek konnte die Lesefunktion der Engine dauerhaft durch die „gezielte“ ersetzt zurücklassen; danach las sie nur noch einen Teil des Verzeichnisbaums.
-- **Behoben:** Ziehen und Ablegen von Ordnern und Dateien in die Felder Quelle, Ziel und Temp funktioniert wieder, obwohl das Programm als Administrator läuft: Windows ließ die Ablage aus dem normal gestarteten Explorer sonst ohne Meldung nicht durch. Das Programm nimmt sie jetzt über den älteren Weg an, den Windows für diesen Fall zulässt.
-- **Geändert:** Der erste Klick auf PS5 PKG erscheint sofort (vorher gut eine halbe Sekunde, die Ansicht wurde erst dann gebaut): Sie entsteht kurz nach dem Öffnen von „7. PKG / FPKG“ im Leerlauf hinter der PS4-Ansicht. Außerdem rechnen große runde Flächen (Karten) viel schneller – sie werden aus neun Teilen zusammengesetzt, das Bild ist pixelgleich. Das beschleunigt jede Ansicht, die zum ersten Mal erscheint.
-- **Behoben:** Beim ersten Wechsel von PS4 PKG zu PS5 PKG baute sich die Ansicht sichtbar auf (erst ein Gerüst mit schmaler Karte, dann die endgültige Breite). Die Unterseite wird jetzt vor dem Zeigen an ihrem Platz fertig ausgelegt; beim ersten Mal sieht es so aus wie beim zweiten.
-- **Behoben:** Der graue Hinweis in den Feldern Quelle, Ziel und Temp füllte an den runden Enden die Ecken dunkel aus. Er steht jetzt als Text im Feld selbst, die Rundung bleibt unberührt.
-- **Geändert:** Die Pfad-Karte springt nicht mehr: ZIELORDNER und TEMP-ORDNER stehen bei jeder Aufgabe und jedem Zielformat an derselben Stelle. Der Formathinweis behält die Höhe von zwei Zeilen, die Zeile der Auswahl BAUFORM (Container) bleibt auch dort reserviert, wo sie nichts bewirkt. Über BAUFORM und ZIELORDNER ist mehr Abstand.
-- **Geändert:** Die Auswahl BAUFORM (Container) steht jetzt direkt unter dem Formathinweis. Bei breitem Fenster, wenn die Einbauzeile rechts neben der Prüfstufe steht, blieb dazwischen ein Loch von gut 100 Pixeln.
-- **Geändert:** Die beiden Knöpfe in Aufgabe 7 heißen jetzt „PS4 PKG“ und „PS5 PKG“ (vorher „PKG“ und „FPKG“).
-- **Neu:** Die leeren Felder Quelle, Ziel und Temp zeigen einen grauen Hinweis, dass man einen Ordner oder eine Datei hineinziehen kann – bei der Quelle passend zur gewählten Aufgabe (Dump-Ordner, .ffpfsc, .exFAT, .ffpkg).
-- **Neu:** Update-Pakete (Delta) zeigen in der Bibliothek einen Titel sowie Content-ID und Title-ID aus dem Dateinamen statt gar nichts.
+- **Neu:** Ziehen und Ablegen in die Felder Quelle, Ziel und Temp funktioniert auch, wenn das Programm als Administrator läuft; leere Felder zeigen einen grauen Hinweis, was man hineinziehen kann.
+- **Neu:** Die Backport-Funktion wurde optimiert und verbessert: Der Backport lässt sich im Spiel integrieren oder separat als Ordner erstellen, der im Dump-Ordner des Spiels ausgetauscht wird (auch an die Konsole senden).
+- **Neu:** Die Bibliothek zeigt die verlangte Firmware, liest `.ffpkg` ohne Einhängen und zeigt Update-Pakete (Delta) mit Titel und IDs.
+- **Geändert:** Die Pfad-Karte springt nicht mehr, BAUFORM steht direkt unter dem Formathinweis, die Knöpfe in Aufgabe 7 heißen „PS4 PKG“ und „PS5 PKG“, und große runde Flächen rechnen viel schneller (der erste Wechsel zu PS5 PKG erscheint sofort).
+- **Aktualisiert:** ShadowMount+ 1.7beta10, zftpd 1.7.0, PS5Upload 9.1.0, PS4Mount 0.7.2, PatchDL 0.3.11, NeoEnabler 0.5.3, WebKit Autoloader 0.6.2, ps5-unified-autoloader 0.1.7 und ps5-ultrapack 2.3.3.
+- **Behoben:** Gleichzeitiges Lesen von Abbild-Angaben in der Bibliothek konnte die Lesefunktion der Engine dauerhaft ersetzt zurücklassen, sodass sie nur noch einen Teil des Verzeichnisbaums las.
 
 ## v1.9.88 – 26.10.2026
 
