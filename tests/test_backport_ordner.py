@@ -1,0 +1,201 @@
+# -*- coding: utf-8 -*-
+"""Backport als eigener Ordner ``backports/<TITLE_ID>`` fuer ShadowMount+ (28.10.2026).
+
+Die Form folgt dem README und dem Quelltext von ShadowMountPlus 1.7beta2 (``resolve_backport_path_for_title``,
+``mount_backport_overlay_for_title``): ``<Suchpfad>/backports/<TITLE_ID>/`` wird ueber das Spiel gelegt, darin zaehlt
+``fakelib2`` vor ``fakelib``. Das Spiel selbst bleibt unveraendert.
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+PROJEKT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJEKT))
+sys.path.insert(0, str(PROJEKT / "tests"))
+
+import pruefumgebung                                        # noqa: E402,F401
+from ps5_validator.utils import ps5_backport as bp          # noqa: E402
+from ps5_validator.utils.i18n import STRINGS                # noqa: E402
+from test_backport import baue_elf                          # noqa: E402
+
+HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
+BASIS = str(PROJEKT / "Backport_Fakelibs")
+PARAM = {"titleId": "PPSA01234", "contentId": "UP0000-PPSA01234_00-TESTSPIEL0000000",
+         "requiredSystemSoftwareVersion": "0x1001000000000000", "sdkVersion": "0x0900000000000000"}
+
+
+class _Spiel(unittest.TestCase):
+    def setUp(self) -> None:
+        self.wurzel = tempfile.mkdtemp(prefix="bp_ordner_")
+        self.addCleanup(shutil.rmtree, self.wurzel, True)
+        self.spiel = os.path.join(self.wurzel, "spiel")
+        self.ausgabe = os.path.join(self.wurzel, "ausgabe")
+        os.makedirs(os.path.join(self.spiel, "sce_sys"))
+        os.makedirs(os.path.join(self.spiel, "sce_module"))
+        os.makedirs(self.ausgabe)
+        self._schreibe("eboot.bin", baue_elf(ps5_sdk=0x09000040))
+        self._schreibe("sce_module/libtest.prx", baue_elf(ps5_sdk=0x09000040))
+        self._schreibe("sce_module/schon_niedrig.prx", baue_elf(ps5_sdk=0x04000031))
+        self._schreibe("sce_sys/param.json", json.dumps(PARAM).encode("ascii"))
+        self._schreibe("daten/bild.dat", b"nicht anfassen")
+
+    def _schreibe(self, rel: str, daten: bytes) -> None:
+        pfad = os.path.join(self.spiel, rel)
+        os.makedirs(os.path.dirname(pfad), exist_ok=True)
+        with open(pfad, "wb") as datei:
+            datei.write(daten)
+
+    def _stand(self) -> dict:
+        stand = {}
+        for wurzel, _o, dateien in os.walk(self.spiel):
+            for name in dateien:
+                pfad = os.path.join(wurzel, name)
+                with open(pfad, "rb") as datei:
+                    stand[os.path.relpath(pfad, self.spiel)] = datei.read()
+        return stand
+
+
+class PfadTests(unittest.TestCase):
+    def test_der_ordner_heisst_genau_wie_die_title_id(self) -> None:
+        self.assertEqual(os.path.join("x", "backports", "PPSA01234"), bp.backport_ordner_pfad("x", "PPSA01234"))
+
+    def test_unbrauchbare_title_ids_werden_abgelehnt(self) -> None:
+        for kennung in ("", "ppsa01234", "PPSA1234", "PPSA01234 Spiel", "../PPSA01234", "PPSA012345"):
+            with self.subTest(kennung=kennung), self.assertRaises(bp.BackportFehler):
+                bp.backport_ordner_pfad("x", kennung)
+
+    def test_die_title_id_kommt_aus_der_param_json(self) -> None:
+        wurzel = tempfile.mkdtemp(prefix="bp_tid_")
+        self.addCleanup(shutil.rmtree, wurzel, True)
+        self.assertEqual("", bp.titel_id_aus_param(wurzel))
+        os.makedirs(os.path.join(wurzel, "sce_sys"))
+        pfad = os.path.join(wurzel, "sce_sys", "param.json")
+        with open(pfad, "w", encoding="utf-8") as datei:
+            json.dump({"contentId": "EP0000-PPSA09999_00-ABC"}, datei)
+        self.assertEqual("PPSA09999", bp.titel_id_aus_param(wurzel), "Ohne titleId gilt die contentId.")
+        with open(pfad, "w", encoding="utf-8") as datei:
+            json.dump(PARAM, datei)
+        self.assertEqual("PPSA01234", bp.titel_id_aus_param(wurzel))
+
+
+class BauenTests(_Spiel):
+    def _bauen(self, **kw) -> dict:
+        return bp.backport_ordner_bauen(self.spiel, self.ausgabe, "PPSA01234", 4, BASIS, **kw)
+
+    def test_das_spiel_bleibt_byte_gleich(self) -> None:
+        vorher = self._stand()
+        self._bauen()
+        self.assertEqual(vorher, self._stand(), "Der Dump darf nicht angefasst werden - auch keine .bak/.neu-Dateien.")
+
+    def test_der_ordner_liegt_unter_backports_und_title_id(self) -> None:
+        erg = self._bauen()
+        soll = os.path.join(self.ausgabe, "backports", "PPSA01234")
+        self.assertEqual(soll, erg["ziel"])
+        self.assertTrue(os.path.isdir(soll))
+
+    def test_nur_geaenderte_dateien_mit_demselben_pfad_wie_im_spiel(self) -> None:
+        erg = self._bauen()
+        ziel = erg["ziel"]
+        self.assertEqual(2, erg["gepatcht"], "eboot.bin und libtest.prx; die schon niedrige Datei bleibt draussen.")
+        self.assertEqual(0, erg["fehler"], erg["fehlermeldungen"])
+        self.assertTrue(os.path.isfile(os.path.join(ziel, "eboot.bin")))
+        self.assertTrue(os.path.isfile(os.path.join(ziel, "sce_module", "libtest.prx")))
+        self.assertFalse(os.path.exists(os.path.join(ziel, "sce_module", "schon_niedrig.prx")))
+        self.assertFalse(os.path.exists(os.path.join(ziel, "daten")), "Unveraenderte Dateien gehoeren nicht hinein.")
+
+    def test_die_dateien_sind_auf_die_zielfirmware_herabgesetzt(self) -> None:
+        ziel = self._bauen()["ziel"]
+        with open(os.path.join(ziel, "eboot.bin"), "rb") as datei:
+            roh = datei.read()
+        elf = bp.self_zu_elf(roh) if bp.dateityp(roh) == bp.TYP_SELF else roh
+        ps5, _ps4 = bp.sdk_lesen(elf)
+        self.assertEqual(bp.sdk_paar(4)[0], ps5)
+
+    def test_param_json_ist_eine_herabgesetzte_kopie(self) -> None:
+        ziel = self._bauen()["ziel"]
+        with open(os.path.join(ziel, "sce_sys", "param.json"), "r", encoding="utf-8") as datei:
+            neu = json.load(datei)
+        self.assertTrue(neu["requiredSystemSoftwareVersion"].lower().startswith("0x04"))
+        with open(os.path.join(self.spiel, "sce_sys", "param.json"), "r", encoding="utf-8") as datei:
+            self.assertEqual(PARAM, json.load(datei), "Das Original bleibt.")
+
+    def test_fakelib_traegt_den_satz_samt_ampr_und_playgo(self) -> None:
+        ziel = self._bauen()["ziel"]
+        bib = os.path.join(ziel, "fakelib")
+        soll = {os.path.basename(p) for p in bp.fakelib_dateien(BASIS, 4)}
+        self.assertEqual(soll, set(os.listdir(bib)))
+        self.assertIn("libSceAmpr.sprx", soll)
+        self.assertIn("libScePlayGo.sprx", soll)
+        self.assertFalse(os.path.exists(os.path.join(ziel, "fakelib2")),
+                         "Nur fakelib: ein fakelib2 wirkt exklusiv und braucht ShadowMount+ ab alpha10.")
+
+    def test_die_eigene_fakelib_des_spiels_geht_mit(self) -> None:
+        """ShadowMount+ nimmt NUR den Ordner des Backports - sonst waere das AMPR EMU des Spiels verloren."""
+        self._schreibe("fakelib/dlc_emu.ini", b"[x]")
+        self._schreibe("fakelib/libSceAmpr.sprx", b"\x7fELF.....[AMPR_EMU] 0.4.2.1")
+        self._schreibe("fakelib/libSceAmpr.sprx.orig", b"original")
+        ziel = self._bauen()["ziel"]
+        bib = os.path.join(ziel, "fakelib")
+        self.assertTrue(os.path.isfile(os.path.join(bib, "dlc_emu.ini")))
+        self.assertFalse(os.path.exists(os.path.join(bib, "libSceAmpr.sprx.orig")))
+        with open(os.path.join(bib, "libSceAmpr.sprx"), "rb") as datei:
+            self.assertTrue(datei.read().endswith(b"0.4.2.1"), "Ein mitgebrachtes AMPR EMU bleibt.")
+
+    def test_ein_fremdes_ampr_des_spiels_wird_ersetzt(self) -> None:
+        self._schreibe("fakelib/libSceAmpr.sprx", b"\x7fELF fremd")
+        bib = os.path.join(self._bauen()["ziel"], "fakelib")
+        with open(os.path.join(bib, "libSceAmpr.sprx"), "rb") as datei:
+            self.assertNotEqual(b"\x7fELF fremd", datei.read())
+
+    def test_ein_ausgabeordner_im_spiel_wird_abgelehnt(self) -> None:
+        with self.assertRaises(bp.BackportFehler):
+            bp.backport_ordner_bauen(self.spiel, os.path.join(self.spiel, "raus"), "PPSA01234", 4, BASIS)
+        self.assertFalse(os.path.exists(os.path.join(self.spiel, "raus")))
+
+    def test_unbekannte_firmware_bricht_ab(self) -> None:
+        with self.assertRaises(bp.BackportFehler):
+            bp.backport_ordner_bauen(self.spiel, self.ausgabe, "PPSA01234", 99, BASIS)
+
+    def test_abbruch_haelt_an(self) -> None:
+        erg = self._bauen(abbruch=lambda: True)
+        self.assertTrue(erg["abgebrochen"])
+
+
+class VerdrahtungTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        with open(HAUPTDATEI, "r", encoding="utf-8") as datei:
+            cls.quelle = datei.read()
+
+    def test_knopf_und_arbeiter_sind_verdrahtet(self) -> None:
+        self.assertIn("ps5_backport.backport_ordner_bauen(", self.quelle)
+        self.assertIn('self._t("backport.action_folder")', self.quelle)
+        self.assertIn("ps5_backport.titel_id_aus_param(ordner)", self.quelle)
+
+    def test_alle_texte_sind_in_allen_sprachen_da(self) -> None:
+        for schluessel in ("backport.action_folder", "backport.action_folder_hint", "backport.folder_pick_title",
+                           "backport.folder_no_id", "backport.folder_inside_game", "backport.folder_exists",
+                           "backport.folder_status", "backport.folder_log_start", "backport.folder_log_done",
+                           "backport.folder_done_title", "backport.folder_done_message"):
+            for sprache in ("de", "en", "es", "it", "fr"):
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    self.assertTrue(STRINGS[schluessel].get(sprache))
+
+    def test_die_platzhalter_stimmen_in_allen_sprachen_ueberein(self) -> None:
+        import re
+        for schluessel in ("backport.folder_log_start", "backport.folder_log_done", "backport.folder_done_message",
+                           "backport.folder_exists"):
+            sollen = set(re.findall(r"\{(\w+)\}", STRINGS[schluessel]["de"]))
+            for sprache in ("en", "es", "it", "fr"):
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    self.assertEqual(sollen, set(re.findall(r"\{(\w+)\}", STRINGS[schluessel][sprache])))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

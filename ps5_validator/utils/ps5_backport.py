@@ -1914,3 +1914,194 @@ def fakelibs_aus_firmware_kopieren(
 
     return {"kopiert": kopiert, "uebersprungen": uebersprungen,
             "dateien": sorted(dateien)}
+
+
+# --------------------------------------------------------------------------
+# Backport als eigener Ordner (ShadowMount+ ``backports/<TITLE_ID>``)
+# --------------------------------------------------------------------------
+
+#: Der Ordner neben den Spielen, den ShadowMount+ (ab 1.7beta2) ueber das Spiel legt:
+#: ``<Suchpfad>/backports/<TITLE_ID>/``. Quelle: README von ShadowMountPlus 1.7beta2 ("Backport overlay behavior"),
+#: ``src/sm_scan.c`` (``resolve_backport_path_for_title``, ``mount_backport_overlay_for_title``).
+BACKPORTS_ORDNER = "backports"
+
+_TITEL_ID_FORM = re.compile(r"[A-Z]{4}\d{5}")
+
+
+def titel_id_aus_param(spielordner: str) -> str:
+    """Die Title-ID aus ``sce_sys/param.json`` (``titleId``, sonst aus ``contentId``); leer, wenn nicht lesbar."""
+    import json
+    pfad = os.path.join(str(spielordner or ""), "sce_sys", "param.json")
+    try:
+        with open(pfad, "r", encoding="utf-8-sig", errors="replace") as datei:
+            daten = json.load(datei)
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(daten, dict):
+        return ""
+    kandidaten_ = [daten.get("titleId"), daten.get("contentId")]
+    for wert in kandidaten_:
+        treffer = re.search(r"[A-Z]{4}\d{5}", str(wert or "").upper())
+        if treffer:
+            return treffer.group(0)
+    return ""
+
+
+def backport_ordner_pfad(ausgabe: str, titel_id: str) -> str:
+    """``<ausgabe>/backports/<TITLE_ID>`` - der Name ist genau die Title-ID, ohne Zusatz.
+
+    ShadowMount+ nimmt innerhalb eines Suchpfads zuerst den Ordner, der genau so heisst; ein Zusatz hinter der
+    Title-ID gilt erst ab 1.7beta6. Der blanke Name wirkt in jeder Fassung ab 1.7beta2.
+
+    Raises:
+        BackportFehler: ``titel_id`` hat nicht die Form ``PPSA01234``.
+    """
+    kennung = str(titel_id or "").strip()
+    if not _TITEL_ID_FORM.fullmatch(kennung):
+        raise BackportFehler(f"Ungueltige Title-ID: {titel_id!r}")
+    return os.path.join(str(ausgabe or ""), BACKPORTS_ORDNER, kennung)
+
+
+def _ist_emu_datei(pfad: str) -> bool:
+    try:
+        with open(pfad, "rb") as datei:
+            daten = datei.read()
+    except OSError:
+        return False
+    return any(k in daten for k in EMU_KENNZEICHEN)
+
+
+def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmware: int,
+                          fakelib_basis: str, *, minimal: bool = False,
+                          texte: "dict[str, str] | None" = None,
+                          melde: Any = None, abbruch: Any = None) -> dict[str, Any]:
+    """Baut nur den Backport - als Ordner ``<ausgabe>/backports/<TITLE_ID>/`` - und fasst das Spiel nicht an.
+
+    Gelegt wird, was ShadowMount+ ueber das Spiel einblendet (``mount_backport_overlay``): derselbe Pfadaufbau wie
+    im Spiel, aber nur die Dateien, die sich aendern - die herabgesetzte ``eboot.bin`` und ``.prx``/``.sprx``,
+    die herabgesetzte ``sce_sys/param.json`` und der Ordner ``fakelib`` mit den Ersatzbibliotheken. Der Ordner
+    ``fakelib`` des Spiels (etwa AMPR EMU) wird mitgenommen, weil ShadowMount+ nur EINEN Ordner waehlt - den des
+    Backports - und der des Spiels sonst unbeachtet bliebe.
+
+    Args:
+        spielordner: Dump-Ordner (bleibt unveraendert).
+        ausgabe: Ordner, in dem ``backports/<TITLE_ID>`` entsteht.
+        titel_id: ``PPSA01234``.
+        firmware: Zielfirmware (Hauptversion).
+        fakelib_basis: Wurzel der Bibliothekssaetze (``<basis>/<fw>/fakelib``).
+        minimal: nur die Bibliotheken, die das Spiel importiert.
+        melde: ``(text) -> None`` fuer Zwischenstaende (ohne Tk).
+        abbruch: ``() -> bool`` - True haelt am naechsten Schritt an.
+
+    Returns:
+        ``{"ziel", "gepatcht", "fehler", "bibliotheken", "fehlermeldungen", "abgebrochen"}``.
+
+    Raises:
+        BackportFehler: Title-ID oder Firmware unbrauchbar, oder ``ausgabe`` liegt im Spielordner.
+    """
+    ziel = backport_ordner_pfad(ausgabe, titel_id)
+    ziel_ps5, ziel_ps4 = sdk_paar(firmware)
+    spiel = os.path.normcase(os.path.abspath(str(spielordner)))
+    wurzel = os.path.normcase(os.path.abspath(ziel))
+    if wurzel == spiel or wurzel.startswith(spiel + os.sep):
+        raise BackportFehler("Der Ausgabeordner liegt im Spielordner.")
+
+    def _meld(text: str) -> None:
+        if melde is not None:
+            melde(text)
+
+    def _halt() -> bool:
+        return bool(abbruch is not None and abbruch())
+
+    ergebnis: dict[str, Any] = {"ziel": ziel, "gepatcht": 0, "fehler": 0, "bibliotheken": 0,
+                                "fehlermeldungen": [], "abgebrochen": False}
+    os.makedirs(ziel, exist_ok=True)
+
+    def _schreiben(rel: str, daten: bytes) -> None:
+        voll = os.path.join(ziel, rel)
+        os.makedirs(os.path.dirname(voll), exist_ok=True)
+        zwischen = voll + ".neu"
+        try:
+            with open(zwischen, "wb") as datei:
+                datei.write(daten)
+            os.replace(zwischen, voll)
+        except OSError:
+            try:
+                if os.path.isfile(zwischen):
+                    os.remove(zwischen)
+            except OSError:
+                pass
+            raise
+
+    for pfad in kandidaten(spielordner):
+        if _halt():
+            ergebnis["abgebrochen"] = True
+            return ergebnis
+        rel = os.path.relpath(pfad, spielordner)
+        try:
+            with open(pfad, "rb") as datei:
+                roh = datei.read()
+        except OSError as exc:
+            ergebnis["fehler"] += 1
+            ergebnis["fehlermeldungen"].append((rel, str(exc)))
+            continue
+        kennung, neu, grund = datei_verarbeiten(
+            roh, ziel_ps5=ziel_ps5, ziel_ps4=ziel_ps4, libc_zusatz=True,
+            ist_libc_datei=ist_libc(pfad), texte=texte)
+        if kennung == ERG_FEHLER:
+            ergebnis["fehler"] += 1
+            ergebnis["fehlermeldungen"].append((rel, grund))
+            continue
+        if kennung != ERG_GEPATCHT:
+            continue
+        try:
+            _schreiben(rel, neu)
+        except OSError as exc:
+            ergebnis["fehler"] += 1
+            ergebnis["fehlermeldungen"].append((rel, str(exc)))
+            continue
+        ergebnis["gepatcht"] += 1
+        _meld(rel)
+
+    param_quelle = os.path.join(str(spielordner), "sce_sys", "param.json")
+    if os.path.isfile(param_quelle):
+        try:
+            os.makedirs(os.path.join(ziel, "sce_sys"), exist_ok=True)
+            shutil.copy2(param_quelle, os.path.join(ziel, "sce_sys", "param.json"))
+            param_json_anpassen(ziel, firmware)
+        except (OSError, BackportFehler) as exc:
+            ergebnis["fehlermeldungen"].append(("sce_sys/param.json", str(exc)))
+
+    # Eigene fakelib des Spiels zuerst (fakelib2 vor fakelib: das spaetere gewinnt), dann der Satz der Firmware.
+    bib = os.path.join(ziel, FAKELIB_ORDNER)
+    try:
+        for name in reversed(FAKELIB_ORDNERNAMEN):
+            quelle_ordner = os.path.join(str(spielordner), name)
+            if not os.path.isdir(quelle_ordner):
+                continue
+            os.makedirs(bib, exist_ok=True)
+            for eintrag in sorted(os.listdir(quelle_ordner)):
+                voll = os.path.join(quelle_ordner, eintrag)
+                if os.path.isfile(voll) and not eintrag.lower().endswith(".orig"):
+                    shutil.copy2(voll, os.path.join(bib, eintrag))
+        if minimal:
+            satz = fakelib_dateien_benoetigt(fakelib_basis, firmware, kandidaten(spielordner))
+        else:
+            satz = fakelib_dateien(fakelib_basis, firmware)
+        for quelle in satz:
+            if _halt():
+                ergebnis["abgebrochen"] = True
+                return ergebnis
+            name = os.path.basename(quelle)
+            ablage = os.path.join(bib, name)
+            # Ein bereits mitgebrachtes AMPR EMU / PlayGo-Stub des Spiels bleibt; alles andere wird ersetzt.
+            if (name.lower() in AMPR_PLAYGO_BIBLIOTHEKEN and os.path.isfile(ablage)
+                    and _ist_emu_datei(ablage)):
+                continue
+            os.makedirs(bib, exist_ok=True)
+            shutil.copy2(quelle, ablage)
+            ergebnis["bibliotheken"] += 1
+    except OSError as exc:
+        ergebnis["fehler"] += 1
+        ergebnis["fehlermeldungen"].append((FAKELIB_ORDNER, str(exc)))
+    return ergebnis

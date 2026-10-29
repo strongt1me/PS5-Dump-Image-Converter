@@ -550,6 +550,23 @@ class KartenMasseTests(unittest.TestCase):
         self.assertEqual((412, 462, 514), (a.info_y, a.start_y, a.aktion_y))
         self.assertEqual(566, a.hoehe)
 
+    def test_ohne_firmware_zeile_bleibt_alles_wie_im_entwurf(self) -> None:
+        a = z.KartenMasse(faktor=1.0, titel_zeile=20, chip_zeile=24).aufteilen(284)
+        self.assertEqual((0, 0), (a.fw_y, a.fw_hoehe))
+        self.assertEqual(2, a.poster_y, "Das Titelbild beginnt am Kartenrand.")
+
+    def test_die_firmware_zeile_steht_ueber_dem_titelbild_und_schiebt_den_rest(self) -> None:
+        ohne = z.KartenMasse(faktor=1.0, titel_zeile=20, chip_zeile=24).aufteilen(284)
+        mit = z.KartenMasse(faktor=1.0, titel_zeile=20, chip_zeile=24, fw_zeile=16).aufteilen(284)
+        self.assertEqual(16, mit.fw_hoehe)
+        self.assertLess(mit.fw_y, mit.poster_y)
+        self.assertGreaterEqual(mit.poster_y, mit.fw_y + mit.fw_hoehe, "Die Zeile darf das Titelbild nicht beruehren.")
+        verschiebung = mit.poster_y - ohne.poster_y
+        self.assertGreater(verschiebung, 16)
+        self.assertEqual(ohne.titel_y + verschiebung, mit.titel_y)
+        self.assertEqual(ohne.hoehe + verschiebung, mit.hoehe)
+        self.assertEqual(ohne.poster_hoehe, mit.poster_hoehe, "Das Titelbild bleibt quadratisch und gleich gross.")
+
     def test_alle_bereiche_folgen_aufeinander_ohne_ueberlappung(self) -> None:
         for faktor in (1.0, 1.25, 1.5, 2.0, 3.0):
             for breite in (200, 284, 330, 480):

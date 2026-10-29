@@ -47055,7 +47055,7 @@ class PS5ConverterGUI:
         kopf_karte.pack_configure(padx=(0, rechts_frei))
         liste_karte.grid_configure(padx=(0, rechts_frei))
 
-        cols = ("title", "title_id", "version", "format", "einbauten", "path")
+        cols = ("title", "title_id", "version", "firmware", "format", "einbauten", "path")
         # Seit 27.09.2026 mit Vorschaubild je Zeile (Spalte #0). Die Zeilen
         # werden dafuer hoeher - in einem eigenen Stil, damit die uebrigen
         # Listen des Programms bei ihren 24 Pixeln bleiben. Die Farben erbt
@@ -47087,7 +47087,8 @@ class PS5ConverterGUI:
             "title":    dict(schluessel="library.col.title",    width=220, minwidth=150, anchor="w",      stretch=True),
             "title_id": dict(schluessel="library.col.title_id", width=100, minwidth=90,  anchor="center", stretch=False),
             "version":  dict(schluessel="library.col.version",  width=100, minwidth=90,  anchor="center", stretch=False),
-            "format":   dict(schluessel="library.col.format",   width=120, minwidth=105, anchor="center", stretch=False),
+            "firmware": dict(schluessel="library.col.firmware", width=190, minwidth=110, anchor="w",      stretch=False),
+            "format":  dict(schluessel="library.col.format",   width=120, minwidth=105, anchor="center", stretch=False),
             "einbauten": dict(schluessel="library.col.einbauten", width=215, minwidth=120, anchor="w",    stretch=False),
             "path":     dict(schluessel="library.col.path",     width=320, minwidth=150, anchor="w",      stretch=True),
         }
@@ -47445,6 +47446,15 @@ class PS5ConverterGUI:
         def _erweitert_da(pfad: str, angaben: dict) -> None:
             ansicht["erweitert_laeuft"].discard(pfad)
             ansicht["erweitert"][pfad] = dict(angaben)
+            # Die verlangte Firmware kann erst jetzt bekannt sein (Abbilder): Karte und Listenzeile nachziehen.
+            iid = iid_nach_pfad.get(pfad)
+            vorhanden = item_by_iid.get(iid) if iid is not None else None
+            if vorhanden is not None:
+                raster.aktualisieren(vorhanden)
+                try:
+                    tree.set(iid, "firmware", _firmware_kurztext(vorhanden, _angaben(vorhanden))[0] or "–")
+                except tk.TclError:
+                    pass
             aktuell = ansicht.get("angezeigt")
             if aktuell is not None and aktuell.get("path") == pfad:
                 _detail_zeichnen(aktuell)
@@ -47487,6 +47497,7 @@ class PS5ConverterGUI:
             if iid is not None:
                 try:
                     tree.set(iid, "einbauten", _einbauten_kurz(ergebnis))
+                    tree.set(iid, "firmware", _firmware_kurztext(eintrag, _angaben(eintrag))[0] or "–")
                 except tk.TclError:
                     pass
             aktuell = ansicht.get("angezeigt")
@@ -47585,6 +47596,9 @@ class PS5ConverterGUI:
                 return str(meta.get("title_id", "")).lower()
             if spalte == "version":
                 return str(meta.get("version", "")).lower()
+            if spalte == "firmware":
+                return bibliothek_bestand.firmware_teile(
+                    _wert(_angaben(eintrag), "required_firmware")) or (0, 0)
             if spalte == "format":
                 return str(eintrag["kind"]).lower()
             if spalte == "einbauten":
@@ -47808,7 +47822,8 @@ class PS5ConverterGUI:
                             image=ansicht["minis"].get(item["path"]) or leer_mini,
                             values=(
                     meta.get("title", "–"), meta.get("title_id", "–"),
-                    meta.get("version", "–"), self._bibliothek_art_text(item),
+                    meta.get("version", "–"), _firmware_kurztext(item, _angaben(item))[0] or "–",
+                    self._bibliothek_art_text(item),
                     _einbauten_kurz(ansicht["einbauten"].get(item["path"])), item["path"],
                 ), tags=("gerade" if sichtbar % 2 == 0 else "ungerade",))
                 item_by_iid[iid] = item
@@ -48523,9 +48538,40 @@ class PS5ConverterGUI:
             return {"start": self._is_valid_title_id(kennung), "kopieren": True,
                     "konvertieren": True}
 
+        def _backport_fw_text(namen) -> str:
+            """Die Zielfirmware(n) eines Backports aus den Markierungsnamen: ``FW4`` -> ``4.00``."""
+            teile = []
+            for name in namen or ():
+                ziffern = re.sub(r"(?i)^fw", "", str(name))
+                teile.append(ziffern + ".00" if ziffern.isdigit() else str(name))
+            return ", ".join(teile)
+
+        def _firmware_kurztext(eintrag: dict, meta: dict) -> tuple[str, str]:
+            """Die Firmware-Angabe fuer Karte und Liste: was das Spiel verlangt, bei Backport dazu das Ziel.
+
+            Returns: (Text, Art) - Art ist ``"backport"``, wenn ein Backport nachgewiesen ist, sonst leer.
+            Leerer Text, wenn weder das eine noch das andere bekannt ist.
+            """
+            verlangt = _wert(meta, "required_firmware")
+            fw = (bibliothek_bestand.firmware_kurz(verlangt) or verlangt) if verlangt else ""
+            ergebnis = ansicht["einbauten"].get(eintrag["path"])
+            ziel = ""
+            if ergebnis is not None and ergebnis.get("zustand") == "ok" and ergebnis.get("backport"):
+                ziel = _backport_fw_text(ergebnis["backport"])
+            if fw and ziel:
+                return self._t("library.karte_fw_backport", fw=fw, bp=ziel), "backport"
+            if ziel:
+                return self._t("library.karte_nur_backport", bp=ziel), "backport"
+            if not fw:
+                return "", ""
+            if self._bibliothek_ist_ps4(eintrag, meta):
+                return self._t("library.karte_fw_ps4", fw=fw), ""
+            return self._t("library.karte_fw", fw=fw), ""
+
         def _karten_inhalt(eintrag: dict) -> dict:
             """Was eine Karte zeigt: Titel, Plakette, Chips und die vier Knoepfe samt Zustand."""
             meta = _angaben(eintrag)
+            fw_text, fw_art = _firmware_kurztext(eintrag, meta)
             titel = (_wert(meta, "title") or str(eintrag.get("name") or "")
                      or os.path.basename(str(eintrag["path"]).rstrip("/\\")))
             chips = [(_format_chip_text(eintrag), "neutral")]
@@ -48564,7 +48610,7 @@ class PS5ConverterGUI:
                                             "flaeche", greift["konvertieren"]),
             ]
             return {"titel": titel, "plattform": _plattform_von(eintrag), "chips": chips,
-                    "knoepfe": knoepfe_spec}
+                    "knoepfe": knoepfe_spec, "firmware": fw_text, "firmware_art": fw_art}
 
         def _karten_aktion(name: str, eintrag: dict) -> None:
             """Ein Knopf auf einer Karte (oder im Streifen der Liste) wurde gedrueckt.
@@ -57147,6 +57193,16 @@ class PS5ConverterGUI:
         except ValueError:
             fw_box.current(0)
 
+        # Orientierung bei der Wahl (Nutzerwunsch 28.10.2026): Die Metadaten
+        # sind oben ohnehin schon gelesen (meta) - required_firmware steht
+        # dort bereits normalisiert ("10.01"), wenn die param.json es nennt.
+        # Senkt nichts automatisch ab, zeigt nur, wovon herabgesetzt wird.
+        verlangt = str(meta.get("required_firmware", "–") or "–").strip()
+        if verlangt not in ("", "–", "-"):
+            tk.Label(einstellungen, text=self._t("backport.required_firmware_hint", fw=verlangt),
+                     font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                     fg=c["fg_secondary"]).pack(side="left", padx=(0, 16))
+
         # Der Bibliotheksordner steht fest - hier stand bis zum 05.09.2026 eine
         # Klappliste. Waehlen liess sich darin seit v1.8.98 nichts mehr, was
         # eine Wirkung gehabt haette: Die Ablage entscheidet
@@ -57206,13 +57262,40 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_secondary"],
                  anchor="w", justify="left", wraplength=520).pack(side="left", fill="x", expand=True)
 
-        fakelib_ordner_zeile = tk.Frame(win, bg=c["bg_main"])
+        # Zwei fortgeschrittene Felder (eigener Bibliotheksordner, Firmware-Ordner
+        # fuer die NID-Analyse) - ein Grossteil der Nutzer braucht sie nie, sie
+        # standen aber bis zum 28.10.2026 immer offen im Fenster. Eingeklappt,
+        # ausser einer der beiden Werte ist bereits gesetzt - sonst wuerde eine
+        # aktive, abweichende Einstellung wortlos verschwinden (Nutzerwunsch).
+        _basis_wert_vorab = str(self._load_setting("backport_fakelib_ordner", "")).strip()
+        _fw_analyse_wert_vorab = str(self._load_setting("backport_fw_analyse_ordner", "")).strip()
+        erweitert_offen = tk.BooleanVar(value=bool(_basis_wert_vorab or _fw_analyse_wert_vorab))
+        erweitert_rahmen = tk.Frame(win, bg=c["bg_main"])
+
+        def _erweitert_umschalten() -> None:
+            offen = not erweitert_offen.get()
+            erweitert_offen.set(offen)
+            if offen:
+                erweitert_rahmen.pack(fill="x", after=erweitert_umschalter)
+            else:
+                erweitert_rahmen.pack_forget()
+            erweitert_umschalter.configure(text=self._t(
+                "backport.advanced_toggle_open" if offen else "backport.advanced_toggle_closed"))
+
+        erweitert_umschalter = self._pw.Button(
+            win, text=self._t("backport.advanced_toggle_open" if erweitert_offen.get()
+                               else "backport.advanced_toggle_closed"),
+            command=_erweitert_umschalten)
+        erweitert_umschalter.pack(padx=16, pady=(8, 0), anchor="w")
+        if erweitert_offen.get():
+            erweitert_rahmen.pack(fill="x", after=erweitert_umschalter)
+
+        fakelib_ordner_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
         fakelib_ordner_zeile.pack(fill="x", padx=16, pady=(6, 0))
         tk.Label(fakelib_ordner_zeile, text=self._t("backport.fakelib_basis_label"),
                  font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left")
-        fakelib_basis_var = tk.StringVar(
-            value=str(self._load_setting("backport_fakelib_ordner", "")).strip())
+        fakelib_basis_var = tk.StringVar(value=_basis_wert_vorab)
         fakelib_basis_feld = self._pw.Entry(
             fakelib_ordner_zeile, textvariable=fakelib_basis_var,
             font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
@@ -57252,13 +57335,12 @@ class PS5ConverterGUI:
                  fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
 
         # ---- Firmware-Analyse-Ordner ----
-        fw_analyse_zeile = tk.Frame(win, bg=c["bg_main"])
+        fw_analyse_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
         fw_analyse_zeile.pack(fill="x", padx=16, pady=(4, 0))
         tk.Label(fw_analyse_zeile, text=self._t("backport.fw_analyse_label"),
                  font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left")
-        fw_analyse_var = tk.StringVar(
-            value=str(self._load_setting("backport_fw_analyse_ordner", "")).strip())
+        fw_analyse_var = tk.StringVar(value=_fw_analyse_wert_vorab)
         fw_analyse_feld = self._pw.Entry(
             fw_analyse_zeile, textvariable=fw_analyse_var,
             font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
@@ -57564,6 +57646,90 @@ class PS5ConverterGUI:
                 laeuft["abbruch"] = True
             win.destroy()
 
+        def _ordner_erstellen() -> None:
+            """Nur den Backport als Ordner ``backports/<Title-ID>`` bauen (ShadowMount+), das Spiel bleibt unberuehrt."""
+            if laeuft["aktiv"]:
+                return
+            tid = ps5_backport.titel_id_aus_param(ordner)
+            if not tid:
+                tid = self._sanitize_title_id(str(meta.get("title_id", "") or ""))
+            if not re.fullmatch(r"[A-Z]{4}\d{5}", tid or ""):
+                messagebox.showwarning(self._t("backport.window_title", name=os.path.basename(ordner)),
+                                       self._t("backport.folder_no_id"), parent=win)
+                return
+            firmware = _ziel_firmware()
+            basis = self._backport_fakelib_basis()
+            if not ps5_backport.fakelib_dateien(basis, firmware):
+                if not messagebox.askyesno(
+                        self._t("backport.no_libs_title"),
+                        self._t("backport.no_libs_message", fw=f"{firmware}.00"),
+                        parent=win, default="no"):
+                    return
+            gewaehlt = filedialog.askdirectory(parent=win, title=self._t("backport.folder_pick_title"))
+            if not gewaehlt:
+                return
+            gewaehlt = os.path.normpath(gewaehlt)
+            try:
+                ziel = ps5_backport.backport_ordner_pfad(gewaehlt, tid)
+            except ps5_backport.BackportFehler as exc:
+                messagebox.showwarning(self._t("backport.window_title", name=os.path.basename(ordner)),
+                                       str(exc), parent=win)
+                return
+            spiel_norm = os.path.normcase(os.path.abspath(ordner))
+            ziel_norm = os.path.normcase(os.path.abspath(ziel))
+            if ziel_norm == spiel_norm or ziel_norm.startswith(spiel_norm + os.sep):
+                messagebox.showwarning(self._t("backport.window_title", name=os.path.basename(ordner)),
+                                       self._t("backport.folder_inside_game"), parent=win)
+                return
+            if os.path.isdir(ziel) and os.listdir(ziel):
+                if not messagebox.askyesno(self._t("backport.confirm_title"),
+                                           self._t("backport.folder_exists", pfad=ziel),
+                                           parent=win, default="no"):
+                    return
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            for knopf in (start_btn, analyse_btn, ordner_btn):
+                knopf.configure(state="disabled")
+            fw_box.configure(state="disabled")
+            stand_var.set(self._t("backport.folder_status"))
+            self._append_to_log(self._t("backport.folder_log_start", tid=tid, fw=f"{firmware}.00", pfad=ziel) + chr(10))
+            minimal = bool(minimal_var.get())
+
+            def _fertig(ergebnis: dict) -> None:
+                laeuft["aktiv"] = False
+                try:
+                    for knopf in (start_btn, analyse_btn, ordner_btn):
+                        knopf.configure(state="normal")
+                    fw_box.configure(state="readonly")
+                except tk.TclError:
+                    return                  # Fenster schon zu
+                zeile = self._t("backport.folder_log_done", gepatcht=ergebnis["gepatcht"],
+                                libs=ergebnis["bibliotheken"], fehler=ergebnis["fehler"])
+                stand_var.set(zeile)
+                self._append_to_log(zeile + chr(10))
+                for name, grund in ergebnis["fehlermeldungen"]:
+                    self._append_to_log(self._t("backport.log_failed", name=name, error=grund) + chr(10))
+                messagebox.showinfo(
+                    self._t("backport.folder_done_title"),
+                    self._t("backport.folder_done_message", pfad=ergebnis["ziel"], tid=tid,
+                            gepatcht=ergebnis["gepatcht"], libs=ergebnis["bibliotheken"],
+                            fehler=ergebnis["fehler"]), parent=win)
+
+            def _arbeit() -> None:
+                try:
+                    ergebnis = ps5_backport.backport_ordner_bauen(
+                        ordner, gewaehlt, tid, firmware, basis, minimal=minimal,
+                        texte=self._modul_texte(ps5_backport.MELDUNGEN, "backportmod."),
+                        melde=lambda text: self._spaeter_im_fenster(win, stand_var.set, text),
+                        abbruch=lambda: bool(laeuft.get("abbruch")))
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Backport-Ordner gescheitert: %s", exc)
+                    ergebnis = {"ziel": ziel, "gepatcht": 0, "fehler": 1, "bibliotheken": 0,
+                                "fehlermeldungen": [(os.path.basename(ziel), str(exc))], "abgebrochen": False}
+                self._spaeter_im_fenster(win, _fertig, ergebnis)
+
+            threading.Thread(target=_arbeit, daemon=True, name="backport-ordner").start()
+
         win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
@@ -57575,6 +57741,10 @@ class PS5ConverterGUI:
         analyse_btn = self._pw.Button(knopfreihe, text=self._t("backport.action_analyse"),
                                  command=_analysieren)
         analyse_btn.pack(side="left", padx=(8, 0))
+        ordner_btn = self._pw.Button(knopfreihe, text=self._t("backport.action_folder"),
+                                     command=_ordner_erstellen)
+        ordner_btn.pack(side="left", padx=(8, 0))
+        self._tooltip(ordner_btn, "backport.action_folder_hint", delay_ms=900, wraplength=430)
 
         # Reihenfolge ist hier entscheidend: Erst die feste Knopfleiste an den
         # unteren Rand, dann die Statuszeile darueber - und ganz zum Schluss die

@@ -1056,7 +1056,9 @@ class KartenRaster:
         inhalt: ``(eintrag) -> dict`` mit ``titel``, ``plattform`` (``"PS4"``,
             ``"PS5"`` oder ``""``), ``chips`` (``[(text, art), ...]``) und
             ``knoepfe`` (``[KnopfSpec, ...]`` in der Reihenfolge Infos,
-            Starten, Kopieren, Konvertieren).
+            Starten, Kopieren, Konvertieren); optional ``firmware`` (Text der
+            Zeile ueber dem Titelbild) und ``firmware_art`` (``"backport"``
+            faerbt sie in der Warnfarbe).
         aktion: ``(name, eintrag)`` - ein Knopf wurde gedrueckt.
         bei_auswahl: ``(eintrag)`` - Klick auf die Karte selbst.
         bei_start: ``(eintrag)`` - Doppelklick auf die Karte.
@@ -1153,7 +1155,7 @@ class KartenRaster:
         z = self._z
         chip_h = max(z.px(24), z.zeilenhoehe("chip") + z.px(10))
         return zeichnen.KartenMasse(faktor=z.faktor, titel_zeile=z.zeilenhoehe("titel") + z.px(2),
-                                    chip_zeile=chip_h)
+                                    chip_zeile=chip_h, fw_zeile=z.zeilenhoehe("klein") + z.px(2))
 
     def _layout(self, breite: int) -> tuple[int, int]:
         """Spaltenzahl und Kartenbreite fuer die Flaechenbreite; setzt die Aufteilung."""
@@ -1294,7 +1296,7 @@ class KartenRaster:
             rb = m.randbreite
             pb = z.messen("plakette", plattform) + 2 * z.px(10)
             ph = z.zeilenhoehe("plakette") + z.px(8)
-            px_, py_ = karte.x + rb + z.px(12), karte.y + rb + z.px(12)
+            px_, py_ = karte.x + rb + z.px(12), karte.y + a.poster_y + z.px(12)
             pf = z.foto(("plakette", pb, ph), lambda: zeichnen.plakette(pb, ph))
             karte.fotos["plakette"] = pf
             karte.ids["plakette"] = c.create_image(px_, py_, image=pf, anchor="nw", tags=(tag,))
@@ -1308,15 +1310,31 @@ class KartenRaster:
             karte.x + a.innen_x, karte.y + a.titel_y, text="\n".join(zeilen) or "?", anchor="nw",
             fill=p.get("fg_accent" if gewaehlt else "fg_primary", "#ffffff"), font=z.schrift_angabe("titel"),
             tags=(tag,))
+        self._firmware_zeichnen(karte, tag)
         self._chips_zeichnen(karte, tag)
         self._knoepfe_zeichnen(karte, tag)
+
+    def _firmware_zeichnen(self, karte: Karte, tag: str) -> None:
+        """Die Zeile ueber dem Titelbild: verlangte Firmware, bei Backport dazu die Zielfirmware (links, eine Zeile)."""
+        z, a = self._z, self._auf
+        c, p = self.flaeche, z.palette
+        alt = karte.ids.pop("firmware", None)
+        if alt:
+            c.delete(alt)
+        text = str(karte.inhalt.get("firmware") or "")
+        if not text or not a.fw_hoehe:
+            return
+        farbe = p.get("fg_warning" if karte.inhalt.get("firmware_art") == "backport" else "fg_secondary", "#9a9ca6")
+        karte.ids["firmware"] = c.create_text(
+            karte.x + a.innen_x, karte.y + a.fw_y, text=_passend(z, "klein", text, a.innen_breite),
+            anchor="nw", fill=farbe, font=z.schrift_angabe("klein"), tags=(tag,))
 
     def _poster_zeichnen(self, karte: Karte, tag: str, fenster: Any = _ERFRAGEN) -> None:
         z, m, a = self._z, self._masse, self._auf
         c, p = self.flaeche, z.palette
         rb = m.randbreite
         pb = a.breite - 2 * rb
-        x, y = karte.x + rb, karte.y + rb
+        x, y = karte.x + rb, karte.y + a.poster_y
         radius = max(1, m.ecke - rb)
         foto = None
         if karte.bildzustand == "da" and karte.bilddatei and self._poster_gewuenscht(karte, fenster):
@@ -1497,6 +1515,7 @@ class KartenRaster:
             return
         karte.inhalt = self._inhalt(karte.eintrag) or {}
         tag = "k%d" % karte.nummer
+        self._firmware_zeichnen(karte, tag)
         self._chips_zeichnen(karte, tag)
         self._knoepfe_zeichnen(karte, tag)
         self._knoepfe_nachfuehren(karte)

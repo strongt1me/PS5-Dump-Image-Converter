@@ -157,6 +157,10 @@ class FensterLayoutTests(unittest.TestCase):
         _WURZEL.update_idletasks()
 
     def test_backport_knoepfe_voll_sichtbar(self):
+        """Seit 28.10.2026 stehen die beiden fortgeschrittenen Felder (Fakelib-Ordner,
+        Firmware-Ordner NID-Analyse) eingeklappt hinter "Erweiterte Einstellungen" -
+        ohne gesetzten Wert sind ihre Knoepfe deshalb beim Oeffnen nicht sichtbar.
+        """
         fenster = self._oeffne(
             lambda: self.app._render_backport_window(_leerer_spielordner(self)))
         try:
@@ -164,11 +168,32 @@ class FensterLayoutTests(unittest.TestCase):
             self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
             knoepfe = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
             self.assertEqual(len(knoepfe), 5,
-                             "Erwartet: Starten, Nur prüfen, Schließen, Fakelib-Ordner wählen, "
-                             "Firmware-Analyse-Ordner wählen")
+                             "Erwartet: Starten, Nur prüfen, Backport-Ordner, Schließen, Erweiterte Einstellungen")
             for knopf in knoepfe:
                 self.assertTrue(str(knopf.cget("text")).strip(),
                                 "Knopf ohne Beschriftung")
+        finally:
+            self._schliesse(fenster)
+
+    def test_backport_erweiterte_einstellungen_zeigen_die_zwei_felder(self):
+        """Aufklappen bringt genau die zwei fortgeschrittenen Knoepfe dazu."""
+        fenster = self._oeffne(
+            lambda: self.app._render_backport_window(_leerer_spielordner(self)))
+        try:
+            # Textfilter auf das Dreieck statt auf ein deutsches Wort: Steht in
+            # allen fuenf Sprachen gleich am Anfang (backport.advanced_toggle_*),
+            # andere Pruefungen in dieser Datei vermeiden uebersetzten Text bewusst.
+            umschalter = [b for b in _sammle(fenster, "Button")
+                          if str(b.cget("text")).strip().startswith(("▸", "▾"))]
+            self.assertEqual(len(umschalter), 1, "Umschalter nicht gefunden")
+            umschalter[0].invoke()
+            fenster.update_idletasks()
+            zu_klein = _gequetschte_knoepfe(fenster)
+            self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
+            knoepfe = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
+            self.assertEqual(len(knoepfe), 7,
+                             "Erwartet: Starten, Nur prüfen, Backport-Ordner, Schließen, Erweiterte Einstellungen, "
+                             "Fakelib-Ordner wählen, Firmware-Analyse-Ordner wählen")
         finally:
             self._schliesse(fenster)
 

@@ -619,6 +619,11 @@ class KartenAufteilung:
     knopf_hoehe: int       # der Knopf "Infos & Metadaten"
     start_hoehe: int
     aktion_hoehe: int
+    # Zeile mit der verlangten Firmware ueber dem Titelbild (0 = keine Zeile). ``poster_y`` ist die Oberkante
+    # des Titelbilds; ohne Zeile ist sie der Kartenrand, wie vor dem 28.10.2026.
+    fw_y: int = 0
+    fw_hoehe: int = 0
+    poster_y: int = 0
 
 
 @dataclass(frozen=True)
@@ -636,6 +641,7 @@ class KartenMasse:
     chip_zeile: int = 24           # gemessene Hoehe eines Chips (Pixel, schon skaliert)
     titel_zeilen: int = 2
     chip_zeilen: int = 2
+    fw_zeile: int = 0              # gemessene Hoehe der Firmware-Zeile ueber dem Titelbild; 0 = keine Zeile
 
     def px(self, wert: float) -> int:
         return int(round(wert * self.faktor))
@@ -684,7 +690,12 @@ class KartenMasse:
         poster = max(1, b - 2 * rb)                                  # quadratisch, ohne den Rand
         innen_x = self.polster
         innen_b = max(1, b - 2 * self.polster)
-        titel_y = rb + poster + self.px(14)
+        if self.fw_zeile > 0:
+            fw_y = rb + self.px(8)
+            poster_y = fw_y + self.fw_zeile + self.px(6)
+        else:
+            fw_y, poster_y = 0, rb
+        titel_y = poster_y + poster + self.px(14)
         titel_h = self.titel_zeile * self.titel_zeilen
         chips_y = titel_y + titel_h + self.px(10)
         chips_h = self.chip_zeile * self.chip_zeilen + self.px(6) * (self.chip_zeilen - 1)
@@ -697,4 +708,5 @@ class KartenMasse:
             breite=b, hoehe=hoehe, innen_x=innen_x, innen_breite=innen_b, poster_hoehe=poster,
             titel_y=titel_y, titel_hoehe=titel_h, chips_y=chips_y, chips_hoehe=chips_h,
             info_y=info_y, start_y=start_y, aktion_y=aktion_y, knopf_hoehe=knopf_h,
-            start_hoehe=start_h, aktion_hoehe=aktion_h)
+            start_hoehe=start_h, aktion_hoehe=aktion_h,
+            fw_y=fw_y, fw_hoehe=self.fw_zeile, poster_y=poster_y)

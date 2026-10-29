@@ -574,6 +574,55 @@ class SeitenTests(unittest.TestCase):
             zustand["filter"].set("alle")
             zustand["filter_gewaehlt"]()
 
+    def _firmware_setzen(self, pfad: str, verlangt: str) -> dict:
+        """Gibt dem Eintrag die verlangte Firmware (nur an der Kopie dieses Tests) und zeichnet neu."""
+        for i, e in enumerate(self.zustand["eintraege"]):
+            if e["path"] == pfad:
+                self.zustand["eintraege"][i] = dict(e, meta=dict(e["meta"], required_firmware=verlangt))
+        self.zustand["filtern"]()
+        _WURZEL.update_idletasks()
+        return self._eintrag(pfad)
+
+    def _firmware_zeile(self, eintrag: dict) -> str:
+        kennung = eintrag["_kachel"].ids.get("firmware")
+        return self.zustand["raster"].flaeche.itemcget(kennung, "text") if kennung else ""
+
+    def test_die_karte_nennt_die_verlangte_firmware_ueber_dem_cover(self) -> None:
+        """Nutzerwunsch 28.10.2026: Was das Spiel verlangt, steht links ueber dem Titelbild."""
+        ohne = self._firmware_setzen(self.ohne, "09.00.00.00")
+        self.assertEqual(self.app._t("library.karte_fw", fw="9.00"), self._firmware_zeile(ohne))
+        flaeche = self.zustand["raster"].flaeche
+        kachel = ohne["_kachel"]
+        self.assertLess(flaeche.coords(kachel.ids["firmware"])[1], flaeche.coords(kachel.ids["poster"])[1])
+        self.assertEqual(self.app._COLORS["fg_secondary"], flaeche.itemcget(kachel.ids["firmware"], "fill"))
+
+    def test_mit_backport_steht_die_zielfirmware_dabei(self) -> None:
+        alle = self._firmware_setzen(self.alle, "10.01")
+        self.assertEqual(self.app._t("library.karte_fw_backport", fw="10.01", bp="10.00"),
+                         self._firmware_zeile(alle))
+        flaeche = self.zustand["raster"].flaeche
+        self.assertEqual(self.app._COLORS["fg_warning"],
+                         flaeche.itemcget(alle["_kachel"].ids["firmware"], "fill"),
+                         "Ein Backport ist in der Warnfarbe wie sein Chip.")
+
+    def test_ohne_angabe_keine_zeile_und_trotzdem_gleich_hohe_karten(self) -> None:
+        raster = self.zustand["raster"]
+        self.assertEqual("", self._firmware_zeile(self._eintrag(self.ffpkg)))
+        self.assertEqual("", self._firmware_zeile(self._eintrag(self.ohne)))
+        self.assertEqual(1, len({k.h for k in raster.karten}))
+
+    def test_nur_backport_ohne_bekannte_firmware(self) -> None:
+        """Der Backport ist nachgewiesen, die param.json nennt aber nichts: Das Ziel steht trotzdem da."""
+        self.assertEqual(self.app._t("library.karte_nur_backport", bp="10.00"),
+                         self._firmware_zeile(self._eintrag(self.alle)))
+
+    def test_die_liste_hat_eine_firmware_spalte(self) -> None:
+        self._firmware_setzen(self.alle, "10.01")
+        baum = self.zustand["liste"]
+        zellen = {baum.set(iid, "path"): baum.set(iid, "firmware") for iid in baum.get_children()}
+        self.assertEqual(self.app._t("library.karte_fw_backport", fw="10.01", bp="10.00"), zellen[self.alle])
+        self.assertEqual("–", zellen[self.ohne])
+
     def test_die_spalte_der_liste(self) -> None:
         baum = self.zustand["liste"]
         zellen = {baum.set(iid, "path"): baum.set(iid, "einbauten")

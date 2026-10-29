@@ -741,6 +741,46 @@ class KartenRasterTests(unittest.TestCase):
         self.assertLessEqual(letzte_der_reihe.x + letzte_der_reihe.b, self.BREITE)
         self.assertGreater(letzte_der_reihe.x + letzte_der_reihe.b, self.BREITE - spalten)
 
+    def test_die_firmware_zeile_steht_links_ueber_dem_titelbild(self) -> None:
+        """Seit 28.10.2026: verlangte Firmware (bei Backport dazu das Ziel) ueber dem Cover, linksbuendig."""
+        self.chips = {}
+        orig = self._inhalt
+        self._inhalt = lambda e: dict(orig(e), firmware="Benoetigt FW 10.01 · Backport 4.00", firmware_art="backport")
+        self.raster._inhalt = self._inhalt
+        self._setzen(2)
+        a = self.raster._auf
+        karte = self.raster.karten[0]
+        text = karte.ids.get("firmware")
+        self.assertIsNotNone(text, "Keine Firmware-Zeile gezeichnet.")
+        x, y = self.raster.flaeche.coords(text)
+        poster_x, poster_y = self.raster.flaeche.coords(karte.ids["poster"])
+        self.assertLess(y, poster_y, "Die Zeile steht ueber dem Titelbild.")
+        self.assertEqual(karte.x + a.innen_x, x, "Linksbuendig mit Titel und Chips.")
+        self.assertEqual(karte.y + a.poster_y, poster_y)
+        plakette = self.raster.flaeche.coords(karte.ids["plakette"])
+        self.assertGreaterEqual(plakette[1], poster_y, "Die Plakette sitzt weiter auf dem Titelbild.")
+        self.assertEqual(self.raster._z.palette.get("fg_warning"),
+                         self.raster.flaeche.itemcget(text, "fill"), "Backport faerbt die Zeile in der Warnfarbe.")
+
+    def test_ohne_firmwaretext_bleibt_die_zeile_leer_und_alle_karten_gleich_hoch(self) -> None:
+        self._setzen(2)
+        self.assertNotIn("firmware", self.raster.karten[0].ids)
+        self.assertGreater(self.raster._auf.poster_y, self.raster._masse.randbreite,
+                           "Die Zeile ist reserviert, damit alle Karten gleich hoch bleiben.")
+
+    def test_aktualisieren_setzt_die_firmware_zeile_nach(self) -> None:
+        eintraege = self._setzen(1)
+        self.assertNotIn("firmware", self.raster.karten[0].ids)
+        orig = self._inhalt
+        self.raster._inhalt = lambda e: dict(orig(e), firmware="Benoetigt FW 9.00", firmware_art="")
+        self.raster.aktualisieren(eintraege[0])
+        self.assertIn("firmware", self.raster.karten[0].ids)
+        self.assertEqual("Benoetigt FW 9.00",
+                         self.raster.flaeche.itemcget(self.raster.karten[0].ids["firmware"], "text"))
+        self.raster._inhalt = lambda e: dict(orig(e))
+        self.raster.aktualisieren(eintraege[0])
+        self.assertNotIn("firmware", self.raster.karten[0].ids)
+
     def test_die_karten_stehen_zeilenweise_ohne_ueberlappung(self) -> None:
         self._setzen(9)
         m, spalten = self.raster._masse, self.raster.spalten

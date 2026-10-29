@@ -830,6 +830,26 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   und in ein installiertes Paket (ohne <code>backports</code>-Ordner) kann das
   Programm nicht hineinsehen &ndash; dort steht „nicht ermittelbar“, nie
   „keine“.</p>
+  <p><strong>Backport als eigener Ordner.</strong> Im BACKPORT-Fenster legt
+  <em>Nur Backport-Ordner erstellen …</em> den Backport neben das Spiel statt
+  hinein: Sie wählen einen Ausgabeordner, darin entsteht
+  <code>backports/&lt;Title-ID&gt;</code> mit den herabgesetzten Dateien (gleiche
+  Pfade wie im Spiel), der herabgesetzten <code>param.json</code> und dem Ordner
+  <code>fakelib</code>. Das Spiel selbst bleibt unverändert. So verlangt es
+  ShadowMount+ (ab 1.7beta2): Legen Sie den Ordner
+  <code>&lt;Title-ID&gt;</code> auf die Konsole nach
+  <code>/data/homebrew/backports/&lt;Title-ID&gt;/</code> (oder in den Ordner
+  <code>backports</code> eines anderen Suchpfads). ShadowMount+ blendet ihn beim
+  Start über das Spiel; der Ordner <code>backports</code> wird beim normalen Scan
+  übergangen. Eine <code>fakelib</code> des Spiels (etwa AMPR EMU) geht in den
+  Backport-Ordner mit, weil ShadowMount+ nur einen Ordner wählt.</p>
+  <p><strong>Firmware auf der Karte.</strong> Links über dem Titelbild steht,
+  welche Firmware das Spiel laut seiner <code>param.json</code> verlangt
+  (<em>Benötigt FW 10.01</em>). Trägt das Spiel einen BACKPORT, folgt dahinter die
+  Firmware, für die es herabgesetzt wurde (<em>Backport 4.00</em>), in der Farbe
+  der BACKPORT-Marke. In der Liste steht dasselbe in der Spalte
+  <em>Firmware</em>. Bei einem Abbild liegt die verlangte Firmware erst vor,
+  wenn der Eintrag einmal gewählt wurde &ndash; solange bleibt die Zeile leer.</p>
   <p><strong>Starten.</strong> Der hervorgehobene Knopf <em>Starten</em> auf der
   Karte startet den Titel auf der Konsole &ndash; über
   <em>websrv</em> (Port&nbsp;8080), der dem Programm beiliegt. Läuft auf der

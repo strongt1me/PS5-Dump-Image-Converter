@@ -9,6 +9,9 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 ## Nächste Version (in Arbeit)
 
 - **Geändert:** Das BACKPORT-Fenster ist einfacher: Es gibt nur noch die Haken „Sicherung anlegen“ und „Nur benötigte Bibliotheken“. Ersatzbibliotheken, libc-Anpassung und Deckungsprüfung laufen immer mit, wie beim Einbau während des Erstellens.
+- **Neu:** Die Bibliothek zeigt auf jeder Karte links über dem Titelbild, welche Firmware das Spiel verlangt – und bei einem Backport dahinter, für welche Firmware er gemacht wurde. In der Listenansicht gibt es dafür die neue Spalte „Firmware“.
+- **Neu:** Im BACKPORT-Fenster erstellt „Nur Backport-Ordner erstellen …“ den Backport als eigenen Ordner `backports/<Title-ID>` für ShadowMount+ – das Spiel bleibt unverändert. Der Ordner wird nach `/data/homebrew/backports/<Title-ID>/` auf die Konsole gelegt.
+- **Geändert:** Im BACKPORT-Fenster stehen der eigene Bibliotheksordner und der Firmware-Ordner für die Analyse jetzt eingeklappt unter „Erweiterte Einstellungen“ (aufgeklappt, sobald dort schon etwas eingestellt ist), und neben der Zielfirmware steht, was das Spiel selbst verlangt.
 - **Behoben:** BACKPORT bringt jetzt für jede Firmware-Stufe auch die Kompatibilitäts-Bausteine für AMPR und PlayGo mit. An der echten Konsole bestätigt: Ein Spiel mit PlayGo-Inhalten startete ohne sie gar nicht erst.
 
 ## v1.9.88 – 26.10.2026
