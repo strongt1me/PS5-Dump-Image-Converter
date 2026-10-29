@@ -232,7 +232,9 @@ class WeitereDiensteTests(unittest.TestCase):
     def test_web_adressen(self):
         erwartet = {"cheatrunner": "http://10.0.0.5:9999/", "appdumper": "http://10.0.0.5:8081/",
                     "gamecompressor": "http://10.0.0.5:5910/", "smplusgui": "http://10.0.0.5:7777/",
-                    "aria2": "http://10.0.0.5:6800/", "zftpd": "http://10.0.0.5:2120/",
+                    "aria2": "http://10.0.0.5:6800/",
+                    # zftpd ab 1.7.0: FTP auf 2120, Weboberflaeche fest auf 8888 (an der Konsole gemessen).
+                    "zftpd": "http://10.0.0.5:8888/",
                     "gdbsrv": "", "ps5debug": ""}
         for schluessel, adresse in erwartet.items():
             with self.subTest(dienst=schluessel):
@@ -803,7 +805,7 @@ class VersionOhneStartenTests(unittest.TestCase):
         modul = _lade_hauptprogramm()
         app = modul.PS5ConverterGUI.__new__(modul.PS5ConverterGUI)
         app._t = lambda schluessel, **werte: STRINGS[schluessel]["de"].format(**werte)
-        erwartet = {"shadowmount": "1.7beta9", "elfldr9020": "0.27", "dpiv2": "1.00",
+        erwartet = {"shadowmount": "1.7beta10", "elfldr9020": "0.27", "dpiv2": "1.00",
                     "elfldr9021": "0.27"}
         for schluessel, version in erwartet.items():
             with self.subTest(dienst=schluessel):

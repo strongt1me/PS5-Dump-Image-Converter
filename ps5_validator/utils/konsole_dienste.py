@@ -71,6 +71,8 @@ class Dienst:
     datei_muster: str = ""
     #: Pfad der Weboberflaeche, oder "" fuer keine.
     web: str = ""
+    #: Port der Weboberflaeche, wenn er vom Dienstport abweicht (0 = derselbe Port).
+    web_port: int = 0
     #: Nur einer aus dieser Gruppe muss laufen (die beiden Loader-Ports).
     gruppe: str = ""
     #: Sekunden, die dieser Dienst nach dem Start zum Hochkommen braucht.
@@ -181,10 +183,10 @@ KATALOG: tuple[Dienst, ...] = (
     Dienst("smplusgui", 7777, "SMPlusGui_v*.elf", web="/", anlaufzeit=2.0),
     # AriaNg steckt im ELF und liegt auf demselben Port wie die RPC-Schnittstelle.
     Dienst("aria2", 6800, "aria2-v*.elf", web="/", anlaufzeit=3.0),
-    # Nur die zhttp-Fassung traegt die Weboberflaeche; der HTTP-Port spiegelt
-    # den FTP-Port (auf Konsolen 2120). Ohne Gruss geprueft: Die Fassung
-    # entscheidet bei einer Verbindung, ob FTP oder HTTP gesprochen wird.
-    Dienst("zftpd", 2120, "zftpd-ps5-zhttp-v*.elf", web="/", anlaufzeit=2.5),
+    # Nur die zhttp-Fassung traegt die Weboberflaeche. Bis 1.6.0 spiegelte der HTTP-Port den FTP-Port (auf Konsolen
+    # 2120); seit 1.7.0 hat die Weboberflaeche einen festen Port 8888 (README der Freigabe: "The web UI has a fixed
+    # port", an der echten Konsole am 29.10.2026 gemessen: 2120 spricht nur FTP, 8888 liefert die Seite "zftpd").
+    Dienst("zftpd", 2120, "zftpd-ps5-zhttp-v*.elf", web="/", web_port=8888, anlaufzeit=2.5),
     Dienst("gdbsrv", 2159, "gdbsrv-ps5_v*.elf"),
     Dienst("ps5debug", 744, "ps5debug-NG_v*.elf", anlaufzeit=2.0),
     # --- AnyPad PS5 (seit 04.10.2026) -----------------------------------------
@@ -582,4 +584,4 @@ def web_adresse(eintrag: Dienst, adresse: str) -> str:
     """Die Adresse der Weboberflaeche - leer, wenn der Dienst keine hat."""
     if not eintrag.web or not str(adresse or "").strip():
         return ""
-    return "http://%s:%d%s" % (str(adresse).strip(), eintrag.port, eintrag.web)
+    return "http://%s:%d%s" % (str(adresse).strip(), eintrag.web_port or eintrag.port, eintrag.web)

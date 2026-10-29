@@ -5,7 +5,13 @@
 Bibliothek **LibProsperoPkg 1.2.0** (GPL-3.0-or-later; als fertige Datei `src/ffpfsc-pkg-tool/lib/`, die Quelle
 dazu liegt nicht bei - siehe `src/ffpfsc-pkg-tool/lib/README.md`).
 
-Seit 27.10.2026 steht die Versionskonstante auf **2.3.2**. ps5-ultrapack 2.3.2 aendert am C#-Teil nur Kommentare und
+Seit 29.10.2026 steht die Versionskonstante auf **2.3.3**. ps5-ultrapack 2.3.3 aendert nur die Oberflaeche der Upstream-App
+(`PS5_UltraPack.py`: mehrere Auftraege fuer dieselbe Quelle, Zusatzinhalte, die schon als gleiche Datei da sind, zaehlen als
+abgelegt) und ihre Tests - der Vergleich 2.3.2 bis 2.3.3 nennt keine C#-Datei; `lib/` und `patches/` sind unveraendert. Unsere
+Konstante ist auf 2.3.3 gehoben, `ffpfsc-pkg-tool.dll` in allen vier Ordnern neu gebaut; `dotnet ... version` zeigt 2.3.3 und
+LibProsperoPkg 1.2.0. An keinem echten Paket gemessen.
+
+Davor (27.10.2026): **2.3.2**. ps5-ultrapack 2.3.2 aendert am C#-Teil nur Kommentare und
 Leerraum (Vergleich der Dateien ohne Kommentare und Leerzeichen: Program.cs und Ps4Keystone.cs je nur Zeilenende-Leerraum, alle
 anderen gleich; `lib/` und `patches/` unveraendert); Upstream selbst haelt die Konstante noch auf 2.3.1. Unsere Konstante ist
 auf 2.3.2 gehoben, `ffpfsc-pkg-tool.dll` in allen vier Ordnern neu gebaut (nur diese Datei je Ordner); `dotnet ... version`
