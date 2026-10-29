@@ -18745,7 +18745,6 @@ class PS5ConverterGUI:
             hinweisfeld.Hinweisfeld(self.dest_entry, self.dest_path, lambda: self._t("main.hint_dest")),
             hinweisfeld.Hinweisfeld(self.temp_entry, self.temp_path, lambda: self._t("main.hint_temp")),
         ]
-        self.current_mode.trace_add("write", lambda *_a: self._hinweisfelder_aktualisieren())
 
     def _hinweisfelder_aktualisieren(self) -> None:
         """Zieht Text und Farben nach - nach Aufgaben-, Sprach- und Designwechsel."""
@@ -20661,6 +20660,8 @@ class PS5ConverterGUI:
         noch bevor der Benutzer auf Start drückt.
         """
         if _args:
+            # Der Hinweistext der Quelle haengt an der Aufgabe: sofort nachziehen, die Berechnung folgt entprellt.
+            self._hinweisfelder_aktualisieren()
             pending = getattr(self, "_source_change_after_id", None)
             if pending:
                 try:
@@ -57905,7 +57906,7 @@ class PS5ConverterGUI:
             win.destroy()
 
         def _ordner_erstellen() -> None:
-            """Nur den Backport als Ordner ``backports/<Title-ID>`` bauen (ShadowMount+), das Spiel bleibt unberuehrt."""
+            """Nur die Backport-Dateien als Ordner bauen: Inhalt in den Spielordner kopieren, das Spiel bleibt unberuehrt."""
             if laeuft["aktiv"]:
                 return
             tid = ps5_backport.titel_id_aus_param(ordner)
@@ -57928,7 +57929,7 @@ class PS5ConverterGUI:
                 return
             gewaehlt = os.path.normpath(gewaehlt)
             try:
-                ziel = ps5_backport.backport_ordner_pfad(gewaehlt, tid)
+                ziel = ps5_backport.einfuegen_ordner_pfad(gewaehlt, tid, firmware)
             except ps5_backport.BackportFehler as exc:
                 messagebox.showwarning(self._t("backport.window_title", name=os.path.basename(ordner)),
                                        str(exc), parent=win)
@@ -57952,6 +57953,7 @@ class PS5ConverterGUI:
             stand_var.set(self._t("backport.folder_status"))
             self._append_to_log(self._t("backport.folder_log_start", tid=tid, fw=f"{firmware}.00", pfad=ziel) + chr(10))
             minimal = bool(minimal_var.get())
+            fakelib_name = self._fakelib_ordnername()
 
             def _fertig(ergebnis: dict) -> None:
                 laeuft["aktiv"] = False
@@ -57967,24 +57969,19 @@ class PS5ConverterGUI:
                 self._append_to_log(zeile + chr(10))
                 for name, grund in ergebnis["fehlermeldungen"]:
                     self._append_to_log(self._t("backport.log_failed", name=name, error=grund) + chr(10))
-                text = self._t("backport.folder_done_message", pfad=ergebnis["ziel"], tid=tid,
+                text = self._t("backport.folder_done_message", pfad=ergebnis["ziel"],
                                gepatcht=ergebnis["gepatcht"], libs=ergebnis["bibliotheken"],
                                fehler=ergebnis["fehler"])
                 if ergebnis["fehler"] or ergebnis.get("abgebrochen"):
                     messagebox.showinfo(self._t("backport.folder_done_title"), text, parent=win)
                     return
-                # Gleich auf die Konsole legen? Die Uebertragung fragt selbst nach Groesse und vorhandenem Ordner.
-                if messagebox.askyesno(self._t("backport.folder_done_title"),
-                                       text + "\n\n" + self._t("backport.folder_upload_frage", tid=tid),
-                                       parent=win, default="no"):
-                    self._bibliothek_ordner_uebertragen(
-                        win, richtung="hoch", oertlich=ergebnis["ziel"],
-                        entfernt="/data/homebrew/backports/" + tid)
+                messagebox.showinfo(self._t("backport.folder_done_title"), text, parent=win)
 
             def _arbeit() -> None:
                 try:
                     ergebnis = ps5_backport.backport_ordner_bauen(
                         ordner, gewaehlt, tid, firmware, basis, minimal=minimal,
+                        ziel_ordner=ziel, fakelib_name=fakelib_name,
                         texte=self._modul_texte(ps5_backport.MELDUNGEN, "backportmod."),
                         melde=lambda text: self._spaeter_im_fenster(win, stand_var.set, text),
                         abbruch=lambda: bool(laeuft.get("abbruch")))

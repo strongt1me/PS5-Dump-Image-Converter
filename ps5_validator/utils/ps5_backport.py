@@ -1996,10 +1996,28 @@ def _ist_emu_datei(pfad: str) -> bool:
     return any(k in daten for k in EMU_KENNZEICHEN)
 
 
+def einfuegen_ordner_pfad(ausgabe: str, titel_id: str, firmware: int) -> str:
+    """``<ausgabe>/<TITLE_ID> Backport FW<n>`` - ein Ordner, dessen Inhalt in den Spielordner kopiert wird.
+
+    Anders als :func:`backport_ordner_pfad` (Overlay ``backports/<TITLE_ID>`` fuer ShadowMount+) steht hier
+    kein ``backports`` davor: Der Inhalt hat denselben Aufbau wie das Spiel und ersetzt beim Kopieren
+    genau die Dateien, die der Backport im Spielordner selbst ersetzen wuerde.
+
+    Raises:
+        BackportFehler: ``titel_id`` hat nicht die Form ``PPSA01234``.
+    """
+    kennung = str(titel_id or "").strip()
+    if not _TITEL_ID_FORM.fullmatch(kennung):
+        raise BackportFehler(f"Ungueltige Title-ID: {titel_id!r}")
+    return os.path.join(str(ausgabe or ""), f"{kennung} Backport FW{int(firmware)}")
+
+
 def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmware: int,
                           fakelib_basis: str, *, minimal: bool = False,
                           texte: "dict[str, str] | None" = None,
-                          melde: Any = None, abbruch: Any = None) -> dict[str, Any]:
+                          melde: Any = None, abbruch: Any = None,
+                          ziel_ordner: "str | None" = None,
+                          fakelib_name: str = FAKELIB_ORDNER) -> dict[str, Any]:
     """Baut nur den Backport - als Ordner ``<ausgabe>/backports/<TITLE_ID>/`` - und fasst das Spiel nicht an.
 
     Gelegt wird, was ShadowMount+ ueber das Spiel einblendet (``mount_backport_overlay``): derselbe Pfadaufbau wie
@@ -2017,6 +2035,10 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
         minimal: nur die Bibliotheken, die das Spiel importiert.
         melde: ``(text) -> None`` fuer Zwischenstaende (ohne Tk).
         abbruch: ``() -> bool`` - True haelt am naechsten Schritt an.
+        ziel_ordner: Ordner fuer das Ergebnis; ohne Angabe ``<ausgabe>/backports/<TITLE_ID>``. Mit
+            :func:`einfuegen_ordner_pfad` entsteht ein Ordner, dessen Inhalt man in den Spielordner kopiert.
+        fakelib_name: Name des Bibliotheksordners im Ergebnis - derselbe wie beim Backport im Spielordner
+            (``fakelib`` oder ``fakelib2``, siehe ``shadowmount_generation``).
 
     Returns:
         ``{"ziel", "gepatcht", "fehler", "bibliotheken", "fehlermeldungen", "abgebrochen"}``.
@@ -2024,7 +2046,7 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
     Raises:
         BackportFehler: Title-ID oder Firmware unbrauchbar, oder ``ausgabe`` liegt im Spielordner.
     """
-    ziel = backport_ordner_pfad(ausgabe, titel_id)
+    ziel = ziel_ordner or backport_ordner_pfad(ausgabe, titel_id)
     ziel_ps5, ziel_ps4 = sdk_paar(firmware)
     spiel = os.path.normcase(os.path.abspath(str(spielordner)))
     wurzel = os.path.normcase(os.path.abspath(ziel))
@@ -2098,7 +2120,7 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
             ergebnis["fehlermeldungen"].append(("sce_sys/param.json", str(exc)))
 
     # Eigene fakelib des Spiels zuerst (fakelib2 vor fakelib: das spaetere gewinnt), dann der Satz der Firmware.
-    bib = os.path.join(ziel, FAKELIB_ORDNER)
+    bib = os.path.join(ziel, fakelib_name)
     try:
         for name in reversed(FAKELIB_ORDNERNAMEN):
             quelle_ordner = os.path.join(str(spielordner), name)
@@ -2128,5 +2150,5 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
             ergebnis["bibliotheken"] += 1
     except OSError as exc:
         ergebnis["fehler"] += 1
-        ergebnis["fehlermeldungen"].append((FAKELIB_ORDNER, str(exc)))
+        ergebnis["fehlermeldungen"].append((fakelib_name, str(exc)))
     return ergebnis

@@ -167,6 +167,45 @@ class BauenTests(_Spiel):
         self.assertTrue(erg["abgebrochen"])
 
 
+class EinfuegenTests(_Spiel):
+    """Der Ordner zum Hineinkopieren: derselbe Inhalt, nur ohne ``backports/`` davor (30.10.2026)."""
+
+    def _bauen(self, **kw) -> dict:
+        ziel = bp.einfuegen_ordner_pfad(self.ausgabe, "PPSA01234", 4)
+        return bp.backport_ordner_bauen(self.spiel, self.ausgabe, "PPSA01234", 4, BASIS, ziel_ordner=ziel, **kw)
+
+    def test_der_ordner_traegt_title_id_und_firmware_im_namen(self) -> None:
+        self.assertEqual(os.path.join("x", "PPSA01234 Backport FW4"), bp.einfuegen_ordner_pfad("x", "PPSA01234", 4))
+        self.assertEqual(os.path.join(self.ausgabe, "PPSA01234 Backport FW4"), self._bauen()["ziel"])
+        self.assertFalse(os.path.exists(os.path.join(self.ausgabe, "backports")))
+
+    def test_unbrauchbare_title_ids_werden_abgelehnt(self) -> None:
+        with self.assertRaises(bp.BackportFehler):
+            bp.einfuegen_ordner_pfad("x", "../PPSA01234", 4)
+
+    def test_der_bibliotheksordner_heisst_wie_vorgegeben(self) -> None:
+        erg = self._bauen(fakelib_name="fakelib2")
+        self.assertTrue(os.path.isdir(os.path.join(erg["ziel"], "fakelib2")))
+        self.assertFalse(os.path.exists(os.path.join(erg["ziel"], "fakelib")))
+
+    def test_in_den_spielordner_kopiert_ergibt_den_backport_im_spiel(self) -> None:
+        erg = self._bauen()
+        self.assertEqual(0, erg["fehler"], erg["fehlermeldungen"])
+        stand_vorher = {k.replace(os.sep, "/"): v for k, v in self._stand().items()}
+        unberuehrt = stand_vorher["daten/bild.dat"]
+        shutil.copytree(erg["ziel"], self.spiel, dirs_exist_ok=True)       # "Dateien ersetzen"
+        stand = {k.replace(os.sep, "/"): v for k, v in self._stand().items()}
+        def _sdk(roh: bytes) -> int:
+            return bp.sdk_lesen(bp.self_zu_elf(roh) if bp.dateityp(roh) == bp.TYP_SELF else roh)[0]
+
+        self.assertEqual(bp.sdk_paar(4)[0], _sdk(stand["eboot.bin"]), "eboot.bin ist herabgesetzt")
+        self.assertEqual(bp.sdk_paar(4)[0], _sdk(stand["sce_module/libtest.prx"]))
+        self.assertEqual(unberuehrt, stand["daten/bild.dat"], "Was der Backport nicht anfasst, bleibt.")
+        self.assertTrue(any(name.startswith("fakelib/") for name in stand), "Der Satz liegt im Spielordner.")
+        self.assertIn(bp.param_json_herabsetzen(json.dumps(PARAM).encode("ascii"), 4)[0].decode("ascii"),
+                      stand["sce_sys/param.json"].decode("ascii"))
+
+
 class FirmwareVorschlagTests(unittest.TestCase):
     """Die Vorauswahl der Zielfirmware (29.10.2026): nie ueber der Konsole, sonst so hoch wie moeglich."""
 
@@ -238,8 +277,10 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertIn("ps5_backport.backport_ordner_bauen(", self.quelle)
         self.assertIn('self._t("backport.action_folder")', self.quelle)
         self.assertIn("ps5_backport.titel_id_aus_param(ordner)", self.quelle)
-        self.assertIn('entfernt="/data/homebrew/backports/" + tid', self.quelle,
-                      "Der Upload geht dorthin, wo ShadowMount+ den Ordner erwartet.")
+        self.assertIn("ps5_backport.einfuegen_ordner_pfad(gewaehlt, tid, firmware)", self.quelle)
+        self.assertIn("fakelib_name=fakelib_name", self.quelle,
+                      "Der Bibliotheksordner heisst wie beim Backport im Spielordner.")
+        self.assertNotIn("backport.folder_upload_frage", self.quelle, "Kein Upload nach backports/ mehr.")
         self.assertIn("ps5_backport.firmware_vorschlag(konsole_fw, firmwares)", self.quelle)
 
     def test_alle_texte_sind_in_allen_sprachen_da(self) -> None:
@@ -247,7 +288,7 @@ class VerdrahtungTests(unittest.TestCase):
                            "backport.folder_no_id", "backport.folder_inside_game", "backport.folder_exists",
                            "backport.folder_status", "backport.folder_log_start", "backport.folder_log_done",
                            "backport.folder_done_title", "backport.folder_done_message",
-                           "backport.folder_upload_frage", "backport.fw_vorschlag"):
+                           "backport.fw_vorschlag"):
             for sprache in ("de", "en", "es", "it", "fr"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):
                     self.assertTrue(STRINGS[schluessel].get(sprache))
