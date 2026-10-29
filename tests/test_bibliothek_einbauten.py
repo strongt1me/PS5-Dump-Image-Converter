@@ -656,6 +656,17 @@ class SeitenTests(unittest.TestCase):
         self.assertEqual(("unbekannt", "format"), (ergebnis["zustand"], ergebnis["grund"]))
         self.assertEqual(({}, None), self.app._bibliothek_ffpkg_angaben(self.ffpkg))
 
+    @unittest.skipUnless(os.path.isfile(r"E:\exFAT Games\Arcade Game Zone (01.003.000).exfat"), "kein echtes .exfat")
+    def test_echtes_exfat_liefert_verlangte_firmware_und_sdk(self) -> None:
+        """Befund vom 29.10.2026: Bei exFAT-/PFS-Abbildern blieb die verlangte Firmware leer, obwohl sie als gelesen galt."""
+        echt = r"E:\exFAT Games\Arcade Game Zone (01.003.000).exfat"
+        angaben, bild = self.app._bibliothek_abbild_angaben(echt)
+        self.assertEqual("9.60", bib.firmware_kurz(angaben.get("required_firmware", "")))
+        self.assertEqual("7.00", bib.firmware_kurz(angaben.get("sdk", "")))
+        erweitert = self.app._bibliothek_erweiterte_angaben(echt)
+        self.assertEqual("9.60", bib.firmware_kurz(erweitert.get("required_firmware", "")))
+        self.assertEqual("2", erweitert.get("gelesen"))
+
     @unittest.skipUnless(os.path.isdir(r"D:\PS5 TEMP\A1_Ausgabe\Format__ffpkg"), "keine echte .ffpkg")
     def test_echtes_ffpkg_zeigt_cover_und_firmware(self) -> None:
         echt = r"D:\PS5 TEMP\A1_Ausgabe\Format__ffpkg\PPSA19015 Arcade Game Zone.ffpkg"

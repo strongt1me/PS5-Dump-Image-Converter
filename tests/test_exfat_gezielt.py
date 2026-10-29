@@ -165,6 +165,14 @@ class MetadatenParitaetTests(_Basis):
                          (gezielt.game_title, gezielt.title_id, gezielt.content_id, gezielt.version, gezielt.region,
                           gezielt.has_apr_emu, gezielt.icon_bytes))
 
+    def test_die_roh_param_json_haengt_am_ergebnis(self) -> None:
+        """Die Bibliothek liest daraus die verlangte Firmware (die Engine behaelt sie nicht) - ohne zweiten Zugriff."""
+        abbild = _abbild(_quelle(self.basis, "roh", _spiel()))
+        gezielt = eg.metadaten(str(abbild), gm)
+        self.assertEqual(PARAM, gezielt.param_json_roh)
+        ohne = eg.metadaten(str(_abbild(_quelle(self.basis, "roh2", {"eboot.bin": b"B"}))), gm)
+        self.assertFalse(getattr(ohne, "param_json_roh", None), "Ohne param.json bleibt nichts haengen.")
+
     def test_ohne_emulation_ohne_bild_ohne_param_json(self) -> None:
         for name, dateien in (("ohne_emu", _spiel()),
                               ("ohne_bild", {"sce_sys/param.json": PARAM, "eboot.bin": b"B"}),
@@ -222,7 +230,10 @@ class MetadatenParitaetTests(_Basis):
             gezielt = eg.metadaten(str(abbild), gm)
             gelesen_gezielt = zaehler["n"]
             zaehler["n"] = 0
-            engine = gm.read_game_metadata(abbild)
+            # Unter der Sperre: Ein Hintergrundfaden der Bibliothek (Firmware nachlesen) kann gerade die Engine-Funktion
+            # getauscht haben - dann zaehlte die Engine hier die gezielten Zugriffe statt des ganzen Baums.
+            with eg._SPERRE:
+                engine = gm.read_game_metadata(abbild)
             gelesen_engine = zaehler["n"]
         self.assertEqual(_felder(engine), _felder(gezielt))
         self.assertLessEqual(gelesen_gezielt, 4, "Wurzel, sce_sys, fakelib (gelesen: %d)." % gelesen_gezielt)

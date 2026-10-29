@@ -43560,7 +43560,9 @@ class PS5ConverterGUI:
         """
         speicher = self._bibliothek_bildspeicher()
         gemerkt = speicher.angaben_lesen(pfad)
-        if gemerkt:
+        # "gelesen" = "2" seit dem 29.10.2026: Bis dahin blieb bei exFAT-/PFS-Abbildern die verlangte Firmware leer
+        # (``_read_game_meta`` liest solche Dateien nicht) und wurde so als "gelesen" gemerkt.
+        if gemerkt and gemerkt.get("gelesen") == "2":
             return gemerkt
         try:
             meta = self._read_game_meta(pfad, deep_scan=True)
@@ -43571,7 +43573,18 @@ class PS5ConverterGUI:
                    for schluessel in self._BIBLIOTHEK_ERWEITERT}
         angaben = {k: v for k, v in angaben.items()
                    if v and v not in ("–", "-", "Unbekannt")}
-        angaben["gelesen"] = "1"
+        if not angaben.get("required_firmware") and os.path.isfile(pfad):
+            # Abbilder: derselbe Leser wie der Suchlauf - er hat param.json ohnehin in der Hand.
+            try:
+                weitere, _bild = self._bibliothek_abbild_angaben(pfad)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: Abbild-Angaben von %s nicht lesbar (%s)", pfad, exc)
+                weitere = {}
+            for schluessel in self._BIBLIOTHEK_ERWEITERT:
+                wert = str(weitere.get(schluessel) or "").strip()
+                if wert and wert not in ("–", "-", "Unbekannt") and not angaben.get(schluessel):
+                    angaben[schluessel] = wert
+        angaben["gelesen"] = "2"
         speicher.angaben_schreiben(pfad, angaben)
         return angaben
 
@@ -45081,6 +45094,19 @@ class PS5ConverterGUI:
             "region": str(getattr(daten, "region", "") or ""),
             "content_id": inhalts_id,
         }
+        # Verlangte Firmware, SDK und Kategorie stehen nicht im Ergebnis der Engine; die Roh-param.json haengt
+        # seit dem 29.10.2026 daran (exfat_gezielt.fuellen) - ohne zweiten Zugriff auf das Abbild.
+        roh_param = getattr(daten, "param_json_roh", None)
+        if isinstance(roh_param, (bytes, bytearray)) and roh_param:
+            try:
+                weitere = self._meta_from_param_json_payload(json.loads(bytes(roh_param).decode("utf-8-sig", errors="replace")))
+            except (ValueError, TypeError, AttributeError) as exc:
+                logger.debug("Bibliothek: param.json von %s nicht auswertbar (%s)", pfad, exc)
+                weitere = {}
+            for schluessel in ("required_firmware", "sdk", "category"):
+                wert = str(weitere.get(schluessel) or "").strip()
+                if wert and wert not in ("–", "-", "Unbekannt") and not angaben.get(schluessel):
+                    angaben[schluessel] = wert
         bild = getattr(daten, "icon_bytes", None)
         if not isinstance(bild, (bytes, bytearray)) or not bild:
             bild = None
@@ -67465,7 +67491,6 @@ def _run_werkzeugpflege(argv: list[str]) -> int:
         Liste nicht erreichbar war.
     """
     _prepare_cli_streams()
-    from ps5_validator.utils import werkzeugstaende
 
     wurzel = os.path.dirname(os.path.abspath(__file__))
     ordner = os.path.join(wurzel, "helloworld")

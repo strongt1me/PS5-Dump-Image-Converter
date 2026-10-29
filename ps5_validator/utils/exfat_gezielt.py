@@ -172,6 +172,12 @@ def fuellen(leser: Any, meta: Any, engine: Any) -> None:
         daten = zugriff.lesen(param, grenze_param)
         if daten is not None:
             engine._fill_from_param_json(daten, meta)
+            # Die Engine behaelt nur Titel, Fassung und Region. Die Roh-Bytes bleiben am Ergebnis haengen, damit die
+            # Bibliothek daraus ohne zweiten Zugriff die verlangte Firmware und das SDK lesen kann (29.10.2026).
+            try:
+                meta.param_json_roh = bytes(daten)
+            except AttributeError:
+                pass
     icon = zugriff.suchen("sce_sys", "icon0.png")
     grenze_icon = int(getattr(engine, "_MAX_ICON_SIZE", 4 << 20))
     if icon is not None and 0 < icon.laenge <= grenze_icon:

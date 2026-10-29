@@ -31,7 +31,7 @@ def _dirent(ino: int, name: str, typ: int, reclen: int) -> bytes:
 def _verzeichnis(eintraege: list[tuple[int, str, int]]) -> bytes:
     """Ein Verzeichnisblock aus einem 512-Byte-Abschnitt; der letzte Eintrag fuellt den Rest."""
     teile = []
-    for nummer, (ino, name, typ) in enumerate(eintraege):
+    for ino, name, typ in eintraege:
         laenge = (8 + len(name) + 3) & ~3
         teile.append((ino, name, typ, laenge))
     letzter = teile[-1]
