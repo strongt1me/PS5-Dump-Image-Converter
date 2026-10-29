@@ -407,6 +407,57 @@ class KartenzeilenTests(unittest.TestCase):
         finally:
             self.wurzel.withdraw()
 
+    def test_bauform_steht_direkt_unter_dem_hinweis_wenn_die_einbauzeile_daneben_steht(self):
+        """Die beiden Rasterzeilen der Einbauzeile fallen dann zusammen - kein Loch zwischen Hinweis und BAUFORM.
+
+        Nutzerwunsch 30.10.2026: BAUFORM (Container) soll unter dem Formathinweis stehen. Vorher blieben gut 100 px
+        leer, weil die Zeilen fuer die Einbauzeile ihre Hoehe behielten, obwohl sie rechts daneben steht.
+        """
+        self._fenster_auf(BREIT_GENUG)
+        try:
+            self.assertTrue(self.app._einbauzeile_daneben)
+            hinweis = self.app.format_info_label
+            bauform = self.app.bauform_title
+            if not (hinweis.winfo_ismapped() and bauform.winfo_ismapped()):
+                self.skipTest("Hinweis oder BAUFORM sind in diesem Modus nicht sichtbar.")
+            luecke = bauform.winfo_rooty() - (hinweis.winfo_rooty() + hinweis.winfo_height())
+            self.assertLessEqual(luecke, 40, "Zwischen Hinweis und BAUFORM liegen %d px." % luecke)
+        finally:
+            self.wurzel.withdraw()
+
+    def test_zielordner_und_temp_springen_bei_keiner_aufgabe_und_keinem_format(self):
+        """Hinweis (eine oder zwei Zeilen) und BAUFORM (sichtbar oder nicht) halten ihre Hoehe: nichts springt.
+
+        Gemessen am 30.10.2026 vor der Aenderung: ZIELORDNER stand bei y=187, 202 oder 247, TEMP bei 265, 280 oder
+        325 - je nach Aufgabe und Zielformat. Aufgabe 8 (Validator) hat kein Ziel und bleibt aussen vor.
+        """
+        self._fenster_auf(BREIT_GENUG)
+        app = self.app
+        vorher = (app.current_mode.get(), app.target_format.get())
+        try:
+            ziele, temps, luecken = set(), set(), []
+            for modus in ("pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
+                          "batch_convert", "universal_convert"):
+                app._set_mode_from_sidebar(modus)
+                self.wurzel.update_idletasks()
+                for wahl in list(app.format_combo["values"]):
+                    app.target_format.set(wahl)
+                    app._format_hinweis_setzen(modus)
+                    self.wurzel.update_idletasks()
+                    if not app.dest_title.winfo_ismapped():
+                        continue
+                    ziele.add(app.dest_title.winfo_rooty())
+                    temps.add(app.temp_title.winfo_rooty())
+                    unten = app.format_info_label.winfo_rooty() + app.format_info_label.winfo_height()
+                    luecken.append(app.dest_title.winfo_rooty() - unten)
+            self.assertEqual(1, len(ziele), "ZIELORDNER springt: %s" % sorted(ziele))
+            self.assertEqual(1, len(temps), "TEMP-ORDNER springt: %s" % sorted(temps))
+            self.assertGreaterEqual(min(luecken), 12, "ZIELORDNER klebt am Hinweis (%d px)." % min(luecken))
+        finally:
+            app._set_mode_from_sidebar(vorher[0])
+            app.target_format.set(vorher[1])
+            self.wurzel.withdraw()
+
     def test_einbauzeile_faellt_bei_schmalem_fenster_zurueck(self):
         """Reicht die Breite nicht, muss sie zurueck in die eigene Zeile.
 

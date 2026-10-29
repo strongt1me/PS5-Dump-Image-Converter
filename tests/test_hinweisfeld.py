@@ -35,25 +35,35 @@ class HinweisfeldTests(unittest.TestCase):
         self.h = hf.Hinweisfeld(self.feld, self.var, lambda: self.text)
 
     def test_leeres_feld_zeigt_den_hinweis_ohne_den_inhalt_zu_beruehren(self) -> None:
-        self.assertEqual("hierher ziehen", self.h.etikett.cget("text"))
-        self.assertTrue(self.h.etikett.winfo_manager())
-        self.assertEqual("", self.var.get())
+        self.assertTrue(self.h.zeigt_hinweis)
+        self.assertEqual("hierher ziehen", self.feld.get())
+        self.assertEqual("", self.var.get(), "Die echte Variable bleibt leer.")
+
+    def test_kein_eckiges_etikett_ueber_dem_runden_feld(self) -> None:
+        self.assertEqual([], [w for w in self.feld.winfo_children()], "Der Hinweis steht im Feld, nicht darueber.")
 
     def test_ein_pfad_im_feld_verbirgt_den_hinweis(self) -> None:
         self.var.set("C:/Spiel")
-        self.assertFalse(self.h.etikett.winfo_manager())
+        self.assertFalse(self.h.zeigt_hinweis)
+        self.assertEqual("C:/Spiel", self.feld.get())
         self.var.set("")
-        self.assertTrue(self.h.etikett.winfo_manager())
+        self.assertTrue(self.h.zeigt_hinweis)
+
+    def test_ein_klick_ins_feld_nimmt_den_hinweis_weg(self) -> None:
+        self.feld.event_generate("<ButtonPress-1>")
+        self.assertFalse(self.h.zeigt_hinweis)
+        self.assertEqual("", self.feld.get())
 
     def test_der_text_wird_beim_aktualisieren_nachgezogen(self) -> None:
         self.text = "anderer Text"
         self.h.aktualisieren()
-        self.assertEqual("anderer Text", self.h.etikett.cget("text"))
+        self.assertEqual("anderer Text", self.feld.get())
 
     def test_ohne_text_gibt_es_keinen_hinweis(self) -> None:
         self.text = ""
         self.h.aktualisieren()
-        self.assertFalse(self.h.etikett.winfo_manager())
+        self.assertFalse(self.h.zeigt_hinweis)
+        self.assertEqual("", self.feld.get())
 
 
 class TexteTests(unittest.TestCase):

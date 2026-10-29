@@ -10335,7 +10335,7 @@ class PS5ConverterGUI:
         # 14 px oben: Der Hinweis klebte mit einem einzigen Pixel Abstand an
         # den Kaestchen darueber (gemessen 21.08.2026: Kaestchen enden bei
         # y=249, der Hinweis begann bei y=250).
-        self.format_info_label.grid(row=4, column=0, columnspan=3, sticky="w",
+        self.format_info_label.grid(row=4, column=0, columnspan=3, sticky="nw",
                                     pady=(4, 6))
         # Der Hinweis steht mitten zwischen den randlosen Beschriftungen und
         # bekommt deshalb dieselbe Behandlung – sonst bliebe genau hier als
@@ -10375,7 +10375,7 @@ class PS5ConverterGUI:
         # statt in einer eigenen Zeile darunter: Drei Zeilen mehr in der
         # Pfad-Karte werfen die Rollflaechen-Pruefung um, die 991 Pixel
         # Fensterhoehe einstellt und verlangt, dass dabei nichts rollt.
-        self.bauform_title.grid(row=7, column=0, sticky="w", pady=(12, 2))
+        self.bauform_title.grid(row=7, column=0, sticky="w", pady=(self._BAUFORM_ABSTAND_OBEN, 2))
         self._card_caption_labels.append(self.bauform_title)
 
         self.bauform_combo = ttk.Combobox(
@@ -10387,7 +10387,7 @@ class PS5ConverterGUI:
             width=34,
         )
         self.bauform_combo.grid(row=7, column=1, columnspan=2, sticky="w",
-                                pady=(12, 2))
+                                pady=(self._BAUFORM_ABSTAND_OBEN, 2))
         self.bauform_combo.bind("<<ComboboxSelected>>", self._on_bauform_changed)
         # Die Erklaerung haengt am Auswahlfeld, nicht in einer eigenen Zeile:
         # drei Zeilen mehr in der Karte werfen die Rollflaechen-Pruefung um.
@@ -10404,7 +10404,7 @@ class PS5ConverterGUI:
             compound="center",
         )
         self._register_translatable(self.dest_title, "main.target_folder_label")
-        self.dest_title.grid(row=8, column=0, sticky="w")
+        self.dest_title.grid(row=8, column=0, sticky="w", pady=(self._ZIELORDNER_ABSTAND_OBEN, 0))
         self._card_caption_labels.append(self.dest_title)
         self.dest_entry = ttk.Entry(path_card, textvariable=self.dest_path, font=(UI_SCHRIFT, pt(12)))
         self.dest_entry.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(5, 0))
@@ -10554,6 +10554,7 @@ class PS5ConverterGUI:
         self.arbeitskopie_check.grid(row=15, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         self._hinweisfelder_anlegen()
+        self._kartenzeilen_fixieren()
         self._register_drag_drop()
         self._register_keyboard_shortcuts()
 
@@ -16720,6 +16721,7 @@ class PS5ConverterGUI:
                 pass
         self._zeilen_ordnen_laeuft = True
         try:
+            self._kartenzeilen_fixieren()
             obere, einbau = self._kartenzeilen()
             self._kartenzeile_ausrichten(obere, nachmessen=nachmessen)
             self._kartenbeschriftung_setzen(getattr(self, "worker_title", None),
@@ -16828,8 +16830,9 @@ class PS5ConverterGUI:
             return
         try:
             dlc.place(in_=erstes, relx=0.0, x=0, rely=1.0, y=self._DLC_ZEILE_ABSTAND, anchor="nw")
-            erstes.master.grid_rowconfigure(6, minsize=max(
-                int(erstes.master.grid_rowconfigure(6)["minsize"]), self._dlc_zeile_hoehe()))
+            if not getattr(self, "_einbauzeile_daneben", False):
+                erstes.master.grid_rowconfigure(6, minsize=max(
+                    int(erstes.master.grid_rowconfigure(6)["minsize"]), self._dlc_zeile_hoehe()))
         except (tk.TclError, KeyError, ValueError) as exc:
             logger.debug("DLC-EMU-Zeile nicht setzbar: %s", exc)
 
@@ -16865,6 +16868,45 @@ class PS5ConverterGUI:
         except tk.TclError as exc:
             logger.debug("Optionskaesten nicht ordenbar: %s", exc)
 
+    #: Luft ueber BAUFORM und ZIELORDNER - sie klebten am Text darueber (Nutzerwunsch 30.10.2026).
+    _BAUFORM_ABSTAND_OBEN = 18
+    _ZIELORDNER_ABSTAND_OBEN = 14
+
+    def _kartenzeilen_fixieren(self) -> None:
+        """Haelt die Zeilen der Pfad-Karte auf fester Hoehe, damit beim Wechsel von Aufgabe oder Zielformat nichts springt.
+
+        Gemessen am 30.10.2026 (alle Aufgaben, alle Zielformate): ZIELORDNER stand je nach Fall bei y=187, 202 oder 247 -
+        der Hinweis ist mal eine, mal zwei Zeilen hoch, und die BAUFORM-Zeile verschwand ganz, wo sie nichts bewirkt.
+        Jetzt behalten beide ihre Hoehe: der Hinweis zwei Zeilen, BAUFORM die Hoehe ihrer Auswahl samt Abstaenden.
+        """
+        karte = getattr(self, "path_card", None)
+        hinweis = getattr(self, "format_info_label", None)
+        bauform = getattr(self, "bauform_combo", None)
+        if karte is None or hinweis is None or bauform is None:
+            return
+        try:
+            import tkinter.font as _tkfont  # noqa: PLC0415
+            zeile = int(_tkfont.Font(root=self.root, font=hinweis.cget("font")).metrics("linespace"))
+            karte.grid_rowconfigure(4, minsize=2 * zeile + 4 + 6)
+            karte.grid_rowconfigure(7, minsize=int(bauform.winfo_reqheight()) + self._BAUFORM_ABSTAND_OBEN + 2)
+        except (tk.TclError, ValueError) as exc:
+            logger.debug("Kartenzeilen nicht fixierbar: %s", exc)
+
+    def _hinweisbreite_setzen(self, daneben: bool) -> None:
+        """Begrenzt den Umbruch des Formathinweises, solange die Einbauzeile rechts neben der Pruefstufe steht."""
+        hinweis = getattr(self, "format_info_label", None)
+        if hinweis is None:
+            return
+        breite = 560
+        try:
+            if daneben:
+                pruef = self.verify_combo
+                rand = int(pruef.winfo_x()) + int(pruef.winfo_width()) + self._ZEILE_ABSTAND_GRUPPE
+                breite = max(300, min(560, rand - int(hinweis.winfo_x()) - 12))
+            hinweis.configure(wraplength=breite)
+        except tk.TclError as exc:
+            logger.debug("Umbruch des Formathinweises nicht setzbar: %s", exc)
+
     def _einbauzeile_setzen(self, daneben: bool) -> None:
         """Haengt die Einbauzeile neben die Pruefstufe oder unter sie."""
         if getattr(self, "_einbauzeile_daneben", None) == daneben:
@@ -16883,15 +16925,19 @@ class PS5ConverterGUI:
                 self._kartenbeschriftung_setzen(
                     titel, None, rechts_von=self.verify_combo,
                     x=self._ZEILE_ABSTAND_GRUPPE)
-                # Die beiden Rasterzeilen sind jetzt leer und duerfen
-                # zusammenfallen, sonst bleibt ein Loch ueber dem Hinweis.
-                kaestchen.master.grid_rowconfigure(6, minsize=self._dlc_zeile_hoehe())
+                # Die beiden Rasterzeilen sind jetzt leer und fallen zusammen: Sonst bleibt ein Loch zwischen dem
+                # Hinweis und BAUFORM (Nutzerwunsch 30.10.2026). DLC EMU steht per place neben dem Hinweis; damit
+                # der Hinweistext nicht darunter laeuft, endet er vor der Einbauzeile.
+                kaestchen.master.grid_rowconfigure(5, minsize=0)
+                kaestchen.master.grid_rowconfigure(6, minsize=0)
+                self._hinweisbreite_setzen(daneben=True)
             else:
                 kaestchen.place_forget()
                 titel.place_forget()
                 kaestchen.grid()
                 titel.grid()
                 self._integrationszeile_hoehe_setzen()
+                self._hinweisbreite_setzen(daneben=False)
             self._einbauzeile_daneben = daneben
             logger.debug("Einbauzeile %s", "neben der Prüfstufe"
                          if daneben else "in eigener Zeile")
@@ -18760,8 +18806,6 @@ class PS5ConverterGUI:
                 ziele = [(self.src_entry, self._on_source_dropped),
                          (self.dest_entry, self._on_dest_dropped),
                          (self.temp_entry, self._on_temp_dropped)]
-                # Der Hinweistext liegt als Etikett im Feld - auch darauf muss das Ablegen gehen.
-                ziele += [(h.etikett, z[1]) for h, z in zip(getattr(self, "_hinweisfelder", []), ziele)]
                 if ablegen_admin.installieren(self.root, ziele):
                     return
             except Exception as exc:  # noqa: BLE001
@@ -18775,10 +18819,6 @@ class PS5ConverterGUI:
             self.dest_entry.dnd_bind("<<Drop>>", self._on_dest_dropped)
             self.temp_entry.drop_target_register(DND_FILES)
             self.temp_entry.dnd_bind("<<Drop>>", self._on_temp_dropped)
-            for hinweis, behandler in zip(getattr(self, "_hinweisfelder", []),
-                                          (self._on_source_dropped, self._on_dest_dropped, self._on_temp_dropped)):
-                hinweis.etikett.drop_target_register(DND_FILES)
-                hinweis.etikett.dnd_bind("<<Drop>>", behandler)
         except Exception as exc:
             logger.debug("Drag & Drop konnte nicht aktiviert werden: %s", exc)
 
