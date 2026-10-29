@@ -331,6 +331,37 @@ class BilderTests(unittest.TestCase):
         self.assertEqual(0, pfeil.getpixel((0, 0))[3])
 
 
+class NeunTeileTests(unittest.TestCase):
+    """Grosse Rundungsbilder aus neun Teilen: dasselbe Bild wie die volle Rechnung, nur schneller (30.10.2026)."""
+
+    FAELLE = ((970, 824, 14.0, "#2f3541", "#4a5160", 1.0, 255), (938, 722, 12.0, "#2f3541", "", 1.0, 255),
+              (1360, 396, 20.0, "#1b1d23", "#3c4350", 2.0, 255), (300, 220, 8.0, "#334455", "#8899aa", 1.5, 200))
+
+    def _rechnen(self, schwelle: int, fall: tuple) -> "Image.Image":
+        b, h, r, f, rd, rb, al = fall
+        with mock.patch.object(z, "NEUN_TEILE_AB", schwelle):
+            return z._rund_rechteck_rechnen(b, h, r, f, rd, rb, False, al, z.UEBERABTASTUNG)
+
+    def test_das_bild_ist_pixelgleich_zur_vollen_rechnung(self) -> None:
+        from PIL import ImageChops
+        for fall in self.FAELLE:
+            with self.subTest(fall=fall):
+                voll = self._rechnen(10 ** 12, fall)
+                neun = self._rechnen(1, fall)
+                self.assertEqual(voll.size, neun.size)
+                self.assertEqual(0, max(e[1] for e in ImageChops.difference(voll, neun).getextrema()))
+
+    def test_kleine_und_gestrichelte_bilder_gehen_den_alten_weg(self) -> None:
+        with mock.patch.object(z, "_rund_rechteck_neun_teile") as neun:
+            z._rund_rechteck_rechnen(80, 40, 8.0, "#334455", "#8899aa", 1.0, False, 255, z.UEBERABTASTUNG)
+            with mock.patch.object(z, "NEUN_TEILE_AB", 1):
+                z._rund_rechteck_rechnen(300, 220, 8.0, "#334455", "#8899aa", 1.0, True, 255, z.UEBERABTASTUNG)
+        neun.assert_not_called()
+
+    def test_zu_kleine_flaechen_fuer_den_neun_teile_weg_geben_none(self) -> None:
+        self.assertIsNone(z._rund_rechteck_neun_teile(40, 40, 20.0, "#334455", "", 1.0, 255, z.UEBERABTASTUNG))
+
+
 class RundMerkerTests(unittest.TestCase):
     """Die gemerkten Rundungsbilder (11.10.2026): schneller, aber nie veraendert und nie unbegrenzt."""
 

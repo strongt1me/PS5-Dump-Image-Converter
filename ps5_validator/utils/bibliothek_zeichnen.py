@@ -295,10 +295,51 @@ def _gestrichelt_zeichnen(bild: "Image.Image", breite: int, hoehe: int, radius: 
         zeichner.line(aktuell, fill=farbe, width=max(1, int(round(staerke * ueber))), joint="curve")
 
 
+#: Ab dieser Flaeche (Punkte) wird ein Rundungsbild aus neun Teilen zusammengesetzt, statt es vierfach gross zu
+#: zeichnen und zu verkleinern. Bei Kartenflaechen (um 1000 x 800) dauerte allein das Verkleinern gut 100 ms je Karte;
+#: eine Ansicht mit zwanzig Karten brauchte beim ersten Zeigen so ueber eine Sekunde (30.10.2026 gemessen).
+NEUN_TEILE_AB = 60_000
+
+
+def _rund_rechteck_neun_teile(breite: int, hoehe: int, radius: float, fuellung: str, rand: str,
+                              randbreite: float, alpha: int, ueber: int) -> "Image.Image | None":
+    """Dasselbe Bild wie :func:`_rund_rechteck_rechnen`, aber nur die vier Ecken werden fein gerechnet.
+
+    Ein abgerundetes Rechteck ist ausserhalb seiner Ecken gleichmaessig: Die geraden Raender und die Mitte tragen in
+    jeder Zeile bzw. Spalte dieselben Punkte. Gerechnet wird deshalb ein kleines Bild mit allen vier Ecken; die
+    Ecken werden daraus kopiert, Raender und Mitte aus je einer Punktzeile gestreckt. ``None``, wenn das Bild fuer
+    diesen Weg zu klein ist.
+    """
+    ecke = int(math.ceil(max(0.0, min(float(radius), breite / 2.0, hoehe / 2.0)))) + int(math.ceil(randbreite)) + 3
+    klein_b = klein_h = 2 * ecke + 2
+    if breite < klein_b + 8 or hoehe < klein_h + 8:
+        return None
+    klein = _rund_rechteck_rechnen(klein_b, klein_h, radius, fuellung, rand, randbreite, False, alpha, ueber)
+    bild = Image.new("RGBA", (breite, hoehe), (0, 0, 0, 0))
+    bild.paste(klein.crop((0, 0, ecke, ecke)), (0, 0))
+    bild.paste(klein.crop((klein_b - ecke, 0, klein_b, ecke)), (breite - ecke, 0))
+    bild.paste(klein.crop((0, klein_h - ecke, ecke, klein_h)), (0, hoehe - ecke))
+    bild.paste(klein.crop((klein_b - ecke, klein_h - ecke, klein_b, klein_h)), (breite - ecke, hoehe - ecke))
+    mitte_b, mitte_h = breite - 2 * ecke, hoehe - 2 * ecke
+    nahe = Image.NEAREST
+    bild.paste(klein.crop((ecke, 0, ecke + 1, ecke)).resize((mitte_b, ecke), nahe), (ecke, 0))
+    bild.paste(klein.crop((ecke, klein_h - ecke, ecke + 1, klein_h)).resize((mitte_b, ecke), nahe),
+               (ecke, hoehe - ecke))
+    bild.paste(klein.crop((0, ecke, ecke, ecke + 1)).resize((ecke, mitte_h), nahe), (0, ecke))
+    bild.paste(klein.crop((klein_b - ecke, ecke, klein_b, ecke + 1)).resize((ecke, mitte_h), nahe),
+               (breite - ecke, ecke))
+    bild.paste(klein.crop((ecke, ecke, ecke + 1, ecke + 1)).resize((mitte_b, mitte_h), nahe), (ecke, ecke))
+    return bild
+
+
 def _rund_rechteck_rechnen(breite: int, hoehe: int, radius: float, fuellung: str, rand: str,
                            randbreite: float, gestrichelt: bool, alpha: int, ueber: int) -> "Image.Image":
     """Die Rechnung hinter :func:`rund_rechteck` - vierfach gross zeichnen, dann verkleinern."""
     breite, hoehe = max(2, int(breite)), max(2, int(hoehe))
+    if not gestrichelt and breite * hoehe >= NEUN_TEILE_AB:
+        teile = _rund_rechteck_neun_teile(breite, hoehe, radius, fuellung, rand, randbreite, alpha, ueber)
+        if teile is not None:
+            return teile
     gross = Image.new("RGBA", (breite * ueber, hoehe * ueber), (0, 0, 0, 0))
     zeichner = ImageDraw.Draw(gross)
     r = max(0.0, min(float(radius), breite / 2.0, hoehe / 2.0)) * ueber
