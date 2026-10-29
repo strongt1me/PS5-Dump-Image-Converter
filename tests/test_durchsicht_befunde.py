@@ -393,7 +393,7 @@ class DndRueckfallTests(unittest.TestCase):
     def test_ohne_tkdnd_startet_es_ohne_ziehen_und_ablegen(self) -> None:
         import subprocess
         skript = (
-            "import sys, tkinter as tk\n"
+            "import sys, unittest, tkinter as tk\n"   # unittest zuerst: sonst schreibt der Lauf ins echte Protokoll
             "sys.path.insert(0, %r)\n"
             "import PS5ImageConverter_Pro_FINAL_revised as APP\n"
             "class _Kaputt(tk.Tk):\n"
