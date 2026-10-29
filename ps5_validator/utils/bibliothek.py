@@ -847,7 +847,10 @@ def einbauten_bewerten(dateien: Iterable[str], *, ordner: Iterable[str] = (),
         "verdeckt": len(vorhanden) > 1,
         "ampr": ampr,
         "playgo": PLAYGO_DATEI.lower() in marken,
-        "backport": sorted((n for n in unterordner.get(gilt, set())
+        # Zwei Schreibweisen: ein Ordner ``fw10`` (BackPork Kitchen) und die leere Markierungsdatei ``FW4`` in
+        # fakelib selbst - so legt dieses Programm seinen Satz ab (``ps5_backport.fakelib_dateien``). Bis zum
+        # 29.10.2026 kannte die Bibliothek nur die Ordnerform; ein hier gebauter Backport blieb ohne Marke.
+        "backport": sorted((n for n in unterordner.get(gilt, set()) | marken
                             if BACKPORT_ORDNER.fullmatch(n)),
                            key=lambda n: (len(n), n)),
         "assetpack": assetpack,
@@ -934,6 +937,29 @@ def backports_auf_konsole(ftp: Any, scanpfade: Iterable[str], *,
             if name:
                 funde.setdefault(kennung, []).append("%s/%s" % (wurzel, name))
     return funde
+
+
+def backport_ordner_auf_rechner(wurzeln: Iterable[str], kennung: str) -> str:
+    """Der ``backports/<ID>``-Ordner eines Titels auf dem Rechner - oder ``""``.
+
+    Wie auf der Konsole (:func:`backports_auf_konsole`): je Suchpfad gilt der Ordner, den ShadowMount+ waehlt
+    (``backport_ordner_waehlen``); der erste Suchpfad der Reihe mit Treffer gewinnt. Gedacht fuer den Ordner, den
+    das Fenster BACKPORT mit "Nur Backport-Ordner erstellen" anlegt, wenn er neben den Spielen liegt.
+    """
+    kennung = str(kennung or "").strip()
+    if not kennung:
+        return ""
+    for ort in dict.fromkeys(os.path.normpath(str(w)) for w in wurzeln if w):
+        basis = os.path.join(ort, BACKPORTS_ORDNER)
+        try:
+            with os.scandir(basis) as eintraege:
+                namen = [e.name for e in eintraege if e.is_dir()]
+        except OSError:
+            continue
+        name = _smgen.backport_ordner_waehlen(kennung, namen)
+        if name:
+            return os.path.join(basis, name)
+    return ""
 
 
 # ---------------------------------------------------------------------------

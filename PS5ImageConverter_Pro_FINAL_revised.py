@@ -128,6 +128,7 @@ from ps5_validator.utils.dump_rename import (
 )
 from ps5_validator.utils import anleitung
 from ps5_validator.utils import bibliothek as bibliothek_bestand
+from ps5_validator.utils import ufs2_leser
 from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import ps5_updates
 from ps5_validator.utils import prosperopkg
@@ -43574,8 +43575,124 @@ class PS5ConverterGUI:
         speicher.angaben_schreiben(pfad, angaben)
         return angaben
 
+    def _bibliothek_ffpkg_angaben(self, pfad: str):
+        """Angaben und Titelbild aus einem UFS2-``.ffpkg`` - ueber den eigenen Leser, ohne Mount und ohne Admin.
+
+        Liest ``sce_sys/param.json`` und ``sce_sys/icon0.png`` (zusammen einige hundert KB, auch bei 40 GB), die
+        Auswertung ist dieselbe wie bei Ordnern und Paketen (:meth:`_meta_from_param_json_payload`): Titel, Fassung,
+        verlangte Firmware, SDK, Region. Seit 29.10.2026; vorher gab es fuer ein ``.ffpkg`` weder Angaben noch Bild.
+
+        Returns:
+            ``(angaben, bilddaten)`` wie :meth:`_bibliothek_abbild_angaben`; leer, wenn nichts lesbar war.
+        """
+        try:
+            with ufs2_leser.Ufs2Leser(pfad) as leser:
+                roh = leser.datei_lesen("sce_sys/param.json")
+                try:
+                    bild = leser.datei_lesen("sce_sys/icon0.png")
+                except (FileNotFoundError, ufs2_leser.Ufs2Fehler):
+                    bild = None
+        except (OSError, ufs2_leser.Ufs2Fehler) as exc:
+            logger.debug("Bibliothek: %s (UFS2) nicht lesbar (%s)", pfad, exc)
+            return {}, None
+        try:
+            payload = json.loads(roh.decode("utf-8-sig", errors="replace"))
+        except ValueError:
+            return {}, None
+        if not isinstance(payload, dict):
+            return {}, None
+        meta = self._meta_from_param_json_payload(payload)
+        angaben = {str(k): str(v) for k, v in meta.items()
+                   if not str(k).startswith("_") and v and str(v).strip() not in ("", "–", "-")}
+        inhalts_id = str(payload.get("contentId") or "").strip()
+        if inhalts_id:
+            angaben.setdefault("content_id", inhalts_id)
+        kennung = str(payload.get("titleId") or "").strip().upper()
+        treffer = _TITLE_ID_RE.search(kennung or inhalts_id.upper())
+        if treffer:
+            angaben.setdefault("title_id", treffer.group(0))
+        if bild and not bild.startswith(b"\x89PNG"):
+            bild = None
+        return angaben, (bytes(bild) if bild else None)
+
+    def _bibliothek_ffpkg_einbauten(self, pfad: str, pruefen) -> dict:
+        """AMPR EMU, PlayGo, BACKPORT, Asset-Pack in einem ``.ffpkg`` - aus Verzeichnislisten des UFS2-Abbilds."""
+        if not ufs2_leser.ist_ufs2(pfad):
+            return {"zustand": "unbekannt", "grund": "format"}
+        speicher = self._bibliothek_bildspeicher()
+        gemerkt = speicher.einbauten_lesen(pfad)
+        if gemerkt is not None and gemerkt.get("regel") == bibliothek_bestand.EINBAU_REGEL:
+            return gemerkt
+        dateien: list[str] = []
+        ordner: list[str] = []
+        try:
+            with ufs2_leser.Ufs2Leser(pfad) as leser:
+                for name, ist_ordner, _groesse in leser.auflisten(""):
+                    if not ist_ordner:
+                        dateien.append(name)
+                    elif name.lower() in bibliothek_bestand.FAKELIB_REIHENFOLGE:
+                        ordner.append(name)
+                        for unter, unter_ordner, _g in leser.auflisten(name):
+                            (ordner if unter_ordner else dateien).append("%s/%s" % (name, unter))
+        except (OSError, ufs2_leser.Ufs2Fehler) as exc:
+            logger.debug("Bibliothek: Einbauten in %s (UFS2) nicht lesbar (%s)", pfad, exc)
+            return {"zustand": "unbekannt", "grund": "unlesbar"}
+        ergebnis = bibliothek_bestand.einbauten_bewerten(dateien, ordner=ordner, assetpack_datei=pruefen)
+        ergebnis["zustand"] = "ok"
+        speicher.einbauten_schreiben(pfad, ergebnis)
+        return ergebnis
+
+    def _bibliothek_ordner_einbauten(self, pfad: str, pruefen) -> "dict | None":
+        """Wertet einen Ordner auf dem Rechner aus: Wurzeldateien und der Inhalt seiner Bibliotheksordner.
+
+        Returns:
+            Das Ergebnis von ``einbauten_bewerten`` - oder ``None``, wenn der Ordner nicht lesbar ist.
+        """
+        dateien: list[str] = []
+        ordner: list[str] = []
+        try:
+            with os.scandir(pfad) as wurzel:
+                for teil in wurzel:
+                    if teil.is_dir() and teil.name.lower() in bibliothek_bestand.FAKELIB_REIHENFOLGE:
+                        ordner.append(teil.name)
+                        with os.scandir(teil.path) as innen:
+                            for unter in innen:
+                                ziel = "%s/%s" % (teil.name, unter.name)
+                                (ordner if unter.is_dir() else dateien).append(ziel)
+                    elif teil.is_file():
+                        dateien.append(teil.name)
+        except OSError as exc:
+            logger.debug("Bibliothek: Einbauten in %s nicht lesbar (%s)", pfad, exc)
+            return None
+        return bibliothek_bestand.einbauten_bewerten(dateien, ordner=ordner, assetpack_datei=pruefen)
+
+    def _bibliothek_backport_ordner(self, eintrag: dict) -> str:
+        """Der Ordner ``backports/<Title-ID>`` zu einem Eintrag auf dem Rechner, sonst ``""``.
+
+        Gesucht wird neben dem Spiel (ein und zwei Ebenen darueber, wie ``scan_depth`` 1 und 2) und in den
+        Suchordnern der Bibliothek; der Suchpfad des Spiels geht vor, wie bei ShadowMount+.
+        """
+        if eintrag.get("ps5"):
+            return ""
+        kennung = self._sanitize_title_id(str(
+            eintrag.get("title_id") or (eintrag.get("meta") or {}).get("title_id") or ""))
+        pfad = str(eintrag.get("path") or "")
+        if not kennung or not pfad:
+            return ""
+        wurzeln: list[str] = []
+        ebene = pfad.rstrip("\\/")
+        for _ in range(2):
+            ebene = os.path.dirname(ebene)
+            if ebene:
+                wurzeln.append(ebene)
+        try:
+            wurzeln.extend(str(p) for p in (self._load_setting("library_scan_folders", []) or []))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: Suchordner nicht lesbar (%s)", exc)
+        return bibliothek_bestand.backport_ordner_auf_rechner(wurzeln, kennung)
+
     #: Welche Arten sich auf dem Rechner nach Einbauten durchsehen lassen.
-    #: Ein ``.ffpkg`` (UFS2) liest keiner der Leser des Programms.
+    #: Ein ``.ffpkg`` (UFS2) steht hier nicht: Es hat seinen eigenen Zweig (``ufs2_leser``).
     _EINBAU_ABBILDER: tuple[str, ...] = ("ffpfsc", "ffpfs", "exfat")
 
     def _bibliothek_einbauten(self, eintrag: dict) -> dict:
@@ -43598,27 +43715,22 @@ class PS5ConverterGUI:
         pfad = str(eintrag.get("path") or "")
         art = str(eintrag.get("kind") or "")
         pruefen = self._ist_ampr_asset_datei
+        # Ein Ordner backports/<Title-ID> neben den Spielen geht vor (ShadowMount+ legt ihn ueber das Spiel und
+        # nimmt zuerst seine fakelib) - so auch der, den das Fenster BACKPORT mit "Nur Backport-Ordner" anlegt.
+        # Nur wenn er einen Bibliotheksordner traegt, wie auf der Konsole; nicht gemerkt: er kann sich aendern.
+        ueber = self._bibliothek_backport_ordner(eintrag)
+        if ueber:
+            auswertung = self._bibliothek_ordner_einbauten(ueber, pruefen)
+            if auswertung is not None and auswertung.get("ordner"):
+                return dict(auswertung, zustand="ok", ueber=ueber.replace("\\", "/"))
         if art == "folder":
-            dateien: list[str] = []
-            ordner: list[str] = []
-            try:
-                with os.scandir(pfad) as wurzel:
-                    for teil in wurzel:
-                        if teil.is_dir() and teil.name.lower() in bibliothek_bestand.FAKELIB_REIHENFOLGE:
-                            ordner.append(teil.name)
-                            with os.scandir(teil.path) as innen:
-                                for unter in innen:
-                                    ziel = "%s/%s" % (teil.name, unter.name)
-                                    (ordner if unter.is_dir() else dateien).append(ziel)
-                        elif teil.is_file():
-                            dateien.append(teil.name)
-            except OSError as exc:
-                logger.debug("Bibliothek: Einbauten in %s nicht lesbar (%s)", pfad, exc)
+            ergebnis = self._bibliothek_ordner_einbauten(pfad, pruefen)
+            if ergebnis is None:
                 return {"zustand": "unbekannt", "grund": "unlesbar"}
-            ergebnis = bibliothek_bestand.einbauten_bewerten(
-                dateien, ordner=ordner, assetpack_datei=pruefen)
             ergebnis["zustand"] = "ok"
             return ergebnis
+        if art == "ffpkg":
+            return self._bibliothek_ffpkg_einbauten(pfad, pruefen)
         if art not in self._EINBAU_ABBILDER:
             return {"zustand": "unbekannt", "grund": "format"}
         speicher = self._bibliothek_bildspeicher()
@@ -44915,14 +45027,18 @@ class PS5ConverterGUI:
         nicht den Inhalt.
 
         Der Weg deckt **exFAT-basierte** Abbilder ab; das ist die Vorgabe-
-        Bauform dieses Programms. Ein PFS-in-PFS oder ein UFS2-``.ffpkg``
-        meldet dort einen Fehler oder ein leeres Ergebnis - dann gibt es eben
-        kein Bild, statt eines zu behaupten.
+        Bauform dieses Programms. Ein PFS-in-PFS meldet dort einen Fehler oder
+        ein leeres Ergebnis - dann gibt es eben kein Bild, statt eines zu
+        behaupten. Ein UFS2-``.ffpkg`` liest seit 29.10.2026 der eigene Leser
+        (:meth:`_bibliothek_ffpkg_angaben`).
 
         Returns:
             ``(angaben, bilddaten)``. ``angaben`` ist ein dict im Format des
             Metadatenlesers, ``bilddaten`` sind rohe PNG-Bytes oder ``None``.
         """
+        # Ein UFS2-.ffpkg liest die Engine nicht; der eigene Leser holt param.json und icon0.png ohne Mount.
+        if str(pfad).lower().endswith(".ffpkg") and ufs2_leser.ist_ufs2(pfad):
+            return self._bibliothek_ffpkg_angaben(pfad)
         mkpfs_dir = getattr(self, "mkpfs_dir", "") or ""
         if not mkpfs_dir:
             try:
@@ -47489,6 +47605,46 @@ class PS5ConverterGUI:
             threading.Thread(target=_lesen, daemon=True,
                              name="bibliothek-angaben").start()
 
+        def _fw_nachlesen_starten() -> None:
+            """Liest die verlangte Firmware aller Abbilder im Hintergrund nach, damit die Karten sie ohne Klick zeigen.
+
+            Bei einem Abbild liest der Suchlauf nur Titel und Fassung (``_erweitert_anstossen`` holte den Rest bis
+            zum 29.10.2026 erst beim Auswaehlen). Ein einziger Faden, der Reihe nach; das Ergebnis merkt sich der
+            Bildspeicher, ein zweiter Lauf kostet nichts. Ein neuer Suchlauf macht den Faden "veraltet".
+            """
+            if ansicht.get("fw_laeuft") or quelle_var.get() == "ps5":
+                return
+            offen = [item for item in all_items
+                     if not item.get("ps5") and str(item.get("kind") or "") in self._EINBAU_ABBILDER
+                     and not _wert(item.get("meta") or {}, "required_firmware")
+                     and item["path"] not in ansicht["erweitert"]]
+            if not offen:
+                return
+            ansicht["fw_laeuft"] = True
+            suchlauf = ansicht["suchlauf"]
+
+            def _fw_ende() -> None:
+                ansicht["fw_laeuft"] = False
+
+            def _lesen() -> None:
+                try:
+                    for item in offen:
+                        if ansicht["suchlauf"] != suchlauf:
+                            break
+                        pfad = item["path"]
+                        if pfad in ansicht["erweitert"]:
+                            continue
+                        angaben: dict = {}
+                        try:
+                            angaben = self._bibliothek_erweiterte_angaben(pfad)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("Bibliothek: Firmware von %s nicht lesbar (%s)", pfad, exc)
+                        self._spaeter_im_fenster(seite, _erweitert_da, pfad, angaben)
+                finally:
+                    self._spaeter_im_fenster(seite, _fw_ende)
+
+            threading.Thread(target=_lesen, daemon=True, name="bibliothek-firmware").start()
+
         def _einbauten_da(eintrag, ergebnis) -> None:
             """Einbauten eines Eintrags sind da - Karte, Liste, Infofenster und Zaehlzeile nachziehen."""
             pfad = str(eintrag.get("path") or "")
@@ -47869,6 +48025,7 @@ class PS5ConverterGUI:
                 self._bibliothek_bilder_nachladen(
                     seite, sichtbare, generation=ansicht["generation"],
                     einbauten=(offen_einbau, _einbauten_fertig), fortschritt=fortschritt)
+                _fw_nachlesen_starten()
 
         # Neue Breite, neue Spaltenzahl: Das Raster verteilt die Karten selbst neu
         # (KartenRaster._groesse_geaendert); die Seite muss nichts nachfuehren.
@@ -57190,10 +57347,19 @@ class PS5ConverterGUI:
         fw_box = self._pw.Combobox(einstellungen, state="readonly",
                               width=16, values=auswahlwerte)
         fw_box.pack(side="left", padx=(8, 16))
+        # Vorauswahl: passend zur Konsole (die hoechste Stufe, die nicht darueber liegt), sonst der Standard.
+        konsole_fw = self._konsole_firmware()
+        vorschlag = ps5_backport.firmware_vorschlag(konsole_fw, firmwares)
         try:
-            fw_box.current(firmwares.index(ps5_backport.FIRMWARE_STANDARD))
+            fw_box.current(firmwares.index(vorschlag if vorschlag is not None
+                                           else ps5_backport.FIRMWARE_STANDARD))
         except ValueError:
             fw_box.current(0)
+        if vorschlag is not None:
+            tk.Label(einstellungen,
+                     text=self._t("backport.fw_vorschlag", konsole=konsole_fw, fw=f"{vorschlag}.00"),
+                     font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                     fg=c["fg_secondary"]).pack(side="left", padx=(0, 16))
 
         # Orientierung bei der Wahl (Nutzerwunsch 28.10.2026): Die Metadaten
         # sind oben ohnehin schon gelesen (meta) - required_firmware steht
@@ -57711,11 +57877,19 @@ class PS5ConverterGUI:
                 self._append_to_log(zeile + chr(10))
                 for name, grund in ergebnis["fehlermeldungen"]:
                     self._append_to_log(self._t("backport.log_failed", name=name, error=grund) + chr(10))
-                messagebox.showinfo(
-                    self._t("backport.folder_done_title"),
-                    self._t("backport.folder_done_message", pfad=ergebnis["ziel"], tid=tid,
-                            gepatcht=ergebnis["gepatcht"], libs=ergebnis["bibliotheken"],
-                            fehler=ergebnis["fehler"]), parent=win)
+                text = self._t("backport.folder_done_message", pfad=ergebnis["ziel"], tid=tid,
+                               gepatcht=ergebnis["gepatcht"], libs=ergebnis["bibliotheken"],
+                               fehler=ergebnis["fehler"])
+                if ergebnis["fehler"] or ergebnis.get("abgebrochen"):
+                    messagebox.showinfo(self._t("backport.folder_done_title"), text, parent=win)
+                    return
+                # Gleich auf die Konsole legen? Die Uebertragung fragt selbst nach Groesse und vorhandenem Ordner.
+                if messagebox.askyesno(self._t("backport.folder_done_title"),
+                                       text + "\n\n" + self._t("backport.folder_upload_frage", tid=tid),
+                                       parent=win, default="no"):
+                    self._bibliothek_ordner_uebertragen(
+                        win, richtung="hoch", oertlich=ergebnis["ziel"],
+                        entfernt="/data/homebrew/backports/" + tid)
 
             def _arbeit() -> None:
                 try:

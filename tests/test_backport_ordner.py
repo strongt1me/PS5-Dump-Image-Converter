@@ -167,6 +167,67 @@ class BauenTests(_Spiel):
         self.assertTrue(erg["abgebrochen"])
 
 
+class FirmwareVorschlagTests(unittest.TestCase):
+    """Die Vorauswahl der Zielfirmware (29.10.2026): nie ueber der Konsole, sonst so hoch wie moeglich."""
+
+    def test_die_hoechste_stufe_unter_der_konsole(self) -> None:
+        for konsole, soll in (("4.03", 4), ("5.50", 5), ("6.00", 6), ("7.61", 7), ("9.60", 7), ("12.00", 7),
+                              ("04030000", 4), ("0x07000000", 7), ("12000020", 7)):
+            with self.subTest(konsole=konsole):
+                self.assertEqual(soll, bp.firmware_vorschlag(konsole, (4, 5, 6, 7)))
+
+    def test_unbekannt_oder_zu_niedrig_gibt_keinen_vorschlag(self) -> None:
+        for konsole in ("", "unbekannt", "3.20", None):
+            with self.subTest(konsole=konsole):
+                self.assertIsNone(bp.firmware_vorschlag(konsole, (4, 5, 6, 7)))
+
+    def test_nur_waehlbare_stufen(self) -> None:
+        self.assertEqual(5, bp.firmware_vorschlag("6.50", (4, 5)))
+        self.assertIsNone(bp.firmware_vorschlag("6.50", ()))
+
+
+@unittest.skipUnless(os.environ.get("PS5CONV_KONFIGORDNER") is not None, "Konfigordner nicht umgelenkt")
+class FensterVorauswahlTests(unittest.TestCase):
+    """Das BACKPORT-Fenster waehlt die Firmware passend zur Konsole vor."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import tkinter as tk
+        from unittest import mock
+        try:
+            cls.wurzel = tk._default_root or tk.Tk()
+            cls.wurzel.withdraw()
+        except Exception:                                  # noqa: BLE001
+            raise unittest.SkipTest("Keine Anzeige")
+        from test_fensterlayout import _lade_hauptprogramm, _sammle
+        cls._sammle = staticmethod(_sammle)
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI(cls.wurzel)
+        cls.app._current_language = "de"
+        cls.mock = mock
+
+    def _box(self, konsole: str):
+        spiel = tempfile.mkdtemp(prefix="bp_vor_")
+        self.addCleanup(shutil.rmtree, spiel, True)
+        vorher = {str(w) for w in self.wurzel.winfo_children()}
+        with self.mock.patch.object(self.app, "_konsole_firmware", return_value=konsole):
+            self.app._render_backport_window(spiel)
+        self.wurzel.update_idletasks()
+        fenster = [w for w in self.wurzel.winfo_children()
+                   if str(w) not in vorher and w.winfo_class() == "Toplevel"][-1]
+        self.addCleanup(fenster.destroy)
+        return self._sammle(fenster, "Combobox")[0].get()
+
+    def test_konsole_4_03_waehlt_firmware_4(self) -> None:
+        self.assertIn("4.00", self._box("4.03"))
+
+    def test_konsole_12_waehlt_den_standard(self) -> None:
+        self.assertIn("%d.00" % bp.FIRMWARE_STANDARD, self._box("12.00"))
+
+    def test_unbekannte_konsole_waehlt_den_standard(self) -> None:
+        self.assertIn("%d.00" % bp.FIRMWARE_STANDARD, self._box(""))
+
+
 class VerdrahtungTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -177,12 +238,16 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertIn("ps5_backport.backport_ordner_bauen(", self.quelle)
         self.assertIn('self._t("backport.action_folder")', self.quelle)
         self.assertIn("ps5_backport.titel_id_aus_param(ordner)", self.quelle)
+        self.assertIn('entfernt="/data/homebrew/backports/" + tid', self.quelle,
+                      "Der Upload geht dorthin, wo ShadowMount+ den Ordner erwartet.")
+        self.assertIn("ps5_backport.firmware_vorschlag(konsole_fw, firmwares)", self.quelle)
 
     def test_alle_texte_sind_in_allen_sprachen_da(self) -> None:
         for schluessel in ("backport.action_folder", "backport.action_folder_hint", "backport.folder_pick_title",
                            "backport.folder_no_id", "backport.folder_inside_game", "backport.folder_exists",
                            "backport.folder_status", "backport.folder_log_start", "backport.folder_log_done",
-                           "backport.folder_done_title", "backport.folder_done_message"):
+                           "backport.folder_done_title", "backport.folder_done_message",
+                           "backport.folder_upload_frage", "backport.fw_vorschlag"):
             for sprache in ("de", "en", "es", "it", "fr"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):
                     self.assertTrue(STRINGS[schluessel].get(sprache))

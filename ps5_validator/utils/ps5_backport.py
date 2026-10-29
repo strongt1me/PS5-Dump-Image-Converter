@@ -1920,6 +1920,31 @@ def fakelibs_aus_firmware_kopieren(
 # Backport als eigener Ordner (ShadowMount+ ``backports/<TITLE_ID>``)
 # --------------------------------------------------------------------------
 
+def firmware_vorschlag(konsole: str, verfuegbar: "tuple[int, ...] | list[int]") -> "int | None":
+    """Die Zielfirmware, die zur Konsole passt: die hoechste Stufe, die nicht ueber der Konsole liegt.
+
+    Ein Spiel auf eine hoehere Stufe herabzusetzen, als die Konsole hat, startet nicht (der Kernel verweist die
+    SDK-Angabe: ``Prospero SDK version ... is newer than system version``, Mordhau-Test 3). Je hoeher die Stufe
+    unter dieser Grenze, desto weniger Ersatzbibliotheken braucht das Spiel.
+
+    Args:
+        konsole: Firmware der Konsole, ``"4.03"``, ``"12.00"`` oder ``"04030000"``; leer = unbekannt.
+        verfuegbar: Die waehlbaren Hauptversionen.
+
+    Returns:
+        Die Hauptversion, oder ``None``, wenn die Konsole unbekannt ist oder unter allen Stufen liegt.
+    """
+    text = str(konsole or "").strip().lower()
+    if text.startswith("0x"):
+        text = text[2:]
+    treffer = re.match(r"(\d{1,2})\.\d", text) or re.fullmatch(r"(\d{2})\d{6}(?:\d{8})?", text)
+    if not treffer:
+        return None
+    haupt = int(treffer.group(1))
+    passend = [int(f) for f in verfuegbar if int(f) <= haupt]
+    return max(passend) if passend else None
+
+
 #: Der Ordner neben den Spielen, den ShadowMount+ (ab 1.7beta2) ueber das Spiel legt:
 #: ``<Suchpfad>/backports/<TITLE_ID>/``. Quelle: README von ShadowMountPlus 1.7beta2 ("Backport overlay behavior"),
 #: ``src/sm_scan.c`` (``resolve_backport_path_for_title``, ``mount_backport_overlay_for_title``).

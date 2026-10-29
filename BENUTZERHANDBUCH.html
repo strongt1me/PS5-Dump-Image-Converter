@@ -842,14 +842,23 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <code>backports</code> eines anderen Suchpfads). ShadowMount+ blendet ihn beim
   Start über das Spiel; der Ordner <code>backports</code> wird beim normalen Scan
   übergangen. Eine <code>fakelib</code> des Spiels (etwa AMPR EMU) geht in den
-  Backport-Ordner mit, weil ShadowMount+ nur einen Ordner wählt.</p>
+  Backport-Ordner mit, weil ShadowMount+ nur einen Ordner wählt. Nach dem Bauen
+  fragt das Programm, ob es den Ordner gleich per FTP an diese Stelle der Konsole
+  legen soll. Die Zielfirmware ist passend zur Konsole vorgewählt: die höchste
+  Stufe, die nicht über der Firmware der Konsole liegt.</p>
   <p><strong>Firmware auf der Karte.</strong> Links über dem Titelbild steht,
   welche Firmware das Spiel laut seiner <code>param.json</code> verlangt
   (<em>Benötigt FW 10.01</em>). Trägt das Spiel einen BACKPORT, folgt dahinter die
   Firmware, für die es herabgesetzt wurde (<em>Backport 4.00</em>), in der Farbe
   der BACKPORT-Marke. In der Liste steht dasselbe in der Spalte
   <em>Firmware</em>. Bei einem Abbild liegt die verlangte Firmware erst vor,
-  wenn der Eintrag einmal gewählt wurde &ndash; solange bleibt die Zeile leer.</p>
+  wenn sie nachgelesen ist; das geschieht im Hintergrund, ohne dass Sie den
+  Eintrag anklicken müssen. Auch einen Ordner
+  <code>backports/&lt;Title-ID&gt;</code> neben den Spielen erkennt die Bibliothek
+  und zeigt ihn als BACKPORT mit seiner Firmware. Bei einem <code>.ffpkg</code>
+  liest das Programm das UFS2-Abbild selbst (ohne Einhängen, ohne
+  Administratorrechte) und zeigt Titelbild, Titel, Fassung, verlangte Firmware
+  und die Einbauten; dabei werden nur wenige hundert Kilobyte gelesen.</p>
   <p><strong>Starten.</strong> Der hervorgehobene Knopf <em>Starten</em> auf der
   Karte startet den Titel auf der Konsole &ndash; über
   <em>websrv</em> (Port&nbsp;8080), der dem Programm beiliegt. Läuft auf der

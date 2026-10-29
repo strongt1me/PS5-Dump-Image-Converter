@@ -29,6 +29,7 @@ from __future__ import annotations
 import ast
 import io
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -111,6 +112,27 @@ class BewertungTests(unittest.TestCase):
         erg = _bewerten(["eboot.bin", "sce_sys/param.json"])
         self.assertEqual("", erg["ordner"])
         self.assertFalse(any(erg[k] for k in ("ampr", "playgo", "backport", "assetpack")))
+
+    def test_backport_ordner_auf_dem_rechner_waehlt_wie_shadowmount(self) -> None:
+        wurzel = tempfile.mkdtemp(prefix="bp_rechner_")
+        self.addCleanup(shutil.rmtree, wurzel, True)
+        for name in ("PPSA01234 Zweiter", "PPSA01234 Erster", "PPSA09999"):
+            os.makedirs(os.path.join(wurzel, "backports", name))
+        self.assertEqual(os.path.join(wurzel, "backports", "PPSA01234 Erster"),
+                         bib.backport_ordner_auf_rechner([wurzel], "PPSA01234"), "Erster in Byte-Reihenfolge.")
+        os.makedirs(os.path.join(wurzel, "backports", "PPSA01234"))
+        self.assertEqual(os.path.join(wurzel, "backports", "PPSA01234"),
+                         bib.backport_ordner_auf_rechner([wurzel], "PPSA01234"), "Der blanke Name gewinnt.")
+        self.assertEqual("", bib.backport_ordner_auf_rechner([wurzel], "PPSA00000"))
+        self.assertEqual("", bib.backport_ordner_auf_rechner([wurzel], ""))
+        self.assertEqual("", bib.backport_ordner_auf_rechner([os.path.join(wurzel, "gibt-es-nicht")], "PPSA01234"))
+
+    def test_die_markierungsdatei_des_programms_zaehlt_als_backport(self) -> None:
+        """Dieses Programm legt seinen Satz flach in fakelib und setzt die leere Datei ``FW4`` dazu (29.10.2026)."""
+        erg = _bewerten(["fakelib/libSceAgc.sprx", "fakelib/FW4", "fakelib/fw10/libSceRtc.sprx"])
+        self.assertEqual(["fw4", "fw10"], erg["backport"])
+        self.assertEqual(["fw4"], _bewerten(["fakelib/libSceAgc.sprx", "fakelib/FW4"])["backport"])
+        self.assertEqual([], _bewerten(["fakelib/libSceAgc.sprx", "fakelib/fwtest.txt"])["backport"])
 
     def test_alle_drei_in_fakelib(self) -> None:
         erg = _bewerten(["fakelib/libSceAmpr.sprx", "fakelib/libScePlayGo.sprx",
@@ -615,6 +637,92 @@ class SeitenTests(unittest.TestCase):
         """Der Backport ist nachgewiesen, die param.json nennt aber nichts: Das Ziel steht trotzdem da."""
         self.assertEqual(self.app._t("library.karte_nur_backport", bp="10.00"),
                          self._firmware_zeile(self._eintrag(self.alle)))
+
+    def test_ffpkg_liefert_angaben_titelbild_und_einbauten_ohne_mount(self) -> None:
+        """UFS2-.ffpkg (29.10.2026): param.json, icon0.png und fakelib kommen aus dem eigenen Leser."""
+        sys.path.insert(0, str(PROJEKT / "tests"))
+        from test_ufs2_leser import baue_abbild
+        abbild = os.path.join(os.path.dirname(self.ffpkg), "mini.ffpkg")
+        baue_abbild(abbild)
+        angaben, bild = self.app._bibliothek_abbild_angaben(abbild)
+        self.assertEqual("PPSA00001", angaben.get("title_id"))
+        self.assertEqual("9.60", bib.firmware_kurz(angaben.get("required_firmware", "")))
+        self.assertIsNone(bild, "Das Mini-Abbild hat kein icon0.png.")
+        ergebnis = self.app._bibliothek_einbauten({"path": abbild, "kind": "ffpkg"})
+        self.assertEqual("ok", ergebnis["zustand"])
+        self.assertEqual([], ergebnis["backport"])
+        # Eine Datei, die kein UFS2 ist, bleibt "nicht ermittelbar" - nie "keine".
+        ergebnis = self.app._bibliothek_einbauten({"path": self.ffpkg, "kind": "ffpkg"})
+        self.assertEqual(("unbekannt", "format"), (ergebnis["zustand"], ergebnis["grund"]))
+        self.assertEqual(({}, None), self.app._bibliothek_ffpkg_angaben(self.ffpkg))
+
+    @unittest.skipUnless(os.path.isdir(r"D:\PS5 TEMP\A1_Ausgabe\Format__ffpkg"), "keine echte .ffpkg")
+    def test_echtes_ffpkg_zeigt_cover_und_firmware(self) -> None:
+        echt = r"D:\PS5 TEMP\A1_Ausgabe\Format__ffpkg\PPSA19015 Arcade Game Zone.ffpkg"
+        if not os.path.isfile(echt):
+            self.skipTest("Testdatei fehlt")
+        angaben, bild = self.app._bibliothek_abbild_angaben(echt)
+        self.assertEqual("PPSA19015", angaben.get("title_id"))
+        self.assertEqual("9.60", bib.firmware_kurz(angaben.get("required_firmware", "")))
+        self.assertTrue(bild and bild.startswith(b"\x89PNG"))
+        ergebnis = self.app._bibliothek_einbauten({"path": echt, "kind": "ffpkg"})
+        self.assertEqual("ok", ergebnis["zustand"])
+
+    def test_ein_backport_ordner_neben_dem_spiel_wird_erkannt(self) -> None:
+        """``backports/<Title-ID>`` (so legt ihn "Nur Backport-Ordner erstellen" an) zeigt BACKPORT und Ziel-FW."""
+        basis = Path(os.path.dirname(self.ohne))
+        spiel = _dump(basis, "PPSA01330-ohne-eigene-fakelib", {})
+        backport = basis / "backports" / "PPSA01330 Testspiel" / "fakelib"
+        backport.mkdir(parents=True)
+        (backport / "FW4").write_bytes(b"")
+        (backport / "libSceAgc.sprx").write_bytes(b"x")
+        self.addCleanup(shutil.rmtree, str(basis / "backports"), True)
+        self.zustand["eintraege"].append({"path": spiel, "kind": "folder", "size": None,
+                                          "meta": {"title": "Neben", "title_id": "PPSA01330"}})
+        self.zustand["filtern"]()
+        pfad = spiel
+        self.assertTrue(_schleife_bis(lambda: pfad in self.zustand["ansicht"]["einbauten"]))
+        ergebnis = self.zustand["ansicht"]["einbauten"][pfad]
+        self.assertEqual(["fw4"], ergebnis["backport"])
+        self.assertIn("backports/PPSA01330 Testspiel", ergebnis["ueber"])
+        self.assertIn("BACKPORT (fw4)", self._chip_texte(self._eintrag(spiel)))
+        self.assertEqual(self.app._t("library.karte_nur_backport", bp="4.00"),
+                         self._firmware_zeile(self._eintrag(spiel)))
+
+    def test_ein_leerer_backport_ordner_ohne_fakelib_zaehlt_nicht(self) -> None:
+        basis = Path(os.path.dirname(self.ohne))
+        spiel = _dump(basis, "PPSA01331-leer", {})
+        (basis / "backports" / "PPSA01331").mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, str(basis / "backports"), True)
+        self.zustand["eintraege"].append({"path": spiel, "kind": "folder", "size": None,
+                                          "meta": {"title": "Leer", "title_id": "PPSA01331"}})
+        self.zustand["filtern"]()
+        self.assertTrue(_schleife_bis(lambda: spiel in self.zustand["ansicht"]["einbauten"]))
+        self.assertEqual([], self.zustand["ansicht"]["einbauten"][spiel]["backport"])
+        self.assertNotIn("ueber", self.zustand["ansicht"]["einbauten"][spiel])
+
+    def test_bei_abbildern_wird_die_firmware_im_hintergrund_nachgelesen(self) -> None:
+        """Ohne Anklicken: Ein Abbild bekommt die verlangte Firmware auf Karte und Liste (29.10.2026)."""
+        abbild = os.path.join(os.path.dirname(self.ffpkg), "PPSA01329.ffpfsc")
+        Path(abbild).write_bytes(b"\0" * 64)
+        self.zustand["eintraege"].append({"path": abbild, "kind": "ffpfsc", "size": 64,
+                                          "meta": {"title": "Abbild", "title_id": "PPSA01329"}})
+        gelesen: list = []
+
+        def _angaben(pfad: str) -> dict:
+            gelesen.append(pfad)
+            return {"required_firmware": "09.00.00.00", "gelesen": "1"}
+
+        with mock.patch.object(self.app, "_bibliothek_erweiterte_angaben", side_effect=_angaben):
+            self.zustand["ansicht"]["erweitert"].pop(abbild, None)
+            self.zustand["filtern"]()
+            self.assertTrue(_schleife_bis(lambda: bool(self._firmware_zeile(self._eintrag(abbild)))),
+                            "Die Firmware kam nicht auf die Karte.")
+        self.assertEqual(self.app._t("library.karte_fw", fw="9.00"), self._firmware_zeile(self._eintrag(abbild)))
+        self.assertEqual([abbild], gelesen, "Nur Abbilder werden gelesen - kein Ordner, kein ffpkg.")
+        baum = self.zustand["liste"]
+        zellen = {baum.set(iid, "path"): baum.set(iid, "firmware") for iid in baum.get_children()}
+        self.assertEqual(self.app._t("library.karte_fw", fw="9.00"), zellen[abbild])
 
     def test_die_liste_hat_eine_firmware_spalte(self) -> None:
         self._firmware_setzen(self.alle, "10.01")
