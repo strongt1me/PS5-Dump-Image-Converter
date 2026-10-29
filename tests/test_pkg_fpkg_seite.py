@@ -177,6 +177,53 @@ class PkgFpkgUnterseitenTests(unittest.TestCase):
         self.assertEqual("pack", ps5.win.winfo_manager())
         self.assertFalse(isinstance(ps5.win, tk.Toplevel))
 
+    def test_die_unterseite_ist_beim_ersten_zeigen_schon_ausgelegt(self) -> None:
+        """Nichts baut sich sichtbar auf (30.10.2026): Beim Packen steht die neue Unterseite schon in Zielgroesse.
+
+        Vorher wurde sie gepackt, bevor ihr Layout fertig war - der Anwender sah beim ersten Klick auf PS5 PKG erst
+        ein Geruest mit schmaler Karte, dann die endgueltige Breite. Beim zweiten Mal war sie bereits geordnet.
+        """
+        from unittest import mock
+        self.app._show_pkg_fpkg_seite()
+        _WURZEL.update()
+        s = getattr(self.app, pkg_fpkg_seite.SEITE_ATTRIBUT)
+        gesehen = {}
+        echt = tk.Frame.pack
+
+        def _pack(widget, *args, **kw):
+            ps5 = getattr(self.app, ps5_pkg_fenster.FENSTER_ATTRIBUT, None)
+            if ps5 is not None and widget is ps5.win:
+                gesehen["breite"] = widget.winfo_width()
+                gesehen["inhalt"] = s.inhalt.winfo_width()
+            return echt(widget, *args, **kw)
+
+        with mock.patch.object(tk.Frame, "pack", _pack):
+            s.fpkg_zeigen()
+        self.assertGreater(gesehen.get("breite", 0), 200, "Beim Packen war die Unterseite noch nicht ausgelegt.")
+        self.assertEqual(gesehen["inhalt"], gesehen["breite"], "Sie stand schon in der Groesse des Inhaltsrahmens.")
+        _WURZEL.update()
+        stehen_geblieben = [w for w in s.inhalt.winfo_children() if w.winfo_manager() == "place"]
+        self.assertEqual([], stehen_geblieben, "Abdeckung oder Platzhalter sind wieder weg.")
+
+    def test_die_ps5_ansicht_wird_im_leerlauf_vorgebaut_und_der_klick_packt_sie_nur(self) -> None:
+        """Der erste Klick auf PS5 PKG dauerte 0,66 s, der zweite 0,08 s (30.10.2026): Sie entsteht jetzt vorab."""
+        self.app._show_pkg_fpkg_seite()
+        _WURZEL.update()
+        s = getattr(self.app, pkg_fpkg_seite.SEITE_ATTRIBUT)
+        self.assertIsNone(getattr(self.app, ps5_pkg_fenster.FENSTER_ATTRIBUT, None), "Vor dem Leerlauf gibt es sie noch nicht.")
+        s._fpkg_vorbauen()
+        ps5 = getattr(self.app, ps5_pkg_fenster.FENSTER_ATTRIBUT, None)
+        self.assertIsNotNone(ps5, "Die PS5-Ansicht ist vorgebaut.")
+        self.assertEqual("", ps5.win.winfo_manager(), "Sie ist noch nicht gepackt - zu sehen ist weiter PKG.")
+        self.assertEqual(pkg_fpkg_seite.UNTERSEITE_PKG, s.unterseite)
+        self.assertTrue(getattr(ps5.win, "_vorgelegt", False))
+        s.fpkg_zeigen()
+        _WURZEL.update()
+        self.assertEqual("pack", ps5.win.winfo_manager())
+        self.assertEqual(pkg_fpkg_seite.UNTERSEITE_FPKG, s.unterseite)
+        s._fpkg_vorbauen()                       # ein zweiter Aufruf baut nichts neu
+        self.assertIs(ps5, getattr(self.app, ps5_pkg_fenster.FENSTER_ATTRIBUT))
+
     def test_ein_erneuter_druck_auf_sieben_merkt_sich_fpkg(self) -> None:
         self.app._show_pkg_fpkg_seite()
         s = getattr(self.app, pkg_fpkg_seite.SEITE_ATTRIBUT)

@@ -47,6 +47,7 @@ class PkgFpkgSeite:
         self.c = gui._COLORS
         self.unterseite = ""
         self._sichtbar: "tk.Frame | None" = None
+        self._vorbau_geplant = False
         #: Das Objekt der sichtbaren Unterseite - liefert sie ``quelle_karte``, steht der PKG-Knopf buendig darueber.
         self._aktiv = None
         self.knoepfe: "dict[str, object]" = {}
@@ -130,11 +131,58 @@ class PkgFpkgSeite:
     # ------------------------------------------------------------------
     # Unterseiten
     # ------------------------------------------------------------------
+    #: Wie oft das Layout einer neu gebauten Unterseite vor dem Zeigen nachgezogen wird. Karten, Rollbereich und
+    #: rechte Spalte stellen ihre Breite erst auf ein Groessenereignis ein; meist reichen zwei Durchgaenge.
+    _VORLEGEN_DURCHGAENGE = 4
+
+    def _vorlegen(self, win: "tk.Frame") -> "tk.Frame | None":
+        """Legt eine neu gebaute Unterseite an ihrem endgueltigen Platz fertig aus, ohne dass man es sieht.
+
+        Gemeldet am 30.10.2026: Beim ersten Klick auf PS5 PKG baute sich die Ansicht sichtbar auf - leere Flaeche,
+        ein Geruest mit schmaler Karte, dann die endgueltige Breite und Stueck fuer Stueck der Inhalt. Beim zweiten
+        Mal war sie schon geordnet, nichts sprang. Die runden Karten rechnen sich bei jeder Lage neu (sie nehmen den
+        Hintergrund an ihrer Stelle auf); die Unterseite darf also nicht an anderer Stelle vorbereitet und dann
+        verschoben werden. Sie steht deshalb gleich an ihrem Platz, verdeckt: hinter der bisherigen Unterseite - oder,
+        wenn es keine gibt, unter einer Abdeckung. Zurueck kommt die Abdeckung (oder ``None``); der Aufrufer
+        entfernt sie, nachdem die Unterseite gepackt ist.
+        """
+        if getattr(win, "_vorgelegt", False):
+            return None
+        win._vorgelegt = True
+        abdeckung = None
+        try:
+            if int(self.inhalt.winfo_width()) <= 1 or int(self.inhalt.winfo_height()) <= 1:
+                return None
+            if self._sichtbar is None:
+                abdeckung = tk.Frame(self.inhalt, bg=self.c["bg_main"])
+                abdeckung.place(x=0, y=0, relwidth=1, relheight=1)
+            win.place(in_=self.inhalt, x=0, y=0, relwidth=1, relheight=1)
+            if abdeckung is not None:
+                abdeckung.lift()
+            else:
+                win.lower()
+            for _ in range(self._VORLEGEN_DURCHGAENGE):
+                win.update_idletasks()
+                self.rahmen.update()
+            win.place_forget()
+        except tk.TclError:
+            try:
+                win.place_forget()
+            except tk.TclError:
+                pass
+        return abdeckung
+
     def _umschalten(self, kennung: str, win: "tk.Frame") -> None:
+        abdeckung = self._vorlegen(win) if win.winfo_manager() != "pack" else None
         if self._sichtbar is not None and self._sichtbar is not win:
             self._sichtbar.pack_forget()
         if win.winfo_manager() != "pack":
             win.pack(fill="both", expand=True)
+        if abdeckung is not None:
+            try:
+                abdeckung.destroy()
+            except tk.TclError:
+                pass
         self._sichtbar = win
         self.unterseite = kennung
         self._knoepfe_zeichnen()
@@ -151,6 +199,30 @@ class PkgFpkgSeite:
             # Die Angaben des FPKG-Pakets in Seitenleiste und Info-Box gehoeren nicht zu "PKG".
             ps5_pkg_fenster.spielinfo_zuruecksetzen(self.g)
         fenster.spielinfo_nachziehen()
+        if not kam_von_fpkg and not self._vorbau_geplant:
+            self._vorbau_geplant = True
+            self.rahmen.after(self._VORBAU_NACH_MS, self._fpkg_vorbauen)
+
+    #: Wartezeit, bis die PS5-Ansicht im Leerlauf vorgebaut wird (nach dem Zeigen der PS4-Ansicht).
+    _VORBAU_NACH_MS = 900
+
+    def _fpkg_vorbauen(self) -> None:
+        """Baut und legt die PS5-Ansicht vor, solange der Anwender die PS4-Ansicht liest.
+
+        Gemessen am 30.10.2026: Der erste Klick auf PS5 PKG brauchte 0,66 s (Aufbau 0,1 s, erstes Auslegen 0,5 s), der
+        zweite 0,08 s. Die Ansicht entsteht jetzt kurz nach dem Zeigen von PS4 PKG, hinter ihr und ungepackt; der Klick
+        packt sie nur noch. Ist die Seite dann nicht sichtbar (andere Ansicht) oder die PS5-Ansicht schon da, geschieht
+        nichts - der Klick baut sie wie bisher.
+        """
+        try:
+            if (not self.rahmen.winfo_exists() or not self.inhalt.winfo_ismapped()
+                    or getattr(self.g, ps5_pkg_fenster.FENSTER_ATTRIBUT, None) is not None):
+                return
+            h = self.h
+            fenster = ps5_pkg_fenster.oeffnen(self.g, h.UI_SCHRIFT, h.MONO_SCHRIFT, h.pt, "", master=self.inhalt)
+            self._vorlegen(fenster.win)
+        except tk.TclError:
+            pass
 
     def fpkg_zeigen(self, vorgabe: str = "") -> None:
         """Zeigt "FPKG" (``ps5_pkg_fenster``)."""
