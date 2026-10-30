@@ -805,7 +805,7 @@ class VersionOhneStartenTests(unittest.TestCase):
         modul = _lade_hauptprogramm()
         app = modul.PS5ConverterGUI.__new__(modul.PS5ConverterGUI)
         app._t = lambda schluessel, **werte: STRINGS[schluessel]["de"].format(**werte)
-        erwartet = {"shadowmount": "1.7beta10", "elfldr9020": "0.27", "dpiv2": "1.00",
+        erwartet = {"shadowmount": "1.7beta11", "elfldr9020": "0.27", "dpiv2": "1.00",
                     "elfldr9021": "0.27"}
         for schluessel, version in erwartet.items():
             with self.subTest(dienst=schluessel):
