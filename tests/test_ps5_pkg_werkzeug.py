@@ -746,5 +746,17 @@ class PlayGoTests(unittest.TestCase):
             os.unlink(tmp.name)
 
 
+class KeinSchwarzesFensterTests(unittest.TestCase):
+    """Gemeldet 31.10.2026: Beim Laden eines PS5-Pakets oeffneten sich drei bis vier schwarze Konsolenfenster."""
+
+    @unittest.skipUnless(sys.platform == "win32", "nur Windows")
+    def test_laufen_ohne_popen_extra_startet_ohne_konsolenfenster(self) -> None:
+        import subprocess
+        with mock.patch.object(wz.subprocess, "Popen", side_effect=OSError("nicht gestartet")) as popen:
+            with self.assertRaises(wz.Fehler):
+                wz.laufen("x.exe", ["list-inner", "a.pkg"])
+        self.assertEqual(subprocess.CREATE_NO_WINDOW, popen.call_args.kwargs.get("creationflags"))
+
+
 if __name__ == "__main__":
     unittest.main()

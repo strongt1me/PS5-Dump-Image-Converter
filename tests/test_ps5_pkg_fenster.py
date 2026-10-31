@@ -195,26 +195,17 @@ class FensterTests(unittest.TestCase):
         self.assertGreater(region[3] - region[1], canvas.winfo_height(),
                            "Vier Karten sollten den sichtbaren Bereich im Testfenster ueberragen.")
 
-    def test_die_seite_umwandeln_rollt_statt_abzuschneiden(self) -> None:
-        """Nutzerbefund 18.10.2026, erweiterte Suche: QUELLE+ZIELFORMAT+AUFTRAG reichten
-
-        bei knapper Fensterhoehe ebenso ueber den sichtbaren Bereich hinaus. Seit 30.10.2026 gibt es keine rechte
-        Spalte mehr: ERGEBNIS (Chips) und Protokoll stehen unter AUFTRAG in derselben Spalte und rollen mit.
-        """
+    def test_die_seite_umwandeln_rollt_nicht_das_protokoll_nimmt_die_restliche_hoehe(self) -> None:
+        """Nutzerwunsch 31.10.2026: Die Seite PS5 PKG rollt nicht mehr; das Protokoll wird kuerzer, damit alles Platz hat."""
         f = self.f
         f._seite_zeigen("umwandeln")
         _pumpen(0.05)
         seite = f.seiten["umwandeln"]
         seite.update_idletasks()
-        canvas = _rollbares_canvas(seite)
-        self.assertIsNotNone(canvas, "Die Seite Umwandeln hat kein rollbares Canvas.")
-        region = canvas.bbox("all")
-        self.assertIsNotNone(region)
-        self.assertGreater(region[3] - region[1], canvas.winfo_height(),
-                           "QUELLE+ZIELFORMAT+AUFTRAG sollten den sichtbaren Bereich im Testfenster ueberragen.")
-        self.assertTrue(str(f.spalte_rechts).startswith(str(canvas.master) + "."),
-                        "Ergebnis und Protokoll liegen in der rollenden Spalte (keine eigene Spalte rechts mehr).")
+        self.assertIsNone(_rollbares_canvas(seite), "Die Seite Umwandeln hat kein rollbares Canvas mehr.")
+        self.assertTrue(str(f.spalte_rechts).startswith(str(seite) + "."))
         self.assertTrue(f.protokoll.winfo_ismapped())
+        self.assertEqual(f.protokoll.pack_info().get("expand"), True, "Das Protokoll nimmt die uebrige Hoehe.")
 
     def test_die_seite_bibliothek_rollt_statt_abzuschneiden(self) -> None:
         """Nutzerbefund 18.10.2026, erweiterte Suche: COVER+TECH in der schmalen rechten
@@ -512,7 +503,9 @@ class FensterTests(unittest.TestCase):
         f = self.f
         f.win.update_idletasks()
         self.assertLess(f.format_box.winfo_rooty(), f.ziel_reihe.winfo_rooty(), "ZIELFORMAT steht vor ZIELORDNER.")
-        self.assertLess(f.format_box.winfo_rooty(), f.paket_titel.winfo_rooty(), "und direkt unter QUELLE.")
+        self.assertFalse(f.paket_titel.winfo_ismapped(), "Der Block AUSGEWAEHLTES PAKET steht nicht mehr da.")
+        self.assertFalse(f.paket_kopf.winfo_ismapped())
+        self.assertFalse(f.paket_pfad.winfo_ismapped())
 
     def test_die_auswahl_im_feld_wirkt_wie_der_klick_auf_die_alte_kachel(self) -> None:
         self._laden("alpha.pkg")

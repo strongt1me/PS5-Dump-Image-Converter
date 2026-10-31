@@ -41,6 +41,8 @@ class Seitenbild:
         self.rahmen = rahmen
         self.hinter = hinter
         self._nach: "str | None" = None
+        self._ruhe = 0
+        self._nachholen = False
         self._zwilling: "tk.Label | None" = None
         self._bindungen: "list[tuple[str, str]]" = []
         self._dnd: "dict[Any, tuple[Any, Any]]" = {}
@@ -78,7 +80,27 @@ class Seitenbild:
         if pfad == wurzel or pfad.startswith(wurzel + "."):
             self.planen()
 
+    def ruhen(self):
+        """``with``-Block: solange er laeuft, wird nicht unterlegt (jedes ``update()`` darin wuerde sonst einen ganzen
+        Durchlauf ausloesen). Danach folgt, falls etwas anstand, genau ein entprellter Durchlauf."""
+        bild = self
+
+        class _Ruhe:
+            def __enter__(self_):
+                bild._ruhe += 1
+
+            def __exit__(self_, *a):
+                bild._ruhe -= 1
+                if bild._ruhe == 0 and bild._nachholen:
+                    bild._nachholen = False
+                    bild.planen()
+
+        return _Ruhe()
+
     def planen(self) -> None:
+        if self._ruhe:
+            self._nachholen = True
+            return
         if self._nach is not None:
             return
         try:
@@ -95,6 +117,9 @@ class Seitenbild:
     # ------------------------------------------------------------------
     def jetzt(self) -> None:
         self._nach = None
+        if self._ruhe:
+            self._nachholen = True
+            return
         try:
             if not self.rahmen.winfo_exists() or not self.rahmen.winfo_ismapped():
                 return

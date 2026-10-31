@@ -501,14 +501,18 @@ class Ps5PkgFenster:
         # 901 px Inhalt gegen 750 px sichtbar). Nur diese Spalte wird eingepackt - die
         # rechte Spalte bleibt direkt in "seite", damit sie weiter ueber die Zeilenhoehe
         # von "seite" mitwaechst statt auf ihre eigene Inhaltsgroesse zu schrumpfen.
-        links_aussen, links = g._build_scrollable_body(seite)
+        # Seit 31.10.2026 (Nutzerwunsch) rollt die Seite nicht mehr: Sie steht in einem einfachen Rahmen, und das
+        # Protokoll nimmt die uebrige Hoehe (es wird kuerzer, statt dass die Seite rollen muss).
+        links = tk.Frame(seite, bg=c["bg_main"])
+        links_aussen = links
         links_aussen.grid(row=0, column=0, sticky="nsew")
         links.columnconfigure(0, weight=1)
+        links.rowconfigure(4, weight=1)
         # Seit 30.10.2026 eine einzige Spalte wie bei den Aufgaben 1 bis 6: Die Spalte rechts mit ERGEBNIS und Protokoll
         # ist weggefallen, beides steht unter AUFTRAG (``unten``) und rollt mit. ``spalte_rechts`` heisst weiter so
         # (Protokoll und Ergebnis liegen in ihr).
         rechts = tk.Frame(links, bg=c["bg_main"])
-        rechts.grid(row=4, column=0, sticky="ew", pady=(12, 8))
+        rechts.grid(row=4, column=0, sticky="nsew", pady=(12, 8))
         self.spalte_rechts = rechts
         # Die Knopfleiste steht wie bei den Aufgaben 1 bis 6 unter den Abschnitten, das Protokoll darunter.
         self._leiste_bauen(links)
@@ -556,12 +560,11 @@ class Ps5PkgFenster:
         # Aktionen (Nutzer 11.10.2026: "viel zu nah beim Erstellen-Knopf, unuebersichtlich").
         self.paket_kopf = tk.Label(quelle, text=t("ps5pkg.selected_caption").upper(), font=(F, pt(9), "bold"),
                                    bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
-        self.paket_kopf.pack(fill="x", pady=(4, 0))
+        # Seit 31.10.2026 nicht mehr angezeigt (Nutzerwunsch: "soll bitte weg aus der Anzeige"): Die Felder bleiben
+        # bestehen und werden weiter gefuellt (Tests, Spielinfo), stehen aber nicht im Raster der Seite.
         self.paket_titel = tk.Label(quelle, text=t("ps5pkg.no_source"), font=(F, pt(13), "bold"),
                                     bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
-        self.paket_titel.pack(fill="x", pady=(2, 0))
         zeile = tk.Frame(quelle, bg=c["bg_main"])
-        zeile.pack(fill="x", pady=(2, 0))
         self.paket_pfad = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"], anchor="w")
         self.paket_pfad.pack(side="left", fill="x", expand=True)
         self.paket_typ = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_accent"], padx=10)
@@ -662,9 +665,9 @@ class Ps5PkgFenster:
         # Das Protokoll liegt unter dem Auftrag: In der Karte AUFTRAG blieb ihm bei normaler Fensterhoehe keine Hoehe -
         # der Text war nicht zu sehen. Es hat eine feste Hoehe (die Seite rollt); die Breite bestimmt die Spalte
         # (width=1), nicht der Text.
-        self.protokoll = pw.Text(rechts, height=9, width=1, font=(self.M, pt(9)), bg=c["console_bg"],
+        self.protokoll = pw.Text(rechts, height=3, width=1, font=(self.M, pt(9)), bg=c["console_bg"],
                                  fg=c["console_fg"], relief="flat", wrap="word", state="disabled")
-        self.protokoll.pack(fill="x", pady=(12, 0))
+        self.protokoll.pack(fill="both", expand=True, pady=(12, 0))
         self._protokoll_menue_einrichten()
         # Abstand nach jeder Meldung (nicht zwischen den umbrochenen Zeilen einer Meldung) - so steht jede fuer sich und
         # liest sich leichter (Nutzer 14.10.2026).

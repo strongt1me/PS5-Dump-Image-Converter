@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog
@@ -514,6 +515,9 @@ class PkgFpkgSeite:
         win._vorgelegt = True
         abdeckung = None
         try:
+            # Beim ersten Klick steht die Seite eben erst im Raster: ohne diesen Durchgang waere der Bereich noch 1x1
+            # gross, das Vorlegen unterbliebe und alles ordnete sich sichtbar danach (gemessen 31.10.2026: ~1 s).
+            self.rahmen.update_idletasks()
             if int(self.bereich.winfo_width()) <= 1 or int(self.bereich.winfo_height()) <= 1:
                 return None
             if self._sichtbar is None:
@@ -525,9 +529,10 @@ class PkgFpkgSeite:
                 abdeckung.lift()
             else:
                 win.lower()
-            for _ in range(self._VORLEGEN_DURCHGAENGE):
-                win.update_idletasks()
-                self.rahmen.update()
+            with self.bild.ruhen():
+                for _ in range(self._VORLEGEN_DURCHGAENGE):
+                    win.update_idletasks()
+                    self.rahmen.update()
             win.place_forget()
         except tk.TclError:
             try:
@@ -536,6 +541,27 @@ class PkgFpkgSeite:
                 pass
         return abdeckung
 
+    #: Hoechstzahl der Durchgaenge, mit denen ein frisch gepackter Bereich unter der Abdeckung zur Ruhe kommt.
+    _SETZEN_DURCHGAENGE = 8
+
+    def _setzen_lassen(self) -> None:
+        """Laesst Layout und Unterlegbilder eines frisch gepackten Bereichs unter der Abdeckung zur Ruhe kommen.
+
+        Gemeldet am 31.10.2026: Der erste Klick auf PKG / FPKG zeigte sekundenlang eine sich neu ordnende Seite -
+        jedes Unterlegen verschob Karten, das loeste das naechste aus (gemessen: 27 Durchgaenge in 0,9 s, sichtbar).
+        Jetzt laufen sie, bevor die Abdeckung fällt; ein Durchgang ohne Wirkung (unter 3 ms) beendet es.
+        """
+        try:
+            for _ in range(self._SETZEN_DURCHGAENGE):
+                self.rahmen.update_idletasks()
+                self.rahmen.update()
+                t0 = time.perf_counter()
+                self.bild.jetzt()
+                if time.perf_counter() - t0 < 0.003:
+                    break
+        except tk.TclError:
+            pass
+
     def _umschalten(self, kennung: str, win: "tk.Frame") -> None:
         abdeckung = self._vorlegen(win) if win.winfo_manager() != "pack" else None
         if self._sichtbar is not None and self._sichtbar is not win:
@@ -543,6 +569,7 @@ class PkgFpkgSeite:
         if win.winfo_manager() != "pack":
             win.pack(fill="both", expand=True)
         if abdeckung is not None:
+            self._setzen_lassen()
             try:
                 abdeckung.destroy()
             except tk.TclError:
@@ -561,9 +588,10 @@ class PkgFpkgSeite:
         if not geaendert or not self._gewaehlt:
             return
         try:
-            for _ in range(2):
-                fenster.win.update_idletasks()
-                self.rahmen.update()
+            with self.bild.ruhen():
+                for _ in range(2):
+                    fenster.win.update_idletasks()
+                    self.rahmen.update()
             self.bild.jetzt()
         except tk.TclError:
             pass

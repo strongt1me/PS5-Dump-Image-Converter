@@ -109,7 +109,8 @@ def _beenden(prozess: subprocess.Popen) -> None:
     """Beendet den Prozess samt Kindern (das Werkzeug startet keine, die Laufzeit kann es)."""
     try:
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(prozess.pid)], capture_output=True, check=False)
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(prozess.pid)], capture_output=True, check=False,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         else:
             prozess.kill()
     except OSError:
@@ -166,9 +167,14 @@ def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, 
             os.chmod(werkzeug, os.stat(werkzeug).st_mode | 0o111)
         except OSError:
             pass
+    extra = dict(popen_extra or {})
+    if sys.platform == "win32" and not extra.get("creationflags"):
+        # Ohne dieses Flag oeffnet jeder Start des Konsolenwerkzeugs ein schwarzes Fenster (gemeldet 31.10.2026: beim
+        # Laden eines Pakets drei bis vier hintereinander - die PlayGo-Pruefung rief ``baum`` ohne ``popen_extra``).
+        extra["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         prozess = subprocess.Popen([werkzeug, *argumente], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   stdin=subprocess.DEVNULL, env=_umgebung(temp), bufsize=0, **(popen_extra or {}))
+                                   stdin=subprocess.DEVNULL, env=_umgebung(temp), bufsize=0, **extra)
     except OSError as exc:
         raise Fehler("Das Werkzeug laesst sich nicht starten: %s" % exc) from exc
     assert prozess.stdout is not None
