@@ -3544,6 +3544,20 @@ class RoundedButton(tk.Canvas):
     config = configure
 
 
+def _tk_hauptfassung(widget) -> int:
+    """Hauptfassung des laufenden Tk (8 oder 9); 8 wenn sie sich nicht erfragen laesst."""
+    try:
+        return int(str(widget.tk.call("info", "patchlevel")).split(".")[0])
+    except (tk.TclError, ValueError):
+        return 8
+
+
+#: Pixel, die ein tk.Checkbutton unter Tk 9 breiter anfordert als unter Tk 8.6 (gemessen am 31.10.2026 bei
+#: tk scaling 1,668: AMPR EMU, PlayGo und BACKPORT je 7 px). Die Einbauzeile von Aufgabe 1-6 passte dadurch nicht
+#: mehr neben die Pruefstufe.
+_TK9_CHECKBUTTON_ZUGABE = 7
+
+
 class RunderHaken(tk.Canvas):
     """Ankreuzfeld als Zeichnung: gerundetes Kaestchen, Schrift direkt auf dem Hintergrund.
 
@@ -3633,6 +3647,8 @@ class RunderHaken(tk.Canvas):
                                                   "padx", "pady", "anchor")})
             breite, hoehe = zwilling.winfo_reqwidth(), zwilling.winfo_reqheight()
             zwilling.destroy()
+            if _tk_hauptfassung(self) >= 9:
+                breite = max(1, breite - _TK9_CHECKBUTTON_ZUGABE)
         except tk.TclError:
             breite, hoehe = 120, 24
         super().configure(width=breite, height=hoehe)
@@ -18058,6 +18074,16 @@ class PS5ConverterGUI:
             except tk.TclError as exc:
                 logger.debug("Pillenfeld %s nicht einrichtbar: %s", name, exc)
 
+    #: Pixel, die eine ttk.Combobox unter Tk 9 breiter anfordert als unter Tk 8.6. Gemessen am 31.10.2026 bei
+    #: tk scaling 1,668 und gleicher Einstellung: Zielformat 195 statt 190, Kompression 177 statt 172, Pruefung 141
+    #: statt 137 px. Die Einbauzeile von Aufgabe 1-6 passte dadurch nicht mehr neben die Pruefstufe und rutschte
+    #: in eine eigene Zeile.
+    _TK9_COMBOBOX_ZUGABE = 4
+
+    def _tk9_combobox_zugabe(self) -> int:
+        """Die Mehrbreite einer Combobox unter Tk 9 gegenueber Tk 8.6 (0 unter Tk 8.6)."""
+        return self._TK9_COMBOBOX_ZUGABE if _tk_hauptfassung(self.root) >= 9 else 0
+
     def _pillenfeld(self, feld, mit_pfeil: bool) -> None:
         """Zeichnet ein ttk.Entry/ttk.Combobox als Pille - und laesst es ein ttk-Widget.
 
@@ -18082,6 +18108,8 @@ class PS5ConverterGUI:
         stil = "Pille%d.T%s" % (zaehler, innen)
         element = "Pille%d.field" % zaehler
         alt_b, alt_h = feld.winfo_reqwidth(), feld.winfo_reqheight()
+        if mit_pfeil:
+            alt_b -= self._tk9_combobox_zugabe()
         # Nie leer und ohne Rand am Element: Mit border=4 und einem leeren
         # oder 1x1 grossen Bild kachelt ttk einen Mittelteil der Breite null -
         # eine Endlosschleife im Zeichnen (04.10.2026 eingegrenzt: die blosse
