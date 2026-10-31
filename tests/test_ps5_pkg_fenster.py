@@ -166,10 +166,10 @@ class FensterTests(unittest.TestCase):
     def test_das_fenster_hat_alle_seiten_und_das_auswahlfeld_mit_formaten_und_aktionen(self) -> None:
         f = self.f
         self.assertEqual({"umwandeln", "bibliothek", "extras"}, set(f.seiten))
-        self.assertEqual(["Umwandeln zu FFPKG (.ffpkg)", "Umwandeln zu FFPFSC (.ffpfsc)", "Umwandeln zu FFPFS (.ffpfs)",
-                          "Umwandeln zu exFAT (.exfat)", "Umwandeln zu Paket (.pkg)", "Extrahieren", "Prüfen",
+        self.assertEqual([".ffpkg", ".ffpfsc", ".ffpfs",
+                          ".exFAT", ".pkg", "Extrahieren", "Prüfen",
                           "Auf die PS5 entpacken"], list(f.format_box.values))
-        self.assertEqual("Umwandeln zu FFPFSC (.ffpfsc)", f.format_var.get())
+        self.assertEqual(".ffpfsc", f.format_var.get())
         self.assertFalse(hasattr(f, "_aktion_knoepfe"), "Die Zeile AKTION ist entfallen.")
         self.assertEqual("ffpfsc", f.format_schluessel)
         self.assertEqual("umwandeln", f.aktion_var.get())
@@ -438,7 +438,7 @@ class FensterTests(unittest.TestCase):
         f = self.f
         f._format_waehlen("exfat")
         self.assertEqual("exfat", self.app._load_setting(fz.EINST_FORMAT, ""))
-        self.assertEqual("Umwandeln zu exFAT (.exfat)", f.format_var.get(), "Das Auswahlfeld zeigt die Wahl.")
+        self.assertEqual(".exFAT", f.format_var.get(), "Das Auswahlfeld zeigt die Wahl.")
         self.assertEqual("Alpha Spiel [PPSA00001].exfat", f.ergebnis_var["output"].get())
 
     def test_die_aktionen_stehen_im_auswahlfeld_und_wirken_wie_die_alte_zeile(self) -> None:
@@ -452,7 +452,7 @@ class FensterTests(unittest.TestCase):
                 self.assertEqual(aktion, self.app._load_setting(fz.EINST_AKTION, ""), "gemerkt wie zuvor")
                 self.assertEqual(text, f.format_var.get())
         self.assertEqual("pack", f.fern_reihe.winfo_manager(), "Auf die PS5 entpacken: Adresse statt Zielordner.")
-        f.format_var.set("Umwandeln zu FFPKG (.ffpkg)")
+        f.format_var.set(".ffpkg")
         f.format_box.event_generate("<<ComboboxSelected>>")
         self.assertEqual("umwandeln", f.aktion_var.get())
         self.assertEqual("ffpkg", f.format_schluessel)
@@ -461,7 +461,7 @@ class FensterTests(unittest.TestCase):
     def test_die_gemerkte_aktion_steht_beim_start_im_auswahlfeld(self) -> None:
         f = self.f
         for aktion, text in (("pruefen", "Prüfen"), ("konsole", "Auf die PS5 entpacken"),
-                             ("umwandeln", "Umwandeln zu FFPFSC (.ffpfsc)")):
+                             ("umwandeln", ".ffpfsc")):
             with self.subTest(aktion=aktion):
                 f.aktion_var.set(aktion)
                 f._aktion_anwenden()
@@ -475,7 +475,7 @@ class FensterTests(unittest.TestCase):
         f.format_var.set("Auf die PS5 entpacken")
         f.format_box.event_generate("<<ComboboxSelected>>")
         self.assertEqual("umwandeln", f.aktion_var.get())
-        self.assertEqual("Umwandeln zu FFPFSC (.ffpfsc)", f.format_var.get())
+        self.assertEqual(".ffpfsc", f.format_var.get())
         self.assertIn(STRINGS["ps5pkg.action_only_package"]["de"], f.status_var.get())
 
     def test_ausgabe_oeffnen_und_verlauf_leeren_liegen_im_rechtsklickmenue_des_protokolls(self) -> None:
@@ -512,7 +512,7 @@ class FensterTests(unittest.TestCase):
         f = self.f
         f.aktion_var.set("pruefen")
         f._aktion_geaendert()
-        f.format_var.set("Umwandeln zu exFAT (.exfat)")
+        f.format_var.set(".exFAT")
         f.format_box.event_generate("<<ComboboxSelected>>")
         self.assertEqual("exfat", f.format_schluessel)
         self.assertEqual("umwandeln", f.aktion_var.get(), "Ein Format waehlen stellt die Aktion auf Umwandeln.")
@@ -521,10 +521,10 @@ class FensterTests(unittest.TestCase):
     def test_paket_im_feld_gibt_es_nur_fuer_einen_spielordner_und_das_feld_springt_zurueck(self) -> None:
         self._laden("alpha.pkg")
         f = self.f
-        f.format_var.set("Umwandeln zu Paket (.pkg)")
+        f.format_var.set(".pkg")
         f.format_box.event_generate("<<ComboboxSelected>>")
         self.assertEqual("ffpfsc", f.format_schluessel, "fuer ein Paket nicht moeglich")
-        self.assertEqual("Umwandeln zu FFPFSC (.ffpfsc)", f.format_var.get(), "Das Feld springt zurueck.")
+        self.assertEqual(".ffpfsc", f.format_var.get(), "Das Feld springt zurueck.")
         self.assertIn("Spielordner", f.status_var.get())
 
     def test_die_ausgabe_je_aktion(self) -> None:
@@ -845,7 +845,7 @@ class FensterTests(unittest.TestCase):
         ordner = self._spielordner_laden()
         f._format_waehlen("pkg")
         self.assertEqual("pkg", f.format_schluessel)
-        self.assertEqual("Umwandeln zu Paket (.pkg)", f.format_var.get())
+        self.assertEqual(".pkg", f.format_var.get())
         self.assertTrue(f.ergebnis_var["output"].get().startswith("UP0000-PPSA00003_00-GAMMAGAMMAGAMMA0"))
         self.assertTrue(ordner)
         self.f._pakete_hinzufuegen([os.path.join(self.ordner, "alpha.pkg")], waehlen=True)

@@ -736,8 +736,9 @@ class Ps5PkgFenster:
     def _format_eintraege(self) -> "list[tuple[str, str, str]]":
         """Die Eintraege des Auswahlfelds als (Art, Schluessel, Text): erst die Formate, dann die uebrigen Aktionen."""
         t = self.t
-        liste = [("format", schluessel, t("ps5pkg.fmt_convert_to", name="%s (%s)" % (name, endung)))
-                 for schluessel, name, endung in FORMATE]
+        # Seit 01.11.2026 nur die Endung (Nutzerwunsch: ".ffpkg", ".ffpfsc", ".ffpfs", ".exFAT", ".pkg" ohne "Umwandeln zu").
+        liste = [("format", schluessel, ".exFAT" if schluessel == "exfat" else endung)
+                 for schluessel, _name, endung in FORMATE]
         liste += [("aktion", AKTION_EXTRAHIEREN, t("ps5pkg.action_extract")),
                   ("aktion", AKTION_PRUEFEN, t("ps5pkg.action_check")),
                   ("aktion", AKTION_KONSOLE, t("ps5pkg.action_console"))]
