@@ -5,14 +5,14 @@ WEITERE TOOLS: „PS5 PKG Dump & Image Converter“).
 Eine Oberflaeche in Karten nach dem Vorbild von PS5-PKG-IMAGE-CONVERTER 1.5.3 (Nutzerwunsch 08.10.2026):
 
 * **Umwandeln** - Quelle (ein PS5-Paket ``.pkg`` oder ein Spielordner, per Ablegen oder Klick), Aktion (Erstellen /
-  Umwandeln, Extrahieren, Pruefen), Zielformat als Kacheln, Auftrag mit Fortschritt, rechts das Ergebnis.
+  Umwandeln, Extrahieren, Pruefen), Zielformat als Auswahlfeld, Auftrag mit Fortschritt, rechts das Ergebnis.
 * **Bibliothek** - die Pakete und Spielordner mit Suche, Cover und technischer Uebersicht.
 
 Die Arbeit am Paket macht ``ffpfsc-pkg-tool`` (:mod:`ps5_validator.utils.ps5_pkg_werkzeug`): lesen, pruefen,
 entpacken, bauen. **Umwandeln** eines Pakets entpackt das Spiel in einen Arbeitsordner und uebergibt ihn an
 **Aufgabe 1** des Hauptprogramms (``pack_folder`` mit dem gewaehlten Zielformat) - so gelten dort dieselben
 Pruefungen, derselbe Fortschritt und die Haken fuer AMPR EMU und BACKPORT; ein Spielordner geht ohne Entpacken
-direkt dorthin. **Extrahieren** schreibt den Dump-Ordner direkt ins Ziel. Die Kachel **Paket** baut aus einem
+direkt dorthin. **Extrahieren** schreibt den Dump-Ordner direkt ins Ziel. Das Format **Paket** baut aus einem
 Spielordner ein Debug-Paket (FPKG) und prueft es danach.
 
 **Faeden:** Arbeitsfaeden fassen nie ein Widget oder eine Tk-Variable an; sie schreiben unter ``self._sperre`` in
@@ -42,6 +42,7 @@ from ps5_validator.utils import pkg_direkt
 from ps5_validator.utils import ps5_pkg_optionen as opt
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
 from ps5_validator.utils import prospero_pkg_tool as ppt
+from ps5_validator.ui import hauptknoepfe
 from ps5_validator.ui import ps5_pkg_optionen as optionen_ui
 from ps5_validator.ui import pkg_datei_browser as browser_ui
 from ps5_validator.ui import spiel_detail_fenster as detail_ui
@@ -50,6 +51,12 @@ logger = logging.getLogger("PS5Converter.ui.ps5_pkg_fenster")
 
 FENSTER_ATTRIBUT = "_ps5_pkg_fenster"
 TAKT_MS = 250
+
+#: Welche Reiter die Seite oben zeigt. Nutzerwunsch 30.10.2026: Bibliothek und Extras nicht mehr anzeigen - und weil
+#: die Seite wie die Aufgaben 1 bis 6 aus einer Spalte besteht (Quellfeld im Kopf der Seite ``pkg_fpkg_seite``), gar keine
+#: Reiterzeile mehr; "Optionen" ist ein Knopf der Knopfleiste. Die Seiten ``bibliothek`` und ``extras`` werden weiter
+#: gebaut und ihr Code ist unveraendert - nur ihr Reiter fehlt. Zurueckholen: die Namen wieder in dieses Tupel schreiben.
+SICHTBARE_REITER = ()
 
 EINST_ZIEL = "ps5pkg_ziel"
 EINST_FORMAT = "ps5pkg_format"
@@ -206,8 +213,12 @@ class Ps5PkgFenster:
     """Die Seite. Eine Instanz je Programmlauf (Singleton, siehe :func:`oeffnen`)."""
 
     def __init__(self, gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",
-                 *, master: "tk.Misc | None" = None) -> None:
+                 *, master: "tk.Misc | None" = None, karte_bauer: "Callable | None" = None,
+                 quelle_bauer: "Callable | None" = None) -> None:
         self.g = gui
+        #: Von der Seite ``pkg_fpkg_seite``: baut die Karte (wie ``path_card`` der Aufgabe 1) und das Quellfeld darin.
+        self._karte_bauer = karte_bauer
+        self._quelle_bauer = quelle_bauer
         self.t = gui._t
         self.c = gui._COLORS
         self.F = schrift
@@ -228,7 +239,6 @@ class Ps5PkgFenster:
         self._cover = None
         self._cover_ordner: list[str] = []
         self._staging: list[str] = []
-        self._kacheln: dict[str, tuple] = {}
         self._bau: dict = {}                       # Arbeitsordner und Vorher-Stand des laufenden Baus
         self._werkzeug_pfad = ""
         self._werkzeug_ppt_pfad = ""
@@ -346,14 +356,23 @@ class Ps5PkgFenster:
     # ------------------------------------------------------------------
     # Aufbau
     # ------------------------------------------------------------------
-    def _karte(self, eltern, titel_schluessel: str, polster=(16, 12)):
+    def _karte(self, eltern, titel_schluessel: str, polster=(16, 12), flach: bool = False):
         """Eine runde Karte mit Ueberschrift; die Kinder entstehen in der Karte selbst.
 
         ``pw.Karte`` statt ``_runde_seitenkarte``: Das Hauptprogramm hielte jede Karte seiner Seiten in einer Liste fest,
         ein geschlossenes Fenster liesse sie samt Bildern stehen (``test_fenster_leck``).
+
+        ``flach``: statt der Karte ein schlichter Abschnitt wie bei den Aufgaben 1 bis 6 - ein Rahmen in der Farbe der
+        Seite, darueber (wenn ``titel_schluessel`` gesetzt ist) die Beschriftung in Grossbuchstaben.
         """
+        if flach:
+            abschnitt = tk.Frame(eltern, bg=self.c["bg_main"])
+            if titel_schluessel:
+                tk.Label(abschnitt, text=self.t(titel_schluessel).upper(), font=(self.F, self.pt(9), "bold"),
+                         bg=self.c["bg_main"], fg=self.c["fg_primary"], anchor="w").pack(fill="x", pady=(0, 5))
+            return abschnitt
         karte = self.g._pw.Karte(eltern, bg=self.c["bg_card"], padx=polster[0], pady=polster[1])
-        tk.Label(karte, text=self.t(titel_schluessel).upper(), font=(self.F, self.pt(10), "bold"),
+        tk.Label(karte, text=self.t(titel_schluessel).upper(), font=(self.F, self.pt(9), "bold"),
                  bg=self.c["bg_card"], fg=self.c["fg_primary"], anchor="w").pack(fill="x", pady=(0, 8))
         return karte
 
@@ -399,29 +418,17 @@ class Ps5PkgFenster:
                  fg=c["fg_secondary"]).pack(side="right")
         rumpf = tk.Frame(self.win, bg=c["bg_main"])
         rumpf.pack(fill="both", expand=True)
-        rumpf.columnconfigure(1, weight=1)
-        rumpf.rowconfigure(0, weight=1)
+        rumpf.columnconfigure(0, weight=1)
+        rumpf.rowconfigure(2, weight=1)
+        # Seit 30.10.2026 keine Reiterzeile mehr (``SICHTBARE_REITER``): Die Seite besteht wie die Aufgaben 1 bis 6 aus
+        # einer Spalte; Quelle waehlt das Quellfeld der Seite ``pkg_fpkg_seite``.
         self._navigation(rumpf)
+        if self._nav:
+            tk.Frame(rumpf, height=1, bg=c["border"]).grid(row=1, column=0, sticky="ew", padx=14)
         flaeche = tk.Frame(rumpf, bg=c["bg_main"])
-        flaeche.grid(row=0, column=1, sticky="nsew", padx=(0, 14))
+        flaeche.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 0))
         flaeche.columnconfigure(0, weight=1)
         flaeche.rowconfigure(0, weight=1)
-        # Die Knopfleiste liegt in derselben Spalte wie die Karten (Zeile darunter, ohne Gewicht - sie behaelt ihre
-        # Hoehe, wenn der Platz knapp wird): so stehen "Umwandlung starten" und "Abbrechen" buendig mit der linken Kante
-        # der Karten. Bis 12.10.2026 hing sie ueber die ganze Breite unten und ragte links ueber die Navigation hinaus.
-        leiste = tk.Frame(rumpf, bg=c["bg_main"], pady=8)
-        leiste.grid(row=1, column=1, sticky="ew", padx=(0, 14))
-        self.start_knopf = self._pille(leiste, "ps5pkg.start_button", self._starten, akzent=True)
-        self.start_knopf.pack(side="left")
-        self.abbrechen_knopf = self._pille(leiste, "action.cancel", self._abbrechen)
-        self.abbrechen_knopf.pack(side="left", padx=(10, 0))
-        self.abbrechen_knopf.configure(state="disabled")
-        self.update_knopf = self._pille(leiste, "ps5pkg.btn_update", self._updates_online)
-        self.update_knopf.pack(side="left", padx=(10, 0))
-        self.browser_knopf = self._pille(leiste, "ps5pkg.browser_button", self._browser_oeffnen)
-        self.browser_knopf.pack(side="left", padx=(24, 0))
-        self.detail_knopf = self._pille(leiste, "ps5pkg.detail_button", self._detail_oeffnen)
-        self.detail_knopf.pack(side="left", padx=(10, 0))
         self.seiten = {"umwandeln": tk.Frame(flaeche, bg=c["bg_main"]),
                        "bibliothek": tk.Frame(flaeche, bg=c["bg_main"]),
                        "extras": tk.Frame(flaeche, bg=c["bg_main"])}
@@ -440,21 +447,29 @@ class Ps5PkgFenster:
 
     def _navigation(self, eltern) -> None:
         c, F, pt = self.c, self.F, self.pt
-        leiste = tk.Frame(eltern, bg=c["bg_main"], width=104)
-        leiste.grid(row=0, column=0, sticky="ns", padx=(10, 12), pady=10)
-        leiste.grid_propagate(False)
         self._nav: dict[str, tuple[tk.Frame, tk.Label, tk.Label]] = {}
-        for schluessel, zeichen, text in (("umwandeln", "⇄", "ps5pkg.nav_convert"), ("bibliothek", "▥", "ps5pkg.nav_library"),
-                                          ("extras", "⚒", "ps5pkg.nav_extras"), ("optionen", "⚙", "ps5pkg.nav_options")):
-            rahmen = tk.Frame(leiste, bg=c["bg_main"], cursor="hand2", pady=8)
-            rahmen.pack(fill="x", pady=(0, 6))
-            symbol = tk.Label(rahmen, text=zeichen, font=(F, pt(18)), bg=c["bg_main"], fg=c["fg_secondary"])
-            symbol.pack()
-            name = tk.Label(rahmen, text=self.t(text), font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"])
+        if not SICHTBARE_REITER:
+            return
+        leiste = tk.Frame(eltern, bg=c["bg_main"])
+        leiste.grid(row=0, column=0, sticky="ew", padx=14, pady=(8, 0))
+        for schluessel, text in (("umwandeln", "ps5pkg.nav_convert"), ("bibliothek", "ps5pkg.nav_library"),
+                                 ("extras", "ps5pkg.nav_extras"), ("optionen", "ps5pkg.nav_options")):
+            if schluessel not in SICHTBARE_REITER:
+                continue
+            rahmen = tk.Frame(leiste, bg=c["bg_main"], cursor="hand2")
+            rahmen.pack(side="left", padx=(0, 24))
+            # Das Symbol der frueheren Leiste links entfaellt; das (leere, ungepackte) Label bleibt, damit ``_nav`` und
+            # ``_seite_zeigen`` ihre Form behalten.
+            symbol = tk.Label(rahmen, text="", bg=c["bg_main"], fg=c["fg_secondary"])
+            name = tk.Label(rahmen, text=self.t(text), font=(F, pt(11)), bg=c["bg_main"], fg=c["fg_secondary"],
+                            padx=2, pady=4)
             name.pack()
+            strich = tk.Frame(rahmen, height=2, bg=c["bg_main"])
+            strich.pack(fill="x")
+            rahmen._strich = strich
             # "Optionen" ist keine Seite, sondern ein Dialog: Der Eintrag bleibt nie als gewaehlte Seite stehen.
             befehl = self._optionen_oeffnen if schluessel == "optionen" else (lambda s=schluessel: self._seite_zeigen(s))
-            for w in (rahmen, symbol, name):
+            for w in (rahmen, name, strich):
                 w.bind("<Button-1>", lambda _e, b=befehl: b())
             self._nav[schluessel] = (rahmen, symbol, name)
 
@@ -463,10 +478,8 @@ class Ps5PkgFenster:
         self.seiten[schluessel].tkraise()
         for name, (rahmen, symbol, text) in self._nav.items():
             aktiv = name == schluessel
-            farbe = c["fg_accent"] if aktiv else c["fg_secondary"]
-            rahmen.configure(bg=c["bg_card"] if aktiv else c["bg_main"])
-            symbol.configure(bg=c["bg_card"] if aktiv else c["bg_main"], fg=farbe)
-            text.configure(bg=c["bg_card"] if aktiv else c["bg_main"], fg=c["fg_primary"] if aktiv else c["fg_secondary"])
+            text.configure(fg=c["fg_primary"] if aktiv else c["fg_secondary"])
+            rahmen._strich.configure(bg=c["fg_accent"] if aktiv else c["bg_main"])
         self.aktuelle_seite = schluessel
         if hasattr(self, "start_knopf"):
             self._knoepfe_pruefen()
@@ -489,28 +502,44 @@ class Ps5PkgFenster:
         # rechte Spalte bleibt direkt in "seite", damit sie weiter ueber die Zeilenhoehe
         # von "seite" mitwaechst statt auf ihre eigene Inhaltsgroesse zu schrumpfen.
         links_aussen, links = g._build_scrollable_body(seite)
-        links_aussen.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        links_aussen.grid(row=0, column=0, sticky="nsew")
         links.columnconfigure(0, weight=1)
-        rechts = tk.Frame(seite, bg=c["bg_main"], width=380)
-        rechts.grid(row=0, column=1, sticky="ns")
-        # Die Kinder werden gepackt, nicht gegridet: Erst pack_propagate(False) haelt die Breite von 380 fest (bis
-        # 13.10.2026 stand hier grid_propagate - ohne Wirkung; die Spalte war so breit wie ihr Inhalt und sprang, sobald
-        # ein Cover erschien).
-        rechts.pack_propagate(False)
+        # Seit 30.10.2026 eine einzige Spalte wie bei den Aufgaben 1 bis 6: Die Spalte rechts mit ERGEBNIS und Protokoll
+        # ist weggefallen, beides steht unter AUFTRAG (``unten``) und rollt mit. ``spalte_rechts`` heisst weiter so
+        # (Protokoll und Ergebnis liegen in ihr).
+        rechts = tk.Frame(links, bg=c["bg_main"])
+        rechts.grid(row=4, column=0, sticky="ew", pady=(12, 8))
         self.spalte_rechts = rechts
+        # Die Knopfleiste steht wie bei den Aufgaben 1 bis 6 unter den Abschnitten, das Protokoll darunter.
+        self._leiste_bauen(links)
 
-        # QUELLE
-        quelle = self._karte(links, "ps5pkg.card_source")
-        self.quelle_karte = quelle          # daran richtet die Seite PKG/FPKG ihren Knopf "PKG" aus
-        quelle.grid(row=0, column=0, sticky="ew")
-        oben = tk.Frame(quelle, bg=c["bg_card"])
-        oben.pack(fill="x")
+        # Die Karte wie ``path_card`` der Aufgabe 1 (getoent, runde Ecken): Quelle, Paket, Aktion, Ziel und Zielformat
+        # stehen darin, Knopfleiste, Auftrag und Protokoll darunter auf dem Hauptbild. Ohne die Seite (``karte_bauer``
+        # fehlt, z. B. im Test) stehen die Abschnitte lose in der Rollflaeche.
+        if self._karte_bauer is not None:
+            karte, konf = self._karte_bauer(links)
+            karte.grid(row=0, column=0, sticky="ew")
+            konf.columnconfigure(0, weight=1)
+        else:
+            konf = links
+        basis = 0
+        if self._quelle_bauer is not None:
+            self._quelle_bauer(konf).grid(row=0, column=0, sticky="ew", pady=(0, 16))
+            basis = 1
+
+        # QUELLE: Die Wahl trifft das Quellfeld oben in der Karte (``pkg_fpkg_seite``, erkennt PS4/PS5 selbst); hier
+        # steht das gewaehlte Paket mit seinen Angaben und darunter, was damit geschehen soll. Die Ablagezone und ihre
+        # beiden Knoepfe werden weiter gebaut (Befehle und Ziele unveraendert), aber nicht angezeigt.
+        quelle = self._karte(konf, "", flach=True)
+        self.quelle_karte = quelle
+        quelle.grid(row=basis + 1, column=0, sticky="ew", pady=(18, 0))
+        oben = tk.Frame(quelle, bg=c["bg_main"])
         oben.columnconfigure(0, weight=1)
-        self.ablage = tk.Canvas(oben, height=74, bg=c["bg_card"], highlightthickness=0, cursor="hand2")
+        self.ablage = tk.Canvas(oben, height=74, bg=c["bg_main"], highlightthickness=0, cursor="hand2")
         self.ablage.grid(row=0, column=0, sticky="ew", padx=(0, 12))
         self.ablage.bind("<Configure>", self._ablage_malen)
         self.ablage.bind("<Button-1>", lambda _e: self._datei_waehlen())
-        rechts_k = tk.Frame(oben, bg=c["bg_card"])
+        rechts_k = tk.Frame(oben, bg=c["bg_main"])
         rechts_k.grid(row=0, column=1, sticky="ns")
         self._pille(rechts_k, "ps5pkg.choose_file", self._datei_waehlen, klein=True).pack(fill="x", pady=(0, 6))
         self._pille(rechts_k, "ps5pkg.choose_folder", self._ordner_waehlen, klein=True).pack(fill="x")
@@ -523,158 +552,173 @@ class Ps5PkgFenster:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Ablegen nicht verfuegbar: %s", exc)
 
-        # Das gewaehlte Paket steht fuer sich: Trennlinie, kleine Ueberschrift, Titel, Pfad - und erst darunter, wieder
-        # durch eine Linie getrennt, die Aktionen (Nutzer 11.10.2026: "viel zu nah beim Erstellen-Knopf, unuebersichtlich").
-        tk.Frame(quelle, height=1, bg=c["border"]).pack(fill="x", pady=(14, 0))
-        self.paket_kopf = tk.Label(quelle, text=t("ps5pkg.selected_caption"), font=(F, pt(8), "bold"),
-                                   bg=c["bg_card"], fg=c["fg_secondary"], anchor="w")
-        self.paket_kopf.pack(fill="x", pady=(10, 0))
+        # Das gewaehlte Paket steht fuer sich: kleine Ueberschrift, Titel, Pfad - und erst darunter, mit Abstand, die
+        # Aktionen (Nutzer 11.10.2026: "viel zu nah beim Erstellen-Knopf, unuebersichtlich").
+        self.paket_kopf = tk.Label(quelle, text=t("ps5pkg.selected_caption").upper(), font=(F, pt(9), "bold"),
+                                   bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
+        self.paket_kopf.pack(fill="x", pady=(4, 0))
         self.paket_titel = tk.Label(quelle, text=t("ps5pkg.no_source"), font=(F, pt(13), "bold"),
-                                    bg=c["bg_card"], fg=c["fg_primary"], anchor="w")
+                                    bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
         self.paket_titel.pack(fill="x", pady=(2, 0))
-        zeile = tk.Frame(quelle, bg=c["bg_card"])
+        zeile = tk.Frame(quelle, bg=c["bg_main"])
         zeile.pack(fill="x", pady=(2, 0))
-        self.paket_pfad = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"], anchor="w")
+        self.paket_pfad = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"], anchor="w")
         self.paket_pfad.pack(side="left", fill="x", expand=True)
-        self.paket_typ = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_accent"], padx=10)
+        self.paket_typ = tk.Label(zeile, text="", font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_accent"], padx=10)
         self.paket_typ.pack(side="right")
-        self.paket_playgo = tk.Label(quelle, text="", font=(F, pt(9), "bold"), bg=c["bg_card"],
+        self.paket_playgo = tk.Label(quelle, text="", font=(F, pt(9), "bold"), bg=c["bg_main"],
                                      fg=c.get("fg_warning", "#f0a32e"), anchor="w")
         self.paket_playgo.pack(fill="x")
-        tk.Frame(quelle, height=1, bg=c["border"]).pack(fill="x", pady=(14, 0))
-        # Vier Aktionen passen bei der Mindestbreite nicht mehr in eine Zeile: Die Zeile bricht um, statt abzuschneiden.
-        aktion = raster.FlussZeile(quelle, g._bibliothek_zeichner(), grund="bg_card", abstand=(14, 4))
-        aktion.pack(fill="x", pady=(12, 0))
-        self.aktion_reihe = aktion
-        beschriftung = tk.Label(aktion, text=t("ps5pkg.action_label"), font=(F, pt(10)), bg=c["bg_card"],
-                                fg=c["fg_secondary"])
-        aktion.hinzufuegen(beschriftung)
-        self._aktion_knoepfe = {}
-        for wert, schluessel in ((AKTION_UMWANDELN, "ps5pkg.action_convert"), (AKTION_EXTRAHIEREN, "ps5pkg.action_extract"),
-                                 (AKTION_PRUEFEN, "ps5pkg.action_check"), (AKTION_KONSOLE, "ps5pkg.action_console")):
-            knopf = pw.Radiobutton(aktion, text=t(schluessel), value=wert, variable=self.aktion_var, font=(F, pt(10)),
-                                   command=self._aktion_geaendert, bg=c["bg_card"], fg=c["fg_primary"],
-                                   selectcolor=c["bg_card"], activebackground=c["bg_card"],
-                                   activeforeground=c["fg_primary"], highlightthickness=0, bd=0)
-            aktion.hinzufuegen(knopf)
-            self._aktion_knoepfe[wert] = knopf
-        ziel = tk.Frame(quelle, bg=c["bg_card"])
-        ziel.pack(fill="x", pady=(10, 0))
+        # Die Aktionen (Umwandeln, Extrahieren, Pruefen, Auf die PS5 entpacken) stehen seit 31.10.2026 im Auswahlfeld
+        # ZIELFORMAT (``format_box``); die Aktionsvariable und alles, was von ihr abhaengt, ist unveraendert. Die Zeilen
+        # Zielordner / Konsole haengen sich hinter das Paket (``aktion_reihe``).
+        self.aktion_reihe = self.paket_playgo
+        ziel = tk.Frame(quelle, bg=c["bg_main"])
+        ziel.pack(fill="x", pady=(16, 0))
         self.ziel_reihe = ziel
         ziel.columnconfigure(1, weight=1)
-        tk.Label(ziel, text=t("ps5pkg.target_folder"), font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"]).grid(
-            row=0, column=0, sticky="w", padx=(0, 12))
-        self.ziel_feld = pw.Entry(ziel, textvariable=self.ziel_var, font=(F, pt(10)), bg=c["bg_main"],
+        # Wie die Zielordner-Zeile der Aufgaben 1 bis 6: die Beschriftung in Grossbuchstaben darueber, Feld und Knopf darunter.
+        tk.Label(ziel, text=t("ps5pkg.target_folder").upper(), font=(F, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 5))
+        self.ziel_feld = pw.Entry(ziel, textvariable=self.ziel_var, font=(F, pt(12)), bg=c["bg_main"],
                                   fg=c["fg_primary"], insertbackground=c["fg_primary"], relief="flat")
-        self.ziel_feld.grid(row=0, column=1, sticky="ew", ipady=3)
-        self._pille(ziel, "ps5pkg.choose_target", self._ziel_waehlen, klein=True).grid(row=0, column=2, padx=(8, 0))
+        self.ziel_feld.grid(row=1, column=0, columnspan=2, sticky="ew", ipady=3)
+        pw.Button(ziel, text=t("ps5pkg.choose_target"), command=self._ziel_waehlen, hoehe=36, fett=True).grid(
+            row=1, column=2, padx=(8, 0))
         self.ueberschreiben = pw.Checkbutton(quelle, text=t("ps5pkg.overwrite"), variable=self.ueberschreiben_var,
                                              font=(F, pt(10)))
         self.ueberschreiben.pack(anchor="w", pady=(6, 0))
         # Auf die PS5 entpacken: statt des Zielordners auf dem PC die Adresse und der Ordner auf der Konsole. Erst
         # sichtbar, wenn diese Aktion gewaehlt ist (:meth:`_aktion_anwenden`).
-        fern = tk.Frame(quelle, bg=c["bg_card"])
+        fern = tk.Frame(quelle, bg=c["bg_main"])
         self.fern_reihe = fern
         fern.columnconfigure(1, weight=1)
         optionen = dict(font=(F, pt(10)), bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
                         relief="flat")
-        tk.Label(fern, text=t("ps5pkg.console_address"), font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"]).grid(
+        tk.Label(fern, text=t("ps5pkg.console_address"), font=(F, pt(10)), bg=c["bg_main"], fg=c["fg_secondary"]).grid(
             row=0, column=0, sticky="w", padx=(0, 12))
         self.adresse_feld = pw.Entry(fern, textvariable=self.adresse_var, **optionen)
         self.adresse_feld.grid(row=0, column=1, sticky="ew", ipady=3)
-        tk.Label(fern, text=t("ps5pkg.console_folder"), font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"]).grid(
+        tk.Label(fern, text=t("ps5pkg.console_folder"), font=(F, pt(10)), bg=c["bg_main"], fg=c["fg_secondary"]).grid(
             row=1, column=0, sticky="w", padx=(0, 12), pady=(6, 0))
         self.fern_feld = pw.Entry(fern, textvariable=self.fern_var, **optionen)
         self.fern_feld.grid(row=1, column=1, sticky="ew", ipady=3, pady=(6, 0))
         self.fern_feld.bind("<KeyRelease>", lambda _e: self._ergebnis_fuellen(), add="+")
-        hinweis = tk.Label(fern, text=t("ps5pkg.console_hint"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+        hinweis = tk.Label(fern, text=t("ps5pkg.console_hint"), font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
                            anchor="w", justify="left", wraplength=520)
         hinweis.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
-        hinweis.bind("<Configure>", lambda e: hinweis.configure(wraplength=max(120, e.width - 6)))
+        # Der Umbruch folgt der Breite der Zeile (das Label selbst hat auf dem Hauptbild die Groesse seines Textes).
+        fern.bind("<Configure>", lambda e: hinweis.configure(wraplength=max(120, e.width - 6)), add="+")
 
         # ZIELFORMAT
-        formate = self._karte(links, "ps5pkg.card_format")
-        formate.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        reihe = tk.Frame(formate, bg=c["bg_card"])
-        reihe.pack(fill="x")
-        for i, (schluessel, name, endung) in enumerate(FORMATE):
-            reihe.columnconfigure(i, weight=1, uniform="kachel")
-            self._kachel(reihe, i, schluessel, name, endung)
-        self._kacheln_faerben()
+        formate = self._karte(konf, "ps5pkg.card_format", flach=True)
+        formate.grid(row=basis, column=0, sticky="ew")
+        # Seit 31.10.2026 (Nutzerwunsch) ein Auswahlfeld wie ZIELFORMAT bei Aufgabe 1 (direkt unter QUELLE) statt fuenf
+        # Kacheln und der Aktionszeile: die fuenf Formate ("Umwandeln zu ...") und die Aktionen Extrahieren, Pruefen und
+        # Auf die PS5 entpacken. Wirkung wie zuvor: ``_format_waehlen`` und ``_aktion_geaendert``.
+        self.format_var = tk.StringVar(value="")
+        self.format_box = pw.Combobox(formate, textvariable=self.format_var, state="readonly", width=34,
+                                      values=tuple(e[2] for e in self._format_eintraege()), font=(F, pt(10)))
+        self.format_box.pack(anchor="w")
+        self.format_box.bind("<<ComboboxSelected>>", self._format_gewaehlt)
+        self._format_anzeigen()
 
         # AUFTRAG
-        auftrag = self._karte(links, "ps5pkg.card_job")
-        auftrag.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
-        tk.Label(auftrag, textvariable=self.auftrag_var, font=(F, pt(11), "bold"), bg=c["bg_card"],
-                 fg=c["fg_primary"], anchor="w", wraplength=700, justify="left").pack(fill="x")
-        balken = tk.Frame(auftrag, bg=c["bg_card"])
+        auftrag = self._karte(links, "ps5pkg.card_job", flach=True)
+        auftrag.grid(row=3, column=0, sticky="nsew", pady=(16, 0))
+        auftrag_text = tk.Label(auftrag, textvariable=self.auftrag_var, font=(F, pt(11), "bold"), bg=c["bg_main"],
+                                fg=c["fg_primary"], anchor="w", wraplength=500, justify="left")
+        auftrag_text.pack(fill="x")
+        # Der Umbruch folgt der Breite der Karte (fest 700 ragte bei der Mindestbreite ueber den Rand).
+        auftrag.bind("<Configure>", lambda e: auftrag_text.configure(wraplength=max(160, e.width - 4)), add="+")
+        balken = tk.Frame(auftrag, bg=c["bg_main"])
         balken.pack(fill="x", pady=(8, 0))
         balken.columnconfigure(1, weight=1)
-        tk.Label(balken, text=t("ps5pkg.step_progress"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"]).grid(
+        tk.Label(balken, text=t("ps5pkg.step_progress"), font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"]).grid(
             row=0, column=0, sticky="w", padx=(0, 12))
         self.balken = pw.Progressbar(balken, mode="determinate", maximum=100.0)
         self.balken.grid(row=0, column=1, sticky="ew", pady=2)
-        tk.Label(balken, textvariable=self.schritt_var, width=6, anchor="e", font=(F, pt(9)), bg=c["bg_card"],
+        tk.Label(balken, textvariable=self.schritt_var, width=6, anchor="e", font=(F, pt(9)), bg=c["bg_main"],
                  fg=c["fg_primary"]).grid(row=0, column=2, padx=(8, 0))
-        tk.Label(balken, text=t("ps5pkg.job_steps"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"]).grid(
+        tk.Label(balken, text=t("ps5pkg.job_steps"), font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"]).grid(
             row=1, column=0, sticky="w", padx=(0, 12))
         self.balken_gesamt = pw.Progressbar(balken, mode="determinate", maximum=100.0)
         self.balken_gesamt.grid(row=1, column=1, sticky="ew", pady=2)
-        textknoepfe = tk.Frame(auftrag, bg=c["bg_card"])
-        textknoepfe.pack(fill="x", pady=(10, 0))
-        self.ausgabe_knopf = self._pille(textknoepfe, "ps5pkg.open_output", self._ausgabe_oeffnen, klein=True)
-        self.ausgabe_knopf.pack(side="left")
-        self._pille(textknoepfe, "ps5pkg.clear_log", self._verlauf_leeren, klein=True).pack(side="left", padx=(8, 0))
-        # Was gerade entsteht (Datei, Menge, Dateien, Zeit) - unter den Knoepfen, buendig mit "Ausgabe oeffnen", ueber die
-        # ganze Breite der Karte (Nutzer 14.10.2026: neben "Verlauf leeren" war zu wenig Platz, die Zeile lief ab).
+        # Was gerade entsteht (Datei, Menge, Dateien, Zeit) - ueber die ganze Breite der Karte (Nutzer 14.10.2026).
+        # "Ausgabe oeffnen" und "Verlauf leeren" stehen seit 31.10.2026 im Rechtsklick-Menue des Protokolls.
         self.datei_var = tk.StringVar(value="")
-        datei_zeile = tk.Label(auftrag, textvariable=self.datei_var, font=(F, pt(9)), bg=c["bg_card"],
+        datei_zeile = tk.Label(auftrag, textvariable=self.datei_var, font=(F, pt(9)), bg=c["bg_main"],
                                fg=c["fg_secondary"], anchor="w", justify="left")
         # expand: steht mittig im freien Raum zwischen den Knoepfen und der Unterkante der Karte (Nutzer 14.10.2026)
-        datei_zeile.pack(fill="x", expand=True, pady=(8, 0))
-        datei_zeile.bind("<Configure>", lambda e: datei_zeile.configure(wraplength=max(120, e.width - 4)))
+        datei_zeile.pack(fill="x", expand=True, pady=(10, 0))
+        auftrag.bind("<Configure>", lambda e: datei_zeile.configure(wraplength=max(120, e.width - 4)), add="+")
 
-        # ERGEBNIS
-        ergebnis = self._karte(rechts, "ps5pkg.card_result")
-        ergebnis.pack(fill="x")
-        self.ergebnis_var = {}
-        for schluessel in ("output", "title_id", "content", "size", "free"):
-            zeile = tk.Frame(ergebnis, bg=c["bg_card"])
-            zeile.pack(fill="x", pady=2)
-            tk.Label(zeile, text=t("ps5pkg.res_" + schluessel), font=(F, pt(10)), bg=c["bg_card"],
-                     fg=c["fg_secondary"]).pack(side="left")
-            var = tk.StringVar(value="")
-            self.ergebnis_var[schluessel] = var
-            tk.Label(zeile, textvariable=var, font=(F, pt(10)), bg=c["bg_card"], fg=c["fg_primary"], anchor="e",
-                     wraplength=210, justify="right").pack(side="right", fill="x", expand=True)
-        self.ergebnis_karte = ergebnis
+        # ERGEBNIS (Ausgabe, Titel-ID, Inhalt, Groesse, Freier Platz): Die Chips sind seit 31.10.2026 nicht mehr zu sehen
+        # (Nutzerwunsch); die Werte werden weiter gefuellt (``_ergebnis_fuellen``), die Anzeige entfaellt.
+        self.ergebnis_var = {schluessel: tk.StringVar(value="") for schluessel in
+                             ("output", "title_id", "content", "size", "free")}
         # Das Cover steht seit dem 13.10.2026 (Nutzerwunsch) nicht mehr hier, sondern wie bei den Aufgaben 1 bis 6 in der
         # Seitenleiste (:meth:`_spielinfo_zeigen`); der Knopf "Vorschau oeffnen" ist entfallen.
-        # Das Protokoll liegt unter dem Ergebnis: In der Karte AUFTRAG blieb ihm bei normaler Fensterhoehe keine Hoehe -
-        # der Text war nicht zu sehen. Es fuellt den Rest der Spalte; die Breite bestimmt die Spalte (width=1), nicht
-        # der Text.
-        self.protokoll = pw.Text(rechts, height=6, width=1, font=(self.M, pt(9)), bg=c["console_bg"],
+        # Das Protokoll liegt unter dem Auftrag: In der Karte AUFTRAG blieb ihm bei normaler Fensterhoehe keine Hoehe -
+        # der Text war nicht zu sehen. Es hat eine feste Hoehe (die Seite rollt); die Breite bestimmt die Spalte
+        # (width=1), nicht der Text.
+        self.protokoll = pw.Text(rechts, height=9, width=1, font=(self.M, pt(9)), bg=c["console_bg"],
                                  fg=c["console_fg"], relief="flat", wrap="word", state="disabled")
-        self.protokoll.pack(fill="both", expand=True, pady=(12, 0))
+        self.protokoll.pack(fill="x", pady=(12, 0))
+        self._protokoll_menue_einrichten()
         # Abstand nach jeder Meldung (nicht zwischen den umbrochenen Zeilen einer Meldung) - so steht jede fuer sich und
         # liest sich leichter (Nutzer 14.10.2026).
         try:
             self.protokoll.configure(spacing3=max(20, int(pt(22))))
         except tk.TclError:
             pass
+        # Alles unter dem Quellfeld: Zielformat, Paket, Knopfleiste, Auftrag, Protokoll (siehe ``rest_zeigen``).
+        self._rest = (formate, quelle, self.leiste, auftrag, rechts)
+        self._rest_sichtbar = True
 
-    def _kachel(self, eltern, spalte: int, schluessel: str, name: str, endung: str) -> None:
-        g, c, F, pt = self.g, self.c, self.F, self.pt
-        karte = raster.RundeKarte(eltern, g._bibliothek_zeichner(), fuellung="bg_main", rand="border", grund="bg_card",
-                                  radius=g._KARTEN_ECKE, polster=(6, 4))
-        karte.grid(row=0, column=spalte, sticky="ew", padx=(0 if spalte == 0 else 8, 0))
-        l1 = tk.Label(karte.innen, text=name, font=(F, pt(11), "bold"), bg=c["bg_main"], fg=c["fg_primary"], cursor="hand2")
-        l1.pack(pady=(8, 0))
-        l2 = tk.Label(karte.innen, text=endung, font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"], cursor="hand2")
-        l2.pack(pady=(0, 8))
-        for w in (karte, karte.innen, l1, l2):
-            w.bind("<Button-1>", lambda _e, s=schluessel: self._format_waehlen(s))
-        self._kacheln[schluessel] = (karte, l1, l2)
+    def rest_zeigen(self, sichtbar: bool) -> bool:
+        """Blendet alles unter dem Quellfeld ein oder aus (31.10.2026: Die Seite zeigt vor der ersten gueltigen Wahl nur QUELLE).
+
+        Die Abschnitte bleiben gebaut und werden nur aus dem Raster genommen - ihre Werte, Befehle und das Protokoll
+        arbeiten weiter. Liefert ``True``, wenn sich etwas geaendert hat.
+        """
+        if sichtbar == self._rest_sichtbar:
+            return False
+        for teil in self._rest:
+            try:
+                teil.grid() if sichtbar else teil.grid_remove()
+            except tk.TclError:
+                pass
+        self._rest_sichtbar = sichtbar
+        return True
+
+    def _leiste_bauen(self, eltern) -> None:
+        """Die Knopfleiste: wie bei den Aufgaben 1 bis 6 STARTEN links, ABBRECHEN daneben, danach die Zusatzfunktionen.
+
+        Sie steht unter den Abschnitten Quelle und Zielformat (Zeile 2 der Rollflaeche), darunter Auftrag, Ergebnis und
+        Protokoll, und bricht um, wenn die Breite nicht reicht - statt rechts
+        abgeschnitten zu werden (gemessen bei Mindestgroesse: "Details" lief aus dem Bild). "Optionen" ist seit
+        30.10.2026 ein Knopf hier statt eines Reiters.
+        """
+        leiste = raster.FlussZeile(eltern, self.g._bibliothek_zeichner(), grund="bg_main", abstand=(10, 6))
+        leiste.grid(row=2, column=0, sticky="ew", pady=(20, 0))
+        self.leiste = leiste
+        # STARTEN und ABBRECHEN wie bei Aufgabe 1 (``run_btn``/``abort_btn``), die Zusatzfunktionen als Pillen.
+        haupt = hauptknoepfe.starten_abbrechen(self.g, leiste, self.t("ps5pkg.start_button"), self._starten,
+                                               self._abbrechen)
+        if haupt is not None:
+            self.start_knopf, self.abbrechen_knopf = haupt
+        else:
+            self.start_knopf = self._pille(leiste, "ps5pkg.start_button", self._starten, akzent=True)
+            self.abbrechen_knopf = self._pille(leiste, "action.cancel", self._abbrechen)
+        self.abbrechen_knopf.configure(state="disabled")
+        self.update_knopf = self._pille(leiste, "ps5pkg.btn_update", self._updates_online)
+        self.browser_knopf = self._pille(leiste, "ps5pkg.browser_button", self._browser_oeffnen)
+        self.detail_knopf = self._pille(leiste, "ps5pkg.detail_button", self._detail_oeffnen)
+        self.optionen_knopf = self._pille(leiste, "ps5pkg.nav_options", self._optionen_oeffnen)
+        for knopf in (self.start_knopf, self.abbrechen_knopf, self.update_knopf, self.browser_knopf, self.detail_knopf,
+                      self.optionen_knopf):
+            leiste.hinzufuegen(knopf)
 
     def _aktion_moeglich(self, aktion: str) -> bool:
         """Ein Spielordner kennt nur Erstellen / Umwandeln - entpacken und pruefen gibt es nur fuer Pakete."""
@@ -682,34 +726,59 @@ class Ps5PkgFenster:
         return info is None or not info.ist_ordner or aktion == AKTION_UMWANDELN
 
     def _format_moeglich(self, schluessel: str) -> bool:
-        """Die Kachel Paket (Bau eines Debug-Pakets) gibt es nur fuer einen Spielordner."""
+        """Das Format Paket (Bau eines Debug-Pakets) gibt es nur fuer einen Spielordner."""
         info = self.aktuell
         return schluessel != FORMAT_PAKET or info is None or info.ist_ordner
 
-    def _kacheln_faerben(self) -> None:
-        c = self.c
-        gesperrt = self.aktion_var.get() != AKTION_UMWANDELN
-        for schluessel, (karte, l1, l2) in self._kacheln.items():
-            frei = self._format_moeglich(schluessel)
-            aktiv = schluessel == self.format_schluessel and not gesperrt and frei
-            fuellung = "accent_btn" if aktiv else "bg_main"
-            karte._rollen = (fuellung, "fg_accent" if aktiv else "border", "bg_card")
-            karte.neu_faerben()
-            matt = gesperrt or not frei
-            l1.configure(bg=c[fuellung], fg=("white" if aktiv else (c["fg_secondary"] if matt else c["fg_primary"])),
-                         cursor="hand2" if frei else "arrow")
-            l2.configure(bg=c[fuellung], fg=("white" if aktiv else c["fg_secondary"]), cursor="hand2" if frei else "arrow")
+    def _format_eintraege(self) -> "list[tuple[str, str, str]]":
+        """Die Eintraege des Auswahlfelds als (Art, Schluessel, Text): erst die Formate, dann die uebrigen Aktionen."""
+        t = self.t
+        liste = [("format", schluessel, t("ps5pkg.fmt_convert_to", name="%s (%s)" % (name, endung)))
+                 for schluessel, name, endung in FORMATE]
+        liste += [("aktion", AKTION_EXTRAHIEREN, t("ps5pkg.action_extract")),
+                  ("aktion", AKTION_PRUEFEN, t("ps5pkg.action_check")),
+                  ("aktion", AKTION_KONSOLE, t("ps5pkg.action_console"))]
+        return liste
+
+    def _format_anzeigen(self) -> None:
+        """Zeigt Format beziehungsweise Aktion im Auswahlfeld (nach Wahl, Optionen, Aktionswechsel, beim Start)."""
+        aktion = self.aktion_var.get()
+        text = ""
+        for art, schluessel, eintrag in self._format_eintraege():
+            if (art == "aktion" and schluessel == aktion) or (
+                    art == "format" and aktion == AKTION_UMWANDELN and schluessel == self.format_schluessel):
+                text = eintrag
+                break
+        if self.format_var.get() != text:
+            self.format_var.set(text)
+
+    def _format_gewaehlt(self, _e=None) -> None:
+        wahl = self.format_var.get()
+        for art, schluessel, eintrag in self._format_eintraege():
+            if eintrag != wahl:
+                continue
+            if art == "format":
+                self._format_waehlen(schluessel)
+            elif not self._aktion_moeglich(schluessel):
+                self._status(self.t("ps5pkg.action_only_package"))
+                self._format_anzeigen()                  # das Feld springt auf die bisherige Wahl zurueck
+            else:
+                self.aktion_var.set(schluessel)
+                self._aktion_geaendert()
+            return
+        self._format_anzeigen()
 
     def _format_waehlen(self, schluessel: str) -> None:
         if not self._format_moeglich(schluessel):
             self._status(self.t("ps5pkg.format_only_folder"))
+            self._format_anzeigen()                  # das Feld springt auf das bisherige Format zurueck
             return
         if self.aktion_var.get() != AKTION_UMWANDELN:
             self.aktion_var.set(AKTION_UMWANDELN)
             self._aktion_geaendert()
         self.format_schluessel = schluessel
         self._merken(EINST_FORMAT, schluessel)
-        self._kacheln_faerben()
+        self._format_anzeigen()
         self._ergebnis_fuellen()
 
     def _ablage_malen(self, _e=None) -> None:
@@ -794,16 +863,19 @@ class Ps5PkgFenster:
         self._suche_hinweis_setzen(True)       # erst jetzt: die Liste existiert
 
     # ---------------- Seite Extras (SDK-Werkzeuge) ----------------
-    def _seite_extras(self, seite) -> None:
+    def _seite_extras(self, seite, mit_kopf: bool = True) -> None:
+        """Die vier Werkzeug-Karten. ``mit_kopf=False``: ohne Ueberschrift (das eigene Fenster unter WEITERE TOOLS
+        hat schon eine, siehe :mod:`ps5_validator.ui.pkg_extras_fenster`)."""
         g, t, c = self.g, self.t, self.c
         F, pt = self.F, self.pt
         pw = g._pw
         seite.columnconfigure(0, weight=1)
         seite.rowconfigure(1, weight=1)
-        kopf = tk.Frame(seite, bg=c["bg_main"])
-        kopf.grid(row=0, column=0, sticky="ew", pady=(8, 12))
-        tk.Label(kopf, text=t("ps5pkg.nav_extras"), font=(F, pt(20), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x")
+        if mit_kopf:
+            kopf = tk.Frame(seite, bg=c["bg_main"])
+            kopf.grid(row=0, column=0, sticky="ew", pady=(8, 12))
+            tk.Label(kopf, text=t("ps5pkg.nav_extras"), font=(F, pt(20), "bold"), bg=c["bg_main"],
+                     fg=c["fg_primary"], anchor="w").pack(fill="x")
 
         # Vier Karten stapeln sich hier - bei kleineren Fenstern reichten sie
         # ueber den sichtbaren Bereich hinaus, ohne jede Moeglichkeit zu
@@ -1354,7 +1426,7 @@ class Ps5PkgFenster:
                 self._aktion_geaendert()
             if werte[opt.FORMAT] != alt[opt.FORMAT] and self._format_moeglich(werte[opt.FORMAT]):
                 self.format_schluessel = werte[opt.FORMAT]
-                self._kacheln_faerben()
+                self._format_anzeigen()
         if self.aktuell is not None:
             self._cover_zeigen(self.aktuell)
             self._spielinfo_zeigen(self.aktuell)
@@ -1615,14 +1687,9 @@ class Ps5PkgFenster:
             logger.debug("Zeilen der Aktion nicht umschaltbar: %s", exc)
 
     def _aktion_anwenden(self) -> None:
-        """Kacheln, Ergebnis und Knoepfe zur Aktion nachziehen - ohne zu speichern (auch beim Oeffnen)."""
-        for aktion, knopf in getattr(self, "_aktion_knoepfe", {}).items():
-            try:
-                knopf.configure(state="normal" if self._aktion_moeglich(aktion) else "disabled")
-            except tk.TclError:
-                pass
+        """Zielformat, Ergebnis und Knoepfe zur Aktion nachziehen - ohne zu speichern (auch beim Oeffnen)."""
         self._konsole_zeilen_zeigen()
-        self._kacheln_faerben()
+        self._format_anzeigen()
         self._ergebnis_fuellen()
         self._knoepfe_pruefen()
 
@@ -1714,6 +1781,33 @@ class Ps5PkgFenster:
             self.ziel_var.set(os.path.normpath(ordner))
             self._merken(EINST_ZIEL, self.ziel_var.get())
             self._ergebnis_fuellen()
+
+    def _protokoll_menue_einrichten(self) -> None:
+        """Rechtsklick im Protokoll: Kopieren, Alles waehlen - und "Ausgabe oeffnen" / "Verlauf leeren" (31.10.2026).
+
+        Die beiden Knoepfe unter dem Auftrag sind entfallen; ihre Funktionen liegen hier. Das Menue ersetzt auf dem
+        Protokoll das allgemeine Bearbeiten-Menue des Programms (nur Kopieren und Alles waehlen waren dort nutzbar).
+        """
+        c, t = self.c, self.t
+        menue = tk.Menu(self.protokoll, tearoff=0, bg=c["bg_card"], fg=c["fg_primary"], activebackground=c["fg_accent"],
+                        activeforeground=c["bg_main"], font=(self.F, self.pt(10)))
+        menue.add_command(label=self.g._t("context.copy"), command=lambda: self.protokoll.event_generate("<<Copy>>"))
+        menue.add_command(label=self.g._t("context.select_all"),
+                          command=lambda: self.protokoll.tag_add("sel", "1.0", "end-1c"))
+        menue.add_separator()
+        menue.add_command(label=t("ps5pkg.open_output"), command=self._ausgabe_oeffnen)
+        menue.add_command(label=t("ps5pkg.clear_log"), command=self._verlauf_leeren)
+        self.protokoll_menue = menue
+
+        def zeigen(ereignis) -> str:
+            try:
+                menue.tk_popup(ereignis.x_root, ereignis.y_root)
+            finally:
+                menue.grab_release()
+            return "break"
+
+        for taste in ("<Button-3>", "<Button-2>") if sys.platform == "darwin" else ("<Button-3>",):
+            self.protokoll.bind(taste, zeigen)
 
     def _verlauf_leeren(self) -> None:
         try:
@@ -2394,7 +2488,8 @@ def spielinfo_zuruecksetzen(gui) -> None:
 
 
 def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",
-            *, master: "tk.Misc | None" = None) -> Ps5PkgFenster:
+            *, master: "tk.Misc | None" = None, karte_bauer: "Callable | None" = None,
+            quelle_bauer: "Callable | None" = None) -> Ps5PkgFenster:
     """Gibt die Seite zurueck - einmalig gebaut, danach immer dieselbe (mit der neuen Vorgabe, falls es eine gibt).
 
     ``master``: wohin die Seite (einmalig) gebaut wird, siehe :func:`ps5_validator.ui.ps4_dump_image.oeffnen`.
@@ -2408,6 +2503,7 @@ def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str
                 return vorhanden
         except tk.TclError:
             pass
-    fenster = Ps5PkgFenster(gui, schrift, mono, pt, vorgabe, master=master)
+    fenster = Ps5PkgFenster(gui, schrift, mono, pt, vorgabe, master=master, karte_bauer=karte_bauer,
+                            quelle_bauer=quelle_bauer)
     setattr(gui, FENSTER_ATTRIBUT, fenster)
     return fenster

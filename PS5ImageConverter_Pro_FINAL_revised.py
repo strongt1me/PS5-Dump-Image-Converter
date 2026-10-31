@@ -115,6 +115,8 @@ from ps5_validator.utils.self_reader import (
 from ps5_validator.utils import ampr_updates
 from ps5_validator.utils import dlc_emu
 from ps5_validator.utils import werkzeug_updates
+from ps5_validator.utils.tk_masse import cget_pixel
+from ps5_validator.utils.tk_bindungen import an_toplevel_binden
 from ps5_validator.utils.dump_rename import (
     CONFIDENCE_FAILED as dump_rename_fehlgeschlagen,
     CONFIDENCE_NEEDS_REVIEW as dump_rename_nachsehen,
@@ -142,6 +144,7 @@ from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
 from ps5_validator.ui import ampr_seite
 from ps5_validator.ui import pkg_fpkg_seite
+from ps5_validator.ui import pkg_extras_fenster
 from ps5_validator.ui import updates_fenster
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
@@ -4697,6 +4700,9 @@ class PS5ConverterGUI:
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.unjail", "_show_unjail_sender"),
+        # Seit dem 30.10.2026 (Nutzerwunsch): die vier Werkzeuge der frueheren FPKG-Seite "Extras" (DDS zu PNG, exFAT
+        # reparieren/bearbeiten, FFPKG-Metadaten) - ihr Reiter ist dort entfallen.
+        ("titlebar.pkg_extras", "_show_pkg_extras"),
         # Fremdwerkzeug fuer den NOR-Flash der Konsole (seit v1.9.29), kein
         # Teil der Umwandlung - deshalb ganz am Ende.
         ("titlebar.wee_tools", "_show_wee_tools"),
@@ -10831,7 +10837,7 @@ class PS5ConverterGUI:
             if obergrenze > 0:
                 breite = min(breite, obergrenze)
             for knopf in knoepfe:
-                if int(float(knopf.cget("width"))) != breite:
+                if cget_pixel(knopf, "width") != breite:
                     tk.Canvas.configure(knopf, width=breite)
         except tk.TclError as exc:
             logger.debug("Seitenleistenknoepfe nicht einpassbar: %s", exc)
@@ -13654,6 +13660,11 @@ class PS5ConverterGUI:
 
         protokoll_karte = self._runde_seitenkarte(seite, "console_bg", polster=(6, 6))
         protokoll_karte.pack(fill="both", expand=True, pady=(14, 8))
+        self._webkit_protokoll_karte = protokoll_karte
+        # Der Balken zum Laden eines Hosts (erst beim Klick zu sehen, sonst nicht gepackt).
+        self._webkit_fortschritt_var = tk.DoubleVar(value=0.0)
+        self._webkit_fortschritt_balken = self._pw.Progressbar(
+            seite, variable=self._webkit_fortschritt_var, mode="determinate", maximum=100.0)
         protokoll = tk.Text(protokoll_karte.innen, height=6, font=(MONO_SCHRIFT, pt(9)),
                             bg=c["console_bg"], fg=c["console_fg"],
                             selectbackground=c["fg_accent"],
@@ -13725,10 +13736,13 @@ class PS5ConverterGUI:
         """Der Satz hinter der Auswahl: was von dieser Fassung vorliegt."""
         if not fassung:
             return self._t("webkit.keine_fassung")
-        fehlt = [self._t("webkit.art_" + art)
-                 for art, pfad in self._webkit_fassung_dateien(fassung).items() if not pfad]
+        dateien = self._webkit_fassung_dateien(fassung)
+        if not dateien.get("elf"):
+            return self._t("webkit.fassung_unvollstaendig", fehlt=self._t("webkit.art_elf"))
+        # Die Hosts liegen nicht mehr bei; sie kommen beim ersten Start (siehe _webkit_host_laden).
+        fehlt = [self._t("webkit.art_" + art) for art in ("exe", "py") if not dateien.get(art)]
         if fehlt:
-            return self._t("webkit.fassung_unvollstaendig", fehlt=", ".join(fehlt))
+            return self._t("webkit.fassung_hosts_laden", fehlt=", ".join(fehlt))
         return self._t("webkit.fassung_vollstaendig")
 
     def _webkit_seite_beschriften(self) -> None:
@@ -15635,15 +15649,13 @@ class PS5ConverterGUI:
         # Die Bindetags eines Widgets sind (Widget, Klasse, Toplevel, all).
         # Eine Bindung am **Toplevel** erreicht daher jedes Kind dieses
         # Fensters - ohne die globale Tabelle anzufassen und ohne Enter/Leave.
-        try:
-            fenster = canvas.winfo_toplevel()
-            fenster.bind("<MouseWheel>", _on_mousewheel, add="+")
-            # X11 meldet das Rad als Knopf 4 und 5 - ohne diese Bindungen
-            # rollten die Fenster mit diesem Aufbau unter Linux nicht.
-            fenster.bind("<Button-4>", lambda _e: canvas.yview_scroll(-1, "units"), add="+")
-            fenster.bind("<Button-5>", lambda _e: canvas.yview_scroll(1, "units"), add="+")
-        except tk.TclError as exc:                    # pragma: no cover
-            logger.debug("Mausrad nicht bindbar: %s", exc)
+        # Die Bindungen nimmt die Rollflaeche beim Zerstoeren wieder ab: Liegt sie im Hauptfenster (die PKG-Bereiche seit
+        # 30.10.2026), haette sonst jede gebaute Seite ihr Widget samt Kindern und Bildern am Toplevel hinterlassen.
+        an_toplevel_binden(canvas, "<MouseWheel>", _on_mousewheel)
+        # X11 meldet das Rad als Knopf 4 und 5 - ohne diese Bindungen
+        # rollten die Fenster mit diesem Aufbau unter Linux nicht.
+        an_toplevel_binden(canvas, "<Button-4>", lambda _e: canvas.yview_scroll(-1, "units"))
+        an_toplevel_binden(canvas, "<Button-5>", lambda _e: canvas.yview_scroll(1, "units"))
 
         return outer, inner
 
@@ -17950,6 +17962,15 @@ class PS5ConverterGUI:
             return False
 
         try:
+            # Eine Seite, die selbst auf dem Hauptbild steht (7. PKG / FPKG): ihr Rahmen kennt den Ausschnitt.
+            knoten = widget
+            for _ in range(40):
+                if knoten is None:
+                    break
+                seitenbild = getattr(knoten, "_seitenbild", None)
+                if callable(seitenbild):
+                    return seitenbild(widget, breite, hoehe)
+                knoten = getattr(knoten, "master", None)
             seitenleiste = getattr(self, "sidebar", None)
             if seitenleiste is not None and liegt_in(seitenleiste):
                 return self._compute_sidebar_bg_crop(widget, breite, hoehe)
@@ -18417,8 +18438,8 @@ class PS5ConverterGUI:
         try:
             # place zaehlt in einem tk.Frame ab der gepolsterten Kante (siehe
             # content_bg_label: x=-40 gleicht padx=40 aus).
-            polster_x = int(float(self.content_area.cget("padx")))
-            polster_y = int(float(self.content_area.cget("pady")))
+            polster_x = cget_pixel(self.content_area, "padx")
+            polster_y = cget_pixel(self.content_area, "pady")
         except (tk.TclError, ValueError):
             polster_x = polster_y = 0
         breite, hoehe = glanz.size
@@ -43531,7 +43552,7 @@ class PS5ConverterGUI:
                 hoehe = max(hoehe, h)
             ziel = max(1, y + hoehe)
             try:
-                if int(rahmen.cget("height")) != ziel:
+                if cget_pixel(rahmen, "height") != ziel:
                     rahmen.configure(height=ziel)
             except tk.TclError:
                 pass
@@ -53530,6 +53551,12 @@ class PS5ConverterGUI:
         self._pkg_fpkg_seite_einblenden(s.rahmen)
         s.fpkg_zeigen()
 
+    def _show_pkg_extras(self) -> None:
+        """WEITERE TOOLS "PKG-Extras": DDS zu PNG, exFAT-Boot-Sektor reparieren, exFAT-Inhalt entpacken/aufbauen,
+        FFPKG-Metadaten reparieren - die Karten der frueheren FPKG-Seite "Extras" in einem eigenen Fenster
+        (``ps5_validator/ui/pkg_extras_fenster.py``); es haengt nicht von einem geoeffneten PKG-Bereich ab."""
+        pkg_extras_fenster.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
+
     def _pkg_fpkg_seite_einblenden(self, rahmen: "tk.Frame") -> None:
         """Legt die Seite "PKG / FPKG" in die Zelle der Rollflaeche (1, 1) und blendet diese aus."""
         if getattr(self, "_ansicht", "umwandeln") != "umwandeln":
@@ -59820,21 +59847,136 @@ class PS5ConverterGUI:
             fassung: Die gewaehlte Fassung (``"0.5.1"``); leer = die neueste.
         """
         eltern = parent or self.root
-        pfad = (self._webkit_host_pfad(art, fassung) if fassung
-                else self._webkit_host_pfad(art))
-        if not pfad or not os.path.isfile(pfad):
-            messagebox.showerror(
-                self._t("webkit.title"),
-                self._t("webkit.host_missing",
-                        datei=self._webkit_dateimuster(
-                            "exe" if art == "exe" else "py", fassung)),
-                parent=eltern)
-            return
-
+        # Erst das, was ohnehin nicht geht - ein Host, der hier nicht laufen kann,
+        # wird auch nicht erst geladen.
         if art == "exe" and os.name != "nt":
             messagebox.showwarning(self._t("webkit.title"),
                                    self._t("webkit.host_windows_only"),
                                    parent=eltern)
+            return
+        if art != "exe" and not self._webkit_python():
+            messagebox.showerror(self._t("webkit.title"),
+                                 self._t("webkit.no_python"), parent=eltern)
+            return
+
+        pfad = (self._webkit_host_pfad(art, fassung) if fassung
+                else self._webkit_host_pfad(art))
+        if pfad and os.path.isfile(pfad):
+            self._webkit_host_ausfuehren(art, pfad, eltern)
+            return
+
+        # Seit v1.9.90 liegen die Hosts nicht mehr im Programm: Beim ersten Klick
+        # wird der Host der gewaehlten Fassung geladen (SHA-256 geprueft) und
+        # gleich gestartet; jeder weitere Klick startet die gespeicherte Datei.
+        nummer = fassung or next(iter(self._webkit_fassungen_liste()), "")
+        if not nummer:
+            messagebox.showerror(self._t("webkit.title"),
+                                 self._t("webkit.host_keine_fassung"), parent=eltern)
+            return
+        self._webkit_host_laden(
+            art, nummer, eltern,
+            lambda geladen: self._webkit_host_ausfuehren(art, geladen, eltern))
+
+    def _webkit_host_laden(self, art: str, fassung: str, eltern, danach) -> None:
+        """Laedt den Host dieser Fassung im Hintergrund - mit Fortschritt auf der Seite.
+
+        Netzzugriff nur hier und nur auf Klick. Bei Erfolg ruft der Fensterfaden
+        ``danach(pfad)``; bei einem Fehler steht der Grund auf Deutsch in einem
+        Fenster und im Protokoll - nichts bleibt stumm. Waehrend des Ladens sind
+        die beiden Host-Knoepfe gesperrt, ein zweiter Klick meldet es.
+
+        Args:
+            art: ``"exe"`` oder ``"py"``.
+            fassung: Eine Nummer wie ``"0.6.2"``.
+            danach: Wird mit dem Pfad der geladenen Datei im Hauptfaden gerufen.
+        """
+        if getattr(self, "_webkit_laedt", False):
+            messagebox.showinfo(self._t("webkit.title"), self._t("webkit.dl_laeuft"), parent=eltern)
+            return
+        self._webkit_laedt = True
+        datei = werkzeug_updates.WEBKIT_HOST_ANHANG[art].replace("{f}", fassung)
+        seite = getattr(self, "_webkit_seite", None)
+        var = getattr(self, "_webkit_fortschritt_var", None)
+        balken = getattr(self, "_webkit_fortschritt_balken", None)
+        status_var = getattr(self, "_webkit_status_var", None)
+        if seite is None:
+            seite = self.root
+
+        def _wege(zustand: str) -> None:
+            for knopf in (getattr(self, "_webkit_wegknoepfe", None) or {}).values():
+                try:
+                    knopf.configure(state=zustand)
+                except tk.TclError as exc:
+                    logger.debug("WebKit-Knopf nicht umschaltbar: %s", exc)
+
+        def _anzeigen(prozent: float) -> None:
+            if var is not None:
+                var.set(prozent)
+            if status_var is not None:
+                status_var.set(self._t("webkit.dl_status", datei=datei, prozent=int(prozent)))
+                self._webkit_status_ruhe = False
+
+        _wege("disabled")
+        if var is not None and balken is not None:
+            var.set(0.0)
+            try:
+                balken.pack(fill="x", pady=(8, 0), before=self._webkit_protokoll_karte)
+            except (tk.TclError, AttributeError) as exc:
+                logger.debug("WebKit-Balken nicht zeigbar: %s", exc)
+        _anzeigen(0.0)
+        self._webkit_zeile(self._t("webkit.dl_start", datei=datei))
+
+        def _melden(was: str, **wert) -> None:
+            if was != "hole":
+                return
+            gesamt = int(wert.get("gesamt") or 0)
+            prozent = (int(wert.get("fertig") or 0) / gesamt * 100.0) if gesamt else 0.0
+            self._spaeter_im_fenster(seite, _anzeigen, prozent)
+
+        def _fertig(ergebnis) -> None:
+            self._webkit_laedt = False
+            _wege("normal")
+            if balken is not None:
+                try:
+                    balken.pack_forget()
+                except tk.TclError as exc:
+                    logger.debug("WebKit-Balken nicht ausblendbar: %s", exc)
+            if status_var is not None:
+                status_var.set(self._t("webkit.status_idle"))
+                self._webkit_status_ruhe = True
+            if ergebnis.fehler:
+                code = (ergebnis.fehler if ergebnis.fehler in werkzeug_updates.HOST_GRUENDE
+                        else werkzeug_updates.HOST_SONST)
+                grund = self._t("webkit.dl_grund_" + code, detail=ergebnis.detail)
+                self._webkit_zeile("[FEHLER] %s\n" % grund)
+                if ergebnis.fehler != werkzeug_updates.HOST_ABGEBROCHEN:
+                    messagebox.showerror(self._t("webkit.title"),
+                                         self._t("webkit.dl_fehler", datei=datei, grund=grund),
+                                         parent=eltern)
+                return
+            self._webkit_zeile(self._t("webkit.dl_fertig", datei=datei))
+            self._webkit_info_aktualisieren()
+            danach(ergebnis.pfad)
+
+        def _lauf() -> None:
+            try:
+                ergebnis = werkzeug_updates.webkit_host_holen(
+                    art, fassung, werkzeug_updates_basis, werkzeug_updates.Netz(), _melden)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("WebKit-Host nicht ladbar")
+                ergebnis = werkzeug_updates.HostErgebnis("", werkzeug_updates.HOST_SONST, str(exc)[:200])
+            if not self._spaeter_im_fenster(seite, _fertig, ergebnis):
+                self._webkit_laedt = False
+
+        werkzeug_updates_basis = self._updates_basis()
+        threading.Thread(target=_lauf, daemon=True, name="webkit-host-laden").start()
+
+    def _webkit_host_ausfuehren(self, art: str, pfad: str, eltern) -> None:
+        """Startet eine vorhandene Host-Datei (nach Rueckfrage) in einem eigenen Fenster."""
+        if not os.path.isfile(pfad):
+            messagebox.showerror(self._t("webkit.title"),
+                                 self._t("webkit.host_weg", datei=os.path.basename(pfad)),
+                                 parent=eltern)
             return
 
         befehl = [pfad]
@@ -59877,8 +60019,11 @@ class PS5ConverterGUI:
         except Exception as exc:
             if offen is not None:
                 offen.close()
+            # WinError 225: Der Virenschutz hat die Datei gesperrt (oder nach dem Laden entfernt).
+            hinweis = (self._t("webkit.host_virenschutz")
+                       if getattr(exc, "winerror", 0) == 225 else "")
             messagebox.showerror(self._t("webkit.title"),
-                                 self._t("webkit.host_failed", fehler=exc),
+                                 self._t("webkit.host_failed", fehler=exc) + hinweis,
                                  parent=eltern)
             return
 

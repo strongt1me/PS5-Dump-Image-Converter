@@ -442,9 +442,12 @@ class UpdatesFenster:
         try:
             if self.liste.identify_region(ereignis.x, ereignis.y) != "cell":
                 return
-            if self.liste.identify_column(ereignis.x) != "#1":
-                return
             zeile = self.liste.identify_row(ereignis.y)
+            # Spalte ueber bbox statt identify_column: Tk 9 rechnet die Spaltengrenze
+            # bei hoher Skalierung anders als es zeichnet (Kasten ~6 px zu breit).
+            kasten = self.liste.bbox(zeile, "auswahl") if zeile else None
+            if not kasten or not kasten[0] <= ereignis.x < kasten[0] + kasten[2]:
+                return
         except tk.TclError:
             return
         if zeile and not zeile.startswith(GRUPPEN_ZEILE):

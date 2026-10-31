@@ -31,6 +31,8 @@ pruefumgebung.umlenken("webkit_seite")
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 from ps5_validator.utils import konsole_dienste as kd       # noqa: E402
 from ps5_validator.utils.i18n import STRINGS                # noqa: E402
+from ps5_validator.utils import werkzeug_updates as wu      # noqa: E402
+from webkit_host_attrappen import FREIGABEN, FakeNetz, inhalt  # noqa: E402
 
 try:
     import tkinter as tk
@@ -194,15 +196,22 @@ class FassungenTests(unittest.TestCase):
         objekt._load_setting = lambda _s, vorgabe="": "0.1.0"
         self.assertEqual("0.5.2", objekt._webkit_gewaehlt(), "eine verschwundene Fassung gilt nicht")
 
-    def test_unvollstaendige_fassung_nennt_was_fehlt(self) -> None:
-        mit = _ordner_mit({"0.5.0": ["exe", "elf"], "0.4.0": ["exe", "py", "elf"]})
+    def test_fehlende_hosts_heissen_nachgeladen_fehlender_installer_unvollstaendig(self) -> None:
+        """Die Hosts liegen seit v1.9.90 nicht mehr bei - ihr Fehlen ist der Normalfall, kein Mangel."""
+        mit = _ordner_mit({"0.5.0": ["exe", "elf"], "0.4.0": ["exe", "py", "elf"], "0.3.0": ["elf"],
+                           "0.2.0": ["exe", "py"]})
         self.addCleanup(mit.cleanup)
         objekt = _nackt(mit.name)
         info = objekt._webkit_fassung_info("0.5.0")
         self.assertIn(STRINGS["webkit.art_py"]["de"], info)
         self.assertNotIn(STRINGS["webkit.art_exe"]["de"], info)
+        self.assertEqual(STRINGS["webkit.fassung_hosts_laden"]["de"].format(
+            fehlt="%s, %s" % (STRINGS["webkit.art_exe"]["de"], STRINGS["webkit.art_py"]["de"])),
+            objekt._webkit_fassung_info("0.3.0"), "nur der Installer: beide Hosts werden nachgeladen")
         self.assertEqual(STRINGS["webkit.fassung_vollstaendig"]["de"],
                          objekt._webkit_fassung_info("0.4.0"))
+        self.assertEqual(STRINGS["webkit.fassung_unvollstaendig"]["de"].format(fehlt=STRINGS["webkit.art_elf"]["de"]),
+                         objekt._webkit_fassung_info("0.2.0"), "ohne Installer ist die Fassung unvollstaendig")
         self.assertEqual(STRINGS["webkit.keine_fassung"]["de"], objekt._webkit_fassung_info(""))
 
     def test_die_fassung_aus_dem_dateinamen(self) -> None:
@@ -226,10 +235,17 @@ class MitgelieferteFassungenTests(unittest.TestCase):
             self.assertIn(fassung, liste, "Fassung %s fehlt im Ordner" % fassung)
         self.assertEqual(FASSUNGEN[0], liste[0], "die neueste steht vorn")
 
-    def test_jede_fassung_hat_alle_drei_dateien(self) -> None:
+    def test_jede_fassung_hat_ihren_installer(self) -> None:
+        """Mit dem Programm kommt nur der Installer (seit v1.9.90); die Hosts laedt der Klick nach.
+
+        Im Arbeitsbaum duerfen die Host-Dateien weiter liegen - sie kommen nur nicht in den Bau
+        (test_webkit_host_holen.KlassenTests). Liegen sie da, muessen sie heil sein.
+        """
         for fassung in FASSUNGEN:
             for art, pfad in self.objekt._webkit_fassung_dateien(fassung).items():
                 with self.subTest(fassung=fassung, art=art):
+                    if art != "elf" and not pfad:
+                        continue
                     self.assertTrue(pfad, "%s v%s fehlt" % (art, fassung))
                     self.assertGreater(Path(pfad).stat().st_size, 1024 * 1024 if art != "py" else 100_000)
 
@@ -251,7 +267,10 @@ class MitgelieferteFassungenTests(unittest.TestCase):
             muster = rb"(?<![\d.])" + re.escape(fassung.encode()) + rb"(?![\d])"
             for art in ("py", "exe"):
                 with self.subTest(fassung=fassung, art=art):
-                    roh = Path(self.objekt._webkit_datei(art, fassung)).read_bytes()
+                    datei = self.objekt._webkit_datei(art, fassung)
+                    if not datei:                      # im Arbeitsbaum nicht vorhanden - kommt per Klick
+                        continue
+                    roh = Path(datei).read_bytes()
                     self.assertTrue(re.search(muster, roh),
                                     "Die Datei nennt ihre Fassung %s nicht" % fassung)
 
@@ -436,6 +455,168 @@ class SeitenTests(unittest.TestCase):
         self.assertEqual(1, len(befehle))
         self.assertTrue(befehle[0][-1].endswith("webkit-autoloader-host_v0.4.0.py"), befehle[0])
 
+    # -- Der Host wird beim Klick geladen (seit v1.9.90) --------------------
+
+    def _host_umgebung(self, netz):
+        """Ein Ordner nur mit dem Installer 0.6.2, ein leerer Update-Ordner, ein Netz-Ersatz.
+
+        Gibt ``(basis, befehle, fehler, infos)`` zurueck; ``befehle`` sammelt, was gestartet wurde.
+        """
+        ordner = tempfile.TemporaryDirectory()
+        basis = tempfile.TemporaryDirectory()
+        self.addCleanup(ordner.cleanup)
+        self.addCleanup(basis.cleanup)
+        (Path(ordner.name) / "webkit-autoloader-installer_v0.6.2.elf").write_bytes(b"x" * 2048)
+        befehle: list = []
+        fehler: list = []
+        infos: list = []
+
+        class _Prozess:
+            def __init__(self, befehl, **_kw) -> None:
+                befehle.append(list(befehl))
+
+            def wait(self, timeout=None):
+                raise APP.subprocess.TimeoutExpired("x", timeout)
+
+        for ziel, name, ersatz in (
+                (self.app, "_webkit_ordner", lambda: ordner.name),
+                (self.app, "_updates_basis", lambda: basis.name),
+                (self.app, "_append_to_log", lambda _t: None),
+                (wu, "Netz", lambda: netz),
+                (APP.subprocess, "Popen", _Prozess),
+                (APP.messagebox, "askyesno", lambda *a, **k: True),
+                (APP.messagebox, "showerror", lambda *a, **k: fehler.append(a[1])),
+                (APP.messagebox, "showinfo", lambda *a, **k: infos.append(a[1]))):
+            flicken = mock.patch.object(ziel, name, ersatz)
+            flicken.start()
+            self.addCleanup(flicken.stop)
+        self.app._webkit_laedt = False
+        self.addCleanup(setattr, self.app, "_webkit_laedt", False)
+        self.app._webkit_fassungen_anzeigen()
+        self.addCleanup(self.app._webkit_fassungen_anzeigen)
+        return basis.name, befehle, fehler, infos
+
+    def _gespeichert(self, basis: str, name: str) -> Path:
+        return Path(wu.update_ordner(basis)) / wu.ORT_WEBKIT / name
+
+    def test_der_erste_klick_laedt_und_startet_jeder_weitere_startet_nur(self) -> None:
+        netz = FakeNetz(FREIGABEN)
+        basis, befehle, fehler, _infos = self._host_umgebung(netz)
+        werte: list = []
+        self.app._webkit_fortschritt_var.trace_add(
+            "write", lambda *_a: werte.append(self.app._webkit_fortschritt_var.get()))
+        self.app._webkit_host_starten("py", fassung="0.6.2")
+        _schleife(8.0, bis=lambda: bool(befehle))
+        self.assertEqual([], fehler)
+        self.assertEqual(1, len(befehle), "gleich beim ersten Klick gestartet")
+        ziel = self._gespeichert(basis, "webkit-autoloader-host_v0.6.2.py")
+        self.assertEqual(str(ziel), befehle[0][-1])
+        self.assertEqual(inhalt(ziel.name), ziel.read_bytes())
+        self.assertEqual(1, len(netz.geladen))
+        self.assertIn(100.0, werte, "der Fortschritt lief bis zum Ende")
+        _schleife(1.0, bis=lambda: not self.app._webkit_laedt)
+        self.assertFalse(self.app._webkit_laedt)
+        self.assertEqual("", self.app._webkit_fortschritt_balken.winfo_manager(), "der Balken ist wieder weg")
+
+        befehle.clear()
+        self.app._webkit_host_starten("py", fassung="0.6.2")             # zweiter Klick: ohne Netz, ohne Warten
+        self.assertEqual(1, len(befehle))
+        self.assertEqual(1, len(netz.geladen), "nicht noch einmal geladen")
+        self.assertEqual(1, netz.abgefragt, "auch nicht noch einmal nachgefragt")
+
+    def test_eine_andere_fassung_laedt_ihren_eigenen_host(self) -> None:
+        netz = FakeNetz(FREIGABEN)
+        basis, befehle, fehler, _infos = self._host_umgebung(netz)
+        self._gespeichert(basis, "x").parent.mkdir(parents=True, exist_ok=True)
+        self._gespeichert(basis, "webkit-autoloader-host_v0.6.2.py").write_bytes(b"alt")
+        self.app._webkit_host_starten("py", fassung="0.6.1")
+        _schleife(8.0, bis=lambda: bool(befehle))
+        self.assertEqual([], fehler)
+        self.assertTrue(befehle[0][-1].endswith("host_v0.6.1.py"), befehle)
+        self.assertEqual(b"alt", self._gespeichert(basis, "webkit-autoloader-host_v0.6.2.py").read_bytes(),
+                         "die vorhandene andere Fassung bleibt unberuehrt")
+
+    def test_eine_verfaelschte_datei_startet_nicht_und_der_naechste_klick_versucht_es_neu(self) -> None:
+        netz = FakeNetz(FREIGABEN)
+        netz.verfaelscht = True
+        basis, befehle, fehler, _infos = self._host_umgebung(netz)
+        self.app._webkit_host_starten("py", fassung="0.6.2")
+        _schleife(8.0, bis=lambda: bool(fehler))
+        self.assertEqual([], befehle, "eine ungepruefte Datei wird nie gestartet")
+        self.assertEqual(1, len(fehler))
+        self.assertIn(STRINGS["webkit.dl_grund_pruefsumme"]["de"].split(" (")[0], fehler[0])
+        self.assertFalse(self._gespeichert(basis, "webkit-autoloader-host_v0.6.2.py").exists())
+        _schleife(1.0, bis=lambda: not self.app._webkit_laedt)
+        self.assertFalse(self.app._webkit_laedt, "die Sperre ist wieder offen")
+        netz.verfaelscht = False
+        self.app._webkit_host_starten("py", fassung="0.6.2")
+        _schleife(8.0, bis=lambda: bool(befehle))
+        self.assertEqual(1, len(befehle), "Gegenprobe: mit heiler Datei startet es")
+
+    def test_ohne_netz_steht_der_grund_auf_deutsch_da_und_nichts_startet(self) -> None:
+        netz = FakeNetz(FREIGABEN, ausfall=OSError("getaddrinfo failed"))
+        basis, befehle, fehler, _infos = self._host_umgebung(netz)
+        self.app._webkit_host_starten("py", fassung="0.6.2")
+        _schleife(8.0, bis=lambda: bool(fehler))
+        self.assertEqual([], befehle)
+        self.assertEqual(1, len(fehler))
+        self.assertIn(STRINGS["webkit.dl_grund_netz"]["de"].split("{")[0], fehler[0])
+        self.assertIn("getaddrinfo", fehler[0])
+        self.assertFalse(self._gespeichert(basis, "webkit-autoloader-host_v0.6.2.py").exists())
+
+    def test_ein_zweiter_klick_waehrend_des_ladens_wird_gemeldet(self) -> None:
+        netz = FakeNetz(FREIGABEN)
+        _basis, befehle, fehler, infos = self._host_umgebung(netz)
+        self.app._webkit_laedt = True
+        self.app._webkit_host_starten("py", fassung="0.6.2")
+        self.assertEqual([STRINGS["webkit.dl_laeuft"]["de"]], infos)
+        self.assertEqual((0, [], []), (netz.abgefragt, befehle, fehler))
+
+    def test_ist_die_datei_nach_dem_laden_weg_sagt_es_der_virenschutz_hinweis(self) -> None:
+        netz = FakeNetz(FREIGABEN)
+        basis, befehle, fehler, _infos = self._host_umgebung(netz)
+        self.app._webkit_host_ausfuehren("py", str(self._gespeichert(basis, "webkit-autoloader-host_v0.6.2.py")),
+                                         self.app.root)
+        self.assertEqual([], befehle)
+        self.assertEqual(1, len(fehler))
+        self.assertIn("Virenschutz", fehler[0])
+        self.assertIn("webkit-autoloader-host_v0.6.2.py", fehler[0])
+
+    def test_sperrt_der_virenschutz_beim_start_kommt_der_hinweis_dazu(self) -> None:
+        netz = FakeNetz(FREIGABEN)
+        basis, befehle, fehler, _infos = self._host_umgebung(netz)
+        ziel = self._gespeichert(basis, "webkit-autoloader-host_v0.6.2.py")
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        ziel.write_bytes(b"x")
+        sperre = OSError("Der Vorgang wurde nicht erfolgreich beendet, da die Datei einen Virus enthaelt")
+        sperre.winerror = 225
+
+        def _wirft(*_a, **_k):
+            raise sperre
+
+        with mock.patch.object(APP.subprocess, "Popen", _wirft):
+            self.app._webkit_host_ausfuehren("py", str(ziel), self.app.root)
+        self.assertEqual(1, len(fehler))
+        self.assertIn(STRINGS["webkit.host_virenschutz"]["de"].strip(), fehler[0])
+
+    def test_ohne_jede_fassung_wird_nichts_geladen(self) -> None:
+        netz = FakeNetz(FREIGABEN)
+        _basis, befehle, fehler, _infos = self._host_umgebung(netz)
+        with mock.patch.object(self.app, "_webkit_fassungen_liste", lambda: []):
+            self.app._webkit_host_starten("py")
+        self.assertEqual([STRINGS["webkit.host_keine_fassung"]["de"]], fehler)
+        self.assertEqual((0, []), (netz.abgefragt, befehle))
+
+    def test_der_windows_host_wird_unter_linux_gar_nicht_erst_geladen(self) -> None:
+        netz = FakeNetz(FREIGABEN)
+        _basis, befehle, _fehler, _infos = self._host_umgebung(netz)
+        warnungen: list = []
+        with mock.patch.object(APP.os, "name", "posix"), \
+                mock.patch.object(APP.messagebox, "showwarning", lambda *a, **k: warnungen.append(a[1])):
+            self.app._webkit_host_starten("exe", fassung="0.6.2")
+        self.assertEqual([STRINGS["webkit.host_windows_only"]["de"]], warnungen)
+        self.assertEqual((0, []), (netz.abgefragt, befehle), "kein Netz fuer einen Host, der hier nie laeuft")
+
     def test_der_installer_geht_in_der_gewaehlten_fassung_raus(self) -> None:
         gesendet: list = []
         gemeldet: list = []
@@ -535,6 +716,12 @@ class QuelltextTests(unittest.TestCase):
         erwartet = {
             "webkit.fassung_neueste": {"version"},
             "webkit.fassung_unvollstaendig": {"fehlt"},
+            "webkit.fassung_hosts_laden": {"fehlt"},
+            "webkit.dl_start": {"datei"},
+            "webkit.dl_status": {"datei", "prozent"},
+            "webkit.dl_fertig": {"datei"},
+            "webkit.dl_fehler": {"datei", "grund"},
+            "webkit.host_weg": {"datei"},
             "webkit.log_gesendet": {"datei", "ip", "groesse"},
             "webkit.log_usb": {"datei", "usb"},
         }

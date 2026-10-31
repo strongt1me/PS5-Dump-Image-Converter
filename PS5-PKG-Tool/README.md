@@ -1,9 +1,15 @@
 # PS5-PKG-Tool
 
 `ffpfsc-pkg-tool` fuer das Fenster „PS5 PKG Dump & Image Converter“ - gebaut aus dem Quelltext von
-**ps5-fpkg-converter 0.0.2** (GPL-3.0-or-later, `src/`); darin die Engine von ps5-ultrapack (MIT) und die
+**ps5-fpkg-converter 0.0.3** (GPL-3.0-or-later, `src/`); darin die Engine von ps5-ultrapack (MIT) und die
 Bibliothek **LibProsperoPkg 1.2.0** (GPL-3.0-or-later; als fertige Datei `src/ffpfsc-pkg-tool/lib/`, die Quelle
 dazu liegt nicht bei - siehe `src/ffpfsc-pkg-tool/lib/README.md`).
+
+Seit 31.10.2026 steht die Fassung auf **0.0.3** (30.10.2026). Der Vergleich 0.0.2 bis 0.0.3 nennt keine Datei unter `src/`
+(nur `app/engine.py`, `app/ui.py`, die Hilfetexte und `pyproject.toml` der Python-Oberflaeche des Autors) - das C#-Werkzeug hier
+ist also unveraendert. Uebernommen ist die eine Verhaltensaenderung, die auch fuer unser Fenster zaehlt: Mit einem Temp-Ordner
+setzt der Aufruf auch `TMP`, `TEMP` und `TMPDIR` des Werkzeugs (`ps5_pkg_werkzeug._umgebung`) und legt den Ordner an, damit keine
+Zwischendatei auf dem Systemlaufwerk landet. An keinem echten Paket gemessen.
 
 Seit 29.10.2026 steht die Versionskonstante auf **2.3.3**. ps5-ultrapack 2.3.3 aendert nur die Oberflaeche der Upstream-App
 (`PS5_UltraPack.py`: mehrere Auftraege fuer dieselbe Quelle, Zusatzinhalte, die schon als gleiche Datei da sind, zaehlen als

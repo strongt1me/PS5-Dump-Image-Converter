@@ -34,6 +34,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from typing import Callable
 
+from ps5_validator.ui import hauptknoepfe
 from ps5_validator.utils import bibliothek_raster as raster
 from ps5_validator.utils import orbispkg
 from ps5_validator.utils import ps4_abbild as ab
@@ -86,8 +87,12 @@ class Ps4DumpImageFenster:
     """Die Seite. Eine Instanz je Programmlauf (Singleton, siehe :func:`oeffnen`)."""
 
     def __init__(self, gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",
-                 *, master: "tk.Misc | None" = None) -> None:
+                 *, master: "tk.Misc | None" = None, karte_bauer: "Callable | None" = None,
+                 quelle_bauer: "Callable | None" = None) -> None:
         self.g = gui
+        #: Von der Seite ``pkg_fpkg_seite``: baut die Karte (wie ``path_card`` der Aufgabe 1) und das Quellfeld darin.
+        self._karte_bauer = karte_bauer
+        self._quelle_bauer = quelle_bauer
         self.t = gui._t
         self.c = gui._COLORS
         self.F = schrift
@@ -175,16 +180,35 @@ class Ps4DumpImageFenster:
         g, t, c = self.g, self.t, self.c
         pw = g._pw
         F, pt = self.F, self.pt
-        titel = t("ps4pkg.window_title")
-        self.win = tk.Frame(self._master if self._master is not None else g.root, bg=c["bg_main"])
+        self.win =tk.Frame(self._master if self._master is not None else g.root, bg=c["bg_main"])
         if self._master is None:
             # Ohne eine Seite, die sie eingebettet reicht (z. B. direkt im Test erzeugt): eine feste Groesse wie
             # das fruehere Popup-Fenster (1000x820), sonst bleibt der Rahmen 1x1 px - Kinder, die auf ein echtes
             # Groessenereignis warten (etwa eine FlussZeile), bekommen dann nie eines.
             self.win.place(x=0, y=0, width=1000, height=820)
-        g._build_modern_header(self.win, titel, t("ps4pkg.subtitle"))
-        koerper = tk.Frame(self.win, bg=c["bg_main"], padx=18)
-        koerper.pack(fill="both", expand=True)
+        # Seit 30.10.2026 wie die Seite PS5 PKG und die Aufgaben 1 bis 6: Titel und Quellfeld stehen im Kopf der Seite
+        # (``pkg_fpkg_seite``), der Inhalt rollt ueber ``_build_scrollable_body`` statt ueber eine eigene Rollflaeche,
+        # und die Knopfleiste (bricht um) steht wie bei Aufgabe 1 unter den Abschnitten, das Protokoll darunter.
+        aussen, koerper = g._build_scrollable_body(self.win)
+        aussen.pack(fill="both", expand=True, padx=(14, 14), pady=(0, 0))
+        # Die Karte wie ``path_card`` der Aufgabe 1: Quelle, Spiele, Ziel und Einstellungen stehen darin; Knopfleiste,
+        # Fortschritt und Protokoll darunter auf dem Hauptbild. Ohne die Seite (``karte_bauer`` fehlt) steht alles lose.
+        if self._karte_bauer is not None:
+            karte, konf = self._karte_bauer(koerper)
+            karte.pack(fill="x")
+        else:
+            konf = koerper
+        if self._quelle_bauer is not None:
+            self._quelle_bauer(konf).pack(fill="x", pady=(0, 6))
+        # Alles unter dem Quellfeld liegt in einem eigenen Rahmen (``rest_zeigen`` blendet ihn ein und aus).
+        konf = tk.Frame(konf, bg=c["bg_main"])
+        konf.pack(fill="x")
+        self._rest_karte = konf
+        beschreibung = tk.Label(konf, text=t("ps4pkg.subtitle"), font=(F, pt(9)), bg=c["bg_main"],
+                                fg=c["fg_secondary"], anchor="w", justify="left", wraplength=560)
+        beschreibung.pack(fill="x", padx=0, pady=(6, 0))
+        # Der Umbruch folgt der Breite der Spalte (das Label selbst hat auf dem Hauptbild die Groesse seines Textes).
+        konf.bind("<Configure>", lambda e: beschreibung.configure(wraplength=max(160, e.width - 16)), add="+")
 
         self.art_var = tk.StringVar(value=str(self._einstellung(EINST_ART, QUELLE_ORDNER)))
         if self.art_var.get() not in (QUELLE_ORDNER, QUELLE_DATEIEN, QUELLE_DUMP):
@@ -210,26 +234,29 @@ class Ps4DumpImageFenster:
         self.status_var = tk.StringVar(value=t("ps4pkg.status_idle"))
 
         # ── Quelle ──────────────────────────────────────────────────────
-        tk.Label(koerper, text=t("ps4pkg.source_label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        art_reihe = tk.Frame(koerper, bg=c["bg_main"])
-        art_reihe.pack(fill="x")
+        # Seit 30.10.2026 waehlt das Quellfeld der Seite (``pkg_fpkg_seite``) die Quelle und erkennt ihre Art; die drei
+        # Quellarten stehen hier nicht mehr zur Wahl (nicht gepackt, die Werte und Befehle bleiben - die Seite setzt
+        # sie ueber :meth:`quelle_von_seite`).
+        self._quelle_kopf = tk.Label(konf, text=t("ps4pkg.source_label").upper(), font=(F, pt(9), "bold"),
+                                     bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
+        art_reihe = raster.FlussZeile(konf, g._bibliothek_zeichner(), grund="bg_main", abstand=(14, 4))
+        self._art_reihe = art_reihe
         for wert, schluessel in ((QUELLE_ORDNER, "ps4pkg.source_kind_dir"), (QUELLE_DATEIEN, "ps4pkg.source_kind_files"),
                                  (QUELLE_DUMP, "ps4pkg.source_kind_dump")):
-            pw.Radiobutton(art_reihe, text=t(schluessel), value=wert, variable=self.art_var, font=(F, pt(9)),
-                           command=self._quelle_gewaehlt,
-                           bg=c["bg_main"], fg=c["fg_primary"], selectcolor=c["bg_card"],
-                           activebackground=c["bg_main"], activeforeground=c["fg_primary"], highlightthickness=0,
-                           bd=0).pack(side="left", padx=(0, 14))
+            art_reihe.hinzufuegen(pw.Radiobutton(
+                art_reihe, text=t(schluessel), value=wert, variable=self.art_var, font=(F, pt(10)),
+                command=self._quelle_gewaehlt,
+                bg=c["bg_main"], fg=c["fg_primary"], selectcolor=c["bg_card"],
+                activebackground=c["bg_main"], activeforeground=c["fg_primary"], highlightthickness=0, bd=0))
 
         # ── Gefundene Spiele ────────────────────────────────────────────
-        tk.Label(koerper, text=t("ps4pkg.games_label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        liste_rahmen = tk.Frame(koerper, bg=c["bg_main"])
-        liste_rahmen.pack(fill="both", expand=True)
+        tk.Label(konf, text=t("ps4pkg.games_label").upper(), font=(F, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=0, pady=(14, 5))
+        liste_rahmen = tk.Frame(konf, bg=c["bg_main"])
+        liste_rahmen.pack(fill="x")
         spalten = ("title_id", "plattform", "titel", "version", "teile")
         self.liste = pw.Treeview(liste_rahmen, columns=spalten, show="headings", height=4, selectmode="extended")
-        for spalte, breite in zip(spalten, (110, 80, 330, 90, 220)):
+        for spalte, breite in zip(spalten, (100, 80, 250, 80, 170)):
             self.liste.heading(spalte, text=t(f"ps4pkg.col_{spalte}"), anchor="w")
             self.liste.column(spalte, width=breite, anchor="w")
         self.liste.tag_configure("ps5", foreground=c["fg_warning"])
@@ -239,81 +266,103 @@ class Ps4DumpImageFenster:
         rolle.pack(side="right", fill="y")
         self.liste.configure(yscrollcommand=rolle.set)
         self.liste.bind("<<TreeviewSelect>>", lambda _e: self._spielinfo_zeigen(), add="+")
-        self.playgo_hinweis = tk.Label(koerper, text="", font=(F, pt(9), "bold"), bg=c["bg_main"],
+        self.playgo_hinweis = tk.Label(konf, text="", font=(F, pt(9), "bold"), bg=c["bg_main"],
                                        fg=c.get("fg_warning", "#f0a32e"), anchor="w")
-        self.playgo_hinweis.pack(fill="x", pady=(4, 0))
+        self.playgo_hinweis.pack(fill="x", padx=0, pady=(4, 0))
 
         # ── Ziel und Einstellungen ──────────────────────────────────────
-        tk.Label(koerper, text=t("ps4pkg.output_label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        ziel_reihe = tk.Frame(koerper, bg=c["bg_main"])
+        tk.Label(konf, text=t("ps4pkg.output_label").upper(), font=(F, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=0, pady=(14, 5))
+        ziel_reihe = tk.Frame(konf, bg=c["bg_main"])
         ziel_reihe.pack(fill="x")
-        pw.Entry(ziel_reihe, textvariable=self.ziel_var, font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+        pw.Entry(ziel_reihe, textvariable=self.ziel_var, font=(F, pt(12)), bg=c["bg_card"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"], relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
-        pw.Button(ziel_reihe, text="…", width=3, command=self._ziel_waehlen).pack(side="left", padx=(6, 0))
-        tk.Label(koerper, text=t("ps4pkg.temp_label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        temp_reihe = tk.Frame(koerper, bg=c["bg_main"])
+        pw.Button(ziel_reihe, text=t("ps5pkg.choose_target"), command=self._ziel_waehlen, hoehe=36,
+                  fett=True).pack(side="left", padx=(8, 0))
+        tk.Label(konf, text=t("ps4pkg.temp_label").upper(), font=(F, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=0, pady=(14, 5))
+        temp_reihe = tk.Frame(konf, bg=c["bg_main"])
         temp_reihe.pack(fill="x")
-        pw.Entry(temp_reihe, textvariable=self.temp_var, font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+        pw.Entry(temp_reihe, textvariable=self.temp_var, font=(F, pt(12)), bg=c["bg_card"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"], relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
-        pw.Button(temp_reihe, text="…", width=3, command=self._temp_waehlen).pack(side="left", padx=(6, 0))
+        pw.Button(temp_reihe, text=t("ps5pkg.choose_target"), command=self._temp_waehlen, hoehe=36,
+                  fett=True).pack(side="left", padx=(8, 0))
 
-        einstell = tk.Frame(koerper, bg=c["bg_main"])
-        einstell.pack(fill="x", pady=(8, 0))
-        tk.Label(einstell, text=t("ps4pkg.format_label"), font=(F, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        self.format_box = pw.Combobox(einstell, textvariable=self.format_var, state="readonly", width=24,
-                                      values=tuple(self._formate.values()), font=(F, pt(9)))
-        self.format_box.pack(side="left", padx=(6, 18))
-        tk.Label(einstell, text=t("ps4pkg.level_label"), font=(F, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        self.stufe_feld = pw.Spinbox(einstell, from_=0, to=9, textvariable=self.stufe_var, width=4, font=(F, pt(9)))
-        self.stufe_feld.pack(side="left", padx=(6, 18))
-        tk.Label(einstell, text=t("ps4pkg.workers_label"), font=(F, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        self.worker_feld = pw.Spinbox(einstell, from_=1, to=max(1, os.cpu_count() or 4), textvariable=self.worker_var,
-                                      width=4, font=(F, pt(9)))
-        self.worker_feld.pack(side="left", padx=(6, 18))
-        dlc = pw.Checkbutton(einstell, text=t("ps4pkg.dlc_label"), variable=self.dlc_var, font=(F, pt(9)),
+        # Format, Stufe, Worker und DLC wie die Zeile ZIELFORMAT / KOMPRESSION / WORKER / BEIM ERSTELLEN EINBAUEN der
+        # Aufgabe 1: je eine Spalte mit kleiner Fettschrift ueber dem Feld. Bei der Mindestbreite bricht die Zeile um.
+        einstell = raster.FlussZeile(konf, g._bibliothek_zeichner(), grund="bg_main", abstand=(24, 10))
+        einstell.pack(fill="x", padx=0, pady=(14, 0))
+
+        def spalte(titel: str) -> tk.Frame:
+            rahmen = tk.Frame(einstell, bg=c["bg_main"])
+            tk.Label(rahmen, text=titel.rstrip(":").rstrip(" :").upper(), font=(F, pt(9), "bold"), bg=c["bg_main"],
+                     fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(0, 5))
+            einstell.hinzufuegen(rahmen)
+            return rahmen
+
+        sp = spalte(t("ps4pkg.format_label"))
+        self.format_box = pw.Combobox(sp, textvariable=self.format_var, state="readonly", width=24,
+                                      values=tuple(self._formate.values()), font=(F, pt(10)))
+        self.format_box.pack(anchor="w")
+        sp = spalte(t("ps4pkg.level_label"))
+        self.stufe_feld = pw.Spinbox(sp, from_=0, to=9, textvariable=self.stufe_var, width=4, font=(F, pt(10)))
+        self.stufe_feld.pack(anchor="w")
+        sp = spalte(t("ps4pkg.workers_label"))
+        self.worker_feld = pw.Spinbox(sp, from_=1, to=max(1, os.cpu_count() or 4), textvariable=self.worker_var,
+                                      width=4, font=(F, pt(10)))
+        self.worker_feld.pack(anchor="w")
+        sp = spalte(t("main.integrate_label"))
+        dlc = pw.Checkbutton(sp, text=t("ps4pkg.dlc_label"), variable=self.dlc_var, font=(F, pt(10)),
                              bg=c["bg_main"], fg=c["fg_warning"], selectcolor=c["bg_card"],
                              activebackground=c["bg_main"], activeforeground=c["fg_warning"], highlightthickness=0, bd=0)
-        dlc.pack(side="left")
+        dlc.pack(anchor="w")
         tooltip = getattr(_haupt(g), "DelayedTooltip", None)
         if tooltip is not None:
             tooltip(dlc, t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
 
-        # ── Fortschritt und Protokoll ───────────────────────────────────
-        balken_reihe = tk.Frame(koerper, bg=c["bg_main"])
-        balken_reihe.pack(fill="x", pady=(10, 3))
+        # ── Knopfleiste, Fortschritt und Protokoll ──────────────────────
+        unten = tk.Frame(koerper, bg=c["bg_main"])
+        unten.pack(fill="x")
+        self._rest_unten = unten
+        self._rest_sichtbar = True
+        leiste = raster.FlussZeile(unten, g._bibliothek_zeichner(), grund="bg_main", abstand=(10, 6))
+        leiste.pack(fill="x", pady=(20, 0))
+        self.leiste = leiste
+        balken_reihe = tk.Frame(unten, bg=c["bg_main"])
+        balken_reihe.pack(fill="x", pady=(14, 3))
         self.prozent_var = tk.StringVar(value="0 %")
         tk.Label(balken_reihe, textvariable=self.prozent_var, width=6, anchor="e", font=(F, pt(10), "bold"),
                  bg=c["bg_main"], fg=c["fg_primary"]).pack(side="right", padx=(8, 0))
         self.balken = pw.Progressbar(balken_reihe, mode="determinate", maximum=100.0)
         self.balken.pack(side="left", fill="x", expand=True)
         self._balken_unbestimmt = False
-        tk.Label(koerper, textvariable=self.status_var, font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
-                 anchor="w", wraplength=920, justify="left").pack(fill="x")
-        self.protokoll = pw.Text(koerper, height=6, font=(self.M, pt(9)), bg=c["console_bg"], fg=c["console_fg"],
+        status_text = tk.Label(unten, textvariable=self.status_var, font=(F, pt(9)), bg=c["bg_main"],
+                               fg=c["fg_secondary"], anchor="w", wraplength=560, justify="left")
+        status_text.pack(fill="x")
+        koerper.bind("<Configure>", lambda e: status_text.configure(wraplength=max(160, e.width - 16)), add="+")
+        # Feste Hoehe (die Seite rollt): in der Rollflaeche gaebe es keinen freien Platz, auf den ``expand`` wirken koennte.
+        self.protokoll = pw.Text(unten, height=9, font=(self.M, pt(9)), bg=c["console_bg"], fg=c["console_fg"],
                                  relief="flat", insertbackground=c["console_fg"], wrap="word")
-        self.protokoll.pack(fill="both", expand=True, pady=(6, 0))
+        self.protokoll.pack(fill="x", pady=(6, 10))
 
-        # ── Knopfleiste (zuerst unten gepackt, vor dem Koerper - sonst quetscht ihn die Mindesthoehe) ─────
+        # ── Knopfleiste (oben im Koerper schon gepackt, hier gefuellt) ───────────────────────────────────
         # Kein SCHLIESSEN mehr (seit 12.10.2026): die Seite bleibt wie die uebrigen Seiten des Programms stehen.
-        leiste = tk.Frame(self.win, bg=c["bg_main"], padx=16, pady=12)
-        leiste.pack(side="bottom", fill="x", before=koerper)
-        self.abbrechen_knopf = pw.Button(leiste, text=t("action.cancel"), command=self._abbrechen)
-        self.abbrechen_knopf.pack(side="right")
+        # Reihenfolge wie bei den Aufgaben 1 bis 6: erst STARTEN und ABBRECHEN, danach die Zusatzfunktionen.
+        # STARTEN und ABBRECHEN wie bei Aufgabe 1 (``run_btn``/``abort_btn``), die Zusatzfunktionen als Pillen.
+        haupt = hauptknoepfe.starten_abbrechen(g, leiste, t("ps4dib.start_button"), self._starten, self._abbrechen)
+        if haupt is not None:
+            self.start_knopf, self.abbrechen_knopf = haupt
+        else:
+            self.start_knopf = pw.Button(leiste, text=t("ps4dib.start_button"), style="Accent.TButton",
+                                         command=self._starten)
+            self.abbrechen_knopf = pw.Button(leiste, text=t("action.cancel"), command=self._abbrechen)
         self.einlesen_knopf = pw.Button(leiste, text=t("ps4pkg.scan_button"), command=self._einlesen)
-        self.einlesen_knopf.pack(side="left")
-        self.start_knopf = pw.Button(leiste, text=t("ps4dib.start_button"), style="Accent.TButton", command=self._starten)
-        self.start_knopf.pack(side="left", padx=(8, 0))
         self.update_knopf = pw.Button(leiste, text=t("ps4dib.btn_update"), command=self._update_online)
-        self.update_knopf.pack(side="left", padx=(8, 0))
         self.senden_knopf = pw.Button(leiste, text=t("ps4dib.btn_senden"), command=self._senden)
-        self.senden_knopf.pack(side="left", padx=(8, 0))
         self.mehr_knopf = pw.Button(leiste, text=t("ps4dib.btn_mehr"), command=self._mehr_menue)
-        self.mehr_knopf.pack(side="left", padx=(8, 0))
+        for knopf in (self.start_knopf, self.abbrechen_knopf, self.einlesen_knopf, self.update_knopf,
+                      self.senden_knopf, self.mehr_knopf):
+            leiste.hinzufuegen(knopf)
 
         self.win.bind("<Destroy>", self._bei_zerstoerung, add="+")
         raster.spur_bis_zerstoert(self.win, self.format_var, self._format_geaendert)
@@ -322,6 +371,22 @@ class Ps4DumpImageFenster:
         # Eine Vorgabe (aus der Bibliothek) wird gleich eingelesen - der Anwender hat sie ja gerade gewaehlt.
         if vorgabe:
             self.win.after(200, self._einlesen)
+
+    def rest_zeigen(self, sichtbar: bool) -> bool:
+        """Blendet alles unter dem Quellfeld ein oder aus (31.10.2026: Die Seite zeigt vor der ersten gueltigen Wahl nur QUELLE).
+
+        Die Abschnitte bleiben gebaut und werden nur aus dem Layout genommen - Werte, Befehle und das Protokoll
+        arbeiten weiter. Liefert ``True``, wenn sich etwas geaendert hat.
+        """
+        if sichtbar == self._rest_sichtbar:
+            return False
+        for teil in (self._rest_karte, self._rest_unten):
+            try:
+                teil.pack(fill="x") if sichtbar else teil.pack_forget()
+            except tk.TclError:
+                pass
+        self._rest_sichtbar = sichtbar
+        return True
 
     @staticmethod
     def _zahl(wert, vorgabe: int, kleinst: int, groesst: int) -> int:
@@ -381,6 +446,20 @@ class Ps4DumpImageFenster:
         self.quelle_var.set(wert)
         self._protokoll(self.t("ps4dib.quelle_gewaehlt", pfad=wert.replace(os.pathsep, "; ")))
         self._einlesen()
+
+    def quelle_von_seite(self, art: str, pfade: "list[str]") -> None:
+        """Die Quelle, die das Quellfeld der Seite ``pkg_fpkg_seite`` gewaehlt und als PS4-Quelle erkannt hat.
+
+        ``art`` ist eine der drei Quellarten (Ordner mit Paketen, einzelne Pakete, entpacktes Spiel); danach gilt dasselbe
+        wie bei einer Wahl im frueheren Dialog: uebernehmen und einlesen.
+        """
+        pfade = [os.path.normpath(p) for p in pfade if p]
+        if not pfade:
+            return
+        if art not in (QUELLE_ORDNER, QUELLE_DATEIEN, QUELLE_DUMP):
+            art = QUELLE_DATEIEN if all(os.path.isfile(p) for p in pfade) else QUELLE_ORDNER
+        self.art_var.set(art)
+        self._quelle_uebernehmen(os.pathsep.join(pfade) if art == QUELLE_DATEIEN else pfade[0])
 
     def _ziel_waehlen(self) -> None:
         ordner = filedialog.askdirectory(title=self.t("ps4pkg.choose_output"), parent=self.win)
@@ -1378,7 +1457,8 @@ class Ps4DumpImageFenster:
 
 
 def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str = "",
-            *, master: "tk.Misc | None" = None) -> Ps4DumpImageFenster:
+            *, master: "tk.Misc | None" = None, karte_bauer: "Callable | None" = None,
+            quelle_bauer: "Callable | None" = None) -> Ps4DumpImageFenster:
     """Gibt die Seite zurueck - einmalig gebaut, danach immer dieselbe (mit der neuen Vorgabe, falls es eine gibt).
 
     ``master``: wohin die Seite (einmalig) gebaut wird - die Seite ``ui/pkg_fpkg_seite.py`` reicht dafuer ihren
@@ -1396,6 +1476,7 @@ def oeffnen(gui, schrift: str, mono: str, pt: Callable[[int], int], vorgabe: str
                 return vorhanden
         except tk.TclError:
             pass
-    fenster = Ps4DumpImageFenster(gui, schrift, mono, pt, vorgabe, master=master)
+    fenster = Ps4DumpImageFenster(gui, schrift, mono, pt, vorgabe, master=master, karte_bauer=karte_bauer,
+                                  quelle_bauer=quelle_bauer)
     setattr(gui, FENSTER_ATTRIBUT, fenster)
     return fenster

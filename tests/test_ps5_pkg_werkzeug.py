@@ -460,6 +460,22 @@ class BauenTests(unittest.TestCase):
         self.assertIn("--no-ampr-index", a)
         self.assertNotIn("--title", a)
         self.assertNotIn("--temp", a)
+        self.assertIsNone(lauf.call_args.kwargs.get("temp"))
+
+    def test_ein_temp_ordner_wird_angelegt_und_an_das_werkzeug_gereicht(self) -> None:
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "laufen", return_value=(0, "OK - wrote x.pkg (1 B)")) as lauf:
+            ordner = os.path.join(t, "neu", "tmp")
+            wz.bauen("w", "q", os.path.join(t, "z"), content_id=CID, title_id="PPSA19015", temp=ordner)
+            self.assertTrue(os.path.isdir(ordner))
+            self.assertEqual(ordner, lauf.call_args.kwargs["temp"])
+
+    def test_die_umgebung_setzt_tmp_temp_und_tmpdir_nur_mit_temp_ordner(self) -> None:
+        mit = wz._umgebung("D:\\Arbeit")
+        for name in ("TMP", "TEMP", "TMPDIR"):
+            self.assertEqual("D:\\Arbeit", mit[name])
+        ohne = wz._umgebung()
+        self.assertEqual(os.environ.get("TMP"), ohne.get("TMP"))
+        self.assertEqual(os.environ.get("TMPDIR"), ohne.get("TMPDIR"))
 
     def test_ungueltige_kennungen_werden_vorher_abgelehnt(self) -> None:
         with mock.patch.object(wz, "laufen") as lauf:

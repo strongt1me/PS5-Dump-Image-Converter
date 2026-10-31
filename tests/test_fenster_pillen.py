@@ -124,6 +124,17 @@ class ButtonTests(_Basis):
         knopf.invoke()
         self.assertEqual([1, 1], aufrufe)
 
+    def test_hoehe_und_fett_lassen_sich_vorgeben(self) -> None:
+        """Die Seite 7 (PKG / FPKG) baut Knoepfe so hoch und fett wie bei Aufgabe 1 (31.10.2026)."""
+        normal = self.pw.Button(self.flaeche, text="Waehlen")
+        hoch = self.pw.Button(self.flaeche, text="Waehlen", hoehe=40, fett=True)
+        normal.pack()
+        hoch.pack()
+        self.flaeche.update_idletasks()
+        self.assertGreater(hoch.winfo_reqheight(), normal.winfo_reqheight(), "Hoehe aus dem Aufruf.")
+        self.assertFalse(normal._fett, "Gegenprobe: ohne Angabe bleibt eine Flaechenpille nicht fett.")
+        self.assertTrue(hoch._fett)
+
     def test_nimmt_die_optionen_der_vorbilder_ohne_fehler(self) -> None:
         """ttk.Button und flach_knopf: alles, was die Fenster uebergeben haben."""
         self.pw.Button(self.flaeche, text="a", command=lambda: None, style="Accent.TButton", width=8).pack()

@@ -2764,12 +2764,18 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h4>Eine neuere Fassung einspielen</h4>
-  <p>Die Dateien aller Fassungen liegen im Ordner <code>PS5 WebKit
-  Autoloader</code> neben dem Programm &ndash; je Fassung drei:
-  <code>webkit-autoloader-host_v<em>X.Y.Z</em>.exe</code>,
-  <code>webkit-autoloader-host_v<em>X.Y.Z</em>.py</code> und
-  <code>webkit-autoloader-installer_v<em>X.Y.Z</em>.elf</code>. Erscheint eine
-  neue Fassung, legen Sie ihre drei Dateien <strong>zus&auml;tzlich</strong>
+  <p>Der Installer jeder Fassung liegt im Ordner <code>PS5 WebKit
+  Autoloader</code> neben dem Programm:
+  <code>webkit-autoloader-installer_v<em>X.Y.Z</em>.elf</code>. Die beiden
+  Hosts (<code>webkit-autoloader-host_v<em>X.Y.Z</em>.exe</code> und
+  <code>.py</code>) liefert das Programm nicht mit: Beim ersten Klick auf
+  <strong>Host starten</strong> l&auml;dt es den Host der gew&auml;hlten
+  Fassung aus dem Release des Autors (mit Fortschrittsanzeige, der SHA-256 wird
+  gepr&uuml;ft) in den Einstellungsordner und startet ihn gleich; jeder weitere
+  Klick startet die gespeicherte Datei. Ist die Datei danach verschwunden, hat
+  sie meist der Virenschutz entfernt &ndash; lassen Sie sie dort zu, wenn Sie
+  ihr vertrauen. Erscheint eine neue Fassung, legen Sie ihren Installer
+  <strong>zus&auml;tzlich</strong>
   dort hinein; die &auml;lteren bleiben liegen und bleiben w&auml;hlbar. Das
   Programm liest den Ordner, wenn die Seite aufgebaut wird: Die neue Fassung
   steht dann in der Auswahl, die neueste vorn (nach den Zahlen im Namen

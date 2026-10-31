@@ -37,6 +37,7 @@ from PIL import Image, ImageTk
 
 from ps5_validator.utils import bibliothek_zeichnen as zeichnen
 from ps5_validator.utils.bibliothek_fortschritt import Drossel, Phasen, Stand
+from ps5_validator.utils.tk_masse import cget_pixel
 
 def _rad_einheiten_vorgabe(ereignis: Any) -> int:
     """Rolleinheiten fuer ein Mausrad-Ereignis, wenn der Aufrufer keine eigene Regel mitgibt."""
@@ -805,12 +806,44 @@ class RundeKarte(tk.Frame):
         radius = hoehe / 2.0 if self._radius is None else self._z.px(self._radius)
         bild = zeichnen.rund_rechteck(breite, hoehe, radius, p.get(fuellung, "#000000"),
                                       p.get(rand, "#000000"), max(1.0, self._randbreite * self._z.faktor))
+        grund = self._untergrund_bild(breite, hoehe)
+        if grund is not None:
+            # Eine Seite, die auf dem Hauptbild steht (``_seitenbild`` am Seitenrahmen): Die Ecken zeigen das Bild.
+            flach = grund.convert("RGBA")
+            flach.alpha_composite(bild.convert("RGBA"))
+            bild = flach.convert("RGB")
         self._foto = ImageTk.PhotoImage(bild, master=self._z.wurzel)
         self._groesse_gemalt = (breite, hoehe)
         try:
             self._hintergrund.configure(image=self._foto)
         except tk.TclError:
             pass
+
+    def _untergrund_bild(self, breite: int, hoehe: int) -> Any:
+        """Der Bildausschnitt hinter der Karte, wenn ein Vorfahr eine Seite auf dem Hauptbild ist - sonst ``None``."""
+        knoten: Any = self
+        for _ in range(40):
+            if knoten is None:
+                return None
+            funktion = getattr(knoten, "_seitenbild", None)
+            if callable(funktion):
+                try:
+                    return funktion(self, breite, hoehe)
+                except (tk.TclError, ValueError, AttributeError):
+                    return None
+            knoten = getattr(knoten, "master", None)
+        return None
+
+    def neu_malen(self) -> None:
+        """Malt die Karte mit dem Ausschnitt ihrer jetzigen Lage neu (Seite auf dem Hauptbild)."""
+        if self._nach is not None:
+            try:
+                self.after_cancel(self._nach)
+            except tk.TclError:
+                pass
+            self._nach = None
+        self._groesse_gemalt = (0, 0)
+        self._bild_neu()
 
     def neu_faerben(self) -> None:
         """Nach einem Designwechsel: Grund, Fuellung und Bild in den neuen Farben."""
@@ -915,7 +948,7 @@ class FlussZeile(tk.Frame):
             y += hoehe + vluft
         gesamt = max(1, y - vluft)
         try:
-            if int(float(self.cget("height"))) != gesamt:
+            if cget_pixel(self, "height") != gesamt:
                 tk.Frame.configure(self, height=gesamt)
         except tk.TclError:
             pass
@@ -1715,7 +1748,7 @@ class KartenRaster:
             return
         hoehe = max(1, int(self.flaeche.winfo_height()))
         oben = int(self.flaeche.canvasy(0))
-        gesamt = max(1, int(float(self.flaeche.cget("height")) or 1))
+        gesamt = max(1, cget_pixel(self.flaeche, "height", 1))
         try:
             region = [float(v) for v in str(self.flaeche.cget("scrollregion")).split()]
             gesamt = region[3] if len(region) == 4 else gesamt

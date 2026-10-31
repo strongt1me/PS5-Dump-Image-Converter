@@ -566,7 +566,7 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     Werkzeug("orbispkgtool", "OrbisPkgTool", GRUPPE_WERKZEUG, "pearlxcore/OrbisPkgTool", ordner="OrbisPkgTool-*",
              art=ART_HINWEIS, hinweis="updates.hinweis_festgelegt", lokal="ordnername"),
     Werkzeug("ps5-pkg-tool", "PS5-PKG-Tool (ps5-fpkg-converter)", GRUPPE_WERKZEUG, "sub0x00001/ps5-fpkg-converter",
-             ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:0.0.2"),
+             ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:0.0.3"),
     Werkzeug("ps5-ultrapack", "ps5-ultrapack (Engine im PS5-PKG-Tool)", GRUPPE_WERKZEUG, "knutwurst/ps5-ultrapack",
              ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:2.3.3"),
     Werkzeug("wee-tools", "PS5 Wee Tools", GRUPPE_WERKZEUG, "andy-man/ps5-wee-tools", ordner="PS5-Wee-Tools-*",
@@ -1360,6 +1360,92 @@ def holen(befunde: Sequence[Befund], basis: str, netz: Any, melden: "Melder | No
                 except OSError:
                     pass
     return ergebnis
+
+
+# ---------------------------------------------------------------------------
+# Der Host des WebKit Autoloaders - erst beim Klick, nicht mit dem Programm
+# ---------------------------------------------------------------------------
+#: Anhang-Namen der beiden Hosts (``{f}`` = die Fassung, z. B. ``0.6.2``); der Installer liegt weiter bei.
+WEBKIT_HOST_ANHANG = {"exe": "webkit-autoloader-host_v{f}.exe", "py": "webkit-autoloader-host_v{f}.py"}
+
+#: Warum ein Host nicht zu bekommen war (die Oberflaeche uebersetzt es).
+HOST_NETZ = "netz"
+HOST_LIMIT = "limit"
+HOST_KEINE_FREIGABE = "keine_freigabe"
+HOST_KEINE_DATEI = "keine_datei"
+HOST_OHNE_SUMME = "ohne_summe"
+HOST_PRUEFSUMME = "pruefsumme"
+HOST_ABGEBROCHEN = "abgebrochen"
+HOST_SONST = "sonst"
+HOST_GRUENDE = (HOST_NETZ, HOST_LIMIT, HOST_KEINE_FREIGABE, HOST_KEINE_DATEI, HOST_OHNE_SUMME, HOST_PRUEFSUMME,
+                HOST_ABGEBROCHEN, HOST_SONST)
+
+
+class HostErgebnis(NamedTuple):
+    #: Pfad der abgelegten Datei; leer, wenn nichts geholt wurde.
+    pfad: str = ""
+    #: Einer der ``HOST_*``-Werte, leer bei Erfolg.
+    fehler: str = ""
+    #: Rohtext des Grundes (fuer das Protokoll).
+    detail: str = ""
+
+
+def webkit_host_holen(art: str, fassung: str, basis: str, netz: Any, melden: "Melder | None" = None,
+                      abbruch: "threading.Event | None" = None) -> HostErgebnis:
+    """Holt den Host (``exe`` oder ``py``) genau dieser Fassung nach ``<basis>/Werkzeug-Updates/PS5 WebKit Autoloader/``.
+
+    Seit v1.9.90 liegen die Hosts nicht mehr im Programm: Die Freigabe ``v<fassung>`` des Autors wird nachgeschlagen,
+    die Datei geladen und gegen den SHA-256 der Freigabe geprueft, erst dann kommt sie an ihren Platz. **Ohne Pruefsumme
+    in der Freigabe wird nichts geladen** - ein Programm, das gleich gestartet wird, nimmt man nicht ungeprueft.
+    Netzzugriff nur, wenn der Aufrufer diese Funktion ruft (Knopfdruck).
+
+    Args:
+        art: ``"exe"`` oder ``"py"``.
+        fassung: Eine Nummer wie ``"0.6.2"``; die Freigabe muss genau ``v0.6.2`` heissen (Vorabmarken zaehlen nicht).
+        melden: wie bei :func:`holen` (``melden("hole", name=..., text=Datei, fertig=Bytes, gesamt=Bytes)``).
+    """
+    vorlage = WEBKIT_HOST_ANHANG.get(art)
+    if not vorlage or not _SICHER.fullmatch(fassung or ""):
+        return HostErgebnis("", HOST_SONST, "Angabe unbrauchbar: %s %s" % (art, fassung))
+    w = werkzeug("webkit")
+    if w is None or not w.quelle:
+        return HostErgebnis("", HOST_SONST, "keine Quelle")
+    try:
+        antwort = netz.abfragen(w.quelle)
+    except Exception as exc:  # noqa: BLE001
+        return HostErgebnis("", HOST_NETZ, _kurz(exc))
+    if antwort.status == 429:
+        return HostErgebnis("", HOST_LIMIT, "HTTP 429")
+    if antwort.status != 200:
+        return HostErgebnis("", HOST_NETZ, "HTTP %s" % antwort.status)
+    marke = "v%s" % fassung
+    freigabe = next((f for f in freigaben_lesen(antwort.text) if not f.entwurf and f.tag.lower() == marke.lower()),
+                    None)
+    if freigabe is None:
+        return HostErgebnis("", HOST_KEINE_FREIGABE, marke)
+    einzeln = Werkzeug(w.schluessel, w.name, w.gruppe, w.quelle, ordner=w.ordner, muster=w.muster,
+                       dateien=(Datei(vorlage, vorlage, (ORT_WEBKIT,)),))
+    teile = _teile(einzeln, freigabe, fassung)
+    if not teile:
+        return HostErgebnis("", HOST_KEINE_DATEI, vorlage.replace("{f}", fassung))
+    teil = teile[0]
+    if not teil.digest and not teil.pruefsumme_adresse:
+        return HostErgebnis("", HOST_OHNE_SUMME, teil.ziel)
+    befund = Befund(werkzeug=einzeln, status=STATUS_NEU, neu=fassung, teile=teile)
+    ergebnis = holen([befund], basis, netz, melden, abbruch)
+    if ergebnis.abgebrochen:
+        return HostErgebnis("", HOST_ABGEBROCHEN, "")
+    if ergebnis.fehler or not ergebnis.abgelegt:
+        grund = "; ".join(ergebnis.fehler) or "nichts abgelegt"
+        return HostErgebnis("", HOST_PRUEFSUMME if ("SHA-256" in grund or "Bytes" in grund) else HOST_NETZ, grund)
+    if ergebnis.ohne_summe:                      # nicht vorgesehen (oben ausgeschlossen) - trotzdem nie behalten
+        for pfad in ergebnis.abgelegt:
+            try:
+                os.remove(pfad)
+            except OSError:
+                pass
+        return HostErgebnis("", HOST_OHNE_SUMME, teil.ziel)
+    return HostErgebnis(ergebnis.abgelegt[0], "", "")
 
 
 def holen_emu(befund: Befund, ordner: str, netz: Any) -> tuple[list[str], list[str]]:

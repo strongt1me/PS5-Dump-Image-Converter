@@ -180,14 +180,18 @@ _anleitungen = os.path.join(_here, 'Anleitungen')
 if os.path.isdir(_anleitungen):
     _datas.append((_anleitungen, 'Anleitungen'))
 
-# Der WebKit Autoloader: Host als Windows-Programm, derselbe als
-# Python-Skript und der Installer-Payload. Der Ordner gehoert dem
-# Benutzer - was darin liegt, wird eingebettet. Legt er eine neuere
-# Fassung hinein, kommt sie beim naechsten Bau mit; das Programm sucht
-# zur Laufzeit nach Muster und nimmt die hoechste Versionsnummer.
+# Der WebKit Autoloader: Installer-Payload und Symbole kommen mit. Die beiden
+# Hosts (webkit-autoloader-host_*.exe / .py) NICHT - das Programm laedt sie
+# beim ersten Klick auf den Host-Knopf (SHA-256 geprueft) und startet dann
+# die gespeicherte Datei. Im Arbeitsbaum duerfen sie liegen; hier bleiben sie draussen.
 _webkit = os.path.join(_here, 'PS5 WebKit Autoloader')
 if os.path.isdir(_webkit):
-    _datas.append((_webkit, 'PS5 WebKit Autoloader'))
+    for _wk_datei in sorted(os.listdir(_webkit)):
+        if _wk_datei.lower().startswith('webkit-autoloader-host_'):
+            continue
+        _wk_pfad = os.path.join(_webkit, _wk_datei)
+        if os.path.isfile(_wk_pfad):
+            _datas.append((_wk_pfad, 'PS5 WebKit Autoloader'))
 
 # Payload fuer die Direktinstallation einer Anwendung. Klein genug, um
 # es immer mitzunehmen; ohne das ELF kann das Werkzeug die Kachel auf

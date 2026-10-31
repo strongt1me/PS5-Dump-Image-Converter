@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Die Huelle um ``ffpfsc-pkg-tool`` - lesen, pruefen, entpacken und bauen von PS5-Paketen (seit v1.9.71).
 
-Das Werkzeug stammt aus dem Quelltext von **ps5-fpkg-converter 0.0.2** (GPL-3.0-or-later; darin die Engine von
+Das Werkzeug stammt aus dem Quelltext von **ps5-fpkg-converter 0.0.3** (GPL-3.0-or-later; darin die Engine von
 ps5-ultrapack, MIT) und liegt, fuer jede Plattform einzeln gebaut, unter ``PS5-PKG-Tool/<Plattform>/``. Es ist ein
 .NET-Programm (net10.0, abhaengig von der installierten Laufzeit - die braucht das Programm ohnehin) und kapselt
 LibProsperoPkg 1.2.0. Befehle, die hier gebraucht werden: ``inspect``, ``validate``, ``extract-inner`` (ganz oder
@@ -89,8 +89,13 @@ def dotnet_ordner() -> str:
     return ""
 
 
-def _umgebung() -> dict[str, str]:
+def _umgebung(temp: str | None = None) -> dict[str, str]:
     env = dict(os.environ)
+    if temp:
+        # Wie ps5-fpkg-converter 0.0.3: Auch Zwischendateien, die nicht ueber ``--temp`` laufen (die .NET-Laufzeit
+        # nimmt TMP/TEMP bzw. TMPDIR), bleiben so vom Systemlaufwerk fern.
+        for name in ("TMP", "TEMP", "TMPDIR"):
+            env[name] = str(temp)
     ordner = dotnet_ordner()
     if ordner:
         env["DOTNET_ROOT"] = ordner
@@ -144,8 +149,10 @@ def menge_kurz(n: int) -> str:
 
 
 def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, abbruch: _Abbruch | None = None,
-           popen_extra: dict | None = None) -> tuple[int, str]:
+           popen_extra: dict | None = None, temp: str | None = None) -> tuple[int, str]:
     """Startet das Werkzeug und liest seine Ausgabe zeilenweise (stdout und stderr zusammen).
+
+    ``temp`` setzt zusaetzlich TMP, TEMP und TMPDIR des Werkzeugs auf diesen Ordner (``_umgebung``).
 
     Returns:
         ``(Rueckgabewert, gesamte Ausgabe)``. Bei Abbruch ``(-1, ...)``.
@@ -161,7 +168,7 @@ def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, 
             pass
     try:
         prozess = subprocess.Popen([werkzeug, *argumente], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   stdin=subprocess.DEVNULL, env=_umgebung(), bufsize=0, **(popen_extra or {}))
+                                   stdin=subprocess.DEVNULL, env=_umgebung(temp), bufsize=0, **(popen_extra or {}))
     except OSError as exc:
         raise Fehler("Das Werkzeug laesst sich nicht starten: %s" % exc) from exc
     assert prozess.stdout is not None
@@ -488,6 +495,10 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: s
         argumente += ["--title", titel]
     if temp:
         argumente += ["--temp", temp]
+        try:
+            Path(temp).mkdir(parents=True, exist_ok=True)   # TMP/TEMP muessen existieren (wie ps5-fpkg-converter 0.0.3)
+        except OSError:
+            temp = None   # nicht anlegbar: das Werkzeug meldet den Ordner selbst, TMP bleibt unveraendert
     if kerne and int(kerne) > 0:
         argumente += ["--parallelism", str(int(kerne))]
     if playgo_chunks and int(playgo_chunks) > 1:
@@ -508,7 +519,7 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: s
         elif zeile and not text.startswith(("[inner]   read ", "[inner]   data ")):
             zeile(text)
 
-    rc, aus = laufen(werkzeug, argumente, zeile=jede, abbruch=abbruch, popen_extra=popen_extra)
+    rc, aus = laufen(werkzeug, argumente, zeile=jede, abbruch=abbruch, popen_extra=popen_extra, temp=temp)
     if rc == -1:
         raise Fehler("abgebrochen")
     ok = [z for z in aus.splitlines() if z.startswith("OK")]

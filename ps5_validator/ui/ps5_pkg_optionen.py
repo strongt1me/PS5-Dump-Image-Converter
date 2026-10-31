@@ -4,7 +4,8 @@
 Vier Register: **Bibliothek** (Ordner, Unterordner, Aktualisieren beim Start, Quellen entfernen), **Darstellung** (Cover,
 Sortierung), **Ausgabe & Vorgaben** (Zielordner, Temp-Ordner, Aktion, Zielformat, Standard-Builder, Debug-Passcode,
 Ausgabeordner oeffnen) und **Wartung** (Export, Import, Zuruecksetzen). Nichts wird vor "Speichern" uebernommen;
-"Abbrechen" und das X lassen alles, wie es war.
+"Abbrechen" und das X lassen alles, wie es war. Seit 30.10.2026 zeigt der Dialog nur noch "Ausgabe & Vorgaben" und
+"Bau" (:data:`SICHTBARE_REGISTER`); die anderen Register sind gebaut, aber verborgen.
 
 **Standard-Builder** (seit 12.10.2026, wie in der Vorlage - der eigenen PKG-App des Nutzers): welches Werkzeug "Paket
 bauen" verwendet, LibProsperoPkg 1.2.0 (``ffpfsc-pkg-tool``, Vorgabe) oder ProsperoPkgTool (zweiter, MIT-lizenzierter
@@ -44,6 +45,10 @@ DIALOG_ATTRIBUT = "_optionen_dialog"
 REGISTER = (("bibliothek", "ps5pkg.opt_tab_library"), ("darstellung", "ps5pkg.opt_tab_view"),
             ("ausgabe", "ps5pkg.opt_tab_output"), ("bau", "ps5pkg.opt_tab_build"),
             ("wartung", "ps5pkg.opt_tab_maint"))
+#: Welche Register der Dialog zeigt (Nutzerwunsch 30.10.2026: Bibliothek, Darstellung und Wartung nicht mehr anzeigen).
+#: Die verborgenen Register werden weiter gebaut, ihre Felder gelesen und beim Speichern unveraendert zurueckgeschrieben -
+#: nur ihr Reiter fehlt. Zurueckholen: den Schluessel hier wieder eintragen.
+SICHTBARE_REGISTER = ("ausgabe", "bau")
 EXPORT_NAME = "PS5PKGTool-Optionen.json"
 
 
@@ -109,7 +114,7 @@ class Optionen:
         self._bauen()
         self._felder_fuellen(self.aktuell)
         self._liste_zeigen()
-        self.zeigen("bibliothek")
+        self.zeigen(SICHTBARE_REGISTER[0])
         self.win.protocol("WM_DELETE_WINDOW", self.schliessen)
         self.win.bind("<Escape>", lambda _e: self.schliessen())
 
@@ -147,6 +152,8 @@ class Optionen:
         leiste = tk.Frame(self.win, bg=c["bg_main"])
         leiste.pack(fill="x", padx=18, pady=(10, 0))
         for schluessel, text in REGISTER:
+            if schluessel not in SICHTBARE_REGISTER:
+                continue
             tab = tk.Frame(leiste, bg=c["bg_main"], cursor="hand2")
             tab.pack(side="left", padx=(0, 18))
             name = tk.Label(tab, text=t(text), font=(F, pt(10)), bg=c["bg_main"], fg=c["fg_secondary"], cursor="hand2")
@@ -179,6 +186,9 @@ class Optionen:
         self._register_ausgabe(self._register_rahmen["ausgabe"])
         self._register_bau(self._register_rahmen["bau"])
         self._register_wartung(self._register_rahmen["wartung"])
+        for schluessel, rahmen in self._register_rahmen.items():
+            if schluessel not in SICHTBARE_REGISTER:
+                rahmen.grid_remove()
 
     def zeigen(self, schluessel: str) -> None:
         c = self.c

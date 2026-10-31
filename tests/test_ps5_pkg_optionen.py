@@ -262,24 +262,70 @@ class DialogTests(unittest.TestCase):
 
     # ---------------- Aufbau ----------------
     def test_die_navigation_hat_den_eintrag_optionen(self) -> None:
-        self.assertEqual(["umwandeln", "bibliothek", "extras", "optionen"], list(self.f._nav))
-        self.assertEqual("Optionen", self.f._nav["optionen"][2].cget("text"))
+        # Seit 30.10.2026 stehen oben keine Reiter mehr (``SICHTBARE_REITER``); "Optionen" ist ein Knopf der Knopfleiste.
+        self.assertEqual([], list(self.f._nav))
+        self.assertEqual("Optionen", self.f.optionen_knopf.cget("text"))
 
     def test_der_eintrag_optionen_ist_anklickbar_und_keine_seite(self) -> None:
-        """Ein erzeugtes Klickereignis erreicht ein verdecktes Fenster nicht - geprueft wird die Bindung und der Weg dahinter."""
-        for widget in self.f._nav["optionen"]:
-            self.assertTrue(widget.bind("<Button-1>"), "Klick nicht gebunden")
+        """Der Knopf ruft den Dialog; Optionen ist keine Seite des Fensters."""
+        with mock.patch.object(ui, "oeffnen") as oeffnen:
+            self.f.optionen_knopf.invoke()
+        oeffnen.assert_called_once_with(self.f)
         self.assertNotIn("optionen", self.f.seiten, "Optionen ist ein Dialog, keine Seite")
         self.assertIn(self.f.aktuelle_seite, ("umwandeln", "bibliothek"))
 
-    def test_der_dialog_hat_fuenf_register_und_ein_zweiter_aufruf_holt_ihn_nach_vorn(self) -> None:
+    def test_der_dialog_zeigt_zwei_register_und_ein_zweiter_aufruf_holt_ihn_nach_vorn(self) -> None:
+        """Nutzerwunsch 30.10.2026: Bibliothek, Darstellung und Wartung erscheinen nicht mehr (``SICHTBARE_REGISTER``)."""
         dialog = self._dialog()
-        self.assertEqual(["bibliothek", "darstellung", "ausgabe", "bau", "wartung"], list(dialog._register_tabs))
-        self.assertEqual(["Bibliothek", "Darstellung", "Ausgabe & Vorgaben", "Bau", "Wartung"],
-                         [t.cget("text") for t, _s in dialog._register_tabs.values()])
+        self.assertEqual(["ausgabe", "bau"], list(dialog._register_tabs))
+        self.assertEqual(["Ausgabe & Vorgaben", "Bau"], [t.cget("text") for t, _s in dialog._register_tabs.values()])
         self.assertIs(dialog, ui.oeffnen(self.f))
+        dialog.zeigen("ausgabe")
         for schluessel in dialog._register_tabs:
             dialog.zeigen(schluessel)                      # keines wirft
+        dialog.schliessen()
+
+    def test_die_verborgenen_register_sind_gebaut_aber_nicht_zu_sehen(self) -> None:
+        dialog = self._dialog()
+        _pumpen(0.1)
+        self.assertEqual({k for k, _t in ui.REGISTER}, set(dialog._register_rahmen))
+        for schluessel, rahmen in dialog._register_rahmen.items():
+            with self.subTest(register=schluessel):
+                self.assertEqual(schluessel in ui.SICHTBARE_REGISTER, rahmen.winfo_manager() == "grid",
+                                 "Nur die sichtbaren Register stehen im Dialog.")
+        dialog.schliessen()
+
+    def test_speichern_erhaelt_die_werte_der_verborgenen_register(self) -> None:
+        """Ohne Reiter kann niemand Cover, Sortierung, Unterordner, Start-Scan oder die Bibliothek ansehen - sie duerfen
+        beim Speichern aber weder auf die Vorgabe springen noch verschwinden."""
+        self._laden()
+        self.app._save_setting(opt.COVER, False)
+        self.app._save_setting(opt.SORTIERUNG, "groesse")
+        self.app._save_setting(opt.REKURSIV, True)
+        self.app._save_setting(opt.START_SCAN, True)
+        self.app._save_setting(opt.ORDNER, [self.ordner])
+        vorher_bibliothek = sorted(i.pfad for i in self.f.pakete)
+        dialog = self._dialog()
+        dialog.passcode_var.set("")
+        dialog.speichern()
+        _pumpen(0.3)
+        self.assertIs(False, self._gespeichert(opt.COVER))
+        self.assertEqual("groesse", self._gespeichert(opt.SORTIERUNG))
+        self.assertIs(True, self._gespeichert(opt.REKURSIV))
+        self.assertIs(True, self._gespeichert(opt.START_SCAN))
+        self.assertEqual([self.ordner], self._gespeichert(opt.ORDNER))
+        self.assertEqual(vorher_bibliothek, sorted(i.pfad for i in self.f.pakete), "keine Quelle ging verloren")
+        self.assertEqual(vorher_bibliothek, sorted(self._gespeichert(fz.EINST_BIBLIOTHEK)))
+
+    def test_gegenprobe_die_verborgenen_felder_werden_beim_speichern_weiter_gelesen(self) -> None:
+        """Waeren sie vom Speichern abgekoppelt, bliebe dieser Wert auf dem alten Stand."""
+        dialog = self._dialog()
+        dialog.cover_var.set(False)
+        dialog.sort_var.set("Größe")
+        dialog.speichern()
+        _pumpen(0.3)
+        self.assertIs(False, self._gespeichert(opt.COVER))
+        self.assertEqual("groesse", self._gespeichert(opt.SORTIERUNG))
 
     def test_register_bau_rollt_statt_abzuschneiden(self) -> None:
         """Nutzerfrage 18.10.2026 nach dem Extras-Fund im Fenster "PS5 PKG Dump & Image

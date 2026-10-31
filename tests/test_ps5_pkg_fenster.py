@@ -47,6 +47,13 @@ def _pumpen(sekunden: float) -> None:
         time.sleep(0.02)
 
 
+def _alle_kinder(widget):
+    """Alle Nachkommen eines Widgets, rekursiv."""
+    for kind in widget.winfo_children():
+        yield kind
+        yield from _alle_kinder(kind)
+
+
 def _warten(bedingung, grenze: float = 15.0) -> bool:
     ende = time.time() + grenze
     while not bedingung() and time.time() < ende:
@@ -156,10 +163,14 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(_warten(lambda: len(self.f.pakete) == len(pfade) and self.f.aktuell is not None))
 
     # ---------------- Aufbau ----------------
-    def test_das_fenster_hat_alle_seiten_und_fuenf_kacheln(self) -> None:
+    def test_das_fenster_hat_alle_seiten_und_das_auswahlfeld_mit_formaten_und_aktionen(self) -> None:
         f = self.f
         self.assertEqual({"umwandeln", "bibliothek", "extras"}, set(f.seiten))
-        self.assertEqual(["ffpkg", "ffpfsc", "ffpfs", "exfat", "pkg"], list(f._kacheln))
+        self.assertEqual(["Umwandeln zu FFPKG (.ffpkg)", "Umwandeln zu FFPFSC (.ffpfsc)", "Umwandeln zu FFPFS (.ffpfs)",
+                          "Umwandeln zu exFAT (.exfat)", "Umwandeln zu Paket (.pkg)", "Extrahieren", "Prüfen",
+                          "Auf die PS5 entpacken"], list(f.format_box.values))
+        self.assertEqual("Umwandeln zu FFPFSC (.ffpfsc)", f.format_var.get())
+        self.assertFalse(hasattr(f, "_aktion_knoepfe"), "Die Zeile AKTION ist entfallen.")
         self.assertEqual("ffpfsc", f.format_schluessel)
         self.assertEqual("umwandeln", f.aktion_var.get())
 
@@ -187,10 +198,8 @@ class FensterTests(unittest.TestCase):
     def test_die_seite_umwandeln_rollt_statt_abzuschneiden(self) -> None:
         """Nutzerbefund 18.10.2026, erweiterte Suche: QUELLE+ZIELFORMAT+AUFTRAG reichten
 
-        bei knapper Fensterhoehe ebenso ueber den sichtbaren Bereich hinaus. Nur die linke
-        Spalte bekam ein Canvas - die rechte (ERGEBNIS+Protokoll) soll unveraendert ueber
-        die volle Zeilenhoehe von "seite" mitwachsen, nicht auf ihre Inhaltsgroesse
-        schrumpfen.
+        bei knapper Fensterhoehe ebenso ueber den sichtbaren Bereich hinaus. Seit 30.10.2026 gibt es keine rechte
+        Spalte mehr: ERGEBNIS (Chips) und Protokoll stehen unter AUFTRAG in derselben Spalte und rollen mit.
         """
         f = self.f
         f._seite_zeigen("umwandeln")
@@ -203,9 +212,8 @@ class FensterTests(unittest.TestCase):
         self.assertIsNotNone(region)
         self.assertGreater(region[3] - region[1], canvas.winfo_height(),
                            "QUELLE+ZIELFORMAT+AUFTRAG sollten den sichtbaren Bereich im Testfenster ueberragen.")
-        self.assertEqual(seite.winfo_height(), f.spalte_rechts.winfo_height(),
-                         "Die rechte Spalte soll weiterhin die volle Zeilenhoehe einnehmen.")
-        self.assertTrue(f.ergebnis_karte.winfo_ismapped())
+        self.assertTrue(str(f.spalte_rechts).startswith(str(canvas.master) + "."),
+                        "Ergebnis und Protokoll liegen in der rollenden Spalte (keine eigene Spalte rechts mehr).")
         self.assertTrue(f.protokoll.winfo_ismapped())
 
     def test_die_seite_bibliothek_rollt_statt_abzuschneiden(self) -> None:
@@ -264,26 +272,42 @@ class FensterTests(unittest.TestCase):
         f.win.update_idletasks()
         _pumpen(0.3)
         seite_x = f.seiten["umwandeln"].winfo_rootx()
-        nav_rahmen = f._nav["umwandeln"][0]
-        nav_rechts = nav_rahmen.master.winfo_rootx() + nav_rahmen.master.winfo_width()
+        # Seit 30.10.2026 gibt es keine Leiste links mehr (Reiter stehen oben): Die Knoepfe stehen an der linken Kante
+        # der Karten und nicht links davon.
         for knopf in (f.start_knopf, f.abbrechen_knopf):
-            self.assertGreaterEqual(knopf.winfo_rootx(), nav_rechts, "Der Knopf ragt in die Navigation hinein.")
+            self.assertGreaterEqual(knopf.winfo_rootx(), seite_x - 4, "Der Knopf ragt links ueber die Karten hinaus.")
         self.assertLessEqual(abs(f.start_knopf.winfo_rootx() - seite_x), 4,
                              "Der Startknopf steht nicht an der linken Kante der Karten.")
         self.assertGreater(f.abbrechen_knopf.winfo_rootx(), f.start_knopf.winfo_rootx())
 
-    def test_das_protokoll_liegt_unter_dem_ergebnis_und_ist_sichtbar(self) -> None:
-        """13.10.2026: In der Karte AUFTRAG bekam das Protokoll keine Hoehe - der Text war nicht zu sehen."""
+    def test_die_reiter_zeigen_nur_umwandeln_und_optionen(self) -> None:
+        """Nutzerwunsch 30.10.2026: Bibliothek und Extras erscheinen nicht mehr - nur der Reiter fehlt, die Seiten
+        und ihr Code bleiben (``SICHTBARE_REITER``), damit sich beides leicht zurueckholen laesst."""
+        f = self.f
+        self.assertEqual((), fz.SICHTBARE_REITER, "Keine Reiterzeile mehr: Die Seite ist eine Spalte wie Aufgabe 1 bis 6.")
+        self.assertEqual({}, f._nav)
+        with mock.patch.object(fz.optionen_ui, "oeffnen") as oeffnen:
+            f.optionen_knopf.invoke()
+        oeffnen.assert_called_once_with(f)
+        self.assertIs(f.leiste, f.optionen_knopf.master)
+        self.assertEqual({"umwandeln", "bibliothek", "extras"}, set(f.seiten), "Die Seiten werden weiter gebaut.")
+        for name in ("_seite_bibliothek", "_seite_extras", "_dds_konvertieren", "_exfat_reparieren",
+                     "_exfat_entpacken", "_exfat_aufbauen", "_ffpkg_befehl_kopieren", "_bibliothek_aktualisieren",
+                     "_alles_kopieren"):
+            self.assertTrue(callable(getattr(f, name)), name)
+
+    def test_das_protokoll_liegt_unter_dem_auftrag_und_ist_sichtbar(self) -> None:
+        """13.10.2026: In der Karte AUFTRAG bekam das Protokoll keine Hoehe - der Text war nicht zu sehen.
+
+        Seit 31.10.2026 ohne Chipzeile (Ausgabe, Titel-ID, ...): Die Werte stehen weiter in ``ergebnis_var``.
+        """
         f = self.f
         f._protokoll("Probezeile im Protokoll")
         f.win.update_idletasks()
         _pumpen(0.3)
-        karte = f.ergebnis_karte
-        # Das Pillen-Kit setzt Textfeld und Karte in runde Rahmen; beide liegen unterhalb der rechten Spalte.
-        for teil in (f.protokoll, karte):
-            self.assertTrue(str(teil).startswith(str(f.spalte_rechts) + "."), "Protokoll und Ergebnis: dieselbe Spalte.")
-        self.assertGreaterEqual(f.protokoll.winfo_rooty(), karte.winfo_rooty() + karte.winfo_height(),
-                                "Das Protokoll muss unter dem Ergebnis stehen.")
+        self.assertTrue(str(f.protokoll).startswith(str(f.spalte_rechts) + "."), "Das Protokoll liegt in der Spalte.")
+        self.assertFalse(hasattr(f, "ergebnis_karte"), "Die Chipzeile ist entfallen.")
+        self.assertEqual({"output", "title_id", "content", "size", "free"}, set(f.ergebnis_var))
         self.assertGreaterEqual(f.protokoll.winfo_height(), 60, "Das Protokoll ist zu niedrig, um gelesen zu werden.")
         self.assertGreaterEqual(f.protokoll.winfo_width(), 200)
         self.assertIn("Probezeile im Protokoll", f.protokoll.get("1.0", "end"))
@@ -418,14 +442,97 @@ class FensterTests(unittest.TestCase):
         self.assertEqual([], self.f.pakete)
 
     # ---------------- Format und Aktion ----------------
-    def test_die_formatwahl_wird_gemerkt_und_gefaerbt(self) -> None:
+    def test_die_formatwahl_wird_gemerkt_und_angezeigt(self) -> None:
         self._laden("alpha.pkg")
         f = self.f
         f._format_waehlen("exfat")
         self.assertEqual("exfat", self.app._load_setting(fz.EINST_FORMAT, ""))
-        self.assertEqual("accent_btn", f._kacheln["exfat"][0]._rollen[0])
-        self.assertEqual("bg_main", f._kacheln["ffpfsc"][0]._rollen[0])
+        self.assertEqual("Umwandeln zu exFAT (.exfat)", f.format_var.get(), "Das Auswahlfeld zeigt die Wahl.")
         self.assertEqual("Alpha Spiel [PPSA00001].exfat", f.ergebnis_var["output"].get())
+
+    def test_die_aktionen_stehen_im_auswahlfeld_und_wirken_wie_die_alte_zeile(self) -> None:
+        self._laden("alpha.pkg")
+        f = self.f
+        for aktion, text in (("extrahieren", "Extrahieren"), ("pruefen", "Prüfen"), ("konsole", "Auf die PS5 entpacken")):
+            with self.subTest(aktion=aktion):
+                f.format_var.set(text)
+                f.format_box.event_generate("<<ComboboxSelected>>")
+                self.assertEqual(aktion, f.aktion_var.get())
+                self.assertEqual(aktion, self.app._load_setting(fz.EINST_AKTION, ""), "gemerkt wie zuvor")
+                self.assertEqual(text, f.format_var.get())
+        self.assertEqual("pack", f.fern_reihe.winfo_manager(), "Auf die PS5 entpacken: Adresse statt Zielordner.")
+        f.format_var.set("Umwandeln zu FFPKG (.ffpkg)")
+        f.format_box.event_generate("<<ComboboxSelected>>")
+        self.assertEqual("umwandeln", f.aktion_var.get())
+        self.assertEqual("ffpkg", f.format_schluessel)
+        self.assertEqual("", f.fern_reihe.winfo_manager())
+
+    def test_die_gemerkte_aktion_steht_beim_start_im_auswahlfeld(self) -> None:
+        f = self.f
+        for aktion, text in (("pruefen", "Prüfen"), ("konsole", "Auf die PS5 entpacken"),
+                             ("umwandeln", "Umwandeln zu FFPFSC (.ffpfsc)")):
+            with self.subTest(aktion=aktion):
+                f.aktion_var.set(aktion)
+                f._aktion_anwenden()
+                self.assertEqual(text, f.format_var.get())
+
+    def test_ein_spielordner_kennt_extrahieren_nicht_und_das_feld_springt_zurueck(self) -> None:
+        self._laden("alpha.pkg")
+        f = self.f
+        f.aktuell.pfad = self.ordner
+        f.aktuell.typ = wz.TYP_ORDNER
+        f.format_var.set("Auf die PS5 entpacken")
+        f.format_box.event_generate("<<ComboboxSelected>>")
+        self.assertEqual("umwandeln", f.aktion_var.get())
+        self.assertEqual("Umwandeln zu FFPFSC (.ffpfsc)", f.format_var.get())
+        self.assertIn(STRINGS["ps5pkg.action_only_package"]["de"], f.status_var.get())
+
+    def test_ausgabe_oeffnen_und_verlauf_leeren_liegen_im_rechtsklickmenue_des_protokolls(self) -> None:
+        f = self.f
+        menue = f.protokoll_menue
+        eintraege = [menue.entrycget(i, "label") for i in range(menue.index("end") + 1) if menue.type(i) == "command"]
+        self.assertIn(STRINGS["ps5pkg.open_output"]["de"], eintraege)
+        self.assertIn(STRINGS["ps5pkg.clear_log"]["de"], eintraege)
+        self.assertFalse(hasattr(f, "ausgabe_knopf"), "Die Knopfreihe unter dem Auftrag ist entfallen.")
+        f._protokoll("eine Zeile")
+        self.assertIn("eine Zeile", f.protokoll.get("1.0", "end"))
+        menue.invoke(menue.index(STRINGS["ps5pkg.clear_log"]["de"]))
+        self.assertEqual("", f.protokoll.get("1.0", "end").strip(), "Verlauf leeren wirkt wie der alte Knopf.")
+
+    def test_die_chipzeile_ist_weg_die_werte_werden_weiter_gefuellt(self) -> None:
+        self._laden("alpha.pkg")
+        f = self.f
+        self.assertEqual("PPSA00001", f.ergebnis_var["title_id"].get())
+        self.assertTrue(f.ergebnis_var["size"].get().startswith("ca. "))
+        beschriftet = [w.cget("text") for w in _alle_kinder(f.win) if isinstance(w, tk.Label)]
+        self.assertFalse([t for t in beschriftet if t.startswith(STRINGS["ps5pkg.res_title_id"]["de"])],
+                         "Keine Chips mit Titel-ID, Inhalt, Groesse, Freier Platz mehr.")
+
+    def test_die_zeile_zielformat_steht_direkt_unter_der_quelle_vor_dem_zielordner(self) -> None:
+        f = self.f
+        f.win.update_idletasks()
+        self.assertLess(f.format_box.winfo_rooty(), f.ziel_reihe.winfo_rooty(), "ZIELFORMAT steht vor ZIELORDNER.")
+        self.assertLess(f.format_box.winfo_rooty(), f.paket_titel.winfo_rooty(), "und direkt unter QUELLE.")
+
+    def test_die_auswahl_im_feld_wirkt_wie_der_klick_auf_die_alte_kachel(self) -> None:
+        self._laden("alpha.pkg")
+        f = self.f
+        f.aktion_var.set("pruefen")
+        f._aktion_geaendert()
+        f.format_var.set("Umwandeln zu exFAT (.exfat)")
+        f.format_box.event_generate("<<ComboboxSelected>>")
+        self.assertEqual("exfat", f.format_schluessel)
+        self.assertEqual("umwandeln", f.aktion_var.get(), "Ein Format waehlen stellt die Aktion auf Umwandeln.")
+        self.assertEqual("exfat", self.app._load_setting(fz.EINST_FORMAT, ""))
+
+    def test_paket_im_feld_gibt_es_nur_fuer_einen_spielordner_und_das_feld_springt_zurueck(self) -> None:
+        self._laden("alpha.pkg")
+        f = self.f
+        f.format_var.set("Umwandeln zu Paket (.pkg)")
+        f.format_box.event_generate("<<ComboboxSelected>>")
+        self.assertEqual("ffpfsc", f.format_schluessel, "fuer ein Paket nicht moeglich")
+        self.assertEqual("Umwandeln zu FFPFSC (.ffpfsc)", f.format_var.get(), "Das Feld springt zurueck.")
+        self.assertIn("Spielordner", f.status_var.get())
 
     def test_die_ausgabe_je_aktion(self) -> None:
         self._laden("alpha.pkg")
@@ -439,7 +546,7 @@ class FensterTests(unittest.TestCase):
                 self.assertEqual(soll, f.ergebnis_var["output"].get())
         f.aktion_var.set("extrahieren")
         f._aktion_geaendert()
-        self.assertTrue(all(k._rollen[0] == "bg_main" for k, _a, _b in f._kacheln.values()), "keine Kachel gewaehlt")
+        self.assertNotEqual("disabled", str(f.format_box.cget("state")))
 
     # ---------------- Pruefen ----------------
     def test_pruefen_zeigt_das_ergebnis_und_die_befunde(self) -> None:
@@ -745,7 +852,7 @@ class FensterTests(unittest.TestCase):
         ordner = self._spielordner_laden()
         f._format_waehlen("pkg")
         self.assertEqual("pkg", f.format_schluessel)
-        self.assertEqual("accent_btn", f._kacheln["pkg"][0]._rollen[0])
+        self.assertEqual("Umwandeln zu Paket (.pkg)", f.format_var.get())
         self.assertTrue(f.ergebnis_var["output"].get().startswith("UP0000-PPSA00003_00-GAMMAGAMMAGAMMA0"))
         self.assertTrue(ordner)
         self.f._pakete_hinzufuegen([os.path.join(self.ordner, "alpha.pkg")], waehlen=True)
@@ -1093,7 +1200,7 @@ class FensterTests(unittest.TestCase):
         self.assertEqual("", f.ziel_reihe.winfo_manager(), "der Zielordner auf dem PC passt hier nicht")
         self.assertEqual("", f.ueberschreiben.winfo_manager())
         self.assertEqual("10.0.0.5:/mnt/usb0/Alpha", f.ergebnis_var["output"].get())
-        self.assertTrue(all(k._rollen[0] == "bg_main" for k, _a, _b in f._kacheln.values()), "keine Kachel gewaehlt")
+        self.assertNotEqual("disabled", str(f.format_box.cget("state")))
         f.aktion_var.set("extrahieren")
         f._aktion_geaendert()
         self.assertEqual("", f.fern_reihe.winfo_manager())
@@ -1106,12 +1213,6 @@ class FensterTests(unittest.TestCase):
         self.f.aktuell.typ = wz.TYP_ORDNER
         self.assertFalse(self.f._aktion_moeglich(fz.AKTION_KONSOLE))
         self.assertTrue(self.f._aktion_moeglich(fz.AKTION_UMWANDELN))
-
-    def test_die_vier_aktionen_stehen_in_einer_umbrechenden_zeile(self) -> None:
-        self.assertEqual({"umwandeln", "extrahieren", "pruefen", "konsole"}, set(self.f._aktion_knoepfe))
-        _pumpen(0.5)                    # die Zeile legt ihre Kinder erst nach dem ersten Groessenereignis
-        for knopf in self.f._aktion_knoepfe.values():
-            self.assertEqual("place", knopf.winfo_manager(), "FlussZeile setzt mit place - sie bricht um statt abzuschneiden")
 
     def test_ohne_adresse_wird_nicht_gestartet(self) -> None:
         f = self._konsole(adresse="  ")

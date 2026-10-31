@@ -238,7 +238,8 @@ class Button(_Dehnbar, raster.KartenKnopf):
     """
 
     def __init__(self, master, look: FensterLook, text: str = "", command=None, style: str = "",
-                 state: str = "normal", width=None, bg=None, **legacy: Any) -> None:
+                 state: str = "normal", width=None, bg=None, hoehe: "int | None" = None, fett: "bool | None" = None,
+                 **legacy: Any) -> None:
         for name in _KNOPF_KOSMETIK:
             legacy.pop(name, None)
         self._look = look
@@ -250,7 +251,8 @@ class Button(_Dehnbar, raster.KartenKnopf):
         stil = "flaeche" if self._art == "flaeche" else "akzent"
         super().__init__(master, z, str(text), command, stil, grund=look.grund_von(master),
                          breite=self._feste_breite(z, klein) if width else None,
-                         hoehe=26 if klein else 30, fett=stil == "akzent",
+                         hoehe=int(hoehe) if hoehe else (26 if klein else 30),
+                         fett=(stil == "akzent") if fett is None else bool(fett),
                          state="disabled" if str(state) == "disabled" else "normal", **legacy)
         self.bind("<Configure>", self._bei_groesse, add="+")
 

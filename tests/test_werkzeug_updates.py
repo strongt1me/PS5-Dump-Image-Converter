@@ -297,6 +297,7 @@ RELEASES = {
                                          'PS5-UltraPack-2.2.1-macos-arm64.zip.sha256']),
     ],
     'sub0x00001/ps5-fpkg-converter': [
+        ('v0.0.3', False, '2026-10-30', ['PS5-FPKG-Converter-v0.0.3-portable-win64.zip']),
         ('v0.0.2', False, '2026-10-07', ['PS5-FPKG-Converter-v0.0.2-portable-win64.zip']),
     ],
 }
