@@ -291,3 +291,30 @@ def _keine_echten_dialoge(monkeypatch: pytest.MonkeyPatch):
     if geoeffnet:
         pytest.fail("Der Test hat ein echtes Dialogfenster geoeffnet: "
                     + "; ".join(geoeffnet), pytrace=False)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _keine_startfaeden_im_test():
+    """Die Startarbeiten (Engine vorwaermen, Einhaengungen aufraeumen, Temp-Suche) laufen in Testlaeufen nicht.
+
+    Jede ``PS5ConverterGUI`` startet sie in Hintergrundfaeden; die schreiben (``_append_to_log`` -> ``root.after``) in die
+    Oberflaeche, waehrend der Test im Hauptfaden ``update()`` ruft. Im Volllauf stuerzte der Prozess dabei zweimal an
+    derselben Stelle ab (31.10.2026: ``Fatal Python error: Aborted`` unter Tk 9, ``access violation`` unter Tk 8.6, beide in
+    ``after`` -> ``_register`` des Warmup-Fadens, Hauptfaden in ``update()``), einzeln lief jede Datei fehlerfrei. Im Programm
+    laeuft die Hauptschleife, dort ist es kein Problem.
+    """
+    try:
+        haupt = importlib.import_module("PS5ImageConverter_Pro_FINAL_revised")
+    except Exception:  # noqa: BLE001 - ohne Hauptmodul gibt es nichts zu sperren
+        yield
+        return
+    klasse = getattr(haupt, "PS5ConverterGUI", None)
+    if klasse is None:
+        yield
+        return
+    alt = klasse._run_startup_maintenance
+    klasse._run_startup_maintenance = lambda self: None
+    try:
+        yield
+    finally:
+        klasse._run_startup_maintenance = alt
