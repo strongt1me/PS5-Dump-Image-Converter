@@ -117,6 +117,11 @@ class FensterTests(unittest.TestCase):
         cls.app._current_language = "de"
 
     def setUp(self) -> None:
+        # Volllauf 01.11.2026: Das Programm maximiert die Wurzel; minimiert sie Windows waehrend des Laufs (Desktop
+        # anzeigen), liegt die Seite bei -32000 und die Knopfleiste wird nie gesetzt (Startknopf bei 0).
+        if _WURZEL.state() == "iconic":
+            _WURZEL.deiconify()
+            _pumpen(0.2)
         self.app._current_language = "de"
         self.ordner = tempfile.mkdtemp(prefix="ps5pkg_test_")
         self.addCleanup(lambda: APP._rmtree_force(self.ordner, ignore_errors=True))
