@@ -170,7 +170,10 @@ class MausradTests(unittest.TestCase):
                    if isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)}
         self.assertNotIn("bind_all", gerufen)
         self.assertNotIn("unbind_all", gerufen)
-        self.assertIn("winfo_toplevel", gerufen)
+        # Seit 31.10.2026 bindet ``utils.tk_bindungen.an_toplevel_binden`` (loest das Fenster selbst auf und loest die
+        # Bindung beim Schliessen wieder) - ein Aufruf von ``winfo_toplevel`` steht hier nicht mehr.
+        namen = {k.func.id for k in ast.walk(koerper) if isinstance(k, ast.Call) and isinstance(k.func, ast.Name)}
+        self.assertTrue("winfo_toplevel" in gerufen or "an_toplevel_binden" in namen)
 
     def test_kein_neues_tcl_kommando_je_ueberfahrt(self) -> None:
         """Das alte Muster band bei jedem <Enter> ein frisches Lambda.
