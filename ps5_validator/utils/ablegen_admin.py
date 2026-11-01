@@ -89,10 +89,80 @@ def installieren(root, ziele: Sequence[tuple[object, Callable]]) -> bool:
     shell32.DragFinish.argtypes = [wintypes.HANDLE]
     shell32.DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
 
-    stuecke = getattr(root, "_ablegen_admin_stuecke", None)
-    if stuecke is None:
-        stuecke = root._ablegen_admin_stuecke = []   # haelt Rueckruf und alte Prozedur am Leben
-    alte: dict[int, int] = {}
+    user32.GetWindowLongPtrW.restype = ctypes.c_void_p
+    user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+
+    # Ein Zustand je Wurzel: EINE Fensterprozedur, die alten Prozeduren und die aktuellen Ziele. Volllauf 01.11.2026
+    # (als Administrator): Jeder Programmaufbau auf derselben Wurzel hing eine weitere Prozedur vor das Hauptfenster
+    # - nach Dutzenden lief jede Nachricht durch Dutzende Python-Rueckrufe, bis update() mit einer Zugriffsverletzung
+    # abstuerzte; und die Rueckrufe hielten jedes alte Programmfenster fest.
+    zustand = getattr(root, "_ablegen_admin_zustand", None)
+    if zustand is None:
+        zustand = root._ablegen_admin_zustand = {"alte": {}, "ziele": [], "rueckruf": None}
+    # Schwach gehalten: Ein neuer Aufbau ersetzt die Ziele, ohne das vorige Programmfenster am Leben zu halten.
+    zustand["ziele"] = [(_schwach(w), _schwach(b)) for w, b in ziele]
+    if zustand["rueckruf"] is None:
+        zustand["rueckruf"] = _prozedur_bauen(root, zustand, ctypes, wintypes, user32, shell32, WNDPROC)
+    rueckruf = zustand["rueckruf"]
+    alte: dict[int, int] = zustand["alte"]
+    eigene = ctypes.cast(rueckruf, ctypes.c_void_p).value
+
+    fenster: list[int] = []
+    try:
+        root.update_idletasks()
+        innen = root.winfo_id()
+        wurzel_hwnd = user32.GetAncestor(innen, GA_ROOT) or innen
+        for kandidat in [wurzel_hwnd, innen] + [w.winfo_id() for w, _b in ziele]:
+            if kandidat and int(kandidat) not in fenster:
+                fenster.append(int(kandidat))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Ablage ueber WM_DROPFILES: Fenster nicht ermittelt (%s)", exc)
+        return False
+
+    eingerichtet = 0
+    for hwnd in fenster:
+        try:
+            if user32.GetWindowLongPtrW(hwnd, GWL_WNDPROC) == eigene:
+                eingerichtet += 1       # schon eingehaengt - ein zweites Mal riefe sich die Prozedur selbst auf
+                continue
+            for nachricht in (WM_DROPFILES, WM_COPYGLOBALDATA, WM_COPYDATA):
+                user32.ChangeWindowMessageFilterEx(hwnd, nachricht, MSGFLT_ALLOW, None)
+            vorher = user32.SetWindowLongPtrW(hwnd, GWL_WNDPROC, eigene)
+            if not vorher:
+                continue
+            alte[hwnd] = vorher
+            shell32.DragAcceptFiles(hwnd, True)
+            eingerichtet += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Ablage ueber WM_DROPFILES: Fenster %s nicht eingerichtet (%s)", hwnd, exc)
+    logger.info("Ablage ueber WM_DROPFILES eingerichtet fuer %d von %d Fenstern %s", eingerichtet, len(fenster), fenster)
+    return eingerichtet > 0
+
+
+def _schwach(obj):
+    """Schwacher Verweis auf ein Feld oder eine gebundene Methode; was keinen erlaubt, bleibt fest gehalten."""
+    import weakref
+    if hasattr(obj, "__self__") and hasattr(obj, "__func__"):
+        return weakref.WeakMethod(obj)
+    try:
+        return weakref.ref(obj)
+    except TypeError:
+        return lambda: obj
+
+
+def lebende_ziele(zustand: dict) -> list[tuple[object, Callable]]:
+    """Die Ziele des Zustands, deren Feld und Behandler noch leben."""
+    lebend = []
+    for feld_ref, behandler_ref in zustand.get("ziele", ()):
+        feld, behandler = feld_ref(), behandler_ref()
+        if feld is not None and behandler is not None:
+            lebend.append((feld, behandler))
+    return lebend
+
+
+def _prozedur_bauen(root, zustand: dict, ctypes, wintypes, user32, shell32, WNDPROC):
+    """Die Fensterprozedur der Wurzel samt Abholtakt - einmal je Wurzel, sie liest die Ziele aus ``zustand``."""
+    alte: dict[int, int] = zustand["alte"]
 
     def _pfade(hdrop) -> list[str]:
         anzahl = shell32.DragQueryFileW(hdrop, 0xFFFFFFFF, None, 0)
@@ -136,7 +206,7 @@ def installieren(root, ziele: Sequence[tuple[object, Callable]]) -> bool:
                 namen = _pfade(wparam)
                 shell32.DragFinish(wparam)
                 user32.ClientToScreen(hwnd, ctypes.byref(punkt))
-                behandler = ziel_waehlen((punkt.x, punkt.y), ziele)
+                behandler = ziel_waehlen((punkt.x, punkt.y), lebende_ziele(zustand))
                 logger.info("Ablage ueber WM_DROPFILES: %d Pfad(e) bei (%d,%d)", len(namen), punkt.x, punkt.y)
                 if behandler is not None and namen:
                     daten = pfade_in_liste(namen, root.tk)
@@ -147,35 +217,6 @@ def installieren(root, ziele: Sequence[tuple[object, Callable]]) -> bool:
             return 0
         return user32.CallWindowProcW(alte.get(hwnd_zahl), hwnd, msg, wparam, lparam)
 
-    rueckruf = WNDPROC(_prozedur)
-    stuecke.append(rueckruf)
-
-    fenster: list[int] = []
-    try:
-        root.update_idletasks()
-        innen = root.winfo_id()
-        wurzel_hwnd = user32.GetAncestor(innen, GA_ROOT) or innen
-        for kandidat in [wurzel_hwnd, innen] + [w.winfo_id() for w, _b in ziele]:
-            if kandidat and int(kandidat) not in fenster:
-                fenster.append(int(kandidat))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Ablage ueber WM_DROPFILES: Fenster nicht ermittelt (%s)", exc)
-        return False
-
-    eingerichtet = 0
-    for hwnd in fenster:
-        try:
-            for nachricht in (WM_DROPFILES, WM_COPYGLOBALDATA, WM_COPYDATA):
-                user32.ChangeWindowMessageFilterEx(hwnd, nachricht, MSGFLT_ALLOW, None)
-            vorher = user32.SetWindowLongPtrW(hwnd, GWL_WNDPROC, ctypes.cast(rueckruf, ctypes.c_void_p))
-            if not vorher:
-                continue
-            alte[hwnd] = vorher
-            shell32.DragAcceptFiles(hwnd, True)
-            eingerichtet += 1
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Ablage ueber WM_DROPFILES: Fenster %s nicht eingerichtet (%s)", hwnd, exc)
-    if eingerichtet:
-        root.after(100, _abholen)
-    logger.info("Ablage ueber WM_DROPFILES eingerichtet fuer %d von %d Fenstern %s", eingerichtet, len(fenster), fenster)
-    return eingerichtet > 0
+    rueckruf = WNDPROC(_prozedur)      # bleibt ueber ``zustand`` an der Wurzel am Leben
+    root.after(100, _abholen)
+    return rueckruf

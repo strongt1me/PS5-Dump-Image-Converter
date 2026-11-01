@@ -52,5 +52,73 @@ class ZielwahlTests(unittest.TestCase):
             self.assertFalse(ab.installieren(object(), []))
 
 
+class _Programm:
+    """Steht fuer das Programmfenster: Die Behandler sind gebundene Methoden wie im Hauptmodul."""
+
+    def __init__(self, wurzel):
+        import tkinter as tk
+        self.feld = tk.Entry(wurzel)
+        self.feld.pack()
+        self.abgelegt: list = []
+
+    def abgelegt_bei(self, ereignis):
+        self.abgelegt.append(ereignis.data)
+
+
+@unittest.skipUnless(sys.platform == "win32", "nur Windows")
+class MehrfachEinrichtenTests(unittest.TestCase):
+    """Volllauf 01.11.2026 als Administrator: Jeder Programmaufbau auf derselben Wurzel hing eine weitere
+    Fensterprozedur vor das Hauptfenster (Absturz in update()) und hielt das vorige Programmfenster fest."""
+
+    def setUp(self):
+        import ctypes
+        import tkinter as tk
+        self.wurzel = tk._default_root or tk.Tk()
+        self.wurzel.withdraw()
+        self.user32 = ctypes.windll.user32
+        self.user32.GetWindowLongPtrW.restype = ctypes.c_void_p
+        self.user32.GetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.user32.SetWindowLongPtrW.restype = ctypes.c_void_p
+        self.user32.SetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+        self.user32.GetAncestor.restype = ctypes.c_void_p
+        self.user32.GetAncestor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.assertIsNone(getattr(self.wurzel, "_ablegen_admin_zustand", None), "Anker: noch nichts eingehaengt.")
+        self.addCleanup(self._aushaengen)
+
+    def _aushaengen(self):
+        # Erst die alten Prozeduren zurueck, dann den Zustand (und damit den Rueckruf) freigeben.
+        zustand = getattr(self.wurzel, "_ablegen_admin_zustand", None)
+        if zustand is None:
+            return
+        for hwnd, vorher in zustand["alte"].items():
+            self.user32.SetWindowLongPtrW(hwnd, ab.GWL_WNDPROC, vorher)
+        del self.wurzel._ablegen_admin_zustand
+
+    def _prozedur_des_hauptfensters(self):
+        self.wurzel.update_idletasks()
+        innen = self.wurzel.winfo_id()
+        return self.user32.GetWindowLongPtrW(self.user32.GetAncestor(innen, ab.GA_ROOT) or innen, ab.GWL_WNDPROC)
+
+    def test_zweimal_einrichten_haengt_eine_prozedur_und_laesst_das_alte_programm_frei(self):
+        import gc
+        import weakref
+        erstes = _Programm(self.wurzel)
+        self.assertTrue(ab.installieren(self.wurzel, [(erstes.feld, erstes.abgelegt_bei)]))
+        prozedur = self._prozedur_des_hauptfensters()
+        spur = weakref.ref(erstes)
+        erstes.feld.destroy()
+        del erstes
+        zweites = _Programm(self.wurzel)
+        self.addCleanup(zweites.feld.destroy)
+        self.assertTrue(ab.installieren(self.wurzel, [(zweites.feld, zweites.abgelegt_bei)]))
+        self.assertEqual(prozedur, self._prozedur_des_hauptfensters(),
+                         "Das Hauptfenster bekam eine zweite Prozedur vorgehaengt.")
+        gc.collect()
+        self.assertIsNone(spur(), "Die Ablage haelt das vorige Programmfenster fest.")
+        ziele = ab.lebende_ziele(self.wurzel._ablegen_admin_zustand)
+        self.assertEqual([(zweites.feld, zweites.abgelegt_bei)], ziele)
+        self.wurzel.update()      # Nachrichten laufen durch die eingehaengte Prozedur, ohne Absturz
+
+
 if __name__ == "__main__":
     unittest.main()
