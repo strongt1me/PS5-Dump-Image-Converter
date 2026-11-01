@@ -189,8 +189,10 @@ class Ps4DumpImageFenster:
         # Seit 30.10.2026 wie die Seite PS5 PKG und die Aufgaben 1 bis 6: Titel und Quellfeld stehen im Kopf der Seite
         # (``pkg_fpkg_seite``), der Inhalt rollt ueber ``_build_scrollable_body`` statt ueber eine eigene Rollflaeche,
         # und die Knopfleiste (bricht um) steht wie bei Aufgabe 1 unter den Abschnitten, das Protokoll darunter.
-        aussen, koerper = g._build_scrollable_body(self.win)
-        aussen.pack(fill="both", expand=True, padx=(14, 14), pady=(0, 0))
+        # Seit 01.11.2026 (Nutzerwunsch) rollt die Seite nicht mehr: ein einfacher Rahmen, das Protokoll nimmt die
+        # uebrige Hoehe (es wird kuerzer, statt dass die Seite rollen muss).
+        koerper = tk.Frame(self.win, bg=c["bg_main"])
+        koerper.pack(fill="both", expand=True, padx=(14, 14), pady=(0, 0))
         # Die Karte wie ``path_card`` der Aufgabe 1: Quelle, Spiele, Ziel und Einstellungen stehen darin; Knopfleiste,
         # Fortschritt und Protokoll darunter auf dem Hauptbild. Ohne die Seite (``karte_bauer`` fehlt) steht alles lose.
         if self._karte_bauer is not None:
@@ -206,7 +208,7 @@ class Ps4DumpImageFenster:
         self._rest_karte = konf
         beschreibung = tk.Label(konf, text=t("ps4pkg.subtitle"), font=(F, pt(9)), bg=c["bg_main"],
                                 fg=c["fg_secondary"], anchor="w", justify="left", wraplength=560)
-        beschreibung.pack(fill="x", padx=0, pady=(6, 0))
+        # Der Beschreibungstext steht seit 01.11.2026 nicht mehr da (Nutzerwunsch); das Label bleibt gebaut, ungepackt.
         # Der Umbruch folgt der Breite der Spalte (das Label selbst hat auf dem Hauptbild die Groesse seines Textes).
         konf.bind("<Configure>", lambda e: beschreibung.configure(wraplength=max(160, e.width - 16)), add="+")
 
@@ -322,7 +324,7 @@ class Ps4DumpImageFenster:
 
         # ── Knopfleiste, Fortschritt und Protokoll ──────────────────────
         unten = tk.Frame(koerper, bg=c["bg_main"])
-        unten.pack(fill="x")
+        unten.pack(fill="both", expand=True)
         self._rest_unten = unten
         self._rest_sichtbar = True
         leiste = raster.FlussZeile(unten, g._bibliothek_zeichner(), grund="bg_main", abstand=(10, 6))
@@ -341,9 +343,9 @@ class Ps4DumpImageFenster:
         status_text.pack(fill="x")
         koerper.bind("<Configure>", lambda e: status_text.configure(wraplength=max(160, e.width - 16)), add="+")
         # Feste Hoehe (die Seite rollt): in der Rollflaeche gaebe es keinen freien Platz, auf den ``expand`` wirken koennte.
-        self.protokoll = pw.Text(unten, height=9, font=(self.M, pt(9)), bg=c["console_bg"], fg=c["console_fg"],
+        self.protokoll = pw.Text(unten, height=1, font=(self.M, pt(9)), bg=c["console_bg"], fg=c["console_fg"],
                                  relief="flat", insertbackground=c["console_fg"], wrap="word")
-        self.protokoll.pack(fill="x", pady=(6, 10))
+        self.protokoll.pack(fill="both", expand=True, pady=(6, 10))
 
         # ── Knopfleiste (oben im Koerper schon gepackt, hier gefuellt) ───────────────────────────────────
         # Kein SCHLIESSEN mehr (seit 12.10.2026): die Seite bleibt wie die uebrigen Seiten des Programms stehen.
@@ -382,7 +384,10 @@ class Ps4DumpImageFenster:
             return False
         for teil in (self._rest_karte, self._rest_unten):
             try:
-                teil.pack(fill="x") if sichtbar else teil.pack_forget()
+                if sichtbar:
+                    teil.pack(fill="both", expand=True) if teil is self._rest_unten else teil.pack(fill="x")
+                else:
+                    teil.pack_forget()
             except tk.TclError:
                 pass
         self._rest_sichtbar = sichtbar

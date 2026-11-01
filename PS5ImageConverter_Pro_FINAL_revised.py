@@ -44171,8 +44171,18 @@ class PS5ConverterGUI:
 
         knoepfe = tk.Frame(koerper, bg=c["bg_main"], pady=8)
         knoepfe.pack(side="bottom", fill="x")
+        def _abbrechen() -> None:
+            # Sofort sichtbar (31.10.2026 gemeldet: "passiert gar nichts"): Der Faden merkt den Abbruch erst, wenn die
+            # laufende Anfrage antwortet (Verzeichnis: bis 20 s) - bis dahin steht die Anzeige schon auf "Abgebrochen".
+            abbruch.set()
+            try:
+                abbrechen_btn.configure(state="disabled")
+                status_var.set(self._t("ps5upd.abgebrochen"))
+            except tk.TclError:
+                pass
+
         abbrechen_btn = self._pw.Button(knoepfe, text=self._t("ps5upd.knopf_abbrechen"),
-                                        command=abbruch.set)
+                                        command=_abbrechen)
         abbrechen_btn.pack(side="left")
         ordner_btn = self._pw.Button(
             knoepfe, text=self._t("ps5upd.knopf_ordner"), state="disabled",
@@ -44226,6 +44236,8 @@ class PS5ConverterGUI:
                 balken.configure(value=max(0.0, min(100.0, prozent)))
                 if stand["fertig"]:
                     status_var.set(self._t("ps5upd.status_fertig", pfad=ziel))
+                elif abbruch.is_set():
+                    status_var.set(self._t("ps5upd.abgebrochen"))
                 elif stand["fehler"]:
                     status_var.set(self._t("ps5upd.status_fehler", fehler=stand["fehler"]))
                 elif gesamt and geladen:
@@ -44331,8 +44343,18 @@ class PS5ConverterGUI:
 
         knoepfe = tk.Frame(koerper, bg=c["bg_main"], pady=8)
         knoepfe.pack(side="bottom", fill="x")
+        def _abbrechen() -> None:
+            # Sofort sichtbar (31.10.2026 gemeldet: "passiert gar nichts"): Der Faden merkt den Abbruch erst, wenn die
+            # laufende Anfrage antwortet (Verzeichnis: bis 20 s) - bis dahin steht die Anzeige schon auf "Abgebrochen".
+            abbruch.set()
+            try:
+                abbrechen_btn.configure(state="disabled")
+                status_var.set(self._t("ps5upd.abgebrochen"))
+            except tk.TclError:
+                pass
+
         abbrechen_btn = self._pw.Button(knoepfe, text=self._t("ps5upd.knopf_abbrechen"),
-                                        command=abbruch.set)
+                                        command=_abbrechen)
         abbrechen_btn.pack(side="left")
         ordner_btn = self._pw.Button(
             knoepfe, text=self._t("ps5upd.knopf_ordner"), state="disabled",
@@ -44382,6 +44404,8 @@ class PS5ConverterGUI:
                 balken.configure(value=max(0.0, min(100.0, prozent)))
                 if stand["fertig"]:
                     status_var.set(self._t("ps5upd.status_fertig", pfad=ziel))
+                elif abbruch.is_set():
+                    status_var.set(self._t("ps5upd.abgebrochen"))
                 elif stand["fehler"]:
                     status_var.set(self._t("ps5upd.status_fehler", fehler=stand["fehler"]))
                 elif geladen:
