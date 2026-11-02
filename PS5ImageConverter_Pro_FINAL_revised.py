@@ -44205,7 +44205,7 @@ class PS5ConverterGUI:
                 manifest = ps5_updates.manifest_holen(
                     info["manifest_url"], abbruch=abbruch.is_set)
                 stand["gesamt"] = manifest.gesamt
-                stand["status"] = ""
+                stand["teile"] = len(manifest.teile)
                 ps5_updates.paket_laden(manifest, ziel, fortschritt=_fortschritt,
                                         abbruch=abbruch.is_set, faeden=3)
                 stand["fertig"] = True
@@ -44247,6 +44247,9 @@ class PS5ConverterGUI:
                         "ps5upd.status_lade", geladen=self._fmt_bytes(geladen),
                         gesamt=self._fmt_bytes(gesamt), prozent="%.1f" % prozent,
                         tempo=self._fmt_bytes(int(tempo)), rest=rest))
+                elif stand.get("teile"):
+                    # 02.11.2026: Verzeichnis da, noch kein Byte - nicht weiter "Lade das Verzeichnis" zeigen.
+                    status_var.set(self._t("ps5upd.status_verbinde", teile=stand["teile"]))
             except tk.TclError:
                 return
             if aktiv:

@@ -360,6 +360,85 @@ class LadenTests(unittest.TestCase):
                 pu.paket_laden(m, self.ziel, versuche=1)
 
 
+class ReiheLadenTests(LadenTests):
+    """Alle Ladetests noch einmal so, wie es auf exFAT laeuft: kein Strecken, ein Faden, Anhaengen am Ende.
+
+    Gemeldet 02.11.2026 (Fallout 4, 52,66 GB auf exFAT): "Lade das Verzeichnis des Pakets ..." stand fest - das
+    Strecken der Teildatei fuellte mit 0,22 MB/s Nullen, geladen wurde nichts.
+    """
+
+    def setUp(self):
+        super().setUp()
+        strecken = mock.patch.object(pu, "_datei_strecken", return_value=False)
+        strecken.start()
+        self.addCleanup(strecken.stop)
+
+    def test_die_teildatei_waechst_nur_mit_dem_geladenen(self):
+        stand = {"geladen": 0, "groessen": []}
+        teil = pu.teildatei(self.ziel)
+
+        def abbruch() -> bool:
+            if os.path.isfile(teil):
+                stand["groessen"].append(os.path.getsize(teil))
+            return stand["geladen"] >= 1_000_000
+
+        with self.assertRaises(pu.UpdateFehler):
+            pu.paket_laden(self.manifest, self.ziel, abbruch=abbruch, faeden=3,
+                           fortschritt=lambda a, _b: stand.update(geladen=a))
+        self.assertTrue(stand["groessen"], "Anker: die Teildatei wurde beobachtet.")
+        self.assertLess(max(stand["groessen"]), self.manifest.gesamt, "Die Teildatei wurde vorab gestreckt.")
+        self.assertLessEqual(os.path.getsize(teil), stand["geladen"] + 1024 * 1024)
+
+    def test_ein_zu_langer_rest_wird_auf_den_merkstand_gekuerzt(self):
+        """Eine Teildatei aus dem haengenden Strecken (laenger als geladen, ohne Merkstand) beginnt sauber von vorn."""
+        os.makedirs(os.path.dirname(self.ziel))
+        with open(pu.teildatei(self.ziel), "wb") as datei:
+            datei.write(b"\0" * 500_000)
+        pu.paket_laden(self.manifest, self.ziel)
+        self.assertEqual(self._gesamt(), Path(self.ziel).read_bytes())
+
+
+class ReihenstandTests(unittest.TestCase):
+
+    def setUp(self):
+        self.m = pu.Manifest(60, [pu.Teil("https://x/a", 0, 10, "a" * 64), pu.Teil("https://x/b", 10, 20, "b" * 64),
+                                  pu.Teil("https://x/c", 30, 30, "c" * 64)])
+
+    def test_nach_dem_ersten_unvollstaendigen_teil_zaehlt_nichts(self):
+        self.assertEqual(([10, 5, 0], 15), pu.reihenstand(self.m, [10, 5, 30]))
+
+    def test_alles_da(self):
+        self.assertEqual(([10, 20, 30], 60), pu.reihenstand(self.m, [10, 20, 30]))
+
+    def test_nichts_da_und_unsinn_wird_begrenzt(self):
+        self.assertEqual(([0, 0, 0], 0), pu.reihenstand(self.m, [0, 20, 30]))
+        self.assertEqual(([10, 20, 30], 60), pu.reihenstand(self.m, [99, 99, 99]))
+        self.assertEqual(([0, 0, 0], 0), pu.reihenstand(self.m, [-4, 0, 0]))
+
+
+@unittest.skipUnless(os.name == "nt", "nur Windows")
+class StreckenTests(unittest.TestCase):
+
+    def test_ntfs_streckt_duenn_und_sofort(self):
+        import time as zeit
+        with tempfile.TemporaryDirectory(prefix="ps5upd_strecken_") as tmp:
+            if pu._dateisystem(tmp).upper() != "NTFS":
+                self.skipTest("Temp-Ordner liegt nicht auf NTFS")
+            pfad = os.path.join(tmp, "x.teil")
+            beginn = zeit.monotonic()
+            self.assertTrue(pu._datei_strecken(pfad, 8 * 1024 ** 3))
+            self.assertLess(zeit.monotonic() - beginn, 5.0, "8 GiB duenn strecken darf nicht dauern")
+            self.assertEqual(8 * 1024 ** 3, os.path.getsize(pfad))
+            self.assertTrue(os.stat(pfad).st_file_attributes & 0x200, "Die Datei ist nicht duenn besetzt (sparse).")
+
+    def test_andere_dateisysteme_werden_nicht_gestreckt(self):
+        with tempfile.TemporaryDirectory(prefix="ps5upd_strecken_") as tmp, \
+                mock.patch.object(pu, "_dateisystem", return_value="exFAT"):
+            pfad = os.path.join(tmp, "x.teil")
+            self.assertFalse(pu._datei_strecken(pfad, 8 * 1024 ** 3))
+            self.assertFalse(os.path.exists(pfad), "Ohne Strecken wird auch nichts angelegt.")
+
+
 class HolenTests(unittest.TestCase):
 
     def test_host_fremd(self):

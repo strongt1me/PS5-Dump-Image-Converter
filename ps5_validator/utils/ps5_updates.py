@@ -512,13 +512,82 @@ def _merk_schreiben(pfad: str, kennung: str, geladen: list[int]) -> None:
         logger.debug("Merkstand nicht schreibbar (%s): %s", pfad, exc)
 
 
+def _dateisystem(pfad: str) -> str:
+    """Name des Dateisystems unter ``pfad`` (Windows, z. B. ``NTFS``/``exFAT``); sonst oder bei Fehler ``""``."""
+    if os.name != "nt":
+        return ""
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        wurzel = ctypes.create_unicode_buffer(300)
+        if not k32.GetVolumePathNameW(os.path.abspath(pfad), wurzel, 300):
+            return ""
+        name = ctypes.create_unicode_buffer(64)
+        if not k32.GetVolumeInformationW(wurzel.value, None, 0, None, None, None, name, 64):
+            return ""
+        return name.value
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _datei_strecken(pfad: str, groesse: int) -> bool:
+    """Streckt ``pfad`` auf ``groesse``, ohne die Luecke zu beschreiben. ``False``: geht hier nicht schnell.
+
+    Gemessen 02.11.2026 auf exFAT (USB-Platte, 1 GiB): Pythons ``truncate`` fuellt unter Windows in 4-KiB-Schritten
+    mit Nullen (0,22 MB/s - 52 GB haetten ueber zwei Tage gedauert, ohne ein Byte zu laden), ``SetEndOfFile`` braucht
+    69 s je GiB. Nur NTFS (als duenn besetzte Datei) und POSIX strecken sofort.
+    """
+    if os.name != "nt":
+        with open(pfad, "ab") as datei:
+            datei.truncate(groesse)
+        return True
+    if _dateisystem(pfad).upper() != "NTFS":
+        return False
+    try:
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+        k32 = ctypes.windll.kernel32
+        k32.DeviceIoControl.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+                                        ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+                                        ctypes.c_void_p]
+        k32.SetFilePointerEx.argtypes = [wintypes.HANDLE, ctypes.c_longlong, ctypes.c_void_p, wintypes.DWORD]
+        k32.SetEndOfFile.argtypes = [wintypes.HANDLE]
+        with open(pfad, "ab") as datei:
+            handle = msvcrt.get_osfhandle(datei.fileno())
+            zurueck = wintypes.DWORD()
+            if not k32.DeviceIoControl(handle, 0x000900C4, None, 0, None, 0, ctypes.byref(zurueck), None):
+                return False            # FSCTL_SET_SPARSE abgelehnt
+            return bool(k32.SetFilePointerEx(handle, groesse, None, 0) and k32.SetEndOfFile(handle))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Teildatei nicht duenn streckbar (%s): %s", pfad, exc)
+        return False
+
+
+def reihenstand(manifest: Manifest, geladen: list[int]) -> tuple[list[int], int]:
+    """Der Merkstand, beschnitten auf das, was der Reihe nach ab Dateianfang lueckenlos geladen ist.
+
+    Returns:
+        ``(geladen, stelle)``: hinter dem ersten unvollstaendigen Teil zaehlt nichts mehr; ``stelle`` ist das
+        Dateiende, an dem es weitergeht.
+    """
+    neu = [0] * len(manifest.teile)
+    for i, stueck in enumerate(manifest.teile):
+        menge = min(max(0, geladen[i]), stueck.groesse)
+        neu[i] = menge
+        if menge < stueck.groesse:
+            return neu, stueck.versatz + menge
+    return neu, manifest.gesamt
+
+
 def paket_laden(manifest: Manifest, ziel: str,
                 fortschritt: Callable[[int, int], None] | None = None,
                 abbruch: Callable[[], bool] | None = None,
                 faeden: int = 3, versuche: int = 4) -> str:
     """Laedt alle Teile in **eine** Datei und prueft jedes gegen seine SHA-256.
 
-    Geschrieben wird in ``<ziel>.teil`` (vorab auf die Endgroesse gestreckt),
+    Geschrieben wird in ``<ziel>.teil`` (auf NTFS/POSIX vorab duenn auf die
+    Endgroesse gestreckt und parallel, sonst der Reihe nach angehaengt),
     daneben ``<ziel>.teil.json`` mit dem Stand je Teil. Bricht etwas ab, setzt
     der naechste Aufruf bei dem fort, was schon da ist (Bereichsanfrage). Erst
     wenn jedes Teil stimmt, wird zu ``ziel`` umbenannt.
@@ -543,18 +612,27 @@ def paket_laden(manifest: Manifest, ziel: str,
     os.makedirs(os.path.dirname(os.path.abspath(ziel)), exist_ok=True)
     kennung = _kennung(manifest)
     geladen = _merk_lesen(merk, kennung, len(manifest.teile))
-    if not os.path.isfile(teil) or os.path.getsize(teil) != manifest.gesamt:
-        geladen = [0] * len(manifest.teile)
     bereits = os.path.getsize(teil) if os.path.isfile(teil) else 0
+    # Der Reihe nach (ein Faden, die Datei waechst nur am Ende), wo sie sich nicht sofort strecken laesst (exFAT/FAT).
+    der_reihe_nach = False
     if bereits != manifest.gesamt:
         frei = shutil.disk_usage(os.path.dirname(os.path.abspath(ziel))).free
         if frei < manifest.gesamt - bereits + 64 * 1024 * 1024:
             raise UpdateFehler("ps5upd.platz")
         try:
-            with open(teil, "ab") as datei:
-                datei.truncate(manifest.gesamt)
+            if _datei_strecken(teil, manifest.gesamt):
+                geladen = [0] * len(manifest.teile)
+            else:
+                der_reihe_nach = True
+                geladen, stelle = reihenstand(manifest, geladen)
+                if bereits < stelle:
+                    geladen, stelle = [0] * len(manifest.teile), 0
+                with open(teil, "ab") as datei:
+                    datei.truncate(stelle)          # nur kuerzen oder anlegen - das geht sofort
         except OSError as exc:
             raise UpdateFehler("ps5upd.platz|%s" % exc) from exc
+    logger.info("PS5-Update: %s, %d Teile, ab %d Bytes", "der Reihe nach" if der_reihe_nach else "parallel",
+                len(manifest.teile), sum(geladen))
 
     sperre = threading.Lock()
     naechstes = [0]
@@ -651,7 +729,7 @@ def paket_laden(manifest: Manifest, ziel: str,
 
     _melden()
     arbeiter = [threading.Thread(target=_arbeiter, daemon=True, name="ps5-update-%d" % n)
-                for n in range(max(1, min(int(faeden), len(manifest.teile))))]
+                for n in range(1 if der_reihe_nach else max(1, min(int(faeden), len(manifest.teile))))]
     for faden in arbeiter:
         faden.start()
     for faden in arbeiter:
