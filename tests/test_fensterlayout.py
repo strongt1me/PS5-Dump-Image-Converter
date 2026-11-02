@@ -197,6 +197,28 @@ class FensterLayoutTests(unittest.TestCase):
         finally:
             self._schliesse(fenster)
 
+    def test_backport_eigene_zielwerte_stehen_im_fenster(self):
+        """Ist ein eigener Zielwert gespeichert, klappt der Bereich von selbst auf und zeigt die drei Felder
+        (PS5-SDK, PS4-SDK, verlangte Firmware) vollstaendig innerhalb des Fensters."""
+        for name in ("backport_sdk_ps5", "backport_sdk_ps4", "backport_verlangte_fw"):
+            self.addCleanup(self.app._save_setting, name, "")
+        self.app._save_setting("backport_sdk_ps5", "0x04500031")
+        self.app._save_setting("backport_verlangte_fw", "4.50")
+        fenster = self._oeffne(
+            lambda: self.app._render_backport_window(_leerer_spielordner(self)))
+        try:
+            fenster.update_idletasks()
+            felder = [w for w in _sammle(fenster, "Entry") + _sammle(fenster, "TEntry") if w.winfo_ismapped()]
+            texte = sorted(str(w.get()) for w in felder)
+            for erwartet in ("0x04500031", "4.50"):
+                self.assertIn(erwartet, texte, f"Feld mit {erwartet} fehlt: {texte}")
+            rechts = fenster.winfo_rootx() + fenster.winfo_width()
+            for feld in felder:
+                self.assertLessEqual(feld.winfo_rootx() + feld.winfo_width(), rechts,
+                                     f"Eingabefeld ragt aus dem Fenster: {feld.get()!r}")
+        finally:
+            self._schliesse(fenster)
+
     def test_backport_auswahlfelder_zeigen_einen_wert(self):
         """Die Klappliste im Backport-Fenster: die Firmware.
 

@@ -35520,7 +35520,7 @@ class PS5ConverterGUI:
             Die Zahl der geaenderten Felder.
         """
         try:
-            aenderungen = ps5_backport.param_json_anpassen(ordner, firmware)
+            aenderungen = ps5_backport.param_json_anpassen(ordner, firmware, self._backport_eigene())
         except (OSError, ps5_backport.BackportFehler) as exc:
             logger.debug("param.json nicht herabgesetzt: %s", exc)
             self._append_to_log(self._t("backport.log_failed", name="sce_sys/param.json", error=exc))
@@ -35540,10 +35540,18 @@ class PS5ConverterGUI:
         """
         try:
             firmware = int(self._tk_wert("backport_fw_var", 0))
-            ziel_ps5, ziel_ps4 = ps5_backport.sdk_paar(firmware)
+            ps5_backport.sdk_paar(firmware)
         except (ValueError, ps5_backport.BackportFehler) as exc:
             self._append_to_log(self._t("main.integrate_backport_bad_fw", error=exc))
             return False
+        # Eigene SDK-Werte / verlangte Firmware (BACKPORT-Fenster, Erweiterte Einstellungen): ein unbrauchbarer
+        # Wert bricht ab, statt still den Tabellenwert zu nehmen.
+        try:
+            ziel = ps5_backport.ziel_werte(firmware, self._backport_eigene())
+        except ps5_backport.BackportFehler as exc:
+            self._append_to_log(self._t("backport.eigene_ungueltig", error=exc))
+            return False
+        ziel_ps5, ziel_ps4 = ziel.ps5_sdk, ziel.ps4_sdk
 
         self._append_to_log(self._t("main.integrate_backport_start", firmware=firmware))
         self._set_status(self._t("main.integrate_backport_status", firmware=firmware))
@@ -53379,6 +53387,28 @@ class PS5ConverterGUI:
         """
         return bool(self._load_setting("backport_fakelib_nur_benoetigt", False))
 
+    def _backport_eigene(self) -> "ps5_backport.EigeneWerte":
+        """Eigene Zielwerte aus den Einstellungen (leer = Tabellenwert der gewaehlten Firmware).
+
+        Gelten im BACKPORT-Fenster und beim Einbau waehrend des Erstellens gleichermassen, wie
+        ``backport_fakelib_ordner``. Der Text wird hier nicht geprueft: Ein unbrauchbarer Wert soll sichtbar
+        scheitern (:meth:`_backport_eigene_fehler`), nicht still durch den Tabellenwert ersetzt werden.
+        """
+        def _text(schluessel: str) -> str:
+            return str(self._load_setting(schluessel, "") or "").strip()
+
+        return ps5_backport.EigeneWerte(
+            ps5_sdk=_text("backport_sdk_ps5"), ps4_sdk=_text("backport_sdk_ps4"),
+            verlangt_fw=_text("backport_verlangte_fw"))
+
+    def _backport_eigene_fehler(self, eigene: "ps5_backport.EigeneWerte | None" = None) -> str:
+        """Leer, wenn die eigenen Werte brauchbar sind, sonst der Grund (fuer Protokoll und Statuszeile)."""
+        try:
+            ps5_backport.ziel_werte(ps5_backport.FIRMWARE_STANDARD, eigene or self._backport_eigene())
+        except ps5_backport.BackportFehler as exc:
+            return str(exc)
+        return ""
+
     def _backport_fakelib_auswahl(self, basis: str, firmware: int, ordner: str) -> list[str]:
         """Welche Ersatzbibliotheken ins Spiel kommen - zuerst gegen die Zielfirmware gemessen.
 
@@ -57703,7 +57733,9 @@ class PS5ConverterGUI:
         # aktive, abweichende Einstellung wortlos verschwinden (Nutzerwunsch).
         _basis_wert_vorab = str(self._load_setting("backport_fakelib_ordner", "")).strip()
         _fw_analyse_wert_vorab = str(self._load_setting("backport_fw_analyse_ordner", "")).strip()
-        erweitert_offen = tk.BooleanVar(value=bool(_basis_wert_vorab or _fw_analyse_wert_vorab))
+        _eigene_vorab = self._backport_eigene()
+        erweitert_offen = tk.BooleanVar(value=bool(
+            _basis_wert_vorab or _fw_analyse_wert_vorab or any(_eigene_vorab)))
         erweitert_rahmen = tk.Frame(win, bg=c["bg_main"])
 
         def _erweitert_umschalten() -> None:
@@ -57804,6 +57836,38 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
 
+        # ---- Eigene Zielwerte (statt der festen Stufentabelle) ----
+        # Wie min_ps5_sdk_version / min_ps4_sdk_version beim PS5-App-Dumper; dazu die verlangte Firmware der
+        # param.json mit Nebenversion (der FW-4.xx-Release von AC Black Flag traegt dort 4.50 bei SDK 4.00).
+        # Leer = Wert der gewaehlten Firmware. Gespeichert wird der Text wie getippt; ob er brauchbar ist,
+        # sagen Statuszeile und Protokoll beim Start (_eigene_pruefen) - kein stilles Zurueckfallen.
+        eigene_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
+        eigene_zeile.pack(fill="x", padx=16, pady=(4, 0))
+        tk.Label(eigene_zeile, text=self._t("backport.eigene_label"),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        for schluessel, einstellung, vorab, breite in (
+            ("backport.eigene_ps5", "backport_sdk_ps5", _eigene_vorab.ps5_sdk, 12),
+            ("backport.eigene_ps4", "backport_sdk_ps4", _eigene_vorab.ps4_sdk, 12),
+            ("backport.eigene_fw", "backport_verlangte_fw", _eigene_vorab.verlangt_fw, 7),
+        ):
+            tk.Label(eigene_zeile, text=self._t(schluessel), font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left", padx=(10, 0))
+            eigene_var = tk.StringVar(value=vorab)
+            self._pw.Entry(
+                eigene_zeile, textvariable=eigene_var, font=(UI_SCHRIFT, pt(9)),
+                bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
+                relief="flat", width=breite).pack(side="left", padx=(6, 0), ipady=2)
+
+            def _eigene_speichern(*_: object, _var=eigene_var, _name=einstellung) -> None:
+                self._save_setting(_name, _var.get().strip())
+                stand_var.set(self._t("backport.state_idle"))
+
+            bibliothek_raster.spur_bis_zerstoert(win, eigene_var, _eigene_speichern)
+        tk.Label(erweitert_rahmen, text=self._t("backport.eigene_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_secondary"],
+                 anchor="w", justify="left", wraplength=900).pack(fill="x", padx=16, pady=(2, 0))
+
         tk.Label(win, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
                  wraplength=920, justify="left").pack(fill="x", padx=16, pady=(6, 0))
@@ -57843,6 +57907,16 @@ class PS5ConverterGUI:
         # naechsten Datei bzw. am naechsten Kopierblock an.
         laeuft = {"aktiv": False, "backport": False, "abbruch": False}
 
+        def _eigene_pruefen() -> bool:
+            """Sind die eigenen Zielwerte (Erweiterte Einstellungen) brauchbar? Sonst Grund zeigen und nicht starten."""
+            grund = self._backport_eigene_fehler()
+            if not grund:
+                return True
+            text = self._t("backport.eigene_ungueltig", error=grund)
+            stand_var.set(text.strip())
+            self._append_to_log(text)
+            return False
+
         def _ziel_firmware() -> int:
             # current() liefert -1, wenn nichts ausgewaehlt ist. Ein blosser
             # Zugriff darauf wuerde stillschweigend den letzten Eintrag nehmen,
@@ -57868,6 +57942,8 @@ class PS5ConverterGUI:
             if laeuft["aktiv"]:
                 # Ein Firmware-Wechsel waehrend des Laufs geht nicht verloren:
                 # _analyse_fertig vergleicht und startet dann neu.
+                return
+            if not _eigene_pruefen():
                 return
             laeuft["aktiv"] = True
             analyse_btn.configure(state="disabled")
@@ -57915,7 +57991,12 @@ class PS5ConverterGUI:
             ``firmware`` kommt als Zahl aus dem Hauptfaden.
             """
             gesammelt: list = []
-            ziel_ps5, _ziel_ps4 = ps5_backport.sdk_paar(firmware)
+            try:
+                ziel_ps5 = ps5_backport.ziel_werte(firmware, self._backport_eigene()).ps5_sdk
+            except ps5_backport.BackportFehler:
+                # _analysieren hat die eigenen Werte vorab geprueft; aendert sie jemand waehrend des Laufs, zaehlt
+                # fuer diese reine Anzeige der Tabellenwert.
+                ziel_ps5 = ps5_backport.sdk_paar(firmware)[0]
             dateien = ps5_backport.kandidaten(ordner)
             if not dateien:
                 self._spaeter_im_fenster(win, _analyse_fertig, [], 0, True, firmware)
@@ -57968,6 +58049,8 @@ class PS5ConverterGUI:
 
         def _starten() -> None:
             if laeuft["aktiv"]:
+                return
+            if not _eigene_pruefen():
                 return
             firmware = _ziel_firmware()
             basis = self._backport_fakelib_basis()
@@ -58084,6 +58167,8 @@ class PS5ConverterGUI:
             """Nur die Backport-Dateien als Ordner bauen: Inhalt in den Spielordner kopieren, das Spiel bleibt unberuehrt."""
             if laeuft["aktiv"]:
                 return
+            if not _eigene_pruefen():
+                return
             tid = ps5_backport.titel_id_aus_param(ordner)
             if not tid:
                 tid = self._sanitize_title_id(str(meta.get("title_id", "") or ""))
@@ -58129,6 +58214,7 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("backport.folder_log_start", tid=tid, fw=f"{firmware}.00", pfad=ziel) + chr(10))
             minimal = bool(minimal_var.get())
             fakelib_name = self._fakelib_ordnername()
+            eigene = self._backport_eigene()
 
             def _fertig(ergebnis: dict) -> None:
                 laeuft["aktiv"] = False
@@ -58156,7 +58242,7 @@ class PS5ConverterGUI:
                 try:
                     ergebnis = ps5_backport.backport_ordner_bauen(
                         ordner, gewaehlt, tid, firmware, basis, minimal=minimal,
-                        ziel_ordner=ziel, fakelib_name=fakelib_name,
+                        ziel_ordner=ziel, fakelib_name=fakelib_name, eigene=eigene,
                         texte=self._modul_texte(ps5_backport.MELDUNGEN, "backportmod."),
                         melde=lambda text: self._spaeter_im_fenster(win, stand_var.set, text),
                         abbruch=lambda: bool(laeuft.get("abbruch")))
@@ -58369,7 +58455,9 @@ class PS5ConverterGUI:
         sicherungsordner = ""
         sicherung_fertig = False
         try:
-            ziel_ps5, ziel_ps4 = ps5_backport.sdk_paar(firmware)
+            # Vorher in _starten geprueft; ein Fehler hier wird vom finally unten wie jeder andere Abbruch gemeldet.
+            ziel_werte = ps5_backport.ziel_werte(firmware, self._backport_eigene())
+            ziel_ps5, ziel_ps4 = ziel_werte.ps5_sdk, ziel_werte.ps4_sdk
 
             def melde(pfad: str, spalte: str, wert: str) -> None:
                 iid = zeilen.get(pfad)
@@ -58487,7 +58575,7 @@ class PS5ConverterGUI:
                         melde(pfad, "status", self._t("backport.row_failed", error=str(exc)[:50]))
                         continue
                     gepatcht += 1
-                    melde(pfad, "sdk", f"{firmware}.00")
+                    melde(pfad, "sdk", ps5_backport.firmware_text(ziel_ps5))
                     melde(pfad, "status", self._t("backport.row_patched", detail=grund))
                     self._append_to_log(self._t("backport.log_patched", name=rel, detail=grund))
                 elif kennung == ps5_backport.ERG_FEHLER:

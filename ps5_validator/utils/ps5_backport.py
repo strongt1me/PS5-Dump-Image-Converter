@@ -37,7 +37,7 @@ import os
 import re
 import shutil
 import struct
-from typing import Any
+from typing import Any, NamedTuple
 
 # --------------------------------------------------------------------------
 # Dateikennungen
@@ -368,20 +368,26 @@ _PARAM_MUSTER = {
 }
 
 
-def param_json_herabsetzen(daten: bytes, firmware: int) -> tuple[bytes, list[tuple[str, str, str]]]:
+def param_json_herabsetzen(daten: bytes, firmware: int,
+                           eigene: "EigeneWerte | None" = None) -> tuple[bytes, list[tuple[str, str, str]]]:
     """Setzt ``requiredSystemSoftwareVersion`` und ``sdkVersion`` auf ``0xMM00000000000000``, wenn ihre Hauptversion
     ueber dem Ziel liegt (Auto: wie der PS5-App-Dumper).
 
     Es wird nur der Wert ersetzt, der Rest der Datei bleibt Byte fuer Byte; je Feld zaehlt das erste Vorkommen. Ein
     Wert auf oder unter der Zielversion bleibt, auch mit hoeherer Nebenversion - wie beim Dumper.
 
+    Mit ``eigene.verlangt_fw`` (z. B. ``4.50``) verlangt ``requiredSystemSoftwareVersion`` genau diese Version
+    (``0x0450000000000000``); verglichen wird dann Haupt- UND Nebenversion, ein niedrigerer Wert bleibt. ``sdkVersion``
+    folgt weiter der Hauptversion der (ggf. eigenen) PS5-SDK-Zahl.
+
     Returns:
         ``(neue Bytes, [(Feld, alt, neu), ...])``; die Liste ist leer, wenn nichts zu aendern war.
 
     Raises:
-        BackportFehler: unbekannte Firmware.
+        BackportFehler: unbekannte Firmware oder unbrauchbarer eigener Wert.
     """
-    ziel = (sdk_paar(firmware)[0] >> 24) & 0xFF
+    werte = ziel_werte(firmware, eigene)
+    ziel = (werte.ps5_sdk >> 24) & 0xFF
     neu_wert = "0x%02X00000000000000" % ziel
     aenderungen: list[tuple[str, str, str]] = []
     for feld in PARAM_FELDER:
@@ -389,14 +395,21 @@ def param_json_herabsetzen(daten: bytes, firmware: int) -> tuple[bytes, list[tup
         if not treffer:
             continue
         alt = treffer.group(2).decode("ascii")
-        if int(alt[2:4], 16) <= ziel:
-            continue
-        daten = daten[:treffer.start(2)] + neu_wert.encode("ascii") + daten[treffer.end(2):]
-        aenderungen.append((feld, alt, neu_wert))
+        if feld == "requiredSystemSoftwareVersion" and werte.verlangt_fw is not None:
+            if int(alt[2:6], 16) <= werte.verlangt_fw:
+                continue
+            ersatz = "0x%04X000000000000" % werte.verlangt_fw
+        else:
+            if int(alt[2:4], 16) <= ziel:
+                continue
+            ersatz = neu_wert
+        daten = daten[:treffer.start(2)] + ersatz.encode("ascii") + daten[treffer.end(2):]
+        aenderungen.append((feld, alt, ersatz))
     return daten, aenderungen
 
 
-def param_json_anpassen(ordner: str, firmware: int) -> list[tuple[str, str, str]]:
+def param_json_anpassen(ordner: str, firmware: int,
+                        eigene: "EigeneWerte | None" = None) -> list[tuple[str, str, str]]:
     """Wendet :func:`param_json_herabsetzen` auf ``<ordner>/sce_sys/param.json`` an - atomar, ueber eine Zwischendatei.
 
     Returns:
@@ -404,13 +417,14 @@ def param_json_anpassen(ordner: str, firmware: int) -> list[tuple[str, str, str]
 
     Raises:
         OSError: Lesen oder Schreiben scheitert - die Datei ist dann unveraendert.
+        BackportFehler: unbekannte Firmware oder unbrauchbarer eigener Wert.
     """
     pfad = os.path.join(str(ordner or ""), "sce_sys", "param.json")
     if not os.path.isfile(pfad):
         return []
     with open(pfad, "rb") as datei:
         roh = datei.read()
-    neu, aenderungen = param_json_herabsetzen(roh, firmware)
+    neu, aenderungen = param_json_herabsetzen(roh, firmware, eigene)
     if not aenderungen:
         return []
     zwischen = pfad + ".bp_neu"
@@ -445,6 +459,89 @@ def sdk_paar(firmware: int) -> tuple[int, int]:
         return SDK_PAARE[int(firmware)]
     except (KeyError, TypeError, ValueError):
         raise BackportFehler(f"Unbekannte Firmware: {firmware}") from None
+
+
+class EigeneWerte(NamedTuple):
+    """Vom Anwender vorgegebene Zielwerte statt der festen Stufentabelle (Text wie im Eingabefeld, leer = Tabelle).
+
+    Wie ``min_ps5_sdk_version`` / ``min_ps4_sdk_version`` beim PS5-App-Dumper (v2.10), dazu die verlangte Firmware der
+    ``param.json`` mit Nebenversion: Der FW-4.xx-Release von Assassin's Creed Black Flag traegt dort ``4.50``
+    (``0x0450000000000000``), waehrend SDK und ``sdkVersion`` bei 4.00 stehen.
+    """
+
+    ps5_sdk: str = ""
+    ps4_sdk: str = ""
+    verlangt_fw: str = ""
+
+
+class ZielWerte(NamedTuple):
+    """Aufgeloeste Zielwerte eines Laufs."""
+
+    ps5_sdk: int
+    ps4_sdk: int
+    #: Verlangte Firmware fuer ``requiredSystemSoftwareVersion`` als BCD-Wort (``4.50`` -> ``0x0450``);
+    #: ``None`` = Hauptversion der PS5-SDK-Zahl, Nebenversion 00.
+    verlangt_fw: "int | None" = None
+
+
+_SDK_TEXT = re.compile(r"(?:0[xX])?([0-9A-Fa-f]{8})")
+_FW_TEXT = re.compile(r"(\d{1,2})\.(\d{2})")
+
+
+def sdk_wert_lesen(text: str, name: str = "SDK") -> "int | None":
+    """Liest eine SDK-Zahl wie ``0x04000031`` (genau acht Hexziffern, ``0x`` optional).
+
+    Genau acht Stellen, damit ein abgeschnittener Wert (``0x4``) nicht still als SDK 0.00 durchgeht.
+
+    Returns:
+        Die Zahl, oder ``None`` bei leerem Text (= Tabellenwert).
+
+    Raises:
+        BackportFehler: Text ist kein achtstelliger Hexwert oder gleich null.
+    """
+    roh = str(text or "").strip()
+    if not roh:
+        return None
+    treffer = _SDK_TEXT.fullmatch(roh)
+    wert = int(treffer.group(1), 16) if treffer else 0
+    if not wert:
+        raise BackportFehler(f"{name}: '{roh}' ist keine SDK-Zahl (erwartet: acht Hexziffern, z. B. 0x04000031)")
+    return wert
+
+
+def firmware_version_lesen(text: str, name: str = "Firmware") -> "int | None":
+    """Liest eine Firmwareversion wie ``4.50`` oder ``10.01`` als BCD-Wort (``0x0450``, ``0x1001``).
+
+    Returns:
+        Das Wort, oder ``None`` bei leerem Text.
+
+    Raises:
+        BackportFehler: Text hat nicht die Form ``H.NN``.
+    """
+    roh = str(text or "").strip()
+    if not roh:
+        return None
+    treffer = _FW_TEXT.fullmatch(roh)
+    if not treffer:
+        raise BackportFehler(f"{name}: '{roh}' ist keine Firmwareversion (erwartet: z. B. 4.50)")
+    return (int(treffer.group(1).zfill(2), 16) << 8) | int(treffer.group(2), 16)
+
+
+def ziel_werte(firmware: int, eigene: "EigeneWerte | None" = None) -> ZielWerte:
+    """Zielwerte eines Laufs: Tabelle der Stufe ``firmware``, einzelne Felder durch ``eigene`` ersetzt.
+
+    Raises:
+        BackportFehler: Unbekannte Firmware oder ein unbrauchbarer eigener Wert.
+    """
+    ps5, ps4 = sdk_paar(firmware)
+    verlangt = None
+    if eigene is not None:
+        eigen_ps5 = sdk_wert_lesen(eigene.ps5_sdk, "PS5-SDK")
+        eigen_ps4 = sdk_wert_lesen(eigene.ps4_sdk, "PS4-SDK")
+        ps5 = ps5 if eigen_ps5 is None else eigen_ps5
+        ps4 = ps4 if eigen_ps4 is None else eigen_ps4
+        verlangt = firmware_version_lesen(eigene.verlangt_fw, "Verlangte Firmware")
+    return ZielWerte(ps5, ps4, verlangt)
 
 
 def muss_gepatcht_werden(aktuell: int, ziel: int) -> bool:
@@ -2174,7 +2271,8 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
                           texte: "dict[str, str] | None" = None,
                           melde: Any = None, abbruch: Any = None,
                           ziel_ordner: "str | None" = None,
-                          fakelib_name: str = FAKELIB_ORDNER) -> dict[str, Any]:
+                          fakelib_name: str = FAKELIB_ORDNER,
+                          eigene: "EigeneWerte | None" = None) -> dict[str, Any]:
     """Baut nur den Backport - als Ordner ``<ausgabe>/backports/<TITLE_ID>/`` - und fasst das Spiel nicht an.
 
     Gelegt wird, was ShadowMount+ ueber das Spiel einblendet (``mount_backport_overlay``): derselbe Pfadaufbau wie
@@ -2196,6 +2294,7 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
             :func:`einfuegen_ordner_pfad` entsteht ein Ordner, dessen Inhalt man in den Spielordner kopiert.
         fakelib_name: Name des Bibliotheksordners im Ergebnis - derselbe wie beim Backport im Spielordner
             (``fakelib`` oder ``fakelib2``, siehe ``shadowmount_generation``).
+        eigene: eigene Zielwerte statt der Stufentabelle, siehe :class:`EigeneWerte`.
 
     Returns:
         ``{"ziel", "gepatcht", "fehler", "bibliotheken", "fehlermeldungen", "abgebrochen"}``.
@@ -2204,7 +2303,8 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
         BackportFehler: Title-ID oder Firmware unbrauchbar, oder ``ausgabe`` liegt im Spielordner.
     """
     ziel = ziel_ordner or backport_ordner_pfad(ausgabe, titel_id)
-    ziel_ps5, ziel_ps4 = sdk_paar(firmware)
+    werte = ziel_werte(firmware, eigene)
+    ziel_ps5, ziel_ps4 = werte.ps5_sdk, werte.ps4_sdk
     spiel = os.path.normcase(os.path.abspath(str(spielordner)))
     wurzel = os.path.normcase(os.path.abspath(ziel))
     if wurzel == spiel or wurzel.startswith(spiel + os.sep):
@@ -2272,7 +2372,7 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
         try:
             os.makedirs(os.path.join(ziel, "sce_sys"), exist_ok=True)
             shutil.copy2(param_quelle, os.path.join(ziel, "sce_sys", "param.json"))
-            param_json_anpassen(ziel, firmware)
+            param_json_anpassen(ziel, firmware, eigene)
         except (OSError, BackportFehler) as exc:
             ergebnis["fehlermeldungen"].append(("sce_sys/param.json", str(exc)))
 
