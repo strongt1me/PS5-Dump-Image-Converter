@@ -232,9 +232,10 @@ class LueckenOhneErsatz(unittest.TestCase):
 
 
 class KandidatenOhneSicherungen(unittest.TestCase):
-    """``kandidaten`` -- ``.esbak``-Sicherungen des PS5-App-Dumpers zaehlen
-    nicht als patchbare Datei (sonst wird die Sicherung selbst ueberschrieben
-    und signiert, siehe Memory ``project-anno117-backport-fw4-2026-11-02``)."""
+    """``kandidaten`` -- ``.esbak``-Sicherungen (im Anno-117-Dump gefunden,
+    Urheber unbekannt) zaehlen nicht als patchbare Datei (sonst wird die
+    Sicherung selbst ueberschrieben und signiert, siehe Memory
+    ``project-anno117-backport-fw4-2026-11-02``)."""
 
     def test_esbak_wird_uebersprungen(self):
         with tempfile.TemporaryDirectory() as t:

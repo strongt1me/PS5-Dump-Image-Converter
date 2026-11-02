@@ -325,9 +325,10 @@ def _hat_programmkennung(pfad: str) -> bool:
 
 
 #: Endungen von Datensicherungen, die nie als patchbare Datei zaehlen - auch wenn sie ein ELF oder SELF
-#: enthalten. ``.esbak`` legt der PS5-App-Dumper (EchoStretch) selbst neben jede entschluesselte Datei
-#: ab (das reine ELF vor dem FSELF-Umbau, siehe [[project-backport-fremde-ampr-2026-10-25]]) - ohne diese
-#: Ausnahme patchte und signierte der Backport sie als zweite, ueberfluessige Kopie der Datei mit.
+#: enthalten. ``.esbak`` fand sich im Anno-117-Dump (reines ELF neben jeder Programmdatei, aelter als die
+#: SELF-Fassung); welches Werkzeug sie anlegt, ist NICHT geklaert - der PS5-App-Dumper v2.10 jedenfalls
+#: nicht (sein Quelltext und die ELF kennen die Endung nicht, er legt Kopien in einen Ordner ``decrypted``).
+#: Ohne diese Ausnahme patchte und signierte der Backport sie als zweite, ueberfluessige Kopie mit.
 SICHERUNGS_ENDUNGEN = (".bak", ".esbak")
 
 
