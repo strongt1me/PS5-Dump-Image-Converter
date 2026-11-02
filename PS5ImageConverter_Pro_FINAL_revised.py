@@ -35604,18 +35604,16 @@ class PS5ConverterGUI:
         # es erwartet Bibliotheken, die es auf der aelteren Firmware nicht gibt.
         kopiert = 0
         basis = self._backport_fakelib_basis()
+        installiert: list[str] = []
         if basis:
+            quellen = self._backport_fakelib_auswahl(basis, firmware, ordner)
             if self._backport_fakelib_minimal():
-                quellen = ps5_backport.fakelib_dateien_benoetigt(
-                    basis, firmware, ps5_backport.kandidaten(ordner))
                 unnoetig = ps5_backport.fakelib_unnoetige(
                     basis, firmware, ps5_backport.kandidaten(ordner))
                 if unnoetig:
                     self._append_to_log(self._t(
                         "backport.log_libs_unnoetig",
                         count=len(unnoetig), names=", ".join(unnoetig)))
-            else:
-                quellen = ps5_backport.fakelib_dateien(basis, firmware)
             ziel = ps5_backport.fakelib_ziel(ordner, self._fakelib_ordnername())
             if not quellen:
                 # Das Fenster fragt in diesem Fall nach; beim Einbau lief es
@@ -35626,7 +35624,9 @@ class PS5ConverterGUI:
                 try:
                     os.makedirs(ziel, exist_ok=True)
                     for quelle in quellen:
-                        shutil.copy2(quelle, os.path.join(ziel, os.path.basename(quelle)))
+                        ziel_datei = os.path.join(ziel, os.path.basename(quelle))
+                        shutil.copy2(quelle, ziel_datei)
+                        installiert.append(ziel_datei)
                         kopiert += 1
                 except OSError as exc:
                     self._append_to_log(self._t("main.integrate_backport_libs_failed", error=exc))
@@ -35635,6 +35635,8 @@ class PS5ConverterGUI:
         self._backport_fremdlibs_klaeren(ordner, bool(self._tk_wert("ampr_integrate_var", False)),
                                          bool(self._tk_wert("ampr_playgo_var", False)))
         self._backport_param_json(ordner, firmware)
+        if basis:
+            self._backport_luecken_melden(basis, firmware, ordner, installiert)
         self._append_to_log(
             self._t("main.integrate_backport_done",
                     patched=gepatcht, libs=kopiert, errors=fehler)
@@ -53377,6 +53379,55 @@ class PS5ConverterGUI:
         """
         return bool(self._load_setting("backport_fakelib_nur_benoetigt", False))
 
+    def _backport_fakelib_auswahl(self, basis: str, firmware: int, ordner: str) -> list[str]:
+        """Welche Ersatzbibliotheken ins Spiel kommen - zuerst gegen die Zielfirmware gemessen.
+
+        Liegt neben dem Bibliothekssatz eine Exporttabelle der Zielfirmware
+        (``ps5_backport.FIRMWARE_EXPORTE_DATEI``, mitgeliefert fuer FW 4-7), entscheidet die tatsaechliche
+        Deckungslücke: Eine Bibliothek kommt nur mit, wenn die Konsole selbst eine Funktion vermisst, die das
+        Spiel von ihr verlangt. AMPR EMU und der PlayGo-Stub bleiben davon unberuehrt, sie sind immer dabei.
+
+        Grund: Sowohl der volle Satz als auch "Nur benoetigte Bibliotheken" (die nur gegen die Importe des
+        Spiels misst, nicht gegen die Firmware) legten bei Mordhau und Anno 117 die FW4-Audio-Ersatzdateien
+        ab, obwohl die Konsole diese Funktionen vollstaendig selbst mitbringt - die ueberfluessigen Dateien
+        brachen den Start mit ``0xa0020104`` ab (siehe [[project-anno117-backport-fw4-2026-11-02]]).
+
+        Ohne lesbare Exporttabelle oder Importtabelle faellt die Auswahl auf das bisherige Verhalten zurueck
+        (:meth:`_backport_fakelib_minimal`).
+        """
+        spieldateien = ps5_backport.kandidaten(ordner)
+        gezielt = ps5_backport.fakelib_dateien_fuer_ziel(basis, firmware, spieldateien)
+        if gezielt is not None:
+            return gezielt
+        if self._backport_fakelib_minimal():
+            return ps5_backport.fakelib_dateien_benoetigt(basis, firmware, spieldateien)
+        return ps5_backport.fakelib_dateien(basis, firmware)
+
+    def _backport_luecken_melden(self, basis: str, firmware: int, ordner: str,
+                                 installierte_fakelibs: list[str]) -> None:
+        """Warnt, wenn dem Spiel nach dem Einbau immer noch eine Funktion fehlt.
+
+        Anders als :meth:`_backport_ziel_deckung_melden` (misst vor dem Kopieren, rein informativ) prueft dies
+        NACH dem Kopieren gegen das, was tatsaechlich im Zielordner liegt. Fehlt dabei etwas aus
+        :data:`ps5_backport.KERNBIBLIOTHEKEN` (libkernel, libSceLibcInternal[Ext]), startet das Spiel auf
+        dieser Firmware mit an Sicherheit grenzender Wahrscheinlichkeit nicht - dafuer gibt es keine
+        Ersatzbibliothek (an Anno 117 bestaetigt: ``0xa0020101 PRX_NOT_RESOLVED_FUNCTION`` genau in dieser
+        Lage, siehe [[project-anno117-backport-fw4-2026-11-02]]).
+        """
+        luecken = ps5_backport.luecken_ohne_ersatz(
+            basis, firmware, ps5_backport.kandidaten(ordner), installierte_fakelibs)
+        if not luecken:
+            return
+        kern = {lib: nids for lib, nids in luecken.items() if lib in ps5_backport.KERNBIBLIOTHEKEN}
+        gesamt = sum(len(n) for n in luecken.values())
+        aufzaehlung = ", ".join("%s (%d)" % (lib, len(nids)) for lib, nids in sorted(luecken.items()))
+        if kern:
+            self._append_to_log(self._t(
+                "backport.luecken_kern", total=gesamt, libs=aufzaehlung))
+        else:
+            self._append_to_log(self._t(
+                "backport.luecken_sonst", total=gesamt, libs=aufzaehlung))
+
     def _backport_fw_analyse_basis(self) -> str:
         """Firmware-Ordner fuer die NID-Analyse; leer, wenn nicht konfiguriert."""
         return str(self._load_setting("backport_fw_analyse_ordner", "")).strip()
@@ -58462,24 +58513,25 @@ class PS5ConverterGUI:
             if laeuft.get("abbruch"):
                 raise _KopieAbgebrochen()
             kopiert = 0
+            basis = self._backport_fakelib_basis()
+            installiert: list[str] = []
             if libs:
-                basis = self._backport_fakelib_basis()
+                quellen = self._backport_fakelib_auswahl(basis, firmware, ordner)
                 if minimal:
                     spieldateien = ps5_backport.kandidaten(ordner)
-                    quellen = ps5_backport.fakelib_dateien_benoetigt(basis, firmware, spieldateien)
                     unnoetig = ps5_backport.fakelib_unnoetige(basis, firmware, spieldateien)
                     if unnoetig:
                         self._append_to_log(self._t(
                             "backport.log_libs_unnoetig",
                             count=len(unnoetig), names=", ".join(unnoetig)))
-                else:
-                    quellen = ps5_backport.fakelib_dateien(basis, firmware)
                 ziel = ps5_backport.fakelib_ziel(ordner, self._fakelib_ordnername())
                 if quellen:
                     stand(self._t("backport.state_libs", count=len(quellen)))
                     os.makedirs(ziel, exist_ok=True)
                     for quelle in quellen:
-                        shutil.copy2(quelle, os.path.join(ziel, os.path.basename(quelle)))
+                        ziel_datei = os.path.join(ziel, os.path.basename(quelle))
+                        shutil.copy2(quelle, ziel_datei)
+                        installiert.append(ziel_datei)
                         kopiert += 1
                     self._append_to_log(self._t("backport.log_libs", count=kopiert, path=ziel))
                     # Was nicht mitkommt, ausdruecklich nennen. Im FW7-Satz liegt
@@ -58499,8 +58551,6 @@ class PS5ConverterGUI:
                         # Gegen die Dateien im Zielordner, nicht gegen die
                         # Quellen: Geprueft gehoert, was tatsaechlich neben dem
                         # Spiel liegt.
-                        installiert = [os.path.join(ziel, os.path.basename(q))
-                                       for q in quellen]
                         self._backport_deckung_melden(
                             ps5_backport.kandidaten(ordner), installiert)
 
@@ -58538,6 +58588,7 @@ class PS5ConverterGUI:
                     )
                     if ergebnis_fw["kopiert"]:
                         kopiert += ergebnis_fw["kopiert"]
+                        installiert.extend(os.path.join(_ziel_fw, n) for n in ergebnis_fw["dateien"])
                         self._append_to_log(self._t(
                             "backport.log_fw_analyse_kopiert",
                             kopiert=ergebnis_fw["kopiert"],
@@ -58550,6 +58601,9 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t(
                         "backport.log_fw_analyse_kein_stand",
                         fw=firmware, basis=fw_basis) + "\n")
+
+            if basis:
+                self._backport_luecken_melden(basis, firmware, ordner, installiert)
 
             dauer = time.time() - beginn
             zusammenfassung = self._t(

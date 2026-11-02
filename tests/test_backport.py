@@ -1048,8 +1048,9 @@ class DeckungVerdrahtungTests(unittest.TestCase):
     def test_geprueft_wird_was_im_zielordner_liegt(self):
         # Gegen die Quellen zu pruefen waere wertlos: Aussagen soll der
         # Bericht ueber die Dateien, die tatsaechlich neben dem Spiel liegen.
-        self.assertIn("installiert = [os.path.join(ziel, os.path.basename(q))",
-                      self.quelle)
+        # Seit 02.11.2026 (Auswahl nach Zielfirmware) sammelt der Kopierschritt
+        # selbst die Zielpfade, statt sie hinterher aus den Quellen abzuleiten.
+        self.assertIn("installiert.append(ziel_datei)", self.quelle)
 
     def test_alle_texte_uebersetzt(self):
         for schluessel in ("backport.options_auto", "backport.option_backup_hint",

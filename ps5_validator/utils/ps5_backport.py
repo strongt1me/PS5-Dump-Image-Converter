@@ -30,7 +30,9 @@ SELF liegen im Klartext im Container, das Entpacken ist reines Umkopieren.
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -322,10 +324,17 @@ def _hat_programmkennung(pfad: str) -> bool:
         return False
 
 
+#: Endungen von Datensicherungen, die nie als patchbare Datei zaehlen - auch wenn sie ein ELF oder SELF
+#: enthalten. ``.esbak`` legt der PS5-App-Dumper (EchoStretch) selbst neben jede entschluesselte Datei
+#: ab (das reine ELF vor dem FSELF-Umbau, siehe [[project-backport-fremde-ampr-2026-10-25]]) - ohne diese
+#: Ausnahme patchte und signierte der Backport sie als zweite, ueberfluessige Kopie der Datei mit.
+SICHERUNGS_ENDUNGEN = (".bak", ".esbak")
+
+
 # Gesucht wird nach dem Namen (``eboot.bin``, ``*.prx``, ``*.sprx``) **und** nach der Kennung am Dateianfang:
 # Auto-Backpork behandelt jede Datei, die ein ELF oder SELF ist, gleich welchen Namens. Eine Programmdatei mit
 # anderem Namen (``.elf``, ``.self``, andere ``.bin``) blieb hier bis zum 22.10.2026 auf der hohen Firmware.
-# Datensicherungen (``.bak``) zaehlen nicht.
+# Datensicherungen (``SICHERUNGS_ENDUNGEN``) zaehlen nicht.
 def kandidaten(ordner: str) -> list[str]:
     """Sammelt alle patchbaren Dateien eines Dump-Ordners (Namen und ELF/SELF-Kennung).
 
@@ -340,7 +349,9 @@ def kandidaten(ordner: str) -> list[str]:
                           if d.lower() not in FAKELIB_ORDNERNAMEN]
         for name in sorted(dateinamen):
             pfad = os.path.join(wurzel, name)
-            if ist_kandidat(name) or (not name.lower().endswith(".bak") and _hat_programmkennung(pfad)):
+            if name.lower().endswith(SICHERUNGS_ENDUNGEN):
+                continue
+            if ist_kandidat(name) or _hat_programmkennung(pfad):
                 gefunden.append(pfad)
     return sorted(gefunden)
 
@@ -1058,6 +1069,12 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
 # Ersatzbibliotheken
 # --------------------------------------------------------------------------
 
+#: Exporttabelle der Zielfirmware neben dem Bibliothekssatz (``<basis>/<n>/``), gebaut von
+#: ``scripts/firmware_exporte_bauen.py``: nur Bibliotheksnamen und NIDs, je Bibliothek die Funktionen, die jeder
+#: entpackte Stand dieser Hauptversion fuehrt.
+FIRMWARE_EXPORTE_DATEI = "firmware_exporte.json.gz"
+
+
 def fakelib_quelle(basis: str, firmware: int) -> str:
     """Pfad zum mitgelieferten Bibliothekssatz einer Firmware."""
     return os.path.join(str(basis or ""), str(int(firmware)), FAKELIB_ORDNER)
@@ -1277,6 +1294,127 @@ def fakelib_unnoetige(basis: str, firmware: int,
     noetig = {os.path.basename(p)
               for p in fakelib_dateien_benoetigt(basis, firmware, spieldateien)}
     return sorted(voll - noetig)
+
+
+# --------------------------------------------------------------------------
+# Auswahl nach Zielfirmware (Exporttabelle neben dem Satz)
+# --------------------------------------------------------------------------
+#
+# Gemessen am 02.11.2026 an Anno 117 (PPSA23559) auf einer FW-4.xx-Konsole, wie zuvor an Mordhau: Der volle
+# FW4-Satz UND die Auswahl "Nur benoetigte Bibliotheken" legen libSceAjm/libSceAudioOut ab, weil das Spiel sie
+# importiert - die Konsole bringt beide aber vollstaendig selbst mit, und die Ersatzdateien brachen den Start mit
+# 0xa0020104 ab. Mit nur Agc, AgcDriver, Ampr und PlayGo lief der Start durch. Massgeblich ist also nicht, ob das
+# Spiel eine Bibliothek importiert, sondern ob der Zielfirmware darin Funktionen fehlen.
+
+#: Bibliotheken, die keine Ersatzdatei ersetzen kann - eine Luecke hier heisst: Das Spiel startet auf dieser
+#: Firmware nicht (Anno 117: PRX_NOT_RESOLVED_FUNCTION aus der spieleigenen libc.prx).
+KERNBIBLIOTHEKEN = ("libkernel", "libSceLibcInternal", "libSceLibcInternalExt")
+
+
+def firmware_exporte_laden(basis: str, firmware: int) -> "dict[str, set] | None":
+    """Liest die Exporttabelle der Zielfirmware (``<basis>/<n>/firmware_exporte.json.gz``).
+
+    Returns:
+        Bibliotheksname -> Menge von NIDs, oder ``None``, wenn keine (lesbare) Tabelle vorliegt - dann bleibt es
+        bei der Auswahl nach Importen.
+    """
+    pfad = os.path.join(str(basis or ""), str(int(firmware)), FIRMWARE_EXPORTE_DATEI)
+    try:
+        with gzip.open(pfad, "rb") as datei:
+            daten = json.loads(datei.read().decode("utf-8"))
+        exporte = daten["exporte"]
+        tabelle = {str(lib): set(nids) for lib, nids in exporte.items()}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return tabelle or None
+
+
+def _spiel_importe_und_exporte(spieldateien: list[str]) -> tuple[dict[str, set], dict[str, set]]:
+    """(verlangt, eigene): was die Spieldateien importieren und was sie selbst exportieren."""
+    verlangt: dict[str, set] = {}
+    eigene: dict[str, set] = {}
+    for pfad in spieldateien:
+        symbole = symbole_aus_datei(pfad)
+        for lib, nids in symbole["importe"].items():
+            if lib and lib != "?":
+                verlangt.setdefault(lib, set()).update(nids)
+        for lib, nids in symbole["exporte"].items():
+            if lib and lib != "?":
+                eigene.setdefault(lib, set()).update(nids)
+    return verlangt, eigene
+
+
+def _luecken(verlangt: dict[str, set], eigene: dict[str, set], *angebote: dict[str, set]) -> dict[str, set]:
+    offen: dict[str, set] = {}
+    for lib, nids in verlangt.items():
+        rest = set(nids) - eigene.get(lib, set())
+        for angebot in angebote:
+            rest -= angebot.get(lib, set())
+        if rest:
+            offen[lib] = rest
+    return offen
+
+
+def _bibliothek_exporte(pfad: str) -> dict[str, set]:
+    symbole = symbole_aus_datei(pfad)
+    exporte = {lib: set(nids) for lib, nids in symbole["exporte"].items() if lib and lib != "?"}
+    return exporte or {bibliotheksname(pfad): set()}
+
+
+def fakelib_dateien_fuer_ziel(basis: str, firmware: int,
+                              spieldateien: list[str]) -> "list[str] | None":
+    """Nur die Ersatzbibliotheken, die eine Luecke der Zielfirmware schliessen.
+
+    Behalten werden: die Markierung ``FW<n>``, AMPR EMU und der PlayGo-Stub (an Mordhau bestaetigt: ohne sie
+    stuerzte ein PlayGo-Titel ab, obwohl die Konsole beide Bibliotheken hat) und jede Bibliothek, aus der das
+    Spiel eine Funktion verlangt, die die Zielfirmware laut Exporttabelle nicht fuehrt.
+
+    Returns:
+        Liste der Dateien; ``None``, wenn keine Exporttabelle vorliegt oder sich keine Importtabelle lesen
+        laesst - dann entscheidet der Aufrufer wie bisher (voller Satz oder :func:`fakelib_dateien_benoetigt`).
+    """
+    exporte = firmware_exporte_laden(basis, firmware)
+    if exporte is None:
+        return None
+    verlangt, eigene = _spiel_importe_und_exporte(spieldateien)
+    if not verlangt:
+        return None
+    offen = _luecken(verlangt, eigene, exporte)
+    markierung = f"FW{int(firmware)}".lower()
+    ergebnis: list[str] = []
+    for pfad in fakelib_dateien(basis, firmware):
+        name = os.path.basename(pfad).lower()
+        if name == markierung or name in AMPR_PLAYGO_BIBLIOTHEKEN:
+            ergebnis.append(pfad)
+        elif set(_bibliothek_exporte(pfad)) & set(offen):
+            ergebnis.append(pfad)
+    return ergebnis
+
+
+def luecken_ohne_ersatz(basis: str, firmware: int, spieldateien: list[str],
+                        fakelibs: list[str]) -> "dict[str, list[str]] | None":
+    """Funktionen, die das Spiel verlangt und weder die Zielfirmware noch eine Ersatzbibliothek liefert.
+
+    Ist hier etwas uebrig, scheitert das Spiel auf der Konsole spaetestens beim ersten Aufruf
+    (``0xa0020101 PRX_NOT_RESOLVED_FUNCTION``).
+
+    Returns:
+        Bibliotheksname -> sortierte NIDs (leer = alles gedeckt); ``None`` ohne Exporttabelle oder lesbare
+        Importe.
+    """
+    exporte = firmware_exporte_laden(basis, firmware)
+    if exporte is None:
+        return None
+    verlangt, eigene = _spiel_importe_und_exporte(spieldateien)
+    if not verlangt:
+        return None
+    geliefert: dict[str, set] = {}
+    for pfad in fakelibs:
+        if os.path.basename(pfad).lower().endswith(FAKELIB_ENDUNGEN):
+            for lib, nids in _bibliothek_exporte(pfad).items():
+                geliefert.setdefault(lib, set()).update(nids)
+    offen = _luecken(verlangt, eigene, exporte, geliefert)
+    return {lib: sorted(nids) for lib, nids in sorted(offen.items())}
 
 
 # --------------------------------------------------------------------------
