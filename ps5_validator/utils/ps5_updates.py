@@ -453,6 +453,10 @@ def datei_laden(url: str, ziel: str,
                         geladen += len(block)
                         if fortschritt is not None:
                             fortschritt(geladen, gesamt)
+            if gesamt > 0 and geladen < gesamt:
+                # Sauber, aber zu frueh beendet: Ohne diese Pruefung wuerde die halbe Datei als fertig umbenannt.
+                # Als Netzfehler behandelt, setzt der naechste Versuch per Range fort.
+                raise ConnectionError("Antwort zu kurz (%d von %d)" % (geladen, gesamt))
             break
         except UpdateFehler:
             raise

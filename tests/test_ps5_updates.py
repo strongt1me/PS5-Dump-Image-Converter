@@ -544,6 +544,71 @@ class RobustheitTests(unittest.TestCase):
         self.assertEqual(daten, Path(self.ziel).read_bytes())
         self.assertEqual(2, zaehler[0])
 
+    def test_ps4_datei_zu_kurz_wird_fortgesetzt_statt_umbenannt(self):
+        """``datei_laden`` (PS4): Endet die Antwort sauber vor ``Content-Length``, darf die halbe Datei nicht als
+        fertig umbenannt werden - der naechste Versuch setzt per Range fort (03.11.2026)."""
+        daten = os.urandom(1000)
+        anfragen: list[str] = []
+
+        class _Antwort:
+            def __init__(self, status, stueck, laenge):
+                self.status, self._stueck = status, stueck
+                self.headers = {"Content-Length": str(laenge)}
+
+            def read(self, _n):
+                stueck, self._stueck = self._stueck, b""
+                return stueck
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+        class _Oeffner:
+            def open(self, anfrage, timeout=None):
+                anfragen.append(anfrage.get_header("Range") or "")
+                if len(anfragen) == 1:
+                    return _Antwort(200, daten[:400], len(daten))       # 400 von 1000, dann sauber zu Ende
+                ab = int(anfragen[-1][6:].split("-")[0])
+                return _Antwort(206, daten[ab:], len(daten) - ab)
+
+        with mock.patch.object(pu, "_oeffner", _Oeffner), mock.patch.object(pu.time, "sleep"):
+            pu.datei_laden("http://127.0.0.1/x.pkg", self.ziel, versuche=2)
+        self.assertEqual(["", "bytes=400-"], anfragen)
+        self.assertEqual(daten, Path(self.ziel).read_bytes())
+
+    def test_ps4_datei_bleibt_teildatei_wenn_sie_zu_kurz_bleibt(self):
+        """Gegenprobe: Kommt nie mehr, scheitert der Lauf mit ``ps5upd.netz``, und ``ziel`` entsteht nicht."""
+        daten = os.urandom(1000)
+
+        class _Antwort:
+            status = 206
+            headers = {"Content-Length": "1000"}
+
+            def __init__(self):
+                self._stueck = daten[:10]
+
+            def read(self, _n):
+                stueck, self._stueck = self._stueck, b""
+                return stueck
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+        class _Oeffner:
+            def open(self, anfrage, timeout=None):
+                return _Antwort()
+
+        with mock.patch.object(pu, "_oeffner", _Oeffner), mock.patch.object(pu.time, "sleep"):
+            with self.assertRaises(pu.UpdateFehler) as ctx:
+                pu.datei_laden("http://127.0.0.1/x.pkg", self.ziel, versuche=1)
+        self.assertTrue(str(ctx.exception).startswith("ps5upd.netz|"), str(ctx.exception))
+        self.assertFalse(os.path.exists(self.ziel))
+
     def test_kaputte_statuszeile_wird_zum_updatefehler(self):
         port = self._starten(lambda h: h.wfile.write(b"KEIN HTTP\r\n\r\n"))
         with self.assertRaises(pu.UpdateFehler) as ctx:
