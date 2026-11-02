@@ -1306,8 +1306,12 @@ def fakelib_unnoetige(basis: str, firmware: int,
 # 0xa0020104 ab. Mit nur Agc, AgcDriver, Ampr und PlayGo lief der Start durch. Massgeblich ist also nicht, ob das
 # Spiel eine Bibliothek importiert, sondern ob der Zielfirmware darin Funktionen fehlen.
 
-#: Bibliotheken, die keine Ersatzdatei ersetzen kann - eine Luecke hier heisst: Das Spiel startet auf dieser
-#: Firmware nicht (Anno 117: PRX_NOT_RESOLVED_FUNCTION aus der spieleigenen libc.prx).
+#: Bibliotheken, die keine Ersatzdatei ersetzen kann (der Kernel liefert sie). Eine Luecke hier ist nicht
+#: auszugleichen - ob sie den Start verhindert, haengt aber davon ab, ob das Spiel die Funktion aufruft:
+#: Assassin's Creed Black Flag (Release fuer FW 4.xx, 02.11.2026) hat dieselben 4 + 1 + 3 Luecken in
+#: libc.prx/libSceJobManager.prx wie Anno 117, Anno bricht trotzdem mit PRX_NOT_RESOLVED_FUNCTION ab -
+#: die Ursache liegt dort bei den Luecken, die AC NICHT teilt (libkernel NH6xARDOVv8, tU5e3f9gSiU,
+#: libSceAcm GTfJ64qFCPw), und ist nicht gesichert.
 KERNBIBLIOTHEKEN = ("libkernel", "libSceLibcInternal", "libSceLibcInternalExt")
 
 

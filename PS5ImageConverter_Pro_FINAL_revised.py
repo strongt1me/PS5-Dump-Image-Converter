@@ -53409,10 +53409,12 @@ class PS5ConverterGUI:
 
         Anders als :meth:`_backport_ziel_deckung_melden` (misst vor dem Kopieren, rein informativ) prueft dies
         NACH dem Kopieren gegen das, was tatsaechlich im Zielordner liegt. Fehlt dabei etwas aus
-        :data:`ps5_backport.KERNBIBLIOTHEKEN` (libkernel, libSceLibcInternal[Ext]), startet das Spiel auf
-        dieser Firmware mit an Sicherheit grenzender Wahrscheinlichkeit nicht - dafuer gibt es keine
-        Ersatzbibliothek (an Anno 117 bestaetigt: ``0xa0020101 PRX_NOT_RESOLVED_FUNCTION`` genau in dieser
-        Lage, siehe [[project-anno117-backport-fw4-2026-11-02]]).
+        :data:`ps5_backport.KERNBIBLIOTHEKEN` (libkernel, libSceLibcInternal[Ext]), laesst es sich nicht
+        ausgleichen (keine Ersatzbibliothek moeglich). Ob das Spiel dann trotzdem startet, haengt davon ab,
+        ob es die Funktion aufruft: Anno 117 bricht mit ``0xa0020101 PRX_NOT_RESOLVED_FUNCTION`` ab,
+        Assassin's Creed Black Flag hat dieselben Luecken in libc.prx/libSceJobManager.prx und ist als
+        FW-4.xx-Release im Umlauf (siehe [[project-anno117-backport-fw4-2026-11-02]]). Die Meldung ist
+        deshalb ein Hinweis, keine Vorhersage.
         """
         luecken = ps5_backport.luecken_ohne_ersatz(
             basis, firmware, ps5_backport.kandidaten(ordner), installierte_fakelibs)
