@@ -1369,6 +1369,15 @@ def fakelib_dateien_fuer_ziel(basis: str, firmware: int,
     stuerzte ein PlayGo-Titel ab, obwohl die Konsole beide Bibliotheken hat) und jede Bibliothek, aus der das
     Spiel eine Funktion verlangt, die die Zielfirmware laut Exporttabelle nicht fuehrt.
 
+    Verglichen wird auf Ebene der einzelnen Funktion (NID), nicht nur des Bibliotheksnamens: Eine Datei fuehrt
+    oft mehrere Bibliotheksnamen (``libSceAudioOut.sprx`` etwa exportiert auch ``libSceAudioOut2`` und drei
+    weitere). Ein Namensabgleich allein haette diese ganze Datei schon dann genommen, wenn irgendeine der
+    mitgefuehrten Bibliotheken irgendeine Luecke hat - gemessen an Assassin's Creed Black Flag (02.11.2026,
+    echter lauffaehiger FW4.xx-Dump): Das Spiel importiert ``libSceAudioOut`` gar nicht, nur eine einzelne
+    Funktion aus ``libSceAudioOut2`` fehlt der Zielfirmware - der Namensabgleich haette trotzdem die ganze,
+    217 Funktionen grosse Datei eingebaut, genau die Art ueberfluessiger Bibliothek, die bei Mordhau/Anno 117
+    den Start abbrach.
+
     Returns:
         Liste der Dateien; ``None``, wenn keine Exporttabelle vorliegt oder sich keine Importtabelle lesen
         laesst - dann entscheidet der Aufrufer wie bisher (voller Satz oder :func:`fakelib_dateien_benoetigt`).
@@ -1386,8 +1395,13 @@ def fakelib_dateien_fuer_ziel(basis: str, firmware: int,
         name = os.path.basename(pfad).lower()
         if name == markierung or name in AMPR_PLAYGO_BIBLIOTHEKEN:
             ergebnis.append(pfad)
-        elif set(_bibliothek_exporte(pfad)) & set(offen):
-            ergebnis.append(pfad)
+            continue
+        for lib, nids in _bibliothek_exporte(pfad).items():
+            # Leere NIDs heisst: keine lesbare Exporttabelle - dann zaehlt wie bei
+            # fakelib_dateien_benoetigt der Dateiname allein (Fallback in _bibliothek_exporte).
+            if lib in offen and (not nids or (nids & offen[lib])):
+                ergebnis.append(pfad)
+                break
     return ergebnis
 
 

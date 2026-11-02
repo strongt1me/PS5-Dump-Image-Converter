@@ -82,6 +82,44 @@ class FakelibDateienFuerZiel(unittest.TestCase):
             self.assertNotIn("libSceAudioOut.sprx", namen)
             self.assertIn("FW4", namen)
 
+    def test_datei_mit_mehreren_bibliotheksnamen_nur_bei_echter_nid_deckung(self):
+        """Eine Datei kann mehrere Bibliotheksnamen exportieren (gemessen an
+        Assassin's Creed Black Flag, 02.11.2026: ``libSceAudioOut.sprx``
+        exportiert nebenbei auch ``libSceAudioOut2`` und drei weitere Namen).
+        Ein Abgleich nur auf Namensebene wuerde die ganze Datei schon nehmen,
+        wenn IRGENDEIN mitgefuehrter Name irgendeine Luecke hat - auch wenn
+        die Datei die konkret fehlende Funktion unter diesem Namen gar nicht
+        liefert."""
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceFoo.sprx")
+            _exporttabelle_schreiben(basis, 4, {
+                "libSceFoo": ["F1F1F1F1F1F"],   # vollstaendig gedeckt
+                "libSceBar": ["B1B1B1B1B1B"],   # B2 fehlt - aber nicht von dieser Datei geliefert
+            })
+
+            def _mock(pfad):
+                name = os.path.basename(pfad)
+                if name == "spiel":
+                    return {"importe": {"libSceFoo": {"F1F1F1F1F1F"},
+                                        "libSceBar": {"B1B1B1B1B1B", "B2B2B2B2B2B"}},
+                            "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+                # libSceFoo.sprx fuehrt zwei Namen; "libSceBar" exportiert hier nur B1, nicht das
+                # fehlende B2 - die Datei hilft also nicht gegen die echte Luecke.
+                return {"importe": {},
+                        "exporte": {"libSceFoo": {"F1F1F1F1F1F"}, "libSceBar": {"B1B1B1B1B1B"}},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.fakelib_dateien_fuer_ziel(str(basis), 4, ["spiel"])
+            finally:
+                b.symbole_aus_datei = alt
+
+            namen = {os.path.basename(p) for p in ergebnis}
+            self.assertNotIn("libSceFoo.sprx", namen)
+
     def test_ampr_und_playgo_bleiben_immer(self):
         """An Mordhau bestaetigt: ohne AMPR/PlayGo stuerzt ein PlayGo-Titel
         trotz vollstaendiger Firmware-Deckung ab."""
