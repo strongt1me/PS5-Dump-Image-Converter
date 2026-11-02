@@ -22,6 +22,9 @@ build/
 __pycache__/
 *.py[cod]
 *.egg-info/
+# Bauergebnisse von dotnet build im mitgelieferten Quellcode des PS5-PKG-Tools (seit 01.11.2026 aufgefallen).
+/PS5-PKG-Tool/src/*/bin/
+/PS5-PKG-Tool/src/*/obj/
 
 # --- Entwicklungsbestand ----------------------------------------------------
 # Der Testbestand kommt mit. Bis v1.8.74 blieb er lokal (Ausnahme war nur

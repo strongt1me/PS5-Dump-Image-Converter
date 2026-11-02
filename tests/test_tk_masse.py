@@ -5,7 +5,9 @@ import unittest
 from ps5_validator.utils.tk_masse import cget_pixel, pixel, pixel_ganz
 
 try:
-    _WURZEL = tk.Tk()
+    # Die gemeinsame Wurzel der Testreihe - eine zweite tk.Tk() im selben Prozess kann scheitern und den Test still
+    # ueberspringen lassen.
+    _WURZEL = tk._default_root or tk.Tk()
     _WURZEL.withdraw()
 except tk.TclError:  # pragma: no cover - ohne Anzeige
     _WURZEL = None
