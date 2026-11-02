@@ -1249,7 +1249,8 @@ AMPR_PLAYGO_BIBLIOTHEKEN = ("libsceampr.sprx", "libsceplaygo.sprx")
 
 #: Woran ein AMPR EMU oder PlayGo-Stub zu erkennen ist (gemessen am 18.09.2026, siehe ``_ist_ersatzbibliothek`` im
 #: Hauptmodul): in allen EMU-Fassungen und beiden Stubs, in keiner Sony-Bibliothek.
-EMU_KENNZEICHEN = (b"[AMPR_EMU]", b"playgo_stub.dat")
+#: ampr-emu-ng (quer3q, seit 02.11.2026 im Bestand) traegt "[AMPR_EMU]" nicht, dafuer "ampr-emu-ng <Fassung>".
+EMU_KENNZEICHEN = (b"[AMPR_EMU]", b"playgo_stub.dat", b"ampr-emu-ng")
 
 
 def fremde_ampr_playgo(spielordner: str) -> list[str]:

@@ -1406,8 +1406,9 @@ class KlapplisteTests(unittest.TestCase):
         if not normal:
             self.skipTest("kein gewoehnlicher Bestand vorhanden")
         for eintrag, variante in normal.items():
+            # ampr-emu-ng (ALLROUND_VARIANTEN) liest auch Packs, gehoert aber trotzdem hierher.
             self.assertFalse(
-                ap.variante_kann_packen(variante),
+                ap.variante_nur_packbau(variante),
                 "%r ist eine Packfassung und gehoert nicht in die normale "
                 "Liste" % eintrag)
 
@@ -1418,10 +1419,12 @@ class KlapplisteTests(unittest.TestCase):
         oder in keiner. Beides waere falsch: Der Anwender soll jede
         mitgelieferte Fassung genau einmal finden.
         """
-        normal = set(self._mit_varianten("ampr_pack.methode_normal"))
-        pack = set(self._mit_varianten("ampr_pack.methode_neu"))
+        normal_mit = self._mit_varianten("ampr_pack.methode_normal")
+        pack_mit = self._mit_varianten("ampr_pack.methode_neu")
+        normal, pack = set(normal_mit), set(pack_mit)
         self.addCleanup(self._umschalten, "ampr_pack.methode_normal")
-        self.assertEqual(normal & pack, set(),
+        # Ausnahme seit 02.11.2026: ampr-emu-ng liest lose Dateien und Packs und steht absichtlich in beiden.
+        self.assertEqual({e for e in normal & pack if normal_mit[e] not in ap.ALLROUND_VARIANTEN}, set(),
                          "Diese Fassungen stehen in beiden Listen")
         # Die Beschriftung der Liste, nicht "Fassung Variante": test-nopack steht seit 25.10.2026 nur als Nummer da.
         alle = {

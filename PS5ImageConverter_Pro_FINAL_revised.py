@@ -34813,9 +34813,12 @@ class PS5ConverterGUI:
         for eintrag in eintraege:
             if eintrag.get("lib") != "libSceAmpr.sprx":
                 continue
-            kann_packen = ampr_assetpakete.variante_kann_packen(
-                str(eintrag.get("variant", "")))
-            if kann_packen != nur_packfaehig:
+            # ampr-emu-ng liest lose Dateien und Packs und steht in beiden Listen (02.11.2026).
+            variante = str(eintrag.get("variant", ""))
+            if nur_packfaehig:
+                if not ampr_assetpakete.variante_kann_packen(variante):
+                    continue
+            elif ampr_assetpakete.variante_nur_packbau(variante):
                 continue
             beschriftung = self._ampr_beschriftung(eintrag)
             if beschriftung in self._ampr_versionsauswahl:
@@ -34856,6 +34859,11 @@ class PS5ConverterGUI:
         variante = str(eintrag.get("variant", "") or "").strip()
         if variante.lower() == "test-nopack":
             return version.strip()
+        # ampr-emu-ng: "NG 0.2.0" und "NG 0.2.0 debug" - man soll die Weiterentwicklung auf einen Blick erkennen.
+        if variante.lower() == "ng":
+            return "NG " + version.strip()
+        if variante.lower() == "ng-debug":
+            return "NG %s debug" % version.strip()
         return f"{version} {variante}".strip()
 
     def _on_integration_changed(self, speichern: bool = True) -> None:
@@ -36562,7 +36570,13 @@ class PS5ConverterGUI:
         "no debug": 0, "nodebug": 0, "nolog": 0, "release": 0,
         "debug": 1, "log": 1,
         "test-nopack": 0, "test-pack": 0, "test-debug-pack": 1,
+        "ng": 0, "ng-debug": 1,
     }
+
+    #: ampr-emu-ng (quer3q/ampr-emu-ng, eigenstaendige Weiterentwicklung des AMPR EMU, seit 02.11.2026 im
+    #: Bestand): eigene Fassungsreihe ab 0.1.0, abgelegt als ``0.2.0 ng`` und ``0.2.0 ng-debug``. Die Nummern
+    #: sind mit denen von drakmor nicht vergleichbar - NG 0.2.0 ist neuer als 0.4.2.1, nicht aelter.
+    _AMPR_NG_VARIANTEN: frozenset[str] = frozenset({"ng", "ng-debug"})
 
     _AMPR_VERSION_RE = re.compile(r"(\d+(?:\.\d+)+)")
 
@@ -37153,12 +37167,25 @@ class PS5ConverterGUI:
         dalag - obwohl nur eine der beiden gepackte Baender liest.
         """
         marke = str(variante or "").strip().lower()
-        if marke in ampr_updates.BAUARTEN:
+        # NG ist eine eigene Fassungsreihe (quer3q) - als "no debug" gezaehlt, rechnete der Vergleich mit den
+        # Freigaben von drakmor gegen NG-Nummern.
+        if marke in ampr_updates.BAUARTEN or marke in cls._AMPR_NG_VARIANTEN:
             return marke
         rang = cls._AMPR_VARIANT_ORDER.get(marke)
         if rang is None:
             return marke
         return ampr_updates.DEBUG if rang else ampr_updates.OHNE_DEBUG
+
+    @classmethod
+    def _ampr_ist_ng(cls, eintrag: dict[str, Any]) -> bool:
+        """Ist der Eintrag eine Fassung von ampr-emu-ng (nicht vom AMPR EMU von drakmor)?"""
+        return str(eintrag.get("variant") or "").strip().lower() in cls._AMPR_NG_VARIANTEN
+
+    @classmethod
+    def _ampr_anzeige_fassung(cls, eintrag: dict[str, Any]) -> str:
+        """Die Fassung, wie der Anwender sie liest: ``NG 0.2.0`` fuer ampr-emu-ng, sonst die blosse Nummer."""
+        version = str(eintrag.get("version") or "").strip()
+        return "NG " + version if cls._ampr_ist_ng(eintrag) else version
 
     def _ampr_sortierschluessel(self, eintrag: dict[str, Any]) -> tuple:
         """Neueste zuerst, je Bibliothek – dieselbe Ordnung wie bisher.
@@ -37167,8 +37194,11 @@ class PS5ConverterGUI:
         auseinanderlaufende Ordnung hier besonders teuer wäre: Mehrere
         Stellen nehmen den ersten Eintrag als "die neueste".
         """
+        # NG steht als eigene Reihe hinter der von drakmor: Nach der Nummer allein landete NG 0.2.0 unter
+        # 0.3.4, und die Vorgabe (der erste Eintrag) soll ohne ausdrueckliche Wahl nicht wechseln.
         return (
             eintrag["lib"],
+            self._ampr_ist_ng(eintrag),
             tuple(-p for p in self._ampr_version_sort_key(eintrag["version"])),
             self._AMPR_VARIANT_ORDER.get(eintrag["variant"], 9),
             eintrag["variant"],
@@ -37284,7 +37314,9 @@ class PS5ConverterGUI:
     #: "[AMPR_EMU]" steckt in allen 14 EMU-Fassungen des Bestands (auch den
     #: Debug-Bauten), "playgo_stub.dat" in beiden PlayGo-Stubs - und keines
     #: von beiden in einer der 18 Sony-Bibliotheken der BACKPORT-Saetze.
-    _ERSATZ_KENNZEICHEN: tuple[bytes, ...] = (b"[AMPR_EMU]", b"playgo_stub.dat")
+    #: ampr-emu-ng (02.11.2026) traegt "[AMPR_EMU]" nicht, dafuer "ampr-emu-ng <Fassung>" - in Release
+    #: und Debug-Bau gemessen; ohne den dritten Eintrag galt NG als Sony-Original und wurde als .orig gesichert.
+    _ERSATZ_KENNZEICHEN: tuple[bytes, ...] = (b"[AMPR_EMU]", b"playgo_stub.dat", b"ampr-emu-ng")
 
     @classmethod
     def _ist_ersatzbibliothek(cls, pfad) -> bool:
@@ -54353,7 +54385,11 @@ class PS5ConverterGUI:
         "test-nopack": "amprgen.variante_nopack",
         "test-pack": "amprgen.variante_pack",
         "test-debug-pack": "amprgen.variante_debug_pack",
+        "ng": "amprgen.variante_ng", "ng-debug": "amprgen.variante_ng_debug",
     }
+
+    #: Was in der Fassungsliste als Variante einer NG-Fassung steht - "ng" waere neben "NG 0.2.0" doppelt.
+    _AMPR_NG_ZEILENVARIANTE: dict[str, str] = {"ng": "release", "ng-debug": "debug"}
 
     #: Woher eine Fassung stammt, als i18n-Schluessel (siehe ``_AMPR_QUELLEN_RANG``).
     _AMPR_QUELLEN_TEXTE: dict[str, str] = {
@@ -54375,13 +54411,14 @@ class PS5ConverterGUI:
         """
         return [e for e in vorrat
                 if not (e.get("lib") == self._AMPR_SPRX_NAME
-                        and ampr_assetpakete.variante_kann_packen(str(e.get("variant") or "")))]
+                        and ampr_assetpakete.variante_nur_packbau(str(e.get("variant") or "")))]
 
     def _ampr_fassung_zeile(self, eintrag: dict[str, Any]) -> str:
         """Eine Zeile der Fassungsliste: Version, Variante, Groesse."""
+        variante = str(eintrag.get("variant") or "-")
         return self._t("amprgen.fassung_zeile",
-                       version=str(eintrag.get("version") or "?"),
-                       variant=str(eintrag.get("variant") or "-"),
+                       version=self._ampr_anzeige_fassung(eintrag) or "?",
+                       variant=self._AMPR_NG_ZEILENVARIANTE.get(variante.strip().lower(), variante),
                        size=self._fmt_bytes(int(eintrag.get("size") or 0)))
 
     def _ampr_fassung_hinweis(self, eintrag: "dict[str, Any] | None") -> str:

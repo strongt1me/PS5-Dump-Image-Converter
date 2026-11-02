@@ -90,8 +90,14 @@ PROFIL_KENNZEILE = "# Vom PS5 Dump & Image Converter erzeugt"
 #: ``test-nopack``-Bibliothek findet das Manifest zwar, kann damit aber
 #: nichts anfangen - das Spiel liefe dann ohne seine Daten.
 PACKFAEHIGE_VARIANTEN: frozenset[str] = frozenset({
-    "test-pack", "test-debug-pack",
+    "test-pack", "test-debug-pack", "ng", "ng-debug",
 })
+
+#: Varianten, die lose Dateien **und** gepackte Baender lesen: ampr-emu-ng (quer3q, seit 02.11.2026 im
+#: Bestand) waehlt beim Laden selbst zwischen zstd-Packs, LZ4-Packs (AMPRPAK4/AMPRDAT3 - Kopf, Eintraege und
+#: Pruefsummenstellen nach Quelltext gleich mit ``AMPR_PackTools-4.0``) und losen Dateien. Sie stehen deshalb
+#: in beiden Listen; nur die reinen Pack-Bauten von drakmor gehoeren allein zur Methode Asset-Pack.
+ALLROUND_VARIANTEN: frozenset[str] = frozenset({"ng", "ng-debug"})
 
 #: LZ4-Stufe der Baender: 1 bis 12 wie bei LZ4 Compression und Lazy_AMPR.
 #: 1 bis 4 laufen im schnellen Modus, 5 bis 12 mit LZ4 HC; 9 ist die Vorgabe.
@@ -426,6 +432,12 @@ def einsatzbereit() -> tuple[bool, str]:
 def variante_kann_packen(variante: str) -> bool:
     """Liest die gewaehlte AMPR-Variante gepackte Baender?"""
     return str(variante or "").strip().lower() in PACKFAEHIGE_VARIANTEN
+
+
+def variante_nur_packbau(variante: str) -> bool:
+    """Ist die Variante ein reiner Pack-Bau (``test-pack``, ``test-debug-pack``), der nicht in die normale Liste gehoert?"""
+    marke = str(variante or "").strip().lower()
+    return marke in PACKFAEHIGE_VARIANTEN and marke not in ALLROUND_VARIANTEN
 
 
 def standardprofil_text(arbeiter: int = 0,

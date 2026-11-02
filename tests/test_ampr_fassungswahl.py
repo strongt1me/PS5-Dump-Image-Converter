@@ -394,6 +394,10 @@ class ZeilenTests(unittest.TestCase):
         class _Text:
             _AMPR_VARIANTEN_TEXTE = G._AMPR_VARIANTEN_TEXTE
             _AMPR_QUELLEN_TEXTE = G._AMPR_QUELLEN_TEXTE
+            _AMPR_NG_VARIANTEN = G._AMPR_NG_VARIANTEN
+            _AMPR_NG_ZEILENVARIANTE = G._AMPR_NG_ZEILENVARIANTE
+            _ampr_ist_ng = G._ampr_ist_ng
+            _ampr_anzeige_fassung = G._ampr_anzeige_fassung
             _fmt_bytes = staticmethod(G._fmt_bytes)
             _ampr_fassung_zeile = G._ampr_fassung_zeile
             _ampr_fassung_hinweis = G._ampr_fassung_hinweis

@@ -238,6 +238,11 @@ class VariantenklasseTests(unittest.TestCase):
         # Sonst uebersetzte die Methode in eine dritte Sprache.
         bekannt = (ampr_updates.DEBUG, ampr_updates.OHNE_DEBUG) + ampr_updates.BAUARTEN
         for name in APP.PS5ConverterGUI._AMPR_VARIANT_ORDER:
+            if name in APP.PS5ConverterGUI._AMPR_NG_VARIANTEN:
+                # ampr-emu-ng ist eine eigene Reihe, die ampr_updates (drakmor) nicht holt - sie bleibt
+                # absichtlich ausserhalb seiner Klassen (siehe test_ampr_ng.AktualisierungTests).
+                self.assertEqual(name, self.gui._ampr_variantenklasse(name))
+                continue
             self.assertIn(self.gui._ampr_variantenklasse(name), bekannt, name)
 
     def test_die_bauarten_bleiben_eigene_varianten(self):

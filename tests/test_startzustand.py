@@ -127,7 +127,8 @@ class StartLeerTests(unittest.TestCase):
         self.assertFalse(ampr_assetpakete.variante_kann_packen(str(eintrag.get("variant", ""))),
                          "ohne Pack: keine packfaehige Fassung")
         for beschriftung, e in a._ampr_versionsauswahl.items():
-            self.assertFalse(ampr_assetpakete.variante_kann_packen(str(e.get("variant", ""))),
+            # ampr-emu-ng liest auch Packs, steht aber zu Recht unter Normal - verboten sind nur reine Pack-Bauten.
+            self.assertFalse(ampr_assetpakete.variante_nur_packbau(str(e.get("variant", ""))),
                              "unter Normal steht eine Packfassung: " + beschriftung)
 
     def test_die_pfadfelder_sind_leer(self) -> None:
