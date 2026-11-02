@@ -2,9 +2,17 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.89):** Ziehen und Ablegen geht auch als Administrator, die Backport-Funktion ist verbessert, und die Oberfläche springt nicht mehr.
+> **Kurz zum aktuellen Stand (v1.9.90):** Die PKG/FPKG-Seite ist neu geordnet und passt ohne Rollen ins Fenster, Updates von Sony laden auf exFAT-Laufwerken sofort, und viele Payloads sind aktualisiert.
 
 ---
+
+## v1.9.90 – 02.11.2026
+
+- **Neu:** Die PKG/FPKG-Seite ist im Stil von Aufgabe 1 aufgebaut und erkennt PS4- und PS5-Pakete von selbst.
+- **Geändert:** Die Bereiche PS4 PKG und PS5 PKG passen ohne Rollen ins Fenster, das Zielformat zeigt nur noch die Endung (.ffpkg, .ffpfsc, .ffpfs, .exFAT, .pkg), und der Block „Ausgewähltes Paket“ ist weg.
+- **Aktualisiert:** ShadowMount+ 1.7beta11, PS5Upload 10.7.2, PS5 Cooling & System Center – Pro 1.75.2, NeoEnabler 0.6.1, Web File Manager 1.13-rc1, garlic-worker und das PS5-PKG-Tool 0.0.3.
+- **Behoben:** Updates von Sony auf exFAT-Laufwerken beginnen sofort zu laden, statt beim Vorbereiten der Datei stundenlang stillzustehen; das Fenster zeigt, wann es mit dem Server verbindet.
+- **Behoben:** ABBRECHEN im Ladefenster für Updates wirkt sofort, beim Einlesen eines PS5-PKG öffnen sich keine schwarzen Konsolenfenster mehr, und die PKG/FPKG-Seite steht beim ersten Klick gleich richtig.
 
 ## v1.9.89 – 29.10.2026
 
