@@ -36858,22 +36858,19 @@ class PS5ConverterGUI:
         threading.Thread(target=_arbeiten, daemon=True,
                          name="ampr_updates").start()
 
+    #: Woher der Knopf neuere AMPR-EMU-Fassungen holt: (Projekt, Leser der Antwort, ampr-emu-ng?). Zwei
+    #: unabhaengige Reihen (seit 03.11.2026): Jede wird nur gegen ihren eigenen Teil des Bestands gemessen -
+    #: NG 0.2.0 ist neuer als 0.4.2.1, gegen drakmor gerechnet galte es als alt und umgekehrt.
+    _AMPR_UPDATE_QUELLEN = (
+        (ampr_updates.PROJEKT, ampr_updates.angebote_lesen, False),
+        (ampr_updates.NG_PROJEKT, ampr_updates.ng_angebote_lesen, True),
+    )
+
     def _ampr_updates_arbeiten(self, danach=None) -> None:
-        """Der eigentliche Ablauf - laeuft im Nebenstrang."""
-        try:
-            adresse = ampr_updates.ADRESSE % ampr_updates.PROJEKT
-            self._melde_im_hauptstrang(
-                self._t("ampr.update_suche", quelle=ampr_updates.PROJEKT))
-            rohtext = self._ampr_lade_adresse(adresse).decode("utf-8", "replace")
-        except Exception as exc:  # noqa: BLE001
-            self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=exc))
-            return
+        """Der eigentliche Ablauf - laeuft im Nebenstrang.
 
-        angebote = ampr_updates.angebote_lesen(rohtext)
-        if not angebote:
-            self._melde_im_hauptstrang(self._t("ampr.update_nichts_gefunden"))
-            return
-
+        Erst beide Quellen fragen, dann gemeinsam holen. Faellt eine Quelle aus, laeuft die andere weiter.
+        """
         # NUR die AMPR-Fassungen. ampr_updates ist ausschliesslich fuer
         # libSceAmpr.sprx gebaut - DATEINAME, PROJEKT und der Filter in
         # angebote_lesen sagen das alle drei. Der Bestand ging bis zum
@@ -36883,19 +36880,38 @@ class PS5ConverterGUI:
         # neu. Gemessen: ein Angebot 0.4.0 kam nicht durch. Der Knopf meldete
         # jedem Anwender "schon aktuell", ohne Ausnahme und ohne eigenen
         # Ordner. Die beiden Projekte zaehlen unabhaengig voneinander; ihre
-        # Nummern gehoeren nie in denselben Vergleich.
-        vorhanden = [(e["version"], self._ampr_variantenklasse(e["variant"]))
-                     for e in self._ampr_alle_fassungen()
-                     if e.get("lib") == self._AMPR_SPRX_NAME]
-        neu = [a for a in ampr_updates.neuere(angebote, vorhanden)
-               if not ampr_updates.schon_da(self._ampr_updates_ordner(), a)]
+        # Nummern gehoeren nie in denselben Vergleich - dasselbe gilt seit
+        # 03.11.2026 fuer drakmor und ampr-emu-ng.
+        bestand = [e for e in self._ampr_alle_fassungen()
+                   if e.get("lib") == self._AMPR_SPRX_NAME]
+        neu: list = []
+        for projekt, lesen, ist_ng in self._AMPR_UPDATE_QUELLEN:
+            vorsatz = "NG " if ist_ng else ""
+            try:
+                self._melde_im_hauptstrang(self._t("ampr.update_suche", quelle=projekt))
+                rohtext = self._ampr_lade_adresse(
+                    ampr_updates.ADRESSE % projekt).decode("utf-8", "replace")
+            except Exception as exc:  # noqa: BLE001
+                self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=exc))
+                continue
+            angebote = lesen(rohtext)
+            if not angebote:
+                self._melde_im_hauptstrang(self._t("ampr.update_nichts_gefunden"))
+                continue
+            vorhanden = [(e["version"], self._ampr_variantenklasse(e["variant"]))
+                         for e in bestand if self._ampr_ist_ng(e) == ist_ng]
+            frisch = [a for a in ampr_updates.neuere(angebote, vorhanden)
+                      if not ampr_updates.schon_da(self._ampr_updates_ordner(), a)]
+            if not frisch:
+                self._melde_im_hauptstrang(
+                    self._t("ampr.update_aktuell", neueste=vorsatz + angebote[0].fassung))
+                continue
+            neu.extend(frisch)
         if not neu:
-            self._melde_im_hauptstrang(
-                self._t("ampr.update_aktuell",
-                        neueste=angebote[0].fassung))
             return
 
-        namen = ", ".join(sorted({a.fassung for a in neu}))
+        namen = ", ".join(sorted({("NG " if a.variante in (ampr_updates.NG, ampr_updates.NG_DEBUG) else "")
+                                  + a.fassung for a in neu}))
         self._melde_im_hauptstrang(
             self._t("ampr.update_gefunden", fassungen=namen, anzahl=len(neu)))
 

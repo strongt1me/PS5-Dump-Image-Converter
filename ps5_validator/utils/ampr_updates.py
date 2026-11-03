@@ -42,6 +42,7 @@ heissen im mitgelieferten Bestand genau so (``0.4.2.1 test-pack``).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -74,7 +75,25 @@ OHNE_DEBUG = "no debug"
 #: nur eine liest gepackte Baender - zusammengefasst waeren sie verloren.
 BAUARTEN = ("test-debug-pack", "test-nopack", "test-pack")
 
+#: Die eigenstaendige Weiterentwicklung ampr-emu-ng (seit 02.11.2026 im Bestand). Eine **eigene Fassungsreihe**:
+#: NG 0.2.0 ist neuer als 0.4.2.1 von drakmor, die Nummern gehoeren nie in denselben Vergleich.
+#:
+#: Aufbau der Veroeffentlichungen (03.11.2026 nachgesehen)::
+#:
+#:     tag v0.2.0
+#:         libSceAmpr.sprx         678.416 B   (stille Fassung)
+#:         libSceAmpr-debug.sprx   747.184 B   (Debug-Fassung, Messwerte auf Port 9090)
+#:         SHA256SUMS
+#:
+#: Anders als bei drakmor steht die Fassung **nur in der Marke**, nicht im Anhangsnamen.
+NG_PROJEKT = "quer3q/ampr-emu-ng"
+NG = "ng"
+NG_DEBUG = "ng-debug"
+#: Anhangsname (klein geschrieben) -> Variante im Bestand (``0.2.0 ng``, ``0.2.0 ng-debug``).
+NG_ANHAENGE = {"libsceampr.sprx": NG, "libsceampr-debug.sprx": NG_DEBUG}
+
 _FASSUNG = re.compile(r"(\d+(?:\.\d+)+)")
+_DIGEST = re.compile(r"^sha256:([0-9a-f]{64})$")
 
 
 @dataclass(frozen=True)
@@ -86,6 +105,8 @@ class Angebot:
     anhang: str
     adresse: str
     groesse: int = 0
+    #: SHA-256 laut GitHub (``digest`` des Anhangs) - leer, wenn die Schnittstelle keinen nennt.
+    sha256: str = ""
 
     @property
     def beschriftung(self) -> str:
@@ -181,12 +202,68 @@ def angebote_lesen(rohtext: str) -> list[Angebot]:
             if not adresse:
                 continue
             gesehen.add(schluessel)
-            try:
-                groesse = int(anhang.get("size") or 0)
-            except (TypeError, ValueError):
-                groesse = 0
-            raus.append(Angebot(fassung, variante, name, adresse, groesse))
+            raus.append(Angebot(fassung, variante, name, adresse, _groesse(anhang), _digest(anhang)))
 
+    _sortieren(raus)
+    return raus
+
+
+def _groesse(anhang: dict) -> int:
+    try:
+        return int(anhang.get("size") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _digest(anhang: dict) -> str:
+    """Der SHA-256 aus ``digest`` (``"sha256:<hex>"``); alles andere zaehlt als "keiner"."""
+    treffer = _DIGEST.match(str(anhang.get("digest") or "").strip().lower())
+    return treffer.group(1) if treffer else ""
+
+
+def ng_angebote_lesen(rohtext: str) -> list[Angebot]:
+    """Liest die Antwort der Releases-Schnittstelle von :data:`NG_PROJEKT`.
+
+    Die Fassung kommt aus der Marke (``v0.2.0`` -> ``0.2.0``), die Variante aus dem genauen Anhangsnamen
+    (:data:`NG_ANHAENGE`); ``SHA256SUMS`` und Quelltextarchive bleiben draussen. Vorabfassungen werden
+    uebergangen - der Knopf bietet nur an, was der Autor als fertig freigegeben hat.
+    """
+    try:
+        daten = json.loads(rohtext)
+    except (ValueError, TypeError):
+        return []
+    if isinstance(daten, dict):
+        daten = [daten]
+    if not isinstance(daten, list):
+        return []
+
+    raus: list[Angebot] = []
+    gesehen: set[tuple[str, str]] = set()
+    for veroeffentlichung in daten:
+        if not isinstance(veroeffentlichung, dict):
+            continue
+        if veroeffentlichung.get("draft") or veroeffentlichung.get("prerelease"):
+            continue
+        fassung = fassung_aus_anhang(str(veroeffentlichung.get("tag_name") or ""))
+        if not fassung:
+            continue
+        for anhang in (veroeffentlichung.get("assets") or []):
+            if not isinstance(anhang, dict):
+                continue
+            name = str(anhang.get("name") or "")
+            variante = NG_ANHAENGE.get(name.strip().lower())
+            adresse = str(anhang.get("browser_download_url") or "")
+            if not variante or not adresse or (fassung, variante) in gesehen:
+                continue
+            gesehen.add((fassung, variante))
+            raus.append(Angebot(fassung, variante, name, adresse, _groesse(anhang), _digest(anhang)))
+
+    _sortieren(raus)
+    return raus
+
+
+def _sortieren(raus: list[Angebot]) -> None:
+    """Neueste zuerst, je Fassung nach Variante - an Ort und Stelle."""
     # Zwei Durchgaenge statt eines negierten Schluessels. Das Negieren
     # jeder Komponente - tuple(-t for t in ...) - geht bei verschieden
     # langen Fassungen schief: "0.3.6" wird zu (0,-3,-6), "0.3.6.6" zu
@@ -195,7 +272,6 @@ def angebote_lesen(rohtext: str) -> list[Angebot]:
     # Schreiben genau so passiert; die Pruefung hat es gemeldet.
     raus.sort(key=lambda a: a.variante)
     raus.sort(key=lambda a: fassung_teile(a.fassung), reverse=True)
-    return raus
 
 
 def neuere(angebote: list[Angebot],
@@ -301,6 +377,9 @@ def ablegen(wurzel: str, angebot: Angebot, inhalt: bytes) -> str:
         raise ValueError(
             "Unvollstaendig: %d von %d Bytes fuer %s"
             % (len(inhalt), angebot.groesse, angebot.beschriftung))
+    if angebot.sha256 and hashlib.sha256(inhalt).hexdigest() != angebot.sha256:
+        # GitHub nennt den Digest jedes Anhangs - eine abweichende Datei kommt nicht in den Bestand.
+        raise ValueError("Pruefsumme stimmt nicht fuer %s" % angebot.beschriftung)
 
     ordner = zielordner(wurzel, angebot.fassung, angebot.variante)
     os.makedirs(ordner, exist_ok=True)

@@ -15,6 +15,7 @@ Bewacht wird hier:
 from __future__ import annotations
 
 import hashlib
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -258,6 +259,115 @@ class HinweisTests(unittest.TestCase):
                 self.assertIn("update_emulators=0", STRINGS["ampr.ng_update_emulators"][sprache])
                 self.assertIn("ShadowMount+", STRINGS["ampr.ng_update_emulators"][sprache])
                 self.assertTrue(STRINGS["ampr.ng_update_emulators_titel"][sprache].strip())
+
+
+def _ng_antwort(*fassungen: str, vorab: str = "") -> bytes:
+    """Eine Releases-Antwort von quer3q/ampr-emu-ng im Aufbau vom 03.11.2026 (gh api .../releases)."""
+    import json
+    freigaben = []
+    for fassung in list(fassungen) + ([vorab] if vorab else []):
+        freigaben.append({
+            "tag_name": "v" + fassung, "draft": False, "prerelease": fassung == vorab,
+            "assets": [{"name": name, "size": 4, "digest": "sha256:" + hashlib.sha256(name.encode()).hexdigest(),
+                        "browser_download_url": "http://beispiel.invalid/%s/%s" % (fassung, name)}
+                       for name in ("libSceAmpr-debug.sprx", "libSceAmpr.sprx", "SHA256SUMS")]})
+    return json.dumps(freigaben).encode("utf-8")
+
+
+def _drakmor_antwort(fassung: str) -> bytes:
+    import json
+    return json.dumps([{"tag_name": fassung, "assets": [{
+        "name": "libSceAmpr.sprx-%s-test-nopack" % fassung, "size": 4,
+        "browser_download_url": "http://beispiel.invalid/d/%s" % fassung}]}]).encode("utf-8")
+
+
+class NgQuelleTests(unittest.TestCase):
+    """Der Updates-Knopf holt auch ampr-emu-ng (Nutzerwunsch 03.11.2026)."""
+
+    def test_leser_nimmt_marke_und_genaue_anhangsnamen(self) -> None:
+        angebote = au.ng_angebote_lesen(_ng_antwort("0.2.0", "0.1.0", vorab="0.3.0").decode())
+        self.assertEqual([("0.2.0", "ng"), ("0.2.0", "ng-debug"), ("0.1.0", "ng"), ("0.1.0", "ng-debug")],
+                         [(a.fassung, a.variante) for a in angebote], "Vorabfassung und SHA256SUMS bleiben draussen")
+        a = angebote[0]
+        self.assertEqual("libSceAmpr.sprx", a.anhang)
+        self.assertEqual(hashlib.sha256(b"libSceAmpr.sprx").hexdigest(), a.sha256)
+
+    def test_die_leser_kreuzen_sich_nicht(self) -> None:
+        self.assertEqual([], au.angebote_lesen(_ng_antwort("0.2.0").decode()),
+                         "NG-Anhaenge tragen keine Nummer - der drakmor-Leser darf sie nicht nehmen")
+        self.assertEqual([], au.ng_angebote_lesen(_drakmor_antwort("0.4.2.2").decode()))
+
+    def test_ablage_heisst_wie_im_mitgelieferten_bestand(self) -> None:
+        for angebot in au.ng_angebote_lesen(_ng_antwort("0.2.0").decode()):
+            with self.subTest(variante=angebot.variante):
+                ordner = Path(au.zielordner("x", angebot.fassung, angebot.variante)).name
+                self.assertTrue((BESTAND / "AMPR_EMU" / ordner).is_dir(), ordner)
+
+    def test_ablegen_prueft_den_digest(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="ampr_ng_digest_") as wurzel:
+            gut = au.Angebot("0.9.0", "ng", "libSceAmpr.sprx", "x", 4, hashlib.sha256(b"abcd").hexdigest())
+            self.assertTrue(os.path.isfile(au.ablegen(wurzel, gut, b"abcd")))
+            falsch = au.Angebot("0.9.1", "ng", "libSceAmpr.sprx", "x", 4, gut.sha256)
+            with self.assertRaises(ValueError):
+                au.ablegen(wurzel, falsch, b"abce")          # gleich lang, anderer Inhalt
+            self.assertFalse(os.path.exists(au.zielpfad(wurzel, "0.9.1", "ng")), "keine falsche Datei im Bestand")
+
+    def _lauf(self, bestand: list[dict], antworten: dict[str, bytes]):
+        gui = G.__new__(G)
+        protokoll: list[str] = []
+        gui._ampr_alle_fassungen = lambda *a, **k: list(bestand)
+        gui._melde_im_hauptstrang = protokoll.append
+        gui._t = lambda schluessel, **w: schluessel + (" " + w["neueste"] if "neueste" in w else "")
+
+        def _lade(adresse: str) -> bytes:
+            for projekt, antwort in antworten.items():
+                if projekt in adresse:
+                    if isinstance(antwort, Exception):
+                        raise antwort
+                    return antwort
+            raise AssertionError("unerwartete Adresse " + adresse)
+
+        gui._ampr_lade_adresse = _lade
+        gui._ampr_updates_ordner = lambda: os.path.join(os.environ.get("TEMP", "/tmp"),
+                                                        "ampr_ng_gibt_es_nicht_%d" % os.getpid())
+        geholt: list = []
+        with mock.patch.object(au, "holen", lambda _w, a, _l: (geholt.extend(a) or ([], []))):
+            gui._ampr_updates_arbeiten()
+        return [(a.fassung, a.variante) for a in geholt], protokoll
+
+    DRAKMOR_DA = [_eintrag("0.4.2.1", "test-nopack")]
+    NG_DA = [_eintrag("0.2.0", "ng"), _eintrag("0.2.0", "ng-debug")]
+
+    def test_neues_ng_wird_geholt(self) -> None:
+        geholt, _p = self._lauf(self.DRAKMOR_DA + self.NG_DA, {
+            au.PROJEKT: _drakmor_antwort("0.4.2.1"), au.NG_PROJEKT: _ng_antwort("0.3.0", "0.2.0")})
+        self.assertEqual([("0.3.0", "ng"), ("0.3.0", "ng-debug")], geholt)
+
+    def test_vorhandenes_ng_gilt_als_aktuell(self) -> None:
+        geholt, protokoll = self._lauf(self.DRAKMOR_DA + self.NG_DA, {
+            au.PROJEKT: _drakmor_antwort("0.4.2.1"), au.NG_PROJEKT: _ng_antwort("0.2.0")})
+        self.assertEqual([], geholt)
+        self.assertIn("ampr.update_aktuell NG 0.2.0", protokoll)
+
+    def test_drakmor_macht_ng_nicht_alt(self) -> None:
+        """Gegenprobe: Ohne NG im Bestand ist NG 0.2.0 neu, obwohl 0.4.2.1 dasteht."""
+        geholt, _p = self._lauf(self.DRAKMOR_DA, {
+            au.PROJEKT: _drakmor_antwort("0.4.2.1"), au.NG_PROJEKT: _ng_antwort("0.2.0")})
+        self.assertEqual([("0.2.0", "ng"), ("0.2.0", "ng-debug")], geholt)
+
+    def test_ng_macht_drakmor_nicht_alt(self) -> None:
+        """Gegenprobe andersherum: Ein hoeheres NG haelt drakmor 0.4.2.2 nicht zurueck."""
+        geholt, _p = self._lauf(self.DRAKMOR_DA + [_eintrag("0.9.0", "ng")], {
+            au.PROJEKT: _drakmor_antwort("0.4.2.2"), au.NG_PROJEKT: _ng_antwort("0.9.0")})
+        self.assertIn(("0.4.2.2", "test-nopack"), geholt)
+        self.assertNotIn(("0.9.0", "ng"), geholt)
+
+    def test_eine_ausgefallene_quelle_haelt_die_andere_nicht_auf(self) -> None:
+        geholt, protokoll = self._lauf(self.DRAKMOR_DA, {
+            au.PROJEKT: OSError("kein Netz"), au.NG_PROJEKT: _ng_antwort("0.2.0")})
+        self.assertIn("ampr.update_fehler", protokoll)
+        self.assertEqual([("0.2.0", "ng"), ("0.2.0", "ng-debug")], geholt)
 
 
 class AktualisierungTests(unittest.TestCase):
