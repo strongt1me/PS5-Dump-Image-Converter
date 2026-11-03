@@ -82,6 +82,30 @@ class FakelibDateienFuerZiel(unittest.TestCase):
             self.assertNotIn("libSceAudioOut.sprx", namen)
             self.assertIn("FW4", namen)
 
+    def test_audioout_wird_auch_bei_echter_luecke_nie_gewaehlt(self):
+        """Test H (Anno 117, 02.11.2026): libSceAudioOut.sprx allein loest 0xa0020104 aus."""
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceAudioOut.sprx")
+            _exporttabelle_schreiben(basis, 4, {"libSceAudioOut2": ["Z1Z1Z1Z1Z1Z"]})
+
+            def _mock(pfad):
+                if os.path.basename(pfad) == "spiel":
+                    return {"importe": {"libSceAudioOut2": {"Z1Z1Z1Z1Z1Z", "Z2Z2Z2Z2Z2Z"}},
+                            "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+                return {"importe": {}, "exporte": {"libSceAudioOut2": {"Z2Z2Z2Z2Z2Z"}},
+                        "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.fakelib_dateien_fuer_ziel(str(basis), 4, ["spiel"])
+                rest = b.luecken_ohne_ersatz(str(basis), 4, ["spiel"], ergebnis)
+            finally:
+                b.symbole_aus_datei = alt
+            self.assertNotIn("libSceAudioOut.sprx", {os.path.basename(p) for p in ergebnis})
+            self.assertEqual(rest, {"libSceAudioOut2": ["Z2Z2Z2Z2Z2Z"]})
+
     def test_datei_mit_mehreren_bibliotheksnamen_nur_bei_echter_nid_deckung(self):
         """Eine Datei kann mehrere Bibliotheksnamen exportieren (gemessen an
         Assassin's Creed Black Flag, 02.11.2026: ``libSceAudioOut.sprx``

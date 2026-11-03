@@ -1405,6 +1405,13 @@ def fakelib_unnoetige(basis: str, firmware: int,
 # 0xa0020104 ab. Mit nur Agc, AgcDriver, Ampr und PlayGo lief der Start durch. Massgeblich ist also nicht, ob das
 # Spiel eine Bibliothek importiert, sondern ob der Zielfirmware darin Funktionen fehlen.
 
+#: Ersatzdateien, die die Automatik nie waehlt, auch wenn eine Funktion fehlt. Gemessen am 02.11.2026 (Anno 117,
+#: Test H): Das Spiel mit Variante E plus nur ``libSceAudioOut.sprx`` bricht beim Laden mit 0xa0020104 ab. Die fehlende
+#: Funktion (``libSceAudioOut2`` TViD1EZXkNI) fehlt der Zielfirmware weiter und erscheint als Luecke ohne Ersatz in
+#: :func:`luecken_ohne_ersatz`. Anno 117 ruft sie in der Audio-Initialisierung auf (Test I, 02.11.2026: Abbruch
+#: 0xa0020101 im Thread AK::AudioMgr nach ca. 8 s) - die Datei loest das nicht, nur ein Stub im PLT des Spiels.
+AUTOMATIK_AUSGENOMMEN = ("libsceaudioout.sprx",)
+
 #: Bibliotheken, die keine Ersatzdatei ersetzen kann (der Kernel liefert sie). Eine Luecke hier ist nicht
 #: auszugleichen - ob sie den Start verhindert, haengt aber davon ab, ob das Spiel die Funktion aufruft:
 #: Assassin's Creed Black Flag (Release fuer FW 4.xx, 02.11.2026) hat dieselben 4 + 1 + 3 Luecken in
@@ -1498,6 +1505,8 @@ def fakelib_dateien_fuer_ziel(basis: str, firmware: int,
         name = os.path.basename(pfad).lower()
         if name == markierung or name in AMPR_PLAYGO_BIBLIOTHEKEN:
             ergebnis.append(pfad)
+            continue
+        if name in AUTOMATIK_AUSGENOMMEN:
             continue
         for lib, nids in _bibliothek_exporte(pfad).items():
             # Leere NIDs heisst: keine lesbare Exporttabelle - dann zaehlt wie bei
