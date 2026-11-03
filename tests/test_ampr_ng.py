@@ -176,6 +176,90 @@ class PackformatTests(unittest.TestCase):
         self.assertEqual("ampr_assets.index", ap.MANIFEST_NAME)
 
 
+class HinweisTests(unittest.TestCase):
+    """Nach dem Einbau von NG kommt die Meldung "update_emulators=0" (Nutzerwunsch 03.11.2026)."""
+
+    NG = BESTAND / "AMPR_EMU" / "0.2.0 ng" / "libSceAmpr.sprx"
+    DRAKMOR = BESTAND / "AMPR_EMU" / "0.4.2.1 test-nopack" / "libSceAmpr.sprx"
+
+    def setUp(self) -> None:
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory(prefix="ampr_ng_hinweis_")
+        self.addCleanup(self.tmp.cleanup)
+        self.log: list[str] = []
+        gui = G.__new__(G)
+        gui._t = lambda schluessel, **w: STRINGS[schluessel]["de"].format(**w)
+        gui._append_to_log = self.log.append
+        gui._fakelib_pfad = lambda root: Path(root) / "fakelib"
+        gui._ampr_ablage_pruefen = lambda root: []
+        gui.root = None
+        self.gui = gui
+        zeigen = mock.patch.object(APP.messagebox, "showinfo")
+        self.showinfo = zeigen.start()
+        self.addCleanup(zeigen.stop)
+
+    def _einbauen(self, quelle: Path) -> bool:
+        return self.gui._ampr_apply_library(self.tmp.name, str(quelle), "libSceAmpr.sprx")
+
+    def test_ng_bringt_die_meldung(self) -> None:
+        self.assertTrue(self._einbauen(self.NG))
+        self.assertEqual(1, self.showinfo.call_count)
+        titel, text = self.showinfo.call_args.args
+        self.assertIn("NG", titel)
+        self.assertIn("update_emulators=0", text)
+        self.assertTrue(any("update_emulators=0" in z for z in self.log), "auch im Protokoll")
+
+    def test_drakmor_bringt_keine_meldung(self) -> None:
+        self.assertTrue(self._einbauen(self.DRAKMOR))
+        self.showinfo.assert_not_called()
+        self.assertFalse(any("update_emulators" in z for z in self.log))
+
+    def test_playgo_aus_einem_ng_ordner_zaehlt_nicht(self) -> None:
+        """Nur libSceAmpr.sprx ist NG - der Name der Zieldatei entscheidet mit."""
+        stub = next(BESTAND.rglob("libScePlayGo.sprx"))
+        self.assertTrue(self.gui._ampr_apply_library(self.tmp.name, str(stub), "libScePlayGo.sprx"))
+        self.showinfo.assert_not_called()
+
+    def test_in_einem_lauf_nur_einmal_im_naechsten_wieder(self) -> None:
+        self.gui._lauf_variablen = {}
+        self._einbauen(self.NG)
+        self._einbauen(self.NG)                          # Sammelkonvertierung: zweites Spiel im selben Lauf
+        self.assertEqual(1, self.showinfo.call_count)
+        self.assertEqual(2, sum("update_emulators=0" in z for z in self.log), "das Protokoll nennt es je Spiel")
+        self.gui._lauf_variablen = {}                    # der naechste Lauf legt einen neuen Stand an
+        self._einbauen(self.NG)
+        self.assertEqual(2, self.showinfo.call_count)
+
+    def test_im_cli_betrieb_nur_das_protokoll(self) -> None:
+        self.gui._cli_mode = True
+        self._einbauen(self.NG)
+        self.showinfo.assert_not_called()
+        self.assertTrue(any("update_emulators=0" in z for z in self.log))
+
+    def test_ftp_picker_bringt_die_meldung(self) -> None:
+        eintrag = {"lib": "libSceAmpr.sprx", "version": "0.2.0", "variant": "ng", "path": str(self.NG)}
+        self.gui._ampr_scan_version_store = lambda store: [eintrag]
+        self.gui._ampr_ftp_upload_file = lambda *a: True
+        self.gui._fakelib_ordnername = lambda: "fakelib"
+        self.assertEqual((1, 0), self.gui._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x",
+                                                                libs=("libSceAmpr.sprx",)))
+        self.assertEqual(1, self.showinfo.call_count)
+
+    def test_die_automatik_von_aufgabe_7_meldet_es_auch(self) -> None:
+        import ast
+        import inspect
+        quelle = ast.unparse(ast.parse(inspect.getsource(G._ampr_gen_automatik).strip()))
+        self.assertIn("_ampr_ist_ng_datei", quelle)
+        self.assertIn("_ampr_ng_hinweis(eltern=fenster)", quelle)
+
+    def test_die_texte_nennen_den_schalter_in_jeder_sprache(self) -> None:
+        for sprache in ("de", "en", "es", "it", "fr"):
+            with self.subTest(sprache=sprache):
+                self.assertIn("update_emulators=0", STRINGS["ampr.ng_update_emulators"][sprache])
+                self.assertIn("ShadowMount+", STRINGS["ampr.ng_update_emulators"][sprache])
+                self.assertTrue(STRINGS["ampr.ng_update_emulators_titel"][sprache].strip())
+
+
 class AktualisierungTests(unittest.TestCase):
     def test_ng_ist_keine_klasse_von_drakmor(self) -> None:
         self.assertEqual("ng", G._ampr_variantenklasse("ng"))

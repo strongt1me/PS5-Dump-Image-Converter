@@ -37336,6 +37336,44 @@ class PS5ConverterGUI:
             return False
         return any(kennzeichen in daten for kennzeichen in cls._ERSATZ_KENNZEICHEN)
 
+    #: Woran ampr-emu-ng zu erkennen ist - am Inhalt, nicht am Ordnernamen: Jeder Einbauweg kennt den Quellpfad,
+    #: aber nicht jeder den Eintrag des Bestands (FTP-Picker, fremde Bibliotheken ersetzen).
+    _AMPR_NG_KENNZEICHEN = b"ampr-emu-ng"
+
+    @classmethod
+    def _ampr_ist_ng_datei(cls, pfad) -> bool:
+        """Ist die Datei ampr-emu-ng (quer3q)?"""
+        try:
+            return cls._AMPR_NG_KENNZEICHEN in Path(pfad).read_bytes()
+        except OSError as exc:
+            logger.debug("Bibliothek nicht lesbar (%s): %s", pfad, exc)
+            return False
+
+    def _ampr_ng_hinweis(self, eltern=None, einmal_je_lauf: bool = False) -> None:
+        """Sagt nach dem Einbau von ampr-emu-ng, dass in ShadowMount+ ``update_emulators=0`` gehoert.
+
+        Nutzerwunsch 03.11.2026. Mit der Vorgabe ``update_emulators=1`` ersetzt ShadowMount+ beim Spielstart die
+        ``libSceAmpr.sprx`` im fakelib durch die gleichnamige Datei aus seinem Emulator-Ordner - NG liefe dann gar
+        nicht, und nichts wiese darauf hin. Im Protokoll steht es immer, das Fenster kommt nicht im CLI-Betrieb.
+
+        Args:
+            eltern: Fenster, ueber dem die Meldung steht (sonst das Hauptfenster).
+            einmal_je_lauf: Fuer Aufgabe 1 - in einer Sammelkonvertierung kaeme die Meldung sonst je Spiel.
+        """
+        self._append_to_log(self._t("ampr.ng_update_emulators"))
+        if getattr(self, "_cli_mode", False):
+            return
+        if einmal_je_lauf:
+            lauf = getattr(self, "_lauf_variablen", None)
+            if lauf is not None and getattr(self, "_ampr_ng_hinweis_lauf", None) is lauf:
+                return
+            self._ampr_ng_hinweis_lauf = lauf
+        try:
+            self._im_hauptfaden(messagebox.showinfo, self._t("ampr.ng_update_emulators_titel"),
+                                self._t("ampr.ng_update_emulators"), parent=eltern or self.root)
+        except Exception as exc:                       # noqa: BLE001 - die Zeile im Protokoll steht schon
+            logger.warning("Hinweis zu ampr-emu-ng nicht darstellbar: %s", exc)
+
     def _ampr_apply_library(
         self, root: str, source_file: str, lib_name: str = "", keep_backup: bool = True
     ) -> bool:
@@ -37388,6 +37426,8 @@ class PS5ConverterGUI:
         self._append_to_log(
             self._t("log.manual.ampr_applied", name=target_name, size=os.path.getsize(target))
         )
+        if target_name == self._AMPR_SPRX_NAME and self._ampr_ist_ng_datei(source_file):
+            self._ampr_ng_hinweis(einmal_je_lauf=True)
         return True
 
     def _ampr_eine_sicherung_zurueck(self, ordner, lib_name: str) -> bool:
@@ -55258,6 +55298,9 @@ class PS5ConverterGUI:
                                                      texte=self._smgen_texte()):
                     melde("!! " + meldung)
 
+            if any(os.path.basename(q) == self._AMPR_SPRX_NAME and self._ampr_ist_ng_datei(q) for q in dateien):
+                melde("!! " + self._t("ampr.ng_update_emulators"))
+                self._ampr_ng_hinweis(eltern=fenster)
             melde("")
             melde(self._t("amprgen.finished"))
             melde(self._t("amprgen.next_steps"))
@@ -63734,6 +63777,8 @@ class PS5ConverterGUI:
             ))
             if self._ampr_ftp_upload_file(ftp, remote_fakelib, chosen["path"], lib_name):
                 done += 1
+                if lib_name == self._AMPR_SPRX_NAME and self._ampr_ist_ng_datei(chosen["path"]):
+                    self._ampr_ng_hinweis()
             else:
                 failed += 1
         return done, failed
