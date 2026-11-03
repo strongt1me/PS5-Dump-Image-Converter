@@ -49669,7 +49669,8 @@ class PS5ConverterGUI:
             protokollschwanz=lambda: list(
                 getattr(self, "_build_log_tail", None) or []),
             fassung=APP_VERSION,
-            letzte_fehler=_LETZTE_FEHLER)
+            letzte_fehler=_LETZTE_FEHLER,
+            betrieb_pruefen=getattr(self, "_betrieb_pruefen", None))
 
     @staticmethod
     def _diagnose_zeile(name: str, wert) -> str:
@@ -50147,6 +50148,150 @@ class PS5ConverterGUI:
             bedienung=self._diagnose_bedienung_messen(),
             bildhelligkeit=self._diagnose_bildhelligkeit_messen(),
             dunkles_design=self._design_ist_dunkel())
+
+    #: Schluessel der Einstellungen, in denen Ordner stehen, in denen das Programm Arbeitsordner und Teildateien anlegt.
+    _BETRIEB_ORDNER_HINWEISE = ("ziel", "temp", "_dir", "dst", "dest")
+
+    def _betrieb_ordner_sammeln(self) -> list[str]:
+        """Wo Arbeitsordner und Teildateien dieses Programms liegen koennen (nur oberste Ebene wird durchsucht)."""
+        ordner: list[str] = [tempfile.gettempdir()]
+        try:
+            ordner.append(self._get_runtime_temp_dir(anlegen=False))
+        except Exception:
+            pass
+        for name in ("dest_path", "temp_path"):
+            try:
+                ordner.append(str(getattr(self, name).get()).strip())
+            except Exception:
+                continue
+        try:
+            with open(self._get_config_path(), "r", encoding="utf-8-sig") as fh:
+                daten = json.load(fh)
+        except Exception:
+            daten = {}
+        if isinstance(daten, dict):
+            for schluessel, wert in daten.items():
+                if (isinstance(wert, str) and wert.strip()
+                        and any(h in str(schluessel).lower() for h in self._BETRIEB_ORDNER_HINWEISE)):
+                    ordner.append(wert.strip())
+        return [o for o in ordner if o and os.path.isdir(o)]
+
+    def _betrieb_pruefen(self, zeilen_je_bauer: dict | None = None):
+        """Die Betriebspruefung: Protokoll, Reste, Prozesse, Ressourcen, Wiederaufnahme, Einstellungen, Texte.
+
+        Dazu liest sie, was Doktor, Werkzeugpflege, Fremdwerkzeuge und die Zusicherungen ohnehin melden - bis zum
+        03.11.2026 zaehlte das nirgends: Oben im Bericht stand "Darstellung: keine Auffaelligkeit", waehrend weiter
+        unten ein ERROR mit Rueckverfolgung, ein fehlender Treiber und fehlende Administratorrechte standen.
+
+        Args:
+            zeilen_je_bauer: Die Zeilen der Berichtsabschnitte (Name des Bauers -> Zeilen), falls der Bericht sie schon
+                gebaut hat; sonst laufen die Bauer hier.
+
+        Returns:
+            Ein ``betriebsdiagnose.Betriebsergebnis``.
+        """
+        from ps5_validator.utils import betriebsdiagnose as bd
+
+        bekannt = zeilen_je_bauer or {}
+
+        def zeilen(name: str):
+            if name in bekannt:
+                return bekannt[name]
+            try:
+                return list(getattr(self, name)())
+            except Exception:
+                logger.debug("Betriebspruefung: %s nicht lesbar", name, exc_info=True)
+                return None
+
+        def messen(funktion):
+            try:
+                return funktion()
+            except Exception:
+                logger.debug("Betriebspruefung: Messung fehlgeschlagen", exc_info=True)
+                return None
+
+        try:
+            arbeit = bool(self._arbeit_laeuft())
+        except Exception:
+            arbeit = False
+
+        def _protokoll():
+            ok, eintraege = bd.protokoll_lesen(os.path.join(tempfile.gettempdir(), "ps5converter.log"))
+            sitzung = None
+            try:
+                import psutil
+                sitzung = datetime.datetime.fromtimestamp(psutil.Process().create_time())
+            except Exception:
+                pass
+            return bd.Protokolllage(eintraege, datetime.datetime.now(), sitzung, ok)
+
+        def _ressourcen():
+            from ps5_validator.utils import ps5_pkg_werkzeug as _pkgwz
+            return bd.ressourcen_messen(arbeit_laeuft=arbeit, getrackt=int(_pkgwz.laufende()))
+
+        def _wiederaufnahme():
+            ok, punkte = bd.wiederaufnahme_lesen(self._checkpoint_file_path())
+            return bd.Wiederaufnahmelage(punkte, datetime.datetime.now(), arbeit, ok)
+
+        def _sprachen():
+            from ps5_validator.utils.i18n import STRINGS as _texte
+            return bd.sprachen_messen(_texte)
+
+        def _abstuerze():
+            abzug = os.path.join(tempfile.gettempdir(), "ps5converter_absturz.txt")
+            try:
+                gross = os.path.getsize(abzug) if os.path.isfile(abzug) else 0
+            except OSError:
+                gross = 0
+            try:
+                aktiv = bool(faulthandler.is_enabled())
+            except Exception:
+                aktiv = False
+            return bd.Absturzlage(len(_LETZTE_FEHLER), gross, abzug, aktiv)
+
+        def _werkzeuge():
+            from ps5_validator.utils import orbispkg as _orb
+            from ps5_validator.utils import ps5_pkg_werkzeug as _wz
+            from ps5_validator.utils import prospero_pkg_tool as _ppt
+            wurzeln = [os.path.dirname(os.path.abspath(__file__))]
+            meipass = getattr(sys, "_MEIPASS", "")
+            if meipass:
+                wurzeln.insert(0, str(meipass))
+            return bd.werkzeuge_messen({
+                "ffpfsc-pkg-tool (PS5 PKG)": lambda: _wz.werkzeug_suchen(wurzeln),
+                "ProsperoPkgTool (PS5 PKG bauen)": lambda: _ppt.werkzeug_suchen(wurzeln),
+                "OrbisPkgTool (PS4 PKG)": _orb.werkzeug_finden,
+            }, dotnet=_wz.dotnet_ordner)
+
+        def _abhaengigkeiten():
+            # Nur im Quelltextbaum: Eine gebaute EXE traegt keine Paket-Metadaten, jedes Paket wuerde fehlen.
+            if getattr(sys, "frozen", False):
+                return None
+            return bd.abhaengigkeiten_messen(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt"))
+
+        ergebnis = bd.pruefe_alles(
+            werkzeuge=messen(_werkzeuge),
+            abhaengigkeiten=messen(_abhaengigkeiten),
+            optimierung=zeilen("_diagnose_optimierung"),
+            protokoll=messen(_protokoll),
+            reste=messen(lambda: bd.Restelage(bd.reste_suchen(self._betrieb_ordner_sammeln()), arbeit)),
+            ressourcen=messen(_ressourcen),
+            wiederaufnahme=messen(_wiederaufnahme),
+            einstellungen=messen(lambda: bd.einstellungen_messen(self._get_config_path())),
+            sprachen=messen(_sprachen),
+            abstuerze=messen(_abstuerze),
+            doktor=zeilen("_diagnose_doktor"),
+            werkzeugpflege=zeilen("_diagnose_werkzeugpflege"),
+            fremdwerkzeuge=zeilen("_diagnose_werkzeuge"),
+            eigenschaften=zeilen("_diagnose_fachpruefungen"))
+        self._letzte_betrieb_pruefung = ergebnis
+        return ergebnis
+
+    def _diagnose_betrieb(self) -> list[str]:
+        """Die Zeilen des Berichtsabschnitts "Betriebspruefung" (fuer die Kommandozeile)."""
+        from ps5_validator.utils import betriebsdiagnose as bd
+        return bd.bericht_zeilen(self._betrieb_pruefen())
 
     #: Ab so vielen Helligkeitsstufen Unterschied ist eine Flaeche von ihrem
     #: Untergrund noch zu unterscheiden. Darunter verschwimmt es. Gemessen am
@@ -68157,12 +68302,15 @@ def _run_anzeige_diagnose(argv: list[str]) -> int:
                 for ueberschrift, bauer in (
                         ("diagnostics.report_section_display", anwendung._diagnose_anzeige),
                         ("diagnostics.report_section_layout", anwendung._diagnose_darstellung),
-                        ("diagnostics.report_section_stability", anwendung._diagnose_laufruhe)):
+                        ("diagnostics.report_section_stability", anwendung._diagnose_laufruhe),
+                        ("diagnostics.report_section_betrieb", anwendung._diagnose_betrieb)):
                     print("")
                     print(anwendung._t(ueberschrift))
                     for zeile in bauer():
                         print(zeile)
-            ergebnis["code"] = 0 if anwendung._diagnose_pruefen().sauber else 1
+            # Betrieb mitzaehlen: Im vollen Bericht hat ihn ``bericht_text`` schon gerechnet.
+            betrieb = getattr(anwendung, "_letzte_betrieb_pruefung", None) or anwendung._betrieb_pruefen()
+            ergebnis["code"] = 0 if (anwendung._diagnose_pruefen().sauber and betrieb.sauber) else 1
         except Exception as exc:
             traceback.print_exc()
             print("Diagnose fehlgeschlagen: %s" % exc, file=sys.stderr)

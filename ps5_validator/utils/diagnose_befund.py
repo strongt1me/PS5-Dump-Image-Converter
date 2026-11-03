@@ -129,7 +129,8 @@ class Diagnosebericht:
                  bauer_holen: Callable[[str], Any] | None = None,
                  protokollschwanz: Callable[[], list] | None = None,
                  fassung: str = "",
-                 letzte_fehler: Any = None) -> None:
+                 letzte_fehler: Any = None,
+                 betrieb_pruefen: Callable[[dict], Any] | None = None) -> None:
         self._programm_ordner = programm_ordner or os.getcwd()
         self._hauptdatei = hauptdatei or __file__
         self.source_path = quelle
@@ -185,6 +186,9 @@ class Diagnosebericht:
         # die nur waechst - so bleibt der Bericht aktuell.
         self._letzte_fehler = ([] if letzte_fehler is None
                                else letzte_fehler)
+        # Die Betriebspruefung (``betriebsdiagnose``): bekommt die Zeilen der Abschnitte (Name des Bauers -> Zeilen),
+        # damit Doktor, Werkzeugpflege usw. nicht ein zweites Mal laufen, und liefert ein ``Betriebsergebnis``.
+        self._betrieb_pruefen = betrieb_pruefen
 
     @staticmethod
     def _diagnose_zeile(name: str, wert) -> str:
@@ -651,19 +655,24 @@ class Diagnosebericht:
             timestamp=datetime.datetime.now().isoformat(timespec="seconds")))
         lines.append(self._t("diagnostics.report_version",
                              version=self._fassung))
+        darstellung = None
         try:
             from ps5_validator.utils import anzeige_diagnose as _ad
             # Die Vorlagen mitgeben: Das Modul traegt seine Saetze nur als
             # Vorgabe, und dieser Bericht steht im Fenster. Der
             # Kommandozeilenlauf (--anzeige-diagnose) ruft dieselbe Funktion
             # ohne Vorlagen und bleibt dadurch deutsch.
+            darstellung = self._diagnose_pruefen()
             lines.append(_ad.zusammenfassung(
-                self._diagnose_pruefen(),
+                darstellung,
                 texte={kennung: self._t("anzeige." + kennung)
                        for kennung in _ad.MELDUNGEN}))
         except Exception as exc:
             lines.append(self._t("diagnostics.report_display_check_failed",
                                  error=exc))
+        # Hier kommt spaeter das Gesamturteil hinein (Darstellung + Betrieb); es steht oben, wird aber erst gerechnet,
+        # wenn die Abschnitte gelaufen sind.
+        gesamt_pos = len(lines)
         lines.append("")
         lines.append(self._t("diagnostics.report_section_system"))
         lines.append(self._t("diagnostics.report_os", os=platform.platform()))
@@ -704,6 +713,7 @@ class Diagnosebericht:
             lines.append(self._t("diagnostics.report_settings_read_failed",
                                  error=exc))
 
+        zeilen_je_bauer: dict[str, list[str]] = {}
         for schluessel, name in self.ABSCHNITTE:
             lines.append("")
             lines.append(self._t(schluessel))
@@ -711,10 +721,27 @@ class Diagnosebericht:
                 bauer = self._bauer_holen(name)
                 if bauer is None:
                     continue
-                lines.extend(bauer())
+                zeilen = list(bauer())
+                zeilen_je_bauer[name] = zeilen
+                lines.extend(zeilen)
             except Exception as exc:
                 # Ein Abschnitt darf den Bericht nie verhindern - er ist
                 # genau dann gefragt, wenn etwas nicht stimmt.
+                lines.append("Abschnitt fehlgeschlagen: %s" % exc)
+
+        # Betriebspruefung: liest, was die Abschnitte oben schon gemeldet haben, und misst dazu Protokoll, Reste,
+        # Prozesse, Ressourcen, Wiederaufnahmepunkte, Einstellungen und Uebersetzungen.
+        if self._betrieb_pruefen is not None:
+            lines.append("")
+            lines.append(self._t("diagnostics.report_section_betrieb"))
+            try:
+                from ps5_validator.utils import betriebsdiagnose as _bd
+                betrieb = self._betrieb_pruefen(zeilen_je_bauer)
+                texte = self._betrieb_texte(_bd)
+                lines.extend(_bd.bericht_zeilen(betrieb, texte))
+                if darstellung is not None and hasattr(darstellung, "befunde"):
+                    lines.insert(gesamt_pos, _bd.gesamturteil(darstellung, betrieb, texte))
+            except Exception as exc:
                 lines.append("Abschnitt fehlgeschlagen: %s" % exc)
 
         lines.append("")
@@ -738,6 +765,16 @@ class Diagnosebericht:
         else:
             lines.append(self._t("diagnostics.report_no_log"))
         return "\n".join(lines) + "\n"
+
+    def _betrieb_texte(self, modul) -> "dict[str, str]":
+        """Die uebersetzten Kopfzeilen der Betriebspruefung; ohne Uebersetzer bleibt es bei den deutschen Vorgaben."""
+        texte = {}
+        for kennung in modul.MELDUNGEN:
+            schluessel = "betrieb." + kennung
+            text = self._t(schluessel)
+            if text and text != schluessel:
+                texte[kennung] = text
+        return texte
 
     def _wert_oder_strich(self, name: str) -> str:
         """Liest ein Werteobjekt mit .get(), sonst einen Gedankenstrich.
