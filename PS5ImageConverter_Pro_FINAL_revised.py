@@ -14552,8 +14552,25 @@ class PS5ConverterGUI:
         # Zeitpunkt beantwortet; wer abgebrochen hat, ist laengst heraus.
         self._fenstergeometrie_merken()
 
+        # Aufgabe 7: Die Rueckfrage oben galt auch ihr (_arbeit_laeuft); der
+        # Abbau unten bricht ihre Laeufe ab und wartet auf ihre Werkzeuge.
+        aufgabe7 = self._aufgabe7_bereiche()
+
         # Dismount + destroy in Hintergrund-Thread damit GUI nicht einfriert
         def _shutdown():
+            # Aufgabe 7 zuerst: Ihre Werkzeuge schreiben ins Ziel und halten
+            # die Dateien offen, solange sie laufen - danach raeumen die
+            # Bereiche ihre halben Ergebnisse weg.
+            for _bereich in aufgabe7:
+                try:
+                    _bereich.programmende()
+                except Exception:
+                    logger.exception("Aufgabe 7 beim Beenden nicht abgebaut")
+            try:
+                from ps5_validator.utils import ps5_pkg_werkzeug as _pkgwz
+                _pkgwz.alle_beenden()
+            except Exception:
+                logger.exception("Werkzeuge von Aufgabe 7 nicht beendet")
             # Zuerst die Rueckstellung des Mitschnitt-Assistenten: Sie braucht
             # die Konsole und das Fenster noch. Blieb dabei etwas offen, muss
             # es der Anwender lesen koennen, bevor das Hauptprotokoll mit dem
@@ -26482,7 +26499,24 @@ class PS5ConverterGUI:
         """
         return bool(getattr(self, "is_running", False)
                     or int(getattr(self, "_pkg_merge_laeuft", 0) or 0) > 0
-                    or int(getattr(self, "_bibliothek_uebertragungen", 0) or 0) > 0)
+                    or int(getattr(self, "_bibliothek_uebertragungen", 0) or 0) > 0
+                    or any(_s.beschaeftigt() for _s in self._aufgabe7_bereiche()))
+
+    def _aufgabe7_bereiche(self) -> list:
+        """Die gebauten Bereiche von Aufgabe 7 "PKG / FPKG" (PS4 PKG, PS5 PKG).
+
+        Sie arbeiten in eigenen Faeden mit eigenen Werkzeugen, nicht ueber
+        ``is_running``. Bis zum 03.11.2026 kannte das Beenden sie nicht: keine
+        Rueckfrage, kein Abbruch - ``OrbisPkgTool``/``ffpfsc-pkg-tool`` liefen
+        nach dem Schliessen weiter und hielten die Dateien im Ziel offen.
+        """
+        bereiche = []
+        for _attr in (pkg_fpkg_seite.ps4_dump_image.FENSTER_ATTRIBUT,
+                      pkg_fpkg_seite.ps5_pkg_fenster.FENSTER_ATTRIBUT):
+            _bereich = getattr(self, _attr, None)
+            if _bereich is not None and callable(getattr(_bereich, "beschaeftigt", None)):
+                bereiche.append(_bereich)
+        return bereiche
 
     def _mitschnitt_laeuft(self) -> bool:
         """Laeuft ein AMPR-Mitschnitt-Assistent - samt seiner Rueckstellung?

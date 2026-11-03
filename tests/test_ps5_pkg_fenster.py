@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -670,8 +671,114 @@ class FensterTests(unittest.TestCase):
             self.assertIsNotNone(f._job)
             f._abbrechen()
             self.assertTrue(_warten(lambda: f._job is None, 10))
-        self.assertIn("Fehlgeschlagen", f.auftrag_var.get())
+        # Seit 03.11.2026: ein Abbruch ist kein Fehlschlag (vorher "Fehlgeschlagen" und "[FEHLER] abgebrochen").
+        self.assertEqual(STRINGS["ps4pkg.status_cancelled"]["de"], f.auftrag_var.get())
+        self.assertNotIn("[FEHLER]", f.protokoll.get("1.0", "end"))
+        self.assertEqual(0.0, float(f.balken.cget("value")))
+        self.assertEqual("0 %", f.schritt_var.get())
         self.assertEqual([], [o for o in f._staging if os.path.isdir(o)], "der halbe Entpackordner ist weg")
+
+    # ---------------- Anzeige und Abbruch (Meldung 03.11.2026) ----------------
+    @staticmethod
+    def _langsam_mit_ordner(werkzeug, paket, ziel, *, abbruch=None, **_kw):
+        """Ein Entpacken, das einen halben Ordner anlegt und bis zum Abbruch laeuft."""
+        Path(ziel).mkdir(parents=True, exist_ok=True)
+        Path(ziel, "halb.bin").write_bytes(b"x")
+        ende = time.time() + 20
+        while time.time() < ende:
+            if abbruch and abbruch():
+                raise wz.Fehler("abgebrochen")
+            time.sleep(0.02)
+        return "OK"
+
+    def test_ein_neu_gewaehltes_paket_beginnt_bei_null(self) -> None:
+        """Nach einem fertigen Lauf standen beide Balken auf 100 % - auch fuer das naechste, noch unbearbeitete Spiel."""
+        self._laden("alpha.pkg")
+        f = self.f
+        f._anzeige_setzen(100, 100)
+        f.auftrag_var.set("Fertig. irgendwas")
+        f._paket_waehlen(f.aktuell)
+        self.assertEqual(0.0, float(f.balken.cget("value")))
+        self.assertEqual(0.0, float(f.balken_gesamt.cget("value")))
+        self.assertEqual("0 %", f.schritt_var.get())
+        self.assertEqual(STRINGS["ps5pkg.job_ready"]["de"], f.auftrag_var.get())
+
+    def test_ein_abgebrochenes_entpacken_hinterlaesst_keinen_halben_ordner(self) -> None:
+        self._laden("alpha.pkg")
+        f = self.f
+        ziel = os.path.join(self.ordner, "ziel_abbruch")
+        os.makedirs(ziel)
+        f.ziel_var.set(ziel)
+        f.aktion_var.set("extrahieren")
+        dump = os.path.join(ziel, "Alpha Spiel [PPSA00001]")
+        with mock.patch.object(wz, "extrahieren", side_effect=self._langsam_mit_ordner):
+            f._starten()
+            self.assertTrue(_warten(lambda: os.path.isfile(os.path.join(dump, "halb.bin")), 5), "Gegenprobe: halb da")
+            f._abbrechen()
+            self.assertTrue(_warten(lambda: f._job is None, 10))
+        self.assertFalse(os.path.exists(dump))
+        self.assertEqual(STRINGS["ps4pkg.status_cancelled"]["de"], f.auftrag_var.get())
+        self.assertEqual(STRINGS["ps5pkg.status_idle"]["de"], f.status_var.get())
+
+    def test_pruefen_zeigt_einen_wandernden_balken_und_endet_bei_100(self) -> None:
+        self._laden("alpha.pkg")
+        f = self.f
+        f.aktion_var.set("pruefen")
+
+        def pruefen(*_a, **_k):
+            time.sleep(0.6)
+            return {"pass": 3, "warn": 0, "fail": 0, "results": []}
+
+        with mock.patch.object(wz, "pruefen", side_effect=pruefen):
+            f._starten()
+            _pumpen(0.2)
+            self.assertTrue(f._wandert)
+            self.assertEqual("…", f.schritt_var.get())
+            self.assertNotEqual(STRINGS["ps5pkg.status_idle"]["de"], f.status_var.get(), "die Statuszeile nennt den Lauf")
+            self.assertTrue(_warten(lambda: f._job is None, 10))
+        self.assertFalse(f._wandert)
+        self.assertEqual("100 %", f.schritt_var.get())
+        self.assertEqual(100.0, float(f.balken.cget("value")))
+
+    def test_programmende_bricht_ab_und_raeumt_auf(self) -> None:
+        """Beim Schliessen des Programms lief das Werkzeug weiter und hielt den halben Ordner offen (03.11.2026)."""
+        self._laden("alpha.pkg")
+        f = self.f
+        ziel = os.path.join(self.ordner, "ziel_ende")
+        os.makedirs(ziel)
+        f.ziel_var.set(ziel)
+        f.aktion_var.set("extrahieren")
+        dump = os.path.join(ziel, "Alpha Spiel [PPSA00001]")
+        with mock.patch.object(wz, "extrahieren", side_effect=self._langsam_mit_ordner):
+            f._starten()
+            self.assertTrue(_warten(lambda: os.path.isdir(dump), 5))
+            self.assertTrue(f.beschaeftigt())
+            self.assertTrue(self.app._arbeit_laeuft(), "das Beenden fragt nach")
+            f.programmende(warten=10)
+            self.assertFalse(os.path.exists(dump))
+            self.assertTrue(_warten(lambda: f._job is None, 10))
+        f._abbruch = False
+        self.assertFalse(f.beschaeftigt())
+
+    def test_ein_spielordner_heisst_im_protokoll_wie_ihn_aufgabe_1_benennt(self) -> None:
+        """Aufgabe 1 nennt das Ergebnis nach dem Ordner ("PPSA19015 Arcade Game Zone.exfat"), nicht nach Titel und ID."""
+        self._laden("alpha.pkg")
+        f = self.f
+        f.aktion_var.set("umwandeln")
+        f._format_waehlen("exfat")
+        alt = f.aktuell
+        self.addCleanup(setattr, f, "aktuell", alt)
+        f.aktuell = wz.PaketInfo(pfad=os.path.join(self.ordner, "PPSA19015 Arcade Game Zone"), typ=wz.TYP_ORDNER,
+                                 titel="Arcade Game Zone", title_id="PPSA19015")
+        self.assertTrue(f.aktuell.ist_ordner)
+        self.assertEqual("PPSA19015 Arcade Game Zone.exfat", f._ziel_name())
+        # Gegenprobe: ein Paket behaelt den Anzeigenamen.
+        f.aktuell = alt
+        self.assertEqual(fz.anzeigename(alt) + ".exfat", f._ziel_name())
+
+    def test_die_dateizeile_zerschneidet_keine_meldung(self) -> None:
+        self.assertTrue(fz._PFADARTIG.match("Media/StreamingAssets/a.bundle"))
+        self.assertFalse(fz._PFADARTIG.match("[finalize] NAPS plaintext integrity tables (SHA3/ihsh/rhsh): started"))
 
     # ---------------- Umwandeln = entpacken + Aufgabe 1 ----------------
     def _aufgabe_1_attrappe(self, ok: bool = True, laeuft: bool = True, dauer: float = 0.8):
@@ -731,6 +838,74 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(f.auftrag_var.get().startswith("Fertig"))
         self.assertEqual([], [o for o in f._staging if os.path.isdir(o)], "der Entpackordner wird abgeraeumt")
         self.assertFalse(os.path.isdir(os.path.dirname(gesehen["quelle"])))
+
+    def test_waehrend_aufgabe_1_zeigt_die_seite_deren_fortschritt(self) -> None:
+        """Nach dem Entpacken stand die Seite minutenlang auf 100 % / 50 % still (03.11.2026)."""
+        self._zustand_sichern()
+        self._laden("alpha.pkg")
+        f = self.f
+        ziel = os.path.join(self.ordner, "ziel_stand")
+        os.makedirs(ziel)
+        f.ziel_var.set(ziel)
+        f.aktion_var.set("umwandeln")
+        f._format_waehlen("ffpfsc")
+        starten, _gesehen = self._aufgabe_1_attrappe(dauer=3.0)
+        alt = self.app.progress_var.get()
+        self.addCleanup(self.app.progress_var.set, alt)
+        with mock.patch.object(wz, "extrahieren", side_effect=self._entpacken_attrappe()), \
+                mock.patch.object(self.app, "_launch_task", side_effect=starten):
+            f._starten()
+            self.assertTrue(_warten(lambda: f._uebergabe is not None and f._uebergabe.get("gesehen"), 10))
+            self.app.progress_var.set(40.0)
+            _pumpen(0.6)
+            self.assertEqual(40.0, float(f.balken.cget("value")))
+            self.assertEqual(70.0, float(f.balken_gesamt.cget("value")))
+            self.assertEqual("40 %", f.schritt_var.get())
+            self.assertTrue(_warten(lambda: f._uebergabe is None, 15))
+        self.assertEqual(100.0, float(f.balken_gesamt.cget("value")))
+
+    def test_abbruch_waehrend_aufgabe_1_wartet_auf_mkpfs_und_raeumt_das_ziel(self) -> None:
+        """mkpfs laeuft nach dem Abbruch im Programm weiter: ohne Warten FileNotFoundError und eine halbe ".tmp", mit
+        Warten auf den Faden allein eine fertige ".ffpfsc" trotz Abbruch (gemessen 03.11.2026)."""
+        self._zustand_sichern()
+        self._laden("alpha.pkg")
+        f = self.f
+        app = self.app
+        ziel = os.path.join(self.ordner, "ziel_mkpfs")
+        os.makedirs(ziel)
+        Path(ziel, "fremd.txt").write_text("bleibt")
+        f.ziel_var.set(ziel)
+        f.aktion_var.set("umwandeln")
+        f._format_waehlen("ffpfsc")
+        mkpfs = threading.Event()
+        alt_pending = getattr(app, "_pending_mkpfs_engine_done", None)
+        self.addCleanup(setattr, app, "_pending_mkpfs_engine_done", alt_pending)
+        def starten() -> None:                               # laeuft bis zum Abbruch (kein spaeter Rueckruf)
+            app.is_running = True
+            app._last_task_ok = False
+
+        def abbrechen() -> None:
+            app.is_running = False
+            app._pending_mkpfs_engine_done = mkpfs           # mkpfs schreibt noch
+            Path(ziel, "Alpha Spiel [PPSA00001].ffpfsc.tmp").write_bytes(b"halb")
+
+        with mock.patch.object(wz, "extrahieren", side_effect=self._entpacken_attrappe()), \
+                mock.patch.object(app, "_launch_task", side_effect=starten), \
+                mock.patch.object(app, "_kill_task", side_effect=abbrechen):
+            f._starten()
+            self.assertTrue(_warten(lambda: f._uebergabe is not None and f._uebergabe.get("gesehen"), 10))
+            staging = list(f._staging)
+            f._abbrechen()
+            _pumpen(1.0)
+            self.assertIsNotNone(f._uebergabe, "solange mkpfs schreibt, wartet die Seite")
+            self.assertTrue(any(os.path.isdir(o) for o in staging), "der Arbeitsordner bleibt so lange")
+            Path(ziel, "Alpha Spiel [PPSA00001].ffpfsc").write_bytes(b"fertig nach dem Abbruch")
+            mkpfs.set()
+            self.assertTrue(_warten(lambda: f._uebergabe is None, 10))
+        self.assertEqual(["fremd.txt"], sorted(os.listdir(ziel)), "nur das Ergebnis dieses Laufs ist weg")
+        self.assertEqual([], [o for o in staging if os.path.isdir(o)])
+        self.assertEqual(STRINGS["ps4pkg.status_cancelled"]["de"], f.auftrag_var.get())
+        self.assertEqual(0.0, float(f.balken_gesamt.cget("value")))
 
     def test_hat_aufgabe_1_nichts_gebaut_wird_es_nicht_als_fertig_gemeldet(self) -> None:
         self._zustand_sichern()

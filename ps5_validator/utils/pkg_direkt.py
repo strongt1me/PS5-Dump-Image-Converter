@@ -336,6 +336,8 @@ class _Uebertrag:
         leser: "_FehlerLeser | None" = None
         try:
             prozess = self._starten(planpfad)
+            with wz._LAUFEND_SPERRE:                         # noqa: SLF001 - beendet beim Programmende (alle_beenden)
+                wz._LAUFEND.add(prozess)                     # noqa: SLF001
             leser = _FehlerLeser(prozess.stderr, self.zeile)
             leser.start()
             for _wunsch, datei in plan:
@@ -371,6 +373,9 @@ class _Uebertrag:
         finally:
             if prozess is not None and prozess.poll() is None:
                 wz._beenden(prozess)                         # noqa: SLF001
+            if prozess is not None:
+                with wz._LAUFEND_SPERRE:                     # noqa: SLF001
+                    wz._LAUFEND.discard(prozess)             # noqa: SLF001
             if leser is not None:
                 leser.join(timeout=2)
             try:

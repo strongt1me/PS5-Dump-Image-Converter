@@ -191,7 +191,11 @@ class FensterTests(unittest.TestCase):
         self.assertEqual("100 %", f.prozent_var.get())
 
     def test_nach_dem_einlesen_steht_der_balken_nicht_irgendwo(self) -> None:
-        """Meldung 07.10.2026: Der Balken blieb nach dem Einlesen auf dem Wert des letzten Pakets stehen."""
+        """Meldung 07.10.2026: Der Balken blieb nach dem Einlesen auf dem Wert des letzten Pakets stehen.
+
+        Seit 03.11.2026 (Meldung: "zeigt 100 %, obwohl noch gar nichts konvertiert wurde") steht er danach auf 0 - das
+        Einlesen ist nicht der Auftrag.
+        """
         from ps5_validator.utils import ps4pkg_bibliothek as bib
         f = self._fenster()
         f._balken_setzen(65.0)
@@ -199,7 +203,8 @@ class FensterTests(unittest.TestCase):
         defekt = bib.PkgEintrag(pfad="E:/y.pkg", lesbar=False, fehler="Pruefsumme falsch")
         f._z.update(scan_fertig=True, scan_fehler="", scan_ergebnis=([fremd, defekt], None))
         f._scan_fertig()
-        self.assertEqual("100 %", f.prozent_var.get())
+        self.assertEqual("0 %", f.prozent_var.get())
+        self.assertEqual(0.0, float(f.balken.cget("value")))
         text = f.protokoll.get("1.0", "end")
         self.assertIn(STRINGS["ps4dib.nicht_ps4_header"]["de"].format(anzahl=1), text)
         self.assertIn(STRINGS["ps4pkg.rejected_header"]["de"].format(anzahl=1), text)
@@ -282,6 +287,34 @@ class FensterTests(unittest.TestCase):
         text = f.status_var.get()
         self.assertEqual(STRINGS["ps4dib.status_abbruch"]["de"].format(titel="Testspiel", text="Räume auf …"), text)
         self.assertNotIn("Rest", text)
+
+    def test_ein_abgebrochener_oder_gescheiterter_stapel_steht_bei_null(self) -> None:
+        """Gemessen 03.11.2026: Nach ABBRECHEN stand "Vorgang abgebrochen." neben einem Balken auf 100 %."""
+        from ps5_validator.utils import ps4pkg_aufgaben as au
+        f = self._fenster()
+        for status, text in ((au.ABGEBROCHEN, STRINGS["ps4pkg.status_cancelled"]["de"]),
+                             (au.FEHLER, STRINGS["ps4dib.status_mit_fehlern"]["de"].format(fehler=1, gesamt=1))):
+            with self.subTest(status=status):
+                a = au.Aufgabe(kennung=5, art="abbild", titel="Testspiel", status=status, fehler="x")
+                f._batch, f._gemeldet = [5], set()
+                f._stapel_anzeigen([a.kopie()])
+                self.assertEqual("0 %", f.prozent_var.get())
+                self.assertEqual(text, f.status_var.get())
+        # Gegenprobe: ein fertiger Stapel steht bei 100 %.
+        a = au.Aufgabe(kennung=6, art="dump", titel="Testspiel", status=au.FERTIG, ergebnis="E:/CUSA00775")
+        f._batch, f._gemeldet = [6], set()
+        f._stapel_anzeigen([a.kopie()])
+        self.assertEqual("100 %", f.prozent_var.get())
+        self.assertEqual(STRINGS["ps4dib.status_fertig"]["de"].format(path="E:/CUSA00775"), f.status_var.get(),
+                         "ein Dump-Ordner ist kein Abbild")
+
+    def test_programmende_bricht_die_warteschlange_ab(self) -> None:
+        f = self._fenster()
+        with mock.patch.object(f.warteschlange, "alle_abbrechen") as abbrechen:
+            f.programmende(warten=0)
+        abbrechen.assert_called_once_with()
+        self.assertTrue(f._z["scan_abbruch"])
+        self.assertFalse(f.beschaeftigt())
 
     def test_ausserhalb_des_stapels_gilt_dasselbe(self) -> None:
         from ps5_validator.utils import ps4pkg_aufgaben as au

@@ -953,6 +953,56 @@ class OrdnenAbbruchTests(unittest.TestCase):
             self.assertEqual({"dateien": 1, "systemdateien": 0}, au.dump_ordner_machen(str(roh)))
 
 
+class GesperrtesVerschiebenTests(unittest.TestCase):
+    """Gemessen 03.11.2026 (PS4 Tetris -> ffpfsc): ``Image0/Media -> Media`` scheiterte gleich nach dem Entpacken mit
+    WinError 5 - frische Dateien hielt Windows kurz offen. Das Ordnen versucht es jetzt erneut."""
+
+    def _mit_sperre(self, fehlschlaege: int):
+        """Ein entpacktes Spiel und ein ``os.replace``, das ``fehlschlaege`` Mal "Zugriff verweigert" meldet."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        roh = Path(tmp) / "roh"
+        (roh / "Image0" / "Media").mkdir(parents=True)
+        (roh / "Image0" / "Media" / "a.bin").write_bytes(b"x")
+        echt = os.replace
+        versuche: list = []
+
+        def ersetzen(von, nach):
+            versuche.append(von)
+            if len(versuche) <= fehlschlaege:
+                raise PermissionError(5, "Zugriff verweigert")
+            echt(von, nach)
+        return roh, versuche, ersetzen
+
+    def test_ein_kurz_gesperrter_ordner_wird_doch_verschoben(self) -> None:
+        roh, versuche, ersetzen = self._mit_sperre(2)
+        with mock.patch.object(au.os, "replace", side_effect=ersetzen), mock.patch.object(au, "ERSETZEN_PAUSE", 0.01):
+            au.dump_ordner_machen(str(roh))
+        self.assertTrue((roh / "Media" / "a.bin").is_file())
+        self.assertEqual(3, len(versuche))
+
+    def test_eine_bleibende_sperre_endet_mit_dem_fehler(self) -> None:
+        roh, versuche, ersetzen = self._mit_sperre(10 ** 6)
+        with mock.patch.object(au.os, "replace", side_effect=ersetzen), mock.patch.object(au, "ERSETZEN_PAUSE", 0.0):
+            with self.assertRaises(PermissionError):
+                au.dump_ordner_machen(str(roh))
+        self.assertEqual(au.ERSETZEN_VERSUCHE, len(versuche))
+
+    def test_der_abbruch_wartet_nicht_auf_die_sperre(self) -> None:
+        roh, versuche, ersetzen = self._mit_sperre(10 ** 6)
+        gefragt: list = []
+
+        def pruefen() -> None:
+            gefragt.append(1)
+            if len(gefragt) > 2:
+                raise au.AufgabeAbgebrochen()
+
+        with mock.patch.object(au.os, "replace", side_effect=ersetzen), mock.patch.object(au, "ERSETZEN_PAUSE", 0.0):
+            with self.assertRaises(au.AufgabeAbgebrochen):
+                au.dump_ordner_machen(str(roh), pruefen=pruefen)
+        self.assertLess(len(versuche), au.ERSETZEN_VERSUCHE)
+
+
 class AufraeumenNachAbbruchTests(unittest.TestCase):
     """Nach einem Abbruch wird der Arbeitsordner im Hintergrund geloescht (09.10.2026).
 

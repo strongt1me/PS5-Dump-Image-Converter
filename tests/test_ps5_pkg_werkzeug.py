@@ -106,6 +106,63 @@ class LaufenTests(unittest.TestCase):
         with self.assertRaises(wz.Fehler):
             wz.laufen(os.path.join(tempfile.gettempdir(), "gibt-es-bestimmt-nicht.exe"), [])
 
+    def test_der_abbruch_wirkt_auch_wenn_das_werkzeug_schweigt(self) -> None:
+        """Gemessen 03.11.2026: ``read`` blockierte, solange das Werkzeug nichts schrieb - ABBRECHEN wirkte erst nach
+        Sekunden, beim Programmende gar nicht. Gegenprobe: Ohne den Abbruch laeuft derselbe Prozess weiter."""
+        code = "import time; time.sleep(60)"
+        abbrechen = threading.Event()
+        threading.Timer(0.5, abbrechen.set).start()
+        start = time.time()
+        rc, _aus = wz.laufen(sys.executable, ["-c", code], abbruch=abbrechen.is_set)
+        self.assertEqual(-1, rc)
+        self.assertLess(time.time() - start, 10)
+        self.assertEqual(0, wz.laufende())
+
+    def test_nach_dem_abbruch_startet_kein_werkzeug_mehr(self) -> None:
+        with mock.patch.object(wz.subprocess, "Popen") as popen:
+            self.assertEqual((-1, ""), wz.laufen("x.exe", ["list-inner", "a.pkg"], abbruch=lambda: True))
+        popen.assert_not_called()
+
+    def test_alle_beenden_trifft_den_laufenden_prozess(self) -> None:
+        """Das Programmende beendet jedes Werkzeug - auch eines ohne Abbruch-Rueckruf (das Schweigen in ``read``)."""
+        ergebnis: dict = {}
+
+        def lauf() -> None:
+            ergebnis["rc"] = wz.laufen(sys.executable, ["-c", "import time; time.sleep(60)"])[0]
+
+        faden = threading.Thread(target=lauf, daemon=True)
+        faden.start()
+        ende = time.time() + 10
+        while not wz.laufende() and time.time() < ende:
+            time.sleep(0.05)
+        self.assertEqual(1, wz.laufende(), "Gegenprobe: der Prozess laeuft")
+        self.assertEqual(1, wz.alle_beenden())
+        faden.join(15)
+        self.assertFalse(faden.is_alive())
+        self.assertEqual(0, wz.laufende())
+        self.assertNotEqual(0, ergebnis.get("rc"))
+
+    def test_abbruch_beim_lesen_des_inhalts_entpackt_nicht_mehr(self) -> None:
+        """Gemessen 03.11.2026: Nach ABBRECHEN waehrend "Paketinhalt wird gelesen" startete das Entpacken trotzdem."""
+        gestartet: list = []
+
+        def laufen(werkzeug, argumente, **_kw):
+            gestartet.append(argumente[0])
+            return 0, "OK"
+
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "baum", return_value=[
+                {"path": "a", "type": "file", "size": 1}]), mock.patch.object(wz, "laufen", side_effect=laufen):
+            with self.assertRaises(wz.Fehler) as fehler:
+                wz.extrahieren("werkzeug", "x.pkg", os.path.join(t, "ziel"), abbruch=lambda: True, arbeitsordner=t)
+            self.assertEqual("abgebrochen", str(fehler.exception))
+            self.assertEqual([], [n for n in os.listdir(t) if n.startswith("ps5conv_teile_")])
+        self.assertEqual([], gestartet)
+        # Gegenprobe: ohne Abbruch wird entpackt.
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "baum", return_value=[
+                {"path": "a", "type": "file", "size": 1}]), mock.patch.object(wz, "laufen", side_effect=laufen):
+            wz.extrahieren("werkzeug", "x.pkg", os.path.join(t, "ziel"), abbruch=lambda: False, arbeitsordner=t)
+        self.assertEqual(["extract-inner"], gestartet)
+
 
 class AuswertungTests(unittest.TestCase):
 

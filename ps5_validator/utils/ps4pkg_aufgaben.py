@@ -374,6 +374,30 @@ def zielordner_name(e: PkgEintrag) -> str:
 #: Nach so vielen verschobenen Dateien meldet sich :func:`_verschmelzen` wieder.
 ORDNEN_SCHRITT = 250
 
+#: Wie oft und in welchem Abstand (Sekunden) :func:`_ersetzen` ein verweigertes Verschieben wiederholt.
+ERSETZEN_VERSUCHE = 20
+ERSETZEN_PAUSE = 0.5
+
+
+def _ersetzen(von: str, nach: str, pruefen: "Callable[[], None] | None" = None) -> None:
+    """``os.replace`` - wiederholt, solange Windows "Zugriff verweigert" meldet.
+
+    Gemessen am 03.11.2026 (PS4 Tetris -> ffpfsc, erster Lauf): Gleich nach dem Entpacken scheiterte
+    ``Image0/Media -> Media`` mit WinError 5; der zweite Lauf ging durch. Frisch geschriebene Dateien haelt der
+    Virenscanner oder die Indizierung kurz offen - ein Ordner darueber laesst sich so lange nicht umbenennen.
+    """
+    for versuch in range(ERSETZEN_VERSUCHE):
+        try:
+            os.replace(von, nach)
+            return
+        except PermissionError:
+            if versuch == ERSETZEN_VERSUCHE - 1:
+                raise
+            logger.debug("Verschieben verweigert (%s), neuer Versuch", von)
+            if pruefen is not None:
+                pruefen()
+            time.sleep(ERSETZEN_PAUSE)
+
 
 def _verschmelzen(quelle: str, ziel: str, melden: "Callable[[int], None] | None" = None,
                   pruefen: "Callable[[], None] | None" = None) -> int:
@@ -412,10 +436,10 @@ def _verschmelzen(quelle: str, ziel: str, melden: "Callable[[int], None] | None"
                 else:
                     if os.path.exists(_lang(nach)):
                         os.remove(_lang(nach))
-                    os.replace(_lang(von), _lang(nach))
+                    _ersetzen(_lang(von), _lang(nach), pruefen)
                     melden_zaehlen(sum(len(f) for _, _, f in os.walk(_lang(nach))))
             else:
-                os.replace(_lang(von), _lang(nach))
+                _ersetzen(_lang(von), _lang(nach), pruefen)
                 melden_zaehlen(1)
 
     lauf(quelle, ziel)

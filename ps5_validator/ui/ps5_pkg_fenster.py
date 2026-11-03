@@ -32,6 +32,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from typing import Callable
@@ -86,6 +87,8 @@ BAU_PLATZ_MINDEST = 1.05
 ENTPACKT_FAKTOR = 1.7
 
 _UNZULAESSIG = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+#: Ein Pfad im Spiel (``Media/a/b.bundle``) - ohne Klammern und Doppelpunkt, die eine Meldung des Werkzeugs traegt.
+_PFADARTIG = re.compile(r"^[^()\[\]:]+$")
 
 
 def _haupt(gui):
@@ -233,6 +236,7 @@ class Ps5PkgFenster:
                          "gelesen": [], "lesen_laeuft": 0, "scan": []}
         self._abbruch = False
         self._schliesst = False
+        self._wandert = False                      # Schrittbalken im unbestimmten Modus (_balken_wandern)
         self._takt_id = None
         self._job: "dict | None" = None            # laufender Auftrag
         self._uebergabe: "dict | None" = None      # Hand-off an Aufgabe 1
@@ -1301,11 +1305,13 @@ class Ps5PkgFenster:
                     else:
                         info = wz.lesen(werkzeug, pfad, arbeit, passcode=self._passcode(), popen_extra=popen_extra)
                     fertig.append(info)
-                except wz.Fehler as exc:
-                    self._melden(self.t("ps5pkg.log_read_failed", name=os.path.basename(pfad), grund=str(exc)))
                 except Exception as exc:  # noqa: BLE001
-                    logger.exception("Paket lesen")
-                    self._melden(self.t("ps5pkg.log_read_failed", name=os.path.basename(pfad), grund=str(exc)))
+                    if not isinstance(exc, wz.Fehler):
+                        logger.exception("Paket lesen")
+                    text = self.t("ps5pkg.log_read_failed", name=os.path.basename(pfad), grund=str(exc))
+                    self._melden(text)
+                    with self._sperre:
+                        self._z["lesefehler"] = text
             with self._sperre:
                 self._z["gelesen"].append((fertig, waehlen))
                 self._z["lesen_laeuft"] -= 1
@@ -1330,7 +1336,18 @@ class Ps5PkgFenster:
                 self._paket_waehlen(gewaehlen_info=gewaehlt)
         elif self.aktuell is None and self.pakete:
             self._paket_waehlen(gewaehlen_info=self.pakete[0])
-        self._status(self.t("ps5pkg.status_idle"))
+        self._status(self._lese_status())
+
+    def _lese_status(self) -> str:
+        """Die Statuszeile nach dem Lesen: "Bereit." - oder warum das zuletzt gewaehlte Paket nicht lesbar war.
+
+        Bis zum 03.11.2026 stand nach einem unlesbaren Paket nur "Bereit." da, und STARTEN blieb ohne Erklaerung grau.
+        """
+        if self._job is not None:
+            return str(self.status_var.get())
+        with self._sperre:
+            fehler, self._z["lesefehler"] = self._z.get("lesefehler", ""), ""
+        return fehler or self.t("ps5pkg.status_idle")
 
     def _bibliothek_speichern(self) -> None:
         self._merken(EINST_BIBLIOTHEK, [i.pfad for i in self.pakete])
@@ -1522,6 +1539,8 @@ class Ps5PkgFenster:
     def _paket_waehlen(self, gewaehlen_info: "wz.PaketInfo", aus_liste: bool = False) -> None:
         self.aktuell = gewaehlen_info
         info = gewaehlen_info
+        if self._job is None and self._uebergabe is None:
+            self._anzeige_zuruecksetzen()
         self.paket_titel.configure(text="%s — %s" % (info.title_id, info.titel) if info.title_id and info.titel
                                    else (info.titel or os.path.basename(info.pfad)))
         self.paket_pfad.configure(text="%s · %s" % (info.pfad, self._fmt(info.groesse)))
@@ -1543,10 +1562,9 @@ class Ps5PkgFenster:
                         if hasattr(self, "paket_playgo") and self.aktuell and self.aktuell.pfad == p:
                             self.paket_playgo.configure(
                                 text=self.t("pkg.playgo_hinweis", datei=merkmal) if merkmal else "")
-                    try:
-                        self.after(0, _ui)
-                    except Exception:
-                        pass
+                    # Die Seite hat kein eigenes ``after`` (``self.after`` warf hier AttributeError, still verschluckt:
+                    # der PlayGo-Hinweis eines Pakets erschien nie) - der Fensterfaden uebernimmt.
+                    self.g._hauptfaden_planen(_ui)
                 import threading as _threading
                 _threading.Thread(target=_pruefe_archiv_playgo, daemon=True).start()
         # Was fuer diese Quelle nicht geht, springt auf den Vorgabewert zurueck (ohne es zu speichern).
@@ -1634,6 +1652,10 @@ class Ps5PkgFenster:
         if self.aktuell is None:
             return ""
         name = anzeigename(self.aktuell)
+        if self.aktuell.ist_ordner:
+            # Aufgabe 1 benennt das Ergebnis nach dem Ordner selbst (gemessen 03.11.2026: "PPSA19015 Arcade Game
+            # Zone.exfat", im Protokoll stand der Anzeigename mit der Title-ID in Klammern).
+            name = os.path.basename(os.path.normpath(self.aktuell.pfad)) or name
         if self.aktion_var.get() == AKTION_UMWANDELN:
             if self.format_schluessel == FORMAT_PAKET:
                 return "%s….pkg" % (self.aktuell.content_id or name)       # den Namen legt das Werkzeug fest
@@ -1720,6 +1742,83 @@ class Ps5PkgFenster:
     def _fehler(self, text: str) -> None:
         self._protokoll(text)
         messagebox.showerror(self.t("ps5pkg.window_title"), text, parent=self.win)
+
+    def _balken_wandern(self, an: bool) -> None:
+        """Der Schrittbalken wandert, solange die Dauer unbekannt ist (Pruefen) - sonst zeigt er den Prozentwert."""
+        if an == self._wandert:
+            return
+        self._wandert = an
+        try:
+            if an:
+                self.balken.configure(mode="indeterminate")
+                self.balken.start()
+                self.schritt_var.set("…")
+            else:
+                self.balken.stop()
+                self.balken.configure(mode="determinate")
+        except tk.TclError:
+            pass
+
+    def _anzeige_setzen(self, schritt: float, gesamt: float) -> None:
+        """Beide Balken und die Prozentzahl daneben - immer zusammen, damit Zahl und Balken nie auseinanderlaufen."""
+        self._balken_wandern(False)
+        self.balken["value"] = schritt
+        self.balken_gesamt["value"] = gesamt
+        self.schritt_var.set("%d %%" % int(schritt))
+
+    def _anzeige_zuruecksetzen(self) -> None:
+        """Ein neu gewaehltes Paket beginnt bei 0: Balken, Zahl, Auftrag und Dateizeile des vorigen Laufs verschwinden.
+
+        Gemeldet am 03.11.2026: Nach einem Lauf blieben beide Balken auf 100 % - wer danach ein anderes Spiel in die
+        Quelle lud, sah "100 %", obwohl noch nichts geschehen war.
+        """
+        self._anzeige_setzen(0, 0)
+        try:
+            self.auftrag_var.set(self.t("ps5pkg.job_ready"))
+            self.datei_var.set("")
+        except tk.TclError:
+            pass
+
+    def beschaeftigt(self) -> bool:
+        """Laeuft gerade ein Auftrag oder die Umwandlung in Aufgabe 1?"""
+        return self._job is not None or self._uebergabe is not None
+
+    def programmende(self, warten: float = 30.0) -> None:
+        """Beim Beenden des Programms (aus dem Abbau-Faden): abbrechen, Werkzeuge beenden, Arbeitsordner wegraeumen.
+
+        Bis zum 03.11.2026 setzte nur die Zerstoerung des Fensters den Abbruch - der Arbeitsfaden hing in ``read`` und
+        starb mit dem Programm, das Werkzeug lief weiter und hielt die Dateien im Ziel offen.
+        """
+        self._abbruch = True
+        ende = time.monotonic() + max(0.0, warten)
+        wz.alle_beenden()
+        while self._job is not None and time.monotonic() < ende:
+            with self._sperre:
+                if self._z.get("fertig") is not None:
+                    break
+            time.sleep(0.1)
+        wz.alle_beenden()
+        job = self._job or {}
+        if job.get("art") == "extrahieren":
+            self._teilergebnis_wegraeumen(job.get("ziel", ""))
+        if job.get("art") == "bauen":
+            self._unfertiges_wegraeumen(job.get("ziel", ""), getattr(self, "_bau", {}) or {})
+        self._staging_raeumen()
+
+    def _teilergebnis_wegraeumen(self, ordner: str) -> None:
+        """Ein abgebrochenes oder gescheitertes Entpacken hinterlaesst einen halben Spielordner - er ist unbrauchbar.
+
+        Der Ordner ist immer einer dieses Laufs: Ein vorhandener, nicht leerer wird vor dem Start nur mit dem Haken
+        "Ueberschreiben" angenommen und dann geleert (``_starten``).
+        """
+        if not ordner or not os.path.isdir(ordner):
+            return
+        try:
+            _haupt(self.g)._rmtree_force(ordner, ignore_errors=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Halber Spielordner %s nicht entfernbar: %s", ordner, exc)
+        if os.path.isdir(ordner):
+            self._protokoll(self.t("ps5pkg.err_cannot_clear", pfad=ordner))
 
     def _browser_oeffnen(self) -> None:
         """Oeffnet den Datei-Browser fuer das aktuell gewaehlte .pkg-Paket."""
@@ -1881,9 +1980,8 @@ class Ps5PkgFenster:
         if info.ist_ordner:
             self._protokoll(self.t("ps5pkg.log_start_uebergabe", name=os.path.basename(info.pfad)))
             self.auftrag_var.set(self.t("ps5pkg.job_handoff"))
-            self.balken["value"] = 0
-            self.balken_gesamt["value"] = 50
-            self._uebergabe = {"staging": "", "gesehen": False, "info": info}
+            self._anzeige_setzen(0, 0)
+            self._uebergabe = self._uebergabe_neu("", info, info.pfad)
             if not self._uebergeben(info.pfad):
                 self._uebergabe = None
             self._knoepfe_pruefen()
@@ -2028,17 +2126,30 @@ class Ps5PkgFenster:
         self._abbruch = False
         self._job = {"art": art, "info": info, "ziel": ziel}
         with self._sperre:
-            self._z.update({"prozent": 0.0, "fertig": None, "ausgabe": "", "gesamt": None})
-        self.balken["value"] = 0
-        self.balken_gesamt["value"] = 0
-        self.schritt_var.set("0 %")
+            # "prozent" erst mit der ersten Meldung des Laufs: Beim Pruefen kommt keine, der Balken wandert dann.
+            self._z.update({"prozent": None, "fertig": None, "ausgabe": "", "gesamt": None, "schritt_text": None})
+        self._anzeige_setzen(0, 0)
+        self.datei_var.set("")
         text = {"pruefen": "ps5pkg.job_checking", "extrahieren": "ps5pkg.job_extracting",
                 "umwandeln": "ps5pkg.job_extracting_for", "bauen": "ps5pkg.job_building",
                 "konsole": "ps5pkg.job_console"}[art]
         self.auftrag_var.set(self.t(text, name=anzeigename(info)))
+        # Auch die Statuszeile sagt, dass gearbeitet wird - sie stand bisher waehrend des ganzen Laufs auf "Bereit."
+        self._status(self.t(text, name=anzeigename(info)))
+        if art == "pruefen":
+            self._balken_wandern(True)
         self._protokoll(self.t("ps5pkg.log_start_" + art, name=os.path.basename(info.pfad)))
         self._knoepfe_pruefen()
         threading.Thread(target=ziel_funktion, args=(info, ziel, art), daemon=True, name="ps5pkg-" + art).start()
+
+    def _ende_bei_fehler(self, exc: Exception) -> dict:
+        """Das Ende eines Laufs, der mit ``exc`` endete: nach ABBRECHEN ein Abbruch, sonst ein Fehlschlag.
+
+        Bis zum 03.11.2026 stand nach ABBRECHEN "Fehlgeschlagen" und "[FEHLER] abgebrochen" da.
+        """
+        if self._abbruch:
+            return {"ok": True, "abgebrochen": True, "text": self.t("ps4pkg.status_cancelled")}
+        return {"ok": False, "text": str(exc)}
 
     def _lauf_pruefen(self, info: "wz.PaketInfo", _ziel: str, _art: str) -> None:
         try:
@@ -2053,7 +2164,7 @@ class Ps5PkgFenster:
                     "text": self.t("ps5pkg.check_summary", ok=ergebnis.get("pass", 0), warn=ergebnis.get("warn", 0),
                                    fail=ergebnis.get("fail", 0))}
         except wz.Fehler as exc:
-            ende = {"ok": False, "text": str(exc)}
+            ende = self._ende_bei_fehler(exc)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Paket pruefen")
             ende = {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
@@ -2081,7 +2192,7 @@ class Ps5PkgFenster:
                                          platz_pruefen=lambda gesamt: self._platz_fuer_entpacken(ziel, gesamt))
             ende = {"ok": True, "text": schluss, "ausgabe": ziel}
         except wz.Fehler as exc:
-            ende = {"ok": False, "text": str(exc)}
+            ende = self._ende_bei_fehler(exc)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Paket entpacken")
             ende = {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
@@ -2139,7 +2250,7 @@ class Ps5PkgFenster:
                     "ps5pkg.log_console_done", dateien=stand.dateien, menge=ftp.menge_lesbar(stand.bytes), ziel=fern,
                     uebersprungen=stand.uebersprungen, fortgesetzt=stand.fortgesetzt, wiederholt=stand.wiederholt)}
         except (ftp.FtpFehler, wz.Fehler) as exc:
-            ende = {"ok": False, "text": str(exc)}
+            ende = self._ende_bei_fehler(exc)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Paket auf die PS5 entpacken")
             ende = {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
@@ -2212,7 +2323,7 @@ class Ps5PkgFenster:
                                 abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
         except wz.Fehler as exc:
             self._unfertiges_wegraeumen(ziel, bau)
-            ende = {"ok": False, "text": str(exc)}
+            ende = self._ende_bei_fehler(exc)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Paket bauen")
             self._unfertiges_wegraeumen(ziel, bau)
@@ -2268,6 +2379,8 @@ class Ps5PkgFenster:
             self._abbruch = True
             self._status(self.t("ps5pkg.status_cancelling"))
         elif self._uebergabe is not None:
+            self._uebergabe["abgebrochen"] = True
+            self._status(self.t("ps5pkg.status_cancelling"))
             try:
                 self.g._kill_task()
             except Exception as exc:  # noqa: BLE001
@@ -2276,6 +2389,16 @@ class Ps5PkgFenster:
     # ------------------------------------------------------------------
     # Hand-off an Aufgabe 1
     # ------------------------------------------------------------------
+    def _uebergabe_neu(self, staging: str, info: "wz.PaketInfo", quelle: str) -> dict:
+        """Der Stand der Uebergabe an Aufgabe 1 - samt dem, was vorher im Ziel lag (fuer einen Abbruch)."""
+        ziel = self.ziel_var.get().strip()
+        try:
+            vorher = sorted(os.listdir(ziel)) if ziel and os.path.isdir(ziel) else None
+        except OSError:
+            vorher = None
+        return {"staging": staging, "gesehen": False, "info": info, "ziel": ziel, "ziel_vorher": vorher,
+                "name": os.path.basename(os.path.normpath(quelle)) if quelle else ""}
+
     def _uebergeben(self, staging: str) -> bool:
         """Traegt den entpackten Ordner in Aufgabe 1 ein und startet sie."""
         g = self.g
@@ -2327,17 +2450,19 @@ class Ps5PkgFenster:
             self._scan_uebernehmen(scan)
         for paket_liste, waehlen in gelesen:
             self._gelesen_uebernehmen(paket_liste, waehlen)
-        if gelesen and not liest:
-            self._status(self.t("ps5pkg.status_idle"))
+        if gelesen and liest and self._job is None:
+            self._status(self.t("ps5pkg.status_reading", count=liest))     # ein weiteres Lesen laeuft noch
         if prozent is not None and self._job is not None:
-            self.balken["value"] = prozent
-            self.schritt_var.set("%d %%" % int(prozent))
-            self.balken_gesamt["value"] = (gesamt if gesamt is not None
-                                           else prozent if self._job["art"] != "umwandeln" else prozent / 2.0)
+            self._anzeige_setzen(prozent, gesamt if gesamt is not None
+                                 else prozent if self._job["art"] != "umwandeln" else prozent / 2.0)
             if datei:
-                # Nur der Dateiname, nicht der Ordnerpfad im Spiel - sonst lief die Zeile rechts aus der Karte.
+                # Nur der Dateiname, nicht der Ordnerpfad im Spiel - sonst lief die Zeile rechts aus der Karte. Das gilt
+                # nur fuer einen Pfad: Eine Meldung des Baus ("... (SHA3/ihsh/rhsh): started (2,462 blocks total)")
+                # wurde sonst am letzten "/" zerschnitten und zeigte " 2,462 blocks)." (gemessen 03.11.2026).
                 erster, _trenner, rest = datei.partition(" \u00b7 ")
-                kurz = erster.replace("\\", "/").rsplit("/", 1)[-1] or erster
+                kurz = erster
+                if _PFADARTIG.match(erster):
+                    kurz = erster.replace("\\", "/").rsplit("/", 1)[-1] or erster
                 self.datei_var.set(kurz + (" \u00b7 " + rest if rest else ""))
         if fertig is not None and self._job is not None:
             self.datei_var.set("")
@@ -2348,21 +2473,24 @@ class Ps5PkgFenster:
     def _job_beendet(self, ende: dict) -> None:
         job, self._job = self._job, None
         art = job["art"]
+        self._balken_wandern(False)
+        self._status(self.t("ps5pkg.status_idle"))
         if ende.get("nichts") or ende.get("abgebrochen"):
-            # Der Anwender hat bei der Rueckfrage verzichtet oder nach einer Datei abgebrochen: kein Fehlschlag.
+            # Der Anwender hat bei der Rueckfrage verzichtet oder abgebrochen: kein Fehlschlag. Ein abgebrochener Lauf
+            # zeigt 0 % (nicht den Stand beim Abbruch) - fertig ist nichts.
             self.auftrag_var.set(ende["text"])
             self._protokoll(ende["text"])
-            if ende.get("nichts"):
-                self.balken["value"] = 0
-                self.balken_gesamt["value"] = 0
+            if ende.get("nichts") or art != "konsole":
+                self._anzeige_setzen(0, 0)
+            if ende.get("abgebrochen"):
+                self._lauf_reste_wegraeumen(job)
             self._knoepfe_pruefen()
             return
         if not ende["ok"]:
             self.auftrag_var.set(self.t("ps5pkg.job_failed"))
             self._protokoll(self.t("ps5pkg.log_failed", grund=ende["text"]))
-            self.balken_gesamt["value"] = 0
-            if art in ("umwandeln", "bauen"):
-                self._staging_raeumen()
+            self._anzeige_setzen(0, 0)
+            self._lauf_reste_wegraeumen(job)
             self._knoepfe_pruefen()
             return
         if art == "bauen":
@@ -2373,22 +2501,19 @@ class Ps5PkgFenster:
             self._protokoll(self.t("ps5pkg.build_note"))
             with self._sperre:
                 self._z["ausgabe"] = job["ziel"]
-            self.balken["value"] = 100
-            self.balken_gesamt["value"] = 100
+            self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
             return
         if art == "pruefen":
             self.auftrag_var.set(ende["text"])
             self._protokoll(("[BEFUND] " if ende.get("befund") else "[OK] ") + ende["text"])
-            self.balken["value"] = 100
-            self.balken_gesamt["value"] = 100
+            self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
             return
         if art == "konsole":
             self.auftrag_var.set(self.t("ps5pkg.job_done_console", ziel=job["ziel"]))
             self._protokoll(ende["text"])
-            self.balken["value"] = 100
-            self.balken_gesamt["value"] = 100
+            self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
             return
         if art == "extrahieren":
@@ -2396,42 +2521,123 @@ class Ps5PkgFenster:
             self._protokoll(ende["text"])
             with self._sperre:
                 self._z["ausgabe"] = job["ziel"]
-            self.balken["value"] = 100
-            self.balken_gesamt["value"] = 100
+            self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
             self._ausgabe_nach_erfolg()
             return
         # umwandeln: entpackt - nun Aufgabe 1
         self._protokoll(ende["text"])
         self.auftrag_var.set(self.t("ps5pkg.job_handoff"))
-        self._uebergabe = {"staging": job["ziel"], "gesehen": False, "info": job["info"]}
-        self.balken_gesamt["value"] = 50
+        self._uebergabe = self._uebergabe_neu(job["ziel"], job["info"], job["ziel"])
+        self._anzeige_setzen(0, 50)
         if not self._uebergeben(job["ziel"]):
             self._uebergabe = None
             self._staging_raeumen()
         self._knoepfe_pruefen()
+
+    def _lauf_reste_wegraeumen(self, job: dict) -> None:
+        """Nach Abbruch oder Fehlschlag: was der Lauf halb angelegt hat (Arbeitsordner, halber Spielordner)."""
+        art = job.get("art")
+        if art in ("umwandeln", "bauen"):
+            self._staging_raeumen()
+        elif art == "extrahieren":
+            self._teilergebnis_wegraeumen(job.get("ziel", ""))
+
+    def _a1_arbeitet_noch(self) -> bool:
+        """Arbeitet Aufgabe 1 noch - ihr Faden oder ein nach dem Abbruch weiterlaufendes mkpfs?"""
+        g = self.g
+        laeuft_noch = getattr(g, "_vorgang_laeuft_noch", None)
+        if callable(laeuft_noch) and laeuft_noch():
+            return True
+        offen = getattr(g, "_pending_mkpfs_engine_done", None)
+        return isinstance(offen, threading.Event) and not offen.is_set()
+
+    def _abbruch_ergebnis_wegraeumen(self, u: dict) -> None:
+        """Nach ABBRECHEN waehrend Aufgabe 1: was dabei neu im Ziel entstand und den Namen des Spiels traegt, ist kein
+        gewolltes Ergebnis (``<Name>.ffpfsc``, ``.tmp``, ``.partial``) - es wird entfernt."""
+        ziel, vorher, name = u.get("ziel", ""), u.get("ziel_vorher"), u.get("name", "")
+        if not ziel or vorher is None or not name or not os.path.isdir(ziel):
+            return
+        try:
+            neu = [n for n in set(os.listdir(ziel)) - set(vorher) if n.startswith(name)]
+        except OSError:
+            return
+        for eintrag in neu:
+            pfad = os.path.join(ziel, eintrag)
+            try:
+                if os.path.isdir(pfad):
+                    _haupt(self.g)._rmtree_force(pfad, ignore_errors=True)
+                else:
+                    os.remove(pfad)
+                self._protokoll(self.t("ps5pkg.log_removed_partial", pfad=pfad))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Teilergebnis %s nicht entfernbar: %s", pfad, exc)
+
+    def _a1_stand_zeigen(self) -> None:
+        """Waehrend Aufgabe 1 umwandelt: ihren Fortschritt auch hier zeigen (zweite Haelfte des Gesamtbalkens).
+
+        Gemeldet am 03.11.2026: Nach dem Entpacken stand die Seite minutenlang still auf 100 % / 50 % - ob noch etwas
+        geschah, war nicht zu sehen.
+        """
+        g = self.g
+        self._status(self.t("ps5pkg.job_handoff"))
+        try:
+            prozent = max(0.0, min(100.0, float(g.progress_var.get())))
+        except (AttributeError, tk.TclError, ValueError):
+            return
+        # Ein Spielordner geht ohne Entpacken an Aufgabe 1: Dann ist ihr Fortschritt der ganze Lauf.
+        entpackt = bool((self._uebergabe or {}).get("staging"))
+        self._anzeige_setzen(prozent, 50.0 + prozent / 2.0 if entpackt else prozent)
+        try:
+            text = str(g.size_label.cget("text") or "")
+        except (AttributeError, tk.TclError):
+            text = ""
+        self.datei_var.set(text)
 
     def _uebergabe_beobachten(self) -> None:
         laeuft = bool(getattr(self.g, "is_running", False))
         u = self._uebergabe
         if laeuft:
             u["gesehen"] = True
+            if not u.get("abgebrochen"):
+                self._a1_stand_zeigen()
+            return
+        if u.get("abgebrochen"):
+            # ``_kill_task`` setzt ``is_running`` sofort zurueck, mkpfs (im Programm, nicht unterbrechbar) liest aber
+            # noch im Arbeitsordner und schreibt ins Ziel: Erst nach seinem Ende wird geraeumt. Gemessen 03.11.2026:
+            # ohne das Warten FileNotFoundError in mkpfs und eine halbe ".ffpfsc.tmp" im Ziel; mit dem Warten auf den
+            # Aufgabenfaden allein eine fertige ".ffpfsc" trotz Abbruch.
+            if self._a1_arbeitet_noch():
+                return
+            self._abbruch_ergebnis_wegraeumen(u)
+            self._uebergabe = None
+            self.datei_var.set("")
+            self._status(self.t("ps5pkg.status_idle"))
+            self.auftrag_var.set(self.t("ps4pkg.status_cancelled"))
+            self._protokoll(self.t("ps4pkg.status_cancelled"))
+            self._anzeige_setzen(0, 0)
+            self._staging_raeumen()
+            self._knoepfe_pruefen()
             return
         if not u["gesehen"]:
             # Aufgabe 1 hat gar nicht angefangen (Rueckfrage verneint, Pruefung gescheitert)
             u["wartezeit"] = u.get("wartezeit", 0) + 1
             if u["wartezeit"] * TAKT_MS < 4000:
                 return
+        if u["gesehen"] and self._a1_arbeitet_noch():
+            return                        # Aufgabe 1 raeumt noch auf - erst danach den Arbeitsordner entfernen
         ok = bool(getattr(self.g, "_last_task_ok", False)) and u["gesehen"]
         self._uebergabe = None
+        self.datei_var.set("")
+        self._status(self.t("ps5pkg.status_idle"))
         if ok:
             self.auftrag_var.set(self.t("ps5pkg.job_done_convert"))
-            self.balken["value"] = 100
-            self.balken_gesamt["value"] = 100
+            self._anzeige_setzen(100, 100)
             self._protokoll(self.t("ps5pkg.log_done_convert", name=self._ziel_name()))
             self._ausgabe_nach_erfolg()
         else:
             self.auftrag_var.set(self.t("ps5pkg.job_failed"))
+            self._anzeige_setzen(0, 0)
             self._protokoll(self.t("ps5pkg.log_convert_not_done"))
         self._staging_raeumen()
         self._knoepfe_pruefen()
@@ -2461,6 +2667,9 @@ class Ps5PkgFenster:
             return
         self._schliesst = True
         self._abbruch = True
+        if self._job is not None:
+            # Der Arbeitsfaden haengt womoeglich im Lesen der Werkzeugausgabe - der Prozess muss sofort enden.
+            wz.alle_beenden()
         if self._takt_id is not None:
             try:
                 self.win.after_cancel(self._takt_id)

@@ -121,6 +121,36 @@ def _beenden(prozess: subprocess.Popen) -> None:
         pass
 
 
+#: Die gerade laufenden Werkzeug-Prozesse (:func:`laufen`) - fuer :func:`alle_beenden` beim Programmende.
+_LAUFEND: "set[subprocess.Popen]" = set()
+_LAUFEND_SPERRE = threading.Lock()
+#: So oft fragt der Waechter in :func:`laufen` nach einem Abbruch (Sekunden).
+_ABBRUCH_TAKT = 0.2
+
+
+def laufende() -> int:
+    """Wie viele Werkzeug-Prozesse gerade laufen."""
+    with _LAUFEND_SPERRE:
+        return sum(1 for p in _LAUFEND if p.poll() is None)
+
+
+def alle_beenden() -> int:
+    """Beendet jeden noch laufenden Werkzeug-Prozess samt Kindern - beim Programmende.
+
+    Gemeldet am 03.11.2026: Nach dem Schliessen des Programms lief ``ffpfsc-pkg-tool`` unsichtbar weiter, schrieb in den
+    Zielordner und hielt seine Dateien offen - der Anwender konnte sie nicht loeschen. Der Arbeitsfaden starb mit dem
+    Programm, der Prozess nicht.
+
+    Returns:
+        Die Zahl der beendeten Prozesse.
+    """
+    with _LAUFEND_SPERRE:
+        offen = [p for p in _LAUFEND if p.poll() is None]
+    for prozess in offen:
+        _beenden(prozess)
+    return len(offen)
+
+
 def _dekodieren(roh: bytes) -> str:
     """Eine Ausgabezeile des Werkzeugs als Text.
 
@@ -172,21 +202,46 @@ def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, 
         # Ohne dieses Flag oeffnet jeder Start des Konsolenwerkzeugs ein schwarzes Fenster (gemeldet 31.10.2026: beim
         # Laden eines Pakets drei bis vier hintereinander - die PlayGo-Pruefung rief ``baum`` ohne ``popen_extra``).
         extra["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if abbruch and abbruch():
+        return -1, ""
     try:
         prozess = subprocess.Popen([werkzeug, *argumente], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    stdin=subprocess.DEVNULL, env=_umgebung(temp), bufsize=0, **extra)
     except OSError as exc:
         raise Fehler("Das Werkzeug laesst sich nicht starten: %s" % exc) from exc
     assert prozess.stdout is not None
+    with _LAUFEND_SPERRE:
+        _LAUFEND.add(prozess)
     gesammelt: list[str] = []
     rest = b""
+    # Der Abbruch wartet nicht auf die naechste Ausgabezeile: Das Werkzeug schweigt beim Lesen grosser Pakete und beim
+    # Packen minutenlang, und ``read`` blockiert so lange (gemessen 03.11.2026: ABBRECHEN wirkte erst nach 4 s, beim
+    # Programmende gar nicht). Ein Waechter beendet den Prozess, sobald der Abbruch verlangt ist - dann endet ``read``.
+    abgebrochen = threading.Event()
+    fertig = threading.Event()
+
+    def waechter() -> None:
+        while not fertig.wait(_ABBRUCH_TAKT):
+            try:
+                verlangt = bool(abbruch())
+            except Exception:  # noqa: BLE001 - ein Rueckruf darf den Waechter nicht beenden
+                verlangt = False
+            if verlangt:
+                abgebrochen.set()
+                _beenden(prozess)
+                return
+
+    if abbruch:
+        threading.Thread(target=waechter, daemon=True, name="ps5pkg-abbruch").start()
     try:
         while True:
-            if abbruch and abbruch():
+            if abgebrochen.is_set() or (abbruch and abbruch()):
                 _beenden(prozess)
                 return -1, "".join(gesammelt)
             stueck = prozess.stdout.read(4096)
             if not stueck:
+                if abgebrochen.is_set():
+                    return -1, "".join(gesammelt)
                 break
             rest += stueck
             while True:
@@ -205,10 +260,16 @@ def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, 
             gesammelt.append(text + "\n")
             if zeile:
                 zeile(text)
-        return prozess.wait(), "".join(gesammelt)
+        rc = prozess.wait()
+        if abgebrochen.is_set():
+            return -1, "".join(gesammelt)
+        return rc, "".join(gesammelt)
     finally:
+        fertig.set()
         if prozess.poll() is None:
             _beenden(prozess)
+        with _LAUFEND_SPERRE:
+            _LAUFEND.discard(prozess)
 
 
 def _json_aus(ausgabe: str) -> dict[str, Any]:
@@ -535,9 +596,13 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: s
     return treffer.group(1) if treffer else ok[-1]
 
 
-def baum(werkzeug: str, paket: str, popen_extra: dict | None = None, *, passcode: str = "") -> list[dict]:
+def baum(werkzeug: str, paket: str, popen_extra: dict | None = None, *, passcode: str = "",
+         abbruch: _Abbruch | None = None) -> list[dict]:
     """Der Inhalt des Spiels (``list-inner``): ``[{"path": ..., "type": "file"|"dir", "size": ...}, ...]``."""
-    rc, aus = laufen(werkzeug, ["list-inner", paket] + _passcode_args(passcode), popen_extra=popen_extra)
+    rc, aus = laufen(werkzeug, ["list-inner", paket] + _passcode_args(passcode), popen_extra=popen_extra,
+                     abbruch=abbruch)
+    if rc == -1:
+        raise Fehler("abgebrochen")
     if rc != 0:
         raise Fehler(_fehlertext(aus))
     eintraege = _json_aus(aus).get("entries", [])
@@ -672,7 +737,7 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zei
         if zeile:
             zeile("[info] Paketinhalt wird gelesen - bei einem grossen Paket auf einer Festplatte kann das eine Minute "
                   "dauern ...")
-        eintraege = baum(werkzeug, paket, popen_extra, passcode=passcode)
+        eintraege = baum(werkzeug, paket, popen_extra, passcode=passcode, abbruch=abbruch)
         stand["dateien"] = [(e["path"], int(e.get("size") or 0)) for e in eintraege if e.get("type", "file") == "file"]
         stand["gesamt"] = sum(g for _p, g in stand["dateien"])
         # Erst jetzt ist die entpackte Groesse bekannt - ein komprimiertes Paket waechst um ein Vielfaches (LEGO Batman:
@@ -688,12 +753,23 @@ def extrahieren(werkzeug: str, paket: str, ziel: str, *, passcode: str = "", zei
                 f.write("\n".join(e["path"] for e in eintraege) + "\n")
             argumente = ["extract-inner", paket, ziel, "--members", liste] + passcode_args
     except (Fehler, OSError) as exc:
+        if abbruch and abbruch():
+            ende.set()
+            raise Fehler("abgebrochen") from exc
         if zeile:
             zeile("[info] kein Fortschritt je Datei moeglich (%s) - voller Entpack" % exc)
         liste = ""
     except BaseException:
         ende.set()                                    # der Herzschlag darf nie ueber den Aufruf hinaus weiterlaufen
         raise
+    if abbruch and abbruch():
+        ende.set()
+        if liste:
+            try:
+                os.remove(liste)
+            except OSError:
+                pass
+        raise Fehler("abgebrochen")
     if platz_meldung:
         ende.set()
         if liste:

@@ -557,10 +557,11 @@ class Ps4DumpImageFenster:
             self._balken_setzen(0.0)
             return
         ergebnis = self._z["scan_ergebnis"]
+        # Das Einlesen ist nicht der Auftrag: Danach steht der Balken auf 0. Bis zum 03.11.2026 zeigte er 100 % -
+        # wer ein Spiel in die Quelle lud, sah "fertig", bevor ueberhaupt etwas umgewandelt war.
+        self._balken_setzen(0.0)
         if not ergebnis:
-            self._balken_setzen(0.0)
             return
-        self._balken_setzen(100.0)
         eintraege, sicht = ergebnis
         self.pakete = list(eintraege)
         if sicht and sicht.get("ps5"):
@@ -967,11 +968,30 @@ class Ps4DumpImageFenster:
         except tk.TclError:
             pass
 
+    def beschaeftigt(self) -> bool:
+        """Laeuft gerade etwas (Einlesen, Aufgaben, Update-Download, Senden)?"""
+        return not self._frei()
+
+    def programmende(self, warten: float = 30.0) -> None:
+        """Beim Beenden des Programms (aus dem Abbau-Faden): alles abbrechen und warten, bis die Prozesse weg sind.
+
+        Gemessen am 03.11.2026: Wer das Programm waehrend "Dump-Ordner" schloss, liess ``OrbisPkgTool`` weiterlaufen; es
+        schrieb in den Zielordner und hielt ``<Title-ID>.partial`` offen - loeschen liess es sich erst nach seinem Ende.
+        Die Warteschlange beendet den Prozessbaum und raeumt den Arbeitsordner; hier wird darauf gewartet.
+        """
+        self._z["scan_abbruch"] = True
+        self.warteschlange.alle_abbrechen()
+        ende = time.monotonic() + max(0.0, warten)
+        while self.warteschlange.offen and time.monotonic() < ende:
+            time.sleep(0.1)
+
     def _bei_zerstoerung(self, ereignis) -> None:
         if ereignis.widget is not self.win:
             return
         self._schliesst = True
         self._z["scan_abbruch"] = True
+        if self.warteschlange.offen:
+            self.warteschlange.alle_abbrechen()
         if self._takt_id is not None:
             try:
                 self.win.after_cancel(self._takt_id)
@@ -1106,6 +1126,10 @@ class Ps4DumpImageFenster:
         self._batch = []
         fehler = sum(1 for a in stapel if a.status == au.FEHLER)
         abgebrochen = sum(1 for a in stapel if a.status == au.ABGEBROCHEN)
+        if abgebrochen or fehler:
+            # Abgebrochen oder gescheitert ist nichts fertig: 0 %, nicht 100 % (so stand es bis zum 03.11.2026 neben
+            # "Vorgang abgebrochen." - die Aufgaben zaehlten als beendet und damit als voll).
+            self._balken_setzen(0.0)
         if abgebrochen and not fehler:
             self._status(t("ps4pkg.status_cancelled"))
         elif fehler:
@@ -1113,7 +1137,9 @@ class Ps4DumpImageFenster:
         else:
             ziel = stapel[-1].ergebnis or stapel[-1].ziel
             self._balken_setzen(100.0)
-            self._status(t("ps4pkg.status_done", path=ziel))
+            # "Das Abbild liegt in ..." nur fuer ein Abbild - ein Dump-Ordner oder ein Paket ist keines.
+            schluessel = "ps4pkg.status_done" if stapel[-1].art == "abbild" else "ps4dib.status_fertig"
+            self._status(t(schluessel, path=ziel))
 
     # ------------------------------------------------------------------
     # Updates online
@@ -1198,9 +1224,11 @@ class Ps4DumpImageFenster:
             self._liste_fuellen(auswaehlen=eintrag.title_id)
             messagebox.showinfo(t("ps4pkg.window_title"), fertig, parent=self.win)
         elif a.status == au.FEHLER:
+            self._balken_setzen(0.0)
             self._status(t("ps4ota.update_fehler", fehler=a.fehler))
             self._protokoll(a.fehler)
         else:
+            self._balken_setzen(0.0)
             self._status(t("ps4pkg.status_cancelled"))
 
     def _kurz_laeuft(self, a: au.Aufgabe) -> None:
@@ -1227,8 +1255,10 @@ class Ps4DumpImageFenster:
             self._status(a.text or t("ps4dib.fertig_kurz", titel=a.titel))
             self._protokoll(t("ps4dib.log_ok", titel=a.titel, pfad=a.ergebnis or a.ziel))
         elif a.status == au.ABGEBROCHEN:
+            self._balken_setzen(0.0)
             self._status(t("ps4pkg.status_cancelled"))
         else:
+            self._balken_setzen(0.0)
             self._status(t("ps4dib.log_fehler", titel=a.titel, grund=a.fehler))
             self._protokoll(t("ps4dib.log_fehler", titel=a.titel, grund=a.fehler))
 
