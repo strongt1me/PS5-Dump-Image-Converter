@@ -1812,6 +1812,23 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </table>
   </div>
   <p>Die Prüfung packt die Datei dafür <strong>nicht</strong> aus: Sie liest nur das Inhaltsverzeichnis der inneren Ebene – bei einer 392-MB-Datei rund 750 Kilobyte in unter einer Zehntelsekunde.</p>
+
+  <h3>12.2 Entpackprüfung bei .ffpfsc</h3>
+  <p>Die Nutzdaten einer <code>.ffpfsc</code> liegen komprimiert vor, und jeder Block trägt seine eigene Prüfsumme. Beim bloßen Lesen der Datei fällt ein beschädigter Block nicht auf – der Datenträger liefert ihn klaglos aus. Aufgabe 8 packt deshalb zusätzlich jeden Block aus (ohne etwas zu speichern) und meldet im Protokoll:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Zeile</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td><span class="punkt p-gruen"></span><code>payload: in Ordnung</code></td><td>Alle Blöcke lassen sich entpacken und stimmen mit ihrer Prüfsumme überein.</td></tr>
+      <tr><td><span class="punkt p-rot"></span><code>payload: beschädigt</code></td><td>Mindestens ein Block lässt sich nicht entpacken – typisch für eine abgebrochene Kopie oder Übertragung. Die Datei neu kopieren oder neu erzeugen.</td></tr>
+      <tr><td><span class="punkt p-gelb"></span><code>payload: nicht prüfbar</code></td><td>Die Datei ist unkomprimiert (<code>.ffpfs</code>) – dort gibt es keine Prüfsummen, die sich vergleichen ließen.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Das dauert so lange wie das Entpacken, bei einem großen Titel einige Minuten. Der Balken zeigt dafür die erste Hälfte, das anschließende Lesen für die SHA-256-Summe die zweite; ABBRECHEN wirkt in beiden Teilen sofort.</p>
+  <p><strong>Grenze:</strong> Eine <code>.ffpfs</code>, eine <code>.exFAT</code> und eine <code>.ffpkg</code> tragen keine Prüfsummen für ihre Nutzdaten, und auch ein Block, den die Engine unkomprimiert abgelegt hat, hat keine. Ein beschädigtes Bit mitten in den Spieldaten bemerkt Aufgabe 8 dort nicht. Aufbau, Größe und Dateisystem werden weiter geprüft; wer sichergehen will, vergleicht die Prüfsumme (SHA-256) der Kopie mit der des Originals.</p>
+  <p>Bei einer <code>.exFAT</code> prüft Aufgabe 8 außerdem den Anfang des Abbilds: den Namen „EXFAT“ im Bootsektor und die Prüfsumme der Boot-Region. Fehlt der Name oder stimmt die Summe nicht, ist die Datei <strong>beschädigt</strong> (nicht mehr nur ein Hinweis); ebenso eine <code>.ffpfs</code>/<code>.ffpfsc</code> mit unbekanntem Kopf.</p>
+  <p>Die Quellen der Aufgaben 1 bis 6 prüft das Programm vor dem Start auf eine plausible Kennung am Dateianfang: Eine leere, falsch benannte oder abgeschnittene <code>.exfat</code> oder <code>.ffpkg</code> wird mit einer Meldung abgewiesen, statt „erfolgreich“ ein kleines, unbrauchbares Ergebnis zu liefern.</p>
   <div class="kasten">
     <span class="titel">Ungeprüft ist kein Urteil</span>
     <p>Ein <code>.ffpkg</code> wird &uuml;ber UFS2Tool gepr&uuml;ft, und das
@@ -2442,6 +2459,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <tbody>
       <tr><td><strong>Sicherung anlegen (empfohlen)</strong></td><td>Legt vor dem ersten Zugriff eine vollständige Kopie des Ordners mit Zeitstempel daneben. Standardmäßig an – bitte anlassen.</td></tr>
       <tr><td><strong>Nur benötigte Bibliotheken (experimentell)</strong></td><td>Kopiert vom Ersatzsatz nur die Bibliotheken, die das Spiel laut seiner Importtabelle tatsächlich verwendet, statt immer den ganzen Satz. Standardmäßig aus; ohne lesbare Importtabelle bleibt es beim vollen Satz. Die Wahl gilt auch beim Einbau während des Erstellens.</td></tr>
+      <tr><td><strong>Fehlende Funktionen neutralisieren (Stubs, experimentell)</strong></td><td>Fehlt der Zielfirmware eine Funktion, die das Spiel verlangt und die keine Ersatzbibliothek liefern kann, bricht das Spiel beim ersten Aufruf ab. Mit diesem Haken ersetzt BACKPORT den Aufruf im Spiel selbst durch einen leeren Rückgabewert: Das Spiel läuft weiter – <strong>ob es dann richtig läuft, ist offen</strong>. Keine Garantie. Braucht die Exporttabelle der Zielfirmware (mitgeliefert für 4 bis 7). Standardmäßig aus; die Wahl gilt auch beim Einbau während des Erstellens und bei <em>Nur Backport-Ordner erstellen</em>. Das Protokoll nennt jede geänderte Stelle.</td></tr>
+      <tr><td><strong>Korrekturprofil des Spiels anwenden (falls vorhanden)</strong></td><td>Manche Spiele brauchen neben fehlenden Funktionen weitere Byte-Korrekturen an der Programmdatei. Ein Profil gilt für <strong>genau eine Fassung</strong> eines Titels: Es wird nur angewendet, wenn die SHA-256-Summe der unveränderten Originaldatei stimmt und an jeder Stelle die erwarteten Bytes stehen – sonst bleibt alles unverändert, und ein zweiter Lauf erkennt „schon angepasst“. Die Profile liegen als JSON je Title-ID im Ordner <code>Backport_Fakelibs/Korrekturprofile</code>; mitgeliefert ist eines für Anno 117 (Firmware 4.xx). Keine Garantie. Standardmäßig aus; gilt wie die anderen Haken auch beim Einbau während des Erstellens.</td></tr>
     </tbody>
   </table>
   </div>

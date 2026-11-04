@@ -178,6 +178,7 @@ from ps5_validator.utils import webansicht
 from ps5_validator.utils import werkzeuge_bereitstellen
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import backport_korrektur
+from ps5_validator.utils import dokan_laufwerk
 from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
 from ps5_validator.utils import shadowmount_generation as sm_gen
@@ -5618,7 +5619,9 @@ class PS5ConverterGUI:
         self._suppress_pulse_creep: bool = False
         self._startup_temp_cleanup_prompted: bool = False
         self._embedded_mkpfs_lock = threading.RLock()
-        self._ffpkg_preview_lock = threading.RLock()
+        # Die Sperre ist dieselbe wie beim Entpacken und Pruefen: Alle Einhaengungen einer .ffpkg gehen nacheinander
+        # (siehe dokan_laufwerk - zwei gleichzeitige nahmen denselben Laufwerksbuchstaben).
+        self._ffpkg_preview_lock = dokan_laufwerk.SPERRE
         self._exit_cleanup_lock = threading.RLock()
         self._session_exit_cleanup_paths: set[str] = set()
 
@@ -28641,6 +28644,7 @@ class PS5ConverterGUI:
         env: dict[str, str] | None = None,
         line_callback=None,
         abbruch: "Callable[[], bool] | None" = None,
+        bei_abbruch: "Callable[[], None] | None" = None,
     ) -> int:
         """Führt einen externen Prozess aus und leitet stdout/stderr ins Log.
 
@@ -28664,6 +28668,10 @@ class PS5ConverterGUI:
                 Optional, nur mit ``line_callback``: ``() -> bool``, gefragt
                 alle 0,25 s - auch wenn das Werkzeug gerade nichts schreibt.
                 Liefert es True, wird der Prozess beendet (Rueckgabe 130).
+            bei_abbruch:
+                Optional: wird einmal gerufen, BEVOR der Prozess bei einem Abbruch beendet wird. Gedacht fuer das
+                Aushaengen eines Dokan-Laufwerks: Ein robocopy, das auf ein haengendes Laufwerk wartet, laesst sich
+                erst beenden, wenn das Laufwerk seine wartenden Anfragen freigibt.
 
         Returns:
             Exit-Code des Prozesses (0 = Erfolg).
@@ -28671,6 +28679,30 @@ class PS5ConverterGUI:
         cf = _NO_WIN_FLAGS
         si = _silent_startupinfo()
         proc = None
+        leser = None
+
+        def _abbruch_vorbereiten() -> None:
+            if bei_abbruch is not None:
+                try:
+                    bei_abbruch()
+                except Exception as exc:  # noqa: BLE001 - Aufraeumen darf das Beenden nicht verhindern
+                    logger.debug("bei_abbruch fehlgeschlagen: %s", exc)
+
+        def _beenden_und_abwarten() -> None:
+            """Beendet den Prozess und wartet kurz, bis er weg ist.
+
+            Der Aufrufer raeumt gleich danach auf (halber Zielordner, Laufwerk). Ein mehrfaediges robocopy schrieb nach
+            ``terminate()`` noch einen Augenblick weiter und lief dem Aufraeumen davon (gemessen 04.11.2026).
+            Haengt der Prozess, gibt es nach 5 s trotzdem die Rueckgabe - der Abbruch bleibt nicht stehen.
+            """
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                pass
         try:
             callback_mode = line_callback is not None
             proc = subprocess.Popen(
@@ -28709,15 +28741,13 @@ class PS5ConverterGUI:
                     finally:
                         zeilen.put(None)
 
-                threading.Thread(target=_lesen, daemon=True,
-                                 name="prozessausgabe").start()
+                leser = threading.Thread(target=_lesen, daemon=True, name="prozessausgabe")
+                leser.start()
                 frist = time.monotonic() + timeout if timeout else None
                 while True:
                     if abbruch is not None and abbruch():
-                        try:
-                            proc.terminate()
-                        except Exception:
-                            pass
+                        _abbruch_vorbereiten()
+                        _beenden_und_abwarten()
                         return 130
                     if frist is not None and time.monotonic() > frist:
                         raise subprocess.TimeoutExpired(cmd, timeout)
@@ -28730,10 +28760,8 @@ class PS5ConverterGUI:
                     try:
                         keep_running = line_callback(record)
                         if keep_running is False:
-                            try:
-                                proc.terminate()
-                            except Exception:
-                                pass
+                            _abbruch_vorbereiten()
+                            _beenden_und_abwarten()
                             return 130
                     except Exception:
                         # Callback-Fehler sollen den Prozesslauf nicht abbrechen.
@@ -28766,6 +28794,11 @@ class PS5ConverterGUI:
         finally:
             if proc is not None:
                 for stream in (getattr(proc, "stdout", None), getattr(proc, "stdin", None)):
+                    # Liest der Lesefaden noch (der Prozess lebt nach einem Abbruch womoeglich noch), wuerde
+                    # close() auf dem gesperrten Puffer warten - und mit ihm der ganze Abbruch, gemessen am
+                    # 04.11.2026: 894 s. Die Ausgabe schliesst sich, sobald der Prozess endet.
+                    if stream is getattr(proc, "stdout", None) and leser is not None and leser.is_alive():
+                        continue
                     try:
                         if stream is not None and not stream.closed:
                             stream.close()
@@ -37790,7 +37823,7 @@ class PS5ConverterGUI:
                 # in den Container.
                 ebenen = self._entpacke_container_ebenen(
                     outer_tmp,
-                    status_prefix=self._t("main.task_number", number=7),
+                    status_prefix=self._t("progress.task.ampr_manager"),
                     pct_start=15.0,
                     pct_end=29.0,
                     erwartet=self._container_expectations(
@@ -37913,7 +37946,7 @@ class PS5ConverterGUI:
             if self._extract_exfat_to_folder_mkpfs(
                 src,
                 tmp_extract,
-                status_prefix=self._t("main.task_number", number=7),
+                status_prefix=self._t("progress.task.ampr_manager"),
                 log_prefix=self._t("log.prefix_fakelib_exfat"),
                 progress_start=3.0,
                 progress_end=24.0,
@@ -37931,7 +37964,7 @@ class PS5ConverterGUI:
                 # trotzdem zum Neubau - aus einem unvollstaendigen Ordner, der
                 # danach die Quelle ersetzte.
                 if self._extract_exfat_via_osfmount(
-                        src, tmp_extract, status_prefix=self._t("main.task_number", number=7),
+                        src, tmp_extract, status_prefix=self._t("progress.task.ampr_manager"),
                         progress_start=3.0, progress_end=24.0):
                     search_root = tmp_extract
 
@@ -37951,7 +37984,7 @@ class PS5ConverterGUI:
             if self._extract_ffpkg_to_folder_via_ufs2tool(
                 src,
                 tmp_extract,
-                status_prefix=self._t("main.task_number", number=7),
+                status_prefix=self._t("progress.task.ampr_manager"),
                 progress_start=3.0,
                 progress_end=34.0,
             ):
@@ -39572,11 +39605,18 @@ class PS5ConverterGUI:
         """
         if not ordner_ist_neu or not os.path.isdir(ordner):
             return
-        try:
-            _rmtree_force(ordner, ignore_errors=True)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Teilordner %s nicht entfernbar: %s", ordner, exc)
-            return
+        # Mehrere Versuche: Das Kopierwerkzeug (robocopy /MT:4) schreibt nach "Abbrechen" noch einen Augenblick
+        # weiter - gemessen am 04.11.2026 blieben bei einem Abbruch nach 2 s 26 MB liegen, weil der Ordner schon
+        # entfernt wurde, waehrend noch Dateien dazukamen.
+        for versuch in range(5):
+            try:
+                _rmtree_force(ordner, ignore_errors=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Teilordner %s nicht entfernbar: %s", ordner, exc)
+                return
+            if not os.path.isdir(ordner):
+                break
+            time.sleep(0.5 * (versuch + 1))
         if os.path.isdir(ordner):
             self._append_to_log(self._t("log.teilordner_bleibt", pfad=ordner))
         else:
@@ -39596,8 +39636,12 @@ class PS5ConverterGUI:
         Unter Windows ueber ein Dokan-Laufwerk - so lassen sich die Dateien
         einzeln kopieren und der Fortschritt mitzaehlen. Anderswo ueber den
         Unterbefehl ``extract``, der ohne Einhaengen auskommt.
+
+        Das Laufwerk gehoert diesem Lauf allein: Die gemeinsame Sperre (``dokan_laufwerk.SPERRE``) gilt vom
+        Einhaengen bis zum Aushaengen und ist dieselbe wie bei der Vorschau der Metadaten und der Pruefung. Zwei
+        gleichzeitige Einhaengungen nahmen denselben Laufwerksbuchstaben (gemessen am 04.11.2026): Das Entpacken las
+        das Laufwerk der Vorschau und verlor es unter den Fuessen.
         """
-        import ctypes as _ct
         import time as _time
 
         if not IST_WINDOWS:
@@ -39624,13 +39668,17 @@ class PS5ConverterGUI:
 
         self._append_to_log(self._t('log.auto.0235', v0=exe))
 
-        drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
-        drive = None
-        for idx in range(25, 3, -1):
-            if not (drives_bitmask & (1 << idx)):
-                drive = chr(65 + idx) + ":"
-                break
+        # Gemeinsame Sperre vom Einhaengen bis zum Aushaengen (Freigabe im finally unten). Wer wartet - etwa auf eine
+        # laufende Vorschau -, bricht bei "Abbrechen" ab.
+        sperre = dokan_laufwerk.SPERRE
+        while not sperre.acquire(timeout=0.5):
+            if not self.is_running:
+                return False
+
+        # Auch ein von Windows nur noch gemerkter, aber nicht mehr vorhandener Buchstabe zaehlt als belegt.
+        drive = dokan_laufwerk.freier_buchstabe()
         if not drive:
+            sperre.release()
             self._append_to_log(self._t('log.auto.0226'))
             return False
 
@@ -39669,13 +39717,12 @@ class PS5ConverterGUI:
                     startupinfo=_silent_startupinfo(),
                 )
 
-                for _ in range(30):
-                    if mount_proc.poll() is not None:
-                        break
-                    if os.path.exists(drive + "\\"):
-                        mounted = True
-                        break
-                    _time.sleep(0.5)
+                # "Bereit" heisst: unser Prozess lebt und das Laufwerk zeigt stabil Dateien - nicht mehr nur "unter
+                # dem Buchstaben steht etwas" (siehe dokan_laufwerk).
+                mounted = dokan_laufwerk.bereit_warten(
+                    mount_proc, drive, versuche=30, pause=0.5, abbruch=lambda: not self.is_running)
+                if not self.is_running:
+                    raise _KopieAbgebrochen()
                 if mounted:
                     break
 
@@ -39690,9 +39737,7 @@ class PS5ConverterGUI:
                 # anderen Lauf, derselbe Buchstabe ging sechs Sekunden spaeter. Zweimal mit dem naechsten
                 # freien Buchstaben nach kurzer Pause nachfassen, bevor die Extraktion als gescheitert gilt.
                 if versuche < 3 and self.is_running and "drive letter" in tail.lower():
-                    belegt = _ct.windll.kernel32.GetLogicalDrives()
-                    neu = next((chr(65 + i) + ":" for i in range(25, 3, -1)
-                                if not (belegt & (1 << i)) and chr(65 + i) + ":" != drive), None)
+                    neu = dokan_laufwerk.freier_buchstabe(ausser=(drive,))
                     if neu:
                         self._append_to_log(self._t("entpacken.laufwerk_neuer_versuch", alt=drive, neu=neu))
                         drive = neu
@@ -39732,26 +39777,8 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t('ffpkg.grossdatei_mountfrei'))
                 run["on"] = False
                 if mount_proc is not None:
-                    try:
-                        mount_proc.terminate()
-                        mount_proc.wait(timeout=10)
-                    except Exception:
-                        try:
-                            mount_proc.kill()
-                        except Exception:
-                            pass
+                    dokan_laufwerk.aushaengen(drive, mount_proc)
                     mount_proc = None
-                try:
-                    if mounted and os.path.exists(drive + "\\"):
-                        subprocess.run(
-                            ["mountvol", drive + "\\", "/D"],
-                            timeout=10,
-                            capture_output=True,
-                            creationflags=_NO_WIN_FLAGS,
-                            startupinfo=_silent_startupinfo(),
-                        )
-                except Exception:
-                    pass
                 mounted = False
                 return self._ffpkg_ueber_unterbefehl_entpacken(
                     src, dest_folder,
@@ -39838,6 +39865,9 @@ class PS5ConverterGUI:
                 line_callback=_log_robo_line,
                 # robocopy /NP schweigt waehrend einer grossen Datei (H6-5).
                 abbruch=lambda: not self.is_running,
+                # Ein robocopy, das auf ein haengendes Laufwerk wartet, stirbt erst, wenn das Laufwerk seine
+                # wartenden Anfragen freigibt (gemessen 04.11.2026: 54 Minuten bei "0 B geschrieben").
+                bei_abbruch=lambda: dokan_laufwerk.aushaengen(drive, mount_proc, warte_s=5.0),
             )
             run["on"] = False
             if not self.is_running:
@@ -39972,26 +40002,13 @@ class PS5ConverterGUI:
             return False
         finally:
             run["on"] = False
-            if mount_proc is not None:
-                try:
-                    mount_proc.terminate()
-                    mount_proc.wait(timeout=10)
-                except Exception:
-                    try:
-                        mount_proc.kill()
-                    except Exception:
-                        pass
+            # Erst aushaengen, dann den Prozess beenden: Ein hart beendetes mount_udf liess das Laufwerk stehen
+            # (der Nutzer fand "W:" im Explorer) und machte den naechsten Lauf unsicher.
             try:
-                if mounted and os.path.exists(drive + "\\"):
-                    subprocess.run(
-                        ["mountvol", drive + "\\", "/D"],
-                        timeout=10,
-                        capture_output=True,
-                        creationflags=_NO_WIN_FLAGS,
-                        startupinfo=_silent_startupinfo(),
-                    )
-            except Exception:
-                pass
+                if mount_proc is not None:
+                    dokan_laufwerk.aushaengen(drive, mount_proc)
+            finally:
+                sperre.release()
 
     def _mode_ffpkg_to_ffpfsc(self, src: str, dst: str) -> bool:
         """Konvertiert eine .ffpkg-Datei direkt zu einer .ffpfsc-Datei (Aufgabe 4).
@@ -50437,6 +50454,7 @@ class PS5ConverterGUI:
             optimierung=zeilen("_diagnose_optimierung"),
             protokoll=messen(_protokoll),
             reste=messen(lambda: bd.Restelage(bd.reste_suchen(self._betrieb_ordner_sammeln()), arbeit)),
+            laufwerke=messen(lambda: bd.laufwerke_messen(arbeit)),
             ressourcen=messen(_ressourcen),
             wiederaufnahme=messen(_wiederaufnahme),
             einstellungen=messen(lambda: bd.einstellungen_messen(self._get_config_path())),
@@ -67924,7 +67942,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     group.add_argument("--task", type=int, choices=range(1, 9), help="Aufgabennummer 1-8 (siehe README).")
     group.add_argument("--mode", type=str, help="Interner Modus-Schlüssel statt Aufgabennummer (z.B. pack_folder).")
     parser.add_argument("--source", nargs="+", required=False, help="Quellpfad(e). Mehrere Pfade nur für Aufgabe 5 (Sammelkonvertierung).")
-    parser.add_argument("--dest", type=str, default="", help="Zielordner (nicht nötig für Aufgabe 7, Aufgabe 8 und Inspect - die arbeiten im Quellordner bzw. lesen nur).")
+    parser.add_argument("--dest", type=str, default="", help="Zielordner (nicht nötig für den AMPR EMU Manager, Aufgabe 8 und Inspect - die arbeiten im Quellordner bzw. lesen nur).")
     parser.add_argument("--format", type=str, choices=sorted(PS5ConverterGUI._FORMAT_LABELS.keys()), help="Zielformat, falls die Aufgabe mehrere anbietet.")
     parser.add_argument("--temp", type=str, default="", help="Temp-Arbeitsordner überschreiben.")
     parser.add_argument("--yes", action="store_true", help="Rückfragen (Überschreiben/Wiederaufnahme) automatisch bestätigen.")
@@ -68007,7 +68025,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "ampr_assetpack baut Asset-Pack-Bänder in ein fertiges Backup "
              "und braucht dazu eine pack-fähige Fassung (--ampr-variant "
              "test-pack oder test-debug-pack). Gepackte Originaldateien "
-             "entfernt Aufgabe 7 nie - dafür ist das Erstellen eines "
+             "entfernt der AMPR EMU Manager nie - dafür ist das Erstellen eines "
              "Abbilds zuständig.",
     )
     ampr.add_argument("--ampr-store", type=str, default="", help="Zusätzlicher Ordner mit AMPR-/PlayGo-Versionen; er hat bei gleicher Fassung Vorrang. Gesucht wird immer auch im mitgelieferten Ordner, im gespeicherten und in den geholten Fassungen. Ohne --ampr-version wird die neueste aus allen genommen.")

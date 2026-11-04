@@ -563,6 +563,38 @@ class ZusammenfassungTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+class LaufwerkeTests(unittest.TestCase):
+    """Liegengebliebene OSFMount-/Dokan-Laufwerke (04.11.2026: X:, Y:, Z: und W: standen nach Abbruechen im Explorer)."""
+
+    def test_keine_laufwerke_kein_befund(self) -> None:
+        self.assertEqual([], bd.pruefe_laufwerke(bd.Laufwerkslage()))
+
+    def test_laeuft_eine_aufgabe_gehoeren_die_laufwerke_zu_ihr(self) -> None:
+        lage = bd.Laufwerkslage((("W", bd.ART_DOKAN),), arbeit_laeuft=True)
+        self.assertEqual([], bd.pruefe_laufwerke(lage))
+
+    def test_befund_nennt_buchstaben_und_den_weg_zum_aushaengen(self) -> None:
+        lage = bd.Laufwerkslage((("X", bd.ART_OSFMOUNT), ("Y", bd.ART_OSFMOUNT), ("W", bd.ART_DOKAN)))
+        befunde = bd.pruefe_laufwerke(lage)
+        self.assertEqual(1, len(befunde))
+        self.assertEqual(bd.HINWEIS, befunde[0].schwere, "Ob jemand das Abbild bewusst einhaengte, sieht man nicht")
+        text = befunde[0].text
+        for stueck in ("3 eingehängte", "X: (OSFMount-Abbild)", "Y: (OSFMount-Abbild)", "W: (UFS2 über Dokan)",
+                       "OSFMount.com -d -m X:", "dokanctl /u W"):
+            self.assertIn(stueck, text)
+
+    @unittest.skipUnless(sys.platform == "win32", "Laufwerke gibt es hier nur unter Windows")
+    def test_die_messung_liefert_nur_buchstaben_mit_bekannter_art(self) -> None:
+        lage = bd.laufwerke_messen()
+        for buchstabe, art in lage.laufwerke:
+            self.assertRegex(buchstabe, r"^[D-Z]$")
+            self.assertIn(art, (bd.ART_OSFMOUNT, bd.ART_DOKAN))
+
+    def test_waehrend_einer_aufgabe_wird_nicht_gemessen(self) -> None:
+        self.assertEqual((), bd.laufwerke_messen(arbeit_laeuft=True).laufwerke)
+
+
+# ---------------------------------------------------------------------------
 class AnschlussTests(unittest.TestCase):
     """Der Bericht des Programms: Gesamturteil oben, Abschnitt "Betriebspruefung", keine doppelte Arbeit."""
 
@@ -585,7 +617,8 @@ class AnschlussTests(unittest.TestCase):
 
     def test_die_betriebspruefung_laeuft_und_prueft_alles(self) -> None:
         erg = self.app._betrieb_pruefen()
-        self.assertEqual(14, len(erg.geprueft), erg.geprueft)
+        self.assertEqual(15, len(erg.geprueft), erg.geprueft)
+        self.assertIn("eingehängte Laufwerke", erg.geprueft)
         self.assertIs(erg, self.app._letzte_betrieb_pruefung)
 
     def test_der_bericht_hat_gesamturteil_und_abschnitt(self) -> None:

@@ -53,6 +53,7 @@ from ps5_validator.utils.nahtstellen import (Melder, Textquelle,
                                              schluessel_zeigen, stumm)
 from ps5_validator.utils.plattform import ist_administrator, prozess_flags
 from ps5_validator.utils import bibliothek as bibliothek_bestand
+from ps5_validator.utils import dokan_laufwerk
 
 try:
     from PIL import Image
@@ -416,9 +417,12 @@ class Metadatenleser:
         ):
             return empty_meta, None
 
+        # Dieselbe Sperre wie beim Entpacken und Pruefen (dokan_laufwerk.SPERRE): Alle Einhaengungen einer .ffpkg gehen
+        # nacheinander. Gemessen am 04.11.2026: Wer die Datei waehlt und sofort startet, bekam zwei Einhaengungen auf
+        # demselben Buchstaben - das Entpacken las das Laufwerk der Vorschau und verlor es unter den Fuessen.
         lock = getattr(self, "_ffpkg_preview_lock", None)
         if lock is None:
-            lock = threading.RLock()
+            lock = dokan_laufwerk.SPERRE
             self._ffpkg_preview_lock = lock
 
         with lock:
@@ -427,13 +431,7 @@ class Metadatenleser:
             mounted = False
             try:
                 exe = self._extract_ufs2tool()
-                import ctypes as _ct
-
-                drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
-                for idx in range(25, 3, -1):
-                    if not (drives_bitmask & (1 << idx)):
-                        drive = chr(65 + idx) + ":"
-                        break
+                drive = dokan_laufwerk.freier_buchstabe() or ""
                 if not drive:
                     return empty_meta, None
 
@@ -446,13 +444,7 @@ class Metadatenleser:
                     errors="replace",
                     **prozess_flags(),
                 )
-                for _ in range(40):
-                    if mount_proc.poll() is not None:
-                        break
-                    if os.path.exists(drive + "\\"):
-                        mounted = True
-                        break
-                    time.sleep(0.25)
+                mounted = dokan_laufwerk.bereit_warten(mount_proc, drive, versuche=40, pause=0.25)
                 if not mounted:
                     return empty_meta, None
 
@@ -463,24 +455,7 @@ class Metadatenleser:
                 return empty_meta, None
             finally:
                 if mount_proc is not None:
-                    try:
-                        mount_proc.terminate()
-                        mount_proc.wait(timeout=10)
-                    except Exception:
-                        try:
-                            mount_proc.kill()
-                        except Exception:
-                            pass
-                try:
-                    if mounted and drive and os.path.exists(drive + "\\"):
-                        subprocess.run(
-                            ["mountvol", drive + "\\", "/D"],
-                            timeout=10,
-                            capture_output=True,
-                            **prozess_flags(),
-                        )
-                except Exception:
-                    pass
+                    dokan_laufwerk.aushaengen(drive, mount_proc)
 
     def _read_game_meta(self, src: str, deep_scan: bool = True) -> dict[str, Any]:
         """Liest Spielmetadaten aus param.json oder param.sfo.

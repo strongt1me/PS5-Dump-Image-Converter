@@ -104,7 +104,8 @@ BEKANNT_STUMM: set[tuple[str, str, str]] = {
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_rmtree_force", "shutil.rmtree"),
     ("abbild_metadaten.py", "_load_cover_image", "os.walk"),
     ("abbild_metadaten.py", "_load_fallback_art_image", "os.walk"),
-    ("abbild_pruefen.py", "_verify_ffpkg_file_count_via_mount", "os.walk"),
+    # Der Teil mit dem Laufwerk heisst seit 04.11.2026 "..._eingehaengt" (die aeussere Methode haelt nur die Sperre).
+    ("abbild_pruefen.py", "_verify_ffpkg_file_count_eingehaengt", "os.walk"),
     # Gemessen am 06.10.2026 an Dirt 5 (67 226 Dateien, HDD, warmer Zwischenspeicher):
     # 0,32-0,34 s je Durchlauf (drei Laeufe). _dateien_zaehlen laeuft nur, wenn die
     # Dateizahl-Pruefung eines .ffpkg schon durchgefallen ist; der Aufrufer meldet den

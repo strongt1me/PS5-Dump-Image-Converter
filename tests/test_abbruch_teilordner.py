@@ -18,6 +18,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 PROJEKT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJEKT))
@@ -61,6 +62,37 @@ class TeilordnerTests(unittest.TestCase):
         gui._teilordner_nach_abbruch_entfernen(self.ordner, False)
         self.assertTrue(os.path.isfile(os.path.join(self.ordner, "eboot.bin")))
         self.assertEqual([], gui.protokoll)
+
+    def test_der_ordner_wird_mit_mehreren_versuchen_entfernt(self):
+        """Das Kopierwerkzeug schreibt nach "Abbrechen" noch einen Augenblick: Bei einem Abbruch nach 2 s blieben
+        26 MB liegen, weil nur einmal versucht wurde (gemessen 04.11.2026)."""
+        gui = _gui()
+        echt = APP._rmtree_force
+        versuche = {"n": 0}
+
+        def widerspenstig(pfad, **kw):
+            versuche["n"] += 1
+            if versuche["n"] >= 3:
+                echt(pfad, **kw)
+
+        with mock.patch.object(APP, "_rmtree_force", widerspenstig), mock.patch.object(APP.time, "sleep", lambda _s: None):
+            gui._teilordner_nach_abbruch_entfernen(self.ordner, True)
+        self.assertEqual(3, versuche["n"])
+        self.assertFalse(os.path.exists(self.ordner))
+        self.assertTrue(any("log.teilordner_entfernt" in z for z in gui.protokoll), gui.protokoll)
+
+    def test_bleibt_er_stehen_wird_es_gesagt_und_nach_fuenf_versuchen_aufgegeben(self):
+        gui = _gui()
+        versuche = {"n": 0}
+
+        def nie(pfad, **kw):
+            versuche["n"] += 1
+
+        with mock.patch.object(APP, "_rmtree_force", nie), mock.patch.object(APP.time, "sleep", lambda _s: None):
+            gui._teilordner_nach_abbruch_entfernen(self.ordner, True)
+        self.assertEqual(5, versuche["n"])
+        self.assertTrue(os.path.isdir(self.ordner))
+        self.assertTrue(any("log.teilordner_bleibt" in z for z in gui.protokoll), gui.protokoll)
 
     def test_ein_fehlender_ordner_ist_kein_fehler(self):
         gui = _gui()

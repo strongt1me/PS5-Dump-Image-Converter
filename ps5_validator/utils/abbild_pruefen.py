@@ -37,6 +37,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from ps5_validator.utils import dokan_laufwerk
 from ps5_validator.utils.nahtstellen import Textquelle, schluessel_zeigen
 from ps5_validator.utils.plattform import ist_administrator, prozess_flags
 
@@ -626,12 +627,16 @@ class Pruefstand:
             result["detail"] = self._t("verify.count_skipped_no_ufs2tool", error=exc)
             return result
 
-        drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
-        drive = None
-        for idx in range(25, 3, -1):
-            if not (drives_bitmask & (1 << idx)):
-                drive = chr(65 + idx) + ":"
-                break
+        # Alle Einhaengungen einer .ffpkg gehen nacheinander (gemeinsame Sperre, siehe dokan_laufwerk): Die Vorschau der
+        # Metadaten nimmt sonst denselben Laufwerksbuchstaben.
+        with dokan_laufwerk.SPERRE:
+            return self._verify_ffpkg_file_count_eingehaengt(exe, candidate_path, expected_file_count, result)
+
+    def _verify_ffpkg_file_count_eingehaengt(
+        self, exe: str, candidate_path: str, expected_file_count: int, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Der Teil von :meth:`_verify_ffpkg_file_count_via_mount`, der das Laufwerk hat (Sperre gehalten)."""
+        drive = dokan_laufwerk.freier_buchstabe()
         if not drive:
             result["detail"] = self._t("verify.count_skipped_no_drive")
             return result
@@ -648,13 +653,7 @@ class Pruefstand:
                 errors="replace",
                 **prozess_flags(),
             )
-            for _ in range(30):
-                if mount_proc.poll() is not None:
-                    break
-                if os.path.exists(drive + "\\"):
-                    mounted = True
-                    break
-                _time.sleep(0.5)
+            mounted = dokan_laufwerk.bereit_warten(mount_proc, drive, versuche=30, pause=0.5)
 
             if not mounted:
                 tail = ""
@@ -685,24 +684,7 @@ class Pruefstand:
             return result
         finally:
             if mount_proc is not None:
-                try:
-                    mount_proc.terminate()
-                    mount_proc.wait(timeout=10)
-                except Exception:
-                    try:
-                        mount_proc.kill()
-                    except Exception:
-                        pass
-            try:
-                if mounted and drive and os.path.exists(drive + "\\"):
-                    subprocess.run(
-                        ["mountvol", drive + "\\", "/D"],
-                        timeout=10,
-                        capture_output=True,
-                        **prozess_flags(),
-                    )
-            except Exception:
-                pass
+                dokan_laufwerk.aushaengen(drive, mount_proc)
 
     def _verify_exfat_file_count(
         self, exfat_path: str, expected_file_count: int

@@ -317,6 +317,70 @@ def pruefe_reste(lage: Restelage) -> list[Befund]:
 
 
 # ---------------------------------------------------------------------------
+# Eingehaengte Laufwerke
+# ---------------------------------------------------------------------------
+ART_OSFMOUNT = "osfmount"
+ART_DOKAN = "dokan"
+
+
+@dataclass(frozen=True)
+class Laufwerkslage:
+    """Laufwerksbuchstaben, die ein Einhaengewerkzeug dieses Programms angelegt haben koennte."""
+    laufwerke: tuple[tuple[str, str], ...] = ()          # (Buchstabe, Art)
+    #: Laeuft eine Aufgabe, gehoeren die Laufwerke zu ihr.
+    arbeit_laeuft: bool = False
+
+
+def laufwerke_messen(arbeit_laeuft: bool = False) -> Laufwerkslage:
+    """Liest die Buchstaben D: bis Z:, hinter denen ein OSFMount-Abbild oder ein UFS2-Dokan-Laufwerk steckt.
+
+    Gemessen am 04.11.2026: Nach Abbruechen blieben drei OSFMount-Abbilder (X:, Y:, Z:, ohne Dateisystem und nicht
+    erreichbar) und ein Dokan-Laufwerk (W:, "UFS2") im Explorer stehen. Niemand bemerkte es, bis der Nutzer sie sah -
+    ``GetLogicalDrives`` zeigt sie, aber kein Bericht nannte sie.
+    """
+    if sys.platform != "win32" or arbeit_laeuft:
+        return Laufwerkslage((), arbeit_laeuft)
+    import ctypes
+    kern = ctypes.windll.kernel32
+    ziel_puffer = ctypes.create_unicode_buffer(1024)
+    name_puffer = ctypes.create_unicode_buffer(64)
+    gefunden: list[tuple[str, str]] = []
+    for index in range(3, 26):
+        buchstabe = chr(65 + index)
+        if not kern.QueryDosDeviceW(buchstabe + ":", ziel_puffer, 1024):
+            continue
+        if ziel_puffer.value.startswith("\\Device\\OSFMDisk"):
+            gefunden.append((buchstabe, ART_OSFMOUNT))
+        elif (kern.GetVolumeInformationW(buchstabe + ":\\", None, 0, None, None, None, name_puffer, 64)
+              and name_puffer.value.upper() == "UFS2"):
+            gefunden.append((buchstabe, ART_DOKAN))
+    return Laufwerkslage(tuple(gefunden), arbeit_laeuft)
+
+
+def pruefe_laufwerke(lage: Laufwerkslage) -> list[Befund]:
+    """Ein Hinweis auf eingehaengte OSFMount-/UFS2-Laufwerke (nur ohne laufende Aufgabe).
+
+    Ein Hinweis und keine Warnung: Ob jemand das Abbild bewusst eingehaengt hat, laesst sich von hier nicht sehen.
+    """
+    if lage.arbeit_laeuft or not lage.laufwerke:
+        return []
+    teile = []
+    for buchstabe, art in lage.laufwerke:
+        teile.append("%s: (%s)" % (buchstabe, "OSFMount-Abbild" if art == ART_OSFMOUNT else "UFS2 über Dokan"))
+    osf = [b for b, a in lage.laufwerke if a == ART_OSFMOUNT]
+    dokan = [b for b, a in lage.laufwerke if a == ART_DOKAN]
+    wie = []
+    if osf:
+        wie.append("OSFMount: OSFMount.com -d -m %s:" % osf[0] + (" (usw.)" if len(osf) > 1 else ""))
+    if dokan:
+        wie.append("Dokan: dokanctl /u %s" % dokan[0] + (" (usw.)" if len(dokan) > 1 else ""))
+    return [Befund(
+        HINWEIS, "laufwerke_eingehaengt",
+        "%d eingehängte(s) Laufwerk(e), die dieses Programm angelegt haben könnte, sind noch da: %s. Waren sie nicht "
+        "gewollt, so aushängen - %s" % (len(lage.laufwerke), ", ".join(teile), "; ".join(wie)))]
+
+
+# ---------------------------------------------------------------------------
 # Ressourcen und Prozesse
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
@@ -843,7 +907,8 @@ def pruefe_alles(*, protokoll: Protokolllage | None = None, reste: Restelage | N
                  werkzeugpflege: Iterable[str] | None = None, fremdwerkzeuge: Iterable[str] | None = None,
                  eigenschaften: Iterable[str] | None = None, werkzeuge: Werkzeuglage | None = None,
                  abhaengigkeiten: Abhaengigkeitslage | None = None,
-                 optimierung: Iterable[str] | None = None) -> Betriebsergebnis:
+                 optimierung: Iterable[str] | None = None,
+                 laufwerke: Laufwerkslage | None = None) -> Betriebsergebnis:
     """Fuehrt alle Betriebspruefungen aus. Fehlt eine Messung, entfaellt nur ihr Teil."""
     befunde: list[Befund] = []
     geprueft: list[str] = []
@@ -854,6 +919,7 @@ def pruefe_alles(*, protokoll: Protokolllage | None = None, reste: Restelage | N
             ("Alter der Testabdeckung", optimierung, pruefe_optimierung),
             ("Protokoll (24 h)", protokoll, pruefe_protokoll),
             ("liegen gebliebene Reste", reste, pruefe_reste),
+            ("eingehängte Laufwerke", laufwerke, pruefe_laufwerke),
             ("Prozesse und Ressourcen", ressourcen, pruefe_ressourcen),
             ("Wiederaufnahmepunkte", wiederaufnahme, pruefe_wiederaufnahme),
             ("Einstellungen und Pfade", einstellungen, pruefe_einstellungen),

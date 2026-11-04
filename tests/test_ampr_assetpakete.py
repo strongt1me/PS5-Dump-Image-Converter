@@ -1608,8 +1608,20 @@ class AufgabeSiebenOhneAssetPackTests(unittest.TestCase):
             with self.subTest(schluessel=schluessel):
                 self.assertNotIn(schluessel, i18n.STRINGS)
         hinweis = i18n.STRINGS.get("ampr.aufgabe7_ohne_assetpack") or {}
-        self.assertIn("Aufgabe 7", hinweis.get("de", ""))
-        self.assertIn("Task 7", hinweis.get("en", ""))
+        # Der AMPR EMU Manager hatte frueher die Nummer 7; seit 12.10.2026 ist 7 PKG / FPKG. Der Text nennt den Namen.
+        self.assertIn("AMPR EMU Manager", hinweis.get("de", ""))
+        self.assertIn("AMPR EMU manager", hinweis.get("en", ""))
+
+    def test_kein_ampr_text_nennt_den_manager_noch_aufgabe_7(self):
+        """Aufgabe 7 ist PKG / FPKG. Texte, die den AMPR EMU Manager meinen, duerfen die Nummer nicht tragen."""
+        import re
+        from ps5_validator.utils import i18n
+        muster = re.compile(r"(?:Aufgabe|task|tarea|attivit[àa]|tâche)\s*7", re.I)
+        for schluessel, texte in i18n.STRINGS.items():
+            for sprache, text in texte.items():
+                if "AMPR EMU Manager" in text or "AMPR EMU manager" in text or schluessel.startswith(("ampr.", "log.auto.")):
+                    with self.subTest(schluessel=schluessel, sprache=sprache):
+                        self.assertIsNone(muster.search(text), text[:120])
 
 
 class FassungsschreibweiseTests(unittest.TestCase):
