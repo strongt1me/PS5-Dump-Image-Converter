@@ -24,6 +24,7 @@ Diese Tests halten alles fest.
 from __future__ import annotations
 
 import os
+import struct
 import sys
 import tempfile
 import unittest
@@ -226,11 +227,18 @@ class SammelkonvertierungTests(unittest.TestCase):
         return gui
 
     def test_gemischte_auswahl_wird_zugelassen(self) -> None:
+        # Anfaenge, die die Quellpruefung als Abbild gelten laesst (seit dem 04.11.2026 prueft sie
+        # jede Quelle auf ihre Kennung; ein einzelnes "x" waere eine unbrauchbare Datei).
+        koepfe = {
+            "a.ffpfsc": struct.pack("<qq", 2, 0x1332A0B),
+            "b.exfat": b"\xeb\x76\x90EXFAT   " + bytes(600),
+            "c.ffpkg": bytes(65536 + 1372) + struct.pack("<I", 0x19540119) + bytes(64),
+        }
         with tempfile.TemporaryDirectory() as ordner:
             pfade = []
-            for name in ("a.ffpfsc", "b.exfat", "c.ffpkg"):
+            for name, kopf in koepfe.items():
                 p = os.path.join(ordner, name)
-                Path(p).write_bytes(b"x")
+                Path(p).write_bytes(kopf)
                 pfade.append(p)
             gui = self._pruefer(pfade)
             grund = APP.PS5ConverterGUI._validate_requested_conversion(

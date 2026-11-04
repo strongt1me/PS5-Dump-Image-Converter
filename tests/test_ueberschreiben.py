@@ -262,6 +262,33 @@ class SammelUeberschreibenTests(unittest.TestCase):
             self.assertTrue(eintrag.get("de"), schluessel)
             self.assertTrue(eintrag.get("en"), schluessel)
 
+    def test_die_schlusszeile_nennt_den_richtigen_grund(self):
+        """Matrixlauf 03.11.2026: Zwei Abbilder gleichen Namens, die zweite wurde
+        mit der Meldung "namensgleich" uebersprungen - die Schlusszeile sagte
+        trotzdem, sie habe "bereits im Zielformat vorgelegen"."""
+        with io.open(APP.__file__, "rb") as fh:
+            baum = ast.parse(fh.read().decode("utf-8"))
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_run_flexible_conversion")
+        text = ast.unparse(knoten)
+        # Der Zweig "Datei vorhanden / namensgleich" kennzeichnet sich selbst ...
+        i_vorhanden = text.find("'detail': self._t('batch.uebersprungen_vorhanden')")
+        self.assertGreater(i_vorhanden, 0)
+        self.assertIn("'skipped_vorhanden': True", text[max(0, i_vorhanden - 200):i_vorhanden])
+        # ... und die Zusammenfassung zaehlt beide Gruende getrennt.
+        self.assertIn("batch.skipped_summary_vorhanden", text)
+        self.assertIn("batch.nothing_to_do_vorhanden", text)
+        self.assertIn("uebersprungen - vorhanden", text.replace("  ", " "),
+                      "Die Zeile 'bereits im Zielformat' darf die anderen nicht mitzaehlen.")
+
+    def test_die_neuen_schlusszeilen_gibt_es_in_allen_sprachen(self):
+        for schluessel in ("batch.skipped_summary_vorhanden", "batch.nothing_to_do_vorhanden"):
+            eintrag = i18n.STRINGS[schluessel]
+            for sprache in ("de", "en", "es", "it", "fr"):
+                self.assertTrue(eintrag.get(sprache), (schluessel, sprache))
+        self.assertIn("{count}", i18n.STRINGS["batch.skipped_summary_vorhanden"]["de"])
+
 
 class BatchVorpruefungTests(unittest.TestCase):
     """_batch_vorpruefung klaert alle Rueckfragen vor dem ersten Byte Arbeit."""

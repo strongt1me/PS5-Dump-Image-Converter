@@ -1,6 +1,7 @@
 """
 PS5 Dump Validator – .ffpfs / .ffpfsc Datei-Prüfung
-Streaming-Read, SHA-256, Magic-Header-Check, Verschachtelungsprüfung.
+Streaming-Read, SHA-256, Magic-Header-Check, Verschachtelungsprüfung,
+Entpackprüfung der komprimierten Nutzdaten.
 
 PFS-Image-Header-Struktur (erzeugt von mkpfs pack file):
   Offset 0x00  int64  version  = 2          (PFS-Version)
@@ -135,6 +136,14 @@ MELDUNGEN: dict[str, str] = {
     "pfs_kopf_unbekannt": "Unbekannter PFS-Header: version=0x{version}, magic=0x{magic}",
     "pfs_magic32_unbekannt": "Unbekannter Magic-Header: 0x{magic}",
     "pfs_kopf_lesefehler": "Header-Lesefehler: {fehler}",
+    "pfs_nutzdaten_defekt": ("Nutzdaten beschädigt: {anzahl} Datei(en) im Container lassen sich "
+                             "nicht vollständig entpacken ({erster}). " + _ERNEUT),
+    "pfs_nutzdaten_kurz_defekt": "beschädigt ({anzahl} Fehler)",
+    "pfs_nutzdaten_ok": "in Ordnung (alle Blöcke entpackt und geprüft, {dateien} Datei(en))",
+    "pfs_nutzdaten_unkomprimiert": ("nicht prüfbar (unkomprimiert – das Abbild enthält keine "
+                                    "Prüfwerte für die Nutzdaten)"),
+    "pfs_nutzdaten_nicht_pruefbar": "nicht prüfbar ({fehler})",
+    "pfs_phase_entpacken": "{name} – Blöcke entpacken und prüfen",
 }
 
 
@@ -682,9 +691,102 @@ class FfpfsValidator(BaseValidator):
                 except Exception:
                     pass
 
+    def _check_payload(self, fpath: Path, file_size: int, result: ValidationResult) -> bool:
+        """Entpackt jeden Block des Containers und haelt ihn gegen seine Pruefwerte.
+
+        Die Nutzdaten eines ``.ffpfsc`` liegen zlib-komprimiert vor, und jeder
+        Block traegt seine Pruefsumme (Adler-32). Das Lesen der Datei
+        (``sha256_stream``) bemerkt ein gekipptes Bit darin nicht - der
+        Datentraeger liefert es klaglos aus. Erst das Entpacken schlaegt an.
+
+        Gemessen am 04.11.2026 (Matrixlauf, Aufgabe 8): ein Byte in der Mitte
+        einer frisch gebauten ``.ffpfsc`` verfaelscht, Validator ``OK``;
+        ``mkpfs verify`` (Fehler: 1) und ``mkpfs unpack --deep`` (zlib:
+        "incorrect data check") meldeten es. Dieselbe Pruefung macht das
+        Programm nach jedem Bau (``abbild_pruefen``).
+
+        Die Pruefung dauert so lange wie das Entpacken - bei einem grossen
+        Titel Minuten - und belegt deshalb die erste Haelfte des Balkens
+        (``self._skala``); das anschliessende SHA-256 die zweite.
+
+        Grenzen, die dieser Test nicht ueberwindet: Ein Block, den mkpfs
+        unkomprimiert abgelegt hat (nicht kleiner geworden), und ein
+        unkomprimiertes ``.ffpfs`` tragen keinen Pruefwert - ein Bitfehler
+        dort faellt nicht auf.
+
+        Returns:
+            False, wenn die Pruefung hier endet (Befund oder Abbruch; das
+            Ergebnis ist dann gesetzt), sonst True.
+        """
+        if not _ensure_mkpfs_importable():
+            return True
+        try:
+            from mkpfs import pfs as mkpfs_pfs
+            from mkpfs.pbar import Progress
+        except ImportError as exc:
+            result.summary["payload"] = self._text("pfs_nutzdaten_nicht_pruefbar", fehler=exc)
+            self._log.info(f"Entpackprüfung übersprungen: {exc}")
+            return True
+
+        try:
+            kopf = mkpfs_pfs.inspect_pfs_image(fpath, verify_payloads=False)
+            komprimiert = [rel for rel, nr in kopf.file_inodes.items()
+                           if kopf.inodes[nr].is_compressed]
+        except Exception as exc:
+            result.summary["payload"] = self._text("pfs_nutzdaten_nicht_pruefbar", fehler=exc)
+            self._log.info(f"Entpackprüfung nicht möglich: {exc}")
+            return True
+        if kopf.header is None or not komprimiert:
+            result.summary["payload"] = self._text("pfs_nutzdaten_unkomprimiert")
+            return True
+
+        class _Abbruch(Exception):
+            """Wird aus dem Fortschrittshoerer geworfen und beendet den Lauf."""
+
+        etikett = self._text("pfs_phase_entpacken", name=fpath.name)
+        gesamt = max(1, int(file_size))
+
+        def _hoeren(aktion, *werte) -> None:
+            # Vor dem Takt: Abbrechen soll nicht auf die naechste Anzeige warten.
+            if self._is_cancelled():
+                raise _Abbruch()
+            if aktion != "step" or len(werte) < 3:
+                return
+            insgesamt = max(1, int(werte[2] or 1))
+            fertig = min(insgesamt, max(0, int(werte[1] or 0)))
+            self._report_progress(fertig * gesamt // insgesamt, 2 * gesamt, etikett)
+
+        fehler: list[str] = []
+        try:
+            with open(fpath, "rb") as fh:
+                geprueft, _crc, _manifest = mkpfs_pfs.verify_file_payload_hashes(
+                    fh, kopf.header, kopf.inodes, kopf.file_inodes, fehler,
+                    progress=Progress(enabled=False, listener=_hoeren))
+        except _Abbruch:
+            result.set_skipped(self._text("abgebrochen_ungelesen"))
+            return False
+        except Exception as exc:
+            result.summary["payload"] = self._text("pfs_nutzdaten_nicht_pruefbar", fehler=exc)
+            self._log.info(f"Entpackprüfung fehlgeschlagen: {exc}")
+            return True
+
+        # Ab hier gehoert dem SHA-256 nur noch die zweite Haelfte des Balkens.
+        self._skala = (gesamt, 2 * gesamt)
+        self._log.info(f"Entpackprüfung: {geprueft} Dateien, {len(fehler)} Fehler")
+        if fehler:
+            result.summary["payload"] = self._text("pfs_nutzdaten_kurz_defekt", anzahl=len(fehler))
+            result.set_corrupted(self._text("pfs_nutzdaten_defekt", anzahl=len(fehler),
+                                            erster=fehler[0]))
+            return False
+        result.summary["payload"] = self._text("pfs_nutzdaten_ok", dateien=geprueft)
+        return True
+
     def validate(self, path: str) -> ValidationResult:
         result = ValidationResult(mode="ffpfs")
         fpath  = Path(path)
+        #: (Versatz, Gesamtmass) des Balkens fuer das SHA-256; die Entpackpruefung
+        #: nimmt sich die erste Haelfte, wenn sie laeuft (siehe ``_check_payload``).
+        self._skala = (0, 0)
 
         # ── Existenz prüfen ──────────────────────────────────────────────────
         if not fpath.exists():
@@ -743,9 +845,13 @@ class FfpfsValidator(BaseValidator):
                             magic_info = self._text("pfs_magic_unbekannt_kopf",
                                                     version=f"{version:016X}",
                                                     magic=f"{magic:016X}")
-                            result.add_error(self._text("pfs_kopf_unbekannt",
-                                                        version=f"{version:016X}",
-                                                        magic=f"{magic:016X}"))
+                            # Weder PFS- noch PFSC-Kennung: Das ist kein
+                            # Abbild. Bis zum 04.11.2026 nur ein Hinweis
+                            # ("BESTANDEN: WARNING") - ein Container mit
+                            # zerstoertem Anfang galt als bestanden.
+                            result.set_corrupted(self._text("pfs_kopf_unbekannt",
+                                                            version=f"{version:016X}",
+                                                            magic=f"{magic:016X}"))
             elif len(header) >= 4:
                 # Datei zu kurz für vollständigen Header – nur int32 lesen
                 magic32 = struct.unpack_from("<I", header, 0x00)[0]
@@ -753,12 +859,14 @@ class FfpfsValidator(BaseValidator):
                     magic_info = self._text("pfs_magic_pfsc")
                 else:
                     magic_info = self._text("pfs_magic_unbekannt_32", magic=f"{magic32:08X}")
-                    result.add_error(self._text("pfs_magic32_unbekannt", magic=f"{magic32:08X}"))
+                    result.set_corrupted(self._text("pfs_magic32_unbekannt", magic=f"{magic32:08X}"))
 
         except OSError as exc:
             result.add_error(self._text("pfs_kopf_lesefehler", fehler=exc))
 
         result.summary["magic"] = magic_info
+        if result.status == "CORRUPTED":
+            return result                     # kein Abbild - weiter zu lesen brachte nichts mehr
 
         # ── Groesse gegen den PFS-Kopf ──────────────────────────────────────
         # Vor allem anderen: Einem abgeschnittenen Abbild fehlen die Bloecke am
@@ -773,15 +881,26 @@ class FfpfsValidator(BaseValidator):
         # sofort auffällt. Kostet nach Messung unter 1 MB und ~10 ms.
         self._check_nesting(fpath, result)
 
+        # ── Nutzdaten entpacken (nur komprimierte Container) ─────────────────
+        # Ein gekipptes Bit in den komprimierten Bloecken faellt beim blossen
+        # Lesen nicht auf (siehe _check_payload). Nach einem Urteil ueber den
+        # Aufbau lohnt es nicht mehr: Was schon beanstandet ist, braucht keine
+        # Viertelstunde Entpacken.
+        if ist_pfs_abbild and result.status in ("OK", "WARNING"):
+            if not self._check_payload(fpath, file_size, result):
+                return result
+
         # ── Vollständiger Streaming-Read + SHA-256 ───────────────────────────
         read_errors: list[str] = []
         file_hash = ""
+        versatz, skala = self._skala
         try:
             with open(fpath, "rb") as fh:
                 file_hash, read_errors = sha256_stream(
                     fh,
                     total_size=file_size,
-                    progress_cb=lambda d, t: self._report_progress(d, t, fpath.name),
+                    progress_cb=lambda d, t: self._report_progress(
+                        versatz + d, skala or t, fpath.name),
                     cancel_cb=self._is_cancelled,
                     lesefehler=self._vorlage("lesefehler_byte"),
                 )

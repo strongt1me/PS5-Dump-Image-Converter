@@ -30,6 +30,7 @@ import hashlib
 import inspect
 import logging
 import os
+import struct
 import subprocess
 import sys
 import time
@@ -124,6 +125,78 @@ class Pruefstand:
     #: Was Aufgabe 5, 6, 7 und 8 an Dateien durchlassen.
     _ALLE_ABBILDER = (".ffpfsc", ".ffpfs", ".exfat", ".ffpkg")
 
+    #: Kennungen am Anfang der Abbilder: PFS-Kopf (int64 bei Offset 8), exFAT-Name
+    #: im Bootsektor (Offset 3) und UFS2-Magic im Superblock bei 65536 + 1372.
+    _PFS_MAGIC = 0x1332A0B
+    _EXFAT_NAME = b"EXFAT   "
+    _UFS2_MAGIC = 0x19540119
+    _UFS2_SUPERBLOCK = 65536
+
+    def _abbild_kennung_problem(self, path: str) -> str:
+        """Kann diese Datei nach ihrer Endung ein Abbild sein? Leer, wenn ja.
+
+        Matrixlauf vom 04.11.2026 (Aufgabe 3): Eine **leere** und eine
+        **Textdatei** mit der Endung ``.exfat`` wurden "erfolgreich" in einen
+        Container verpackt (Rueckgabe 0, die Abschlusspruefung nannte ihn
+        "gueltig") - ``mkpfs pack file`` bettet jede Datei ein. Bei einer
+        leeren oder falschen ``.ffpkg`` kam zwar ein Fehler, aber erst aus dem
+        Werkzeug, und ein leerer Zielordner blieb liegen.
+
+        Gelesen werden nur die ersten Bytes. Gemessen an 4 fremden
+        ``.ffpfsc``, 20 fremden ``.exfat`` und der ``.ffpkg`` von E: sowie den
+        eigenen Abbildern: alle bestehen, jede zerstoerte oder leere Probe wird
+        erkannt.
+
+        Gilt nicht fuer Aufgabe 8: Der Validator muss auch ein kaputtes Abbild
+        oeffnen koennen, um es zu beanstanden.
+        """
+        endung = os.path.splitext(path)[1].lower()
+        arten = {".exfat": "exFAT", ".ffpkg": "ffpkg", ".ffpfs": "ffpfs/ffpfsc", ".ffpfsc": "ffpfs/ffpfsc"}
+        art = arten.get(endung)
+        if art is None or not os.path.isfile(path):
+            return ""
+        name = os.path.basename(path)
+        try:
+            groesse = os.path.getsize(path)
+            with open(path, "rb") as fh:
+                kopf = fh.read(512 if endung == ".exfat" else 16)
+                ufs = b""
+                if endung == ".ffpkg":
+                    fh.seek(self._UFS2_SUPERBLOCK)
+                    ufs = fh.read(1376)
+        except OSError:
+            return ""                 # unlesbar: das meldet der Bau selbst
+        if groesse == 0:
+            return self._t("srccheck.kein_abbild_leer", name=name, art=art)
+        if endung == ".exfat":
+            gueltig = len(kopf) >= 11 and kopf[3:11] == self._EXFAT_NAME
+            if gueltig and len(kopf) >= 0x70 and 9 <= kopf[0x6C] <= 12:
+                # Eine abgebrochene Kopie behaelt ihren Anfang: Der Bootsektor nennt die Volumengroesse
+                # (VolumeLength in Sektoren), die Datei ist kuerzer. Gemessen an 21 echten Abbildern:
+                # die Dateigroesse ist bei allen genau diese Groesse.
+                soll = struct.unpack_from("<Q", kopf, 0x48)[0] << kopf[0x6C]
+                if groesse < soll:
+                    return self._t("srccheck.abbild_abgeschnitten", name=name,
+                                   soll=f"{soll:,}".replace(",", "."), ist=f"{groesse:,}".replace(",", "."))
+        elif endung == ".ffpkg":
+            gueltig = len(ufs) >= 1376 and struct.unpack_from("<I", ufs, 1372)[0] == self._UFS2_MAGIC
+            if gueltig:
+                # Eine abgebrochene Kopie behaelt ihren Anfang samt Superblock - aber das Dateisystem
+                # sieht dann nur noch einen Teil seiner Dateien: Aufgabe 4 lieferte aus einer auf 60 %
+                # gekuerzten .ffpkg EINE Datei (31 MB statt 191 Dateien) und meldete Erfolg, weil die
+                # Liste der erwarteten Dateien aus demselben beschaedigten Abbild kam (Matrixlauf
+                # 04.11.2026). Der Superblock nennt die Groesse: fs_size (int64 bei 1080) mal fs_fsize
+                # (int32 bei 52). Gemessen an beiden echten Abbildern: die Dateigroesse ist genau das.
+                fsize = struct.unpack_from("<i", ufs, 52)[0]
+                anzahl = struct.unpack_from("<q", ufs, 1080)[0]
+                soll = anzahl * fsize if fsize > 0 and anzahl > 0 else 0
+                if soll and groesse < soll:
+                    return self._t("srccheck.abbild_abgeschnitten", name=name,
+                                   soll=f"{soll:,}".replace(",", "."), ist=f"{groesse:,}".replace(",", "."))
+        else:
+            gueltig = len(kopf) >= 16 and struct.unpack_from("<q", kopf, 8)[0] == self._PFS_MAGIC
+        return "" if gueltig else self._t("srccheck.kein_abbild", name=name, art=art)
+
     def _validate_source_path(self, path: str, mode: str) -> str:
         """Prueft ob der Quellpfad den Regeln fuer den gewaehlten Modus entspricht.
 
@@ -158,7 +231,7 @@ class Pruefstand:
                 return self._t("srccheck.wrong_extension",
                                what=self._t(was), ext="/".join(endungen),
                                name=os.path.basename(path))
-            return ""
+            return self._abbild_kennung_problem(path)
 
         if mode == "dump_validator":
             # Akzeptiert: Ordner (Game Dump), .ffpfsc/.ffpfs, .exfat oder .ffpkg
@@ -209,7 +282,7 @@ class Pruefstand:
                 return self._t("srccheck.invalid_file",
                                what=self._t("srccheck.what.batch_files"),
                                name=os.path.basename(path))
-            return ""
+            return self._abbild_kennung_problem(path)
 
         if mode == "universal_convert":
             if os.path.isdir(path):
@@ -221,6 +294,7 @@ class Pruefstand:
                 return self._t("srccheck.invalid_file",
                                what=self._t(was),
                                name=os.path.basename(path))
+            return self._abbild_kennung_problem(path)
         return ""
 
 

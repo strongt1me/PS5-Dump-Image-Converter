@@ -427,14 +427,21 @@ class AbgeschnitteneAbbilderTests(unittest.TestCase):
                     self.assertEqual(ergebnis.status, "CORRUPTED", ergebnis.errors)
                     self.assertIn("abgeschnitten", " ".join(ergebnis.errors))
 
-    def test_ungueltige_boot_signatur_bleibt_eine_warnung(self) -> None:
-        """Bis v1.9.24 setzte das Ende der Pruefung den Stand wieder auf OK."""
+    def test_ungueltige_boot_signatur_wird_nie_ok(self) -> None:
+        """Bis v1.9.24 setzte das Ende der Pruefung den Stand wieder auf OK.
+
+        Seit dem 04.11.2026 kommt die Pruefsumme der Boot-Region dazu: Dieselben
+        zwei Bytes aendern auch sie, und der Fall endet nicht mehr als
+        "WARNING", sondern als beschaedigt (frueher hiess der Test
+        ``..._bleibt_eine_warnung``; dass es nicht mehr OK wird, ist geblieben).
+        """
         kopie = self._kopie(self.exfat, name="signatur.exfat")
         with open(kopie, "r+b") as fh:
             fh.seek(510)
             fh.write(b"\x00\x00")
         ergebnis = self._pruefen(kopie)
-        self.assertEqual(ergebnis.status, "WARNING", ergebnis.errors)
+        self.assertEqual(ergebnis.status, "CORRUPTED", ergebnis.errors)
+        self.assertIn("Boot-Signatur ungültig (0x55AA erwartet).", ergebnis.errors)
 
     def test_abbruch_liest_nicht_zu_ende(self) -> None:
         if self.baufehler:
@@ -1760,6 +1767,30 @@ class ZielformatListeTests(_TempTest):
         quelle = _schreiben(os.path.join(self.basis, "Spiel.ffpfsc"), b"x" * 64)
         self.assertEqual(app._get_target_options("universal_convert", quelle),
                          ("folder", "ffpfs", "exfat", "ffpkg"))
+
+    def test_aufgabe2_bietet_ffpfsc_fuer_eine_ffpfs_quelle(self) -> None:
+        """Matrixlauf 03.11.2026: Aufgabe 2 verschwieg ".ffpfsc" fuer eine .ffpfs.
+
+        Die Liste warf das Ziel fuer jede Quelle heraus, solange kein Einbau
+        gewaehlt war - auch fuer die .ffpfs, deren Umwandlung in den Container
+        keine Kopie ist. Die Kommandozeile wich dann still auf den Dump-Ordner aus.
+        """
+        app = _app()
+        quelle = _schreiben(os.path.join(self.basis, "Spiel.ffpfs"), b"x" * 64)
+        with mock.patch.object(app, "_selbstziel_erlaubt", return_value=False):
+            ziele = app._get_target_options("unpack_to_exfat", quelle)
+        self.assertIn("ffpfsc", ziele)
+        self.assertNotIn("ffpfs", ziele, "Das Selbst-Ziel bleibt gesperrt.")
+
+    def test_aufgabe2_ffpfsc_quelle_ohne_einbau_ohne_selbstziel(self) -> None:
+        """Gegenprobe: Fuer eine .ffpfsc bleibt das Selbst-Ziel ohne Einbau aus der Liste."""
+        app = _app()
+        quelle = _schreiben(os.path.join(self.basis, "Spiel.ffpfsc"), b"x" * 64)
+        with mock.patch.object(app, "_selbstziel_erlaubt", return_value=False):
+            self.assertNotIn("ffpfsc", app._get_target_options("unpack_to_exfat", quelle))
+            self.assertNotIn("ffpfsc", app._get_target_options("unpack_to_exfat", ""))
+        with mock.patch.object(app, "_selbstziel_erlaubt", return_value=True):
+            self.assertIn("ffpfsc", app._get_target_options("unpack_to_exfat", quelle))
 
 
 class BibliothekSuchlaufTests(unittest.TestCase):

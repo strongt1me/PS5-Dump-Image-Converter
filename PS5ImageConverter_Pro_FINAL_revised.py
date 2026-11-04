@@ -20,6 +20,7 @@ if sys.platform == "win32":
 import argparse
 import base64
 import codecs
+import contextvars
 import ctypes
 import dataclasses
 import datetime      # noqa: F401
@@ -489,6 +490,23 @@ class _KopieAbgebrochen(Exception):
     echten Schreibfehler unterscheiden kann - der eine ist eine Entscheidung,
     der andere ein Problem.
     """
+
+
+class _EngineAbbruch(Exception):
+    """Der Anwender hat abgebrochen, waehrend die eingebettete Engine (mkpfs) lief.
+
+    Wird beim naechsten Fortschrittsschritt der Engine geworfen (``Progress.step``, siehe
+    ``PS5ConverterGUI._engine_abbruch_hoerer_setzen``) und beendet ihren Lauf - Packen meldet tausendfach
+    je Sekunde, Entpacken alle 8 MiB. mkpfs raeumt dabei seine ``.tmp``-Datei selbst weg. Von
+    ``Exception`` abgeleitet, aber keine, die mkpfs oder das Programm als Fehler behandeln: Der Abbruch
+    ist eine Entscheidung.
+    """
+
+
+#: Abbruchpruefer der laufenden Engine. Im Engine-Faden gesetzt; ``Progress`` merkt ihn sich beim Anlegen
+#: (``_engine_abbruch_hoerer_setzen``) - Fortschrittsschritte aus Hilfsfaeden des Laufs kommen so ebenfalls an.
+_ENGINE_ABBRUCH: "contextvars.ContextVar[Callable[[], bool] | None]" = contextvars.ContextVar(
+    "ps5conv_engine_abbruch", default=None)
 
 
 #: Ab dieser Groesse kopiert ``_datei_blockweise_kopieren`` statt
@@ -8862,7 +8880,8 @@ class PS5ConverterGUI:
             blockiert: list[str] = []
             for candidate in sources:
                 source_type = self._detect_source_type(candidate)
-                issue = self._conversion_block_reason(source_type, target_type, mode, candidate)
+                issue = (self._conversion_block_reason(source_type, target_type, mode, candidate)
+                         or self._abbild_kennung_problem(candidate))
                 if issue:
                     blockiert.append(f"{os.path.basename(candidate)}: {issue}")
             if len(blockiert) == len(sources):
@@ -14011,15 +14030,21 @@ class PS5ConverterGUI:
         # braechte nichts. Ohne gewaehltes Asset-Pack bleibt die Option deshalb
         # aus der Liste - sie taucht erst auf, wenn Asset-Pack angehakt ist,
         # und das Umschalten frischt die Liste ueber _refresh_target_format_options.
-        if mode == "unpack_to_exfat" and not self._selbstziel_erlaubt():
-            options = tuple(t for t in options if t != "ffpfsc")
-        # Das Selbst-Ziel nach der GENAUEN Endung ausblenden, wie es
+        #
+        # Nur fuer eine .ffpfsc-Quelle (oder noch keine Quelle): Eine .ffpfs ist
+        # ein anderes Format als der Container, ihre Umwandlung in eine .ffpfsc
+        # ist keine Kopie derselben Datei. Gemessen am 03.11.2026 (Matrixlauf,
+        # Aufgabe 2 mit einer .ffpfs): Die Liste verschwieg ".ffpfsc", und die
+        # Kommandozeile wich still auf den Dump-Ordner aus (Rueckgabe 0).
+        # Das Selbst-Ziel wird nach der GENAUEN Endung ausgeblendet, wie es
         # _conversion_block_reason beim Start prueft. Bis v1.9.24 filterte die
         # Liste nach _detect_source_type, das .ffpfs und .ffpfsc zusammenfasst:
         # Bei einer .ffpfs-Quelle stand ".ffpfs" in der Liste (Start: "Quelle
         # und Zielformat sind identisch"), und in der Umwandlung fehlte das
         # erlaubte ".ffpfsc".
         genau = self._detect_source_format(source_path) if source_path else ""
+        if mode == "unpack_to_exfat" and genau != "ffpfs" and not self._selbstziel_erlaubt():
+            options = tuple(t for t in options if t != "ffpfsc")
         # Dump-Ordner -> Dump-Ordner nur mit Einbau (Wunsch vom 01.10.2026):
         # AMPR EMU (jede Methode, PlayGo haengt daran) oder BACKPORT. Ohne
         # Einbau waere es eine blosse Kopie. Aufgabe 1 hat immer einen Ordner
@@ -19775,6 +19800,10 @@ class PS5ConverterGUI:
             sieht_aus_wie_dump=PS5ConverterGUI._looks_like_dump_folder,
             ordner_inhalt=PS5ConverterGUI._sammel_ordner_inhalt,
         )._validate_source_path(path, mode)
+
+    def _abbild_kennung_problem(self, path: str) -> str:
+        """Kann diese Datei nach ihrer Endung ein Abbild sein? Leer, wenn ja. Siehe abbild_pruefen."""
+        return abbild_pruefen.Pruefstand(text=self._t)._abbild_kennung_problem(path)
 
     def _browse_dest(self) -> None:
         """Öffnet einen Verzeichnis-Dialog für den Zielpfad."""
@@ -29946,6 +29975,52 @@ class PS5ConverterGUI:
     # ------------------------------------------------------------------
     # mkpfs-Ausführung
     # ------------------------------------------------------------------
+    def _engine_abbruch_hoerer_setzen(self) -> None:
+        """Haengt den Abbruchhoerer an die eingebettete Engine - im Faden, der sie ausfuehrt.
+
+        ``Abbrechen`` setzte bis zum 04.11.2026 nur ``is_running``. Der eingebettete mkpfs-Lauf "laesst
+        sich nicht unterbrechen" (Kommentar in ``_execute_mkpfs_einmal``) und lief weiter: bis zum Ende,
+        mit voller Plattenlast, und legte sein fertiges Ergebnis ins Ziel, nachdem das Fenster
+        "Abgebrochen." gemeldet hatte (gemessen am 04.11.2026 im Fenster, Aufgabe 1, 2, 3 und 5; ein
+        Entpacken schrieb nach dem Abbruch weitere 500 MB).
+
+        MkPFS ruft ``Progress.step`` bei jedem Schritt; eine Ausnahme daraus beendet den Lauf, und mkpfs
+        raeumt seine ``.tmp``-Datei selbst weg. Hier wird ``Progress`` deshalb einmal umhuellt: ``__init__``
+        merkt sich den Pruefer des Engine-Fadens, ``step`` wirft ``_EngineAbbruch``, sobald er anschlaegt.
+
+        **Nicht ueber ``mkpfs.pbar.default_listener``:** Das war die erste Fassung - und sie legte die
+        Fortschrittsanzeige lahm. Hat eine ``Progress`` einen Hoerer, schreibt sie ihre Balkenzeilen nicht
+        mehr nach stderr (``step`` kehrt vorher zurueck, ``status`` ebenso), und genau diese Zeilen liest das
+        Programm aus der Warteschlange: Der Balken stand in Aufgabe 1 bei 5 %, in Aufgabe 3 bei 0,5 %, und die
+        Statuszeilen der Engine fehlten im Protokoll (gemessen am 04.11.2026 im Fenster). Der Umweg haelt
+        ``listener`` leer.
+
+        Eine fremde MkPFS-Fassung ohne ``Progress`` laeuft wie bisher weiter - dafuer bleibt die
+        Nachlauf-Verwaltung ``_pending_mkpfs_engine_done``.
+        """
+        try:
+            from mkpfs.pbar import Progress  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+        except ImportError:
+            return
+        if not getattr(Progress.step, "_ps5conv_abbruch", False):
+            original_init = Progress.__init__
+            original_step = Progress.step
+
+            def _init(selbst: Any, *args: Any, **kwargs: Any) -> None:
+                original_init(selbst, *args, **kwargs)
+                selbst._ps5conv_abbruch = _ENGINE_ABBRUCH.get(None)
+
+            def _step(selbst: Any, *args: Any, **kwargs: Any) -> None:
+                pruefer = getattr(selbst, "_ps5conv_abbruch", None)
+                if pruefer is not None and pruefer():
+                    raise _EngineAbbruch()
+                return original_step(selbst, *args, **kwargs)
+
+            _step._ps5conv_abbruch = True  # type: ignore[attr-defined]
+            Progress.__init__ = _init  # type: ignore[method-assign]
+            Progress.step = _step  # type: ignore[method-assign]
+        _ENGINE_ABBRUCH.set(lambda: not self.is_running)
+
     def _wait_for_pending_mkpfs_background(self, target_path: str = "", timeout_s: float = 900.0,
                                            abbruch=None) -> bool:
         """Wartet bei Bedarf auf einen zuvor abgebrochenen MkPFS-Lauf im Hintergrund.
@@ -30418,7 +30493,11 @@ class PS5ConverterGUI:
                     sys.stdout = writer  # type: ignore[assignment]
                     sys.stderr = writer  # type: ignore[assignment]
                     from mkpfs.cli import cli_mkpfs_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+                    self._engine_abbruch_hoerer_setzen()
                     exit_code = cli_mkpfs_main(args) or 0
+            except _EngineAbbruch:
+                # Kein Fehler: Der Anwender hat abgebrochen. Der Aufgabenfaden sieht es an is_running.
+                exit_code = 1
             except SystemExit as exc:
                 exit_code = exc.code if isinstance(exc.code, int) else 0
             except ModuleNotFoundError as exc:
@@ -30649,6 +30728,10 @@ class PS5ConverterGUI:
                 _last_keepalive = _now
                 # Keepalive darf keine echte Worker-Aktivitaet vortaeuschen.
                 # _last_engine_output_ts bleibt ausschliesslich vom Engine-Output getrieben.
+        # Seit dem Abbruchhoerer beendet sich die Engine auf Abbrechen selbst, oft schneller als die
+        # Schleife oben hinschaut (0,2 s). Ein Lauf, der nach dem Abbruch endet, ist kein Ergebnis.
+        if not self.is_running:
+            abort_requested = True
 
         # Sicherstellen dass beide Threads fertig sind
         monitor_stop.set()
@@ -31449,6 +31532,19 @@ class PS5ConverterGUI:
                 # Cover und Name des Spiels, das jetzt drankommt, und eine Zeile,
                 # was damit geschieht (Nutzer 06.10.2026: "immer das gleiche Spielcover").
                 self._batch_spiel_zeigen(candidate, idx, len(sources), source_type, target_type)
+                # Eine leere oder falsch benannte Abbilddatei ist ein Fehlschlag dieser Quelle - kein
+                # Ueberspringer, auch wenn ihre Endung zum Zielformat passt (Matrixlauf 04.11.2026).
+                kennung = self._abbild_kennung_problem(candidate)
+                if kennung:
+                    self._append_to_log(self._t('log.auto.0088', v0=kennung))
+                    all_ok = False
+                    self.task_batch_results.append({
+                        "source": candidate,
+                        "output": "",
+                        "ok": False,
+                        "detail": kennung,
+                    })
+                    continue
                 reason = self._conversion_block_reason(source_type, target_type, mode, candidate)
                 if reason:
                     # Liegt die Quelle bereits im Zielformat vor, ist nichts zu
@@ -31506,6 +31602,7 @@ class PS5ConverterGUI:
                         "output": "",
                         "ok": False,
                         "skipped": True,
+                        "skipped_vorhanden": True,
                         "detail": self._t("batch.uebersprungen_vorhanden"),
                     })
                     continue
@@ -31544,13 +31641,22 @@ class PS5ConverterGUI:
                     all_ok = False
             succeeded = sum(1 for item in self.task_batch_results if item["ok"])
             uebersprungen = sum(1 for item in self.task_batch_results if item.get("skipped"))
+            # Zwei Gruende, zwei Zeilen: Eine Quelle, deren Ergebnis schon im Zielordner liegt
+            # (Namensgleichheit im Lauf oder "nicht ueberschreiben"), lag nicht "bereits im
+            # Zielformat vor". Matrixlauf 03.11.2026: Die Schlusszeile nannte bei zwei Abbildern
+            # gleichen Namens trotzdem diesen Grund.
+            vorhanden = sum(1 for item in self.task_batch_results if item.get("skipped_vorhanden"))
+            im_zielformat = uebersprungen - vorhanden
             self._append_to_log(self._t('log.auto.0091', v0=succeeded, v1=len(sources)))
-            if uebersprungen:
-                self._append_to_log(self._t('batch.skipped_summary', count=uebersprungen))
+            if im_zielformat:
+                self._append_to_log(self._t('batch.skipped_summary', count=im_zielformat))
+            if vorhanden:
+                self._append_to_log(self._t('batch.skipped_summary_vorhanden', count=vorhanden))
             # Ein Lauf, in dem jede Quelle schon im Zielformat vorlag, hat nichts
             # zu tun gefunden - das als Erfolg zu melden waere irrefuehrend.
             if succeeded == 0 and uebersprungen == len(sources):
-                self._append_to_log(self._t('batch.nothing_to_do'))
+                self._append_to_log(self._t('batch.nothing_to_do_vorhanden' if vorhanden
+                                            else 'batch.nothing_to_do'))
                 all_ok = False
             self._batch_von, self._batch_bis = 0.0, 100.0
             self._param_batch_aktiv = False
@@ -38949,6 +39055,10 @@ class PS5ConverterGUI:
                                      name=os.path.basename(dest_folder)))
             return True
 
+        if not self.is_running:
+            # Abgebrochen, nicht gescheitert: Der OSFMount-Weg darf nicht anlaufen. Er legte den eben
+            # entfernten Zielordner leer wieder an (Fenstermessung 04.11.2026, Aufgabe 3 und 6).
+            return False
         self._append_to_log(self._t('log.auto.0223'))
         self.progress_engine.begin_prepare(self._t("progress.prepare.find_osfmount"))
         self.root.after(0, lambda: self.status_label.config(
@@ -39446,6 +39556,26 @@ class PS5ConverterGUI:
         self._append_to_log(self._t('ffpkg.extract_done', count=dateien))
         return True
 
+    def _teilordner_nach_abbruch_entfernen(self, ordner: str, ordner_ist_neu: bool) -> None:
+        """Entfernt den halb gefuellten Zielordner eines abgebrochenen Laufs.
+
+        Bei Aufgabe 4 nach Dump-Ordner IST der Zielordner das Ergebnis; nach "Abbrechen" blieb ein Ordner
+        mit dem Namen des Spiels und einem Bruchteil seiner Dateien liegen (gemessen am 04.11.2026:
+        66 MB von 1,2 GB) - er sieht aus wie ein fertiger Dump. Nur wenn der Ordner erst durch diesen Lauf
+        entstanden ist; einen vorhandenen fasst der Abbruch nicht an.
+        """
+        if not ordner_ist_neu or not os.path.isdir(ordner):
+            return
+        try:
+            _rmtree_force(ordner, ignore_errors=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Teilordner %s nicht entfernbar: %s", ordner, exc)
+            return
+        if os.path.isdir(ordner):
+            self._append_to_log(self._t("log.teilordner_bleibt", pfad=ordner))
+        else:
+            self._append_to_log(self._t("log.teilordner_entfernt", pfad=ordner))
+
     def _extract_ffpkg_to_folder_via_ufs2tool(
         self,
         src: str,
@@ -39511,38 +39641,57 @@ class PS5ConverterGUI:
         # bisher still verloren. Gegen diese Liste wird am Ende abgeglichen.
         quell_dateien: dict[str, int] = {}
 
+        # Gehoert der Zielordner diesem Lauf? Nur dann darf er nach einem Abbruch weg (siehe unten).
+        ordner_ist_neu = not os.path.exists(dest_folder)
         try:
             os.makedirs(dest_folder, exist_ok=True)
             self.root.after(0, lambda: self.status_label.config(
                 text=self._t("status.mount_ffpkg", task=status_prefix)))
             self._append_to_log(self._t('log.auto.0228', v0=os.path.basename(src), v1=drive))
 
-            mount_proc = subprocess.Popen(
-                [exe, "mount_udf", "-o", "ro", src, drive],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="mbcs",
-                errors="replace",
-                creationflags=_NO_WIN_FLAGS,
-                startupinfo=_silent_startupinfo(),
-            )
+            versuche = 0
+            while True:
+                versuche += 1
+                mount_proc = subprocess.Popen(
+                    [exe, "mount_udf", "-o", "ro", src, drive],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="mbcs",
+                    errors="replace",
+                    creationflags=_NO_WIN_FLAGS,
+                    startupinfo=_silent_startupinfo(),
+                )
 
-            for _ in range(30):
-                if mount_proc.poll() is not None:
+                for _ in range(30):
+                    if mount_proc.poll() is not None:
+                        break
+                    if os.path.exists(drive + "\\"):
+                        mounted = True
+                        break
+                    _time.sleep(0.5)
+                if mounted:
                     break
-                if os.path.exists(drive + "\\"):
-                    mounted = True
-                    break
-                _time.sleep(0.5)
 
-            if not mounted:
                 tail = ""
                 try:
                     if mount_proc.poll() is not None and mount_proc.stdout is not None:
                         tail = (mount_proc.stdout.read() or "").strip()
                 except Exception:
                     tail = ""
+                # Dokan weist einen Buchstaben gelegentlich zurueck ("Can't assign a drive letter or mount
+                # point"). Gemessen am 04.11.2026 im Fenster: Aufgabe 4 scheiterte so zweimal sofort nach einem
+                # anderen Lauf, derselbe Buchstabe ging sechs Sekunden spaeter. Zweimal mit dem naechsten
+                # freien Buchstaben nach kurzer Pause nachfassen, bevor die Extraktion als gescheitert gilt.
+                if versuche < 3 and self.is_running and "drive letter" in tail.lower():
+                    belegt = _ct.windll.kernel32.GetLogicalDrives()
+                    neu = next((chr(65 + i) + ":" for i in range(25, 3, -1)
+                                if not (belegt & (1 << i)) and chr(65 + i) + ":" != drive), None)
+                    if neu:
+                        self._append_to_log(self._t("entpacken.laufwerk_neuer_versuch", alt=drive, neu=neu))
+                        drive = neu
+                        _time.sleep(2.0)
+                        continue
                 raise RuntimeError(tail or self._t("entpacken.laufwerk_zu_spaet", laufwerk=drive))
 
             self._append_to_log(self._t('log.auto.0229', v0=drive))
@@ -39810,6 +39959,7 @@ class PS5ConverterGUI:
             return True
         except _KopieAbgebrochen:
             self._append_to_log(self._t("log.extraktion_abgebrochen"))
+            self._teilordner_nach_abbruch_entfernen(dest_folder, ordner_ist_neu)
             return False
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0239', v0=exc))
@@ -40498,6 +40648,8 @@ class PS5ConverterGUI:
         ):
             return True
 
+        if not self.is_running:
+            return False                    # abgebrochen, nicht gescheitert: kein Ausweichweg
         self._append_to_log(self._t('log.auto.0255'))
         return self._extract_exfat_via_osfmount(
             inner_path,
@@ -41722,6 +41874,9 @@ class PS5ConverterGUI:
             result = extract_exfat_image(src_path, dest_path, progress=progress_bridge)
         except _KopieAbgebrochen:
             self._append_to_log(self._t("log.extraktion_abgebrochen"))
+            # Der Ordner wurde oben frisch angelegt - er gehoert diesem Lauf, ein halber saehe wie ein
+            # fertiger Dump aus (Fenstermessung 04.11.2026: 58 MB und 159 MB blieben liegen).
+            self._teilordner_nach_abbruch_entfernen(str(dest_path), True)
             return False
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0277', v0=exc))
@@ -68049,6 +68204,13 @@ def _run_cli(args: argparse.Namespace) -> int:
     app._cli_platz_trotzdem = yes
     messagebox.askyesno = lambda *a, **k: yes
     messagebox.askquestion = lambda *a, **k: ("yes" if yes else "no")
+    # Auch die uebrigen Rueckfragen des Systems: Ohne Ersatz zeigt tkinter einen echten, hier unsichtbaren
+    # Dialog, und der Lauf steht fuer immer still. Gemessen am 03.11.2026 (Matrixlauf, Aufgabe 1 mit einem
+    # Dump, der Preflight-Warnungen ausloest): _launch_task fragt dort mit askokcancel, das hier fehlte.
+    # Ohne --yes gilt "Abbrechen" (None/False), nie "Weiter"; eine Wiederholungsfrage nie.
+    messagebox.askokcancel = lambda *a, **k: yes
+    messagebox.askyesnocancel = lambda *a, **k: (True if yes else None)
+    messagebox.askretrycancel = lambda *a, **k: False
     messagebox.showerror = lambda title, message, **k: print(f"[FEHLER] {title}: {message}", file=sys.stderr)
     messagebox.showwarning = lambda title, message, **k: print(f"[WARNUNG] {title}: {message}")
     messagebox.showinfo = lambda title, message, **k: print(f"[INFO] {title}: {message}")

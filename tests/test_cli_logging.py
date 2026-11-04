@@ -158,5 +158,61 @@ class RechtepruefungTests(unittest.TestCase):
                         cli_teil.index("[FEHLER]"))
 
 
+class CliRueckfragenTests(unittest.TestCase):
+    """Jede Rueckfrage des Systems, die das Programm stellt, bekommt im CLI-Modus eine Antwort.
+
+    Gemessen am 03.11.2026 (Matrixlauf der Aufgaben 1-8): ``--cli --task 1 --yes`` mit einem Dump, der
+    Preflight-Warnungen ausloeste, blieb stehen. ``_launch_task`` fragt dann mit ``messagebox.askokcancel``; ``_run_cli``
+    ersetzte aber nur askyesno/askquestion/showerror/showwarning/showinfo. Der echte Dialog blieb ohne sichtbares Fenster
+    offen, und der Lauf wartete fuer immer (im Skript ohne jede Meldung).
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import ast  # noqa: PLC0415
+        baum = ast.parse((PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8"))
+        cls.baum = baum
+        cls.run_cli = next(k for k in baum.body if isinstance(k, ast.FunctionDef) and k.name == "_run_cli")
+
+    @staticmethod
+    def _messagebox_namen(knoten) -> set:
+        import ast  # noqa: PLC0415
+        return {n.attr for n in ast.walk(knoten) if isinstance(n, ast.Attribute)
+                and isinstance(n.value, ast.Name) and n.value.id == "messagebox"}
+
+    def _ersetzt(self) -> set:
+        import ast  # noqa: PLC0415
+        namen = set()
+        for k in ast.walk(self.run_cli):
+            if isinstance(k, ast.Assign):
+                for ziel in k.targets:
+                    if (isinstance(ziel, ast.Attribute) and isinstance(ziel.value, ast.Name)
+                            and ziel.value.id == "messagebox"):
+                        namen.add(ziel.attr)
+        return namen
+
+    def test_jede_benutzte_rueckfrage_wird_im_cli_modus_ersetzt(self) -> None:
+        benutzt = {n for n in self._messagebox_namen(self.baum) if n.startswith("ask")}
+        self.assertGreaterEqual(len(benutzt), 3, "der Syntaxbaum zeigt die benutzten Funktionen nicht mehr")
+        self.assertEqual(set(), benutzt - self._ersetzt(),
+                         "Diese messagebox-Funktionen sind im CLI-Modus nicht ersetzt - der Lauf wuerde an einem "
+                         "unsichtbaren Dialog haengen bleiben")
+
+    def test_gegenprobe_der_alte_stand_faellt_auf(self) -> None:
+        """Mit dem Stand vor der Korrektur (ohne askokcancel) schluege der Waechter an."""
+        benutzt = {n for n in self._messagebox_namen(self.baum) if n.startswith("ask")}
+        alt = self._ersetzt() - {"askokcancel", "askyesnocancel", "askretrycancel"}
+        self.assertIn("askokcancel", benutzt - alt)
+
+    def test_ohne_zusage_gilt_nie_weiter(self) -> None:
+        """Ohne --yes antworten die neuen Ersatzfunktionen mit Abbrechen, nie mit Weiter."""
+        import ast  # noqa: PLC0415
+        quelle = ast.get_source_segment((PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8"),
+                                        self.run_cli)
+        self.assertIn("messagebox.askyesnocancel = lambda *a, **k: (True if yes else None)", quelle)
+        self.assertIn("messagebox.askretrycancel = lambda *a, **k: False", quelle)
+        self.assertIn("messagebox.askokcancel = lambda *a, **k: yes", quelle)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

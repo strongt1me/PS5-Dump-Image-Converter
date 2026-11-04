@@ -56,7 +56,10 @@ class ZielEnthaeltQuelleTests(unittest.TestCase):
         self.spielordner = os.path.join(self.basis, "Spiel")
         os.makedirs(self.spielordner)
         self.quelle = os.path.join(self.spielordner, "Spiel.exfat")
-        Path(self.quelle).write_bytes(b"QUELLE")
+        # Ein Anfang, den die Quellpruefung als exFAT-Abbild gelten laesst (Name im Bootsektor) -
+        # seit dem 04.11.2026 lehnt die Sammelkonvertierung eine Attrappe ohne ihn als Fehlschlag ab.
+        self.inhalt = b"\xeb\x76\x90EXFAT   " + bytes(500) + b"QUELLE"
+        Path(self.quelle).write_bytes(self.inhalt)
 
     def tearDown(self) -> None:
         self.td.cleanup()
@@ -70,7 +73,7 @@ class ZielEnthaeltQuelleTests(unittest.TestCase):
         ok = gui._run_flexible_conversion("batch_convert", "", self.basis)
         self.assertFalse(ok)
         self.assertEqual([], gebaut, "Der Weg wurde trotzdem gestartet.")
-        self.assertEqual(Path(self.quelle).read_bytes(), b"QUELLE")
+        self.assertEqual(Path(self.quelle).read_bytes(), self.inhalt)
         ergebnis = gui.task_batch_results[0]
         self.assertFalse(ergebnis["ok"])
         self.assertIn(self.spielordner, ergebnis["detail"])
@@ -93,7 +96,7 @@ class ZielEnthaeltQuelleTests(unittest.TestCase):
         gui._extract_exfat_to_folder_mkpfs = lambda *a, **k: extrahiert.append(a) or True
         self.assertFalse(gui._mode_exfat_to_folder(self.quelle, self.basis))
         self.assertEqual([], extrahiert)
-        self.assertEqual(Path(self.quelle).read_bytes(), b"QUELLE")
+        self.assertEqual(Path(self.quelle).read_bytes(), self.inhalt)
 
     def test_der_extraktor_selbst_verweigert_es(self) -> None:
         gui = _gui()

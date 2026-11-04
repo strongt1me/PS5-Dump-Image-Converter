@@ -38,6 +38,9 @@ MELDUNGEN: dict[str, str] = {
     "exfat_kein_oem": ("Kein exFAT-OEM-Name gefunden (gefunden: '{oem}'). "
                        "Möglicherweise kein exFAT-Container oder beschädigt."),
     "exfat_zu_klein": "Datei zu klein für Boot-Sektor (<512 Bytes).",
+    "exfat_boot_pruefsumme": ("Die Prüfsumme der Boot-Region stimmt nicht (berechnet {soll}, "
+                              "gespeichert {ist}): Der Anfang des Abbilds ist beschädigt."),
+    "exfat_boot_pruefsumme_ok": "in Ordnung",
     "exfat_boot_lesefehler": "Boot-Sektor Lesefehler: {fehler}",
     "exfat_abgeschnitten": ("Abbild abgeschnitten: Der Boot-Sektor nennt {soll}, "
                             "die Datei hat nur {ist} (es fehlen {fehlend}). "
@@ -77,6 +80,51 @@ class ExtfatValidator(BaseValidator):
             result.add_error(self._text("exfat_sektorgroesse", wert=verschiebung))
             return 0
         return sektoren << verschiebung
+
+    def _boot_region_defekt(self, fpath: Path, boot: bytes, result: ValidationResult) -> bool:
+        """Haelt die Boot-Region gegen ihre Pruefsumme (exFAT-Spezifikation, 3.1.x).
+
+        Die Sektoren 0 bis 10 ergeben eine 32-Bit-Summe (rotieren, addieren);
+        Sektor 11 wiederholt sie. Sektor 0 zaehlt ohne VolumeFlags (Offset 106,
+        107) und PercentInUse (112) - die aendern sich im Betrieb.
+
+        Gemessen am 04.11.2026 an 20 fremden Abbildern von E: und am eigenen:
+        alle bestehen. Die **Sicherungsregion** (Sektoren 12 bis 23) dagegen
+        ist bei 19 der 20 fremden leer - ihr Vergleich wuerde gesunde Abbilder
+        beanstanden und unterbleibt deshalb.
+
+        Matrixlauf vom selben Tag: Ein verfaelschter Pruefsummen-Sektor ging
+        bis dahin als ``OK`` durch.
+
+        Returns:
+            True, wenn die Summe nicht stimmt (Ergebnis ist dann gesetzt).
+        """
+        verschiebung = boot[0x6C] if len(boot) > 0x6C else 0
+        if not 9 <= verschiebung <= 12:
+            return False                      # als Sektorgroesse schon gemeldet
+        sektor = 1 << verschiebung
+        try:
+            with open(fpath, "rb") as fh:
+                region = fh.read(12 * sektor)
+        except OSError as exc:
+            self._log.info(f"Boot-Region nicht lesbar: {exc}")
+            return False
+        if len(region) < 12 * sektor:
+            return False                      # zu kurz - die Groessenpruefung meldet es
+        summe = 0
+        for i, byte in enumerate(region[:11 * sektor]):
+            if i in (106, 107, 112):
+                continue
+            summe = ((((summe & 1) << 31) | (summe >> 1)) + byte) & 0xFFFFFFFF
+        gespeichert = struct.unpack_from("<%dI" % (sektor // 4), region, 11 * sektor)
+        if all(wert == summe for wert in gespeichert):
+            result.summary["boot_checksum"] = self._text("exfat_boot_pruefsumme_ok")
+            return False
+        abweichend = next(wert for wert in gespeichert if wert != summe)
+        result.summary["boot_checksum"] = "0x%08X" % abweichend
+        result.set_corrupted(self._text("exfat_boot_pruefsumme", soll="0x%08X" % summe,
+                                        ist="0x%08X" % abweichend))
+        return True
 
     def validate(self, path: str) -> ValidationResult:
         result = ValidationResult(mode="extfat")
@@ -126,16 +174,23 @@ class ExtfatValidator(BaseValidator):
                     volumen_bytes = self._volumen_bytes(boot, result)
                     self._log.info(f"exFAT erkannt | Cluster: {cluster_count}")
                 else:
+                    # Ohne den Namen "EXFAT   " im Boot-Sektor ist es kein
+                    # exFAT-Abbild - die Spezifikation schreibt ihn vor. Bis
+                    # zum 04.11.2026 war das nur ein Hinweis ("BESTANDEN:
+                    # WARNING"): Eine leere Textdatei und ein Abbild mit
+                    # zerstoertem Anfang galten als bestanden.
                     oem_str = oem.decode("ascii", errors="replace").strip()
-                    result.add_error(self._text("exfat_kein_oem", oem=oem_str))
+                    result.set_corrupted(self._text("exfat_kein_oem", oem=oem_str))
             else:
-                result.add_error(self._text("exfat_zu_klein"))
+                result.set_corrupted(self._text("exfat_zu_klein"))
 
         except OSError as exc:
             result.add_error(self._text("exfat_boot_lesefehler", fehler=exc))
 
         result.summary["exfat_detected"]   = parse_ok
         result.summary["cluster_count"]    = cluster_count
+        if result.status == "CORRUPTED":
+            return result                     # das Urteil steht - Lesen und Hashen brachte nichts mehr
 
         # ── Groesse gegen den Boot-Sektor ────────────────────────────────────
         # Bis v1.9.24 fehlte dieser Vergleich. Eine abgebrochene Kopie oder
@@ -152,6 +207,10 @@ class ExtfatValidator(BaseValidator):
                     "exfat_abgeschnitten", soll=_genau(volumen_bytes),
                     ist=_genau(file_size), fehlend=_genau(fehlend)))
                 return result
+
+        # ── Pruefsumme der Boot-Region ───────────────────────────────────────
+        if parse_ok and self._boot_region_defekt(fpath, boot, result):
+            return result
 
         # ── Vollständiger Streaming-Read + SHA-256 ───────────────────────────
         read_errors: list[str] = []
@@ -181,11 +240,10 @@ class ExtfatValidator(BaseValidator):
                 result.add_error(e)
             result.set_corrupted(self._text("exfat_lesefehler_beschaedigt",
                                             anzahl=len(read_errors)))
-        elif not parse_ok:
-            result.status = "WARNING"
         # Sonst bleibt der Stand stehen. Bis v1.9.24 stand hier
         # ``result.status = "OK"`` - eine ungueltige Boot-Signatur (add_error
-        # oben) wurde damit wieder zu "OK".
+        # oben) wurde damit wieder zu "OK". Der Zweig "kein exFAT-Name -> WARNING"
+        # ist seit dem 04.11.2026 weg: Dieser Fall endet weiter oben als beschaedigt.
 
         self._log.info(
             f"exFAT-Validierung abgeschlossen: {result.status} | SHA-256: {file_hash[:16]}..."
