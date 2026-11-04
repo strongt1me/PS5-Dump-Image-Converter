@@ -1457,6 +1457,11 @@ def _spiel_importe_und_exporte(spieldateien: list[str]) -> tuple[dict[str, set],
 def _luecken(verlangt: dict[str, set], eigene: dict[str, set], *angebote: dict[str, set]) -> dict[str, set]:
     offen: dict[str, set] = {}
     for lib, nids in verlangt.items():
+        # Die Exporttabelle der Zielfirmware fuehrt nur Bibliotheken mit "lib"-Vorsatz aus common/lib
+        # (scripts/firmware_exporte_bauen.py). Ueber alles andere - Anno 117: "ulobjmgr" in libSceJobManager.prx -
+        # kann sie nichts sagen; es waere eine erfundene Luecke (und ein Stub haette eine echte Funktion ersetzt).
+        if not lib.startswith("lib"):
+            continue
         rest = set(nids) - eigene.get(lib, set())
         for angebot in angebote:
             rest -= angebot.get(lib, set())

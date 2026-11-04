@@ -254,6 +254,27 @@ class LueckenOhneErsatz(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             self.assertIsNone(b.luecken_ohne_ersatz(str(t), 9, ["spiel"], []))
 
+    def test_bibliothek_ohne_lib_vorsatz_ist_keine_luecke(self):
+        """Anno 117 (04.11.2026): libSceJobManager.prx importiert zwei Funktionen aus ``ulobjmgr``. Die Exporttabelle
+        fuehrt nur Bibliotheken mit "lib"-Vorsatz (scripts/firmware_exporte_bauen.py) - ueber ``ulobjmgr`` kann sie
+        nichts sagen. Gemeldet wurde es trotzdem als fehlend, und ein Stub haette eine echte Funktion ersetzt."""
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _exporttabelle_schreiben(basis, 4, {"libkernel": ["KKKKKKKKKKK"]})
+
+            def _mock(_pfad):
+                return {"importe": {"ulobjmgr": {"UUUUUUUUUUU"}, "libkernel": {"BBBBBBBBBBB"}},
+                        "exporte": {}, "import_bibliotheken": {}, "export_bibliotheken": {}}
+
+            alt = b.symbole_aus_datei
+            b.symbole_aus_datei = _mock
+            try:
+                ergebnis = b.luecken_ohne_ersatz(str(basis), 4, ["spiel"], [])
+            finally:
+                b.symbole_aus_datei = alt
+
+            self.assertEqual(ergebnis, {"libkernel": ["BBBBBBBBBBB"]})
+
 
 class KandidatenOhneSicherungen(unittest.TestCase):
     """``kandidaten`` -- ``.esbak``-Sicherungen (im Anno-117-Dump gefunden,

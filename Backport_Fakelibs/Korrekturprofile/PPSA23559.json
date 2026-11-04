@@ -1,0 +1,48 @@
+{
+  "format": 1,
+  "titel_id": "PPSA23559",
+  "name": "Anno 117: Pax Romana",
+  "fassung": "02.100.000",
+  "firmware": [4],
+  "hinweis": "Gemessen an einer FW-4.xx-Konsole (Test Z3, 04.11.2026): Start, Speichern und Ton. Nur fuer die unveraenderten Originaldateien dieser Fassung (SDK 11). Nicht uebernommen ist der Diagnoserest aus Z3 (Mount3-Pruefung mit int3) - die bereinigte Fassung ist am Geraet nicht getestet.",
+  "dateien": [
+    {
+      "pfad": "eboot.bin",
+      "sha256_elf": "b22beabad678f01dd6902b4f4cb64a6b9016a0fc055e964b899abb7cb3a162e9",
+      "patches": [
+        {
+          "zweck": "Speichern: SaveData-Mount3, systemBlocks -1 -> 0 (FW 4 liefert sonst PARAMETER und danach einen Commit-Fehler)",
+          "va": "0x27873ff",
+          "alt": "ffffffff",
+          "neu": "00000000"
+        },
+        {
+          "zweck": "Ton: Hauptausgang ohne Objekt-Flag (8 statt 12 Kanaele; FW 4 erlaubt am Hauptport nur 1, 2 oder 8)",
+          "va": "0x175607",
+          "alt": "7526",
+          "neu": "eb26"
+        }
+      ],
+      "plt_stubs": [
+        {"bibliothek": "libkernel", "nid": "NH6xARDOVv8", "art": "ausgaben_minus1"},
+        {"bibliothek": "libkernel", "nid": "tU5e3f9gSiU", "art": "standard"},
+        {"bibliothek": "libSceAcm", "nid": "GTfJ64qFCPw", "art": "standard"},
+        {"bibliothek": "libSceAudioOut2", "nid": "TViD1EZXkNI", "art": "standard"},
+        {"bibliothek": "libSceAudioOut2", "nid": "v8iOE+j8a5o", "art": "standard"}
+      ]
+    },
+    {
+      "pfad": "sce_module/libc.prx",
+      "sha256_elf": "46051fbcc98ff40295cf837ba0f1d2478909f38f3061dbd87968cabffedd3301",
+      "plt_stubs": [
+        {"bibliothek": "libkernel", "nid": "q2y-wDIVWZA", "art": "standard"},
+        {"bibliothek": "libkernel", "nid": "B2n8aDorSH4", "art": "standard"},
+        {"bibliothek": "libkernel", "nid": "Hc4CaR6JBL0", "art": "standard"},
+        {"bibliothek": "libkernel", "nid": "PZQhiiLXRFs", "art": "standard"},
+        {"bibliothek": "libSceLibcInternalExt", "nid": "qBS714-Jr3g", "art": "standard"},
+        {"bibliothek": "libSceLibcInternalExt", "nid": "OQ-dzhlnM28", "art": "standard"},
+        {"bibliothek": "libSceLibcInternalExt", "nid": "tB59hFLH3SA", "art": "standard"}
+      ]
+    }
+  ]
+}

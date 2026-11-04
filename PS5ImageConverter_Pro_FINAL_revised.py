@@ -177,6 +177,7 @@ from ps5_validator.utils import remoteplay
 from ps5_validator.utils import webansicht
 from ps5_validator.utils import werkzeuge_bereitstellen
 from ps5_validator.utils import ps5_backport
+from ps5_validator.utils import backport_korrektur
 from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
 from ps5_validator.utils import shadowmount_generation as sm_gen
@@ -35704,6 +35705,8 @@ class PS5ConverterGUI:
         self._append_to_log(self._t("main.integrate_backport_start", firmware=firmware))
         self._set_status(self._t("main.integrate_backport_status", firmware=firmware))
         self._backport_ziel_deckung_melden(ordner, firmware)
+        # Das Profil gilt fuer das Original: dessen SHA-256 jetzt messen, nicht erst nach dem Herabsetzen.
+        korrekturen = self._backport_korrekturen_vorbereiten(ordner, firmware)
 
         gepatcht = fehler = 0
         for pfad in ps5_backport.kandidaten(ordner):
@@ -35791,8 +35794,11 @@ class PS5ConverterGUI:
         self._backport_fremdlibs_klaeren(ordner, bool(self._tk_wert("ampr_integrate_var", False)),
                                          bool(self._tk_wert("ampr_playgo_var", False)))
         self._backport_param_json(ordner, firmware)
+        neutralisiert = self._backport_korrekturen_anwenden(
+            ordner, firmware, basis, installiert, korrekturen,
+            laeuft=lambda: bool(self.is_running), status=self._set_status)
         if basis:
-            self._backport_luecken_melden(basis, firmware, ordner, installiert)
+            self._backport_luecken_melden(basis, firmware, ordner, installiert, neutralisiert)
         self._append_to_log(
             self._t("main.integrate_backport_done",
                     patched=gepatcht, libs=kopiert, errors=fehler)
@@ -53855,8 +53861,142 @@ class PS5ConverterGUI:
             return ps5_backport.fakelib_dateien_benoetigt(basis, firmware, spieldateien)
         return ps5_backport.fakelib_dateien(basis, firmware)
 
+    def _backport_stubs_an(self) -> bool:
+        """Ob fehlende Funktionen im Spiel durch Stubs neutralisiert werden (Haken im BACKPORT-Fenster).
+
+        Wirkt auch beim Einbau waehrend des Erstellens, wie ``backport_fakelib_nur_benoetigt``. Vorgabe Nein: Ein Stub
+        meldet nur "Erfolg", ohne etwas zu tun - das Spiel kann danach trotzdem abstuerzen oder falsch laufen
+        (siehe ``backport_korrektur``).
+        """
+        return bool(self._load_setting("backport_stubs", False))
+
+    def _backport_profile_an(self) -> bool:
+        """Ob ein vorhandenes Korrekturprofil des Titels angewendet wird (Haken im BACKPORT-Fenster). Vorgabe Nein."""
+        return bool(self._load_setting("backport_profile", False))
+
+    def _backport_profil_ordner(self) -> list[str]:
+        """Ordner mit Korrekturprofilen: ``Korrekturprofile`` neben einem eigenen Bibliothekssatz zuerst, dann der mitgelieferte."""
+        ordner = []
+        eigen = str(self._load_setting("backport_fakelib_ordner", "")).strip()
+        if eigen and os.path.isdir(eigen):
+            ordner.append(os.path.join(eigen, backport_korrektur.PROFIL_ORDNER))
+        gebuendelt = _bundled_resource("Backport_Fakelibs", backport_korrektur.PROFIL_ORDNER)
+        if gebuendelt:
+            ordner.append(gebuendelt)
+        return ordner
+
+    def _backport_korrekturen_vorbereiten(self, ordner: str, firmware: int):
+        """Waehlt das Korrekturprofil des Titels und misst die Originaldateien - VOR dem Herabsetzen.
+
+        Nach dem Herabsetzen tragen die Dateien neue SDK-Werte und eine neue Huelle; die SHA-256 des Originals laesst
+        sich dann nicht mehr bilden. ``None``, wenn der Haken aus ist.
+        """
+        if not self._backport_profile_an():
+            return None
+        titel = ps5_backport.titel_id_aus_param(ordner)
+        profile, fehler = backport_korrektur.profile_laden(self._backport_profil_ordner())
+        for text in fehler:
+            self._append_to_log(self._t("backport.korr_profil_fehler", fehler=text))
+        vorb = backport_korrektur.profile_vorbereiten(ordner, profile, titel, firmware)
+        for profil, _grund in vorb.uebergangen:
+            self._append_to_log(self._t(
+                "backport.korr_profil_firmware", titel=profil.titel_id, name=profil.name,
+                firmware=", ".join(str(f) for f in profil.firmware), ziel=firmware))
+        for aktiv in vorb.aktiv:
+            self._append_to_log(self._t(
+                "backport.korr_profil_gefunden", name=aktiv.profil.name, titel=aktiv.profil.titel_id,
+                fassung=aktiv.profil.fassung or "–"))
+        if not vorb.aktiv and not vorb.uebergangen:
+            self._append_to_log(self._t("backport.korr_profil_kein", titel=titel or "–"))
+        return vorb
+
+    #: Meldeschluessel je Ergebnis einer Profil-Datei (``backport_korrektur.P_*``).
+    _KORR_PROFIL_MELDUNG = {
+        backport_korrektur.P_ANGEWENDET: "backport.korr_profil_angewendet",
+        backport_korrektur.P_BEREITS: "backport.korr_profil_bereits",
+        backport_korrektur.P_SHA: "backport.korr_profil_sha",
+        backport_korrektur.P_BYTES: "backport.korr_profil_bytes",
+        backport_korrektur.P_STUB: "backport.korr_profil_stub",
+        backport_korrektur.P_ADRESSE: "backport.korr_profil_adresse",
+        backport_korrektur.P_DATEI: "backport.korr_profil_datei",
+        backport_korrektur.P_SCHREIBEN: "backport.korr_profil_schreiben",
+    }
+
+    def _backport_korrekturen_anwenden(self, ordner: str, firmware: int, basis: str, installierte_fakelibs: list[str],
+                                       vorbereitung, laeuft=None, status=None) -> set:
+        """Wendet Korrekturprofil und Stubs an - NACH dem Einbau der Ersatzbibliotheken.
+
+        Erst dann steht fest, welche Funktionen wirklich fehlen (:func:`ps5_backport.luecken_ohne_ersatz`). Jede Datei
+        wird nur veraendert, wenn sich das Ergebnis neu signieren und atomar schreiben laesst. Ein Fehler hier bricht
+        den Backport nicht ab - die Dateien sind dann herabgesetzt, nur eben ohne diese Zusaetze.
+
+        Returns:
+            ``(Bibliothek, NID)`` der neutralisierten Luecken, fuer :meth:`_backport_luecken_melden`.
+        """
+        aktive = vorbereitung.aktiv if vorbereitung is not None else ()
+        stubs_an = self._backport_stubs_an()
+        if not stubs_an and not aktive:
+            return set()
+        luecken = None
+        if stubs_an:
+            luecken = (ps5_backport.luecken_ohne_ersatz(
+                basis, firmware, ps5_backport.kandidaten(ordner), installierte_fakelibs) if basis else None)
+            if luecken is None:
+                self._append_to_log(self._t("backport.korr_stub_ohne_tabelle", firmware=firmware))
+            elif not luecken:
+                self._append_to_log(self._t("backport.korr_stub_keine"))
+                luecken = None
+        if not aktive and luecken is None:
+            return set()
+        if status is not None:
+            status(self._t("backport.state_korrekturen"))
+
+        def schreiben(pfad: str, daten: bytes) -> None:
+            zwischen = pfad + ".neu"
+            try:
+                with open(zwischen, "wb") as fh:
+                    fh.write(daten)
+                _datei_ersetzen(zwischen, pfad)
+            except OSError:
+                try:
+                    if os.path.isfile(zwischen):
+                        os.remove(zwischen)
+                except OSError:
+                    pass
+                raise
+
+        try:
+            bericht = backport_korrektur.korrekturen_anwenden(
+                ordner, ps5_backport.kandidaten(ordner), aktive=aktive, luecken=luecken,
+                schreiben=schreiben, laeuft=laeuft)
+        except Exception as exc:  # noqa: BLE001 - die Zusaetze duerfen den fertigen Backport nicht kippen
+            logger.exception("Backport-Korrekturen fehlgeschlagen")
+            self._append_to_log(self._t("backport.korr_fehler", datei="-", fehler=exc))
+            return set()
+
+        for profil, erg in bericht.profile:
+            self._append_to_log(self._t(
+                self._KORR_PROFIL_MELDUNG[erg.status], titel=profil.titel_id, datei=erg.pfad, patches=erg.patches,
+                stubs=erg.stubs, stelle=erg.stelle, fehler=erg.stelle))
+        gesetzt = 0
+        dateien = set()
+        for rel, s in bericht.stubs:
+            if s.status == backport_korrektur.STATUS_GESETZT:
+                gesetzt += 1
+                dateien.add(rel)
+                self._append_to_log(self._t(
+                    "backport.korr_stub", datei=rel, bibliothek=s.bibliothek, nid=s.nid, art=s.art))
+            elif s.status == backport_korrektur.STATUS_ABWEICHEND:
+                self._append_to_log(self._t(
+                    "backport.korr_stub_abweichend", datei=rel, bibliothek=s.bibliothek, nid=s.nid))
+        if gesetzt:
+            self._append_to_log(self._t("backport.korr_stub_summe", anzahl=gesetzt, dateien=len(dateien)))
+        for rel, text in bericht.fehler:
+            self._append_to_log(self._t("backport.korr_fehler", datei=rel, fehler=text))
+        return bericht.neutralisiert
+
     def _backport_luecken_melden(self, basis: str, firmware: int, ordner: str,
-                                 installierte_fakelibs: list[str]) -> None:
+                                 installierte_fakelibs: list[str], neutralisiert=frozenset()) -> None:
         """Warnt, wenn dem Spiel nach dem Einbau immer noch eine Funktion fehlt.
 
         Anders als :meth:`_backport_ziel_deckung_melden` (misst vor dem Kopieren, rein informativ) prueft dies
@@ -53870,6 +54010,10 @@ class PS5ConverterGUI:
         """
         luecken = ps5_backport.luecken_ohne_ersatz(
             basis, firmware, ps5_backport.kandidaten(ordner), installierte_fakelibs)
+        if luecken and neutralisiert:
+            # Was ein Stub erledigt hat, ist keine offene Luecke mehr (die Hinweise unten sind danach sonst falsch).
+            luecken = {lib: [n for n in nids if (lib, n) not in neutralisiert] for lib, nids in luecken.items()}
+            luecken = {lib: nids for lib, nids in luecken.items() if nids}
         if not luecken:
             return
         kern = {lib: nids for lib, nids in luecken.items() if lib in ps5_backport.KERNBIBLIOTHEKEN}
@@ -58156,6 +58300,30 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_secondary"],
                  anchor="w", justify="left", wraplength=520).pack(side="left", fill="x", expand=True)
 
+        # Zwei Zusaetze, die Spielcode aendern - beide aus, bis man sie waehlt, und ausdruecklich ohne Garantie
+        # (backport_korrektur). Wie "Nur benoetigte Bibliotheken" speichern sie sich beim Umschalten und gelten
+        # dann auch fuer den Einbau waehrend des Erstellens.
+        korrektur_zeile = tk.Frame(win, bg=c["bg_main"], padx=16)
+        korrektur_zeile.pack(fill="x", pady=(2, 0))
+        stubs_var = tk.BooleanVar(value=self._backport_stubs_an())
+        profil_var = tk.BooleanVar(value=self._backport_profile_an())
+        win._korrektur_vars = (stubs_var, profil_var)       # Tk haelt nur den Namen, nicht die Variable
+        for variable, schluessel, einstellung in (
+                (stubs_var, "backport.option_stubs", "backport_stubs"),
+                (profil_var, "backport.option_profile", "backport_profile")):
+            haken = self._pw.Checkbutton(
+                korrektur_zeile, text=self._t(schluessel), variable=variable,
+                command=lambda v=variable, e=einstellung: self._save_setting(e, v.get()),
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
+                selectcolor=c["bg_card"], activebackground=c["bg_main"],
+                activeforeground=c["fg_accent"], anchor="w",
+            )
+            haken.pack(side="left", padx=(0, 16))
+            self._tooltip(haken, schluessel + "_hint", delay_ms=900, wraplength=430)
+        tk.Label(korrektur_zeile, text=self._t("backport.option_korr_hinweis"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_secondary"],
+                 anchor="w", justify="left").pack(side="left")
+
         # Zwei fortgeschrittene Felder (eigener Bibliotheksordner, Firmware-Ordner
         # fuer die NID-Analyse) - ein Grossteil der Nutzer braucht sie nie, sie
         # standen aber bis zum 28.10.2026 immer offen im Fenster. Eingeklappt,
@@ -58670,12 +58838,25 @@ class PS5ConverterGUI:
 
             def _arbeit() -> None:
                 try:
+                    # Profil: das Original messen, bevor etwas herabgesetzt wird (der Spielordner bleibt unberuehrt).
+                    korrekturen = self._backport_korrekturen_vorbereiten(ordner, firmware)
                     ergebnis = ps5_backport.backport_ordner_bauen(
                         ordner, gewaehlt, tid, firmware, basis, minimal=minimal,
                         ziel_ordner=ziel, fakelib_name=fakelib_name, eigene=eigene,
                         texte=self._modul_texte(ps5_backport.MELDUNGEN, "backportmod."),
                         melde=lambda text: self._spaeter_im_fenster(win, stand_var.set, text),
                         abbruch=lambda: bool(laeuft.get("abbruch")))
+                    if not ergebnis.get("abgebrochen"):
+                        # Profil und Stubs wirken auf die herabgesetzten Dateien im Ergebnisordner - dort, wo sie
+                        # spaeter ins Spiel kopiert werden.
+                        bib = os.path.join(ergebnis["ziel"], fakelib_name)
+                        installiert = ([os.path.join(bib, n) for n in sorted(os.listdir(bib))
+                                        if n.lower().endswith(ps5_backport.FAKELIB_ENDUNGEN)]
+                                       if os.path.isdir(bib) else [])
+                        self._backport_korrekturen_anwenden(
+                            ergebnis["ziel"], firmware, basis, installiert, korrekturen,
+                            laeuft=lambda: not laeuft.get("abbruch"),
+                            status=lambda text: self._spaeter_im_fenster(win, stand_var.set, text))
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("Backport-Ordner gescheitert: %s", exc)
                     ergebnis = {"ziel": ziel, "gepatcht": 0, "fehler": 1, "bibliotheken": 0,
@@ -58964,6 +59145,9 @@ class PS5ConverterGUI:
                                 copy_function=_sichern_und_melden)
                 sicherung_fertig = True
 
+            # ---- 1b) Korrekturprofil: das Original messen, bevor etwas herabgesetzt wird ----
+            korrekturen = self._backport_korrekturen_vorbereiten(ordner, firmware)
+
             # ---- 2) Dateien einzeln verarbeiten ----
             dateien = ps5_backport.kandidaten(ordner)
             for nummer, pfad in enumerate(dateien, 1):
@@ -59122,8 +59306,14 @@ class PS5ConverterGUI:
                         "backport.log_fw_analyse_kein_stand",
                         fw=firmware, basis=fw_basis) + "\n")
 
+            # ---- 4) Korrekturprofil und Stubs (nur auf Haken) - erst jetzt steht fest, was wirklich fehlt ----
+            if laeuft.get("abbruch"):
+                raise _KopieAbgebrochen()
+            neutralisiert = self._backport_korrekturen_anwenden(
+                ordner, firmware, basis, installiert, korrekturen,
+                laeuft=lambda: not laeuft.get("abbruch"), status=stand)
             if basis:
-                self._backport_luecken_melden(basis, firmware, ordner, installiert)
+                self._backport_luecken_melden(basis, firmware, ordner, installiert, neutralisiert)
 
             dauer = time.time() - beginn
             zusammenfassung = self._t(
