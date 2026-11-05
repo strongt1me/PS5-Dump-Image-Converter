@@ -8888,7 +8888,8 @@ class PS5ConverterGUI:
             for candidate in sources:
                 source_type = self._detect_source_type(candidate)
                 issue = (self._conversion_block_reason(source_type, target_type, mode, candidate)
-                         or self._abbild_kennung_problem(candidate))
+                         or ("" if archiv_quelle.ist_archiv(candidate)
+                             else self._abbild_kennung_problem(candidate)))
                 if issue:
                     blockiert.append(f"{os.path.basename(candidate)}: {issue}")
             if len(blockiert) == len(sources):
@@ -14033,6 +14034,10 @@ class PS5ConverterGUI:
             return "exfat"
         if lower.endswith(".ffpkg"):
             return "ffpkg"
+        # Ein Archiv (.zip, .7z, .rar) steht fuer den Spielordner darin - die Sammelkonvertierung entpackt es, wenn es
+        # drankommt. Andere Aufgaben nehmen keine Archive an (``_validate_source_path`` lehnt sie vorher ab).
+        if archiv_quelle.ist_archiv(norm):
+            return "folder"
         return ""
 
     def _get_target_options(self, mode: str, source_path: str = "") -> tuple[str, ...]:

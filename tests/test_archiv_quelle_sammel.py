@@ -147,6 +147,30 @@ class AnnahmeTests(unittest.TestCase):
                 with self.subTest(modus=modus):
                     self.assertNotEqual("", self.app._validate_source_path(str(pfad), modus))
 
+    def test_ein_archiv_gilt_als_spielordner_fuer_die_quellerkennung(self) -> None:
+        """Gemessen am echten Lauf (05.11.2026): Ohne das hiess es "Quelltyp konnte nicht erkannt werden"."""
+        with tempfile.TemporaryDirectory() as t:
+            for endung in (".zip", ".7z", ".rar"):
+                pfad = Path(t) / ("spiel" + endung)
+                pfad.write_bytes(b"x")
+                self.assertEqual("folder", self.app._detect_source_type(str(pfad)))
+                self.assertEqual("folder", self.app._detect_source_format(str(pfad)))
+            text = Path(t) / "notizen.txt"
+            text.write_bytes(b"x")
+            self.assertEqual("", self.app._detect_source_type(str(text)))
+
+    def test_der_start_lehnt_eine_liste_mit_archiven_nicht_als_unerkannt_ab(self) -> None:
+        """Die Pruefung vor dem Start (ohne Mocks) - sie hatte das Archiv als unbekannten Quelltyp abgewiesen."""
+        with tempfile.TemporaryDirectory() as t:
+            a, b = Path(t) / "A.zip", Path(t) / "B.7z"
+            a.write_bytes(b"x")
+            b.write_bytes(b"x")
+            self.app._batch_sources = [str(a), str(b)]
+            for ziel in ("ffpfsc", "ffpfs", "exfat", "ffpkg"):
+                with self.subTest(ziel=ziel):
+                    self.assertEqual("", self.app._validate_requested_conversion("batch_convert", str(a), ziel))
+            self.app._batch_sources = []
+
     def test_ein_archiv_bleibt_in_der_sammelliste_stehen(self) -> None:
         with tempfile.TemporaryDirectory() as t:
             pfad = Path(t) / "spiel.zip"
