@@ -150,7 +150,17 @@ class EchterLaufTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        shutil.rmtree(cls.arbeit, ignore_errors=True)
+        # Unter Windows haelt der gerade beendete Packlauf (oder ein Virenscanner) eboot.bin noch einen Augenblick
+        # offen; ein einmaliges rmtree(ignore_errors=True) liess dann %TEMP%\ps5conv_engine_abbruch_* liegen
+        # (Anzeige-Diagnose: reste_liegen_geblieben, Rueckgabe 1). Darum mit Wiederholung.
+        import gc
+        import time
+        for _ in range(40):
+            gc.collect()
+            shutil.rmtree(cls.arbeit, ignore_errors=True)
+            if not os.path.exists(cls.arbeit):
+                return
+            time.sleep(0.25)
 
     def _packen(self, laeuft: bool, ziel: str) -> dict:
         """Wie ``_run_engine``: stderr gehoert dem Lauf (die Anzeige liest es), der Pruefer ist gesetzt."""
