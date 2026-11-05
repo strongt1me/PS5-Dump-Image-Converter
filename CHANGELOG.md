@@ -2,27 +2,29 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.90):** Die PKG/FPKG-Seite ist neu geordnet und passt ohne Rollen ins Fenster, Updates von Sony laden auf exFAT-Laufwerken sofort, und viele Payloads sind aktualisiert.
+> **Kurz zum aktuellen Stand (v1.9.90):** Die PKG/FPKG-Seite ist neu geordnet, AMPR EMU NG 0.3.0 steht direkt unter 0.4.2.1 in der Liste, BACKPORT hat zwei neue Haken, ABBRECHEN und eingehängte Laufwerke arbeiten sauberer, und viele Payloads sind aktualisiert.
 
 ---
 
-## v1.9.90 – 02.11.2026
+## v1.9.90 – 05.11.2026
 
 - **Neu:** Die PKG/FPKG-Seite ist im Stil von Aufgabe 1 aufgebaut und erkennt PS4- und PS5-Pakete von selbst.
+- **Neu:** AMPR EMU NG 0.3.0 (stille und Debug-Fassung); die NG-Fassungen stehen in allen Listen direkt unter der neuesten Fassung 0.4.2.1.
+- **Neu:** Die Betriebsprüfung im Diagnosebericht nennt liegen gebliebene OSFMount- und UFS2-Laufwerke samt Befehl zum Aushängen.
 - **Neu:** BACKPORT „Fehlende Funktionen neutralisieren“ (Haken, aus, ohne Garantie): Aufrufe, die die Zielfirmware nicht kennt, liefern einen leeren Rückgabewert, statt das Spiel abstürzen zu lassen.
 - **Neu:** BACKPORT „Korrekturprofil des Spiels anwenden“ (Haken, aus, ohne Garantie): geprüfte Byte-Korrekturen je Titel und Fassung; mitgeliefert ist ein Profil für Anno 117 auf Firmware 4.xx.
 - **Geändert:** Die Bereiche PS4 PKG und PS5 PKG passen ohne Rollen ins Fenster, das Zielformat zeigt nur noch die Endung (.ffpkg, .ffpfsc, .ffpfs, .exFAT, .pkg), und der Block „Ausgewähltes Paket“ ist weg.
-- **Aktualisiert:** ShadowMount+ 1.7beta11, PS5Upload 10.7.2, PS5 Cooling & System Center – Pro 1.75.2, NeoEnabler 0.6.1, Web File Manager 1.13-rc1, garlic-worker und das PS5-PKG-Tool 0.0.3.
+- **Aktualisiert:** ShadowMount+ 1.7beta11, PS5Upload 11.0.8, PS5 Cooling & System Center – Pro 1.76.7, NeoEnabler 0.6.2, Web File Manager 1.13-rc2, PatchDL 0.3.12, CheatRunner 0.18.1, garlic-worker und das PS5-PKG-Tool 0.0.3.
 - **Behoben:** Updates von Sony auf exFAT-Laufwerken beginnen sofort zu laden, statt beim Vorbereiten der Datei stundenlang stillzustehen; das Fenster zeigt, wann es mit dem Server verbindet.
 - **Behoben:** ABBRECHEN im Ladefenster für Updates wirkt sofort, beim Einlesen eines PS5-PKG öffnen sich keine schwarzen Konsolenfenster mehr, und die PKG/FPKG-Seite steht beim ersten Klick gleich richtig.
 - **Behoben:** ABBRECHEN stoppt die Umwandlung in den Aufgaben 1 bis 6 jetzt wirklich – bisher lief die Engine weiter, und nach „Abgebrochen“ erschien eine fertige Datei; halb entpackte Dump-Ordner werden entfernt.
 - **Behoben:** Eine leere, falsch benannte oder abgeschnittene .exfat/.ffpkg wird vor dem Start abgewiesen, statt „erfolgreich“ in ein kleines, unbrauchbares Ergebnis verwandelt zu werden.
 - **Behoben:** Aufgabe 8 meldet beschädigte Blöcke einer .ffpfsc (Entpackprüfung) und eine falsche Prüfsumme der exFAT-Boot-Region jetzt als beschädigt statt als Hinweis.
 - **Behoben:** Aufgabe 2 bietet für eine .ffpfs wieder .ffpfsc an, die Kommandozeile hängt bei Rückfragen nicht mehr, und das Entpacken einer .ffpkg versucht bei einem abgewiesenen Laufwerksbuchstaben den nächsten freien.
-- **Behoben:** Das Laufwerk einer .ffpkg wird beim Entpacken, Abbrechen und Prüfen sauber ausgehängt und bleibt nicht mehr im Explorer stehen; Vorschau, Entpacken und Prüfung hängen die Datei nacheinander ein, nicht mehr gleichzeitig (das ließ den Lauf gelegentlich sofort scheitern, ein Abbruch konnte ewig hängen).
-- **Neu:** Die Betriebsprüfung im Diagnosebericht nennt liegen gebliebene OSFMount- und UFS2-Laufwerke samt Befehl zum Aushängen.
+- **Behoben:** Das Laufwerk einer .ffpkg wird beim Entpacken, Abbrechen und Prüfen sauber ausgehängt und bleibt nicht mehr im Explorer stehen; Vorschau, Entpacken und Prüfung hängen die Datei nacheinander ein, nicht mehr gleichzeitig.
 - **Behoben:** Die Sammelkonvertierung nennt bei schon vorhandenen Zielen den richtigen Grund, und die Texte des AMPR EMU Managers nennen ihn wieder beim Namen statt „Aufgabe 7“.
 - **Behoben:** BACKPORT meldete Funktionen aus Bibliotheken, die die Firmware-Tabelle gar nicht führt, fälschlich als fehlend.
+- **Behoben:** Das Senden von PS4-Paketen an die Konsole (Remote Package Installer) gibt die Paketdatei beim Beenden sofort frei, statt sie noch kurz gesperrt zu halten.
 
 ## v1.9.89 – 29.10.2026
 

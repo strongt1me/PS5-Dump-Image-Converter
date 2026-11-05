@@ -163,6 +163,12 @@ class _Handler(BaseHTTPRequestHandler):
     def _freigabe(self) -> "tuple[str, str] | None":
         """``(name, pfad)`` der angefragten Datei - oder ``None`` (Antwort ist dann schon gesendet)."""
         srv: PaketServer = self.server.paketserver   # type: ignore[attr-defined]
+        if srv._anhalten.is_set():
+            # Angehalten: keine Datei mehr oeffnen. Die Konsole stellt auf einer bestehenden Verbindung weiter
+            # Anfragen; jede haette die Paketdatei kurz geoeffnet und das Aufraeumen des Ordners gestoert.
+            self.close_connection = True
+            self.send_error(503, "Service Unavailable")
+            return None
         if srv.nur_ip and self.client_address[0] != srv.nur_ip:
             self.send_error(403, "Forbidden")
             return None
@@ -217,11 +223,25 @@ class _Handler(BaseHTTPRequestHandler):
             # Die Konsole bricht Verbindungen ab und baut sie neu auf - normal.
             self.close_connection = True
 
+    def _dienen(self, mit_koerper: bool) -> None:
+        """Eine Anfrage bedienen - als laufende Uebertragung gezaehlt, damit ``PaketServer.anhalten`` auf sie wartet.
+
+        Gezaehlt wird ab dem Anfang der Anfrage, nicht erst ab dem Oeffnen der Datei: Sonst kann ``anhalten`` zwischen
+        Pruefung und Oeffnen "keiner da" sehen. Nach dem Anhalten nimmt der Handler keine Anfragen mehr an
+        (``_freigabe``), auch nicht auf einer bestehenden Keep-Alive-Verbindung der Konsole.
+        """
+        srv: PaketServer = self.server.paketserver   # type: ignore[attr-defined]
+        srv._uebertragung_beginnt()
+        try:
+            self._senden(mit_koerper)
+        finally:
+            srv._uebertragung_endet()
+
     def do_GET(self) -> None:   # noqa: N802
-        self._senden(True)
+        self._dienen(True)
 
     def do_HEAD(self) -> None:   # noqa: N802
-        self._senden(False)
+        self._dienen(False)
 
 
 class _Server(ThreadingHTTPServer):
@@ -264,6 +284,9 @@ class PaketServer:
         self._faden: "threading.Thread | None" = None
         self._anhalten = threading.Event()
         self._schloss = threading.Lock()
+        #: Laufende Uebertragungen (Handler-Faeden, die die Paketdatei offen halten) und das Warten darauf.
+        self._aktive_uebertragungen = 0
+        self._uebertragungen_ruhen = threading.Condition(self._schloss)
         self._gesendet: dict[str, int] = {}
         self.anfragen: list[tuple[str, str, int, int]] = []
 
@@ -299,7 +322,15 @@ class PaketServer:
         self._faden.start()
         return self.port
 
-    def anhalten(self) -> None:
+    def anhalten(self, warte_sekunden: float = 3.0) -> None:
+        """Haelt den Server an und wartet (hoechstens ``warte_sekunden``), bis die Paketdateien wieder frei sind.
+
+        ``server_close`` wartet nicht auf die Handler-Faeden (``daemon_threads``): Ein Handler, der gerade in
+        ``wfile.write`` steckte, hielt die Paketdatei noch offen, als ``rpi_senden`` schon zurueck war. Unter Windows
+        liess sie sich dann nicht loeschen oder verschieben - im Volllauf vom 05.11.2026 scheiterte daran das
+        Aufraeumen von ``RpiSendenTests`` (WinError 32), allein gelaufen nie. Die Wartezeit ist begrenzt: Eine Konsole,
+        die nicht mehr liest, darf das Programm nicht aufhalten.
+        """
         self._anhalten.set()
         server, self._server = self._server, None
         if server is not None:
@@ -310,6 +341,22 @@ class PaketServer:
         if self._faden is not None:
             self._faden.join(timeout=5)
             self._faden = None
+        ende = time.monotonic() + max(0.0, warte_sekunden)
+        with self._uebertragungen_ruhen:
+            while self._aktive_uebertragungen > 0:
+                rest = ende - time.monotonic()
+                if rest <= 0:
+                    break
+                self._uebertragungen_ruhen.wait(rest)
+
+    def _uebertragung_beginnt(self) -> None:
+        with self._schloss:
+            self._aktive_uebertragungen += 1
+
+    def _uebertragung_endet(self) -> None:
+        with self._uebertragungen_ruhen:
+            self._aktive_uebertragungen -= 1
+            self._uebertragungen_ruhen.notify_all()
 
     @property
     def laeuft(self) -> bool:

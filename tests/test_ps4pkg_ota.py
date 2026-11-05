@@ -20,6 +20,7 @@ import hashlib
 import http.client
 import json
 import os
+import socket
 import sys
 import tempfile
 import threading
@@ -230,11 +231,100 @@ class PaketServerTests(unittest.TestCase):
         with self.assertRaises(OSError):
             http.client.HTTPConnection(LOKAL, self.port, timeout=2).request("GET", "/")
 
+    def test_nach_dem_anhalten_oeffnet_keine_anfrage_mehr_die_datei(self) -> None:
+        """Die Konsole fragt auf ihrer bestehenden Verbindung weiter (Keep-Alive).
+
+        Jede solche Anfrage oeffnete die Paketdatei noch einmal kurz - im Volllauf vom 05.11.2026 genau im
+        Augenblick des Aufraeumens (WinError 32 in ``RpiSendenTests``). Jetzt antwortet der Handler mit 503.
+        """
+        verbindung = http.client.HTTPConnection(LOKAL, self.port, timeout=5)
+        self.addCleanup(verbindung.close)
+        verbindung.request("GET", self.pfad, headers={"Range": "bytes=0-99"})
+        antwort = verbindung.getresponse()
+        self.assertEqual(206, antwort.status)
+        antwort.read()                                   # die Verbindung bleibt offen
+        self.server.anhalten()
+        with mock.patch.object(ota, "open", create=True,
+                               side_effect=AssertionError("Die Paketdatei wurde nach dem Anhalten geoeffnet.")):
+            verbindung.request("GET", self.pfad, headers={"Range": "bytes=0-99"})
+            antwort = verbindung.getresponse()
+            self.assertEqual(503, antwort.status)
+            antwort.read()
+
     def test_ein_belegter_port_gibt_einen_klaren_fehler(self) -> None:
         zweiter = ota.PaketServer(adresse=LOKAL, port=self.port)
         with self.assertRaises(ota.OtaFehler) as ctx:
             zweiter.starten()
         self.assertEqual("server_start", ctx.exception.schluessel)
+
+
+class AnhaltenWartetTests(unittest.TestCase):
+    """``anhalten`` gibt die Paketdatei frei, bevor es zurueckkehrt.
+
+    Volllauf vom 05.11.2026: ``RpiSendenTests.test_ein_fehlercode_der_konsole_bricht_ab`` scheiterte im Verbund
+    zweimal im ``tearDown`` (WinError 32 auf die .pkg), allein nie. Der Handler-Faden steckte noch in
+    ``wfile.write`` und hielt die Datei offen, als ``rpi_senden`` schon zurueck war. Hier ist der Handler
+    deterministisch festgesetzt: Der Abnehmer liest nach den Kopfzeilen nichts mehr, die Datei ist groesser als
+    alle Socket-Puffer.
+    """
+
+    GROESSE = 40 * 1024 * 1024
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.datei = Path(self._tmp.name) / "gross.pkg"
+        self.datei.write_bytes(b"\0" * self.GROESSE)
+        self.server = ota.PaketServer(adresse=LOKAL)
+        self.addCleanup(self.server.anhalten)
+        name = self.server.datei_anbieten(str(self.datei))
+        port = self.server.starten()
+        self.verbindung = socket.create_connection((LOKAL, port), timeout=5)
+        self.addCleanup(self.verbindung.close)
+        pfad = "/%s/%s" % (self.server.token, urllib.parse.quote(name))
+        self.verbindung.sendall(("GET %s HTTP/1.1\r\nHost: x\r\n\r\n" % pfad).encode("ascii"))
+        self.verbindung.recv(1024)            # Kopfzeilen und ein Stueck Inhalt - danach liest keiner mehr
+        ende = time.monotonic() + 5
+        while self.server._aktive_uebertragungen < 1 and time.monotonic() < ende:
+            time.sleep(0.01)
+        self.assertEqual(1, self.server._aktive_uebertragungen, "Der Handler muss die Datei halten.")
+        # Erst wenn nichts mehr abfliesst, steckt der Handler wirklich in write fest (Puffer voll). Vorher fuellt er
+        # sie noch und wuerde das Anhalten schon an der Schleifenbedingung bemerken.
+        ende = time.monotonic() + 15
+        vorher = -1
+        while time.monotonic() < ende:
+            jetzt = self.server.gesendet()
+            if jetzt > 0 and jetzt == vorher:
+                break
+            vorher = jetzt
+            time.sleep(0.3)
+        self.assertLess(self.server.gesendet(), self.GROESSE, "Die Datei darf nicht ganz abgeflossen sein.")
+
+    def test_anhalten_wartet_bis_der_handler_die_datei_losgelassen_hat(self) -> None:
+        fertig = threading.Event()
+        faden = threading.Thread(target=lambda: (self.server.anhalten(warte_sekunden=20), fertig.set()), daemon=True)
+        faden.start()
+        self.assertFalse(fertig.wait(0.4), "anhalten kehrte zurueck, obwohl der Handler noch in write steckte.")
+        # Der Abnehmer liest weiter: Der Handler kommt aus write, sieht das Anhalten und schliesst die Datei.
+        self.verbindung.settimeout(1.0)
+        try:
+            while self.verbindung.recv(1 << 20):
+                pass
+        except OSError:
+            pass                              # Zeitgrenze: der Server sendet nichts mehr
+        self.assertTrue(fertig.wait(10), "anhalten kehrte nach dem Abfluss nicht zurueck.")
+        self.assertEqual(0, self.server._aktive_uebertragungen)
+        os.remove(self.datei)                 # unter Windows scheitert das mit WinError 32, solange sie offen ist
+        self.assertFalse(self.datei.exists())
+
+    def test_die_wartezeit_ist_begrenzt(self) -> None:
+        """Eine Konsole, die nicht mehr liest, haelt das Programm nicht auf."""
+        beginn = time.monotonic()
+        self.server.anhalten(warte_sekunden=0.3)
+        dauer = time.monotonic() - beginn
+        self.assertLess(dauer, 5.0)
+        self.assertGreaterEqual(dauer, 0.25)
+        self.assertEqual(1, self.server._aktive_uebertragungen, "Der Handler steckt weiter fest - das ist hier gewollt.")
 
 
 # ---------------------------------------------------------------------------

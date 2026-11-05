@@ -420,8 +420,14 @@ class QuellenwahlTests(unittest.TestCase):
 
     def test_dateien_wie_bisher(self) -> None:
         d1, d2 = os.path.join(self.basis, "a.ffpkg"), os.path.join(self.basis, "b.exfat")
-        Path(d1).write_bytes(b"x")
-        Path(d2).write_bytes(b"x")
+        # Seit dem Matrixlauf vom 04.11.2026 liest die Quellpruefung die Kennung am Dateianfang
+        # (abbild_pruefen._abbild_kennung_problem): exFAT-Name im Bootsektor, UFS2-Magic im Superblock.
+        ufs = bytearray(65536 + 1376)
+        ufs[65536 + 1372:65536 + 1376] = (0x19540119).to_bytes(4, "little")
+        Path(d1).write_bytes(bytes(ufs))
+        boot = bytearray(512)
+        boot[3:11] = b"EXFAT   "
+        Path(d2).write_bytes(bytes(boot))
         self.art = self._dateien_art()
         with mock.patch.object(APP.filedialog, "askopenfilenames", return_value=(d2, d1)) as dialog:
             self.app._browse_source()

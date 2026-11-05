@@ -1058,9 +1058,11 @@ class Aufgabe7OhneZielTests(unittest.TestCase):
     def test_die_hilfe_nennt_aufgabe_7(self):
         stelle = self.quelle.index('"--dest"')
         zeile = self.quelle[stelle:stelle + 300]
-        self.assertIn("Aufgabe 7", zeile,
-                      "Die Hilfe zu --dest verschweigt, dass Aufgabe 7 "
-                      "ohne Ziel auskommt.")
+        # Aufgabe 7 ist der PKG-Bau (pkg_fpkg); der Modus ohne Ziel heisst in der Hilfe
+        # "AMPR EMU Manager" (Text seit Commit 7cd4a20).
+        self.assertIn("AMPR EMU Manager", zeile,
+                      "Die Hilfe zu --dest verschweigt, dass der AMPR EMU "
+                      "Manager ohne Ziel auskommt.")
 
 
 class UmbenennenTests(unittest.TestCase):
