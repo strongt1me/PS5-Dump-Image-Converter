@@ -183,6 +183,7 @@ from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
 from ps5_validator.utils import shadowmount_generation as sm_gen
 from ps5_validator.utils import ampr_assetpakete
+from ps5_validator.utils import ampr_zstdpack
 from ps5_validator.utils import wee_tools
 from ps5_validator.utils import credits_daten
 from ps5_validator.utils import bildecken
@@ -5525,6 +5526,8 @@ class PS5ConverterGUI:
         # LZ4-Stufe des Asset-Packs von der Kommandozeile (--ampr-lz4-stufe);
         # None = die gespeicherte Einstellung gilt (_ampr_lz4_stufe).
         self._cli_ampr_lz4_stufe = None
+        self._cli_ampr_pack_verfahren = None
+        self._cli_ampr_zstd_stufe = None
         # PlayGo-Rueckfrage am Anfang des Laufs (_playgo_vor_dem_lauf_klaeren):
         # schon nachgesehen - oder erst beim Einbau fragen, weil sich das
         # Abbild vorher nicht lesen liess.
@@ -34997,6 +35000,10 @@ class PS5ConverterGUI:
             if nur_packfaehig:
                 if not ampr_assetpakete.variante_kann_packen(variante):
                     continue
+                # zstd-Packs liest nur ampr-emu-ng; die reinen LZ4-Pack-Baue von drakmor gehoeren dann nicht in die Liste.
+                if (self._ampr_pack_verfahren() == "zstd"
+                        and variante.strip().lower() not in ampr_assetpakete.ALLROUND_VARIANTEN):
+                    continue
             elif ampr_assetpakete.variante_nur_packbau(variante):
                 continue
             beschriftung = self._ampr_beschriftung(eintrag)
@@ -35206,6 +35213,28 @@ class PS5ConverterGUI:
         return ampr_assetpakete.lz4_stufe_lesen(
             self._load_setting(self._AMPR_LZ4_STUFE_SETTING,
                                ampr_assetpakete.LZ4_STUFE_VORGABE))
+
+    _AMPR_PACK_VERFAHREN_SETTING = "ampr_pack_verfahren"
+    _AMPR_ZSTD_STUFE_SETTING = "ampr_zstd_stufe"
+
+    def _ampr_pack_verfahren(self) -> str:
+        """Womit Asset-Packs gebaut werden: ``"lz4"`` (Vorgabe) oder ``"zstd"``.
+
+        zstd-Packs (``ampr_zstd.index`` + ``ampr_zstd-NNN.pak``) liest nur ampr-emu-ng (die Reihe NG);
+        die Laufzeit von drakmor kennt nur LZ4. Vorrang hat ``--ampr-pack-verfahren``, danach die gespeicherte
+        Einstellung. Unbekannte Werte ergeben LZ4 - nie still zstd.
+        """
+        cli = getattr(self, "_cli_ampr_pack_verfahren", None)
+        wert = cli if cli else self._load_setting(self._AMPR_PACK_VERFAHREN_SETTING, "lz4")
+        return "zstd" if str(wert or "").strip().lower() == "zstd" else "lz4"
+
+    def _ampr_zstd_stufe(self) -> int:
+        """Die zstd-Stufe (1 bis 22) der zstd-Packs; Vorrang hat ``--ampr-zstd-stufe``."""
+        cli = getattr(self, "_cli_ampr_zstd_stufe", None)
+        if cli is not None:
+            return ampr_zstdpack.stufe_lesen(cli)
+        return ampr_zstdpack.stufe_lesen(self._load_setting(self._AMPR_ZSTD_STUFE_SETTING,
+                                                            ampr_zstdpack.STUFE_VORGABE))
 
     def _ampr_pack_arbeiter(self) -> int:
         """Wie viele Packvorgaenge parallel laufen duerfen.
@@ -36063,6 +36092,9 @@ class PS5ConverterGUI:
         mit den losen Dateien, der Speicherblock, dann der vollstaendige Satz
         in den Spielordner.
         """
+        if self._ampr_pack_verfahren() == "zstd":
+            return self._ampr_zstdpakete_bauen(ordner, index_pfad, auswahl)
+
         bereit, grund = ampr_assetpakete.einsatzbereit()
         if not bereit:
             self._append_to_log(self._t(grund))
@@ -36274,6 +36306,109 @@ class PS5ConverterGUI:
         if not self._ampr_direktleser_riegel(ordner, eigenes_profil):
             return True
         return self._ampr_originale_entfernen(ordner, zeilen)
+
+    def _ampr_zstdpakete_bauen(self, ordner: str, index_pfad: str, auswahl: dict[str, Any]) -> bool:
+        """Asset-Pack mit zstd (``ampr_zstd.index`` + ``ampr_zstd-NNN.pak``) statt LZ4.
+
+        Nur fuer ampr-emu-ng: Seine Laufzeit liest die zstd-Packs, die von drakmor kennt nur LZ4. Gepackt wird jede
+        nicht leere Datei ausser den Systemdateien (``ampr_zstdpack.bleibt_lose``), in 256-KiB-Chunks, jeder ein eigener
+        zstd-Frame. Der ``ampr_emu.index`` (``index_pfad``) bleibt wie er ist: Er nennt jede Datei des Spiels, gepackt
+        oder lose.
+
+        Wie beim LZ4-Weg wird in einen Ordner **neben** dem Spielordner gebaut, jedes Byte gegen die Quelle geprueft
+        und erst dann uebernommen. Originale fallen nur weg, wenn beim Start "Originale weglassen" gewaehlt wurde und der
+        Ordner eine Arbeitskopie ist. Ob das Spiel die Packs auf der Konsole wirklich liest, zeigt nur ein Lauf dort.
+        """
+        if not ampr_zstdpack.verfuegbar():
+            self._append_to_log(self._t("ampr_zstd.bibliothek_fehlt"))
+            return False
+        variante = str((auswahl or {}).get("variant", "")).strip().lower()
+        ist_ng = (variante in ampr_assetpakete.ALLROUND_VARIANTEN if variante
+                  else self._ampr_ist_ng_datei(os.path.join(ordner, "fakelib", "libSceAmpr.sprx")))
+        if not ist_ng:
+            self._append_to_log(self._t("ampr_zstd.nur_ng"))
+            return False
+
+        stufe = self._ampr_zstd_stufe()
+        ausgabe = os.path.join(os.path.dirname(os.path.abspath(ordner)),
+                               os.path.basename(os.path.abspath(ordner)) + "_ampr_zstd")
+        self._append_to_log(self._t("ampr_zstd.start", stufe=stufe))
+        self._set_status(self._t("ampr_zstd.status"))
+        ausgabe_war_da = os.path.exists(ausgabe)
+        uebernommen = False
+        try:
+            gewaehlt = ampr_zstdpack.dateien_auswaehlen(ordner, abbruch=lambda: not self.is_running)
+            self._append_to_log(self._t(
+                "ampr_zstd.auswahl", packed=len(gewaehlt.gepackt), loose=len(gewaehlt.lose),
+                size=self._fmt_bytes(gewaehlt.gepackte_bytes)))
+            for pfad in gewaehlt.ungueltig[:10]:
+                self._append_to_log(self._t("ampr_zstd.pfad_ungueltig", path=pfad))
+            if not gewaehlt.gepackt:
+                self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
+                return False
+
+            def _fort(phase: str):
+                return lambda anteil: self._ampr_pack_fortschritt(anteil * 100.0, phase)
+
+            ergebnis = ampr_zstdpack.packen(
+                ordner, ausgabe, gewaehlt, stufe=stufe, arbeiter=self._ampr_pack_arbeiter(),
+                melden=self._append_to_log, abbruch=lambda: not self.is_running, fortschritt=_fort("zstd"))
+            gesamt = max(1, ergebnis.logische_bytes)
+            self._append_to_log(self._t(
+                "ampr_zstd.gepackt", files=ergebnis.dateien, chunks=ergebnis.chunks, zstd=ergebnis.zstd_chunks,
+                raw=ergebnis.roh_chunks, volumes=len(ergebnis.baender),
+                percent="%.1f" % (100.0 * ergebnis.gespeicherte_bytes / gesamt)))
+
+            # Jeder Chunk wird entpackt und mit der Quelle verglichen - erst danach geht etwas in den Spielordner.
+            self._set_status(self._t("ampr_pack.status_pruefen"))
+            index = ampr_zstdpack.pruefen(ausgabe, ordner, melden=lambda _z: None,
+                                          abbruch=lambda: not self.is_running, fortschritt=_fort("pruefen"))
+            self._append_to_log(self._t("ampr_pack.geprueft"))
+
+            ampr_zstdpack.uebernehmen(ausgabe, ordner, index, melden=lambda _z: None,
+                                      abbruch=lambda: not self.is_running)
+            uebernommen = True
+            self._append_to_log(self._t("ampr_zstd.uebernommen", count=len(index.baender) + 1))
+            self._ampr_pack_konsolenhinweis(ordner)
+            self._append_to_log(self._t("ampr_zstd.hinweis_ng"))
+        except ampr_zstdpack.ZstdPackFehler as exc:
+            grund = str(exc)
+            schluessel = grund.split(":", 1)[0]
+            if schluessel.startswith(("ampr_pack.", "ampr_zstd.")) and ":" not in grund:
+                self._append_to_log(self._t(grund))
+            else:
+                self._append_to_log(self._t("ampr_zstd.fehlgeschlagen", error=grund))
+            return False
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("zstd-Packs: unerwarteter Fehler")
+            self._append_to_log(self._t("ampr_zstd.fehlgeschlagen", error=exc))
+            return False
+        finally:
+            self._pack_infotext = ""
+            if not uebernommen and not ausgabe_war_da and os.path.isdir(ausgabe):
+                _rmtree_force(ausgabe)
+            elif uebernommen and os.path.isdir(ausgabe) and not os.listdir(ausgabe):
+                try:
+                    os.rmdir(ausgabe)
+                except OSError:
+                    pass
+
+        if not getattr(self, "_ampr_originale_weglassen", False):
+            self._append_to_log(self._t("ampr_pack.quellen_bleiben"))
+            return True
+        if not getattr(self, "_ampr_ordner_ist_kopie", False):
+            self._append_to_log(self._t("ampr_pack.originale_nicht_im_quellordner"))
+            return True
+        try:
+            ergebnis_r = ampr_zstdpack.originale_entfernen(
+                ordner, index, abbruch=lambda: not self.is_running)
+        except ampr_zstdpack.ZstdPackFehler as exc:
+            self._append_to_log(self._t("ampr_pack.originale_fehlgeschlagen", error=exc))
+            return False
+        self._append_to_log(self._t(
+            "ampr_pack.originale_entfernt", count=ergebnis_r["files"],
+            size=self._fmt_bytes(ergebnis_r["bytes"]), dirs=ergebnis_r["directories"]))
+        return True
 
     def _ampr_pack_konsolenhinweis(self, ordner: str) -> None:
         """Sagt beim Bauen, was die Konsole fuer dieses Abbild braucht.
@@ -62772,6 +62907,7 @@ class PS5ConverterGUI:
         def _fehlertext(fehler: str) -> str:
             # Das Modul nennt manche Gruende als Uebersetzungsschluessel.
             return (self._t(fehler) if fehler.startswith("ampr_pack.")
+                    or (fehler.startswith("ampr_zstd.") and ":" not in fehler)
                     else fehler).strip()
 
         def _starten(arbeit, uhr_schluessel: str) -> None:
@@ -62847,7 +62983,8 @@ class PS5ConverterGUI:
                 messagebox.showwarning(titel, self._t("assetpack_tool.msg_choose_folder"),
                                        parent=win)
                 return ""
-            if not ampr_assetpakete.manifest_im_ordner(ordner):
+            if (not ampr_assetpakete.manifest_im_ordner(ordner)
+                    and not ampr_zstdpack.ist_gepackt(ordner)):
                 messagebox.showwarning(titel, self._t("assetpack_tool.msg_no_pack"),
                                        parent=win)
                 return ""
@@ -62858,12 +62995,35 @@ class PS5ConverterGUI:
                 return merk["befund"]
             return _befund_lesen(ordner)
 
+        def _zstd_pruefen(ordner: str) -> None:
+            """Im Faden: Index und Baender eines zstd-Packs lesen, jeden Chunk entpacken (Frame-Pruefsumme)."""
+            _melden(self._t("assetpack_tool.log_start_read", path=ordner))
+            try:
+                b = ampr_zstdpack.befund(ordner)
+                _melden(self._t(
+                    "assetpack_tool.zstd_befund", stufe=b["stufe"], dateien=b["dateien"],
+                    logisch=self._fmt_bytes(b["logisch"]), baender=b["baender"],
+                    band_groesse=self._fmt_bytes(b["band_bytes"]), chunks=b["chunks"]))
+                if b["fehlende_baender"]:
+                    _melden(self._t("assetpack_tool.log_baender_fehlen", name=b["erste_fehlende"]))
+                    raise ampr_assetpakete.PackFehler("ampr_pack.baender_fehlen")
+                _melden(self._t("assetpack_tool.log_check_start"))
+                index = ampr_zstdpack.pruefen(ordner, "", abbruch=_abbruch)
+            except ampr_zstdpack.ZstdPackFehler as exc:
+                raise ampr_assetpakete.PackFehler(str(exc)) from exc
+            _melden(self._t("assetpack_tool.zstd_check_ok", files=len(index.dateien), chunks=len(index.chunks),
+                            size=self._fmt_bytes(index.logische_bytes)))
+            _melden(self._t("assetpack_tool.log_check_gut"))
+
         def _pruefen() -> None:
             ordner = _ordner_gueltig()
             if not ordner:
                 return
 
             def _arbeit() -> None:
+                if ampr_zstdpack.ist_gepackt(ordner):
+                    _zstd_pruefen(ordner)
+                    return
                 befund = _befund_lesen(ordner)
                 for name in befund["baender_fehlen"]:
                     _melden(self._t("assetpack_tool.log_baender_fehlen", name=name))
@@ -62930,9 +63090,13 @@ class PS5ConverterGUI:
                 # Platz vorab, im Faden (das Manifest zu lesen kann dauern):
                 # Ein halb gefuellter Datentraeger ist schlimmer als eine
                 # Absage. Gemessen wird dort, wo geschrieben wird.
-                befund = _befund_fuer(ordner)
-                bedarf = ampr_assetpakete.entpack_platzbedarf(
-                    befund, in_ordner=not ziel)
+                zstd_ordner = ampr_zstdpack.ist_gepackt(ordner)
+                try:
+                    bedarf = (ampr_zstdpack.platzbedarf(ordner, in_ordner=not ziel) if zstd_ordner
+                              else ampr_assetpakete.entpack_platzbedarf(
+                                  _befund_fuer(ordner), in_ordner=not ziel))
+                except ampr_zstdpack.ZstdPackFehler as exc:
+                    raise ampr_assetpakete.PackFehler(str(exc)) from exc
                 messort = ordner if not ziel else (
                     ziel if os.path.isdir(ziel) else os.path.dirname(ziel) or ziel)
                 try:
@@ -62944,7 +63108,25 @@ class PS5ConverterGUI:
                     raise ampr_assetpakete.PackFehler(self._t(
                         "assetpack_tool.msg_platz", laufwerk=messort,
                         bedarf=self._fmt_bytes(bedarf), frei=self._fmt_bytes(frei)))
-                if ziel:
+                if zstd_ordner:
+                    try:
+                        if ziel:
+                            _melden(self._t("assetpack_tool.log_unpack_start_neu", path=ziel))
+                            erg = ampr_zstdpack.entpacken_in_neuen_ordner(
+                                ordner, ziel, melden=lambda _z: None, abbruch=_abbruch)
+                            _melden(self._t("assetpack_tool.zstd_unpack_neu_ok", files=erg["files"],
+                                            kopiert=erg["kopiert"], path=ziel))
+                        else:
+                            _melden(self._t("assetpack_tool.log_unpack_start_ordner", path=ordner))
+                            erg = ampr_zstdpack.entpacken_in_ordner(
+                                ordner, melden=lambda _z: None, abbruch=_abbruch)
+                            _melden(self._t("assetpack_tool.zstd_unpack_ordner_ok", files=erg["files"],
+                                            size=self._fmt_bytes(erg["bytes"]), entfernt=erg["entfernt"]))
+                    except ampr_zstdpack.ZstdPackFehler as exc:
+                        raise ampr_assetpakete.PackFehler(str(exc)) from exc
+                    merk["ordner"] = ""
+                    merk["befund"] = None
+                elif ziel:
                     _melden(self._t("assetpack_tool.log_unpack_start_neu", path=ziel))
                     erg = ampr_assetpakete.entpacken_in_neuen_ordner(
                         ordner, ziel, melden=_melden, text=self._t, abbruch=_abbruch)
@@ -65865,6 +66047,69 @@ class PS5ConverterGUI:
 
         lz4_combo.bind("<<ComboboxSelected>>", _lz4_gewaehlt)
 
+        # Packverfahren: LZ4 (alle Pack-faehigen Fassungen) oder zstd (nur ampr-emu-ng).
+        tk.Label(body, text=self._t("settings_dialog.verfahren_label"),
+                 font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.verfahren_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+        _verfahren_namen = {"lz4": self._t("settings_dialog.verfahren_lz4"),
+                            "zstd": self._t("settings_dialog.verfahren_zstd")}
+        _verfahren_zurueck = {text: kennung for kennung, text in _verfahren_namen.items()}
+        verfahren_var = tk.StringVar(value=_verfahren_namen[self._ampr_pack_verfahren()])
+        verfahren_combo = self._pw.Combobox(
+            body, textvariable=verfahren_var, state="readonly",
+            values=list(_verfahren_namen.values()), font=(UI_SCHRIFT, pt(9)))
+        verfahren_combo.pack(anchor="w", fill="x", pady=(0, 6))
+
+        _zstd_wahl = (1, 3, 5, 7, 9, 12, 15, 19, 22)
+
+        def _zstd_text(stufe: int) -> str:
+            schluessel = {5: "settings_dialog.zstd_stufe_5", 9: "settings_dialog.zstd_stufe_9",
+                          19: "settings_dialog.zstd_stufe_19", 22: "settings_dialog.zstd_stufe_22"}.get(stufe)
+            return self._t(schluessel) if schluessel else str(stufe)
+
+        _zstd_namen = {stufe: _zstd_text(stufe) for stufe in _zstd_wahl}
+        _zstd_zurueck = {text: stufe for stufe, text in _zstd_namen.items()}
+        _zstd_jetzt = self._ampr_zstd_stufe()
+        if _zstd_jetzt not in _zstd_namen:
+            _zstd_jetzt = ampr_zstdpack.STUFE_VORGABE
+        tk.Label(body, text=self._t("settings_dialog.zstd_stufe_label"),
+                 font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_secondary"]).pack(anchor="w")
+        zstd_var = tk.StringVar(value=_zstd_namen[_zstd_jetzt])
+        zstd_combo = self._pw.Combobox(
+            body, textvariable=zstd_var, state="readonly",
+            values=[_zstd_namen[stufe] for stufe in _zstd_wahl], font=(UI_SCHRIFT, pt(9)))
+        zstd_combo.pack(anchor="w", fill="x", pady=(0, 10))
+
+        def _verfahren_gewaehlt(_ereignis=None) -> None:
+            neu = _verfahren_zurueck.get(verfahren_var.get())
+            if neu is None:
+                logger.warning("Packverfahren: unbekannte Auswahl %r", verfahren_var.get())
+                return
+            self._save_setting(self._AMPR_PACK_VERFAHREN_SETTING, neu)
+            logger.info("Packverfahren auf %s gestellt", neu)
+            try:
+                # Die Versionsliste zeigt bei zstd nur NG.
+                self._ampr_versionsliste_fuellen()
+            except Exception as exc:  # noqa: BLE001 - die Einstellung gilt trotzdem
+                logger.debug("Versionsliste nicht aktualisiert: %s", exc)
+
+        def _zstd_gewaehlt(_ereignis=None) -> None:
+            neu = _zstd_zurueck.get(zstd_var.get())
+            if neu is None:
+                logger.warning("zstd-Stufe: unbekannte Auswahl %r", zstd_var.get())
+                return
+            self._save_setting(self._AMPR_ZSTD_STUFE_SETTING, neu)
+            logger.info("zstd-Stufe auf %d gestellt", neu)
+
+        verfahren_combo.bind("<<ComboboxSelected>>", _verfahren_gewaehlt)
+        zstd_combo.bind("<<ComboboxSelected>>", _zstd_gewaehlt)
+
         # ── Farbsehschwaeche ────────────────────────────────────────────
         #
         # Nur die Farben, die eine Bedeutung tragen, werden ersetzt - Erfolg,
@@ -68025,6 +68270,13 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "und die mitgelieferten Spielprofile, nicht fuer ein eigenes "
              "Profil aus Konsolen-Mitschnitten.")
     parser.add_argument(
+        "--ampr-pack-verfahren", choices=("lz4", "zstd"), default=None,
+        help="Packverfahren des Asset-Packs: lz4 (Vorgabe) oder zstd. zstd-Packs liest nur ampr-emu-ng (NG). "
+             "Ohne den Schalter gilt die in den Einstellungen gespeicherte Wahl.")
+    parser.add_argument(
+        "--ampr-zstd-stufe", type=int, default=None, metavar="1-22",
+        help="zstd-Stufe der zstd-Packs (1 bis 22; Vorgabe 5). Ohne den Schalter gilt die gespeicherte Stufe.")
+    parser.add_argument(
         "--shutdown-on-success", action="store_true",
         help=(
             "Rechner nach erfolgreichem Abschluss herunterfahren (nach dem Lösen "
@@ -68245,6 +68497,8 @@ def _cli_schalter_uebernehmen(app: "PS5ConverterGUI", args: argparse.Namespace) 
         getattr(args, "ampr_originale_weglassen", False))
     # LZ4-Stufe des Asset-Packs, siehe PS5ConverterGUI._ampr_lz4_stufe.
     app._cli_ampr_lz4_stufe = getattr(args, "ampr_lz4_stufe", None)
+    app._cli_ampr_pack_verfahren = getattr(args, "ampr_pack_verfahren", None)
+    app._cli_ampr_zstd_stufe = getattr(args, "ampr_zstd_stufe", None)
 
 
 def _hauptfenster_anlegen():
@@ -68385,6 +68639,12 @@ def _run_cli(args: argparse.Namespace) -> int:
         print("[FEHLER] --ampr-lz4-stufe nimmt eine Zahl von %d bis %d (erhalten: %s)."
               % (ampr_assetpakete.LZ4_STUFE_MIN, ampr_assetpakete.LZ4_STUFE_MAX,
                  stufe_cli), file=sys.stderr)
+        return 2
+
+    zstd_cli = getattr(args, "ampr_zstd_stufe", None)
+    if zstd_cli is not None and not (ampr_zstdpack.STUFE_MIN <= zstd_cli <= ampr_zstdpack.STUFE_MAX):
+        print("[FEHLER] --ampr-zstd-stufe nimmt eine Zahl von %d bis %d (erhalten: %s)."
+              % (ampr_zstdpack.STUFE_MIN, ampr_zstdpack.STUFE_MAX, zstd_cli), file=sys.stderr)
         return 2
 
     if not args.source:
