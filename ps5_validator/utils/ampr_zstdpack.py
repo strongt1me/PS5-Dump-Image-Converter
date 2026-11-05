@@ -154,14 +154,100 @@ class Auswahl:
     lose: list[tuple[str, int]] = field(default_factory=list)
     leer: list[str] = field(default_factory=list)
     ungueltig: list[str] = field(default_factory=list)
+    #: Wie viele Dateien nur wegen der eigenen Regeln lose bleiben.
+    nach_regeln_lose: int = 0
 
     @property
     def gepackte_bytes(self) -> int:
         return sum(g for _p, g in self.gepackt)
 
 
-def dateien_auswaehlen(app0: str, abbruch: Callable[[], bool] = lambda: False) -> Auswahl:
-    """Geht den Spielordner durch und teilt die Dateien in gepackt / lose."""
+PROFIL_MAX_BYTES = 1024 * 1024
+_AKTIONEN = ("compress", "store", "loose")
+
+
+@dataclass
+class Regeln:
+    """Eigene Packregeln aus einer TOML-Datei (Format wie ``ampr_pack.py`` / Lazy_AMPR, wie bei Forge gelesen).
+
+    ``[pack] default_action`` (compress, store, loose; Vorgabe loose) gilt fuer Dateien, die keine Regel trifft.
+    Jede ``[[rule]]`` hat ``action`` (Vorgabe compress), ``include`` (Glob oder Liste, Vorgabe ``**``) und ``exclude``;
+    die **letzte** treffende Regel gewinnt. Globs sind ``fnmatchcase`` (gross/klein beachtet, ``*`` trifft auch ``/``).
+    Bei zstd packt ``store`` wie ``compress`` (ein Chunk, den zstd nicht verkleinert, bleibt ohnehin roh); Blockgroesse,
+    ``hot`` und ``layout`` haben keine Wirkung. Alle anderen Schluessel werden ignoriert, wie bei Forge.
+    """
+
+    standard: str = "loose"
+    regeln: "list[tuple[str, list[str], list[str]]]" = field(default_factory=list)
+    ignoriert: list[str] = field(default_factory=list)
+    quelle: str = ""
+
+    def aktion(self, rel: str) -> str:
+        import fnmatch
+        ergebnis = self.standard
+        for aktion, einschluss, ausschluss in self.regeln:
+            if any(fnmatch.fnmatchcase(rel, m) for m in einschluss) and \
+                    not any(fnmatch.fnmatchcase(rel, m) for m in ausschluss):
+                ergebnis = aktion
+        return ergebnis
+
+
+def _muster_liste(wert: Any, name: str) -> list[str]:
+    if isinstance(wert, str):
+        wert = [wert]
+    if not isinstance(wert, list) or not all(isinstance(m, str) for m in wert):
+        raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: %s muss ein Muster oder eine Liste von Mustern sein" % name)
+    return [m.replace("\\", "/").lstrip("/") for m in wert]
+
+
+def regeln_laden(pfad: str) -> Regeln:
+    """Liest und prueft eine Regeldatei; jeder Fehler ist ein :class:`ZstdPackFehler` (nichts wird geschrieben)."""
+    import tomllib
+    try:
+        if os.path.islink(pfad) or not os.path.isfile(pfad):
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: keine normale Datei")
+        if os.path.getsize(pfad) > PROFIL_MAX_BYTES:
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: groesser als 1 MiB")
+        with open(pfad, "rb") as fh:
+            daten = tomllib.loads(fh.read().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: %s" % exc) from exc
+    ergebnis = Regeln(quelle=pfad)
+    pack = daten.get("pack", {})
+    if not isinstance(pack, dict):
+        raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: [pack] ist keine Tabelle")
+    standard = str(pack.get("default_action", "loose")).strip().lower()
+    if standard not in _AKTIONEN:
+        raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: default_action %r" % standard)
+    ergebnis.standard = standard
+    ergebnis.ignoriert += ["pack." + k for k in pack if k != "default_action"]
+    regeln = daten.get("rule", [])
+    if not isinstance(regeln, list) or not all(isinstance(r, dict) for r in regeln):
+        raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: rule muss [[rule]] sein")
+    for nummer, regel in enumerate(regeln, 1):
+        if "include_from" in regel or "exclude_from" in regel:
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: include_from/exclude_from (Regel %d) - Liste einfuegen" % nummer)
+        aktion = str(regel.get("action", "compress")).strip().lower()
+        if aktion not in _AKTIONEN:
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: action %r in Regel %d" % (aktion, nummer))
+        einschluss = _muster_liste(regel.get("include", "**"), "include")
+        if not einschluss:
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: leeres include in Regel %d" % nummer)
+        ausschluss = _muster_liste(regel.get("exclude", []), "exclude")
+        ergebnis.regeln.append((aktion, einschluss, ausschluss))
+        ergebnis.ignoriert += ["rule." + k for k in regel if k not in ("action", "include", "exclude")]
+    ergebnis.ignoriert += [k for k in daten if k not in ("pack", "rule")]
+    ergebnis.ignoriert = sorted(set(ergebnis.ignoriert))
+    return ergebnis
+
+
+def dateien_auswaehlen(app0: str, abbruch: Callable[[], bool] = lambda: False,
+                       regeln: "Regeln | None" = None) -> Auswahl:
+    """Geht den Spielordner durch und teilt die Dateien in gepackt / lose.
+
+    Ohne ``regeln`` wird alles gepackt, was nicht Systemdatei oder leer ist. Mit ``regeln`` entscheiden diese
+    ueber die uebrigen Dateien; Systemdateien, Laufzeitdateien, Packdateien und leere Dateien bleiben immer lose.
+    """
     wurzel = os.path.abspath(app0)
     ergebnis = Auswahl()
     for ordner, unter, dateien in os.walk(wurzel):
@@ -183,6 +269,9 @@ def dateien_auswaehlen(app0: str, abbruch: Callable[[], bool] = lambda: False) -
             elif not pfad_gueltig(rel):
                 ergebnis.ungueltig.append(rel)
                 ergebnis.lose.append((rel, groesse))
+            elif regeln is not None and regeln.aktion(rel) == "loose":
+                ergebnis.lose.append((rel, groesse))
+                ergebnis.nach_regeln_lose += 1
             else:
                 ergebnis.gepackt.append((rel, groesse))
     # Ein Dateipfad darf nicht der Ordner einer anderen sein - im Dateisystem ausgeschlossen, hier nur zur Sicherheit.

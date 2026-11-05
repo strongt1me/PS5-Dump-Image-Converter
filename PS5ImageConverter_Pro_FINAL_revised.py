@@ -19318,6 +19318,7 @@ class PS5ConverterGUI:
                 (self._t("filetype.ffpfs_image"), "*.ffpfs"),
                 (self._t("filetype.exfat_image"), "*.exfat"),
                 (self._t("filetype.ffpkg_package"), "*.ffpkg"),
+                (self._t("filetype.archive"), "*.zip *.7z *.rar"),
                 (self._t("filetype.all_files"), "*.*"),
             ],
         )
@@ -19719,6 +19720,71 @@ class PS5ConverterGUI:
             self._archiv_quelle_zurueck()
             return
         self._archiv_als_quelle(archiv, passwort=eingabe)
+
+    def _archiv_blockierend_entpacken(self, archiv: str, passwort: str = "",
+                                      abbruch: Callable[[], bool] | None = None) -> tuple[str, str, str]:
+        """Entpackt ein Archiv in einen neuen Arbeitsordner und wartet darauf (Kommandozeile, Sammelkonvertierung).
+
+        Ohne Fenster und ohne Rueckfrage: Das Passwort kommt als Argument (``--archiv-passwort``), die
+        ueblichen Szene-Passwoerter probiert :func:`archiv_quelle.entpacken` selbst. Der Aufrufer raeumt den
+        zurueckgegebenen Entpackordner wieder weg (:meth:`_archiv_ordner_wegraeumen`).
+
+        Returns:
+            ``(spielordner, entpackordner, fehler)``. Bei einem Fehler sind die ersten beiden leer und
+            ``fehler`` nennt den Grund; ein Archiv ohne Spiel (``sce_sys/param.json``) ist ebenfalls ein Fehler.
+        """
+        name = os.path.basename(archiv)
+        endung = os.path.splitext(archiv)[1].lower()
+        wurzeln = [os.path.dirname(os.path.abspath(__file__))]
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            wurzeln.insert(0, str(meipass))
+        if endung != ".zip" and not archiv_quelle.siebenzip_suchen(wurzeln):
+            return "", "", self._t("quelle.siebenzip_fehlt")
+        basis = self._get_runtime_temp_dir()
+        try:
+            frei = shutil.disk_usage(basis).free
+            groesse = os.path.getsize(archiv)
+        except OSError:
+            frei, groesse = 1 << 62, 0
+        if frei < groesse:
+            return "", "", self._t("quelle.archiv_platz", frei=self._fmt_bytes(int(frei)),
+                                   groesse=self._fmt_bytes(int(groesse)))
+        try:
+            ziel = tempfile.mkdtemp(prefix="ps5conv_archiv_", dir=basis)
+        except OSError as exc:
+            return "", "", self._t("quelle.archiv_fehler", grund=str(exc))
+        self._append_to_log(self._t("quelle.archiv_start", name=name, ziel=ziel))
+        popen_extra = ({"creationflags": _NO_WIN_FLAGS, "startupinfo": _silent_startupinfo()}
+                       if sys.platform == "win32" else {})
+        # Der Inhalt kommt in einen Unterordner mit dem Namen des Archivs: Liegt das Spiel gleich an der Wurzel des
+        # Archivs, heisst der Spielordner sonst wie der Zufallsname des Entpackordners - und danach auch das
+        # Ergebnis der Umwandlung.
+        inhalt = os.path.join(ziel, os.path.splitext(name)[0] or "Spiel")
+        try:
+            wurzel = archiv_quelle.entpacken(
+                archiv, inhalt, wurzeln=wurzeln, popen_extra=popen_extra, passwort=passwort, abbruch=abbruch)
+        except archiv_quelle.PasswortFehler as exc:
+            _rmtree_force(ziel, ignore_errors=True)
+            return "", "", self._t("quelle.archiv_passwort_falsch" if passwort else "quelle.archiv_passwort_noetig",
+                                   name=name) + " (" + str(exc) + ")"
+        except archiv_quelle.ArchivFehler as exc:
+            _rmtree_force(ziel, ignore_errors=True)
+            return "", "", self._t("quelle.archiv_fehler", grund=str(exc) or "?")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Archiv entpacken")
+            _rmtree_force(ziel, ignore_errors=True)
+            return "", "", self._t("quelle.archiv_fehler", grund="%s: %s" % (type(exc).__name__, exc))
+        if not archiv_quelle.hat_spiel(wurzel):
+            _rmtree_force(ziel, ignore_errors=True)
+            return "", "", self._t("quelle.archiv_kein_spiel", grund="sce_sys/param.json")
+        self._append_to_log(self._t("quelle.archiv_fertig", ordner=wurzel))
+        return wurzel, ziel, ""
+
+    def _archiv_ordner_wegraeumen(self, ordner: str) -> None:
+        """Entfernt einen Entpackordner von :meth:`_archiv_blockierend_entpacken` (nur ``ps5conv_archiv_*``)."""
+        if ordner and os.path.isdir(ordner) and os.path.basename(ordner).startswith("ps5conv_archiv_"):
+            _rmtree_force(ordner, ignore_errors=True)
 
     def _archiv_quelle_zurueck(self) -> None:
         """Stellt das Feld QUELLE auf den Stand vor dem Entpacken zurueck (Abbruch oder Fehler)."""
@@ -31515,11 +31581,17 @@ class PS5ConverterGUI:
             # Bibliothek) - beim Wechsel zum naechsten Spiel liegt es dann bereit.
             threading.Thread(target=self._batch_cover_vorladen, args=(list(sources),),
                              daemon=True, name="batch-cover").start()
+            # Entpackordner des Archivs, das gerade drankommt (nur bei Archiv-Quellen); er wird vor dem naechsten
+            # Archiv, beim Abbruch und nach der Schleife entfernt.
+            archiv_entpackt = ""
             for idx, candidate in enumerate(sources, start=1):
+                self._archiv_ordner_wegraeumen(archiv_entpackt)
+                archiv_entpackt = ""
                 if not self.is_running:
                     self._batch_von, self._batch_bis = 0.0, 100.0
                     self._param_batch_aktiv = False
                     return False
+                anzeige = candidate
                 # Jede Datei bekommt ihren Abschnitt des Balkens: Datei 1 von 2
                 # fuellt 0-50 %, Datei 2 dann 50-100 %.
                 #
@@ -31570,6 +31642,23 @@ class PS5ConverterGUI:
                 self._ampr_index_entschieden = False
                 self._ampr_ordner_ist_kopie = False
                 self._append_to_log(self._t('log.auto.0087', v0=idx, v1=len(sources), v2=os.path.basename(candidate)))
+                if archiv_quelle.ist_archiv(candidate):
+                    # Ein Archiv steht fuer den Spielordner darin: entpacken, dann wie ein Dump-Ordner behandeln.
+                    # Das Ergebnis heisst nach dem Archiv (der Entpackordner traegt dessen Namen).
+                    spielordner, archiv_entpackt, archiv_fehler = self._archiv_blockierend_entpacken(
+                        candidate, passwort=str(getattr(self, "_cli_archiv_passwort", "") or ""),
+                        abbruch=lambda: not self.is_running)
+                    if archiv_fehler:
+                        self._append_to_log(self._t('log.auto.0088', v0=archiv_fehler))
+                        all_ok = False
+                        self.task_batch_results.append({
+                            "source": anzeige,
+                            "output": "",
+                            "ok": False,
+                            "detail": archiv_fehler,
+                        })
+                        continue
+                    candidate = spielordner
                 source_type = self._detect_source_type(candidate)
                 # Cover und Name des Spiels, das jetzt drankommt, und eine Zeile,
                 # was damit geschieht (Nutzer 06.10.2026: "immer das gleiche Spielcover").
@@ -31581,7 +31670,7 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t('log.auto.0088', v0=kennung))
                     all_ok = False
                     self.task_batch_results.append({
-                        "source": candidate,
+                        "source": anzeige,
                         "output": "",
                         "ok": False,
                         "detail": kennung,
@@ -31600,7 +31689,7 @@ class PS5ConverterGUI:
                         self._append_to_log(self._t('log.auto.0088', v0=reason))
                         all_ok = False
                     self.task_batch_results.append({
-                        "source": candidate,
+                        "source": anzeige,
                         "output": "",
                         "ok": False,
                         "skipped": bereits_im_zielformat,
@@ -31621,7 +31710,7 @@ class PS5ConverterGUI:
                                           ziel=ordner_ziel)
                         self._append_to_log(meldung)
                         self.task_batch_results.append({
-                            "source": candidate,
+                            "source": anzeige,
                             "output": "",
                             "ok": False,
                             "detail": meldung.strip(),
@@ -31640,7 +31729,7 @@ class PS5ConverterGUI:
                 if not self._batch_ueberschreiben_klaeren(candidate, dst,
                                                           target_type):
                     self.task_batch_results.append({
-                        "source": candidate,
+                        "source": anzeige,
                         "output": "",
                         "ok": False,
                         "skipped": True,
@@ -31671,7 +31760,7 @@ class PS5ConverterGUI:
                 # leerte Windows die Kopie des naechsten Spiels mitten im Bau.
                 self._batch_arbeitskopien_raeumen(output_path)
                 self.task_batch_results.append({
-                    "source": candidate,
+                    "source": anzeige,
                     "output": output_path,
                     "ok": item_ok,
                     "detail": str(verification.get("detail", "")),
@@ -31681,6 +31770,7 @@ class PS5ConverterGUI:
                 else:
                     self._append_to_log(self._t('log.auto.0090', v0=verification.get('detail', 'unbekannter Fehler')))
                     all_ok = False
+            self._archiv_ordner_wegraeumen(archiv_entpackt)
             succeeded = sum(1 for item in self.task_batch_results if item["ok"])
             uebersprungen = sum(1 for item in self.task_batch_results if item.get("skipped"))
             # Zwei Gruende, zwei Zeilen: Eine Quelle, deren Ergebnis schon im Zielordner liegt
@@ -32964,7 +33054,7 @@ class PS5ConverterGUI:
         for quelle in quellen:
             if not self.is_running:
                 return
-            if os.path.isdir(quelle):
+            if os.path.isdir(quelle) or archiv_quelle.ist_archiv(quelle):
                 continue
             try:
                 self._bibliothek_cover_datei(quelle)
@@ -36337,10 +36427,24 @@ class PS5ConverterGUI:
         ausgabe_war_da = os.path.exists(ausgabe)
         uebernommen = False
         try:
-            gewaehlt = ampr_zstdpack.dateien_auswaehlen(ordner, abbruch=lambda: not self.is_running)
+            # Eigene Regeln: Liegt neben dem Dump-Ordner "<Name>_ampr_pack.toml" (wie beim LZ4-Weg), entscheidet es,
+            # was lose bleibt. Systemdateien bleiben auch dann lose.
+            regeln = None
+            profil = self._ampr_eigenes_profil_uebernehmen(ausgabe)
+            if profil:
+                regeln = ampr_zstdpack.regeln_laden(profil)
+                self._append_to_log(self._t(
+                    "ampr_zstd.regeln", count=len(regeln.regeln), default=regeln.standard))
+                if regeln.ignoriert:
+                    self._append_to_log(self._t("ampr_zstd.regeln_ignoriert",
+                                                keys=", ".join(regeln.ignoriert[:12])))
+            gewaehlt = ampr_zstdpack.dateien_auswaehlen(
+                ordner, abbruch=lambda: not self.is_running, regeln=regeln)
             self._append_to_log(self._t(
                 "ampr_zstd.auswahl", packed=len(gewaehlt.gepackt), loose=len(gewaehlt.lose),
                 size=self._fmt_bytes(gewaehlt.gepackte_bytes)))
+            if regeln is not None:
+                self._append_to_log(self._t("ampr_zstd.regeln_lose", count=gewaehlt.nach_regeln_lose))
             for pfad in gewaehlt.ungueltig[:10]:
                 self._append_to_log(self._t("ampr_zstd.pfad_ungueltig", path=pfad))
             if not gewaehlt.gepackt:
@@ -36387,11 +36491,9 @@ class PS5ConverterGUI:
             self._pack_infotext = ""
             if not uebernommen and not ausgabe_war_da and os.path.isdir(ausgabe):
                 _rmtree_force(ausgabe)
-            elif uebernommen and os.path.isdir(ausgabe) and not os.listdir(ausgabe):
-                try:
-                    os.rmdir(ausgabe)
-                except OSError:
-                    pass
+            elif uebernommen and os.path.isdir(ausgabe) and set(os.listdir(ausgabe)) <= {"ampr_pack.toml"}:
+                # Nur der Ordner dieses Laufs (leer oder mit der Kopie der Regeldatei) wird weggeraeumt.
+                _rmtree_force(ausgabe)
 
         if not getattr(self, "_ampr_originale_weglassen", False):
             self._append_to_log(self._t("ampr_pack.quellen_bleiben"))
@@ -68277,6 +68379,10 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         "--ampr-zstd-stufe", type=int, default=None, metavar="1-22",
         help="zstd-Stufe der zstd-Packs (1 bis 22; Vorgabe 5). Ohne den Schalter gilt die gespeicherte Stufe.")
     parser.add_argument(
+        "--archiv-passwort", default="", metavar="PASSWORT",
+        help=("Passwort fuer ein verschluesseltes Archiv (.zip, .7z, .rar) als --source von Aufgabe 1 und 5. "
+              "Ohne Angabe probiert das Programm die ueblichen Passwoerter der Szene."))
+    parser.add_argument(
         "--shutdown-on-success", action="store_true",
         help=(
             "Rechner nach erfolgreichem Abschluss herunterfahren (nach dem Lösen "
@@ -68685,6 +68791,7 @@ def _run_cli(args: argparse.Namespace) -> int:
     _cli_fenster_verbergen(root)
     app._cli_mode = True
     app._cli_quiet = bool(args.quiet)
+    app._cli_archiv_passwort = str(getattr(args, "archiv_passwort", "") or "")
     _cli_schalter_uebernehmen(app, args)
     # Im CLI-Modus entscheidet allein der Schalter, nicht die gespeicherte Wahl
     # aus der Oberflaeche. Das Ankreuzfeld wird mitgesetzt, damit
@@ -68726,6 +68833,23 @@ def _run_cli(args: argparse.Namespace) -> int:
     messagebox.showwarning = lambda title, message, **k: print(f"[WARNUNG] {title}: {message}")
     messagebox.showinfo = lambda title, message, **k: print(f"[INFO] {title}: {message}")
 
+    # Ein Archiv (.zip, .7z, .rar) als Quelle von Aufgabe 1 wird hier entpackt (wie der Knopf "Archiv..." im
+    # Fenster); der Spielordner darin ersetzt die Quelle, der Entpackordner wird am Ende wieder entfernt.
+    archiv_ordner: list[str] = []
+    if mode == "pack_folder" and archiv_quelle.ist_archiv(sources[0]):
+        archiv_wurzel, archiv_entpackt, archiv_fehler = app._archiv_blockierend_entpacken(
+            sources[0], passwort=str(getattr(args, "archiv_passwort", "") or ""))
+        if archiv_fehler:
+            print(f"[FEHLER] {archiv_fehler}", file=sys.stderr)
+            root.destroy()
+            return 2
+        archiv_ordner.append(archiv_entpackt)
+        sources = [os.path.normpath(archiv_wurzel)]
+
+    def _archiv_aufraeumen() -> None:
+        for entpackt in archiv_ordner:
+            app._archiv_ordner_wegraeumen(entpackt)
+
     error_msg = ""
     for candidate in sources:
         error_msg = app._validate_source_path(candidate, mode)
@@ -68733,6 +68857,7 @@ def _run_cli(args: argparse.Namespace) -> int:
             break
     if error_msg:
         print(f"[FEHLER] {error_msg}", file=sys.stderr)
+        _archiv_aufraeumen()
         root.destroy()
         return 2
 
@@ -68776,6 +68901,7 @@ def _run_cli(args: argparse.Namespace) -> int:
             app._format_hinweis_setzen(mode)
         else:
             print(f"[FEHLER] Unbekanntes Zielformat: {args.format}", file=sys.stderr)
+            _archiv_aufraeumen()
             root.destroy()
             return 2
     # Merken, was ausdruecklich angefordert war: _on_integration_changed frischt die
@@ -68854,6 +68980,8 @@ def _run_cli(args: argparse.Namespace) -> int:
             app._cleanup_exit_temp_targets()
         except Exception as exc:
             logger.debug("CLI-Temp-Bereinigung: %s", exc)
+
+    _archiv_aufraeumen()
 
     # Drei Ausgaenge. "Nicht geprueft" ist weder Erfolg noch Fehlschlag:
     # Eine 0 liesse ein Skript glauben, das Abbild sei in Ordnung befunden

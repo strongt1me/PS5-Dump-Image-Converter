@@ -28,7 +28,7 @@ SCHLUESSEL = [
     "ampr_zstd.pfad_ungueltig", "ampr_zstd.nichts_zu_packen", "ampr_zstd.gepackt", "ampr_zstd.uebernommen",
     "ampr_zstd.hinweis_ng", "ampr_zstd.fehlgeschlagen", "ampr_zstd.ausgabe_belegt", "ampr_zstd.pfad_doppelt",
     "ampr_zstd.zu_viele_baender", "ampr_zstd.index_pruefsumme", "ampr_zstd.band_ungueltig",
-    "ampr_zstd.band_pruefsumme",
+    "ampr_zstd.band_pruefsumme", "ampr_zstd.regeln", "ampr_zstd.regeln_ignoriert", "ampr_zstd.regeln_lose",
 ]
 
 
@@ -71,6 +71,17 @@ class _Stub:
 
     def _set_status(self, text: str) -> None:
         self.status.append(text)
+
+    regelquelle = ""
+
+    def _ampr_eigenes_profil_uebernehmen(self, ausgabe: str) -> str:
+        """Wie das Original: kopiert die Regeldatei neben dem Spielordner nach ``ausgabe/ampr_pack.toml``."""
+        if not self.regelquelle:
+            return ""
+        os.makedirs(ausgabe, exist_ok=True)
+        ziel = os.path.join(ausgabe, "ampr_pack.toml")
+        shutil.copy2(self.regelquelle, ziel)
+        return ziel
 
     def _ampr_zstd_stufe(self) -> int:
         return self._stufe
@@ -174,6 +185,30 @@ class BauenTests(unittest.TestCase):
             self.assertFalse(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}))
         self.assertIn("ampr_zstd.fehlgeschlagen", s.text())
         self.assertFalse(z.ist_gepackt(self.spiel), "geprueft wird vor der Uebernahme")
+        self.assertFalse(os.path.exists(self.ausgabe))
+
+    def test_eigene_regeln_bestimmen_was_lose_bleibt(self) -> None:
+        regeldatei = os.path.join(self._tmp, "regeln.toml")
+        Path(regeldatei).write_text(
+            '[pack]\ndefault_action = "compress"\n[[rule]]\naction = "loose"\ninclude = "Daten/b.*"\n',
+            encoding="utf-8")
+        s = _Stub()
+        s.regelquelle = regeldatei
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        index = z.index_laden(self.spiel)
+        self.assertEqual(["Daten/a.txt"], [d.pfad for d in index.dateien], "b.bin bleibt wegen der Regel lose")
+        self.assertTrue(os.path.isfile(os.path.join(self.spiel, "Daten", "b.bin")))
+        self.assertIn("ampr_zstd.regeln_lose", s.text())
+        self.assertFalse(os.path.exists(self.ausgabe), "auch die Kopie der Regeldatei wird weggeraeumt")
+
+    def test_kaputte_regeln_brechen_ab_ohne_zu_schreiben(self) -> None:
+        regeldatei = os.path.join(self._tmp, "regeln.toml")
+        Path(regeldatei).write_text("das ist [kein toml", encoding="utf-8")
+        s = _Stub()
+        s.regelquelle = regeldatei
+        self.assertFalse(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}))
+        self.assertIn("ampr_zstd.fehlgeschlagen", s.text())
+        self.assertFalse(z.ist_gepackt(self.spiel))
         self.assertFalse(os.path.exists(self.ausgabe))
 
     def test_ohne_bibliothek(self) -> None:

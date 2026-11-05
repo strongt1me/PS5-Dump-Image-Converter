@@ -306,6 +306,64 @@ class SpielordnerTests(_Ordner):
         self.assertTrue(os.path.isfile(os.path.join(self.spiel, "eboot.bin")))
 
 
+class RegelTests(_Ordner):
+    """Eigene Packregeln (TOML) wie bei Forge: letzte treffende Regel gewinnt, Systemdateien bleiben immer lose."""
+
+    def _regeln(self, text: str) -> "z.Regeln":
+        pfad = os.path.join(self._tmp, "regeln.toml")
+        Path(pfad).write_text(text, encoding="utf-8")
+        return z.regeln_laden(pfad)
+
+    def test_vorgabe_ist_lose_und_die_letzte_regel_gewinnt(self) -> None:
+        r = self._regeln('[[rule]]\naction="compress"\ninclude="Media/*"\n[[rule]]\naction="loose"\ninclude="Media/*"\nexclude="*.txt"\n')
+        self.assertEqual("loose", r.standard)
+        self.assertEqual("compress", r.aktion("Media/text.txt"))
+        self.assertEqual("loose", r.aktion("Media/zufall.bin"))
+        self.assertEqual("loose", r.aktion("sonstwo.bin"), "keine Regel trifft: Vorgabe")
+
+    def test_gross_klein_zaehlt_und_stern_kreuzt_den_schraegstrich(self) -> None:
+        r = self._regeln('[pack]\ndefault_action="loose"\n[[rule]]\ninclude="Daten/*"\n')
+        self.assertEqual("compress", r.aktion("Daten/a/b/c.bin"))
+        self.assertEqual("loose", r.aktion("daten/a.bin"))
+
+    def test_store_packt_wie_compress_und_unbekannte_schluessel_werden_gemeldet(self) -> None:
+        r = self._regeln('[pack]\nworkers=4\ndefault_action="store"\n[groups]\nx=1\n[[rule]]\ninclude=["a","b"]\nhot=true\n')
+        self.assertEqual("store", r.standard)
+        self.assertEqual({"pack.workers", "rule.hot", "groups"}, set(r.ignoriert))
+
+    def test_fehler_werden_abgelehnt(self) -> None:
+        for text in ("kein [toml", '[pack]\ndefault_action="packen"\n', '[[rule]]\naction="zip"\n',
+                     '[[rule]]\ninclude=[]\n', '[[rule]]\ninclude_from="x.txt"\n', '[[rule]]\ninclude=3\n'):
+            with self.assertRaises(z.ZstdPackFehler, msg=text):
+                self._regeln(text)
+        with self.assertRaises(z.ZstdPackFehler):
+            z.regeln_laden(os.path.join(self._tmp, "gibt_es_nicht.toml"))
+
+    def test_zu_grosse_datei(self) -> None:
+        pfad = os.path.join(self._tmp, "gross.toml")
+        Path(pfad).write_text("#" * (z.PROFIL_MAX_BYTES + 1), encoding="utf-8")
+        with self.assertRaises(z.ZstdPackFehler):
+            z.regeln_laden(pfad)
+
+    def test_auswahl_mit_regeln_laesst_systemdateien_trotzdem_lose(self) -> None:
+        r = self._regeln('[pack]\ndefault_action="compress"\n[[rule]]\naction="loose"\ninclude="Media/*"\n')
+        a = z.dateien_auswaehlen(self.spiel, regeln=r)
+        gepackt = {p for p, _g in a.gepackt}
+        self.assertNotIn("Media/text.txt", gepackt)
+        self.assertIn("data/genau.bin", gepackt)
+        self.assertNotIn("eboot.bin", gepackt)
+        self.assertEqual(2, a.nach_regeln_lose)
+        # Eine Regel, die alles packen will, packt trotzdem keine Systemdatei.
+        alles = self._regeln('[[rule]]\ninclude="**"\n')
+        gepackt2 = {p for p, _g in z.dateien_auswaehlen(self.spiel, regeln=alles).gepackt}
+        self.assertNotIn("eboot.bin", gepackt2)
+        self.assertNotIn("fakelib/libSceAmpr.sprx", gepackt2)
+        self.assertNotIn("data/leer.bin", gepackt2)
+
+    def test_ohne_regeln_bleibt_alles_wie_bisher(self) -> None:
+        self.assertEqual(z.dateien_auswaehlen(self.spiel).gepackt, z.dateien_auswaehlen(self.spiel, regeln=None).gepackt)
+
+
 @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
 class WerkzeugTests(_Ordner):
     """Die Funktionen hinter dem Asset-Pack-Werkzeug (Pruefen, Entpacken in den Ordner oder eine Kopie)."""

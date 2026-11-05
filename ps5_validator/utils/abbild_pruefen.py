@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ps5_validator.utils import dokan_laufwerk
+from ps5_validator.utils.archiv_quelle import ENDUNGEN as _ARCHIV_ENDUNGEN
 from ps5_validator.utils.nahtstellen import Textquelle, schluessel_zeigen
 from ps5_validator.utils.plattform import ist_administrator, prozess_flags
 
@@ -279,6 +280,10 @@ class Pruefstand:
                 return self._t("srccheck.path_not_found",
                                what=self._t("srccheck.what.batch_convert"),
                                path=path)
+            # Ein Archiv (.zip, .7z, .rar) steht fuer den Spielordner darin; die Sammelkonvertierung entpackt es,
+            # wenn es drankommt (``_run_flexible_conversion``). Ob ein Spiel darin liegt, zeigt sich erst dann.
+            if path.lower().endswith(_ARCHIV_ENDUNGEN):
+                return ""
             if not path.lower().endswith(self._ALLE_ABBILDER):
                 return self._t("srccheck.invalid_file",
                                what=self._t("srccheck.what.batch_files"),
