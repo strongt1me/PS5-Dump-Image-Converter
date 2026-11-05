@@ -717,8 +717,15 @@ class Werkzeuglage:
     geprueft: int = 0
 
 
+#: Programme, die es nur als Windows-Bau gibt (Namen beginnen so). Unter Linux und macOS fehlen sie von Haus aus - das
+#: ist kein Befund, wie schon bei der Probe der mitgelieferten Programme im Hauptmodul. Bis 05.11.2026 meldete die
+#: Betriebspruefung dort eine WARNUNG; die Mac-CI (``--anzeige-diagnose`` muss 0 liefern) wurde davon rot.
+NUR_WINDOWS = ("OrbisPkgTool",)
+
+
 def werkzeuge_messen(suchen: "dict[str, Callable[[], str]]",
-                     dotnet: "Callable[[], str] | None" = None) -> Werkzeuglage:
+                     dotnet: "Callable[[], str] | None" = None,
+                     plattform: str | None = None) -> Werkzeuglage:
     """Gibt es die Programme, die der Anwender zum Packen und Lesen braucht - und laufen sie auf .NET?
 
     Der Doktor prueft Python-Module und Ordner, nicht die Programmdateien selbst: Fehlt ``ffpfsc-pkg-tool.exe`` (vom
@@ -727,7 +734,10 @@ def werkzeuge_messen(suchen: "dict[str, Callable[[], str]]",
     Args:
         suchen: Name -> Funktion, die den Pfad liefert (leer = nicht gefunden).
         dotnet: Liefert den Ordner der .NET-Laufzeit (leer = keine).
+        plattform: ``sys.platform``; ausserhalb von ``win32`` entfallen die Programme aus ``NUR_WINDOWS``.
     """
+    if (plattform or sys.platform) != "win32":
+        suchen = {n: f for n, f in suchen.items() if not n.startswith(NUR_WINDOWS)}
     fehlend: list[tuple[str, str]] = []
     for name, suche in suchen.items():
         try:

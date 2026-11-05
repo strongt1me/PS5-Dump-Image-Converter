@@ -390,6 +390,19 @@ class WerkzeugeTests(_Ordner):
         self.assertEqual(["dotnet_fehlt"], _kennungen(bd.pruefe_werkzeuge(bd.werkzeuge_messen({}, dotnet=lambda: ""))))
         self.assertEqual([], bd.pruefe_werkzeuge(bd.werkzeuge_messen({})), "nicht gefragt = nicht gemeldet")
 
+    def test_orbispkgtool_fehlt_ausserhalb_von_windows_ohne_befund(self) -> None:
+        """Es gibt OrbisPkgTool nur als Windows-Bau. Die Mac-CI wurde am 05.11.2026 rot, weil die Betriebspruefung
+        sein Fehlen dort als WARNUNG zaehlte und ``--anzeige-diagnose`` damit 1 lieferte."""
+        suchen = {"OrbisPkgTool (PS4 PKG)": lambda: "", "ffpfsc-pkg-tool (PS5 PKG)": lambda: ""}
+        for plattform in ("darwin", "linux"):
+            lage = bd.werkzeuge_messen(suchen, plattform=plattform)
+            self.assertEqual([("ffpfsc-pkg-tool (PS5 PKG)", "nicht gefunden")], list(lage.fehlend), plattform)
+            self.assertEqual(1, lage.geprueft, plattform)
+        # Gegenprobe: Unter Windows bleibt es ein Befund (dort wird es mitgeliefert).
+        lage = bd.werkzeuge_messen(suchen, plattform="win32")
+        self.assertEqual({"OrbisPkgTool (PS4 PKG)", "ffpfsc-pkg-tool (PS5 PKG)"}, {n for n, _ in lage.fehlend})
+        self.assertEqual(2, lage.geprueft)
+
     def test_die_echten_programme_dieses_baums_sind_da(self) -> None:
         """Der Waechter am echten Baum: faellt eines weg (Virenscanner, falsches Entpacken), schlaegt er an."""
         from ps5_validator.utils import orbispkg, ps5_pkg_werkzeug as wz, prospero_pkg_tool as ppt  # noqa: PLC0415
@@ -641,6 +654,26 @@ class AnschlussTests(unittest.TestCase):
                                side_effect=lambda s: ["[ ok ] x"]) as doktor:
             self.app._build_diagnostic_report_text()
         self.assertEqual(1, doktor.call_count)
+
+    def test_orbispkgtool_fehlt_unter_linux_und_mac_ohne_warnung_im_programm(self) -> None:
+        """Der Weg des Programms (nicht nur der reinen Messung): ``_betrieb_pruefen`` darf dort nichts melden."""
+        from ps5_validator.utils import orbispkg  # noqa: PLC0415
+
+        class _MacSys:
+            """``sys`` aus Sicht der Betriebsdiagnose: nur ``platform`` weicht ab (der Rest bleibt echt)."""
+            platform = "darwin"
+
+            def __getattr__(self, name):
+                return getattr(sys, name)
+
+        with mock.patch.object(orbispkg, "werkzeug_finden", return_value=""):
+            unter_windows = self.app._betrieb_pruefen() if sys.platform == "win32" else None
+            with mock.patch.object(bd, "sys", _MacSys()):
+                unter_mac = self.app._betrieb_pruefen()
+        self.assertFalse([b for b in unter_mac.befunde if "OrbisPkgTool" in b.text], unter_mac.befunde)
+        if unter_windows is not None:
+            self.assertTrue([b for b in unter_windows.befunde if "OrbisPkgTool" in b.text],
+                            "Gegenprobe: Unter Windows muss das Fehlen auffallen.")
 
     def test_ein_verwaister_prozess_wird_im_bericht_gemeldet(self) -> None:
         lage = bd.Ressourcenlage(werkzeuge=("orbispkgtool",))

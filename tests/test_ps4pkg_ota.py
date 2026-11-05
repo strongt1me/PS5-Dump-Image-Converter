@@ -245,11 +245,12 @@ class PaketServerTests(unittest.TestCase):
         antwort.read()                                   # die Verbindung bleibt offen
         self.server.anhalten()
         with mock.patch.object(ota, "open", create=True,
-                               side_effect=AssertionError("Die Paketdatei wurde nach dem Anhalten geoeffnet.")):
+                               side_effect=AssertionError("Die Paketdatei wurde nach dem Anhalten geoeffnet.")) as geoeffnet:
             verbindung.request("GET", self.pfad, headers={"Range": "bytes=0-99"})
             antwort = verbindung.getresponse()
             self.assertEqual(503, antwort.status)
             antwort.read()
+        geoeffnet.assert_not_called()              # von aussen: ein except im Handler schluckte den Stubfehler sonst still
 
     def test_ein_belegter_port_gibt_einen_klaren_fehler(self) -> None:
         zweiter = ota.PaketServer(adresse=LOKAL, port=self.port)
