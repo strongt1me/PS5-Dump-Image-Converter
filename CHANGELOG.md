@@ -6,6 +6,12 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ---
 
+## Unveröffentlicht (nach v1.9.90)
+
+- **Neu:** Archive (.zip, .7z, .rar) lassen sich direkt als Quelle wählen – in Aufgabe 1, in der Sammelkonvertierung, in Aufgabe 5 und auf der Kommandozeile (`--archiv-passwort`). Das Programm entpackt sie selbst, erkennt den Spielordner darin und räumt den Temp-Ordner danach wieder auf.
+- **Neu:** WEITERE TOOLS › ABBILD BEARBEITEN: Ein Abbild (.ffpfsc, .ffpfs, .ffpkg, .exFAT) wird entpackt, einzelne Dateien lassen sich ersetzen, umbenennen, löschen oder hinzufügen, und das Ergebnis wird als neues Abbild `<Name>_bearbeitet` gespeichert. Das Original bleibt unberührt.
+- **Neu:** Asset-Packs lassen sich auch mit zstd statt LZ4 packen (nur für AMPR EMU NG). Eigene TOML-Regeln legen fest, was gepackt wird: entweder neben dem Dump (`<Ordnername>_ampr_pack.toml`) oder als feste Regeldatei in den Einstellungen.
+
 ## v1.9.90 – 05.11.2026
 
 - **Neu:** Die PKG/FPKG-Seite ist im Stil von Aufgabe 1 aufgebaut und erkennt PS4- und PS5-Pakete von selbst.
