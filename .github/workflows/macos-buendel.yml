@@ -112,10 +112,13 @@ jobs:
 
     steps:
       - name: Quelltext holen
-        uses: actions/checkout@v4
+        # v7 statt v4/v5/v4 (05.11.2026): Der letzte Lauf (02.11.) meldete "Node.js 20 is deprecated ... forced to run on
+        # Node.js 24" fuer alle drei Aktionen; die Eingaben unten (nur python-version, name, path, retention-days)
+        # sind in den neuen Hauptversionen unveraendert. Beweis erst beim naechsten Lauf.
+        uses: actions/checkout@v7
 
       - name: Python bereitstellen
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           # 3.12, nicht die neueste: Für diese Fassung gibt es für alle
           # benötigten Pakete fertige Räder in beiden Architekturen. Lokal
@@ -262,7 +265,7 @@ jobs:
           " "$WURZEL"
 
       - name: Abbild ablegen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-abbild-${{ matrix.laeufer }}
           path: dist/*.dmg

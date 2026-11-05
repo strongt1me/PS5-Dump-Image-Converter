@@ -127,8 +127,11 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "FEHLER: zstandard konnte nicht installiert werden." -ForegroundColor Red
     exit 1
 }
-Write-Host "      zlib-ng installieren/aktualisieren (MkPFS-Abhaengigkeit)..." -ForegroundColor Gray
-& $PYTHON -m pip install zlib-ng --upgrade --quiet
+Write-Host "      zlib-ng 1.0.0 installieren (MkPFS-Abhaengigkeit, festgenagelt)..." -ForegroundColor Gray
+# Auf 1.0.0 festgenagelt (05.11.2026): 1.1.0 buendelt zlib-ng 2.3.3 statt 2.2.5 und schreibt auf Stufe 9 (Vorgabe
+# von Aufgabe 1) andere Bytes; ob der Entpacker der PS5 sie nimmt, ist an der Konsole nicht geprueft. Anheben nur
+# nach einem Konsolentest - dann requirements.txt und beide Shell-Skripte mit anpassen (test_zlib_ng_festgenagelt).
+& $PYTHON -m pip install zlib-ng==1.0.0 --upgrade --quiet
 if ($LASTEXITCODE -ne 0) {
     Write-Host "FEHLER: zlib-ng konnte nicht installiert werden." -ForegroundColor Red
     exit 1

@@ -9,7 +9,8 @@ Bewacht wird hier:
 * Die beiden Dateien liegen byte-gleich mit der Freigabe im Bestand (``0.2.0 ng``, ``0.2.0 ng-debug``).
 * NG gilt als Ersatzbibliothek, nicht als Sony-Original - im Hauptmodul und in ``ps5_backport``. NG traegt das
   Kennzeichen ``[AMPR_EMU]`` nicht; ohne Anpassung waere es beim naechsten Einbau als ``.orig`` gesichert worden.
-* NG steht in beiden Listen als "NG 0.2.0", als eigene Reihe hinter der von drakmor - die Vorgabe bleibt 0.4.2.1.
+* NG steht in beiden Listen als "NG 0.3.0" / "NG 0.2.0", als eigene Reihe direkt unter der neuesten Fassung von
+  drakmor (Nutzerwunsch 05.11.2026) - die Vorgabe bleibt 0.4.2.1.
 * Der Aktualisierungsvergleich fuer drakmor wird durch NG nicht verschoben.
 """
 from __future__ import annotations
@@ -36,9 +37,11 @@ from ps5_validator.utils.i18n import STRINGS                # noqa: E402
 G = APP.PS5ConverterGUI
 BESTAND = PROJEKT / "PlayGo & AMPR_EMU"
 NG_DATEIEN = {
-    # Ordner im Bestand -> SHA-256 laut GitHub-Digest der Freigabe v0.2.0 (Anhang libSceAmpr.sprx / -debug.sprx)
-    "0.2.0 ng": "7acb2173d9691b5dfb94ea4007660920b7250111c5fd7a86c6eb91b763ad3d76",
+    # Ordner im Bestand -> SHA-256 laut GitHub-Digest der Freigabe (Anhang libSceAmpr.sprx / -debug.sprx)
+    "0.2.0 ng": "7acb2173d9691b5dfb94ea4007660920b7250111c5fd7a86c6eb91b763ad3d76",          # v0.2.0, 02.11.2026
     "0.2.0 ng-debug": "15fd9e82561f1dcd181126672164aabc8a8954db0d5d79d13641706bfdb31881",
+    "0.3.0 ng": "5f39ca8ebe169aa15d8a8ba8ec2f9cd4195f509d55daaf4b4edbfa80b145035c",          # v0.3.0, 04.11.2026
+    "0.3.0 ng-debug": "d6655263b85ecf27fc12736a9a290088be34f1d184164747160b1d14768dcb6a",
 }
 
 
@@ -61,7 +64,8 @@ class BestandTests(unittest.TestCase):
             with self.subTest(ordner=ordner):
                 daten = datei.read_bytes()
                 self.assertNotIn(b"[AMPR_EMU]", daten, "Messgrundlage: NG traegt das alte Kennzeichen nicht")
-                self.assertIn(b"ampr-emu-ng 0.2.0", daten)
+                self.assertIn(("ampr-emu-ng " + ordner.split()[0]).encode(), daten,
+                              "die Fassung im Ordnernamen ist die, die die Datei innen nennt")
                 self.assertTrue(G._ist_ersatzbibliothek(datei))
                 self.assertTrue(bp._ist_emu_datei(str(datei)))
 
@@ -74,11 +78,16 @@ class BestandTests(unittest.TestCase):
         gui = G.__new__(G)
         eintraege = [e for e in gui._ampr_scan_einen_speicher(str(BESTAND)) if e["lib"] == "libSceAmpr.sprx"]
         paare = [(e["version"], e["variant"]) for e in eintraege]
-        self.assertIn(("0.2.0", "ng"), paare)
-        self.assertIn(("0.2.0", "ng-debug"), paare)
+        for fassung in ("0.2.0", "0.3.0"):
+            self.assertIn((fassung, "ng"), paare)
+            self.assertIn((fassung, "ng-debug"), paare)
         self.assertEqual(("0.4.2.1", "test-nopack"), paare[0], "die oberste (= Vorgabe) bleibt drakmor")
-        ng = [i for i, e in enumerate(eintraege) if G._ampr_ist_ng(e)]
-        self.assertEqual(list(range(len(paare) - 2, len(paare))), ng, "NG steht als eigene Reihe am Ende")
+        # Nutzerwunsch 05.11.2026: die NG-Fassungen stehen unterhalb von 0.4.2.1 (mit seinen drei Bauarten),
+        # neueste zuerst, und vor den aelteren Fassungen von drakmor.
+        self.assertEqual({"0.4.2.1"}, {v for v, _ in paare[:3]})
+        self.assertEqual([("0.3.0", "ng"), ("0.3.0", "ng-debug"), ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:7])
+        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[7:]), "danach nur noch Fassungen von drakmor")
+        self.assertEqual("0.3.6.6", paare[7][0])
 
 
 class BeschriftungTests(unittest.TestCase):
@@ -104,13 +113,14 @@ class BeschriftungTests(unittest.TestCase):
                          [(e["version"], e["variant"]) for e in gui._ampr_gen_fassungen_ohne_pack(vorrat)])
 
     def test_ng_steht_in_beiden_listen(self) -> None:
-        vorrat = sorted([_eintrag("0.4.2.1", "test-nopack"), _eintrag("0.4.2.1", "test-pack"),
-                         _eintrag("0.2.0", "ng"), _eintrag("0.2.0", "ng-debug"), _eintrag("0.3.6.6", "no debug")],
-                        key=G.__new__(G)._ampr_sortierschluessel)
-        for methode, erwartet in ((APP.AMPR_METHODE_NORMAL, ["0.4.2.1", "0.3.6.6 no debug", "NG 0.2.0",
-                                                             "NG 0.2.0 debug"]),
-                                  (APP.AMPR_METHODE_ASSETPACK, ["0.4.2.1 test-pack", "NG 0.2.0",
-                                                                "NG 0.2.0 debug"])):
+        vorrat = G.__new__(G)._ampr_ordnen([
+            _eintrag("0.4.2.1", "test-nopack"), _eintrag("0.4.2.1", "test-pack"),
+            _eintrag("0.2.0", "ng"), _eintrag("0.2.0", "ng-debug"), _eintrag("0.3.6.6", "no debug"),
+            _eintrag("0.3.0", "ng"), _eintrag("0.3.0", "ng-debug")])
+        for methode, erwartet in ((APP.AMPR_METHODE_NORMAL, ["0.4.2.1", "NG 0.3.0", "NG 0.3.0 debug", "NG 0.2.0",
+                                                             "NG 0.2.0 debug", "0.3.6.6 no debug"]),
+                                  (APP.AMPR_METHODE_ASSETPACK, ["0.4.2.1 test-pack", "NG 0.3.0", "NG 0.3.0 debug",
+                                                                "NG 0.2.0", "NG 0.2.0 debug"])):
             with self.subTest(methode=methode):
                 app = G.__new__(G)
                 app.ampr_version_combo = mock.Mock()
@@ -153,6 +163,117 @@ class BeschriftungTests(unittest.TestCase):
                 with self.subTest(schluessel=schluessel, sprache=sprache):
                     self.assertTrue(STRINGS[schluessel][sprache].strip())
 
+    def test_der_debug_text_nennt_port_und_absturzspur_in_jeder_sprache(self) -> None:
+        """NG 0.3.0: Der Debug-Bau schreibt zusaetzlich /data/ampr_emu_trace.txt (Notizen der Freigabe v0.3.0)."""
+        for sprache in ("de", "en", "es", "it", "fr"):
+            with self.subTest(sprache=sprache):
+                text = STRINGS["amprgen.variante_ng_debug"][sprache]
+                self.assertIn("9090", text)
+                self.assertIn("/data/ampr_emu_trace.txt", text)
+
+
+class OrdnungTests(unittest.TestCase):
+    """Die NG-Fassungen stehen unterhalb der neuesten Fassung von drakmor (Nutzerwunsch 05.11.2026).
+
+    "Kannst du bitte die NG Versionen unterhalb von der 0.4.2.1 Version anzeigen lassen." Bis dahin stand die NG-Reihe
+    hinter *allen* Fassungen von drakmor - in der Klappliste erst nach dem Blaettern.
+    """
+
+    def setUp(self) -> None:
+        self.gui = G.__new__(G)
+
+    @staticmethod
+    def _namen(eintraege: list[dict]) -> list[str]:
+        return ["%s %s" % (e["version"], e["variant"]) for e in eintraege]
+
+    def _vorrat(self) -> list[dict]:
+        return [_eintrag("0.3.4", "no debug"), _eintrag("0.4.2.1", "test-debug-pack"),
+                _eintrag("0.2.0", "ng-debug"), _eintrag("0.3.6.6", "no debug"), _eintrag("0.4.2.1", "test-nopack"),
+                _eintrag("0.3.0", "ng"), _eintrag("0.2.0", "ng"), _eintrag("0.4.2.1", "test-pack"),
+                _eintrag("0.3.0", "ng-debug"), _eintrag("0.3.6.2", "debug")]
+
+    def test_ng_steht_gleich_unter_dem_block_der_neuesten_fassung(self) -> None:
+        self.assertEqual(
+            ["0.4.2.1 test-nopack", "0.4.2.1 test-pack", "0.4.2.1 test-debug-pack",
+             "0.3.0 ng", "0.3.0 ng-debug", "0.2.0 ng", "0.2.0 ng-debug",
+             "0.3.6.6 no debug", "0.3.6.2 debug", "0.3.4 no debug"],
+            self._namen(self.gui._ampr_ordnen(self._vorrat())))
+
+    def test_die_vorgabe_bleibt_die_gleiche_wie_nach_dem_sortierschluessel(self) -> None:
+        """Alle Stellen, die den ersten Eintrag nehmen, sehen weiter dieselbe Fassung - NG wandert nur nach vorn."""
+        vorrat = self._vorrat()
+        alt = sorted(vorrat, key=self.gui._ampr_sortierschluessel)
+        neu = self.gui._ampr_ordnen(vorrat)
+        self.assertEqual(alt[0], neu[0])
+        self.assertEqual([e for e in alt if not G._ampr_ist_ng(e)], [e for e in neu if not G._ampr_ist_ng(e)],
+                         "die Reihenfolge der Fassungen von drakmor aendert sich nicht")
+        self.assertEqual([e for e in alt if G._ampr_ist_ng(e)], [e for e in neu if G._ampr_ist_ng(e)],
+                         "die Reihenfolge der NG-Fassungen ebenso nicht")
+
+    def test_unabhaengig_von_der_eingangsreihenfolge_und_wiederholbar(self) -> None:
+        import random
+        vorrat = self._vorrat()
+        soll = self._namen(self.gui._ampr_ordnen(vorrat))
+        zufall = random.Random(5)
+        for _ in range(20):
+            gemischt = list(vorrat)
+            zufall.shuffle(gemischt)
+            self.assertEqual(soll, self._namen(self.gui._ampr_ordnen(gemischt)))
+        self.assertEqual(soll, self._namen(self.gui._ampr_ordnen(self.gui._ampr_ordnen(vorrat))), "idempotent")
+
+    def test_eine_neuere_fassung_von_drakmor_schiebt_ng_nach_unten_und_bleibt_oben(self) -> None:
+        """Die Regel gilt der *neuesten* Fassung von drakmor, nicht dem festen Namen 0.4.2.1."""
+        vorrat = self._vorrat() + [_eintrag("0.4.2.2", "test-nopack")]
+        namen = self._namen(self.gui._ampr_ordnen(vorrat))
+        self.assertEqual("0.4.2.2 test-nopack", namen[0], "die Vorgabe ist die neueste Fassung von drakmor")
+        self.assertEqual(["0.3.0 ng", "0.3.0 ng-debug", "0.2.0 ng", "0.2.0 ng-debug"], namen[1:5])
+        self.assertEqual("0.4.2.1 test-nopack", namen[5])
+
+    def test_ohne_ng_oder_ohne_drakmor_aendert_sich_nichts(self) -> None:
+        nur_drakmor = [e for e in self._vorrat() if not G._ampr_ist_ng(e)]
+        nur_ng = [e for e in self._vorrat() if G._ampr_ist_ng(e)]
+        for vorrat in (nur_drakmor, nur_ng, []):
+            with self.subTest(anzahl=len(vorrat)):
+                self.assertEqual(sorted(vorrat, key=self.gui._ampr_sortierschluessel), self.gui._ampr_ordnen(vorrat))
+
+    def test_bibliotheken_bleiben_getrennt_und_playgo_unberuehrt(self) -> None:
+        playgo = [_eintrag("0.5", "nolog", "libScePlayGo.sprx"), _eintrag("0.5", "log", "libScePlayGo.sprx")]
+        geordnet = self.gui._ampr_ordnen(playgo + self._vorrat())
+        libs = [e["lib"] for e in geordnet]
+        self.assertEqual(sorted(libs), libs, "die Bibliotheken stehen weiter am Stueck")
+        self.assertEqual(self._namen(sorted(playgo, key=self.gui._ampr_sortierschluessel)),
+                         self._namen([e for e in geordnet if e["lib"] == "libScePlayGo.sprx"]))
+        ampr = [e for e in geordnet if e["lib"] == "libSceAmpr.sprx"]
+        self.assertEqual("0.3.0 ng", self._namen(ampr)[3])
+
+    def test_der_mitschnitt_nimmt_ng_debug_erst_nach_den_debug_bauten_von_drakmor(self) -> None:
+        """NG steht jetzt vorn in der Ordnung; die Wahl der Aufnahme-Bibliothek darf davon nichts merken."""
+        vorrat = [_eintrag("0.4.2.1", "test-nopack"), _eintrag("0.3.0", "ng"), _eintrag("0.3.0", "ng-debug"),
+                  _eintrag("0.3.6.2", "debug")]
+        self.gui._ampr_alle_fassungen = lambda *a, **k: self.gui._ampr_ordnen(vorrat)
+        self.gui._t = lambda schluessel, **w: schluessel
+        gewaehlt = self.gui._ampr_mitschnitt_debug_bibliothek_waehlen(lambda text: None)
+        self.assertEqual(("0.3.6.2", "debug"), (gewaehlt["version"], gewaehlt["variant"]))
+        # ohne Debug-Bau von drakmor bleibt NG-debug wie bisher die letzte Moeglichkeit
+        self.gui._ampr_alle_fassungen = lambda *a, **k: self.gui._ampr_ordnen(vorrat[:3])
+        gewaehlt = self.gui._ampr_mitschnitt_debug_bibliothek_waehlen(lambda text: None)
+        self.assertEqual(("0.3.0", "ng-debug"), (gewaehlt["version"], gewaehlt["variant"]))
+
+    def test_das_updates_fenster_rechnet_ng_nicht_mit(self) -> None:
+        """Das Fenster "Updates" prueft drakmor/ampr_emu; die Nummern von ampr-emu-ng sind eine andere Reihe."""
+        bestand = [_eintrag("0.4.2.1", "test-nopack"), _eintrag("9.9.9", "ng"), _eintrag("9.9.9", "ng-debug"),
+                   _eintrag("0.5", "nolog", "libScePlayGo.sprx")]
+        self.gui._ampr_alle_fassungen = lambda *a, **k: list(bestand)
+        self.assertEqual([("0.4.2.1", "test-nopack")], self.gui._updates_ampr_vorhanden())
+
+    def test_der_versionsvorrat_liefert_die_neue_ordnung(self) -> None:
+        """Dieselbe Ordnung kommt aus dem Scanner des Bestands - dort liest sie die Klappliste, Aufgabe 7 und der Rest."""
+        eintraege = [e for e in self.gui._ampr_scan_einen_speicher(str(BESTAND)) if e["lib"] == "libSceAmpr.sprx"]
+        namen = self._namen(eintraege)
+        self.assertEqual("0.4.2.1 test-nopack", namen[0])
+        self.assertLess(namen.index("0.3.0 ng"), namen.index("0.3.6.6 no debug"))
+        self.assertGreater(namen.index("0.3.0 ng"), namen.index("0.4.2.1 test-debug-pack"))
+
 
 class PackformatTests(unittest.TestCase):
     """Warum NG in der Liste Asset-Pack stehen darf: Das Packwerkzeug schreibt, was NG liest.
@@ -161,6 +282,10 @@ class PackformatTests(unittest.TestCase):
     02.11.2026): Kopf 128 Byte mit Pruefsumme bei 116, Dateieintrag 48, Chunk 12, Pack 32, Datenkopf 64 mit
     Pruefsumme bei 56, Manifest Version 4, Daten Version 3. Aendert das Werkzeug sein Format, muss NG neu
     geprueft werden, bevor es in der Liste bleibt.
+
+    Am 05.11.2026 gegen v0.3.0 gehalten (``gh api repos/quer3q/ampr-emu-ng/compare/v0.2.0...v0.3.0``): In
+    ``crates/ampr-lz4`` aendert sich nur die Fassung in der ``Cargo.toml``, ``crates/ampr-format/src`` und
+    ``ampr-lz4/src`` bleiben gleich; die Laufzeit (``ampr-sys``) bekam nur Stabilitaets- und Speicheraenderungen.
     """
 
     def test_das_werkzeug_schreibt_das_format_das_ng_liest(self) -> None:
@@ -298,8 +423,8 @@ class NgQuelleTests(unittest.TestCase):
         self.assertEqual([], au.ng_angebote_lesen(_drakmor_antwort("0.4.2.2").decode()))
 
     def test_ablage_heisst_wie_im_mitgelieferten_bestand(self) -> None:
-        for angebot in au.ng_angebote_lesen(_ng_antwort("0.2.0").decode()):
-            with self.subTest(variante=angebot.variante):
+        for angebot in au.ng_angebote_lesen(_ng_antwort("0.3.0", "0.2.0").decode()):
+            with self.subTest(fassung=angebot.fassung, variante=angebot.variante):
                 ordner = Path(au.zielordner("x", angebot.fassung, angebot.variante)).name
                 self.assertTrue((BESTAND / "AMPR_EMU" / ordner).is_dir(), ordner)
 

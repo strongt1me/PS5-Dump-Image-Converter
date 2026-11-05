@@ -3232,7 +3232,8 @@ class BauskriptPaketeTests(unittest.TestCase):
     NUR_WINDOWS = {"pythonnet", "pywebview"}
 
     def test_linux_und_macos_installieren_dieselben_pakete_wie_windows(self) -> None:
-        windows = set(re.findall(r"-m pip install ([A-Za-z0-9_.-]+) --upgrade",
+        # ``(?:==...)?``: zlib-ng steht seit 05.11.2026 festgenagelt da (``zlib-ng==1.0.0``)
+        windows = set(re.findall(r"-m pip install ([A-Za-z0-9_.-]+)(?:==[0-9][0-9.]*)? --upgrade",
                                  (PROJEKT / "Build_EXE.ps1").read_text(encoding="utf-8-sig")))
         windows.discard("pip")
         self.assertEqual(self.NUR_WINDOWS, windows & self.NUR_WINDOWS,

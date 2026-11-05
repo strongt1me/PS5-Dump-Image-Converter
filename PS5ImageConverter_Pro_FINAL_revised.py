@@ -12560,10 +12560,15 @@ class PS5ConverterGUI:
         return _system_konfigurationsordner()
 
     def _updates_ampr_vorhanden(self) -> list:
-        """Die AMPR-Fassungen im Bestand als Paare (Fassung, Variante) - wie ``_ampr_updates_arbeiten`` sie braucht."""
+        """Die AMPR-Fassungen im Bestand als Paare (Fassung, Variante) - wie ``_ampr_updates_arbeiten`` sie braucht.
+
+        Nur die von drakmor: Das Fenster "Updates" prueft ``drakmor/ampr_emu``; die Nummern von ampr-emu-ng sind eine
+        andere Reihe und gehoeren nicht in diesen Vergleich (ihre hoechste Nummer galt sonst als "lokal").
+        """
         try:
             return [(e["version"], self._ampr_variantenklasse(e["variant"]))
-                    for e in self._ampr_alle_fassungen() if e.get("lib") == self._AMPR_SPRX_NAME]
+                    for e in self._ampr_alle_fassungen()
+                    if e.get("lib") == self._AMPR_SPRX_NAME and not self._ampr_ist_ng(e)]
         except Exception as exc:  # noqa: BLE001
             logger.debug("AMPR-Bestand nicht lesbar: %s", exc)
             return []
@@ -35033,7 +35038,7 @@ class PS5ConverterGUI:
         variante = str(eintrag.get("variant", "") or "").strip()
         if variante.lower() == "test-nopack":
             return version.strip()
-        # ampr-emu-ng: "NG 0.2.0" und "NG 0.2.0 debug" - man soll die Weiterentwicklung auf einen Blick erkennen.
+        # ampr-emu-ng: "NG 0.3.0" und "NG 0.3.0 debug" - man soll die Weiterentwicklung auf einen Blick erkennen.
         if variante.lower() == "ng":
             return "NG " + version.strip()
         if variante.lower() == "ng-debug":
@@ -36753,8 +36758,8 @@ class PS5ConverterGUI:
     }
 
     #: ampr-emu-ng (quer3q/ampr-emu-ng, eigenstaendige Weiterentwicklung des AMPR EMU, seit 02.11.2026 im
-    #: Bestand): eigene Fassungsreihe ab 0.1.0, abgelegt als ``0.2.0 ng`` und ``0.2.0 ng-debug``. Die Nummern
-    #: sind mit denen von drakmor nicht vergleichbar - NG 0.2.0 ist neuer als 0.4.2.1, nicht aelter.
+    #: Bestand): eigene Fassungsreihe ab 0.1.0, abgelegt als ``0.3.0 ng`` und ``0.3.0 ng-debug`` (so je Fassung).
+    #: Die Nummern sind mit denen von drakmor nicht vergleichbar - NG 0.3.0 ist neuer als 0.4.2.1, nicht aelter.
     _AMPR_NG_VARIANTEN: frozenset[str] = frozenset({"ng", "ng-debug"})
 
     _AMPR_VERSION_RE = re.compile(r"(\d+(?:\.\d+)+)")
@@ -37039,7 +37044,7 @@ class PS5ConverterGUI:
 
     #: Woher der Knopf neuere AMPR-EMU-Fassungen holt: (Projekt, Leser der Antwort, ampr-emu-ng?). Zwei
     #: unabhaengige Reihen (seit 03.11.2026): Jede wird nur gegen ihren eigenen Teil des Bestands gemessen -
-    #: NG 0.2.0 ist neuer als 0.4.2.1, gegen drakmor gerechnet galte es als alt und umgekehrt.
+    #: NG 0.3.0 ist neuer als 0.4.2.1, gegen drakmor gerechnet galte es als alt und umgekehrt.
     _AMPR_UPDATE_QUELLEN = (
         (ampr_updates.PROJEKT, ampr_updates.angebote_lesen, False),
         (ampr_updates.NG_PROJEKT, ampr_updates.ng_angebote_lesen, True),
@@ -37329,8 +37334,7 @@ class PS5ConverterGUI:
                 elif rang < self._AMPR_QUELLEN_RANG.get(
                         zusammen[schon]["quelle"], 9):
                     zusammen[schon] = eintrag
-        zusammen.sort(key=self._ampr_sortierschluessel)
-        return zusammen
+        return self._ampr_ordnen(zusammen)
 
     @classmethod
     def _ampr_variantenklasse(cls, variante: str) -> str:
@@ -37378,7 +37382,7 @@ class PS5ConverterGUI:
 
     @classmethod
     def _ampr_anzeige_fassung(cls, eintrag: dict[str, Any]) -> str:
-        """Die Fassung, wie der Anwender sie liest: ``NG 0.2.0`` fuer ampr-emu-ng, sonst die blosse Nummer."""
+        """Die Fassung, wie der Anwender sie liest: ``NG 0.3.0`` fuer ampr-emu-ng, sonst die blosse Nummer."""
         version = str(eintrag.get("version") or "").strip()
         return "NG " + version if cls._ampr_ist_ng(eintrag) else version
 
@@ -37390,7 +37394,8 @@ class PS5ConverterGUI:
         Stellen nehmen den ersten Eintrag als "die neueste".
         """
         # NG steht als eigene Reihe hinter der von drakmor: Nach der Nummer allein landete NG 0.2.0 unter
-        # 0.3.4, und die Vorgabe (der erste Eintrag) soll ohne ausdrueckliche Wahl nicht wechseln.
+        # 0.3.4, und die Vorgabe (der erste Eintrag) soll ohne ausdrueckliche Wahl nicht wechseln. Angezeigt wird
+        # die Reihe weiter vorn (``_ampr_ordnen``: direkt unter der neuesten Fassung von drakmor).
         return (
             eintrag["lib"],
             self._ampr_ist_ng(eintrag),
@@ -37398,6 +37403,40 @@ class PS5ConverterGUI:
             self._AMPR_VARIANT_ORDER.get(eintrag["variant"], 9),
             eintrag["variant"],
         )
+
+    def _ampr_ordnen(self, eintraege) -> list[dict[str, Any]]:
+        """Die Anzeigeordnung des Vorrats: neueste zuerst, die NG-Reihe **direkt unter der neuesten Fassung von drakmor**.
+
+        Nutzerwunsch 05.11.2026: "die NG Versionen unterhalb von der 0.4.2.1 Version anzeigen". Nach dem
+        Sortierschluessel allein stand ganz NG hinter *allen* Fassungen von drakmor - in der Klappliste (zehn Zeilen
+        sichtbar) erst nach dem Blaettern. Jetzt steht die Reihe gleich unter dem Block der neuesten Nummer
+        (``0.4.2.1`` mit seinen Bauarten), vor den aelteren Fassungen von drakmor. Die oberste Zeile - die Vorgabe,
+        die alle "erster Eintrag"-Stellen nehmen - bleibt dieselbe wie vorher; verschoben wird nur NG nach vorn.
+        NG ist weiter eine eigene Reihe: Ihre Nummern werden nie gegen die von drakmor gerechnet, nur gezeigt.
+
+        Je Bibliothek gerechnet (``libSceAmpr.sprx`` und der PlayGo-Stub stehen getrennt); gibt es von einer Seite
+        nichts, bleibt die Ordnung des Sortierschluessels.
+        """
+        geordnet = sorted(eintraege, key=self._ampr_sortierschluessel)
+        raus: list[dict[str, Any]] = []
+        beginn = 0
+        while beginn < len(geordnet):
+            ende = beginn
+            while ende < len(geordnet) and geordnet[ende]["lib"] == geordnet[beginn]["lib"]:
+                ende += 1
+            lauf = geordnet[beginn:ende]
+            beginn = ende
+            drakmor = [e for e in lauf if not self._ampr_ist_ng(e)]
+            ng = [e for e in lauf if self._ampr_ist_ng(e)]
+            if not drakmor or not ng:
+                raus.extend(lauf)
+                continue
+            neueste = self._ampr_version_sort_key(drakmor[0]["version"])
+            kopf = 0
+            while kopf < len(drakmor) and self._ampr_version_sort_key(drakmor[kopf]["version"]) == neueste:
+                kopf += 1
+            raus.extend(drakmor[:kopf] + ng + drakmor[kopf:])
+        return raus
 
     def _ampr_scan_version_store(self, store_dir: str) -> list[dict[str, Any]]:
         """Liest den Versionsspeicher ein - **samt geholter Fassungen**.
@@ -37417,8 +37456,7 @@ class PS5ConverterGUI:
         bekannt = {(e["lib"], e["version"], e["variant"]) for e in eigene}
         zusammen = eigene + [e for e in geholt
                              if (e["lib"], e["version"], e["variant"]) not in bekannt]
-        zusammen.sort(key=self._ampr_sortierschluessel)
-        return zusammen
+        return self._ampr_ordnen(zusammen)
 
     def _ampr_scan_einen_speicher(self, store_dir: str) -> list[dict[str, Any]]:
         """Liest genau einen Versionsspeicher ein.
@@ -37456,8 +37494,7 @@ class PS5ConverterGUI:
                     "sha256": self._ampr_file_sha256(str(path)),
                 })
 
-        entries.sort(key=self._ampr_sortierschluessel)
-        return entries
+        return self._ampr_ordnen(entries)
 
     @staticmethod
     def _ampr_file_sha256(path: str) -> str:
@@ -38229,9 +38266,15 @@ class PS5ConverterGUI:
                     for item in found:
                         if item["lib"] != lib_name:
                             continue
+                        # ampr-emu-ng als "NG" / "NG debug" kennzeichnen - "ng" allein ginge neben den
+                        # Bauarten von drakmor unter (Nutzerwunsch 05.11.2026: NG sichtbar unter 0.4.2.1)
+                        variante_anzeige = item["variant"]
+                        if self._ampr_ist_ng(item):
+                            variante_anzeige = ("NG debug" if str(item["variant"]).lower().endswith("debug")
+                                                else "NG")
                         label = self._t(
                             "ampr.version_label_short",
-                            version=item["version"], variant=item["variant"],
+                            version=item["version"], variant=variante_anzeige,
                             size=item["size"],
                         )
                         mapping[label] = item
@@ -54940,7 +54983,7 @@ class PS5ConverterGUI:
         "ng": "amprgen.variante_ng", "ng-debug": "amprgen.variante_ng_debug",
     }
 
-    #: Was in der Fassungsliste als Variante einer NG-Fassung steht - "ng" waere neben "NG 0.2.0" doppelt.
+    #: Was in der Fassungsliste als Variante einer NG-Fassung steht - "ng" waere neben "NG 0.3.0" doppelt.
     _AMPR_NG_ZEILENVARIANTE: dict[str, str] = {"ng": "release", "ng-debug": "debug"}
 
     #: Woher eine Fassung stammt, als i18n-Schluessel (siehe ``_AMPR_QUELLEN_RANG``).
@@ -55016,10 +55059,8 @@ class PS5ConverterGUI:
         """
         c = self._COLORS
         vorrat = self._ampr_gen_fassungen_ohne_pack(vorrat)      # Pack-Bauten stehen hier nie zur Wahl
-        ampr = sorted((e for e in vorrat if e.get("lib") == self._AMPR_SPRX_NAME),
-                      key=self._ampr_sortierschluessel)
-        playgo = sorted((e for e in vorrat if e.get("lib") == self._PLAYGO_SPRX_NAME),
-                        key=self._ampr_sortierschluessel)
+        ampr = self._ampr_ordnen(e for e in vorrat if e.get("lib") == self._AMPR_SPRX_NAME)
+        playgo = self._ampr_ordnen(e for e in vorrat if e.get("lib") == self._PLAYGO_SPRX_NAME)
         antwort: dict[str, Any] = {"wert": None}
 
         dlg = tk.Toplevel(eltern, bg=c["bg_main"])
@@ -56590,9 +56631,11 @@ class PS5ConverterGUI:
         ``debug``/``log``/``test-debug-pack`` als eigene Klasse (Rang 1);
         :meth:`_ampr_alle_fassungen` sortiert je Bibliothek schon nach
         Version absteigend, der erste Treffer dieser Klasse ist also die
-        neueste passende.
+        neueste passende. Die NG-Reihe (steht seit 05.11.2026 gleich unter der neuesten Fassung von drakmor) kommt
+        wie bisher erst nach allen Fassungen von drakmor dran.
         """
-        for eintrag in self._ampr_alle_fassungen():
+        # stabil nach "ist NG" sortiert: an der Ordnung der Fassungen von drakmor aendert das nichts
+        for eintrag in sorted(self._ampr_alle_fassungen(), key=self._ampr_ist_ng):
             if eintrag.get("lib") != self._AMPR_SPRX_NAME:
                 continue
             if self._AMPR_VARIANT_ORDER.get(
