@@ -467,6 +467,16 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Mein Spiel startet nach dem Backport nicht – gibt es noch etwas zum Anhaken?</h3>
+    <p>Im BACKPORT-Fenster gibt es zwei zusätzliche Haken. Beide sind <strong>standardmäßig aus</strong> und beide gelten <strong>ohne Garantie</strong>, denn sie ändern Spielcode:</p>
+    <ul>
+      <li><strong>Fehlende Funktionen neutralisieren (Stubs, experimentell)</strong> – Verlangt das Spiel eine Funktion, die die Zielfirmware nicht kennt und die keine Ersatzbibliothek liefern kann, bricht es beim ersten Aufruf ab. Der Haken ersetzt diesen Aufruf im Spiel durch einen leeren Rückgabewert. Ob das Spiel dann richtig läuft, ist offen.</li>
+      <li><strong>Korrekturprofil des Spiels anwenden (falls vorhanden)</strong> – Für einzelne Titel liegen geprüfte Byte-Korrekturen bei, jeweils für genau eine Fassung des Spiels (mitgeliefert: Anno 117 auf Firmware 4.xx). Ein Profil wird nur angewendet, wenn die Prüfsumme der unveränderten Originaldatei stimmt; sonst bleibt alles, wie es ist.</li>
+    </ul>
+    <p>Die Haken gelten auch beim Einbau während des Erstellens. Das Protokoll nennt jede geänderte Stelle – behalten Sie die Sicherung.</p>
+  </div>
+
+  <div class="frage">
     <h3>Wie mache ich aus einem ELF eine eboot.bin?</h3>
     <p><strong>ELF → EBOOT.BIN</strong> (unter WEITERE TOOLS) verpackt eine <code>.elf</code> – etwa ein selbst gebautes Homebrew – als <code>eboot.bin</code>: eine SELF-Hülle mit dem ELF darin. Danach liest das Programm die Datei zur Kontrolle wieder ein. Eine Datei, die schon ein SELF ist, ein gestripptes ELF und alles, was kein ELF ist, lehnt das Fenster mit einem Hinweis ab.</p>
     <p class="warnung">Die <code>eboot.bin</code> ist ein Fake-SELF ohne echte Signatur und startet nur auf einer gejailbreakten Konsole.</p>

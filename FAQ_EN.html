@@ -467,6 +467,16 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>My game does not start after the backport – is there anything else to tick?</h3>
+    <p>The BACKPORT window has two additional checkboxes. Both are <strong>off by default</strong> and both come <strong>without any guarantee</strong>, because they change game code:</p>
+    <ul>
+      <li><strong>Neutralize missing functions (stubs, experimental)</strong> – If the game requires a function that the target firmware does not know and that no replacement library can provide, it aborts at the first call. This checkbox replaces that call inside the game with an empty return value. Whether the game then runs correctly is open.</li>
+      <li><strong>Apply the game's correction profile (if available)</strong> – For individual titles, verified byte corrections are included, each for exactly one version of the game (included: Anno 117 on firmware 4.xx). A profile is only applied if the checksum of the unmodified original file matches; otherwise everything stays as it is.</li>
+    </ul>
+    <p>The checkboxes also apply to the integration while creating. The log names every changed spot – keep the backup.</p>
+  </div>
+
+  <div class="frage">
     <h3>How do I turn an ELF into an eboot.bin?</h3>
     <p><strong>ELF → EBOOT.BIN</strong> (under MORE TOOLS) wraps an <code>.elf</code> – for example a homebrew you built yourself – as <code>eboot.bin</code>: a SELF wrapper with the ELF inside. Afterwards the program reads the file back as a check. A file that is already a SELF, a stripped ELF and anything that is not an ELF are refused with a note.</p>
     <p class="warnung">The <code>eboot.bin</code> is a fake SELF without a real signature and only starts on a jailbroken console.</p>
