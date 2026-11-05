@@ -29,6 +29,9 @@ SCHLUESSEL = [
     "ampr_zstd.hinweis_ng", "ampr_zstd.fehlgeschlagen", "ampr_zstd.ausgabe_belegt", "ampr_zstd.pfad_doppelt",
     "ampr_zstd.zu_viele_baender", "ampr_zstd.index_pruefsumme", "ampr_zstd.band_ungueltig",
     "ampr_zstd.band_pruefsumme", "ampr_zstd.regeln", "ampr_zstd.regeln_ignoriert", "ampr_zstd.regeln_lose",
+    "ampr_zstd.regeldatei_fehlt", "settings_dialog.regeldatei_label", "settings_dialog.regeldatei_hint",
+    "settings_dialog.regeldatei_keine", "settings_dialog.regeldatei_waehlen", "settings_dialog.regeldatei_entfernen",
+    "filetype.toml", "dialog.title.choose_regeldatei",
 ]
 
 
@@ -73,6 +76,12 @@ class _Stub:
         self.status.append(text)
 
     regelquelle = ""
+    einstellungen: dict = {}
+    _AMPR_ZSTD_REGELDATEI_SETTING = APP.PS5ConverterGUI._AMPR_ZSTD_REGELDATEI_SETTING
+    _ampr_zstd_regeldatei = APP.PS5ConverterGUI._ampr_zstd_regeldatei
+
+    def _load_setting(self, name, vorgabe=None):
+        return self.einstellungen.get(name, vorgabe)
 
     def _ampr_eigenes_profil_uebernehmen(self, ausgabe: str) -> str:
         """Wie das Original: kopiert die Regeldatei neben dem Spielordner nach ``ausgabe/ampr_pack.toml``."""
@@ -210,6 +219,54 @@ class BauenTests(unittest.TestCase):
         self.assertIn("ampr_zstd.fehlgeschlagen", s.text())
         self.assertFalse(z.ist_gepackt(self.spiel))
         self.assertFalse(os.path.exists(self.ausgabe))
+
+    def _regeldatei_in_einstellungen(self) -> str:
+        regeldatei = os.path.join(self._tmp, "global.toml")
+        Path(regeldatei).write_text(
+            '[pack]\ndefault_action = "compress"\n[[rule]]\naction = "loose"\ninclude = "Daten/b.*"\n',
+            encoding="utf-8")
+        return regeldatei
+
+    def test_regeldatei_aus_den_einstellungen_gilt_ohne_datei_neben_dem_spiel(self) -> None:
+        s = _Stub()
+        s.einstellungen = {"ampr_zstd_regeldatei": self._regeldatei_in_einstellungen()}
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        self.assertEqual(["Daten/a.txt"], [d.pfad for d in z.index_laden(self.spiel).dateien])
+        self.assertTrue(os.path.isfile(os.path.join(self.spiel, "Daten", "b.bin")))
+        self.assertIn("ampr_zstd.regeln_lose", s.text())
+        self.assertFalse(os.path.exists(self.ausgabe))
+
+    def test_die_datei_neben_dem_spiel_geht_der_einstellung_vor(self) -> None:
+        nebenan = os.path.join(self._tmp, "nebenan.toml")
+        Path(nebenan).write_text('[pack]\ndefault_action = "compress"\n', encoding="utf-8")   # packt alles
+        s = _Stub()
+        s.regelquelle = nebenan
+        s.einstellungen = {"ampr_zstd_regeldatei": self._regeldatei_in_einstellungen()}
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        self.assertEqual(["Daten/a.txt", "Daten/b.bin"], sorted(d.pfad for d in z.index_laden(self.spiel).dateien))
+
+    def test_fehlende_regeldatei_wird_gemeldet_und_es_gilt_die_vorgabe(self) -> None:
+        s = _Stub()
+        s.einstellungen = {"ampr_zstd_regeldatei": os.path.join(self._tmp, "gibt_es_nicht.toml")}
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        self.assertIn("ampr_zstd.regeldatei_fehlt", s.text())
+        self.assertEqual(["Daten/a.txt", "Daten/b.bin"], sorted(d.pfad for d in z.index_laden(self.spiel).dateien))
+
+    def test_kaputte_regeldatei_aus_den_einstellungen_bricht_ab(self) -> None:
+        kaputt = os.path.join(self._tmp, "kaputt.toml")
+        Path(kaputt).write_text("das ist [kein toml", encoding="utf-8")
+        s = _Stub()
+        s.einstellungen = {"ampr_zstd_regeldatei": kaputt}
+        self.assertFalse(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}))
+        self.assertFalse(z.ist_gepackt(self.spiel))
+        self.assertFalse(os.path.exists(self.ausgabe))
+
+    def test_ohne_einstellung_ist_alles_beim_alten(self) -> None:
+        s = _Stub()
+        s.einstellungen = {}
+        self.assertEqual("", s._ampr_zstd_regeldatei())
+        s.einstellungen = {"ampr_zstd_regeldatei": "   "}
+        self.assertEqual("", s._ampr_zstd_regeldatei())
 
     def test_ohne_bibliothek(self) -> None:
         s = _Stub()

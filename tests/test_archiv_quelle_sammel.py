@@ -23,7 +23,7 @@ from ps5_validator.utils import archiv_quelle   # noqa: E402
 
 try:
     import tkinter as tk
-    _WURZEL = tk.Tk()
+    _WURZEL = tk._default_root or tk.Tk()           # wie die anderen Testdateien: ein gemeinsames Wurzelfenster
     _WURZEL.withdraw()
     TK_DA = True
 except Exception:   # noqa: BLE001 - keine Anzeige

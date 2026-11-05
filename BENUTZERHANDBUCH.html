@@ -1511,7 +1511,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <code>compress</code>, <code>store</code> oder <code>loose</code>, dazu
     <code>[[rule]]</code> mit <code>action</code>, <code>include</code> und
     <code>exclude</code>; die letzte treffende Regel gewinnt, Muster wie
-    <code>fnmatchcase</code>). Systemdateien bleiben immer lose; Blockgr&ouml;&szlig;e,
+    <code>fnmatchcase</code>). Dieselbe Regeldatei l&auml;sst sich auch einmal in
+    den <strong>Einstellungen</strong> w&auml;hlen (<em>Packregeln f&uuml;r zstd</em>,
+    Knopf <em>W&auml;hlen&nbsp;&hellip;</em>); sie gilt f&uuml;r jedes Spiel, bei dem
+    keine Datei neben dem Dump-Ordner liegt, und nur bei zstd. Systemdateien bleiben immer lose; Blockgr&ouml;&szlig;e,
     <code>hot</code> und <code>layout</code> gelten nur f&uuml;r LZ4. Eine fehlerhafte
     Datei bricht den Lauf ab, bevor etwas geschrieben wird. Das Werkzeug <em>Asset-Pack pr&uuml;fen / entpacken</em> (WEITERE
     TOOLS) &ouml;ffnet auch zstd-Ordner. <strong>Ob ampr-emu-ng ein Spiel mit
@@ -2292,7 +2295,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong> (11.4), <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE.</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong> (11.4), <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>ABBILD BEARBEITEN</strong> (14.14), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE.</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k14">Abschnitt 14.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -2912,6 +2915,41 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     als Ziel wählen, bleibt sie bis zuletzt unversehrt.</li>
   </ul>
   <p>Den Aufbau des Ergebnisses zeigt der SELF-Inspektor (14.1).</p>
+
+  <h3>14.14 ABBILD BEARBEITEN &ndash; Dateien in einem Abbild &auml;ndern</h3>
+  <p>In ein fertiges Abbild l&auml;sst sich nichts hineinschreiben (<code>.exfat</code> hat keinen freien
+  Platz, f&uuml;r <code>.ffpfsc</code> gibt es keinen Treiber, <code>.ffpkg</code> ist nur lesbar). Dieses
+  Fenster geht deshalb den Weg, den das Programm auch sonst geht: <strong>entpacken, &auml;ndern, neu
+  packen</strong>.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; ABBILD BEARBEITEN.</p>
+  <ol>
+    <li><strong>Abbild w&auml;hlen und entpacken.</strong> Das Programm entpackt es mit Aufgabe 6 (Ziel
+    Dump-Ordner) in einen Arbeitsordner &ndash; mit allen Pr&uuml;fungen und R&uuml;ckfragen dieser Aufgabe;
+    Fortschritt und Protokoll stehen wie gewohnt im Hauptfenster.</li>
+    <li><strong>&Auml;ndern.</strong> Im Baum einen Eintrag w&auml;hlen: <em>Umbenennen</em>,
+    <em>L&ouml;schen</em>, <em>Ersetzen&nbsp;&hellip;</em> (der Inhalt der Datei wird durch eine andere ersetzt,
+    Name und Ort bleiben), <em>Hinzuf&uuml;gen&nbsp;&hellip;</em> (neue Dateien in den gew&auml;hlten Ordner)
+    und <em>Neuer Ordner</em>. Jede &Auml;nderung geschieht sofort im Arbeitsordner.</li>
+    <li><strong>Speichern.</strong> Format w&auml;hlen (vorgew&auml;hlt ist das des Originals), <em>Als Abbild
+    speichern&nbsp;&hellip;</em>, Zielordner w&auml;hlen. Das Ergebnis hei&szlig;t
+    <code>&lt;Name&gt;_bearbeitet.&lt;Endung&gt;</code>; <strong>das Original bleibt unver&auml;ndert.</strong>
+    Man kann auch in ein anderes Format speichern oder mehrmals speichern.</li>
+  </ol>
+  <ul>
+    <li><strong>Gesch&uuml;tzt</strong> sind <code>eboot.bin</code> und <code>sce_sys/param.json</code>:
+    Sie lassen sich ersetzen (etwa durch eine gepatchte <code>eboot.bin</code>), aber nicht l&ouml;schen oder
+    umbenennen. Fehlt eine davon beim Speichern, fragt das Programm vorher nach.</li>
+    <li><strong>Namen</strong> m&uuml;ssen auf der Konsole und unter Windows g&uuml;ltig sein; zwei Namen, die sich
+    nur in der Gro&szlig;-/Kleinschreibung unterscheiden, gelten als derselbe. Verkn&uuml;pfungen werden nicht
+    angefasst, nichts kann aus dem Spielordner hinaus.</li>
+    <li><strong>Platz:</strong> Der Arbeitsordner (entpacktes Spiel) und das neue Abbild brauchen zusammen
+    Platz; der Arbeitsordner liegt im eingestellten Temp-Ordner und wird beim Schlie&szlig;en des Fensters
+    entfernt. Gibt es noch nicht gespeicherte &Auml;nderungen, fragt das Programm vorher.</li>
+    <li><strong>Gepr&uuml;ft</strong> ist der ganze Weg an einer kleinen <code>.ffpfsc</code> (entpacken,
+    ersetzen, umbenennen, hinzuf&uuml;gen, speichern, das Ergebnis wieder entpacken und vergleichen). Ob ein
+    so ge&auml;ndertes Spiel an der Konsole startet, h&auml;ngt davon ab, was Sie ge&auml;ndert haben &ndash;
+    probieren Sie zuerst mit einer Kopie.</li>
+  </ul>
 
 </section>
 

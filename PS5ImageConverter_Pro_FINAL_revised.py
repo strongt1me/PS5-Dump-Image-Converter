@@ -146,6 +146,7 @@ from ps5_validator.ui import bedienzustand
 from ps5_validator.ui import ampr_seite
 from ps5_validator.ui import pkg_fpkg_seite
 from ps5_validator.ui import pkg_extras_fenster
+from ps5_validator.ui import abbild_bearbeiten_fenster
 from ps5_validator.ui import updates_fenster
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
@@ -4740,6 +4741,9 @@ class PS5ConverterGUI:
         # Seit dem 30.10.2026 (Nutzerwunsch): die vier Werkzeuge der frueheren FPKG-Seite "Extras" (DDS zu PNG, exFAT
         # reparieren/bearbeiten, FFPKG-Metadaten) - ihr Reiter ist dort entfallen.
         ("titlebar.pkg_extras", "_show_pkg_extras"),
+        # Seit dem 05.11.2026 (Nutzerwunsch): Dateien eines Abbilds umbenennen, loeschen, ersetzen und das Ergebnis wieder
+        # als Abbild speichern - ueber Entpacken und Neupacken (ein fertiges Abbild laesst sich nicht beschreiben).
+        ("titlebar.abbild_bearbeiten", "_show_abbild_bearbeiten"),
         # Fremdwerkzeug fuer den NOR-Flash der Konsole (seit v1.9.29), kein
         # Teil der Umwandlung - deshalb ganz am Ende.
         ("titlebar.wee_tools", "_show_wee_tools"),
@@ -35331,6 +35335,22 @@ class PS5ConverterGUI:
         return ampr_zstdpack.stufe_lesen(self._load_setting(self._AMPR_ZSTD_STUFE_SETTING,
                                                             ampr_zstdpack.STUFE_VORGABE))
 
+    _AMPR_ZSTD_REGELDATEI_SETTING = "ampr_zstd_regeldatei"
+
+    def _ampr_zstd_regeldatei(self) -> str:
+        """Pfad der in den Einstellungen gewaehlten Packregeln fuer zstd, sonst ``""``.
+
+        Fehlt die Datei inzwischen, steht das im Protokoll und es gilt die Vorgabe (alles ausser den
+        Systemdateien wird gepackt) - nie ein stilles Weglassen der Regeln.
+        """
+        pfad = str(self._load_setting(self._AMPR_ZSTD_REGELDATEI_SETTING, "") or "").strip()
+        if not pfad:
+            return ""
+        if not os.path.isfile(pfad):
+            self._append_to_log(self._t("ampr_zstd.regeldatei_fehlt", path=pfad))
+            return ""
+        return pfad
+
     def _ampr_pack_arbeiter(self) -> int:
         """Wie viele Packvorgaenge parallel laufen duerfen.
 
@@ -36436,6 +36456,10 @@ class PS5ConverterGUI:
             # was lose bleibt. Systemdateien bleiben auch dann lose.
             regeln = None
             profil = self._ampr_eigenes_profil_uebernehmen(ausgabe)
+            if not profil:
+                # Keine Datei neben dem Dump-Ordner: die in den Einstellungen gewaehlte gilt (nur fuer zstd - beim
+                # LZ4-Weg hebt ein eigenes Profil den Direktleser-Riegel auf, das soll keine globale Datei koennen).
+                profil = self._ampr_zstd_regeldatei()
             if profil:
                 regeln = ampr_zstdpack.regeln_laden(profil)
                 self._append_to_log(self._t(
@@ -54564,6 +54588,11 @@ class PS5ConverterGUI:
         (``ps5_validator/ui/pkg_extras_fenster.py``); es haengt nicht von einem geoeffneten PKG-Bereich ab."""
         pkg_extras_fenster.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
 
+    def _show_abbild_bearbeiten(self) -> None:
+        """WEITERE TOOLS "Abbild bearbeiten": entpacken, Dateien aendern, wieder als Abbild speichern
+        (``ps5_validator/ui/abbild_bearbeiten_fenster.py``; die Dateiarbeit steht in ``utils/abbild_bearbeiten.py``)."""
+        abbild_bearbeiten_fenster.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
+
     def _pkg_fpkg_seite_einblenden(self, rahmen: "tk.Frame") -> None:
         """Legt die Seite "PKG / FPKG" in die Zelle der Rollflaeche (1, 1) und blendet diese aus."""
         if getattr(self, "_ansicht", "umwandeln") != "umwandeln":
@@ -66192,6 +66221,54 @@ class PS5ConverterGUI:
             body, textvariable=zstd_var, state="readonly",
             values=[_zstd_namen[stufe] for stufe in _zstd_wahl], font=(UI_SCHRIFT, pt(9)))
         zstd_combo.pack(anchor="w", fill="x", pady=(0, 10))
+
+        # Packregeln fuer zstd: eine TOML-Datei, die festlegt, welche Dateien lose bleiben.
+        tk.Label(body, text=self._t("settings_dialog.regeldatei_label"),
+                 font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_secondary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.regeldatei_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(2, 4))
+        regel_zeile = tk.Frame(body, bg=c["bg_card"])
+        regel_zeile.pack(anchor="w", fill="x", pady=(0, 10))
+        regel_var = tk.StringVar()
+
+        def _regel_anzeige() -> None:
+            pfad = str(self._load_setting(self._AMPR_ZSTD_REGELDATEI_SETTING, "") or "").strip()
+            regel_var.set(pfad or self._t("settings_dialog.regeldatei_keine"))
+
+        def _regel_waehlen() -> None:
+            alt = str(self._load_setting(self._AMPR_ZSTD_REGELDATEI_SETTING, "") or "").strip()
+            pfad = filedialog.askopenfilename(
+                parent=dlg, title=self._t("dialog.title.choose_regeldatei"),
+                initialdir=os.path.dirname(alt) if alt and os.path.isdir(os.path.dirname(alt))
+                else self._get_source_dialog_initial_dir(),
+                filetypes=[(self._t("filetype.toml"), "*.toml"), (self._t("filetype.all_files"), "*.*")])
+            if not pfad:
+                return
+            pfad = os.path.normpath(pfad)
+            try:
+                ampr_zstdpack.regeln_laden(pfad)       # eine Datei, die sich nicht lesen laesst, nimmt niemand an
+            except ampr_zstdpack.ZstdPackFehler as exc:
+                messagebox.showerror(self._t("dialog.title.invalid_source"), str(exc), parent=dlg)
+                return
+            self._save_setting(self._AMPR_ZSTD_REGELDATEI_SETTING, pfad)
+            logger.info("Packregeln fuer zstd: %s", pfad)
+            _regel_anzeige()
+
+        def _regel_entfernen() -> None:
+            self._save_setting(self._AMPR_ZSTD_REGELDATEI_SETTING, "")
+            _regel_anzeige()
+
+        _regel_anzeige()
+        tk.Label(regel_zeile, textvariable=regel_var, font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w", justify="left", wraplength=300).pack(
+                     side="left", fill="x", expand=True)
+        self._pw.Button(regel_zeile, text=self._t("settings_dialog.regeldatei_entfernen"),
+                        command=_regel_entfernen).pack(side="right", padx=(6, 0))
+        self._pw.Button(regel_zeile, text=self._t("settings_dialog.regeldatei_waehlen"),
+                        command=_regel_waehlen).pack(side="right")
 
         def _verfahren_gewaehlt(_ereignis=None) -> None:
             neu = _verfahren_zurueck.get(verfahren_var.get())
