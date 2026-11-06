@@ -348,7 +348,7 @@ if (Test-Path $exePath) {
     $mitnehmen += Join-Path $ORDNER_LINUX $linuxName
     $mitnehmen += $macosNamen | ForEach-Object { Join-Path $ORDNER_MACOS $_ }
     $mitnehmen += @("README.md", "CHANGELOG.md", "BENUTZERHANDBUCH.pdf",
-                    "FAQ.pdf", "FAQ_EN.pdf",
+                    "FAQ.pdf", "FAQ_EN.pdf", "FAQ_ES.pdf", "FAQ_IT.pdf", "FAQ_FR.pdf",
                     "LICENSE", "THIRD_PARTY_LICENSES.md") |
                   ForEach-Object { Join-Path $PSScriptRoot $_ }
 

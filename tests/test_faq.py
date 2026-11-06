@@ -10,6 +10,7 @@ sind, haelt ``test_dokumente_aktuell.py`` fest.
 """
 from __future__ import annotations
 
+import re
 import sys
 import tkinter as tk
 import unittest
@@ -26,8 +27,10 @@ from ps5_validator.utils.i18n import STRINGS, translate
 QUELLDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
 SPECS = ("PS5ImageConverter_Pro.spec", "PS5ImageConverter_Pro_linux.spec",
          "PS5ImageConverter_Pro_macos.spec")
-FAQ_HTML = ("FAQ.html", "FAQ_EN.html")
-FAQ_PDF = ("FAQ.pdf", "FAQ_EN.pdf")
+FAQ_HTML = ("FAQ.html", "FAQ_EN.html", "FAQ_ES.html", "FAQ_IT.html", "FAQ_FR.html")
+FAQ_PDF = ("FAQ.pdf", "FAQ_EN.pdf", "FAQ_ES.pdf", "FAQ_IT.pdf", "FAQ_FR.pdf")
+#: Sprache der Oberflaeche -> FAQ-Datei (alle fuenf Sprachen des Programms).
+FAQ_JE_SPRACHE = {"de": "FAQ.html", "en": "FAQ_EN.html", "es": "FAQ_ES.html", "it": "FAQ_IT.html", "fr": "FAQ_FR.html"}
 
 #: Die eine Tk-Wurzel dieser Datei. Wird angelegt und behalten.
 _WURZEL = None
@@ -108,6 +111,32 @@ class AuslieferungTests(unittest.TestCase):
                          "Beide Sprachen sollen dieselben Fragen haben")
 
 
+class UebersetzteFassungenTests(unittest.TestCase):
+    """Spanisch, Italienisch und Franzoesisch: dieselben Fragen wie die deutsche Fassung, eigene Sprache."""
+
+    def test_sprachkennzeichen_und_fragenzahl(self):
+        de = (PROJEKT / "FAQ.html").read_text(encoding="utf-8")
+        for sprache in ("es", "it", "fr"):
+            with self.subTest(sprache=sprache):
+                text = (PROJEKT / FAQ_JE_SPRACHE[sprache]).read_text(encoding="utf-8")
+                self.assertIn('<html lang="%s">' % sprache, text)
+                self.assertEqual(de.count('class="frage"'), text.count('class="frage"'),
+                                 "alle Sprachen sollen dieselben Fragen haben")
+                self.assertEqual(de.count("<h2>"), text.count("<h2>"))
+                self.assertIn("GPL-3.0-or-later", text)
+                self.assertNotIn("Frequently Asked Questions", text)
+                self.assertNotIn("Häufige Fragen", text)
+
+    def test_jede_sprache_hat_ein_eigenes_titelwort(self):
+        titel = set()
+        for datei in FAQ_JE_SPRACHE.values():
+            text = (PROJEKT / datei).read_text(encoding="utf-8")
+            treffer = re.search(r"<title>(.*?)</title>", text, re.S)
+            self.assertIsNotNone(treffer, datei)
+            titel.add(treffer.group(1).strip())
+        self.assertEqual(len(FAQ_JE_SPRACHE), len(titel), "zwei Dateien teilen sich denselben Titel")
+
+
 class OeffnenTests(unittest.TestCase):
     """Der Knopf waehlt die Datei nach der Sprache der Oberflaeche."""
 
@@ -130,8 +159,13 @@ class OeffnenTests(unittest.TestCase):
     def test_englisch_oeffnet_faq_en_html(self):
         self.assertEqual("FAQ_EN.html", self._geoeffnet("en"))
 
+    def test_jede_sprache_der_oberflaeche_oeffnet_ihre_faq(self):
+        for sprache, datei in FAQ_JE_SPRACHE.items():
+            with self.subTest(sprache=sprache):
+                self.assertEqual(datei, self._geoeffnet(sprache))
+
     def test_unbekannte_sprache_nimmt_deutsch(self):
-        self.assertEqual("FAQ.html", self._geoeffnet("fr"))
+        self.assertEqual("FAQ.html", self._geoeffnet("xx"))
 
     def test_fehlende_datei_meldet_statt_zu_schweigen(self):
         app = self._app("en")

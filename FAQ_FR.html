@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS5 Dump &amp; Image Converter – Foire aux questions (FAQ) v1.9.90</title>
+<style>
+:root{
+  --bg:#070b14;
+  --bg2:#0c1322;
+  --karte:#111a2c;
+  --karte2:#16223a;
+  --rand:#1f3050;
+  --rand-hell:#2c4470;
+  --text:#dce6f5;
+  --text-leise:#8ea3c4;
+  --blau:#2f8fff;
+  --blau-hell:#6fb4ff;
+  --gruen:#3ddc84;
+  --gelb:#ffcc4d;
+  --rot:#ff5f6d;
+  --schrift:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+  --mono:"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--schrift);
+  font-size:16px;
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--blau-hell); text-decoration:none}
+a:hover{text-decoration:underline}
+code{
+  font-family:var(--mono); font-size:.9em;
+  background:rgba(47,143,255,.10); border:1px solid var(--rand);
+  border-radius:6px; padding:1px 6px; color:#cfe3ff;
+  overflow-wrap:anywhere;
+}
+pre{
+  background:var(--bg2); border:1px solid var(--rand); border-radius:10px;
+  padding:12px 14px; overflow-x:auto; margin:10px 0 4px;
+}
+pre code{background:none; border:0; padding:0}
+
+/* ---------- Header ---------- */
+.kopf{
+  position:relative; overflow:hidden;
+  padding:56px 24px 44px;
+  background:
+    radial-gradient(1200px 400px at 15% -10%, rgba(47,143,255,.28), transparent 60%),
+    radial-gradient(900px 380px at 85% 0%, rgba(15,76,156,.35), transparent 65%),
+    linear-gradient(180deg,#0a1224 0%, var(--bg2) 100%);
+  background-color:var(--bg2);
+  border-bottom:1px solid var(--rand);
+}
+.kopf-inhalt{max-width:980px; margin:0 auto}
+.kopf h1{margin:0 0 10px; font-size:40px; line-height:1.15; font-weight:700; letter-spacing:-.5px}
+.kopf h1 .akzent{
+  background:linear-gradient(92deg,var(--blau-hell),var(--blau));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.kopf .unter{color:var(--text-leise); font-size:18px; margin:0 0 22px; max-width:72ch}
+.marken{display:flex; flex-wrap:wrap; gap:10px}
+.marke{
+  padding:6px 14px; border-radius:999px;
+  border:1px solid var(--rand-hell); background:rgba(47,143,255,.10);
+  color:var(--blau-hell); font-size:13px; font-weight:600; letter-spacing:.4px;
+}
+.marke.grau{background:rgba(140,160,190,.08); color:var(--text-leise); border-color:var(--rand)}
+
+/* ---------- Content ---------- */
+main{max-width:980px; margin:0 auto; padding:32px 24px 80px}
+nav.inhalt{
+  border:1px solid var(--rand); border-radius:14px;
+  background:linear-gradient(180deg,var(--karte),rgba(17,26,44,.55));
+  padding:20px 22px; margin-bottom:36px;
+}
+nav.inhalt h2{margin:0 0 12px; font-size:12px; letter-spacing:1.6px; text-transform:uppercase; color:var(--text-leise)}
+nav.inhalt ol{margin:0; padding-left:22px; columns:2; column-gap:36px}
+nav.inhalt li{margin:3px 0; break-inside:avoid}
+section.abschnitt{margin:0 0 40px}
+section.abschnitt > h2{
+  font-size:26px; margin:0 0 16px; padding-bottom:10px;
+  border-bottom:1px solid var(--rand);
+}
+section.abschnitt > h2 .nr{
+  display:inline-grid; place-items:center; width:38px; height:38px; margin-right:12px;
+  border-radius:10px; background:rgba(47,143,255,.14); border:1px solid var(--rand-hell);
+  color:var(--blau-hell); font-size:18px; vertical-align:2px;
+}
+.frage{
+  border:1px solid var(--rand); border-radius:12px;
+  background:linear-gradient(180deg,var(--karte),rgba(17,26,44,.6));
+  padding:16px 20px; margin:0 0 14px;
+  break-inside:avoid;
+}
+.frage h3{margin:0 0 8px; font-size:18px; line-height:1.4; color:#eef4ff}
+.frage h3::before{content:"Q"; display:inline-grid; place-items:center; width:24px; height:24px; margin-right:10px;
+  border-radius:50%; background:var(--blau); color:#fff; font-size:13px; font-weight:700; vertical-align:2px}
+.frage p{margin:6px 0}
+.frage ul, .frage ol{margin:6px 0; padding-left:22px}
+.frage li{margin:3px 0}
+table{width:100%; border-collapse:collapse; margin:10px 0 6px; font-size:15px}
+th, td{border:1px solid var(--rand); padding:7px 10px; text-align:left; vertical-align:top}
+th{background:var(--karte2); color:var(--blau-hell); font-weight:600}
+.tabelle{overflow-x:auto}
+.hinweis{
+  border-left:4px solid var(--gelb); background:rgba(255,204,77,.07);
+  border-radius:8px; padding:8px 12px; margin:10px 0 4px;
+}
+.warnung{
+  border-left:4px solid var(--rot); background:rgba(255,95,109,.07);
+  border-radius:8px; padding:8px 12px; margin:10px 0 4px;
+}
+.tipp{
+  border-left:4px solid var(--gruen); background:rgba(61,220,132,.07);
+  border-radius:8px; padding:8px 12px; margin:10px 0 4px;
+}
+footer{
+  max-width:980px; margin:0 auto; padding:24px; color:var(--text-leise);
+  border-top:1px solid var(--rand); font-size:14px;
+  display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px;
+}
+@media (max-width:720px){
+  .kopf h1{font-size:30px}
+  nav.inhalt ol{columns:1}
+}
+@media print{
+  body{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .frage{break-inside:avoid}
+  a{text-decoration:none}
+}
+</style>
+</head>
+<body>
+
+<header class="kopf">
+  <div class="kopf-inhalt">
+    <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Foire aux questions (FAQ)</span></h1>
+    <p class="unter">Réponses courtes aux questions les plus fréquentes lors de l’utilisation du programme – du premier démarrage jusqu’à la conversion pour la PS5. Le manuel utilisateur traite tout en détail.</p>
+    <div class="marken">
+      <span class="marke">Version v1.9.90</span>
+      <span class="marke">État au 5 novembre 2026</span>
+      <span class="marke grau">Windows · Linux · macOS</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<nav class="inhalt">
+  <h2>Sommaire</h2>
+  <ol>
+    <li><a href="#a1">Généralités</a></li>
+    <li><a href="#a2">Installation et démarrage</a></li>
+    <li><a href="#a3">Conversion et formats</a></li>
+    <li><a href="#a4">Sur la PS5</a></li>
+    <li><a href="#a5">Console, bibliothèque et payloads</a></li>
+    <li><a href="#a6">Problèmes et aide</a></li>
+  </ol>
+</nav>
+
+<!-- ======================================================= 1 -->
+<section class="abschnitt" id="a1">
+  <h2><span class="nr">1</span>Généralités</h2>
+
+  <div class="frage">
+    <h3>Que fait le PS5 Dump &amp; Image Converter ?</h3>
+    <p>Il convertit des sauvegardes de jeux PS5 entre les formats courants, les décompresse, les empaquette et les vérifie – au moyen d’une interface comportant huit tâches clairement séparées. S’y ajoutent des outils pour travailler avec une PS5 déjà jailbreakée : trouver la console, lancer des payloads, bibliothèque, données de sauvegarde, AMPR EMU, BACKPORT et bien d’autres.</p>
+    <p class="hinweis">Le programme est destiné uniquement aux contenus que vous <strong>possédez et avez acquis légalement</strong>.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Quels formats le programme connaît-il ?</h3>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>Format</th><th>De quoi s’agit-il</th></tr></thead>
+      <tbody>
+        <tr><td>Dossier dump</td><td>Un dossier normal contenant les fichiers du jeu (<code>eboot.bin</code>, <code>sce_sys</code> …).</td></tr>
+        <tr><td><code>.ffpfsc</code></td><td>Conteneur compact et compressé – un seul fichier.</td></tr>
+        <tr><td><code>.ffpfs</code></td><td>Comme <code>.ffpfsc</code>, mais non compressé : plus volumineux, mais plus rapide à créer.</td></tr>
+        <tr><td><code>.exFAT</code></td><td>Une véritable image de système de fichiers au format exFAT.</td></tr>
+        <tr><td><code>.ffpkg</code></td><td>Conteneur avec un système de fichiers UFS2 ; vérifié automatiquement après l’écriture. Windows uniquement.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Le programme peut lire des paquets (<code>.pkg</code>, <code>.fpkg</code>) et les afficher dans la bibliothèque ; les paquets PS4 sont convertis avec des outils dédiés (voir <a href="#a4">section 4</a>).</p>
+  </div>
+
+  <div class="frage">
+    <h3>Quel format de destination dois-je choisir ?</h3>
+    <p>Pour une clé USB et pour transmettre un jeu, <strong><code>.ffpfsc</code></strong> est généralement le meilleur choix – il est compressé. <code>.ffpfs</code> se crée plus vite mais est plus volumineux. Vous n’avez besoin de <code>.exFAT</code> et de <code>.ffpkg</code> que lorsqu’un autre flux de travail attend exactement ce format.</p>
+    <p>Sur une clé USB, la console ne lit pas un dossier en vrac, mais un conteneur que ShadowMount+ monte. C’est précisément pourquoi la tâche&nbsp;1 transforme un dossier dump en un seul fichier.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Quelle tâche correspond à ma source ?</h3>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>Que possédez-vous ?</th><th>Tâche</th><th>À quoi sert-elle</th></tr></thead>
+      <tbody>
+        <tr><td>Un dossier dump</td><td>1</td><td>Convertir en <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> ou <code>.ffpkg</code>.</td></tr>
+        <tr><td>Un <code>.ffpfsc</code></td><td>2</td><td>Extraire dans un dossier ou convertir dans un autre format.</td></tr>
+        <tr><td>Un <code>.exFAT</code></td><td>3</td><td>Extraire ou convertir en <code>.ffpfsc</code>/<code>.ffpfs</code>/<code>.ffpkg</code>.</td></tr>
+        <tr><td>Un <code>.ffpkg</code></td><td>4</td><td>Extraire, convertir ou reconstruire en <code>.ffpkg</code> vérifié.</td></tr>
+        <tr><td>Plusieurs conteneurs</td><td>5</td><td>Tous, l’un après l’autre, dans le même format de destination.</td></tr>
+        <tr><td>Vous ne savez pas de quoi il s’agit</td><td>6</td><td>La source est détectée automatiquement et exportée.</td></tr>
+        <tr><td>Configurer ou changer AMPR EMU</td><td>7</td><td>Appliquer une version, sauvegarder l’original, créer l’index – également directement sur la PS5.</td></tr>
+        <tr><td>Vérifier uniquement</td><td>8</td><td>Contrôler l’intégrité sans rien modifier.</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="frage">
+    <h3>Puis-je utiliser directement un .zip, .7z ou .rar comme source ?</h3>
+    <p>Oui. Dans la tâche&nbsp;1, le bouton <strong>Archive…</strong> sélectionne une archive (ou faites-la glisser sur le champ source) ; dans la tâche&nbsp;5 (conversion par lots), les archives peuvent être ajoutées comme n’importe quelle autre source ; en ligne de commande, <code>--source Game.zip</code> fonctionne. Le programme décompresse l’archive dans le dossier de travail, prend comme source le dossier du jeu qu’elle contient (celui qui comporte <code>sce_sys/param.json</code>) et supprime ensuite le dossier décompressé. Il faut disposer d’au moins autant d’espace libre que la taille de l’archive. Si l’archive est protégée par mot de passe et qu’aucun des mots de passe courants ne convient, le programme vous le demande.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Sur quels systèmes le programme fonctionne-t-il ?</h3>
+    <p>Sous <strong>Windows</strong> (EXE prêt à l’emploi), <strong>Linux</strong> et <strong>macOS</strong>. Sous Linux et macOS, deux voies manquent, car elles ne fonctionnent qu’avec des outils Windows :</p>
+    <ul>
+      <li>la lecture et la création de <code>.ffpkg</code> – c’est-à-dire la tâche&nbsp;4 et <code>.ffpkg</code> comme format de destination (UFS2Tool et le pilote Dokan n’existent que pour Windows),</li>
+      <li>les voies de secours via OSFMount (qui n’interviennent de toute façon que pour des images inhabituelles).</li>
+    </ul>
+    <p>Tout le reste – dossier dump, <code>.ffpfsc</code>, <code>.ffpfs</code> et <code>.exFAT</code> dans tous les sens, conversion par lots, AMPR EMU Manager et Validateur – y est entièrement disponible.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Combien coûte le programme, et quelle licence s’applique ?</h3>
+    <p>Le programme est gratuit et, depuis le 7 octobre 2026, publié sous la <strong>GNU General Public License, version 3 ou ultérieure</strong> (GPL-3.0-or-later, fichier <code>LICENSE</code>) ; les versions jusqu’à v1.9.64 incluse étaient publiées sous licence MIT. Les composants tiers fournis conservent leurs propres licences : ils sont répertoriés dans <code>THIRD_PARTY_LICENSES.md</code> et accessibles via <strong>CRÉDITS</strong>. Presque tout ce que fait le programme repose sur le travail d’autres personnes – par exemple MkPFS (traitement PFS), UFS2Tool, LibProsperoPkg, PS4 FFPFSC et des dizaines de payloads de la communauté homebrew.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 2 -->
+<section class="abschnitt" id="a2">
+  <h2><span class="nr">2</span>Installation et démarrage</h2>
+
+  <div class="frage">
+    <h3>Pourquoi Windows demande-t-il les droits d’administrateur au démarrage ?</h3>
+    <p>La version Windows exige toujours les droits d’administrateur – entre autres pour les voies <code>.ffpkg</code> (UFS2) et pour le montage avec OSFMount. Si vous refusez la demande, le programme ne démarre pas. Sous Linux et macOS, il démarre en tant qu’utilisateur normal.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Mon antivirus signale ou supprime l’EXE. Que puis-je faire ?</h3>
+    <p>Les programmes créés avec PyInstaller sont parfois signalés à tort. Le programme n’ajoute aucune exception à votre antivirus et n’installe aucun certificat. Ne récupérez l’EXE qu’auprès de la source propre au projet ; si la source est la bonne, vous pouvez ajouter vous-même le fichier comme exception dans votre antivirus.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Le fichier Linux ne démarre pas. Pourquoi ?</h3>
+    <ol>
+      <li>Rendez le fichier exécutable une fois (<code>X.Y.Z</code> représente votre version) :
+        <pre><code>chmod +x PS5_Dump_Image_Converter_vX.Y.Z_linux_x86_64</code></pre></li>
+      <li>Le fichier Linux prêt à l’emploi exige un <strong>système récent</strong> (bibliothèque système glibc 2.42 ou plus récente, par exemple Ubuntu 26.04). Il ne démarre pas sur des systèmes plus anciens comme Ubuntu 24.04, Linux Mint 22 ou Debian 13.</li>
+      <li>Dans ce cas, compilez le programme sur votre propre ordinateur – dans le dossier du projet avec <code>./Build_Linux.sh</code>, <strong>sans</strong> <code>sudo</code>. Si Tcl/Tk est absent, le script indique la commande d’installation appropriée.</li>
+    </ol>
+  </div>
+
+  <div class="frage">
+    <h3>Sur le Mac, le message « le développeur ne peut pas être vérifié » apparaît.</h3>
+    <p>macOS marque tout ce qui arrive par le navigateur, le courrier ou AirDrop. Le script d’installation (<code>Install_macOS.sh</code> ou <code>Erste Installation.command</code> de l’image disque) supprime lui-même ce marquage. À la main, cela se fait ainsi :</p>
+    <pre><code>xattr -dr com.apple.quarantine "/Applications/PS5 Dump &amp; Image Converter.app"</code></pre>
+    <p>Remarque : une version Mac ne convient qu’aux Mac du même type – une version pour Apple Silicon ne fonctionne pas sur un Mac Intel, et inversement.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Ai-je besoin d’OSFMount, de Dokan ou d’autres programmes supplémentaires ?</h3>
+    <p>Normalement non. Le programme lit les images <code>.exFAT</code> avec son lecteur intégré – sans montage, sans droits d’administrateur, sur tous les systèmes. OSFMount n’est que la solution de secours sous Windows pour les images construites de façon inhabituelle ; le programme le signale alors et peut installer OSFMount lui-même. FileZilla est facultatif et n’est nécessaire que pour le bouton <strong>FILEZILLA</strong>.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Où le programme enregistre-t-il ses paramètres ?</h3>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>Système</th><th>Dossier</th></tr></thead>
+      <tbody>
+        <tr><td>Windows</td><td><code>%APPDATA%\PS5ImageConverterPro</code></td></tr>
+        <tr><td>Linux</td><td><code>~/.config/PS5ImageConverterPro/</code></td></tr>
+        <tr><td>macOS</td><td><code>~/Library/Application Support/PS5ImageConverterPro/</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Les rapports de diagnostic y sont également enregistrés. Si le fichier de paramètres est endommagé, le programme démarre avec les valeurs par défaut – on dirait alors qu’il a tout oublié. La vérification de l’environnement (« doctor », <a href="#a6">section 6</a>) le détecte.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 3 -->
+<section class="abschnitt" id="a3">
+  <h2><span class="nr">3</span>Conversion et formats</h2>
+
+  <div class="frage">
+    <h3>Comment convertir en toute sécurité ?</h3>
+    <ol>
+      <li>Choisissez à gauche la tâche appropriée.</li>
+      <li>Choisissez la source avec le bouton situé à côté de SOURCE.</li>
+      <li>Si le champ est affiché, choisissez le FORMAT DE DESTINATION – et, si nécessaire, la compression et les workers.</li>
+      <li>Choisissez un DOSSIER DE DESTINATION <strong>distinct</strong> et un DOSSIER TEMPORAIRE accessible en écriture.</li>
+      <li>Vérifiez tous les chemins et appuyez sur DÉMARRER.</li>
+      <li>Laissez le programme ouvert jusqu’à ce que le journal signale la fin avec succès.</li>
+    </ol>
+    <p class="tipp"><strong>Règle d’or :</strong> conserver une copie → tâche appropriée → dossier de destination distinct → assez d’espace → attendre le message de réussite. Ne supprimez les originaux que lorsque le résultat est terminé et, le cas échéant, vérifié avec la tâche&nbsp;8.</p>
+  </div>
+
+  <div class="frage">
+    <h3>De combien d’espace libre ai-je besoin ?</h3>
+    <p>Le programme le calcule avant de démarrer et vous avertit si l’espace est insuffisant. À titre indicatif, par rapport à la taille de la source :</p>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>Format de destination</th><th>Espace nécessaire, environ</th></tr></thead>
+      <tbody>
+        <tr><td><code>.ffpfsc</code></td><td>0,75 fois</td></tr>
+        <tr><td><code>.ffpfs</code>, <code>.exFAT</code></td><td>1,1 fois</td></tr>
+        <tr><td><code>.ffpkg</code></td><td>1,3 fois</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Si <strong>AMPR EMU</strong> ou <strong>BACKPORT</strong> est coché, une copie de travail complète du jeu est en outre créée dans le dossier de travail. Si les dossiers de travail et de destination se trouvent sur le même lecteur, la somme est prise en compte.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Une exécution s’est arrêtée avec « Le dossier source a été vidé pendant la construction ». Que s’est-il passé ?</h3>
+    <p>La copie de travail située dans le dossier temporaire a perdu ses fichiers pendant la construction – sans que le programme en soit la cause. Une cause fréquente est le <strong>Contrôle de stockage de Windows</strong> (Storage Sense) : lorsque l’espace vient à manquer, il supprime des fichiers du dossier temporaire de Windows. Choisissez ci-dessous, sous <strong>DOSSIER TEMPORAIRE</strong>, un dossier personnel sur un grand lecteur (p. ex. <code>D:\PS5-Temp</code>) et recommencez l’exécution. Le programme avertit au début d’une exécution lorsque le dossier temporaire est menacé ; la conversion par lots supprime les copies de travail après chaque jeu. Avec <strong>Dossier de dump : créer d’abord une copie de travail</strong>, la question posée avant une intégration est également supprimée.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Quel niveau de compression est le bon ?</h3>
+    <p>1 est le plus rapide, 9 donne le fichier le plus petit ; pour commencer, « 6 – Équilibrée » suffit. N’attendez pas de miracles : les données des jeux PS5 sont déjà largement compressées. Mesurés sur un dump de 664&nbsp;Mo, les niveaux&nbsp;1 et&nbsp;9 ne différaient que d’environ 5&nbsp;% en taille – les niveaux plus élevés coûtent surtout du temps.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Que signifient WORKERS et VÉRIFICATION ?</h3>
+    <p><strong>WORKERS</strong> définit combien d’opérations s’exécutent en même temps. Un cœur de processeur reste toujours libre, et les très grandes images sont limitées davantage. Vous le réglez avec le bouton rotatif – tournez-le avec la souris, utilisez la molette de la souris ou les touches fléchées ; un double-clic le réinitialise.</p>
+    <p><strong>VÉRIFICATION</strong> détermine si l’image terminée est contrôlée après l’empaquetage : « Rapide » vérifie la structure, « Complète » relit en plus l’ensemble et prend beaucoup plus de temps.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Puis-je modifier une image terminée après coup ?</h3>
+    <p>Pas directement – une image terminée n’a pas d’espace libre pour des fichiers supplémentaires. Il existe toutefois trois moyens :</p>
+    <ul>
+      <li><strong>MODIFIER L’IMAGE</strong> (sous <strong>AUTRES OUTILS</strong>) : le programme décompresse l’image, vous remplacez, renommez, supprimez ou ajoutez des fichiers, puis il enregistre le résultat comme nouvelle image <code>&lt;name&gt;_bearbeitet</code> dans le format de votre choix (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> ou <code>.exFAT</code>). L’original reste intact ; <code>eboot.bin</code> et <code>sce_sys/param.json</code> peuvent seulement être remplacés, ni supprimés ni renommés.</li>
+      <li><strong>Reconstruire le même format, avec intégration</strong> (tâches 2 à 6) : le même fichier comme source, le même format comme destination, cochez ce qui doit être intégré (asset pack, PlayGo, BACKPORT) et démarrez. Le programme décompresse, intègre et reconstruit ; il faut disposer une fois de la taille du jeu en espace libre dans le dossier de travail.</li>
+      <li>Extraire dans un <strong>dossier dump</strong>, modifier vous-même le dossier et le réempaqueter.</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>Qu’est-ce que « Dossier dump (avec intégration) » ?</h3>
+    <p>Si AMPR EMU, PlayGo ou BACKPORT est coché dans la tâche&nbsp;1, ce format de destination apparaît en supplément. Aucune image n’est alors créée, mais un dossier dump comportant exactement ces intégrations. Au démarrage, le programme demande où intégrer :</p>
+    <ul>
+      <li><strong>Dans une sauvegarde (recommandé)</strong> – le dump est copié dans le dossier de destination et seule la copie est modifiée.</li>
+      <li><strong>Dans l’original</strong> – directement dans votre dossier. Les fichiers ne sont ensuite plus originaux ; BACKPORT remplace <code>eboot.bin</code> et les bibliothèques sans sauvegarde. Cette opération est irréversible.</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>L’ordinateur peut-il s’éteindre tout seul après une longue conversion ?</h3>
+    <p>Oui – avec la case <strong>Éteindre l’ordinateur après une réussite</strong> sous DOSSIER TEMPORAIRE. Ce n’est qu’après une exécution <em>réussie</em> qu’une fenêtre apparaît et décompte 60 secondes (annulation avec le bouton ou ÉCHAP). Ensuite, les images sont démontées, les fichiers de travail supprimés et le journal enregistré, puis l’ordinateur s’éteint sans autre question. Après une erreur ou une annulation, il reste allumé. Enregistrez au préalable votre travail dans les autres programmes.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Cela fonctionne-t-il aussi sans l’interface, en ligne de commande ?</h3>
+    <p>Oui, chaque tâche s’exécute également sans fenêtre – avec la même logique de flux de travail que l’interface (<code>X.Y.Z</code> représente votre version) :</p>
+    <pre><code>PS5_Dump_Image_Converter_vX.Y.Z.exe --cli --task 1 --source "D:\Dumps\Game" --dest "D:\Output" --format ffpfsc --yes</code></pre>
+    <p><code>--format</code> connaît <code>folder</code>, <code>ffpfsc</code>, <code>ffpfs</code>, <code>exfat</code> et <code>ffpkg</code> ; <code>--yes</code> confirme les questions, <code>--shutdown-on-success</code> éteint ensuite l’ordinateur. Sous Windows, ouvrez l’invite de commandes ou PowerShell <strong>en tant qu’administrateur</strong> – sinon l’appel s’arrête avec le code de retour&nbsp;3.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment convertir plusieurs fichiers ou dossiers dump en une seule fois ?</h3>
+    <p>Avec la <strong>tâche&nbsp;5 – Conversion par lots</strong> : cliquez sur <strong>Choisir les sources</strong> et indiquez s’il s’agit de dossiers dump ou de fichiers image (<code>.ffpfsc</code>, <code>.exFAT</code> ou <code>.ffpkg</code>). Pour les dossiers dump, la boîte de dialogue de dossiers de Windows s’ouvre : sélectionnez plusieurs dossiers avec Ctrl ou Maj, puis cliquez sur <strong>Sélectionner un dossier</strong>. Un dossier qui n’est pas lui-même un dump (comme <em>Game Dumps</em>) représente tous les dumps et images qu’il contient. Définissez ensuite un format de destination commun et démarrez. Chaque source est traitée et vérifiée séparément ; si l’une échoue, les autres vont tout de même jusqu’au bout. Testez d’abord une seule source et vérifiez qu’il y a de la place pour tous les résultats.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment vérifier une sauvegarde sans rien modifier ?</h3>
+    <p>Avec la <strong>tâche&nbsp;8 – Validateur</strong>. Elle signale les fichiers obligatoires manquants, un système de fichiers endommagé ou un mauvais emboîtement. Pour <code>.ffpfsc</code> et <code>.ffpfs</code>, elle regarde un niveau plus profond sans décompresser : <code>nesting: fine</code> est le résultat souhaité, <code>wrongly nested</code> signifie que le fichier doit être recréé.</p>
+    <p class="hinweis"><strong>Non vérifié n’est pas un verdict :</strong> un <code>.ffpkg</code> ne peut être vérifié qu’avec les droits d’administrateur. Sans eux, le résultat est NON VÉRIFIÉ – et non « échec ». En ligne de commande, la tâche&nbsp;8 renvoie alors 4 (0 = en ordre, 1 = problèmes constatés).</p>
+  </div>
+
+  <div class="frage">
+    <h3>Une exécution a été annulée ou a échoué. Que faire ?</h3>
+    <p>Après ANNULER, attendez la confirmation dans le journal. Ne continuez pas à utiliser un résultat incomplet – supprimez-le et recommencez avec des chemins vérifiés. Si un avertissement apparaît, lisez le message en entier et corrigez d’abord la cause indiquée, au lieu de modifier plusieurs choses à la fois. Conservez le journal et la source jusqu’à ce que la cause soit claire.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 4 -->
+<section class="abschnitt" id="a4">
+  <h2><span class="nr">4</span>Sur la PS5</h2>
+
+  <div class="frage">
+    <h3>Que faut-il préparer sur la console ?</h3>
+    <ul>
+      <li>Une PS5 déjà préparée avec une méthode de jailbreak personnelle – le programme n’effectue pas cette étape.</li>
+      <li><strong>ShadowMount+</strong>, qui monte les images.</li>
+      <li>Pour les transferts, un payload FTP : <strong>ftpsrv sur le port 2121</strong>. Le programme le démarre sur demande via l’ELF loader (port 9021).</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>Où placer l’image sur la clé USB ?</h3>
+    <p><strong>Directement à la racine de la clé</strong> – ou dans les dossiers <code>homebrew</code> ou <code>etaHEN/games</code> qui s’y trouvent. ShadowMount+ ne cherche qu’à des emplacements fixes (clés USB <code>usb0</code> à <code>usb7</code>, ainsi que <code>/data/homebrew</code>, <code>/data/etaHEN/games</code> et l’extension M.2). Une image placée dans un sous-dossier personnel n’est pas trouvée.</p>
+    <p class="hinweis">Une entrée dans le fichier <code>manual.lst</code> de ShadowMount+ rend bien accessible un dossier personnel, mais elle ne survit pas de façon fiable à un redémarrage : avec plusieurs périphériques USB connectés, le numéro de la clé peut changer.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Quel payload FTP dois-je utiliser ?</h3>
+    <p>Fourni et préréglé : <strong>ftpsrv-ps5 sur le port 2121</strong> ; le programme a été testé avec lui. Après chaque envoi, le programme vérifie si les fichiers sont exécutables et, dans le cas contraire, avertit dans le journal.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Le jeu ne démarre pas. Que signifient les codes d’erreur ?</h3>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>Code</th><th>Cause et remède</th></tr></thead>
+      <tbody>
+        <tr><td><code>CE-108255-1</code></td><td>Un <code>.ffpkg</code> incomplet – ou un démarrage depuis le stockage interne au lieu de la clé USB. Essayez la sauvegarde depuis la clé.</td></tr>
+        <tr><td><code>CE-107891-6</code></td><td>Un paquet de mise à jour ne correspond pas au paquet de base installé (même une reconstruction du même jeu compte comme un autre paquet). Installez le paquet de base correspondant ou reconstruisez les deux ensemble. Les mises à jour existant pour un jeu sont indiquées par <strong>PS4 PKG Dump &amp; Image Converter</strong> dans la colonne <em>Composants</em>.</td></tr>
+        <tr><td><code>CE-100096-6</code></td><td>La console rejette un paquet fabriqué par vos soins. Pour les sauvegardes de jeux, la voie par image et ShadowMount+ est la bonne ; pour vos propres homebrews, utilisez <strong>Installer l’app directement</strong>.</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="frage">
+    <h3>Qu’est-ce qu’AMPR EMU, et quand en ai-je besoin ?</h3>
+    <p>Au démarrage d’un jeu, la PS5 demande à son résolveur de fichiers APR où se trouvent les fichiers du jeu. Si le jeu s’exécute depuis une image montée, le résolveur ne reçoit aucune réponse exploitable – et le jeu ne démarre pas. AMPR EMU est une bibliothèque de remplacement qui répond à cette question à sa place. Vous en avez besoin pour les jeux destinés à s’exécuter depuis une image.</p>
+    <p>Vous pouvez l’intégrer lors de la création (case <strong>AMPR EMU</strong> dans les tâches 1 à 6) ou via le <strong>bouton&nbsp;7</strong> : il ouvre une sélection avec la <em>nouvelle méthode</em> (ShadowMount+ à partir de 1.7 alpha8), l’<em>ancienne méthode</em> (jusqu’à alpha6) et <em>Intégrer AMPR EMU dans la sauvegarde</em>. Le programme vérifie lui-même quelle version de ShadowMount+ tourne sur la console et, si nécessaire, vous conseille d’utiliser l’autre bouton.</p>
+    <p>Si AMPR EMU n’a aucun effet, vérifiez le fichier <code>config.ini</code> de ShadowMount+ : si l’ID de titre du jeu figure sous <code>fakelib_exclude</code> (à partir de la version 1.7beta4) ou est désactivé par <code>fakelib_mode=&lt;ID&gt;:disabled</code> ou par <code>fakelib_default_mode=disabled</code> (à partir de 1.7beta5), ShadowMount+ ne monte aucun <code>fakelib</code> pour ce titre. L’AMPR EMU Manager (bouton&nbsp;9 de la vue CONSOLE) et l’assistant d’enregistrement AMPR posent alors la question et nomment l’entrée avant de placer quoi que ce soit ; modifiez-la sous <strong>AUTRES OUTILS</strong> → <strong>SHADOWMOUNT+</strong>.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Que sont les asset packs ?</h3>
+    <p>Avec la méthode <strong>Asset pack</strong>, les fichiers du jeu sont en plus regroupés dans des volumes empaquetés (<code>ampr_assets-*.pak</code>) qu’AMPR EMU lit bloc par bloc à partir de la version 0.4.2.1. Cela économise de l’espace et des descripteurs de fichiers sur la console. Pour cela, <strong>les deux</strong> listes déroulantes doivent être correctes : version AMPR <code>test-pack</code> (ou <code>test-debug-pack</code> pour le dépannage) et méthode <em>Asset pack</em> – la version <code>test-nopack</code> présélectionnée en haut n’en est pas capable.</p>
+    <p>Chaque bloc empaqueté est comparé octet par octet au fichier d’origine. Vos fichiers d’origine restent en place, sauf si vous en décidez autrement ; ne les omettez qu’après un test réussi sur la console. Le guide détaillé s’ouvre avec le bouton <strong>Guide LZ4 et Asset Packs</strong>.</p>
+    <p>Pour <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> et les jeux construits sur le moteur <em>Unity</em> ou <em>Insomniac</em>, le programme configure automatiquement un profil de pack testé (depuis v1.9.78). Un profil personnel placé à côté du dossier dump (<code>&lt;folder name&gt;_ampr_pack.toml</code>) est toujours prioritaire.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Quel est le taux de compression, et comment vérifier ou extraire un asset pack terminé ?</h3>
+    <p><strong>L’intensité</strong> se règle sous <strong>PARAMÈTRES</strong> dans la section <em>ASSET PACK (LZ4)</em> (depuis v1.9.80). La valeur par défaut est le niveau <strong>9</strong> : mesuré sur des données de jeux réelles, le niveau 12 ne gagne que 0,0 à 0,6 point de pourcentage supplémentaire mais prend 1,2 à 3,6 fois plus de temps. Les images, textures, archives, fichiers audio, vidéo et de configuration restent en vrac dans le profil général, car ils sont déjà compressés.</p>
+    <p><strong>LZ4 ou zstd :</strong> sous <strong>PARAMÈTRES</strong>, dans la même section, choisissez la <em>méthode de pack</em>. LZ4 (par défaut) crée <code>ampr_assets-*.pak</code>. zstd crée <code>ampr_zstd.index</code> et <code>ampr_zstd-NNN.pak</code>, empaquette tous les fichiers sauf les fichiers système et compresse généralement davantage, mais n’est lu <em>que</em> par ampr-emu-ng (NG), pas par le runtime drakmor. Avec zstd, la liste des versions ne propose que NG ; le niveau zstd va de 1 à 22 (par défaut 5). Les règles personnalisées (quels fichiers restent en vrac) sont lues dans un fichier <code>&lt;folder name&gt;_ampr_pack.toml</code> placé à côté du dossier dump ou, une fois pour tous les jeux, dans le fichier que vous choisissez dans les paramètres sous « Règles de packaging pour zstd » ; les fichiers système restent toujours en vrac. On n’a pas mesuré si un jeu avec des packs zstd démarre sur la console – testez d’abord avec les originaux.</p>
+    <p><strong>La vérification et l’extraction</strong> se trouvent sous <strong>AUTRES OUTILS</strong> → <strong>VÉRIFIER / EXTRAIRE L’ASSET PACK</strong> (depuis v1.9.80). Choisissez le dossier du jeu qui contient <code>ampr_assets.index</code> : <em>VÉRIFIER</em> relit chaque bloc par rapport aux sommes de contrôle et vous indique si la bibliothèque présente dans le dossier peut lire des volumes ; <em>EXTRAIRE</em> remet les fichiers empaquetés en vrac – dans un nouveau dossier (le dossier du jeu est conservé) ou dans le dossier du jeu lui-même (les volumes sont ensuite supprimés). Une image ne peut pas être ouverte de cette manière ; extrayez-la d’abord avec la tâche 2.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment télécharger une mise à jour officielle de la PS5 auprès de Sony ?</h3>
+    <p>Choisissez le jeu comme source et ouvrez <strong>Infos sur le jeu</strong>. Si le fichier <code>sce_sys\param.json</code> du jeu indique la liste de mises à jour de Sony (<code>versionFileUri</code>), des lignes intitulées <strong>PS5 · Sony (official)</strong> apparaissent avec la version, la taille et le firmware requis (depuis v1.9.81). Un clic sur <strong>Télécharger</strong> récupère le paquet directement sur cet ordinateur : par parties, avec reprise possible, chaque partie étant vérifiée par rapport au SHA-256 de Sony. Il est enregistré dans <em>PS5 Spiele Updates</em> (version la plus récente) ou <em>Patches</em>. Rien n’est installé, et le fichier n’est pas envoyé à la console.</p>
+    <p>Si nanoDNS tourne sur votre PS5, <code>sgst.prod.dl.playstation.net</code> et <code>gs2.ww.prod.dl.playstation.net</code> doivent figurer dans son <code>[exceptions]</code> – par défaut, seul <code>gst.prod.dl.playstation.net</code> y est indiqué.</p>
+  </div>
+
+  <div class="frage">
+    <h3>À quoi sert la case « PlayGo » ?</h3>
+    <p>Elle place dans le jeu un remplacement de <code>libScePlayGo.sprx</code> qui signale tous les paquets de langue et de scénario comme installés. La plupart des jeux n’en ont pas besoin ; la case est donc décochée par défaut. Si un titre déclare du contenu PlayGo et que la case n’est pas cochée, le programme pose la question au début de l’exécution – avant que quoi que ce soit ne soit copié, décompressé ou empaqueté.</p>
+  </div>
+
+  <div class="frage">
+    <h3>À quoi sert la case « DLC EMU » ?</h3>
+    <p>Elle place dans le jeu trois bibliothèques de remplacement (<code>libSceAppContent</code>, <code>libSceNpEntitlementAccess</code> et <code>libSceGameUpdate</code>) afin que la console signale les contenus additionnels comme présents. Les contenus pris en compte sont répertoriés dans <code>dlc_emu.ini</code> dans le dossier du jeu ; s’il est absent, le programme le crée à partir du fichier <code>dlcmap.json</code> du jeu. Les contenus additionnels qui ne font que débloquer quelque chose sont inscrits comme simple droit (entitlement). La case est décochée par défaut. Si le jeu comporte des contenus additionnels (<code>dlcmap.json</code>, un dossier DLC à côté du jeu ou un <code>dlc_emu.ini</code>) et que la case n’est pas cochée, le programme pose la question au début de l’exécution. Sans <code>dlc_emu.ini</code> correspondant, DLC EMU ne signale aucun contenu additionnel.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Puis-je créer le backport sous forme de dossier séparé pour ShadowMount+ ?</h3>
+    <p>Oui. Dans la fenêtre BACKPORT, <strong>Créer uniquement le dossier backport …</strong> crée le dossier <code>backports/&lt;title ID&gt;</code> – avec les fichiers abaissés, le <code>param.json</code> et le dossier <code>fakelib</code>. Le jeu lui-même reste intact. Placez le dossier sur la console dans <code>/data/homebrew/backports/&lt;title ID&gt;/</code> ; ShadowMount+ le superpose au jeu au lancement. Le programme peut aussi l’y envoyer directement par FTP. Le firmware cible est présélectionné en fonction de la console.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Que fait BACKPORT ?</h3>
+    <p>Un jeu PS5 enregistre avec quel kit de développement (SDK) il a été construit ; la console ne lance rien qui soit plus récent que son firmware. <strong>BACKPORT</strong> (sous AUTRES OUTILS) abaisse cette valeur à un firmware cible – <strong>4.00, 5.00, 6.00 ou 7.00</strong> – et place des bibliothèques de remplacement adaptées dans un dossier <code>fakelib</code>. Au préalable, la liste montre chaque fichier et ce qu’il adviendrait de lui ; une sauvegarde du dossier est préréglée.</p>
+    <p class="warnung">Le résultat ne fonctionne que sur une console jailbreakée. On ne peut pas savoir à l’avance si un jeu démarre après le backport – conservez la sauvegarde jusqu’à ce qu’il fonctionne sur la console. La <strong>vérification de couverture</strong> (toujours active) montre s’il manque dans les bibliothèques de remplacement des fonctions requises par le jeu.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Mon jeu ne démarre pas après le backport – y a-t-il autre chose à cocher ?</h3>
+    <p>La fenêtre BACKPORT propose deux cases supplémentaires. Toutes deux sont <strong>décochées par défaut</strong> et toutes deux sont proposées <strong>sans aucune garantie</strong>, car elles modifient le code du jeu :</p>
+    <ul>
+      <li><strong>Neutraliser les fonctions manquantes (stubs, expérimental)</strong> – Si le jeu exige une fonction que le firmware cible ne connaît pas et qu’aucune bibliothèque de remplacement ne peut fournir, il s’interrompt au premier appel. Cette case remplace cet appel, dans le jeu, par une valeur de retour vide. On ne sait pas si le jeu fonctionne ensuite correctement.</li>
+      <li><strong>Appliquer le profil de correction du jeu (s’il existe)</strong> – Pour certains titres, des corrections d’octets vérifiées sont incluses, chacune pour exactement une version du jeu (inclus : Anno 117 sur firmware 4.xx). Un profil n’est appliqué que si la somme de contrôle du fichier d’origine non modifié correspond ; sinon, tout reste en l’état.</li>
+    </ul>
+    <p>Les cases s’appliquent aussi à l’intégration lors de la création. Le journal nomme chaque endroit modifié – conservez la sauvegarde.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment transformer un ELF en eboot.bin ?</h3>
+    <p><strong>ELF → EBOOT.BIN</strong> (sous AUTRES OUTILS) enveloppe un <code>.elf</code> – par exemple un homebrew que vous avez construit vous-même – en <code>eboot.bin</code> : une enveloppe SELF contenant l’ELF. Ensuite, le programme relit le fichier à titre de contrôle. Un fichier qui est déjà un SELF, un ELF dépouillé (stripped) et tout ce qui n’est pas un ELF sont refusés avec une remarque.</p>
+    <p class="warnung">Le <code>eboot.bin</code> est un faux SELF sans véritable signature et ne démarre que sur une console jailbreakée.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Une vignette que je crée apparaît-elle sous Jeux ou sous Médias ?</h3>
+    <p>Ce n’est pas le <code>eboot.bin</code> qui en décide, mais <code>sce_sys/param.json</code> : son champ <code>applicationCategoryType</code> place la vignette sous <strong>Jeux</strong> avec <strong>0</strong> et sous <strong>Médias</strong> avec <strong>65536</strong>. La console le lit lors de l’installation ou de l’enregistrement de l’application ; ensuite, on ne peut le modifier qu’en réinstallant. Dans <strong>Installer l’app directement</strong> (AUTRES OUTILS), vous le choisissez sous <em>Vignette sous</em> ; Médias est présélectionné.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Puis-je aussi utiliser des jeux PS4 ?</h3>
+    <p>Oui. <strong>PS4 PKG Dump &amp; Image Converter</strong> (tâche 7 – PKG / FPKG, page PKG) lit vos paquets PS4 et transforme le jeu de base, la mise à jour et, en option, les DLC en un dossier de jeu normal (format <strong>Dossier dump</strong>), en une image pour ShadowMount+ (<strong>ffpfsc</strong> ou <strong>exFAT</strong>) ou en un paquet fusionné. <strong>MISES À JOUR EN LIGNE</strong> télécharge auprès de Sony les mises à jour manquantes pour les jeux PS4. Les paquets PS5 (paquets de débogage, FPKG) sont décompressés et convertis par <strong>PS5 PKG Dump &amp; Image Converter</strong> (tâche 7 – PKG / FPKG, page FPKG).</p>
+    <p class="hinweis"><strong>Trophées :</strong> un jeu PS4 qui démarre depuis une image n’enregistre pas ses trophées (<em>Trophy registration failed, 0x80551618</em>). C’est voulu et ne vient pas de l’image. Si vous avez besoin des trophées, installez le jeu avec le Package Installer. Les titres PS5 ne sont pas concernés.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Puis-je envoyer un paquet à la console via le réseau ?</h3>
+    <p>Oui, avec <strong>PS4 PKG Dump &amp; Image Converter</strong> (tâche 7 – PKG / FPKG, page PKG) : chargez les paquets, choisissez un jeu, appuyez sur <strong>ENVOYER À LA CONSOLE</strong> et saisissez l’adresse de la console. Il existe deux voies : sur une PS5, le gestionnaire de paquets OnionHEN (appelé <em>DPI v2</em> dans <em>Console et payloads</em>) reçoit le paquet et l’installe ; une PS4 le récupère sur le PC via le Remote Package Installer. <strong>Détecter</strong> demande quel service répond à l’adresse indiquée.</p>
+    <p class="hinweis"><strong>Non testé :</strong> l’envoi n’a pas encore été essayé sur une console – les deux voies ont été testées avec des simulacres des services. Seul un essai permet de savoir si un paquet donné démarre ensuite.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Puis-je décompresser un paquet PS5 sans avoir besoin d’espace sur le PC ?</h3>
+    <p>Oui. Dans <strong>PS5 PKG Dump &amp; Image Converter</strong> (tâche 7 – PKG / FPKG, page FPKG), choisissez l’action <strong>Extraire vers la PS5</strong>, saisissez l’adresse de la console et le dossier cible (par exemple <code>/mnt/usb0/GameName</code>) et démarrez. Le programme lit le paquet et envoie les fichiers directement à la PS5 par FTP ; aucune copie décompressée n’est créée sur le PC. <code>ftpsrv</code> doit être en cours d’exécution sur la console. Si le dossier existe déjà à cet endroit, vous pouvez <strong>reprendre</strong> (les fichiers complets sont ignorés, les fichiers inachevés continuent) ou tout réécrire ; si la connexion est interrompue, le programme se reconnecte jusqu’à cinq fois et reprend là où il s’était arrêté. L’annulation prend effet après le fichier en cours.</p>
+    <p class="hinweis"><strong>Non testé :</strong> la décompression vers la console a été vérifiée avec un vrai paquet et un serveur FTP simulé (chaque fichier identique octet pour octet), mais n’a pas encore été essayée sur une PS5. Essayez d’abord avec un petit jeu.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Puis-je construire moi-même un PKG à partir d’un dossier de jeu, et que fait le « builder » ?</h3>
+    <p>Oui, dans <strong>PS5 PKG Dump &amp; Image Converter</strong> (tâche 7 – PKG / FPKG, page FPKG) : choisissez le dossier du jeu, le dossier de destination, la vignette <strong>Package</strong>, puis <em>Démarrer la conversion</em>. Dans <strong>Options</strong>, le <strong>builder</strong> détermine quel outil le construit – <strong>LibProsperoPkg</strong> (par défaut, avec options de compression, de firmware et de backport dans l’onglet <em>Construction</em>) ou <strong>ProsperoPkgTool</strong> (second constructeur de paquets, licence MIT). L’onglet <em>Construction</em> permet aussi d’intégrer <strong>BACKPORT</strong> juste avant la construction, de définir un <strong>firmware minimum</strong> ou de cocher le <strong>mode patch</strong> pour un PKG de mise à jour.</p>
+  </div>
+
+  <div class="frage">
+    <h3>À quoi servent « Détails » et « Afficher les fichiers » ?</h3>
+    <p><strong>Détails</strong> (avec un dossier de jeu sélectionné) ouvre une fenêtre avec les fichiers SELF/ELF signés du jeu, les entrées de <code>sce_sys/activity.json</code> et les jeux de trophées trouvés. <strong>Afficher les fichiers</strong> (avec un paquet sélectionné) montre la structure interne du <code>.pkg</code> sous forme d’arborescence dépliable et permet d’extraire des fichiers isolés ou des sous-arborescences entières sans décompresser tout le paquet.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Que font Fast, Balanced, Maximum et Low RAM ?</h3>
+    <p>Les quatre boutons sous <strong>PRESET</strong> (dans la vue CONVERT, à côté des cases en bas de la carte) règlent d’un seul coup le niveau de compression et le nombre de cœurs : <em>Fast</em> niveau 3 avec tous les cœurs, <em>Balanced</em> niveau 6 et <em>Maximum</em> niveau 9 avec la moitié des cœurs, <em>Low RAM</em> niveau 3 avec un seul cœur. La taille de bloc reste à 65536. Mesurés sur un dump de 664 Mo, les niveaux 1 et 9 ne diffèrent que d’environ 5&nbsp;% en taille d’image (les données des jeux PS5 se compressent à peine) ; davantage de cœurs raccourcissent la durée mais exigent plus de mémoire. La quantité de mémoire libre pendant une exécution est indiquée par l’affichage en direct sous le journal.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Un jeu reste bloqué sur l’écran de chargement.</h3>
+    <p>Certains titres restent sur un « Veuillez patienter » lorsqu’ils sont lancés depuis l’image, alors que le même paquet fonctionne lorsqu’il est installé avec le Package Installer. Écartés jusqu’ici : l’emplacement de stockage, un contenu PlayGo manquant, une vérification en ligne et une image incomplète – <strong>la cause reste inconnue</strong>. Loin de tous les titres sont concernés.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 5 -->
+<section class="abschnitt" id="a5">
+  <h2><span class="nr">5</span>Console, bibliothèque et payloads</h2>
+
+  <div class="frage">
+    <h3>Que montre la vue CONSOLE ?</h3>
+    <p>Sous le logo, <strong>CONSOLE ›</strong> bascule vers une seconde vue comportant dix outils : <em>Console et payloads</em>, <em>WebKit Autoloader</em>, <em>Bibliothèque</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em>, <em>BFpilot</em>, <em>AMPR EMU Manager</em> et <em>Enregistrement AMPR</em>. <strong>‹ CONVERTIR</strong> ramène en arrière ; la source, les paramètres et un travail en cours sont conservés.</p>
+    <p><strong>Console et payloads</strong> trouve déjà la PS5 de lui-même au démarrage du programme – vous n’avez pas à saisir d’adresse. La page interroge tous les ports connus, affiche pour chaque service l’état, la version et l’usage, démarre les services manquants depuis le dossier <code>helloworld</code> fourni et ouvre les interfaces web. Sous Windows, celles-ci s’affichent directement dans le programme, sinon dans le navigateur.</p>
+    <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (le PS5 Cooling &amp; System Center, port 8086), <strong>ShadowMount+</strong>, <strong>SMPlusGui</strong> et <strong>BFpilot</strong> (un second gestionnaire de fichiers, port 5905) n’ont pas de page propre : une pression vérifie si le payload tourne déjà sur la console, l’envoie lui-même si nécessaire – avec l’ELF loader si le port 9021 est encore fermé – puis ouvre son interface web.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment faire envoyer automatiquement des payloads à la PS5 (favoris) ?</h3>
+    <p>Dans <em>Console et payloads</em>, la première colonne du tableau porte une étoile. Un clic sur ☆ (ou la barre d’espace sur la ligne sélectionnée) fait du service un <strong>favori</strong>, un nouveau clic l’en retire. La ligne au-dessus du tableau indique les favoris actuels.</p>
+    <ul>
+      <li>Le programme envoie les favoris de lui-même <strong>au démarrage</strong> et à la demande avec <strong>Envoyer les favoris</strong>. Par défaut, ce sont le serveur FTP et le journal du noyau ; <strong>Par défaut</strong> rétablit cette sélection.</li>
+      <li>Seul ce qui ne tourne pas est envoyé, dans l’ordre du tableau. Un service « bloqué » (voir ci-dessous) n’est pas renvoyé.</li>
+      <li>Le <strong>port 9021</strong> fait partie de chaque envoi : si l’ELF loader est fermé, le programme l’ouvre d’abord via le Payload Manager. Si cela échoue, les favoris ne sont pas envoyés et le journal l’indique. C’est pourquoi l’ELF loader ne porte pas d’étoile – pas plus que ShadowMount+ et DPI&nbsp;v2, que le programme ne démarre pas lui-même.</li>
+      <li>La case <strong>Envoyer automatiquement au démarrage du programme</strong> (cochée par défaut) ne désactive que l’envoi au démarrage ; le bouton <strong>Envoyer les favoris</strong> reste à votre disposition.</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>Le serveur FTP est affiché comme « bloqué ». Qu’est-ce que cela signifie ?</h3>
+    <p>Un téléchargement interrompu peut placer <code>ftpsrv</code> dans un état où il continue d’accepter des connexions puis reste muet. Un payload fraîchement chargé n’y change alors rien – seul un <strong>redémarrage de la console</strong> aide. C’est pourquoi le programme ne contrôle pas seulement le port, mais aussi si le service répond.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Pourquoi « Annuler » n’arrête-t-il un téléchargement depuis la PS5 qu’après le fichier en cours ?</h3>
+    <p>C’est voulu : un téléchargement interrompu au milieu d’un transfert paralyse <code>ftpsrv</code> (voir ci-dessus). Le programme mémorise votre demande et met fin au transfert dès que le fichier en cours est arrivé en entier.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Que peut faire la bibliothèque ?</h3>
+    <ul>
+      <li><strong>Cet ordinateur :</strong> parcourt vos dossiers d’analyse à la recherche de dossiers dump, d’images et de paquets et les affiche sous forme de cartes ou de liste – avec jaquette, plateforme, format et intégrations.</li>
+      <li><strong>PS5 :</strong> montre les sauvegardes aux emplacements de stockage habituels ainsi que les jeux PS5 et PS4 installés.</li>
+      <li><strong>Informations et métadonnées</strong> indique la version, le SDK et le firmware requis – et « BACKPORT requis » lorsque le jeu exige plus que ce que votre PS5 offre.</li>
+      <li><strong>Démarrer</strong> lance un titre sur la console via websrv (port 8080) ; si un jeu y est en cours, il est fermé – le programme demande d’abord.</li>
+      <li><strong>Copier</strong> envoie vers la PS5 ou télécharge depuis elle, <strong>Convertir</strong> reprend une entrée comme source.</li>
+    </ul>
+    <p>Une recherche plus longue affiche une fenêtre avec une barre de progression et un pourcentage, et peut être annulée.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment sauvegarder les données de sauvegarde ?</h3>
+    <p>La sauvegarde, le déchiffrement et le transfert entre utilisateurs sont assurés par le <strong>Garlic Save Manager</strong> avec sa propre interface (port 8082). Il n’a pas de page propre : dans <em>Console et payloads</em>, vous le sélectionnez dans le tableau, le démarrez avec <strong>Démarrer la sélection</strong> et ouvrez son interface avec <strong>Ouvrir l’interface web</strong>. Faites une sauvegarde avant chaque réécriture. Un utilisateur de la console nouvellement créé trouve ses données de sauvegarde vides – les anciennes sauvegardes restent chez l’utilisateur d’origine.</p>
+  </div>
+
+  <div class="frage">
+    <h3>À quoi sert le WebKit Autoloader, et quelle version dois-je utiliser ?</h3>
+    <p>Il crée la vignette <strong>WebKit Autoload</strong> sur la console (écran d’accueil, sous <em>Médias</em>) afin que l’entrée puisse être répétée d’une simple pression. Il se compose d’un <strong>host</strong> sur votre ordinateur – sous forme de programme Windows ou de script Python – et d’un <strong>installateur</strong> qui s’exécute une fois sur la console. Les deux se trouvent sous <strong>CONSOLE › WebKit Autoloader</strong>.</p>
+    <ul>
+      <li><strong>Version :</strong> plusieurs sont fournies, de v0.4.0 à v0.6.1. La plus récente est présélectionnée ; le programme retient votre choix, qui s’applique aux trois voies (host en programme Windows, host en script Python, envoi de l’installateur). Si la plus récente ne fonctionne pas chez vous, essayez une version plus ancienne.</li>
+      <li><strong>Host :</strong> il occupe DNS (UDP 53) et HTTPS (TCP 443) et nécessite donc les droits d’administrateur.</li>
+      <li><strong>Installateur :</strong> il arrive sur la console via le port 9021. Si le port est fermé, il passe par FTP à la racine d’une clé USB ; vous l’y récupérez avec le Payload Manager.</li>
+    </ul>
+    <p>Si une nouvelle version paraît, le bouton <strong>Mises à jour</strong> (voir ci-dessous) télécharge ses trois fichiers, ou vous les placez vous-même en plus dans le dossier <code>PS5 WebKit Autoloader</code> ; les plus anciennes restent sélectionnables.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment obtenir des versions plus récentes des outils fournis ?</h3>
+    <p>Avec le bouton <strong>Mises à jour</strong> en haut à droite de la page <em>Console et payloads</em>, à côté de <em>Vérifier la console</em>. Il ouvre une fenêtre et demande aussitôt à l’auteur de chaque outil la dernière version publiée – les payloads du dossier <code>helloworld</code>, le WebKit Autoloader, AMPR EMU et les moteurs (MkPFS, UFS2Tool, LibProsperoPkg, OrbisPkgTool, PS5-PKG-Tool, PS5 Wee Tools, 7-Zip). C’est le seul accès réseau ; sans ce bouton, le programme ne demande jamais rien nulle part.</p>
+    <ul>
+      <li><strong>Nouvelle version</strong> peut être cochée dans la première colonne (clic ou barre d’espace) ; <strong>Télécharger</strong> récupère la sélection. Chaque fichier est vérifié par rapport à la taille et au SHA-256 de la version publiée avant d’être mis en place ; un outil composé de plusieurs fichiers arrive complètement ou pas du tout.</li>
+      <li>Les fichiers vont dans <code>Werkzeug-Updates</code> dans le dossier de paramètres du programme – <strong>jamais</strong> dans les dossiers fournis. Le programme prend la version la plus élevée qui s’y trouve ; les fichiers fournis restent intacts, et vous pouvez supprimer à tout moment ceux qui ont été téléchargés.</li>
+      <li><strong>Nouvelle – à installer manuellement</strong> s’affiche pour les moteurs avec adaptations propres, pour les archives et pour les outils sans version dans le nom du fichier : la fenêtre se contente alors de donner le verdict et ouvre la page de la version publiée sur demande.</li>
+      <li>GitHub autorise 60 requêtes par heure sans connexion ; une vérification complète en nécessite une cinquantaine. Le programme mémorise les réponses, de sorte qu’une seconde vérification compte à peine. Lorsque la limite est atteinte, la fenêtre indique l’heure à partir de laquelle cela refonctionne.</li>
+    </ul>
+    <p class="hinweis">Pour elfldr, ftpsrv et klogsrv, le programme continue d’utiliser le fichier fourni et testé dans le tableau, au démarrage (favoris compris) et dans ses propres procédures ; celui qui a été téléchargé est disponible pour l’envoi dans la sélection rapide.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Le bouton ShadowMount+ n’ouvre pas d’interface web. Pourquoi ?</h3>
+    <p>Jusqu’à 1.7beta7, ShadowMount+ n’écoutait par défaut que sur la PS5 elle-même (<code>api_bind_address=127.0.0.1</code>) ; depuis 1.7beta8, c’est <code>0.0.0.0</code>. S’il n’écoute que sur la PS5, le port 10101 est fermé depuis votre PC alors que ShadowMount+ tourne – et le bouton renvoie quand même le payload une fois de plus. Si le port ne répond pas ensuite, le journal en indique la raison. Réglez donc la clé <code>api_bind_address</code> dans l’éditeur ShadowMount+ (<em>AUTRES OUTILS</em>) sur l’adresse de la PS5 ou sur <code>0.0.0.0</code>. L’interface n’a pas d’identification – ne l’utilisez pas sur un réseau que vous ne contrôlez pas.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment utiliser d’autres manettes sur la PS5 (AnyPad PS5) ?</h3>
+    <p>Depuis v1.9.60, le payload <strong>AnyPad PS5</strong> est fourni (désormais en version 0.9.1-beta). Il rend utilisables les manettes Bluetooth sur la PS5 ; les jeux les voient comme une DualSense. Selon son auteur, la DualShock&nbsp;4&nbsp;v2, la 8BitDo SF30 Pro (mode Switch) et la GameSir G7 SE sont vérifiées ; les manettes Xbox et Switch Pro, entre autres, sont prises en charge mais pas encore vérifiées. Dans <em>Console et payloads</em>, vous le démarrez avec <strong>Démarrer la sélection</strong> et ouvrez sa page d’appairage (port 8095) avec <strong>Ouvrir l’interface web</strong>.</p>
+    <ul>
+      <li>Lorsque la console demande qui utilise la manette, l’auteur conseille de choisir <strong>Quick play / Guest</strong> (un utilisateur temporaire).</li>
+      <li>Une DualShock&nbsp;4 doit être appairée à nouveau à chaque mise en marche ; les autres manettes se reconnectent d’elles-mêmes.</li>
+      <li>Arrêtez toujours AnyPad avec le bouton de son interface web, y compris avant de le redémarrer.</li>
+      <li>La page ne demande aucun code PIN : toute personne se trouvant sur le même réseau peut l’utiliser.</li>
+    </ul>
+    <p class="hinweis">Depuis octobre 2026, le projet est hébergé sur Codeberg ; le port, la page et les consignes d’utilisation proviennent des informations de l’auteur.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Que dois-je faire lors de la mise à jour de CheatRunner ?</h3>
+    <p>L’auteur exige trois choses <strong>avant</strong> que vous n’envoyiez une nouvelle version (fournie : 0.18, port&nbsp;9999) :</p>
+    <ul>
+      <li>Sur la console, supprimez tout dans <code>/data/cheatrunner</code> sauf les dossiers <code>cheats</code> et <code>patches</code> – avant le premier démarrage de la nouvelle version, pas après.</li>
+      <li>Supprimez de la PS5 l’ancien PKG de CheatRunner (la vignette de l’écran d’accueil).</li>
+      <li>Videz le cache du navigateur : <em>Paramètres → Système → Navigateur → Effacer le cache</em> (<em>Settings → System → Browser → Clear Cache</em>).</li>
+    </ul>
+    <p>Envoyez ensuite le nouveau <code>CheatRunner_v0.18.1.elf</code> comme d’habitude. Le programme ne supprime rien de lui-même sur la console.</p>
+    <p class="hinweis">Ces étapes proviennent du README de l’auteur (section « Updating CheatRunner »).</p>
+  </div>
+
+  <div class="frage">
+    <h3>Le programme modifie-t-il quelque chose sur ma console ?</h3>
+    <p>Uniquement ce que vous déclenchez : il envoie des payloads (ils fonctionnent jusqu’au prochain redémarrage de la console) et transfère des fichiers par FTP vers les emplacements que vous choisissez. Dans la bibliothèque, il ne renomme rien sur la PS5, il ne lit que la liste des jeux installés, et il n’écrit <strong>rien dans les bases de données système de la console</strong>.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 6 -->
+<section class="abschnitt" id="a6">
+  <h2><span class="nr">6</span>Problèmes et aide</h2>
+
+  <div class="frage">
+    <h3>DÉMARRER reste grisé.</h3>
+    <p>Vérifiez que les dossiers source et de destination sont choisis ; le dossier temporaire peut rester vide – le programme travaille alors, sous Windows, dans un dossier nommé « Temp - Dump-Image Converter » à la racine du lecteur système (généralement C:). La tâche&nbsp;8 n’a pas besoin de dossier de destination. Si la source est refusée, la tâche choisie ne convient pas au type de fichier – utilisez alors la tâche&nbsp;6 ou vérifiez la source avec la tâche&nbsp;8.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Message « sce_sys/param.json manquant » ou « param.json n’a pas de Content ID ».</h3>
+    <p><strong>param.json manquant :</strong> le jeu est incomplet. Avec <em>Oui</em>, le programme crée un <code>param.json</code> valide et poursuit la construction ; avec <em>Non</em>, il s’arrête – dans ce cas, il vaut mieux créer une nouvelle sauvegarde à partir de l’original.</p>
+    <p><strong>Content ID manquant :</strong> le titre et le content ID ne figurent dans aucun fichier d’une sauvegarde, seulement l’ID de titre. Avec <em>Rechercher les métadonnées manquantes en ligne</em> (paramètres), le programme récupère les deux. Sinon, il inscrit un espace réservé (<code>UP0000-&lt;Title-ID&gt;_00-…</code>) ; l’ancien fichier est conservé sous le nom <code>param.json.alt</code>. Pour les mises à jour et les DLC, le véritable content ID doit être saisi.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Message « eboot.bin introuvable dans le dossier source ».</h3>
+    <p>Une image doit contenir le jeu directement à sa racine : <code>eboot.bin</code> et <code>sce_sys/param.json</code> se trouvent dans le dossier lui-même, pas dans un sous-dossier – c’est ce qu’exige ShadowMount+. Le programme le vérifie avant la construction (pour <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> et <code>.ffpkg</code>) et s’arrête dans le cas contraire, au lieu que le problème n’apparaisse que sur la console. Le plus souvent, le dossier choisi est un niveau trop haut – choisissez le dossier dans lequel <code>eboot.bin</code> se trouve directement.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment obtenir rapidement de l’aide en cas d’erreur ?</h3>
+    <p>Appuyez sur <strong>DIAGNOSTIC</strong>. Le rapport contient la version, le système, les dernières lignes du journal et une évaluation de l’affichage et, depuis v1.9.90, un contrôle de fonctionnement avec un verdict global (erreurs dans le journal, programmes manquants, dossiers de travail résiduels et lecteurs montés) ; les identifiants sont automatiquement masqués. Il est enregistré sous le nom <code>Diagnosebericht_&lt;date&gt;.txt</code> dans le dossier de paramètres. Mentionnez aussi la tâche choisie, le type de source et le dernier message visible – des chemins privés ou des données personnelles seulement s’ils sont nécessaires au dépannage.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Qu’est-ce que le « doctor » ?</h3>
+    <p>La vérification de l’environnement répond en quelques secondes aux causes les plus courantes : chemins longs sous Windows, système de fichiers des dossiers (FAT32 s’arrête à 4&nbsp;Go par fichier), espace libre et droit d’écriture, démarrage des programmes fournis, intégrité du fichier de paramètres. Lancez-la dans le dossier du programme – sous Windows, dans une invite de commandes ouverte <strong>en tant qu’administrateur</strong> (<code>X.Y.Z</code> représente votre version) :</p>
+    <pre><code>PS5_Dump_Image_Converter_vX.Y.Z.exe --doktor "E:\PS5_Temp" "E:\Target"</code></pre>
+    <p>Les deux arguments de dossier sont facultatifs. <code>[ ok ]</code> signifie en ordre, <code>[ !! ]</code> une remarque, <code>[FEHL]</code> une véritable erreur, <code>[ -- ]</code> sans objet. La vérification ne se connecte pas à Internet ; les mêmes informations apparaissent dans la fenêtre DIAGNOSTIC.</p>
+  </div>
+
+  <div class="frage">
+    <h3>L’interface est trop petite ou trop grande.</h3>
+    <p>Sous <strong>PARAMÈTRES</strong> → <em>Affichage : mise à l’échelle et résolution</em>, vous réglez à la main la mise à l’échelle (curseur, de 100 à 300&nbsp;% au maximum, limitée par la largeur de l’écran) et la résolution de l’écran. Validez avec <strong>Appliquer et redémarrer</strong> ; <strong>Réinitialiser en automatique</strong> rétablit la valeur par défaut.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment changer le thème, l’image d’arrière-plan et la langue ?</h3>
+    <ul>
+      <li><strong>THÈME :</strong> sept palettes de couleurs (Futuriste, Sombre, Clair, Métallique, Graphite calme, Bleu nuit, Clair et net) ; après APPLIQUER, le programme redémarre.</li>
+      <li><strong>PARAMÈTRES :</strong> 20 images fournies chacune pour la zone principale et pour la barre latérale, ou une image personnelle, ainsi que des curseurs pour la transparence, la luminosité et le contraste. Les images claires sont destinées au thème Clair.</li>
+      <li><strong>DE / EN / ES / IT / FR :</strong> le bouton de langue affiche la langue active ; chaque clic fait passer toute l’interface, journal compris, à la suivante (allemand, anglais, espagnol, italien, français). Cette FAQ existe en allemand, en anglais, en espagnol, en italien et en français : le bouton FAQ l’ouvre dans la langue de l’interface du programme (de, en, es, it, fr).</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>Le programme envoie-t-il des données sur Internet ?</h3>
+    <p>De lui-même, uniquement une recherche de métadonnées manquantes : si le titre, l’éditeur ou la catégorie manquent, l’<strong>ID de titre</strong> du jeu est envoyé à store.playstation.com ainsi qu’à prosperopatches.com (PS5) ou orbispatches.com (PS4). Les détails récupérés sont conservés 30 jours. Par défaut, cette option est activée sous Windows et Linux et désactivée sur Mac ; vous pouvez la modifier dans les paramètres sous <em>Métadonnées en ligne</em>. Au démarrage, le programme recherche aussi la PS5 dans votre propre réseau – cela ne quitte pas votre réseau domestique. Les téléchargements et mises à jour ne s’exécutent que lorsque vous appuyez sur le bouton.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Où trouver davantage d’aide ?</h3>
+    <ul>
+      <li>Cette <strong>FAQ</strong> s’ouvre avec le bouton <strong>FAQ</strong> en haut, à gauche de <strong>MANUEL UTILISATEUR</strong> – dans la langue de l’interface du programme (de, en, es, it, fr).</li>
+      <li>Le <strong>manuel utilisateur</strong> s’ouvre avec le bouton du même nom – il est fourni avec le programme, aucune connexion Internet n’est nécessaire. Le manuel est actuellement rédigé en allemand. Le manuel et la FAQ sont aussi fournis au format PDF à côté du fichier du programme.</li>
+      <li>Les guides sur les asset packs et sur ShadowMount+ (ancienne et nouvelle méthode) s’ouvrent avec les boutons <strong>Guide</strong> et <strong>Guide LZ4 et Asset Packs</strong>.</li>
+      <li>Ce qui a changé dans chaque version est répertorié dans <code>CHANGELOG.md</code>.</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span>PS5 Dump &amp; Image Converter – Foire aux questions <strong>v1.9.90</strong></span>
+  <span>État au 5 novembre 2026 · Uniquement pour les contenus que vous possédez et avez acquis légalement</span>
+</footer>
+
+</body>
+</html>

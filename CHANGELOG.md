@@ -13,6 +13,9 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Neu:** Asset-Packs lassen sich auch mit zstd statt LZ4 packen (nur für AMPR EMU NG). Eigene TOML-Regeln legen fest, was gepackt wird: entweder neben dem Dump (`<Ordnername>_ampr_pack.toml`) oder als feste Regeldatei in den Einstellungen.
 
 - **Aktualisiert:** AMPR EMU NG 0.3.1 (stille und Debug-Fassung): Days Gone Remastered hängt nicht mehr im Ladebildschirm, und Sonic x Shadow Generations stürzt beim Start nicht mehr ab. Die NG-Fassungen 0.3.1, 0.3.0 und 0.2.0 stehen in den Listen direkt unter 0.4.2.1.
+- **Aktualisiert:** PS5Upload 11.2.4, PS4Mount 0.7.3 und PS5 Cooling & System Center – Pro 1.76.9.
+- **Neu:** Die FAQ gibt es jetzt auch auf Spanisch, Italienisch und Französisch; der Knopf FAQ öffnet sie in der Sprache der Oberfläche (bisher nur Deutsch und Englisch, sonst Deutsch).
+- **Geändert:** Die Anleitung zur neuen fakelib-Methode von ShadowMount+ ist mit 1.7beta11 abgeglichen (Log-Zeilen, Meldungen, neue Schalter `fakelib_mode`, Umgang mit `libkernel.sprx`), README, Handbuch und FAQ nennen alle fünf Oberflächensprachen.
 
 ## v1.9.90 – 05.11.2026
 

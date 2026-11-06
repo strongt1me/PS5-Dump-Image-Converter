@@ -37,6 +37,9 @@ DOKUMENTE = (
     ("BENUTZERHANDBUCH.html", "BENUTZERHANDBUCH.pdf", ("h2", "h3")),
     ("FAQ.html", "FAQ.pdf", ("h2", "h3")),
     ("FAQ_EN.html", "FAQ_EN.pdf", ("h2", "h3")),
+    ("FAQ_ES.html", "FAQ_ES.pdf", ("h2", "h3")),
+    ("FAQ_IT.html", "FAQ_IT.pdf", ("h2", "h3")),
+    ("FAQ_FR.html", "FAQ_FR.pdf", ("h2", "h3")),
 )
 
 

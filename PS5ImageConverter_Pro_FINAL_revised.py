@@ -5392,8 +5392,8 @@ class PS5ConverterGUI:
 
         # FAQ. Direkt nach dem Handbuch-Knopf gepackt und damit unmittelbar
         # links von ihm (Wunsch vom 04.10.2026: "links neben den Knopf
-        # Benutzerhandbuch"). Oeffnet je nach Sprache FAQ.html oder
-        # FAQ_EN.html (:meth:`_open_faq`).
+        # Benutzerhandbuch"). Oeffnet je nach Sprache FAQ.html, FAQ_EN.html,
+        # FAQ_ES.html, FAQ_IT.html oder FAQ_FR.html (:meth:`_open_faq`).
         self._btn_faq_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.faq"),
@@ -6351,15 +6351,17 @@ class PS5ConverterGUI:
         # Meldung auch den Grund.
         self._oeffnen_oder_melden(pfad)
 
-    #: Die FAQ je Sprache der Oberflaeche. Beide liegen wie das Handbuch im
+    #: Die FAQ je Sprache der Oberflaeche (alle fuenf). Sie liegen wie das Handbuch im
     #: Projektordner und werden in allen drei .spec eingebettet; als PDF gehen
     #: sie ins Auslieferungsbuendel (Build_EXE.ps1).
-    _FAQ_DATEIEN: dict[str, str] = {"de": "FAQ.html", "en": "FAQ_EN.html"}
+    _FAQ_DATEIEN: dict[str, str] = {"de": "FAQ.html", "en": "FAQ_EN.html", "es": "FAQ_ES.html",
+                                    "it": "FAQ_IT.html", "fr": "FAQ_FR.html"}
 
     def _open_faq(self) -> None:
         """Öffnet die mitgelieferte FAQ in der eingestellten Sprache – wie :meth:`_open_benutzerhandbuch`.
 
-        Bei englischer Oberfläche ``FAQ_EN.html``, sonst ``FAQ.html`` (Wunsch
+        Je Sprache der Oberfläche ``FAQ.html``, ``FAQ_EN.html``, ``FAQ_ES.html``,
+        ``FAQ_IT.html`` oder ``FAQ_FR.html``, bei unbekannter Sprache Deutsch (Wunsch
         vom 04.10.2026: "Die FAQ soll auch in der Englischen Version
         anklickbar sein"). Fehlt die Datei, nennt eine Meldung ihren Namen,
         statt still nichts zu tun.
