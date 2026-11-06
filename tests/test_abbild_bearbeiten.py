@@ -137,6 +137,16 @@ class LoeschenTests(_Basis):
         self.assertFalse((self.w / "Media" / "a.dat").exists())
         self.assertEqual([ab.Aenderung("loeschen", "Media/a.dat")], p.aenderungen)
 
+    def test_loeschen_meldet_vor_dem_loeschen(self) -> None:
+        gemeldet: list[tuple[str, bool]] = []
+        ab.loeschen(self.w_s, "Media/a.dat",
+                    melden=lambda rel: gemeldet.append((rel, (self.w / "Media" / "a.dat").exists())))
+        self.assertEqual([("Media/a.dat", True)], gemeldet, "gemeldet wird, solange die Datei noch da ist")
+        # Abgelehntes (geschuetzt) meldet nichts - es wird ja nichts geloescht
+        gemeldet.clear()
+        self.assertEqual("bearbeiten.geschuetzt", self.grund(ab.loeschen, self.w_s, "eboot.bin", melden=gemeldet.append))
+        self.assertEqual([], gemeldet)
+
     def test_ordner_loeschen(self) -> None:
         ab.loeschen(self.w_s, "Media")
         self.assertFalse((self.w / "Media").exists())

@@ -424,6 +424,11 @@ class RegelTests(_Ordner):
         with self.assertRaises(z.ZstdPackFehler):
             z.regeln_laden(pfad)
 
+    def test_die_auswahl_meldet_den_durchgang_vorher(self) -> None:
+        gemeldet: list[str] = []
+        z.dateien_auswaehlen(self.spiel, melden=gemeldet.append)
+        self.assertEqual([os.path.abspath(self.spiel)], gemeldet)
+
     def test_auswahl_mit_regeln_laesst_systemdateien_trotzdem_lose(self) -> None:
         r = self._regeln('[pack]\ndefault_action="compress"\n[[rule]]\naction="loose"\ninclude="Media/*"\n')
         a = z.dateien_auswaehlen(self.spiel, regeln=r)

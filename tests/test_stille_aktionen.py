@@ -96,6 +96,10 @@ BEKANNT_STUMM: set[tuple[str, str, str]] = {
     # RESTE_ZEITBUDGET_S hart auf 3 s begrenzt (danach "mind. X" im Bericht), geschieht nur, wenn der Anwender den
     # Bericht erzeugt, und das Ergebnis ist der Bericht selbst - eine eigene Meldung waere Laerm.
     ("betriebsdiagnose.py", "_groesse", "os.walk"),
+    # zstd-Packweg (06.11.2026): ``lose_bytes`` zaehlt die Groesse der loesen Dateien fuer den Platzbedarf und laeuft
+    # einmal, unmittelbar nach ``dateien_auswaehlen`` - das den Durchgang meldet ("Spielordner wird durchgesehen").
+    # Gemessen am Spiel Teardown (5.103 Dateien): 0,65 s warm, 7 s kalt; ein zweiter Durchgang laeuft dann aus dem Cache.
+    ("ampr_zstdpack.py", "lose_bytes", "os.walk"),
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_art_wechseln", "shutil.move"),
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_do_build", "os.walk"),
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_doktor_werkzeuge_starten", "os.walk"),

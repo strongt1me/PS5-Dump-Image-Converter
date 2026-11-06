@@ -20,6 +20,7 @@ import re
 import shutil
 import tempfile
 from dataclasses import dataclass, field
+from typing import Callable
 
 #: Dateien, ohne die ein Spiel nicht startet. Vergleich ohne Gross-/Kleinschreibung.
 GESCHUETZT = ("eboot.bin", "sce_sys/param.json")
@@ -199,8 +200,13 @@ def _enthaelt_geschuetztes(wurzel: str, rel: str) -> bool:
     return any(g.startswith(praefix) for g in GESCHUETZT)
 
 
-def loeschen(wurzel: str, rel: str, *, erzwingen: bool = False, protokoll: Protokoll | None = None) -> None:
-    """Loescht eine Datei oder einen ganzen Ordner (endgueltig, im entpackten Arbeitsordner)."""
+def loeschen(wurzel: str, rel: str, *, erzwingen: bool = False, protokoll: Protokoll | None = None,
+             melden: Callable[[str], None] | None = None) -> None:
+    """Loescht eine Datei oder einen ganzen Ordner (endgueltig, im entpackten Arbeitsordner).
+
+    ``melden(rel)`` wird vor dem Loeschen gerufen: Ein grosser Ordner braucht Sekunden (5.000 kleine Dateien: 3,3 s),
+    und das Fenster soll das anzeigen, statt stumm zu haengen.
+    """
     sauber = rel_normalisieren(rel)
     if not sauber:
         raise BearbeitenFehler("bearbeiten.wurzel")
@@ -210,6 +216,8 @@ def loeschen(wurzel: str, rel: str, *, erzwingen: bool = False, protokoll: Proto
         raise BearbeitenFehler("bearbeiten.nicht_gefunden", sauber)
     if os.path.isdir(pfad) and _enthaelt_geschuetztes(wurzel, sauber) and not erzwingen:
         raise BearbeitenFehler("bearbeiten.geschuetzt", sauber)
+    if melden is not None:
+        melden(sauber)
     try:
         if os.path.isdir(pfad):
             shutil.rmtree(pfad)

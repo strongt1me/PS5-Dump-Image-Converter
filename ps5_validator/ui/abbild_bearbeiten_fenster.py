@@ -306,7 +306,15 @@ class BearbeitenFenster:
         if not messagebox.askyesno(self.t("titlebar.abbild_bearbeiten"),
                                    self.t("bearbeiten.frage_loeschen", name=rel), icon="warning", parent=self.win):
             return
-        self._aendern(lambda: (ab.loeschen(self.ordner, rel, protokoll=self.protokoll), "")[1])
+        self._aendern(lambda: (ab.loeschen(self.ordner, rel, protokoll=self.protokoll, melden=self._loescht), "")[1])
+
+    def _loescht(self, rel: str) -> None:
+        """Zeigt vor dem Loeschen, was geschieht - ein grosser Ordner braucht Sekunden im Oberflaechenfaden."""
+        self._status(self.t("bearbeiten.loescht", name=rel))
+        try:
+            self.win.update_idletasks()
+        except tk.TclError:
+            pass
 
     def _umbenennen(self) -> None:
         rel = self._gewaehlt_pruefen()

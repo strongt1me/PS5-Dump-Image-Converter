@@ -768,7 +768,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.90"
+APP_VERSION = "v1.9.91"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -36486,7 +36486,8 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t("ampr_zstd.regeln_ignoriert",
                                                 keys=", ".join(regeln.ignoriert[:12])))
             gewaehlt = ampr_zstdpack.dateien_auswaehlen(
-                ordner, abbruch=lambda: not self.is_running, regeln=regeln)
+                ordner, abbruch=lambda: not self.is_running, regeln=regeln,
+                melden=lambda pfad: self._append_to_log(self._t("ampr_zstd.suche", path=pfad)))
             self._append_to_log(self._t(
                 "ampr_zstd.auswahl", packed=len(gewaehlt.gepackt), loose=len(gewaehlt.lose),
                 size=self._fmt_bytes(gewaehlt.gepackte_bytes)))

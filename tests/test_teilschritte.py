@@ -159,7 +159,8 @@ class ProgrammTests(unittest.TestCase):
 
     def test_die_ffpkg_pruefungen_melden_ihren_stand(self) -> None:
         quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
-        self.assertEqual(2, quelle.count("abbruch=lambda: not self.is_running, fortschritt="))
+        # 2 ffpkg-Pruefungen (Staging und Ziel) + 2 Aufrufe im zstd-Packweg (packen und pruefen, seit 05.11.2026)
+        self.assertEqual(4, quelle.count("abbruch=lambda: not self.is_running, fortschritt="))
         for schluessel in ("progress.teil.dateizahl", "progress.teil.pruefsumme_staging",
                            "progress.teil.uebertragen", "progress.teil.pruefsumme_ziel"):
             self.assertIn('self._teil_melden("teilschritt", self._t("%s"))' % schluessel, quelle)

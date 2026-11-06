@@ -327,14 +327,19 @@ def regeln_laden(pfad: str) -> Regeln:
 
 
 def dateien_auswaehlen(app0: str, abbruch: Callable[[], bool] = lambda: False,
-                       regeln: "Regeln | None" = None) -> Auswahl:
+                       regeln: "Regeln | None" = None, melden: "Callable[[str], None] | None" = None) -> Auswahl:
     """Geht den Spielordner durch und teilt die Dateien in gepackt / lose.
+
+    ``melden(pfad)`` wird vor dem Durchgang gerufen: Bei einem grossen Spiel braucht schon das Auflisten Sekunden
+    (5.103 Dateien auf einem Laufwerk: 0,65 s warm, 7 s kalt; Ghost of Yotei mit 84.218 Dateien rund 20 s kalt).
 
     Ohne ``regeln`` wird alles gepackt, was nicht Systemdatei oder leer ist. Mit ``regeln`` entscheiden diese
     ueber die uebrigen Dateien; Systemdateien, Laufzeitdateien, Packdateien und leere Dateien bleiben immer lose.
     """
     wurzel = os.path.abspath(app0)
     ergebnis = Auswahl()
+    if melden is not None:
+        melden(wurzel)
     for ordner, unter, dateien in os.walk(wurzel):
         if abbruch():
             raise ZstdPackFehler("ampr_pack.abgebrochen")

@@ -164,6 +164,21 @@ class FensterTests(unittest.TestCase):
         cls.app = haupt.PS5ConverterGUI(_WURZEL)
         cls.app._current_language = "de"
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        # Als Administrator haengt der Programmaufbau eine Ablage-Prozedur (ablegen_admin) an die gemeinsame Tk-Wurzel.
+        # Diese Datei laeuft alphabetisch vor test_ablegen_admin, dessen Anker "noch nichts eingehaengt" erwartet
+        # (Volllauf 06.11.2026 erhoeht: dort rot). Deshalb die alten Prozeduren zurueck und den Zustand freigeben.
+        zustand = getattr(_WURZEL, "_ablegen_admin_zustand", None)
+        if zustand is not None and sys.platform == "win32":
+            import ctypes
+            user32 = ctypes.windll.user32
+            user32.SetWindowLongPtrW.restype = ctypes.c_void_p
+            user32.SetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+            for hwnd, vorher in zustand["alte"].items():
+                user32.SetWindowLongPtrW(hwnd, -4, vorher)       # GWL_WNDPROC
+            del _WURZEL._ablegen_admin_zustand
+
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

@@ -2,24 +2,20 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.90):** Die PKG/FPKG-Seite ist neu geordnet, AMPR EMU NG 0.3.0 steht direkt unter 0.4.2.1 in der Liste, BACKPORT hat zwei neue Haken, ABBRECHEN und eingehängte Laufwerke arbeiten sauberer, und viele Payloads sind aktualisiert.
+> **Kurz zum aktuellen Stand (v1.9.91):** Archive lassen sich direkt als Quelle wählen, ABBILD BEARBEITEN ändert einzelne Dateien in einem Abbild, Asset-Packs gibt es auch mit zstd, und Handbuch, Anleitungen, FAQ und README liegen in Deutsch, Englisch, Spanisch, Italienisch und Französisch vor.
 
 ---
 
-## Unveröffentlicht (nach v1.9.90)
+## v1.9.91 – 06.11.2026
 
-- **Neu:** Archive (.zip, .7z, .rar) lassen sich direkt als Quelle wählen – in Aufgabe 1, in der Sammelkonvertierung, in Aufgabe 5 und auf der Kommandozeile (`--archiv-passwort`). Das Programm entpackt sie selbst, erkennt den Spielordner darin und räumt den Temp-Ordner danach wieder auf.
-- **Neu:** WEITERE TOOLS › ABBILD BEARBEITEN: Ein Abbild (.ffpfsc, .ffpfs, .ffpkg, .exFAT) wird entpackt, einzelne Dateien lassen sich ersetzen, umbenennen, löschen oder hinzufügen, und das Ergebnis wird als neues Abbild `<Name>_bearbeitet` gespeichert. Das Original bleibt unberührt.
-- **Neu:** Asset-Packs lassen sich auch mit zstd statt LZ4 packen (nur für AMPR EMU NG). Eigene TOML-Regeln legen fest, was gepackt wird: entweder neben dem Dump (`<Ordnername>_ampr_pack.toml`) oder als feste Regeldatei in den Einstellungen.
-
-- **Neu:** Die eigenen Packregeln (`_ampr_pack.toml`) für zstd lesen jetzt auch `include_from` und `exclude_from`: Muster-Listen in Textdateien neben der Regeldatei, wie in ps5-dump-forge 0.5.4.
-- **Aktualisiert:** AMPR EMU NG 0.3.2 (stille und Debug-Fassung): Days Gone Remastered hängt nicht mehr im Ladebildschirm, Sonic x Shadow Generations stürzt beim Start nicht mehr ab, und Resonance: A Plague Tale Legacy läuft als voll gepackte Installation (bisher schwarzer Bildschirm). Die NG-Fassungen 0.3.2, 0.3.1, 0.3.0 und 0.2.0 stehen in den Listen direkt unter 0.4.2.1.
-- **Aktualisiert:** zlib-ng 1.1.0 (die Bibliothek, mit der MkPFS die Blöcke eines `.ffpfsc` packt). Auf Stufe 9 entstehen damit in einzelnen Blöcken andere Bytes als bisher; an der PS5 geprüft: Das Abbild startet und die Konsole liest die betroffenen Dateien unverändert zurück.
+- **Neu:** Archive (.zip, .7z, .rar) lassen sich direkt als Quelle wählen – in Aufgabe 1, in der Sammelkonvertierung, in Aufgabe 5 und auf der Kommandozeile (`--archiv-passwort`); das Programm entpackt sie selbst und räumt danach auf.
+- **Neu:** WEITERE TOOLS › ABBILD BEARBEITEN entpackt ein Abbild (.ffpfsc, .ffpfs, .ffpkg, .exFAT), lässt Dateien ersetzen, umbenennen, löschen oder hinzufügen und speichert das Ergebnis als neues Abbild `<Name>_bearbeitet`; das Original bleibt unberührt.
+- **Neu:** Asset-Packs lassen sich auch mit zstd statt LZ4 packen (nur für AMPR EMU NG); eigene TOML-Regeln (`_ampr_pack.toml` neben dem Dump oder als feste Regeldatei in den Einstellungen, auch mit `include_from` und `exclude_from`) bestimmen, was gepackt wird.
+- **Neu:** Benutzerhandbuch, die drei Anleitungen, FAQ und README gibt es auch auf Englisch, Spanisch, Italienisch und Französisch; die Knöpfe öffnen die Fassung der Oberflächensprache (maschinell übersetzt, nicht von Muttersprachlern geprüft).
+- **Geändert:** Die Anleitung zur neuen fakelib-Methode von ShadowMount+ ist mit 1.7beta11 abgeglichen (Log-Zeilen, Meldungen, `fakelib_mode`, `libkernel.sprx`).
+- **Aktualisiert:** AMPR EMU NG 0.3.2 (läuft jetzt auch Resonance: A Plague Tale Legacy als voll gepackte Installation; 0.3.1: Days Gone Remastered und Sonic x Shadow Generations).
+- **Aktualisiert:** zlib-ng 1.1.0 für MkPFS; auf Stufe 9 entstehen in einzelnen Blöcken andere Bytes, die PS5 liest sie im Test unverändert.
 - **Aktualisiert:** PS5Upload 11.2.4, PS4Mount 0.7.3 und PS5 Cooling & System Center – Pro 1.76.9.
-- **Neu:** Die FAQ gibt es jetzt auch auf Spanisch, Italienisch und Französisch; der Knopf FAQ öffnet sie in der Sprache der Oberfläche (bisher nur Deutsch und Englisch, sonst Deutsch).
-- **Neu:** Das Benutzerhandbuch und die drei Anleitungen (Asset-Packs, ShadowMount+ alte und neue Methode) gibt es jetzt auch auf Englisch, Spanisch, Italienisch und Französisch. Die Knöpfe BENUTZERHANDBUCH und „LZ4 & Asset Pack Anleitung“ sowie die ShadowMount+-Anleitungen öffnen die Fassung in der Sprache der Oberfläche; fehlt sie, kommt die deutsche. Die Übersetzungen sind maschinell erstellt und nicht von Muttersprachlern geprüft.
-- **Neu:** Die README gibt es auch auf Englisch, Spanisch, Italienisch und Französisch (`README_EN.md`, `README_ES.md`, `README_IT.md`, `README_FR.md`); oben in jeder Fassung führt eine Sprachzeile zu den anderen.
-- **Geändert:** Die Anleitung zur neuen fakelib-Methode von ShadowMount+ ist mit 1.7beta11 abgeglichen (Log-Zeilen, Meldungen, neue Schalter `fakelib_mode`, Umgang mit `libkernel.sprx`), README, Handbuch und FAQ nennen alle fünf Oberflächensprachen.
 
 ## v1.9.90 – 05.11.2026
 
