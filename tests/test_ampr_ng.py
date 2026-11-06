@@ -44,6 +44,8 @@ NG_DATEIEN = {
     "0.3.0 ng-debug": "d6655263b85ecf27fc12736a9a290088be34f1d184164747160b1d14768dcb6a",
     "0.3.1 ng": "bdd93ce2fbcc2d0986b16d77604cc0770d994ccc124b9051ba9f53aeac39f56f",          # v0.3.1, 05.11.2026
     "0.3.1 ng-debug": "b767fdf25b341e0fb52c5c758f58d2d1ac71251312d5eda43d61ec6ae0d57ce9",
+    "0.3.2 ng": "9a8f553a68d4e6e6be11bd9f8d5519b5faa68560761881966abff1dd65bf19f7",          # v0.3.2, 06.11.2026
+    "0.3.2 ng-debug": "5e4f1fcbfb83c9beb06d892dcd807a7f077bd54aa57cefa1d712b6f067ddae5d",
 }
 
 
@@ -80,17 +82,17 @@ class BestandTests(unittest.TestCase):
         gui = G.__new__(G)
         eintraege = [e for e in gui._ampr_scan_einen_speicher(str(BESTAND)) if e["lib"] == "libSceAmpr.sprx"]
         paare = [(e["version"], e["variant"]) for e in eintraege]
-        for fassung in ("0.2.0", "0.3.0", "0.3.1"):
+        for fassung in ("0.2.0", "0.3.0", "0.3.1", "0.3.2"):
             self.assertIn((fassung, "ng"), paare)
             self.assertIn((fassung, "ng-debug"), paare)
         self.assertEqual(("0.4.2.1", "test-nopack"), paare[0], "die oberste (= Vorgabe) bleibt drakmor")
         # Nutzerwunsch 05.11.2026: die NG-Fassungen stehen unterhalb von 0.4.2.1 (mit seinen drei Bauarten),
         # neueste zuerst, und vor den aelteren Fassungen von drakmor.
         self.assertEqual({"0.4.2.1"}, {v for v, _ in paare[:3]})
-        self.assertEqual([("0.3.1", "ng"), ("0.3.1", "ng-debug"), ("0.3.0", "ng"), ("0.3.0", "ng-debug"),
-                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:9])
-        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[9:]), "danach nur noch Fassungen von drakmor")
-        self.assertEqual("0.3.6.6", paare[9][0])
+        self.assertEqual([("0.3.2", "ng"), ("0.3.2", "ng-debug"), ("0.3.1", "ng"), ("0.3.1", "ng-debug"),
+                          ("0.3.0", "ng"), ("0.3.0", "ng-debug"), ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:11])
+        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[11:]), "danach nur noch Fassungen von drakmor")
+        self.assertEqual("0.3.6.6", paare[11][0])
 
 
 class BeschriftungTests(unittest.TestCase):
