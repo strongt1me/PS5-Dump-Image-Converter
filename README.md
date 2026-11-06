@@ -27,6 +27,8 @@ und die Konsole gleich mit bedienen – unter Windows, Linux und macOS.**
 
 </div>
 
+**Deutsch: [README.md](README.md) · English: [README_EN.md](README_EN.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
+
 Das Programm wandelt Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-basierte `.ffpkg`-Dateien
 ineinander um, liest und baut PS4- und PS5-Pakete, baut AMPR EMU und BACKPORT ein und bringt
 Werkzeuge für die Konsole mit: Payloads senden, Weboberflächen im Programm öffnen, die Spielbibliothek
@@ -228,6 +230,7 @@ oben in der Titelleiste, in der Sprache der Oberfläche.
 | **Benutzerhandbuch** | Bedienung in einfacher Sprache: alle Aufgaben, die Werkzeugleiste, typische Fehler, Besonderheiten unter Linux und macOS | [HTML](BENUTZERHANDBUCH.html) · [PDF](BENUTZERHANDBUCH.pdf) |
 | **FAQ** | die häufigsten Fragen kurz beantwortet | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
 | **FAQ (English)** | the most common questions, answered briefly | [HTML](FAQ_EN.html) · [PDF](FAQ_EN.pdf) |
+| **README (EN · ES · IT · FR)** | diese Seite in vier weiteren Sprachen | [English](README_EN.md) · [Español](README_ES.md) · [Italiano](README_IT.md) · [Français](README_FR.md) |
 | **FAQ (Español)** | las preguntas más frecuentes, con respuestas breves | [HTML](FAQ_ES.html) · [PDF](FAQ_ES.pdf) |
 | **FAQ (Italiano)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_IT.html) · [PDF](FAQ_IT.pdf) |
 | **FAQ (Français)** | les questions les plus fréquentes, avec des réponses brèves | [HTML](FAQ_FR.html) · [PDF](FAQ_FR.pdf) |
