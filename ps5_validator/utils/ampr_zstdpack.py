@@ -174,22 +174,35 @@ class Regeln:
     Jede ``[[rule]]`` hat ``action`` (Vorgabe compress), ``include`` (Glob oder Liste, Vorgabe ``**``) und ``exclude``;
     die **letzte** treffende Regel gewinnt. Globs sind ``fnmatchcase`` (gross/klein beachtet, ``*`` trifft auch ``/``).
     Bei zstd packt ``store`` wie ``compress`` (ein Chunk, den zstd nicht verkleinert, bleibt ohnehin roh); Blockgroesse,
-    ``hot`` und ``layout`` haben keine Wirkung. Alle anderen Schluessel werden ignoriert, wie bei Forge.
+    ``hot`` und ``layout`` haben keine Wirkung. ``include_from`` / ``exclude_from`` (Musterdateien neben der Regeldatei)
+    gelten wie bei Forge ab v0.5.4. Alle anderen Schluessel werden ignoriert, wie bei Forge.
     """
 
     standard: str = "loose"
     regeln: "list[tuple[str, list[str], list[str]]]" = field(default_factory=list)
     ignoriert: list[str] = field(default_factory=list)
     quelle: str = ""
+    #: Aus den Regeln abgeleitet (erst beim ersten :meth:`aktion` gebaut): je Regel Aktion, genaue Pfade (Menge)
+    #: und Globs getrennt, damit lange Mustertexte aus ``include_from`` nicht je Datei durchprobiert werden.
+    _vorbereitet: Any = field(default=None, repr=False, compare=False)
 
     def aktion(self, rel: str) -> str:
         import fnmatch
+        if self._vorbereitet is None:
+            def teilen(muster: list[str]) -> "tuple[set[str], list[str]]":
+                exakt = {m for m in muster if not _hat_platzhalter(m)}
+                return exakt, [m for m in muster if _hat_platzhalter(m)]
+            self._vorbereitet = [(a, *teilen(e), *teilen(x)) for a, e, x in self.regeln]
         ergebnis = self.standard
-        for aktion, einschluss, ausschluss in self.regeln:
-            if any(fnmatch.fnmatchcase(rel, m) for m in einschluss) and \
-                    not any(fnmatch.fnmatchcase(rel, m) for m in ausschluss):
+        for aktion, ein_exakt, ein_globs, aus_exakt, aus_globs in self._vorbereitet:
+            if (rel in ein_exakt or any(fnmatch.fnmatchcase(rel, m) for m in ein_globs)) and \
+                    not (rel in aus_exakt or any(fnmatch.fnmatchcase(rel, m) for m in aus_globs)):
                 ergebnis = aktion
         return ergebnis
+
+
+def _hat_platzhalter(muster: str) -> bool:
+    return any(c in muster for c in "*?[")
 
 
 def _muster_liste(wert: Any, name: str) -> list[str]:
@@ -198,6 +211,71 @@ def _muster_liste(wert: Any, name: str) -> list[str]:
     if not isinstance(wert, list) or not all(isinstance(m, str) for m in wert):
         raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: %s muss ein Muster oder eine Liste von Mustern sein" % name)
     return [m.replace("\\", "/").lstrip("/") for m in wert]
+
+
+#: Grenzen fuer Musterdateien (``include_from`` / ``exclude_from``), wie bei ps5-dump-forge v0.5.4: je Datei 1 MiB,
+#: zusammen 16 MiB und 200.000 Muster, davon hoechstens 10.000 mit Platzhalter (Globs werden je Datei durchprobiert).
+MUSTERDATEI_MAX_BYTES = 1024 * 1024
+MUSTER_MAX_BYTES_GESAMT = 16 * 1024 * 1024
+MUSTER_MAX_ANZAHL = 200_000
+MUSTER_MAX_GLOBS = 10_000
+
+
+@dataclass
+class _MusterZaehler:
+    bytes_gesamt: int = 0
+    muster: int = 0
+    globs: int = 0
+
+
+def _muster_dateien(ordner: str, wert: Any, name: str, nummer: int, zaehler: _MusterZaehler) -> list[str]:
+    """Liest die Musterdateien einer Regel. Namen liegen relativ zum Ordner der Regeldatei und bleiben darin.
+
+    Ein Muster je Zeile (getrimmt); leere Zeilen und Zeilen mit ``#`` am Anfang fallen weg. Absolute Namen, ``.``,
+    ``..``, ``\\`` und ``:`` sind verboten, ebenso Verknuepfungen, die aus dem Ordner hinausfuehren.
+    """
+    if wert is None:
+        return []
+    if isinstance(wert, str):
+        wert = [wert]
+    if not isinstance(wert, list) or not all(isinstance(n, str) for n in wert):
+        raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: %s (Regel %d) muss ein Dateiname oder eine Liste sein"
+                             % (name, nummer))
+    wurzel = os.path.realpath(ordner)
+    ergebnis: list[str] = []
+    for datei in wert:
+        teile = datei.split("/")
+        if (not datei or "\\" in datei or ":" in datei or datei.startswith("/")
+                or any(t in ("", ".", "..") for t in teile)):
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: %s (Regel %d): %r ist kein Pfad innerhalb des Regelordners"
+                                 % (name, nummer, datei))
+        voll = os.path.join(ordner, *teile)
+        echt = os.path.realpath(voll)
+        if os.path.islink(voll) or not os.path.isfile(voll) or os.path.commonpath([wurzel, echt]) != wurzel:
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: %s (Regel %d): %s ist keine normale Datei im Regelordner"
+                                 % (name, nummer, datei))
+        groesse = os.path.getsize(voll)
+        if groesse > MUSTERDATEI_MAX_BYTES:
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: %s ist groesser als 1 MiB" % datei)
+        zaehler.bytes_gesamt += groesse
+        if zaehler.bytes_gesamt > MUSTER_MAX_BYTES_GESAMT:
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: die Musterdateien sind zusammen groesser als 16 MiB")
+        try:
+            with open(voll, "rb") as fh:
+                text = fh.read().decode("utf-8-sig")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: %s: %s" % (datei, exc)) from exc
+        for zeile in text.splitlines():
+            muster = zeile.strip()
+            if not muster or muster.startswith("#"):
+                continue
+            zaehler.muster += 1
+            if _hat_platzhalter(muster):
+                zaehler.globs += 1
+            if zaehler.muster > MUSTER_MAX_ANZAHL or zaehler.globs > MUSTER_MAX_GLOBS:
+                raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: zu viele Muster in den Musterdateien")
+            ergebnis.append(muster.replace("\\", "/").lstrip("/"))
+    return ergebnis
 
 
 def regeln_laden(pfad: str) -> Regeln:
@@ -224,18 +302,25 @@ def regeln_laden(pfad: str) -> Regeln:
     regeln = daten.get("rule", [])
     if not isinstance(regeln, list) or not all(isinstance(r, dict) for r in regeln):
         raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: rule muss [[rule]] sein")
+    ordner = os.path.dirname(os.path.abspath(pfad))
+    zaehler = _MusterZaehler()
     for nummer, regel in enumerate(regeln, 1):
-        if "include_from" in regel or "exclude_from" in regel:
-            raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: include_from/exclude_from (Regel %d) - Liste einfuegen" % nummer)
         aktion = str(regel.get("action", "compress")).strip().lower()
         if aktion not in _AKTIONEN:
             raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: action %r in Regel %d" % (aktion, nummer))
-        einschluss = _muster_liste(regel.get("include", "**"), "include")
+        aus_dateien_ein = _muster_dateien(ordner, regel.get("include_from"), "include_from", nummer, zaehler)
+        aus_dateien_aus = _muster_dateien(ordner, regel.get("exclude_from"), "exclude_from", nummer, zaehler)
+        if "include" in regel:
+            einschluss = _muster_liste(regel["include"], "include") + aus_dateien_ein
+        else:
+            # Wie bei ampr_pack.py: Hat die Regel Musterdateien mit Inhalt, entfaellt die Vorgabe ``**``.
+            einschluss = aus_dateien_ein or ["**"]
         if not einschluss:
             raise ZstdPackFehler("ampr_zstd.regeln_ungueltig: leeres include in Regel %d" % nummer)
-        ausschluss = _muster_liste(regel.get("exclude", []), "exclude")
+        ausschluss = _muster_liste(regel.get("exclude", []), "exclude") + aus_dateien_aus
         ergebnis.regeln.append((aktion, einschluss, ausschluss))
-        ergebnis.ignoriert += ["rule." + k for k in regel if k not in ("action", "include", "exclude")]
+        ergebnis.ignoriert += ["rule." + k for k in regel
+                               if k not in ("action", "include", "exclude", "include_from", "exclude_from")]
     ergebnis.ignoriert += [k for k in daten if k not in ("pack", "rule")]
     ergebnis.ignoriert = sorted(set(ergebnis.ignoriert))
     return ergebnis

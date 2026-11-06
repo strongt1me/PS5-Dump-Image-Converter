@@ -339,6 +339,85 @@ class RegelTests(_Ordner):
         with self.assertRaises(z.ZstdPackFehler):
             z.regeln_laden(os.path.join(self._tmp, "gibt_es_nicht.toml"))
 
+    # --- include_from / exclude_from (Forge v0.5.4) -------------------------------------------------------------
+    def _muster(self, name: str, text: str) -> None:
+        pfad = os.path.join(self._tmp, *name.split("/"))
+        os.makedirs(os.path.dirname(pfad), exist_ok=True)
+        Path(pfad).write_text(text, encoding="utf-8")
+
+    def test_musterdatei_wird_an_include_und_exclude_gehaengt(self) -> None:
+        self._muster("liste.txt", "# Kommentar\n\n  Media/a.bin  \nMedia/*.ogg\n")
+        self._muster("weg.txt", "Media/laut.ogg\n")
+        r = self._regeln('[pack]\ndefault_action="loose"\n[[rule]]\ninclude_from="liste.txt"\nexclude_from=["weg.txt"]\n')
+        self.assertEqual("compress", r.aktion("Media/a.bin"), "genauer Pfad aus der Datei, Leerraum getrimmt")
+        self.assertEqual("compress", r.aktion("Media/x.ogg"), "Glob aus der Datei")
+        self.assertEqual("loose", r.aktion("Media/laut.ogg"), "exclude_from nimmt die Datei wieder heraus")
+        self.assertEqual("loose", r.aktion("Anderes/b.bin"), "ohne include gibt es keine Vorgabe **, wenn die Datei Muster hat")
+        self.assertEqual([], r.ignoriert, "include_from und exclude_from sind bekannte Schluessel")
+
+    def test_include_und_include_from_ergaenzen_sich(self) -> None:
+        self._muster("mehr.txt", "Daten/b.bin\n")
+        r = self._regeln('[[rule]]\ninclude=["Daten/a.bin"]\ninclude_from="mehr.txt"\n')
+        self.assertEqual("compress", r.aktion("Daten/a.bin"))
+        self.assertEqual("compress", r.aktion("Daten/b.bin"))
+        self.assertEqual("loose", r.aktion("Daten/c.bin"))
+
+    def test_leere_musterdatei_laesst_die_vorgabe_stern_stehen(self) -> None:
+        self._muster("leer.txt", "# nur ein Kommentar\n\n")
+        r = self._regeln('[[rule]]\ninclude_from="leer.txt"\n')
+        self.assertEqual("compress", r.aktion("irgendwas/datei.bin"))
+
+    def test_include_leer_mit_leerer_musterdatei_ist_ein_fehler(self) -> None:
+        self._muster("leer.txt", "\n")
+        with self.assertRaises(z.ZstdPackFehler):
+            self._regeln('[[rule]]\ninclude=[]\ninclude_from="leer.txt"\n')
+
+    def test_unterordner_ist_erlaubt(self) -> None:
+        self._muster("listen/eins.txt", "Media/a.bin\n")
+        r = self._regeln('[[rule]]\ninclude_from="listen/eins.txt"\n')
+        self.assertEqual("compress", r.aktion("Media/a.bin"))
+
+    def test_unzulaessige_namen_werden_abgelehnt(self) -> None:
+        self._muster("ok.txt", "a\n")
+        for name in ("../ok.txt", "./ok.txt", "/ok.txt", "C:/ok.txt", "a\\\\ok.txt", "x//ok.txt", "", "fehlt.txt", "listen"):
+            with self.subTest(name=name):
+                os.makedirs(os.path.join(self._tmp, "listen"), exist_ok=True)
+                with self.assertRaises(z.ZstdPackFehler):
+                    self._regeln('[[rule]]\ninclude_from=%r\n' % name)
+
+    def test_musterdatei_ueber_der_groessengrenze_und_kein_utf8(self) -> None:
+        self._muster("gross.txt", "a\n" * (z.MUSTERDATEI_MAX_BYTES // 2 + 1))
+        with self.assertRaises(z.ZstdPackFehler):
+            self._regeln('[[rule]]\ninclude_from="gross.txt"\n')
+        Path(self._tmp, "kaputt.txt").write_bytes(b"\xff\xfe\x00\x80")
+        with self.assertRaises(z.ZstdPackFehler):
+            self._regeln('[[rule]]\ninclude_from="kaputt.txt"\n')
+
+    def test_zu_viele_globs_werden_abgelehnt_und_genaue_pfade_gehen_schnell(self) -> None:
+        self._muster("globs.txt", "".join("d%d/*.bin\n" % i for i in range(z.MUSTER_MAX_GLOBS + 1)))
+        with self.assertRaises(z.ZstdPackFehler):
+            self._regeln('[[rule]]\ninclude_from="globs.txt"\n')
+        self._muster("viele.txt", "".join("m/%d\n" % i for i in range(50_000)))
+        r = self._regeln('[[rule]]\ninclude_from="viele.txt"\n')
+        import time
+        t0 = time.time()
+        for i in range(2000):
+            r.aktion("m/%d" % (i * 7))
+        self.assertLess(time.time() - t0, 2.0, "genaue Pfade werden in einer Menge gesucht, nicht je Muster")
+        self.assertEqual("compress", r.aktion("m/49999"))
+        self.assertEqual("loose", r.aktion("m/50000"))
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "keine Verknuepfungen")
+    def test_verknuepfung_als_musterdatei_wird_abgelehnt(self) -> None:
+        ziel = os.path.join(self._tmp, "echt.txt")
+        Path(ziel).write_text("a\n", encoding="utf-8")
+        try:
+            os.symlink(ziel, os.path.join(self._tmp, "link.txt"))
+        except (OSError, NotImplementedError):
+            self.skipTest("Verknuepfung nicht anlegbar (Rechte)")
+        with self.assertRaises(z.ZstdPackFehler):
+            self._regeln('[[rule]]\ninclude_from="link.txt"\n')
+
     def test_zu_grosse_datei(self) -> None:
         pfad = os.path.join(self._tmp, "gross.toml")
         Path(pfad).write_text("#" * (z.PROFIL_MAX_BYTES + 1), encoding="utf-8")

@@ -1511,7 +1511,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <code>compress</code>, <code>store</code> oder <code>loose</code>, dazu
     <code>[[rule]]</code> mit <code>action</code>, <code>include</code> und
     <code>exclude</code>; die letzte treffende Regel gewinnt, Muster wie
-    <code>fnmatchcase</code>). Dieselbe Regeldatei l&auml;sst sich auch einmal in
+    <code>fnmatchcase</code>). Statt langer Listen in der Regel k&ouml;nnen
+    <code>include_from</code> und <code>exclude_from</code> auf Textdateien mit
+    je einem Muster pro Zeile zeigen (leere Zeilen und Zeilen mit <code>#</code>
+    am Anfang z&auml;hlen nicht); die Namen gelten relativ zum Ordner der
+    Regeldatei, bleiben darin (kein <code>..</code>, kein absoluter Pfad, keine
+    Verkn&uuml;pfung) und werden an <code>include</code> bzw. <code>exclude</code>
+    angeh&auml;ngt. Grenzen: 1&nbsp;MiB je Datei, 16&nbsp;MiB und 200.000 Muster
+    insgesamt, davon h&ouml;chstens 10.000 mit Platzhalter. Dieselbe Regeldatei l&auml;sst sich auch einmal in
     den <strong>Einstellungen</strong> w&auml;hlen (<em>Packregeln f&uuml;r zstd</em>,
     Knopf <em>W&auml;hlen&nbsp;&hellip;</em>); sie gilt f&uuml;r jedes Spiel, bei dem
     keine Datei neben dem Dump-Ordner liegt, und nur bei zstd. Systemdateien bleiben immer lose; Blockgr&ouml;&szlig;e,
