@@ -19,9 +19,13 @@
 #   5. Baut macOS dasselbe Abbild wie Windows? Bytegleich, auf beiden
 #      Architekturen gemessen.
 #
-# Beide Architekturen werden gebaut: macos-14 ist Apple Silicon (arm64),
+# Beide Architekturen werden gebaut: macos-15 ist Apple Silicon (arm64),
 # macos-15-intel ist Intel (x86_64). Ein Bündel passt immer nur zu einer von
 # beiden.
+#
+# Warum nicht mehr macos-14: Am 06.11.2026 wurde dieser Job dreimal nach einer
+# Sekunde ohne einen Schritt abgebrochen, GitHub meldete "The configuration
+# 'macos-14-arm64-us-default' is not supported".
 #
 # Warum nicht macos-13: Dieser Läufer steht auf der Hardware, die GitHub
 # abbaut, und ist entsprechend knapp. Ein Job wartete dort 51 Minuten, ohne
@@ -105,7 +109,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - laeufer: macos-14
+          - laeufer: macos-15
             beschriftung: Apple Silicon (arm64)
           - laeufer: macos-15-intel
             beschriftung: Intel (x86_64)
