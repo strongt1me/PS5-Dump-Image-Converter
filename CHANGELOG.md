@@ -14,6 +14,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 - **Neu:** Die eigenen Packregeln (`_ampr_pack.toml`) für zstd lesen jetzt auch `include_from` und `exclude_from`: Muster-Listen in Textdateien neben der Regeldatei, wie in ps5-dump-forge 0.5.4.
 - **Aktualisiert:** AMPR EMU NG 0.3.2 (stille und Debug-Fassung): Days Gone Remastered hängt nicht mehr im Ladebildschirm, Sonic x Shadow Generations stürzt beim Start nicht mehr ab, und Resonance: A Plague Tale Legacy läuft als voll gepackte Installation (bisher schwarzer Bildschirm). Die NG-Fassungen 0.3.2, 0.3.1, 0.3.0 und 0.2.0 stehen in den Listen direkt unter 0.4.2.1.
+- **Aktualisiert:** zlib-ng 1.1.0 (die Bibliothek, mit der MkPFS die Blöcke eines `.ffpfsc` packt). Auf Stufe 9 entstehen damit in einzelnen Blöcken andere Bytes als bisher; an der PS5 geprüft: Das Abbild startet und die Konsole liest die betroffenen Dateien unverändert zurück.
 - **Aktualisiert:** PS5Upload 11.2.4, PS4Mount 0.7.3 und PS5 Cooling & System Center – Pro 1.76.9.
 - **Neu:** Die FAQ gibt es jetzt auch auf Spanisch, Italienisch und Französisch; der Knopf FAQ öffnet sie in der Sprache der Oberfläche (bisher nur Deutsch und Englisch, sonst Deutsch).
 - **Neu:** Die README gibt es auch auf Englisch, Spanisch, Italienisch und Französisch (`README_EN.md`, `README_ES.md`, `README_IT.md`, `README_FR.md`); oben in jeder Fassung führt eine Sprachzeile zu den anderen.

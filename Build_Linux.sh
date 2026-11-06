@@ -113,9 +113,9 @@ pflicht_installieren pyinstaller
 pflicht_installieren pillow
 pflicht_installieren cryptography
 pflicht_installieren zstandard
-# zlib-ng auf 1.0.0 festgenagelt (05.11.2026): 1.1.0 schreibt auf Stufe 9 andere Bytes (zlib-ng 2.3.3 statt 2.2.5);
-# anheben nur nach einem Konsolentest, dann requirements.txt und die anderen Bauskripte mit anpassen.
-optional_installieren zlib-ng==1.0.0 "MkPFS nutzt die langsamere zlib der Standardbibliothek."
+# zlib-ng auf 1.1.0 festgenagelt (06.11.2026; zlib-ng 2.3.3, schreibt auf Stufe 9 andere Bytes als 1.0.0, an der
+# Konsole geprueft); weiter anheben nur nach einem Konsolentest, dann requirements.txt und die anderen Bauskripte anpassen.
+optional_installieren zlib-ng==1.1.0 "MkPFS nutzt die langsamere zlib der Standardbibliothek."
 # paramiko stand hier bis v1.9.29 ("kein SFTP") - das Programm benutzt es
 # seit v1.8.93 nirgends und im Bau landete es nie.
 optional_installieren tkinterdnd2 "kein Drag & Drop."
