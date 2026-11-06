@@ -12,6 +12,8 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Neu:** WEITERE TOOLS › ABBILD BEARBEITEN: Ein Abbild (.ffpfsc, .ffpfs, .ffpkg, .exFAT) wird entpackt, einzelne Dateien lassen sich ersetzen, umbenennen, löschen oder hinzufügen, und das Ergebnis wird als neues Abbild `<Name>_bearbeitet` gespeichert. Das Original bleibt unberührt.
 - **Neu:** Asset-Packs lassen sich auch mit zstd statt LZ4 packen (nur für AMPR EMU NG). Eigene TOML-Regeln legen fest, was gepackt wird: entweder neben dem Dump (`<Ordnername>_ampr_pack.toml`) oder als feste Regeldatei in den Einstellungen.
 
+- **Aktualisiert:** AMPR EMU NG 0.3.1 (stille und Debug-Fassung): Days Gone Remastered hängt nicht mehr im Ladebildschirm, und Sonic x Shadow Generations stürzt beim Start nicht mehr ab. Die NG-Fassungen 0.3.1, 0.3.0 und 0.2.0 stehen in den Listen direkt unter 0.4.2.1.
+
 ## v1.9.90 – 05.11.2026
 
 - **Neu:** Die PKG/FPKG-Seite ist im Stil von Aufgabe 1 aufgebaut und erkennt PS4- und PS5-Pakete von selbst.
