@@ -195,7 +195,8 @@ footer b{color:#fff}
       <span class="badge">AMPR_PackTools-4.0, GPL-3.0</span>
       <span class="badge">drakmor/ampr_emu, GPL-3.0</span>
       <span class="badge">AMPR EMU 0.4.2.1 mit LZ4</span>
-      <span class="badge">Stand: 21. Oktober 2026</span>
+      <span class="badge">zstd mit AMPR EMU NG</span>
+      <span class="badge">Stand: 6. November 2026</span>
     </div>
 
     <div class="alert">
@@ -329,6 +330,7 @@ footer b{color:#fff}
         <li>Das geprüfte Ergebnis (Index, Laufzeitdatei, Bänder) geht direkt in dasselbe Abbild ein, das diese Aufgabe ohnehin baut – kein separater Upload-Schritt.</li>
       </ol>
     </div>
+    <p style="margin:18px 0 0"><b style="color:#fff">zstd statt LZ4 (nur für ampr-emu-ng):</b> Unter <b>EINSTELLUNGEN</b> lässt sich das <em>Packverfahren</em> von LZ4 auf zstd umstellen. Dann entstehen <code class="inline">ampr_zstd.index</code> und <code class="inline">ampr_zstd-NNN.pak</code>; diese Packs liest <em>nur</em> AMPR EMU NG, die Laufzeit von drakmor kennt sie nicht. Das Profil gilt dort genauso: Eine Datei <code class="inline">&lt;Ordnername&gt;_ampr_pack.toml</code> neben dem Dump oder die in den Einstellungen gewählte Regeldatei entscheidet mit <code class="inline">compress</code>, <code class="inline">store</code> oder <code class="inline">loose</code>, was gepackt wird – die Regel neben dem Dump hat Vorrang. Für den Mitschnitt-Assistenten und die LZ4-Packs ändert sich nichts.</p>
     <p class="path-title" style="margin-top:28px">compress, store oder loose – wovon das Profil das abhängig macht</p>
     <div class="table-scroll"><table>
       <tr><th>Aktion</th><th>Wählen, wenn …</th><th>Hauptrisiko</th></tr>

@@ -218,6 +218,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Kann ich ein .zip, .7z oder .rar direkt als Quelle nehmen?</h3>
+    <p>Ja. In Aufgabe&nbsp;1 wählt der Knopf <strong>Archiv…</strong> ein Archiv (oder Sie ziehen es auf das Quellfeld), in Aufgabe&nbsp;5 (Sammelkonvertierung) lassen sich Archive wie andere Quellen hinzufügen, und auf der Kommandozeile gilt <code>--source Spiel.zip</code>. Das Programm entpackt das Archiv in den Arbeitsordner, nimmt den Spielordner darin (mit <code>sce_sys/param.json</code>) als Quelle und räumt den Entpackordner danach wieder weg. Dort muss mindestens so viel Platz frei sein, wie das Archiv groß ist. Bei einem Passwort fragt das Programm nach, wenn keines der gängigen passt.</p>
+  </div>
+
+  <div class="frage">
     <h3>Auf welchen Systemen läuft das Programm?</h3>
     <p>Unter <strong>Windows</strong> (fertige EXE), <strong>Linux</strong> und <strong>macOS</strong>. Unter Linux und macOS fehlen zwei Wege, die nur mit Windows-Werkzeugen gehen:</p>
     <ul>
@@ -336,8 +341,9 @@ footer{
 
   <div class="frage">
     <h3>Kann ich ein fertiges Abbild nachträglich ändern?</h3>
-    <p>Nicht direkt – ein fertiges Abbild hat keinen freien Platz für zusätzliche Dateien. Es gibt aber zwei Wege:</p>
+    <p>Nicht direkt – ein fertiges Abbild hat keinen freien Platz für zusätzliche Dateien. Es gibt aber drei Wege:</p>
     <ul>
+      <li><strong>ABBILD BEARBEITEN</strong> (unter <strong>WEITERE TOOLS</strong>): Das Programm packt das Abbild aus, Sie ersetzen, benennen um, löschen oder fügen Dateien hinzu, und es speichert das Ergebnis als neues Abbild <code>&lt;Name&gt;_bearbeitet</code> im gewünschten Format (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> oder <code>.exFAT</code>). Das Original bleibt unberührt; <code>eboot.bin</code> und <code>sce_sys/param.json</code> lassen sich nur ersetzen, nicht löschen oder umbenennen.</li>
       <li><strong>Dasselbe Format noch einmal bauen, mit Einbau</strong> (Aufgaben 2 bis 6): dieselbe Datei als Quelle, dasselbe Format als Ziel, ankreuzen, was hinein soll (Asset-Pack, PlayGo, BACKPORT) und starten. Das Programm packt aus, baut ein und baut neu; Sie brauchen dafür einmal die Spielgröße an freiem Platz im Arbeitsordner.</li>
       <li>In einen <strong>Dump-Ordner</strong> auspacken, den Ordner selbst bearbeiten und wieder packen.</li>
     </ul>
@@ -676,7 +682,7 @@ footer{
     <ul>
       <li><strong>DESIGN:</strong> sieben Farbschemata (Futuristisch, Dunkel, Hell, Metallisch, Ruhig Graphit, Mitternachtsblau, Hell und klar); nach ANWENDEN startet das Programm neu.</li>
       <li><strong>EINSTELLUNGEN:</strong> je 20 mitgelieferte Bilder für Hauptbereich und Seitenleiste oder ein eigenes Bild, dazu Regler für Durchsicht, Helligkeit und Kontrast. Helle Bilder sind für das Design Hell gedacht.</li>
-      <li><strong>EN / DE:</strong> schaltet die ganze Oberfläche samt Protokoll zwischen Deutsch und Englisch um – auch diese FAQ öffnet sich dann auf Englisch.</li>
+      <li><strong>DE / EN / ES / IT / FR:</strong> Der Sprachknopf zeigt die aktive Sprache; jeder Klick schaltet die ganze Oberfläche samt Protokoll zur nächsten um (Deutsch, Englisch, Spanisch, Italienisch, Französisch). Diese FAQ gibt es auf Deutsch und Englisch: Bei <strong>EN</strong> öffnet sie sich auf Englisch, in allen anderen Sprachen auf Deutsch.</li>
     </ul>
   </div>
 
@@ -688,7 +694,7 @@ footer{
   <div class="frage">
     <h3>Wo finde ich weitere Hilfe?</h3>
     <ul>
-      <li>Diese <strong>FAQ</strong> öffnet der Knopf <strong>FAQ</strong> oben links neben <strong>BENUTZERHANDBUCH</strong> – auf Deutsch oder Englisch, je nach eingestellter Sprache.</li>
+      <li>Diese <strong>FAQ</strong> öffnet der Knopf <strong>FAQ</strong> oben links neben <strong>BENUTZERHANDBUCH</strong> – auf Englisch bei EN, sonst auf Deutsch.</li>
       <li>Das <strong>Benutzerhandbuch</strong> öffnet der gleichnamige Knopf – es liegt dem Programm bei, eine Internetverbindung ist nicht nötig. Handbuch und FAQ liegen außerdem als PDF neben der Programmdatei.</li>
       <li>Die Anleitungen zu Asset-Packs und zu ShadowMount+ (alte und neue Methode) öffnen die Knöpfe <strong>Anleitung</strong> bzw. <strong>LZ4 &amp; Asset Pack Anleitung</strong>.</li>
       <li>Was sich je Version geändert hat, steht in <code>CHANGELOG.md</code>.</li>

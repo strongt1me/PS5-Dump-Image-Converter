@@ -218,6 +218,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Can I use a .zip, .7z or .rar directly as the source?</h3>
+    <p>Yes. In task&nbsp;1 the <strong>Archive…</strong> button picks an archive (or drag it onto the source field), in task&nbsp;5 (batch conversion) archives can be added like any other source, and on the command line <code>--source Game.zip</code> works. The program unpacks the archive into the work folder, takes the game folder inside it (the one with <code>sce_sys/param.json</code>) as the source and removes the unpacked folder afterwards. At least as much free space as the archive's size is needed there. If the archive is password-protected and none of the common passwords fits, the program asks you.</p>
+  </div>
+
+  <div class="frage">
     <h3>Which systems does the program run on?</h3>
     <p>On <strong>Windows</strong> (ready-made EXE), <strong>Linux</strong> and <strong>macOS</strong>. On Linux and macOS two paths are missing that only work with Windows tools:</p>
     <ul>
@@ -336,8 +341,9 @@ footer{
 
   <div class="frage">
     <h3>Can I change a finished image afterwards?</h3>
-    <p>Not directly – a finished image has no free space for additional files. There are two ways, though:</p>
+    <p>Not directly – a finished image has no free space for additional files. There are three ways, though:</p>
     <ul>
+      <li><strong>EDIT IMAGE</strong> (under <strong>MORE TOOLS</strong>): the program unpacks the image, you replace, rename, delete or add files, and it saves the result as a new image <code>&lt;name&gt;_bearbeitet</code> in the format you choose (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> or <code>.exFAT</code>). The original stays untouched; <code>eboot.bin</code> and <code>sce_sys/param.json</code> can only be replaced, not deleted or renamed.</li>
       <li><strong>Build the same format again, with integration</strong> (tasks 2 to 6): the same file as source, the same format as target, tick what should go in (asset pack, PlayGo, BACKPORT) and start. The program unpacks, integrates and rebuilds; you need the game's size once as free space in the work folder.</li>
       <li>Unpack into a <strong>dump folder</strong>, edit the folder yourself and pack it again.</li>
     </ul>
@@ -676,7 +682,7 @@ footer{
     <ul>
       <li><strong>THEME:</strong> seven color schemes (Futuristic, Dark, Light, Metallic, Calm Graphite, Midnight Blue, Light and Clear); after APPLY the program restarts.</li>
       <li><strong>SETTINGS:</strong> 20 bundled images each for the main area and the sidebar, or an image of your own, plus sliders for see-through, brightness and contrast. Light images are meant for the Light theme.</li>
-      <li><strong>EN / DE:</strong> switches the whole interface including the log between English and German – this FAQ then also opens in German.</li>
+      <li><strong>DE / EN / ES / IT / FR:</strong> the language button shows the active language; each click switches the whole interface including the log to the next one (German, English, Spanish, Italian, French). This FAQ exists in German and English: with <strong>EN</strong> it opens in English, in every other language in German.</li>
     </ul>
   </div>
 
@@ -688,7 +694,7 @@ footer{
   <div class="frage">
     <h3>Where can I find more help?</h3>
     <ul>
-      <li>This <strong>FAQ</strong> opens with the <strong>FAQ</strong> button at the top, left of <strong>USER MANUAL</strong> – in English or German, depending on the selected language.</li>
+      <li>This <strong>FAQ</strong> opens with the <strong>FAQ</strong> button at the top, left of <strong>USER MANUAL</strong> – in English with EN, otherwise in German.</li>
       <li>The <strong>user manual</strong> opens with the button of that name – it is bundled with the program, no internet connection is needed. The manual is currently written in German. Manual and FAQ are also included as PDF next to the program file.</li>
       <li>The guides on asset packs and on ShadowMount+ (old and new method) open with the <strong>Guide</strong> and <strong>LZ4 &amp; Asset Pack Guide</strong> buttons.</li>
       <li>What changed in each version is listed in <code>CHANGELOG.md</code>.</li>

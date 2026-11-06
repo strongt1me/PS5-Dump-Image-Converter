@@ -44,8 +44,8 @@ der PS5 verwalten. Alles läuft über eine grafische Oberfläche mit zwei Bereic
 <td width="33%" valign="top">
 
 🔄 **Umwandeln**<br>
-Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-`.ffpkg` in jede Richtung. Angeboten werden nur
-Zielformate, die zur erkannten Quelle passen.
+Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-`.ffpkg` in jede Richtung, auch direkt aus
+`.zip`, `.7z` und `.rar`. Angeboten werden nur Zielformate, die zur erkannten Quelle passen.
 
 </td>
 <td width="33%" valign="top">
@@ -72,7 +72,7 @@ PS4- und PS5-Pakete lesen, entpacken, zu Abbildern bauen, Updates laden und an d
 <td valign="top">
 
 🧩 **AMPR EMU & BACKPORT**<br>
-Beim Erstellen einbauen, mit Asset-Packs. Für ASTRO BOT, EA Sports UFC 6 sowie Unity- und
+Beim Erstellen einbauen, mit Asset-Packs (LZ4, für AMPR EMU NG auch zstd mit eigenen TOML-Regeln). Für ASTRO BOT, EA Sports UFC 6 sowie Unity- und
 Insomniac-Spiele liegen getestete Packprofile bei.
 
 </td>
@@ -109,7 +109,8 @@ Spielbibliothek von Rechner und PS5 mit Cover; Spiel-Info mit Updates & Patches 
 
 🛠 **Werkzeuge**<br>
 ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro und BFpilot erreichen Sie aus der
-Seitenleiste.
+Seitenleiste. Unter WEITERE TOOLS ändert ABBILD BEARBEITEN einzelne Dateien eines Abbilds
+(entpacken, ersetzen, umbenennen, löschen, neu packen).
 
 </td>
 <td valign="top">
@@ -121,7 +122,7 @@ Jede Aufgabe auch ohne Fenster (`--cli`), dazu Umgebungsprüfung (`--doktor`) un
 <td valign="top">
 
 🖥 **Windows, Linux, macOS**<br>
-Dieselbe Oberfläche und dieselben Aufgaben auf allen drei Systemen; Deutsch und Englisch.
+Dieselbe Oberfläche und dieselben Aufgaben auf allen drei Systemen; Deutsch, Englisch, Spanisch, Italienisch und Französisch.
 
 </td>
 </tr>
