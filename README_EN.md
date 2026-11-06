@@ -221,7 +221,7 @@ The sidebar has two areas, which the **SWITCH AREA** button toggles between.
 </tr>
 </table>
 
-What each button does exactly is explained in the **[User manual](BENUTZERHANDBUCH.html)** (German only); short answers
+What each button does exactly is explained in the **[User manual](BENUTZERHANDBUCH_EN.html)**; short answers
 are in the **[FAQ](FAQ_EN.html)**. Inside the program, the **USER MANUAL** and **FAQ** buttons
 at the top of the title bar open both, in the language of the interface.
 
@@ -229,7 +229,7 @@ at the top of the title bar open both, in the language of the interface.
 
 | Document | Contents | Formats |
 | --- | --- | --- |
-| **User manual (German only)** | Operation in plain language: all tasks, the toolbar, typical errors, peculiarities on Linux and macOS | [HTML](BENUTZERHANDBUCH.html) · [PDF](BENUTZERHANDBUCH.pdf) |
+| **User manual** | Operation in plain language: all tasks, the toolbar, typical errors, peculiarities on Linux and macOS | [HTML](BENUTZERHANDBUCH_EN.html) · [PDF](BENUTZERHANDBUCH_EN.pdf) |
 | **FAQ (German)** | the most common questions, answered briefly | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
 | **FAQ (English)** | the most common questions, answered briefly | [HTML](FAQ_EN.html) · [PDF](FAQ_EN.pdf) |
 | **FAQ (Spanish)** | the most common questions, answered briefly | [HTML](FAQ_ES.html) · [PDF](FAQ_ES.pdf) |

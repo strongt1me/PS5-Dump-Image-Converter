@@ -230,6 +230,7 @@ oben in der Titelleiste, in der Sprache der Oberfläche.
 | **Benutzerhandbuch** | Bedienung in einfacher Sprache: alle Aufgaben, die Werkzeugleiste, typische Fehler, Besonderheiten unter Linux und macOS | [HTML](BENUTZERHANDBUCH.html) · [PDF](BENUTZERHANDBUCH.pdf) |
 | **FAQ** | die häufigsten Fragen kurz beantwortet | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
 | **FAQ (English)** | the most common questions, answered briefly | [HTML](FAQ_EN.html) · [PDF](FAQ_EN.pdf) |
+| **Benutzerhandbuch (EN · ES · IT · FR)** | das Handbuch in vier weiteren Sprachen | [English](BENUTZERHANDBUCH_EN.html) · [Español](BENUTZERHANDBUCH_ES.html) · [Italiano](BENUTZERHANDBUCH_IT.html) · [Français](BENUTZERHANDBUCH_FR.html) |
 | **README (EN · ES · IT · FR)** | diese Seite in vier weiteren Sprachen | [English](README_EN.md) · [Español](README_ES.md) · [Italiano](README_IT.md) · [Français](README_FR.md) |
 | **FAQ (Español)** | las preguntas más frecuentes, con respuestas breves | [HTML](FAQ_ES.html) · [PDF](FAQ_ES.pdf) |
 | **FAQ (Italiano)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_IT.html) · [PDF](FAQ_IT.pdf) |

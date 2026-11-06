@@ -168,7 +168,9 @@ if os.path.isfile(_eigene_lizenz):
 # oeffnet es ueber open(1). README.md und CHANGELOG.md kommen mit, weil das
 # Handbuch auf beide verlinkt. Die FAQ (deutsch und englisch) oeffnet der Knopf
 # FAQ links daneben (seit 04.10.2026).
-for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md',
+for _doc in ('BENUTZERHANDBUCH.html', 'BENUTZERHANDBUCH_EN.html', 'BENUTZERHANDBUCH_ES.html',
+             'BENUTZERHANDBUCH_IT.html', 'BENUTZERHANDBUCH_FR.html',
+             'README.md', 'README_EN.md', 'README_ES.md', 'README_IT.md', 'README_FR.md', 'CHANGELOG.md',
              'FAQ.html', 'FAQ_EN.html', 'FAQ_ES.html', 'FAQ_IT.html', 'FAQ_FR.html'):
     _doc_pfad = os.path.join(_here, _doc)
     if os.path.isfile(_doc_pfad):

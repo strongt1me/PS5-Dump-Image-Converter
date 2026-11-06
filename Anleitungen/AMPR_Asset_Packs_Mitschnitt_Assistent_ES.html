@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asset packs de AMPR EMU con el asistente de grabación</title>
+<style>
+:root{
+  --bg-deep:#04070f;
+  --bg-blue:#0a1a35;
+  --bg-blue-2:#12305e;
+  --surface:rgba(255,255,255,.045);
+  --surface-2:rgba(255,255,255,.075);
+  --line:rgba(255,255,255,.11);
+  --line-soft:rgba(255,255,255,.06);
+  --text:#eef3fb;
+  --muted:#93a4c0;
+  --accent:#3aa0ff;
+  --accent-soft:rgba(58,160,255,.14);
+  --warn:#ffb32b;
+  --warn-soft:rgba(255,179,43,.12);
+  --ok:#59e0b0;
+  --radius:18px;
+  --mono:"JetBrains Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:"Inter","SF Pro Display","Segoe UI",system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:96px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{
+  margin:0;background:var(--bg-deep);color:var(--text);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;
+  background:
+    radial-gradient(1100px 620px at 12% -8%, #1b4b8f 0%, transparent 62%),
+    radial-gradient(900px 560px at 96% 4%, #0e2a55 0%, transparent 60%),
+    linear-gradient(180deg,var(--bg-blue) 0%, var(--bg-deep) 46%, #050a14 100%);
+}
+.topbar{
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(18px);
+  background:rgba(6,12,24,.72);border-bottom:1px solid var(--line-soft);
+}
+.topbar .inner{max-width:1180px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:20px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.14em;font-size:13px}
+.brand .shapes{display:flex;gap:6px;color:var(--accent);font-size:11px;opacity:.9}
+.brand b{font-weight:800}
+.brand span.plus{color:var(--accent)}
+.nav{margin-left:auto;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nav a{
+  color:var(--muted);text-decoration:none;font-size:13px;padding:8px 14px;border-radius:999px;
+  white-space:nowrap;transition:background .18s,color .18s;
+}
+.nav a:hover{color:#fff;background:var(--surface)}
+.nav a.active{color:#fff;background:var(--accent-soft);box-shadow:inset 0 0 0 1px rgba(58,160,255,.35)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+.hero{padding:78px 0 44px;position:relative}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--accent);border:1px solid rgba(58,160,255,.3);
+  background:var(--accent-soft);padding:7px 15px;border-radius:999px;
+}
+h1{
+  font-size:clamp(34px,5.6vw,60px);line-height:1.05;margin:24px 0 0;font-weight:800;letter-spacing:-.03em;
+  background:linear-gradient(180deg,#ffffff 20%,#9dc6ff 130%);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+h1 small{display:block;font-size:clamp(15px,2vw,21px);font-weight:500;letter-spacing:0;color:var(--muted);margin-top:16px;-webkit-text-fill-color:var(--muted)}
+.badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}
+.badge{
+  font-size:12.5px;padding:7px 14px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);color:var(--muted);
+}
+.badge.on{color:var(--ok);border-color:rgba(89,224,176,.3);background:rgba(89,224,176,.09)}
+.alert{
+  margin:36px 0 8px;display:flex;gap:16px;align-items:flex-start;padding:20px 22px;
+  border-radius:var(--radius);border:1px solid rgba(255,179,43,.32);background:var(--warn-soft);
+}
+.alert.info{border-color:rgba(58,160,255,.32);background:var(--accent-soft)}
+.alert .ic{flex:0 0 auto;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:rgba(255,179,43,.18);color:var(--warn);font-weight:800;font-size:15px}
+.alert.info .ic{background:rgba(58,160,255,.18);color:var(--accent)}
+.alert p{margin:0;font-size:14.5px}
+.alert strong{color:var(--warn)}
+.alert.info strong{color:var(--accent)}
+section{padding:56px 0 8px;scroll-margin-top:90px}
+.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:8px}
+.sec-mark{
+  font-family:var(--mono);font-size:12px;color:var(--accent);border:1px solid rgba(58,160,255,.3);
+  border-radius:8px;padding:4px 9px;flex:0 0 auto;
+}
+h2{font-size:clamp(22px,2.8vw,30px);margin:0;font-weight:700;letter-spacing:-.02em}
+.lede{color:var(--muted);font-size:15.5px;margin:10px 0 26px;max-width:72ch}
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px;backdrop-filter:blur(8px);
+}
+.grid{display:grid;gap:18px}
+@media(min-width:820px){.grid.two{grid-template-columns:1fr 1fr}}
+ol.flow{list-style:none;counter-reset:s;margin:0;padding:0}
+ol.flow li{
+  counter-increment:s;position:relative;padding:14px 0 14px 58px;border-bottom:1px solid var(--line-soft);
+  font-size:15px;
+}
+ol.flow li:last-child{border-bottom:none}
+ol.flow li::before{
+  content:counter(s,decimal-leading-zero);position:absolute;left:0;top:13px;
+  font-family:var(--mono);font-size:12px;color:var(--accent);
+  width:34px;height:26px;display:grid;place-items:center;border-radius:7px;background:var(--accent-soft);
+}
+ol.flow li b{color:#fff;font-weight:600}
+ul.sub{list-style:disc;margin:10px 0 0;padding-left:20px;color:var(--muted);font-size:14px}
+ul.sub li{counter-increment:none;padding:2px 0;border-bottom:none;font-size:inherit;display:list-item}
+ul.sub li::before{content:none}
+pre{
+  font-family:var(--mono);font-size:13px;line-height:1.75;margin:0;padding:20px;border-radius:14px;
+  background:rgba(0,0,0,.36);border:1px solid var(--line-soft);overflow-x:auto;color:#cfe0f7;
+}
+pre .c{color:var(--muted)}
+pre .hi{color:var(--accent)}
+pre .k{color:var(--ok)}
+code.inline{
+  font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.08);
+  border:1px solid var(--line-soft);border-radius:6px;padding:1.5px 6px;color:#d8e6fb;white-space:nowrap;
+}
+.path-title{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+.pill-way{display:inline-block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+  background:var(--accent-soft);border-radius:999px;padding:4px 12px;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:none}
+td.key{font-family:var(--mono);font-size:13px;color:#fff;white-space:nowrap}
+td.val{font-family:var(--mono);font-size:13px;color:var(--accent);white-space:nowrap}
+.table-scroll{overflow-x:auto}
+.prio{display:grid;gap:16px}
+@media(min-width:820px){.prio{grid-template-columns:1fr 1fr}}
+.prio .p{border:1px solid var(--line);border-radius:14px;padding:20px;background:rgba(0,0,0,.22)}
+.prio .p.default{border-color:rgba(58,160,255,.38);background:rgba(58,160,255,.07)}
+.prio h4{margin:0 0 4px;font-family:var(--mono);font-size:13.5px;color:#fff;font-weight:600}
+.prio .tag{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.prio p{margin:12px 0 0;font-size:14px;color:var(--muted)}
+.prio ul{margin:12px 0 0;padding-left:18px;font-size:14px;color:var(--muted)}
+.prio li{margin:4px 0}
+.pit{display:grid;gap:14px}
+@media(min-width:820px){.pit{grid-template-columns:1fr 1fr}}
+.pit .item{border-left:2px solid var(--warn);padding:4px 0 4px 18px}
+.pit h4{margin:0 0 6px;font-size:15px;font-weight:650}
+.pit p{margin:0;font-size:14px;color:var(--muted)}
+.checklist{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.checklist li{position:relative;padding-left:34px;font-size:14.5px}
+.checklist li::before{content:"✓";position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:7px;background:rgba(89,224,176,.14);
+  color:var(--ok);font-size:12px;font-weight:800;display:grid;place-items:center}
+footer{margin:80px 0 60px;padding-top:26px;border-top:1px solid var(--line-soft);color:var(--muted);font-size:13px}
+footer b{color:#fff}
+.note{font-size:13.5px;color:var(--muted);margin-top:16px}
+.hr{height:1px;background:var(--line-soft);margin:22px 0}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="inner">
+    <div class="brand">
+      <span class="shapes">△ ○ ✕ □</span>
+      <span><b>AMPR</b><span class="plus">-PACK</span></span>
+    </div>
+    <nav class="nav">
+      <a href="#was">Qué es</a>
+      <a href="#wege">Dos vías</a>
+      <a href="#mitschnitt">Asistente de grabación</a>
+      <a href="#pruefen">Revisar el perfil</a>
+      <a href="#bauen">Crear</a>
+      <a href="#originale">Originales</a>
+      <a href="#grenzen">Límites</a>
+      <a href="#konsole">Prueba en consola</a>
+      <a href="#probleme">Problemas</a>
+      <a href="#regeln">Reglas</a>
+      <a href="#lz4">LZ4 &amp; últimas versiones</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow">AMPR EMU · Asset packs</span>
+    <h1>Crear asset packs por cuenta propia
+      <small>Adaptado a PS5 Dump &amp; Image Converter, incluido el asistente de grabación AMPR, que ahora realiza la captura y el perfil de empaquetado dentro del propio programa.</small>
+    </h1>
+    <div class="badges">
+      <span class="badge on">Con asistente de grabación, desde v1.9.54</span>
+      <span class="badge">AMPR_PackTools-4.0, GPL-3.0</span>
+      <span class="badge">drakmor/ampr_emu, GPL-3.0</span>
+      <span class="badge">AMPR EMU 0.4.2.1 con LZ4</span>
+      <span class="badge">zstd con AMPR EMU NG</span>
+      <span class="badge">Estado: 6 de noviembre de 2026</span>
+    </div>
+
+    <div class="alert">
+      <div class="ic">!</div>
+      <p><strong>Una grabación nunca contiene todos los datos del juego</strong> – solo lo que realmente se leyó durante las partidas registradas. Los niveles, idiomas o DLC que falten deben añadirse a mano antes de eliminar nada. Esto vale igualmente tanto si la grabación la hizo el programa como si se hizo a mano.</p>
+    </div>
+    <div class="alert info">
+      <div class="ic">i</div>
+      <p><strong>Qué cambia respecto a la versión original de esta guía:</strong> estaba escrita para un programa llamado “PS5 Cooling &amp; System Center”, que solo sube archivos de pack ya terminados. Eso no existe aquí – <b style="color:#fff">PS5&nbsp;Dump&nbsp;&amp;&nbsp;Image&nbsp;Converter</b> realiza por sí mismo la grabación, la creación del índice y la generación del perfil (sección “Asistente de grabación”) y después empaqueta directamente al crear la imagen (sección “Crear”). A mano queda un único paso: revisar el perfil generado.</p>
+    </div>
+  </div>
+
+  <!-- 1 -->
+  <section id="was">
+    <div class="sec-head"><span class="sec-mark">01</span><h2>Qué es un asset pack – y qué no es</h2></div>
+    <p class="lede">Un asset pack sustituye los archivos sueltos del juego en la carpeta <code class="inline">/app0</code> por uno o varios volúmenes LZ4 (<code class="inline">.pak</code>), comprimidos de forma independiente y con acceso aleatorio, más un directorio (<code class="inline">ampr_assets.index</code>). AMPR EMU lee de ellos igual que leería de los archivos originales sueltos, solo que más rápido y con menos accesos a archivos.</p>
+    <div class="card">
+      <p style="margin:0 0 14px;font-size:14.5px">El punto decisivo sigue siendo el mismo: un asset pack <b style="color:#fff">no</b> se obtiene simplemente “comprimiendo todos los archivos”. El desarrollador recomienda crearlo a partir de una <b style="color:#fff">grabación de accesos de lectura reales</b> (<code class="inline">ampr_commands.bin</code>) obtenida en sesiones de juego efectivas; de ella sale una propuesta (perfil TOML) que debe revisarse y completarse antes de empaquetar. También es posible prescindir de la grabación, pero entonces se usa un perfil genérico y prudente (sección “Dos vías”).</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">Fuente: <code class="inline">drakmor/ampr_emu</code>, directorio <code class="inline">docs/</code> (<code class="inline">ASSET_PACK_WORKFLOW_EN.md</code>), GPL-3.0, así como la herramienta <code class="inline">AMPR_PackTools-4.0</code> proporcionada por el autor (se incluye con el programa y es el propio programa quien la invoca).</p>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="wege">
+    <div class="sec-head"><span class="sec-mark">02</span><h2>Dos vías hacia el asset pack</h2></div>
+    <p class="lede">Ambas vías empaquetan al final con la misma herramienta y las mismas salvaguardas. La única diferencia está en el perfil en el que se basan.</p>
+    <div class="prio">
+      <div class="p default">
+        <span class="tag">Recomendada</span>
+        <h4>Con el asistente de grabación</h4>
+        <p>Un perfil a medida obtenido de partidas reales en la propia PS5. Acierta con más precisión en qué archivos se necesitan realmente y ofrece tamaños de bloque adecuados, basados en el comportamiento de acceso medido en lugar de una suposición general.</p>
+        <ul>
+          <li>Requiere una versión de depuración de AMPR EMU (<code class="inline">test-debug-pack</code>) y tiempo para jugar.</li>
+          <li>Comprueba antes si ShadowMount+ carga realmente esa versión, cambia temporalmente los ajustes si hace falta y al final lo restaura todo.</li>
+          <li>El resultado queda como <code class="inline">&lt;dump&gt;_ampr_pack.toml</code> junto al dump y se usa automáticamente en el siguiente empaquetado.</li>
+        </ul>
+      </div>
+      <div class="p">
+        <span class="tag">Sin grabación</span>
+        <h4>Perfil estándar</h4>
+        <p>El programa empaqueta con un perfil estándar de seguridad, prudente (64&nbsp;KiB, modo mixto, <code class="inline">include=["**"]</code> con las mismas reglas de protección que el perfil de grabación). No hace falta ningún paso adicional: basta con elegir el método “Asset Pack” y crear.</p>
+        <ul>
+          <li>Funciona de inmediato con cualquier título, sin jugar antes.</li>
+          <li>Elección de bloques y de compresión más gruesa y genérica que con un perfil basado en grabación.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Ambas vías protegen automáticamente los archivos de sistema, los archivos ejecutables y los índices antes de empaquetar (<code class="inline">NIE_PACKEN</code>) – más de lo que hace por sí sola la vía directa del desarrollador, que solo lo comprueba al eliminar después los originales.</p>
+  </section>
+
+  <!-- 3 -->
+  <section id="mitschnitt">
+    <div class="sec-head"><span class="sec-mark">03</span><h2>El asistente de grabación</h2></div>
+    <p class="lede">Se encuentra en <b style="color:#fff">MÁS HERRAMIENTAS → TRAZA AMPR</b>. Sustituye por completo la creación manual de una estructura de carpetas, la invocación de un script de creación de índice y el arranque de una GUI de perfil aparte: siete pasos guiados en una sola ventana.</p>
+
+    <div class="card">
+      <ol class="flow">
+        <li><b>Elegir el dump del juego</b> – una carpeta de dump local ya descomprimida (<code class="inline">eboot.bin</code>/<code class="inline">sce_sys</code> deben estar presentes). Los títulos instalados sin carpeta propia no sirven: la grabación necesita una carpeta del juego descomprimida en la consola.</li>
+        <li><b>Conexión con la PS5</b> – como en el resto del programa, mediante la dirección guardada o encontrada.</li>
+        <li><b>Asignar el título en la consola</b> – según el Title-ID. Si coincide más de una carpeta o ninguna de forma inequívoca, el programa pregunta cuál es.</li>
+        <li><b>Comprobar ShadowMount+</b> – lee <code class="inline">/data/shadowmount/config.ini</code>, reconoce la versión y determina si ShadowMount+ cargaría siquiera la biblioteca de grabación (recuadro más abajo). Si no, el programa pregunta: <b>Cambiar temporalmente</b> (recomendado), <b>No cambiar, grabar de todos modos</b> o <b>Cancelar</b>.</li>
+        <li><b>Crear el índice y subir la biblioteca de grabación</b> – crea de nuevo <code class="inline">ampr_emu.index</code> y lo coloca en la raíz del juego (<code class="inline">/app0/ampr_emu.index</code>, <b>no</b> en <code class="inline">fakelib/</code>). La versión de AMPR EMU capaz de grabar (<code class="inline">test-debug-pack</code>) va exactamente a la carpeta fakelib que ShadowMount+ monta para este título, tal como lo determinó el paso 4. Lo que ya haya allí se guarda antes en el equipo; si no se puede guardar, no se sobrescribe nada. Si en el almacén falta una versión capaz de grabar, el programa lo indica y remite a la actualización de AMPR.</li>
+        <li><b>Grabar las partidas</b> – cinco escenarios recomendados por el desarrollador, uno tras otro:
+          <ul class="sub">
+            <li>Arranque en frío por el menú principal, cargar una partida guardada</li>
+            <li>Cargar varios niveles distintos o regiones grandes</li>
+            <li>Viaje rápido, escenas cinemáticas, combate, streaming intensivo</li>
+            <li>Volver a visitar una zona ya visitada</li>
+            <li>Otros modos, idiomas o DLC instalados</li>
+          </ul>
+          Después de cada partida: <b style="color:#fff">cerrar el juego normalmente</b> (no con el modo de reposo) y hacer clic en el programa en “Partida terminada: obtener grabación”. La confirmación <b>no es modal</b>: el resto del programa sigue siendo utilizable mientras se juega, incluso durante horas. Una partida incompleta se puede reintentar, omitir o cancelar todo el asistente; las partidas ya completadas con éxito se conservan. Cada recuperación establece una conexión nueva: tras una sesión larga, ftpsrv hace tiempo que cerró la anterior.</li>
+        <li><b>Generar el perfil</b> – reúne todas las partidas correctas y escribe <code class="inline">&lt;dump&gt;_ampr_pack.toml</code> junto a la carpeta del dump, además de un informe legible y un archivo de cifras al lado. Si ya hay allí un perfil propio, el programa pregunta antes de reemplazarlo.</li>
+      </ol>
+      <div class="hr"></div>
+      <p class="note">El perfil generado <b style="color:#fff">no</b> se “activa” por separado: simplemente queda junto al dump y se reconoce y utiliza automáticamente en el siguiente empaquetado de ese dump (sección “Crear”). No hace falta ningún paso de adopción aparte.</p>
+    </div>
+
+    <p class="path-title" style="margin-top:28px">El paso 4 en detalle – adónde debe ir la biblioteca de grabación</p>
+    <div class="card">
+      <p style="margin:0 0 14px;font-size:14.5px">ShadowMount+ monta por título exactamente <b style="color:#fff">una</b> carpeta fakelib: la primera que encuentra, incluso si está vacía. Una biblioteca de grabación en la carpeta equivocada quedaría sin efecto y nunca se produciría una grabación. Por eso el programa busca en el mismo orden que ShadowMount+:</p>
+      <div class="table-scroll"><table>
+        <tr><th>Ubicación</th><th>Se aplica cuando …</th><th>Observación</th></tr>
+        <tr><td><code class="inline">&lt;Suchpfad&gt;/backports/&lt;TITLE-ID&gt;/</code></td><td>existe una carpeta de backport para este título; allí también deposita la tarea 7. Tiene siempre prioridad sobre la carpeta del juego.</td><td>Se busca primero en la ruta de búsqueda del juego, luego en las entradas <code class="inline">scanpath</code> del config.ini y, desde la 1.7beta3, por último siempre también en <code class="inline">/data/homebrew</code>. ShadowMount+ hasta la 1.7 alpha6 solo lee allí <code class="inline">fakelib2</code>.</td></tr>
+        <tr><td><code class="inline">&lt;Spielordner&gt;/fakelib2</code> o <code class="inline">/fakelib</code></td><td>no existe carpeta de backport.</td><td>Cuál se aplica depende de la versión de ShadowMount+. Si están las dos, la biblioteca va a ambas.</td></tr>
+        <tr><td>creada de nuevo</td><td>no existe ninguna de las dos carpetas.</td><td><code class="inline">fakelib</code> desde la 1.7 alpha8, <code class="inline">fakelib2</code> hasta la alpha6. Al final la carpeta se vuelve a renombrar (más abajo).</td></tr>
+      </table></div>
+      <div class="hr"></div>
+      <p style="margin:0 0 14px;font-size:14.5px">A continuación el programa comprueba si algo desplaza a la biblioteca de grabación:</p>
+      <div class="table-scroll"><table>
+        <tr><th>Hallazgo</th><th>Consecuencia</th><th>Temporalmente</th></tr>
+        <tr><td><code class="inline">backport_fakelib=0</code></td><td>ShadowMount+ no monta ninguna fakelib.</td><td class="val">backport_fakelib=1</td></tr>
+        <tr><td><code class="inline">libSceAmpr.sprx</code> en <code class="inline">/data/shadowmount/emus</code> y <code class="inline">update_emulators</code> activado (valor predeterminado)</td><td>El archivo del emulador sustituye a la biblioteca de grabación. No basta con retirarlo: <code class="inline">auto_update_ampr</code> lo vuelve a traer enseguida.</td><td class="val">update_emulators=0</td></tr>
+        <tr><td><code class="inline">libSceAmpr.sprx</code> en la fakelib global y <code class="inline">global_fakelib_priority=global</code></td><td>Gana el archivo global, salvo que el título figure en <code class="inline">global_fakelib_exclude</code>.</td><td class="val">global_fakelib_priority=game</td></tr>
+      </table></div>
+      <p class="note">ShadowMount+ monta un <code class="inline">fakelib2</code> por sí solo desde la 1.7 alpha8, sin archivos de emulador ni fakelib global; allí solo cuenta el interruptor principal. Al cambiar los ajustes, el programa guarda primero en el equipo el config.ini anterior, modifica únicamente las claves indicadas y después vuelve a leerlo para comprobar que realmente quedaron así. <b style="color:#fff">El juego no debe estar en ejecución durante este proceso:</b> ante cada cambio en estas claves, ShadowMount+ retira de inmediato todos los overlays de un juego en ejecución.</p>
+    </div>
+
+    <p class="path-title" style="margin-top:28px">Al final – todo se restaura</p>
+    <div class="pit">
+      <div class="item"><h4>También en caso de cancelación</h4><p>Tanto tras el último paso como tras una cancelación, un error o al cerrar la ventana: la ventana no se cierra hasta que termina la restauración. Si se cierra todo el programa, este pregunta; luego espera a que termine la restauración y se cierra por sí solo. Por eso conviene cerrar el juego antes.</p></div>
+      <div class="item"><h4>Lo guardado vuelve</h4><p>Una <code class="inline">libSceAmpr.sprx</code> y un <code class="inline">ampr_emu.index</code> existentes de antes quedan después exactamente como estaban.</p></div>
+      <div class="item"><h4>Renombrado, no borrado</h4><p>Donde antes no había biblioteca, la biblioteca de grabación se llama después <code class="inline">libSceAmpr.sprx.mitschnitt</code>. Una carpeta que antes no existía, el programa la renombra igualmente (<code class="inline">fakelib.mitschnitt</code>): ShadowMount+ ya evalúa una carpeta fakelib vacía y, de lo contrario, daría después al juego los archivos del emulador. Si el nombre ya existe, se numera correlativamente (<code class="inline">.mitschnitt2</code> …).</p></div>
+      <div class="item"><h4>ShadowMount+ como antes</h4><p>Si el config.ini sigue como lo escribió el asistente, el archivo antiguo vuelve byte a byte, con sus comentarios. Si entretanto lo ha modificado otra persona, solo se restablecen las claves propias.</p></div>
+    </div>
+    <p class="note">Las copias de seguridad se guardan en <code class="inline">&lt;dump&gt;_ampr_mitschnitte/vorher_&lt;Datum&gt;_&lt;Uhrzeit&gt;/</code>, con una carpeta propia por ejecución. Permanecen en la carpeta del juego los archivos de grabación (<code class="inline">ampr_commands.bin</code>, <code class="inline">ampr_emu.log</code>) y un nuevo <code class="inline">ampr_emu.index</code> donde antes no había ninguno; sin AMPR EMU no molesta. Si la restauración no se completa del todo, por ejemplo porque la consola se ha apagado entretanto, en la ventana y en el registro principal consta exactamente qué queda por hacer a mano y dónde están las copias de seguridad; al cerrar el programa, además, en un mensaje antes de que se cierre la ventana. Un segundo cierre mientras se espera pregunta si se debe salir de inmediato; en ese caso la consola queda con los ajustes cambiados y sirven las copias de seguridad. Mientras el asistente está en marcha, tampoco “Apagar el equipo tras finalizar correctamente” apaga el equipo.</p>
+  </section>
+
+  <!-- 4 -->
+  <section id="pruefen">
+    <div class="sec-head"><span class="sec-mark">04</span><h2>Revisar el perfil a mano (el paso restante más importante)</h2></div>
+    <div class="alert">
+      <div class="ic">!</div>
+      <p><strong>Esto no lo hace el programa.</strong> El desarrollador califica este paso expresamente de obligatorio (“mandatory”). Un perfil generado automáticamente – con o sin el asistente de grabación – es solo un punto de partida. Ni siquiera una grabación larga demuestra que un archivo nunca observado no se vaya a necesitar jamás.</p>
+    </div>
+    <div class="card">
+      <p style="margin:0 0 14px;font-size:14.5px">El <code class="inline">&lt;dump&gt;_ampr_pack.toml</code> generado es texto plano y se puede abrir y ajustar en cualquier editor. Quien prefiera revisar de forma gráfica la vista general habitual con “Add files…” / “Add directory…” / “Add pattern…” puede seguir abriendo el <code class="inline">ampr_pack_gui.exe</code> independiente de <code class="inline">AMPR_PackTools-4.0</code>, aplicar allí “Load from profile” a ese mismo archivo, modificarlo y guardarlo de nuevo en la misma ruta; el programa simplemente lee el archivo actual en el siguiente empaquetado.</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">Especialmente importante revisar: niveles/mapas/biomas que no aparecieron en ninguna partida; cada idioma admitido, doblaje y subtítulos; DLC, modos extra, rutas de nueva partida y capítulos finales; datos de escenas cinemáticas, menús, créditos y gestión de errores.</p>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="bauen">
+    <div class="sec-head"><span class="sec-mark">05</span><h2>Crear: como parte de la imagen, no un paso aparte</h2></div>
+    <p class="lede">A diferencia de la vía directa del desarrollador, no hay un botón “Pack and verify” aparte. El empaquetado se realiza automáticamente cuando, al crear una imagen (cualquiera de las tareas 1–6), la casilla <b style="color:#fff">AMPR EMU</b> está marcada y como método se ha elegido <b style="color:#fff">Asset Pack</b> en lugar de <b>Normal</b>, con la misma carpeta de dump junto a la cual se encuentra, en su caso, el perfil de las secciones 03/04.</p>
+    <div class="card">
+      <ol class="flow">
+        <li>Si junto al dump hay un perfil propio (del asistente de grabación o mantenido a mano), se adopta; en el registro consta entonces expresamente “Se usa un perfil de empaquetado propio”. De lo contrario rige el perfil estándar de la sección 02.</li>
+        <li>Se crean los volúmenes del pack, <code class="inline">ampr_assets.index</code> y el archivo de verificación <code class="inline">.crc</code>.</li>
+        <li>Cada bloque se verifica contra el origen – <b>byte a byte</b>, no solo mediante sumas de comprobación.</li>
+        <li>Un resumen del manifiesto comprueba los números reales de archivos, bloques y volúmenes frente a los límites fijos del formato (sección “Límites”). Si se supera un límite, la creación se cancela: no se transfiere nada a la carpeta del juego.</li>
+        <li>El resultado verificado (índice, archivo de tiempo de ejecución, volúmenes) pasa directamente a la misma imagen que esta tarea construye de todos modos; no hay un paso de subida aparte.</li>
+      </ol>
+    </div>
+    <p style="margin:18px 0 0"><b style="color:#fff">zstd en lugar de LZ4 (solo para ampr-emu-ng):</b> En <b>CONFIGURACIÓN</b> se puede cambiar el <em>método de empaquetado</em> de LZ4 a zstd. Entonces se generan <code class="inline">ampr_zstd.index</code> y <code class="inline">ampr_zstd-NNN.pak</code>; estos packs solo los lee <em>AMPR EMU NG</em>; el entorno de ejecución de drakmor no los conoce. El perfil rige también aquí: un archivo <code class="inline">&lt;Ordnername&gt;_ampr_pack.toml</code> junto al dump, o el archivo de reglas elegido en la configuración, decide con <code class="inline">compress</code>, <code class="inline">store</code> o <code class="inline">loose</code> qué se empaqueta; la regla junto al dump tiene prioridad. Para el asistente de grabación y los packs LZ4 no cambia nada.</p>
+    <p class="path-title" style="margin-top:28px">compress, store o loose – de qué depende el perfil</p>
+    <div class="table-scroll"><table>
+      <tr><th>Acción</th><th>Elegir cuando …</th><th>Riesgo principal</th></tr>
+      <tr><td class="key">compress</td><td>Los datos se pueden comprimir o son una mezcla de bloques comprimibles e incomprimibles.</td><td>LZ4 cuesta tiempo de cálculo; una ganancia pequeña quizá no justifique la descodificación.</td></tr>
+      <tr><td class="key">store</td><td>Los datos ya están comprimidos, pero agruparlos en volúmenes sigue siendo útil (menos archivos/handles).</td><td>El tamaño apenas disminuye; los accesos siguen dependiendo del entorno de ejecución del pack.</td></tr>
+      <tr><td class="key">loose</td><td>Entra en juego mmap u otra vía de acceso no interceptada, el archivo se necesita raramente, o un archivo grande es incomprimible sin ventaja medida.</td><td>La carga habitual del sistema de archivos se mantiene y el original debe conservarse.</td></tr>
+    </table></div>
+    <p class="path-title" style="margin-top:28px">Tamaño de bloque – en qué se basa el perfil</p>
+    <div class="table-scroll"><table>
+      <tr><th>Tamaño de bloque</th><th>Habitual cuando …</th></tr>
+      <tr><td class="val">16 KiB</td><td>Las grabaciones muestran accesos aleatorios muy pequeños a tablas, ajustes o datos de localización de uso frecuente.</td></tr>
+      <tr><td class="val">64 KiB</td><td>Datos desconocidos o mixtos; el perfil estándar sin grabación usa precisamente este valor seguro.</td></tr>
+      <tr><td class="val">128–256 KiB</td><td>Según la grabación, los accesos son mayoritariamente grandes o secuenciales.</td></tr>
+      <tr><td class="val">512 KiB–1 MiB</td><td>Flujos demostrablemente secuenciales y medios en bruto ya comprimidos.</td></tr>
+    </table></div>
+    <p class="note">Cada bloque cuesta 12&nbsp;bytes en el directorio que se carga junto con el juego. Para 100&nbsp;GiB de datos empaquetados esto supone unos 75&nbsp;MiB con 16&nbsp;KiB, pero solo unos 1,17&nbsp;MiB con bloques de 1&nbsp;MiB. Si el grupo de memoria interno no basta, el programa reduce por sí mismo las memorias intermedias y lo anota en el registro, sin volver a empaquetar.</p>
+  </section>
+
+  <!-- 6 -->
+  <section id="originale">
+    <div class="sec-head"><span class="sec-mark">06</span><h2>Omitir los originales</h2></div>
+    <p class="lede">Durante esa misma creación, el programa pregunta – con “No” como valor predeterminado – si los archivos originales ya empaquetados deben omitirse en el resultado. No hace falta ejecutar una herramienta aparte ni una GUI propia para ello.</p>
+    <div class="pit">
+      <div class="item"><h4>Solo en una copia de trabajo</h4><p>Directamente en la carpeta de origen no se elimina nada; para ello hay que crear una copia de trabajo.</p></div>
+      <div class="item"><h4>Después se vuelve a comprobar byte a byte</h4><p>Solo cuando cada volumen se ha vuelto a verificar contra el origen se eliminan los originales empaquetados.</p></div>
+      <div class="item"><h4>eboot.bin, PRX/SPRX/SELF/ELF, índices, carpetas del sistema</h4><p>No se eliminan nunca, aunque un perfil defectuoso los marcara erróneamente como “PACK”.</p></div>
+      <div class="item"><h4>Solo después de la prueba en consola</h4><p>El propio programa lo dice en el registro: “Solo merece la pena eliminarlos tras una prueba en consola exitosa.” La primera creación debería, por tanto, conservar los originales.</p></div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="grenzen">
+    <div class="sec-head"><span class="sec-mark">07</span><h2>Límites fijos del formato</h2></div>
+    <p class="lede">El programa comprueba automáticamente estos límites frente a las cifras reales y cancela en lugar de dejar que la consola lo rechace.</p>
+    <div class="table-scroll"><table>
+      <tr><th>Objeto</th><th>Límite</th></tr>
+      <tr><td>Archivos en AMPRPAK4</td><td class="val">2.000.000</td></tr>
+      <tr><td>Bloques en todos los archivos empaquetados</td><td class="val">16.000.000</td></tr>
+      <tr><td>Volúmenes .pak en todo el directorio</td><td class="val">1.024</td></tr>
+      <tr><td>Grupos de pack</td><td class="val">256</td></tr>
+      <tr><td>Tamaño de bloque</td><td class="val">16 KiB – 1 MiB, potencia de dos</td></tr>
+      <tr><td>Memoria intermedia de descodificación solicitada</td><td class="val">como máximo 512 MiB</td></tr>
+      <tr><td>Memoria intermedia física solicitada</td><td class="val">como máximo 128 MiB</td></tr>
+    </table></div>
+    <p class="note">El límite de volúmenes rige para <b style="color:#fff">todo</b> el directorio, no por grupo. Ejemplo: 250&nbsp;GiB con bloques de 16 KiB ya dan unos 16,38&nbsp;millones de bloques, antes incluso de añadir más archivos. En un caso así ayuda un tamaño de bloque mayor o dejar sueltos datos de forma deliberada.</p>
+  </section>
+
+  <!-- 8 -->
+  <section id="konsole">
+    <div class="sec-head"><span class="sec-mark">08</span><h2>Probar en la consola</h2></div>
+    <p class="lede">Comprobar como mínimo: arranque, partida nueva, varias partidas guardadas, transiciones de nivel, viaje rápido, escenas cinemáticas, recargas intensas, cambio de idioma, DLC, nueva visita a una zona, cancelación de una carga y cierre normal.</p>
+    <div class="alert">
+      <div class="ic">!</div>
+      <p><strong>Para las primeras pruebas:</strong> conservar sin falta los archivos originales (dejar en “No” la sección “Omitir los originales”). Eliminar un original solo después de haber probado todos los recorridos necesarios del juego, y únicamente para un archivo que demostrablemente no se lea por una vía no interceptada (mmap, E/S directa).</p>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section id="probleme">
+    <div class="sec-head"><span class="sec-mark">09</span><h2>Problemas frecuentes</h2></div>
+    <div class="table-scroll"><table>
+      <tr><th>Síntoma</th><th>Causa probable</th><th>Medida</th></tr>
+      <tr><td>fileId y ruta no coinciden</td><td>La grabación o el perfil usan un <code class="inline">ampr_emu.index</code> de otra versión del dump.</td><td>Volver a ejecutar el asistente de grabación para este dump; este crea siempre el índice y la grabación como una pareja que va unida.</td></tr>
+      <tr><td>No hay perfil en el almacén aunque se hicieron grabaciones</td><td>El asistente se canceló antes de que se ejecutara el paso 7/7, o ninguna partida estaba completa.</td><td>Reiniciar el asistente; se pueden omitir partidas individuales sin perder las demás.</td></tr>
+      <tr><td>Tras la partida falta <code class="inline">ampr_commands.bin</code>, cada vez</td><td>ShadowMount+ no ha cargado la biblioteca de grabación: en el paso 4/7 se eligió “No cambiar, grabar de todos modos”, o bien otra <code class="inline">libSceAmpr.sprx</code> se impone por una vía que el programa no conoce.</td><td>Reiniciar el asistente y elegir “Cambiar temporalmente”. En el registro, bajo “La biblioteca de grabación se colocará en”, consta adónde se colocó; <code class="inline">/data/shadowmount/debug.log</code> indica, con <code class="inline">debug=1</code>, en la línea “libraries mounted for”, la carpeta que ShadowMount+ montó realmente.</td></tr>
+      <tr><td>“Restauración incompleta”</td><td>La conexión con la consola se había perdido al final, o ftpsrv rechazó un cambio de nombre.</td><td>El mensaje indica cada punto pendiente por separado; las copias de seguridad están en la carpeta <code class="inline">vorher_…</code> indicada. Completarlo a mano con el gestor de archivos de la consola o por FTP.</td></tr>
+      <tr><td>Falta un volumen o no supera la verificación</td><td>Se mezclaron versiones de compilación, o se interrumpió la copia de la imagen.</td><td>Volver a crear la imagen: índice, archivo de tiempo de ejecución y volúmenes forman siempre un único conjunto.</td></tr>
+      <tr><td>Un archivo empaquetado existe, pero la lectura en el juego falla</td><td>Podrían intervenir mmap, E/S directa u otra vía de acceso no interceptada.</td><td>Probar con los originales (sección “Omitir los originales”), luego añadir en el perfil una regla loose precisa para ese archivo (sección “Revisar el perfil”) y volver a crear.</td></tr>
+    </table></div>
+  </section>
+
+  <!-- 10 -->
+  <section id="regeln">
+    <div class="sec-head"><span class="sec-mark">10</span><h2>Las reglas más importantes de un vistazo</h2></div>
+    <div class="card">
+      <ul class="checklist">
+        <li>Las grabaciones <b style="color:#fff">nunca están completas</b>: añadir a mano en el perfil generado los niveles, idiomas y DLC que falten.</li>
+        <li><b style="color:#fff">Revisar siempre</b> el perfil generado: el asistente de grabación no sustituye este paso, solo la captura y la primera versión del perfil.</li>
+        <li>Primero <b style="color:#fff">probar por completo en la consola</b>; solo después pensar en “Omitir los originales”.</li>
+        <li>Mientras el asistente de grabación cambia o restaura ShadowMount+, <b style="color:#fff">el juego no debe estar en ejecución</b>; de lo contrario ShadowMount+ retira sus overlays.</li>
+        <li>eboot.bin, los archivos PRX/SPRX, los índices y las carpetas del sistema no se empaquetan ni se eliminan nunca automáticamente.</li>
+        <li>El índice, el archivo de tiempo de ejecución y todos los volúmenes van siempre a la imagen como <b style="color:#fff">un único conjunto coherente</b>; no sustituir nunca archivos sueltos de él.</li>
+        <li>La tarea 7 (AMPR EMU Manager) no crea ni elimina volúmenes de asset pack; esto ocurre exclusivamente al crear una imagen (tareas 1–6) con el método “Asset Pack”.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 11 -->
+  <section id="lz4">
+    <div class="sec-head"><span class="sec-mark">11</span><h2>LZ4 y las versiones más recientes (estado a 21 de octubre de 2026)</h2></div>
+    <p class="lede">Desde AMPR EMU 0.4.2.1, los asset packs se pueden comprimir con LZ4. Según la documentación del desarrollador, los juegos pasan a ocupar aproximadamente la mitad y cargan entre un 30 y un 40&nbsp;% más rápido.</p>
+    <div class="card">
+      <ul class="checklist">
+        <li><b style="color:#fff">Modos:</b> <code class="inline">compress</code> (LZ4, predeterminado), <code class="inline">store</code> (agrupado sin compresión) y <code class="inline">loose</code> (los archivos permanecen sueltos). Los bloques que no se pueden reducir se almacenan sin cambios (RAW).</li>
+        <li><b style="color:#fff">Nivel de compresión:</b> LZ4 HC; los niveles altos requieren bastante más tiempo al empaquetar, pero la carga en la consola no se vuelve más lenta por ello.</li>
+        <li><b style="color:#fff">Un solo conjunto:</b> el índice, el archivo de tiempo de ejecución y todos los volúmenes van juntos y nunca se sustituyen por separado.</li>
+        <li><b style="color:#fff">Mensaje de error en tiempo de ejecución</b> (error de LZ4 o de descodificación en el registro): el pack está incompleto o dañado; volver a crearlo y compararlo con el original, no repararlo a mano.</li>
+      </ul>
+    </div>
+    <h3 style="margin:22px 0 8px">Convertir directamente en la consola: exFAT2AMPR</h3>
+    <div class="card">
+      <p style="margin:0 0 12px;font-size:14.5px">La app de consola gratuita <b style="color:#fff">exFAT2AMPR</b> (V-10, GPL-3.0; formato LZ4 de DLPSGAME) convierte un juego en un juego AMPR-LZ4 directamente en la PS5 con el mando, ya sea en el SSD interno, en un SSD M.2 o en USB. No hace falta PC. Estado actual: versión 1.104.</p>
+      <ul class="checklist">
+        <li>Requisitos: PS5 con jailbreak y kstuff, un cargador de ELF en el puerto 9021 y ShadowMountPlus desde la 1.7.</li>
+        <li>Cada bloque se verifica, las conversiones interrumpidas se reanudan y el juego original se conserva.</li>
+        <li>Desde la 1.104: <b style="color:#fff">comprobación de arranque</b> tras la conversión (emulador AMPR ausente o sobrescrito, entre otros), reparación desde el menú del juego, estimación de tiempo por nivel de LZ4 y música de los juegos en la pantalla de inicio.</li>
+        <li>Conservar el original hasta que el juego convertido se haya iniciado una vez; algunos juegos (por ejemplo, títulos de Unity) no funcionan una vez convertidos.</li>
+      </ul>
+      <p class="note" style="margin:14px 0 0">Esta es una vía distinta de la de los packs de este programa: allí el pack se genera en el PC al crear una imagen; aquí, en la consola, a partir de un juego ya terminado. Ambas vías usan LZ4 y el mismo emulador AMPR.</p>
+    </div>
+    <p class="note">Fuentes: <code class="inline">drakmor/ampr_emu</code> (versión 0.4.2.1, <code class="inline">docs/ASSET_PACK_WORKFLOW_EN.md</code>) y <code class="inline">exFAT2AMPR/exfat2ampr</code> (README y versiones publicadas), consultadas el 21&nbsp;de octubre de 2026.</p>
+  </section>
+
+  <footer>
+    Elaborado a partir de la propia documentación de drakmor (<b>ampr_emu</b>, GPL-3.0) y del comportamiento del propio <b>PS5 Dump &amp; Image Converter</b>. No se transmite ningún texto a terceros; esta guía es un resumen propio y traducido del procedimiento documentado, para uso personal.
+  </footer>
+
+</main>
+</body>
+</html>

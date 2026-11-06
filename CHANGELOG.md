@@ -17,6 +17,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Aktualisiert:** zlib-ng 1.1.0 (die Bibliothek, mit der MkPFS die Blöcke eines `.ffpfsc` packt). Auf Stufe 9 entstehen damit in einzelnen Blöcken andere Bytes als bisher; an der PS5 geprüft: Das Abbild startet und die Konsole liest die betroffenen Dateien unverändert zurück.
 - **Aktualisiert:** PS5Upload 11.2.4, PS4Mount 0.7.3 und PS5 Cooling & System Center – Pro 1.76.9.
 - **Neu:** Die FAQ gibt es jetzt auch auf Spanisch, Italienisch und Französisch; der Knopf FAQ öffnet sie in der Sprache der Oberfläche (bisher nur Deutsch und Englisch, sonst Deutsch).
+- **Neu:** Das Benutzerhandbuch und die drei Anleitungen (Asset-Packs, ShadowMount+ alte und neue Methode) gibt es jetzt auch auf Englisch, Spanisch, Italienisch und Französisch. Die Knöpfe BENUTZERHANDBUCH und „LZ4 & Asset Pack Anleitung“ sowie die ShadowMount+-Anleitungen öffnen die Fassung in der Sprache der Oberfläche; fehlt sie, kommt die deutsche. Die Übersetzungen sind maschinell erstellt und nicht von Muttersprachlern geprüft.
 - **Neu:** Die README gibt es auch auf Englisch, Spanisch, Italienisch und Französisch (`README_EN.md`, `README_ES.md`, `README_IT.md`, `README_FR.md`); oben in jeder Fassung führt eine Sprachzeile zu den anderen.
 - **Geändert:** Die Anleitung zur neuen fakelib-Methode von ShadowMount+ ist mit 1.7beta11 abgeglichen (Log-Zeilen, Meldungen, neue Schalter `fakelib_mode`, Umgang mit `libkernel.sprx`), README, Handbuch und FAQ nennen alle fünf Oberflächensprachen.
 

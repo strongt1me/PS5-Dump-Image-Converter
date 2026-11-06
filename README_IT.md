@@ -221,7 +221,7 @@ La barra laterale ha due aree, tra le quali si passa con il pulsante **CAMBIA AR
 </tr>
 </table>
 
-La funzione esatta di ogni pulsante è spiegata nel **[Manuale utente](BENUTZERHANDBUCH.html)** (solo in tedesco); risposte
+La funzione esatta di ogni pulsante è spiegata nel **[Manuale utente](BENUTZERHANDBUCH_IT.html)**; risposte
 brevi si trovano nelle **[FAQ](FAQ_IT.html)**. Nel programma entrambi si aprono con i pulsanti **MANUALE UTENTE** e **FAQ**
 nella barra del titolo, nella lingua dell'interfaccia.
 
@@ -229,7 +229,7 @@ nella barra del titolo, nella lingua dell'interfaccia.
 
 | Documento | Contenuto | Formati |
 | --- | --- | --- |
-| **Manuale utente (solo in tedesco)** | Utilizzo in linguaggio semplice: tutte le attività, la barra degli strumenti, errori tipici, particolarità su Linux e macOS | [HTML](BENUTZERHANDBUCH.html) · [PDF](BENUTZERHANDBUCH.pdf) |
+| **Manuale utente** | Utilizzo in linguaggio semplice: tutte le attività, la barra degli strumenti, errori tipici, particolarità su Linux e macOS | [HTML](BENUTZERHANDBUCH_IT.html) · [PDF](BENUTZERHANDBUCH_IT.pdf) |
 | **FAQ (Tedesco)** | le domande più frequenti, con risposte brevi | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
 | **FAQ (Inglese)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_EN.html) · [PDF](FAQ_EN.pdf) |
 | **FAQ (Spagnolo)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_ES.html) · [PDF](FAQ_ES.pdf) |

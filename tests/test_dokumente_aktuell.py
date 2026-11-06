@@ -35,6 +35,10 @@ except ImportError:                                   # pragma: no cover - nur o
 #: (HTML, PDF, welche Ueberschriften muessen in der PDF stehen)
 DOKUMENTE = (
     ("BENUTZERHANDBUCH.html", "BENUTZERHANDBUCH.pdf", ("h2", "h3")),
+    ("BENUTZERHANDBUCH_EN.html", "BENUTZERHANDBUCH_EN.pdf", ("h2", "h3")),
+    ("BENUTZERHANDBUCH_ES.html", "BENUTZERHANDBUCH_ES.pdf", ("h2", "h3")),
+    ("BENUTZERHANDBUCH_IT.html", "BENUTZERHANDBUCH_IT.pdf", ("h2", "h3")),
+    ("BENUTZERHANDBUCH_FR.html", "BENUTZERHANDBUCH_FR.pdf", ("h2", "h3")),
     ("FAQ.html", "FAQ.pdf", ("h2", "h3")),
     ("FAQ_EN.html", "FAQ_EN.pdf", ("h2", "h3")),
     ("FAQ_ES.html", "FAQ_ES.pdf", ("h2", "h3")),

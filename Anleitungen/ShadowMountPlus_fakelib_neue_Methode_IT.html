@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SHADOWMOUNT+ · fakelib &amp; fakelib2 — dalla 1.7 alpha8</title>
+<style>
+:root{
+  --bg-deep:#04070f;
+  --bg-blue:#0a1a35;
+  --bg-blue-2:#12305e;
+  --surface:rgba(255,255,255,.045);
+  --surface-2:rgba(255,255,255,.075);
+  --line:rgba(255,255,255,.11);
+  --line-soft:rgba(255,255,255,.06);
+  --text:#eef3fb;
+  --muted:#93a4c0;
+  --accent:#3aa0ff;
+  --accent-soft:rgba(58,160,255,.14);
+  --warn:#ffb32b;
+  --warn-soft:rgba(255,179,43,.12);
+  --ok:#59e0b0;
+  --radius:18px;
+  --mono:"JetBrains Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:"Inter","SF Pro Display","Segoe UI",system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:96px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{
+  margin:0;background:var(--bg-deep);color:var(--text);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;
+  background:
+    radial-gradient(1100px 620px at 12% -8%, #1b4b8f 0%, transparent 62%),
+    radial-gradient(900px 560px at 96% 4%, #0e2a55 0%, transparent 60%),
+    linear-gradient(180deg,var(--bg-blue) 0%, var(--bg-deep) 46%, #050a14 100%);
+}
+
+/* ── Topbar ───────────────────────────────────────── */
+.topbar{
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(18px);
+  background:rgba(6,12,24,.72);border-bottom:1px solid var(--line-soft);
+}
+.topbar .inner{max-width:1180px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:20px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.14em;font-size:13px}
+.brand .shapes{display:flex;gap:6px;color:var(--accent);font-size:11px;opacity:.9}
+.brand b{font-weight:800}
+.brand span.plus{color:var(--accent)}
+.nav{margin-left:auto;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nav a{
+  color:var(--muted);text-decoration:none;font-size:13px;padding:8px 14px;border-radius:999px;
+  white-space:nowrap;transition:background .18s,color .18s;
+}
+.nav a:hover{color:#fff;background:var(--surface)}
+.nav a.active{color:#fff;background:var(--accent-soft);box-shadow:inset 0 0 0 1px rgba(58,160,255,.35)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+
+/* ── Hero ─────────────────────────────────────────── */
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+.hero{padding:78px 0 44px;position:relative}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--accent);border:1px solid rgba(58,160,255,.3);
+  background:var(--accent-soft);padding:7px 15px;border-radius:999px;
+}
+h1{
+  font-size:clamp(38px,6.2vw,72px);line-height:1.02;margin:24px 0 0;font-weight:800;letter-spacing:-.03em;
+  background:linear-gradient(180deg,#ffffff 20%,#9dc6ff 130%);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+h1 small{display:block;font-size:clamp(15px,2vw,21px);font-weight:500;letter-spacing:0;color:var(--muted);margin-top:16px;-webkit-text-fill-color:var(--muted)}
+.badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}
+.badge{
+  font-size:12.5px;padding:7px 14px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);color:var(--muted);
+}
+.badge.on{color:var(--ok);border-color:rgba(89,224,176,.3);background:rgba(89,224,176,.09)}
+
+/* ── Alert ────────────────────────────────────────── */
+.alert{
+  margin:36px 0 8px;display:flex;gap:16px;align-items:flex-start;padding:20px 22px;
+  border-radius:var(--radius);border:1px solid rgba(255,179,43,.32);background:var(--warn-soft);
+}
+.alert .ic{flex:0 0 auto;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:rgba(255,179,43,.18);color:var(--warn);font-weight:800;font-size:15px}
+.alert p{margin:0;font-size:14.5px}
+.alert strong{color:var(--warn)}
+
+/* ── Sections ─────────────────────────────────────── */
+section{padding:56px 0 8px;scroll-margin-top:90px}
+.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:8px}
+.sec-mark{
+  font-family:var(--mono);font-size:12px;color:var(--accent);border:1px solid rgba(58,160,255,.3);
+  border-radius:8px;padding:4px 9px;flex:0 0 auto;
+}
+h2{font-size:clamp(24px,3.2vw,34px);margin:0;font-weight:700;letter-spacing:-.02em}
+.lede{color:var(--muted);font-size:15.5px;margin:10px 0 26px;max-width:72ch}
+
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px;backdrop-filter:blur(8px);
+}
+.grid{display:grid;gap:18px}
+@media(min-width:820px){.grid.two{grid-template-columns:1fr 1fr}}
+
+/* Flow steps */
+ol.flow{list-style:none;counter-reset:s;margin:0;padding:0}
+ol.flow li{
+  counter-increment:s;position:relative;padding:14px 0 14px 58px;border-bottom:1px solid var(--line-soft);
+  font-size:15px;
+}
+ol.flow li:last-child{border-bottom:none}
+ol.flow li::before{
+  content:counter(s,decimal-leading-zero);position:absolute;left:0;top:13px;
+  font-family:var(--mono);font-size:12px;color:var(--accent);
+  width:34px;height:26px;display:grid;place-items:center;border-radius:7px;background:var(--accent-soft);
+}
+ol.flow li b{color:#fff;font-weight:600}
+
+/* Code / tree */
+pre{
+  font-family:var(--mono);font-size:13px;line-height:1.75;margin:0;padding:20px;border-radius:14px;
+  background:rgba(0,0,0,.36);border:1px solid var(--line-soft);overflow-x:auto;color:#cfe0f7;
+}
+pre .c{color:var(--muted)}
+pre .hi{color:var(--accent)}
+pre .k{color:var(--ok)}
+code.inline{
+  font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.08);
+  border:1px solid var(--line-soft);border-radius:6px;padding:1.5px 6px;color:#d8e6fb;white-space:nowrap;
+}
+.path-title{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+.pill-way{display:inline-block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+  background:var(--accent-soft);border-radius:999px;padding:4px 12px;margin-bottom:12px}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:none}
+td.key{font-family:var(--mono);font-size:13px;color:#fff;white-space:nowrap}
+td.val{font-family:var(--mono);font-size:13px;color:var(--accent);white-space:nowrap}
+.table-scroll{overflow-x:auto}
+
+/* Priority cards */
+.prio{display:grid;gap:16px}
+@media(min-width:820px){.prio{grid-template-columns:1fr 1fr}}
+.prio .p{border:1px solid var(--line);border-radius:14px;padding:20px;background:rgba(0,0,0,.22)}
+.prio .p.default{border-color:rgba(58,160,255,.38);background:rgba(58,160,255,.07)}
+.prio h4{margin:0 0 4px;font-family:var(--mono);font-size:13.5px;color:#fff;font-weight:600}
+.prio .tag{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.layers{display:flex;align-items:center;gap:10px;margin:16px 0 12px;flex-wrap:wrap}
+.layer{font-size:12.5px;padding:6px 12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line)}
+.layer.win{background:rgba(89,224,176,.12);border-color:rgba(89,224,176,.35);color:var(--ok);font-weight:600}
+.arrow{color:var(--muted);font-size:12px}
+.prio p{margin:0;font-size:14px;color:var(--muted)}
+
+/* Pitfalls */
+.pit{display:grid;gap:14px}
+@media(min-width:820px){.pit{grid-template-columns:1fr 1fr}}
+.pit .item{border-left:2px solid var(--warn);padding:4px 0 4px 18px}
+.pit h4{margin:0 0 6px;font-size:15px;font-weight:650}
+.pit p{margin:0;font-size:14px;color:var(--muted)}
+
+/* Log */
+.log td:first-child{font-family:var(--mono);font-size:12.5px;color:#bcd6f7;white-space:nowrap}
+.log td:last-child{color:var(--muted)}
+
+/* Version check */
+.check{display:grid;gap:14px}
+@media(min-width:900px){.check{grid-template-columns:repeat(3,1fr)}}
+.check .q{border:1px solid var(--line);border-radius:14px;padding:20px;background:rgba(0,0,0,.22)}
+.check .q p.qt{margin:0 0 14px;font-size:14.5px;color:#fff}
+.verdict{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px;color:var(--muted)}
+.yn{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:999px;flex:0 0 auto}
+.yn.y{background:rgba(89,224,176,.12);color:var(--ok);border:1px solid rgba(89,224,176,.3)}
+.yn.n{background:rgba(255,179,43,.14);color:var(--warn);border:1px solid rgba(255,179,43,.3)}
+
+footer{margin:80px 0 60px;padding-top:26px;border-top:1px solid var(--line-soft);color:var(--muted);font-size:13px}
+footer b{color:#fff}
+.note{font-size:13.5px;color:var(--muted);margin-top:16px}
+.hr{height:1px;background:var(--line-soft);margin:22px 0}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="inner">
+    <div class="brand">
+      <span class="shapes">△ ○ ✕ □</span>
+      <span><b>SHADOWMOUNT</b><span class="plus">+</span></span>
+    </div>
+    <nav class="nav">
+      <a href="#start">Avvio del gioco</a>
+      <a href="#struktur">Ordine di ricerca</a>
+      <a href="#cache">Cache</a>
+      <a href="#config">Config</a>
+      <a href="#anleitung">Guida</a>
+      <a href="#stolper">Insidie</a>
+      <a href="#log">Log</a>
+      <a href="#version">Versione</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow">fakelib &amp; fakelib2 · versioni più recenti</span>
+    <h1>Montare i backport
+      <small>Come ShadowMount+ sostituisce le librerie di un gioco — verificato sul codice sorgente della 1.7 alpha13fix1, integrato con la 1.7beta1 fino alla 1.7beta4 e confrontato con la 1.7beta11.</small>
+    </h1>
+    <div class="badges">
+      <span class="badge on">Valido dalla 1.7 alpha8</span>
+      <span class="badge">Cache invece di livelli</span>
+      <span class="badge">fakelib2 esclusiva dalla alpha10</span>
+      <span class="badge">fakelib2 di nuovo nel gioco dalla 1.7beta1</span>
+      <span class="badge">Aggiornamento: 6 novembre 2026</span>
+    </div>
+
+    <div class="alert">
+      <div class="ic">!</div>
+      <p><strong>Non valido per la 1.7 alpha6 e precedenti.</strong> Lì le cartelle vengono ancora lette dalla sandbox in esecuzione e due livelli si sovrappongono. Per quelle versioni vale la guida separata. <strong>Errore più frequente nel passaggio:</strong> una <code class="inline">fakelib2</code> nella cartella del gioco viene ignorata dalla alpha8 alla alpha13fix1, senza alcun messaggio. Dalla 1.7beta1 viene di nuovo letta e prevale su una <code class="inline">fakelib</code> accanto. Non si sa quale versione è in esecuzione? <a href="#version" style="color:var(--warn)">Verifiche a fine pagina.</a></p>
+    </div>
+  </div>
+
+  <!-- 1 -->
+  <section id="start">
+    <div class="sec-head"><span class="sec-mark">01</span><h2>Cosa succede all'avvio del gioco</h2></div>
+    <p class="lede">La procedura parte da sola non appena il watcher rileva l'avvio di un gioco. La ricerca non avviene più nella sandbox in esecuzione, ma in posizioni fisse — e prima del montaggio viene creata una cache.</p>
+    <div class="card">
+      <ol class="flow">
+        <li>Il watcher segnala <b>PID</b> e <b>TITLE_ID</b> del gioco che si avvia.</li>
+        <li>La ricerca segue un <b>ordine fisso</b>: prima nella cartella dei backport, poi nell'origine del gioco; vince il primo risultato e viene scelta sempre <b>una sola</b> cartella (sezione 02).</li>
+        <li>Se si tratta di una <code class="inline">fakelib2</code> — dalla cartella dei backport oppure, dalla 1.7beta1, dal gioco —, viene montata <b>direttamente e in via esclusiva</b> — senza cache, senza file degli emulatori, senza fakelib globale.</li>
+        <li>Altrimenti sotto <code class="inline">/data/shadowmount/cache/&lt;TITLE_ID&gt;/fakelib/</code> viene creata una <b>cache</b>: la fakelib del gioco, più la fakelib globale e i file degli emulatori corrispondenti (sezione 03).</li>
+        <li>La cache viene ricreata solo se è cambiata una delle sue origini; altrimenti si usa quella esistente.</li>
+        <li>Il montaggio avviene nella sandbox del gioco, in <code class="inline">common/lib</code>.</li>
+        <li>Alla chiusura del gioco il mount viene rimosso.</li>
+      </ol>
+      <div class="hr"></div>
+      <p class="note">Da questa versione conta <b style="color:#fff">dove</b> si trova una cartella, non solo come si chiama. Si legge dalla cartella dei backport e dall'origine del gioco stessa — non più da ciò che si forma nella sandbox sotto <code class="inline">app0</code>.</p>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="struktur">
+    <div class="sec-head"><span class="sec-mark">02</span><h2>Ordine di ricerca</h2></div>
+    <p class="lede">Quattro posizioni, in questo ordine. Vince la prima cartella presente — anche se vuota; ciò che segue viene ignorato.</p>
+
+    <div class="card">
+      <ol class="flow">
+        <li><code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/fakelib2/</code> – prevale su tutto il resto e dalla alpha10 viene montata in via esclusiva.</li>
+        <li><code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/fakelib/</code></li>
+        <li><code class="inline">&lt;Spielquelle&gt;/fakelib2/</code> – solo dalla 1.7beta1 in poi, anch'essa in via esclusiva. La 1.7 alpha8 fino alla alpha13fix1 la ignorano senza messaggio.</li>
+        <li><code class="inline">&lt;Spielquelle&gt;/fakelib/</code> – funziona in ogni versione, finché non c'è una <code class="inline">fakelib2</code> accanto.</li>
+      </ol>
+    </div>
+
+    <div class="grid two" style="margin-top:18px">
+      <div class="card">
+        <span class="pill-way">Strada A · come backport, il gioco resta intatto</span>
+<pre>&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/
+└─ <span class="k">fakelib/</span>
+   └─ libSceXxx.sprx
+
+<span class="c">Esempio:</span>
+/data/homebrew/backports/PPSA01234/fakelib/</pre>
+      </div>
+
+      <div class="card">
+        <span class="pill-way">Strada B · nel dump del gioco o nell'immagine</span>
+<pre>&lt;cartella del gioco o contenuto dell'immagine&gt;/
+├─ eboot.bin
+├─ sce_sys/param.json
+├─ <span class="k">fakelib/</span>    <span class="c">← funziona in ogni versione</span>
+│  └─ libSceXxx.sprx
+└─ <span class="hi">fakelib2/</span>   <span class="c">← non metterla accanto!</span></pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <p class="path-title">Regole</p>
+      <p style="margin:0 0 12px;font-size:14.5px">I nomi delle cartelle devono essere esattamente <code class="inline">fakelib</code> o <code class="inline">fakelib2</code>, in minuscolo. Nella cartella del gioco la 1.7beta1 e successive leggono prima <code class="inline">fakelib2</code>, poi <code class="inline">fakelib</code>; la 1.7 alpha8 fino alla alpha13fix1 vi leggono <b style="color:var(--warn)">solo <code class="inline">fakelib</code></b> e ignorano senza messaggio una <code class="inline">fakelib2</code>. L'unica soluzione sicura in ogni versione è quindi una singola cartella <code class="inline">fakelib</code>. Nella cartella dei backport <code class="inline">fakelib2</code> viene prima di <code class="inline">fakelib</code>; se ci sono entrambe, vince <code class="inline">fakelib2</code>.</p>
+      <p style="margin:0 0 12px;font-size:14.5px;color:var(--muted)">La cartella <code class="inline">backports</code> viene ignorata nella normale scansione. Un backport agisce sul gioco corrispondente da qualsiasi percorso di scansione; se più percorsi di scansione forniscono lo stesso titolo, vince il percorso di scansione del gioco, altrimenti l'ordine delle voci <code class="inline">scanpath</code>. Posizioni usuali sono <code class="inline">/data/homebrew/backports/&lt;TITLE_ID&gt;/</code> e <code class="inline">/data/etaHEN/games/backports/&lt;TITLE_ID&gt;/</code>. Dalla 1.7beta6 dopo il Title-ID può esserci un suffisso (<code class="inline">backports/&lt;TITLE_ID&gt; Spielname/</code>): all'interno di un percorso di scansione vince la cartella che si chiama esattamente <code class="inline">&lt;TITLE_ID&gt;</code>; se non esiste, ShadowMount+ prende, tra le cartelle il cui nome inizia con l'intero Title-ID, la prima in ordine di byte (maiuscole e minuscole contano; i file non contano). Se quindi accanto a una cartella con suffisso ce n'è anche una con il nome semplice, quella con il suffisso non viene più letta. Dalla 1.7beta3 <code class="inline">/data/homebrew/backports/&lt;TITLE_ID&gt;/</code> viene comunque cercata per ultima — anche se le voci <code class="inline">scanpath</code> personalizzate omettono <code class="inline">/data/homebrew</code>. Per questo lì non si cercano giochi.</p>
+      <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">PKG installati (dalla 1.7beta2)</b>: anche un gioco installato come PKG ha ora la sua cartella dei backport <code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/</code>. Poco prima dell'avvio del gioco ShadowMount+ ne sovrappone <b>l'intero contenuto</b> all'<code class="inline">app0</code> del pacchetto — i file singolarmente, le sottocartelle che il pacchetto non possiede per intero, al massimo 256 voci per gioco. Il pacchetto stesso non viene modificato. Poi viene montata come di consueto <code class="inline">fakelib2</code> o <code class="inline">fakelib</code>. Fino alla 1.7 un backport esterno per i PKG installati veniva ignorato; contava solo ciò che si trovava nel pacchetto.</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">Questo programma, durante l'integrazione (BACKPORT, AMPR EMU), crea sempre una cartella <code class="inline">fakelib</code> — funziona in entrambe le posizioni e in ogni versione. Se nel gioco c'è già una <code class="inline">fakelib2</code>, avvisa prima.</p>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="cache">
+    <div class="sec-head"><span class="sec-mark">03</span><h2>Cache, emulatori e fakelib globale</h2></div>
+    <p class="lede">Invece di sovrapporre livelli, ShadowMount+ copia tutto prima dell'avvio in una cache sotto <code class="inline">/data/shadowmount/cache/&lt;TITLE_ID&gt;/fakelib/</code>. Ciò che viene copiato per ultimo prevale a parità di nome file — l'ordine è stabilito da <code class="inline">global_fakelib_priority</code>.</p>
+
+    <div class="prio">
+      <div class="p default">
+        <span class="tag">Predefinito</span>
+        <h4>global_fakelib_priority=game</h4>
+        <div class="layers">
+          <span class="layer">1 · globale</span><span class="arrow">→</span>
+          <span class="layer">2 · gioco</span><span class="arrow">→</span>
+          <span class="layer win">3 · emulatore</span>
+        </div>
+        <p>Il file del gioco prevale su quello globale. I file degli emulatori sostituiscono qui solo i nomi che il gioco già possiede.</p>
+      </div>
+      <div class="p">
+        <span class="tag">Alternativa</span>
+        <h4>global_fakelib_priority=global</h4>
+        <div class="layers">
+          <span class="layer">1 · gioco</span><span class="arrow">→</span>
+          <span class="layer">2 · emulatore</span><span class="arrow">→</span>
+          <span class="layer win">3 · globale</span>
+        </div>
+        <p>Prevale il file globale — anche su un file di emulatore con lo stesso nome, che in tal caso non viene nemmeno copiato.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">File degli emulatori</b> (<code class="inline">update_emulators=1</code>): un file da <code class="inline">/data/shadowmount/emus</code> viene acquisito solo se la fakelib del gioco ha un file con <b style="color:#fff">lo stesso nome</b>. Un nome presente solo nella cartella globale o in nessun posto viene saltato. Per un gioco senza <code class="inline">libSceAmpr.sprx</code> questa strada da sola non serve quindi a nulla. Dalla 1.7beta2 ciò vale solo per i giochi da cartelle e immagini — i PKG installati non ricevono file degli emulatori.</p>
+      <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Aggiornamento automatico di AMPR</b> (<code class="inline">auto_update_ampr=1</code>, disattivato di fabbrica): 30 secondi dopo l'avvio e poi ogni quattro ore ShadowMount+ controlla se esiste una <code class="inline">libSceAmpr.sprx</code> più recente e la mette in <code class="inline">emulators_path</code>. Se lì manca del tutto, viene scaricata subito. Finché un gioco è montato, il download attende. Nel gioco arriva tramite i file degli emulatori — cioè solo se la fakelib del gioco contiene già una <code class="inline">libSceAmpr.sprx</code>.</p>
+      <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">fakelib globale</b>: se esistono sia una fakelib globale sia una propria del gioco, nella cache vengono unite. Se non ce n'è una propria del gioco, la cartella globale viene montata direttamente. Con <code class="inline">global_fakelib_exclude</code> si possono escludere singoli titoli.</p>
+      <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Dalla alpha10</b>: una <code class="inline">fakelib2</code> dei backport viene montata direttamente e in via esclusiva. Né i file degli emulatori né la fakelib globale sostituiscono o integrano qualcosa lì.</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">La cache viene ricreata non appena cambiano la fakelib del gioco, la fakelib globale o i file degli emulatori. Se un gioco non viene avviato per sette giorni, la sua cache scade.</p>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="config">
+    <div class="sec-head"><span class="sec-mark">04</span><h2>Impostazioni</h2></div>
+    <p class="lede">Tutto si trova in <code class="inline">/data/shadowmount/config.ini</code>. Le quattro chiavi <code class="inline">update_emulators</code>, <code class="inline">emulators_path</code>, <code class="inline">auto_update_ampr</code> e <code class="inline">ampr_update_url</code> esistono solo dalla alpha8.</p>
+
+    <div class="card" style="padding:8px 8px 0">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Chiave</th><th>Predefinito</th><th>Significato</th></tr></thead>
+          <tbody>
+            <tr><td class="key">backport_fakelib</td><td class="val">1</td><td>Interruttore principale. <code class="inline">0</code> disattiva tutto — anche la fakelib globale e i file degli emulatori. Eccezione dalla 1.7beta2: per i PKG installati la cartella dei backport viene comunque sovrapposta all'<code class="inline">app0</code>; l'interruttore riguarda lì solo il montaggio della fakelib.</td></tr>
+            <tr><td class="key">update_emulators</td><td class="val">1</td><td>I file corrispondenti da <code class="inline">emulators_path</code> sostituiscono quelli con lo stesso nome nella fakelib del gioco. Una <code class="inline">fakelib2</code> resta invariata, dalla 1.7beta2 anche ogni PKG installato.</td></tr>
+            <tr><td class="key">emulators_path</td><td class="val">/data/shadowmount/emus</td><td>Cartella con i file degli emulatori. Si trovano direttamente al suo interno — viene confrontato solo ciò che non è in una sottocartella.</td></tr>
+            <tr><td class="key">auto_update_ampr</td><td class="val">0</td><td>Scaricare da sola la <code class="inline">libSceAmpr.sprx</code> dalla rete: 30 s dopo l'avvio, poi ogni quattro ore.</td></tr>
+            <tr><td class="key">ampr_update_url</td><td class="val">drakmor/ampr_emu</td><td>Indirizzo di download per l'aggiornamento di AMPR; di fabbrica l'ultima pubblicazione di <code class="inline">github.com/drakmor/ampr_emu</code>.</td></tr>
+            <tr><td class="key">global_fakelib</td><td class="val">1</td><td>Usare anche la cartella globale per ogni gioco rilevato. Una <code class="inline">fakelib2</code> ne resta esclusa.</td></tr>
+            <tr><td class="key">global_fakelib_path</td><td class="val">/data/shadowmount/fakelib</td><td>Posizione della cartella globale. Le librerie si trovano direttamente al suo interno; una sottocartella <code class="inline">fakelib</code> verrebbe copiata, ma non montata. Non deve puntare alla cache.</td></tr>
+            <tr><td class="key">global_fakelib_priority</td><td class="val">game</td><td><code class="inline">game</code> o <code class="inline">global</code> — chi prevale a parità di nome file (sezione 03).</td></tr>
+            <tr><td class="key">global_fakelib_exclude</td><td class="val">—</td><td>Ripetibile. Esclude titoli dalla fakelib globale; quella propria del gioco resta attiva.</td></tr>
+            <tr><td class="key">fakelib_exclude</td><td class="val">—</td><td>Dalla 1.7beta4. Ripetibile, fino a 128 Title-ID (<code class="inline">PPSA</code>, <code class="inline">CUSA</code>, <code class="inline">LAPY</code>, <code class="inline">FAKE</code>). Dalla 1.7beta5 solo il vecchio nome di <code class="inline">fakelib_mode=&lt;ID&gt;:disabled</code> (le due condividono i 128 posti; <code class="inline">global_fakelib_exclude</code> ha un proprio limite di 128). Per questi titoli disattiva <b>ogni</b> fakelib — <code class="inline">fakelib</code>, <code class="inline">fakelib2</code>, quella globale e la cache. Un AMPR EMU lì presente non viene quindi caricato. Ha effetto al successivo avvio del gioco.</td></tr>
+            <tr><td class="key">fakelib_default_mode</td><td class="val">full</td><td>Dalla 1.7beta5. Modalità per tutti i giochi senza voce propria: <code class="inline">full</code>, <code class="inline">emulators</code> (solo poche librerie di emulatori) o <code class="inline">disabled</code>.</td></tr>
+            <tr><td class="key">fakelib_mode</td><td class="val">—</td><td>Dalla 1.7beta5. Ripetibile, <code class="inline">&lt;TITLE_ID&gt;:default|full|emulators|disabled</code>. Prevale l'ultima voce valida di un gioco.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <p class="path-title">Esempio</p>
+<pre><span class="k">backport_fakelib</span>=1
+<span class="k">update_emulators</span>=1
+<span class="k">emulators_path</span>=/data/shadowmount/emus
+<span class="k">auto_update_ampr</span>=0
+<span class="k">global_fakelib</span>=1
+<span class="k">global_fakelib_path</span>=/data/shadowmount/fakelib
+<span class="k">global_fakelib_priority</span>=game
+<span class="k">global_fakelib_exclude</span>=PPSA01234</pre>
+      <p class="note">Come valori sono ammessi <code class="inline">1/0</code>, <code class="inline">true/false</code>, <code class="inline">yes/no</code>, <code class="inline">on/off</code>. <code class="inline">auto_update_ampr=1</code> fa accedere la console alla rete — di fabbrica è disattivato.</p>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="anleitung">
+    <div class="sec-head"><span class="sec-mark">05</span><h2>Passo dopo passo</h2></div>
+    <p class="lede">Da zero fino al messaggio «Gioco backportato».</p>
+    <div class="card">
+      <ol class="flow">
+        <li><b>Disattivare il payload BackPork.</b> L'uso in parallelo causa conflitti.</li>
+        <li><b>Mettere il gioco</b> in un percorso di scansione — come cartella (con <code class="inline">sce_sys/param.json</code>) o come immagine.</li>
+        <li><b>Creare le librerie</b> — per esempio con questo programma (BACKPORT o AMPR EMU). Crea sempre una cartella <code class="inline">fakelib</code>.</li>
+        <li><b>Metterle a posto.</b> Come backport in <code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/fakelib/</code> il gioco resta intatto. Nel gioco stesso — come lo integra questo programma durante la creazione — funziona solo <code class="inline">fakelib</code>.</li>
+        <li>Facoltativo: <b>librerie globali</b> direttamente in <code class="inline">/data/shadowmount/fakelib/</code>, <b>file degli emulatori</b> direttamente in <code class="inline">/data/shadowmount/emus/</code> — in ogni caso senza sottocartelle.</li>
+        <li><b>Impostare la config</b> — prima di avviare il gioco.</li>
+        <li><b>Avviare il payload</b> (porta <code class="inline">9021</code> oppure <code class="inline">autoload.txt</code>) e attendere la tessera.</li>
+        <li><b>Avviare il gioco.</b> Messaggio: «Gioco backportato: &lt;TITLE_ID&gt;» (dalla 1.7beta11 «Backport applicato: …»; per una cartella dei backport vi compare il suo percorso senza <code class="inline">/fakelib</code>). Se sono stati sostituiti file degli emulatori, il messaggio lo indica in aggiunta (nell'originale «Emulators updated»). Se sono montate solo librerie di emulatori, il messaggio è «Emulatori applicati al gioco: …».</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="stolper">
+    <div class="sec-head"><span class="sec-mark">06</span><h2>Insidie</h2></div>
+    <p class="lede">Otto punti in cui in questa versione ci si blocca — i primi tre sono nuovi rispetto alla alpha6.</p>
+    <div class="card">
+      <div class="pit">
+        <div class="item">
+          <h4><code class="inline">fakelib2</code> nella cartella del gioco dipende dalla versione</h4>
+          <p>La 1.7 alpha8 fino alla alpha13fix1 la ignorano senza messaggio. Dalla 1.7beta1 prevale e oscura una <code class="inline">fakelib</code> accanto — allora senza fakelib globale e senza file degli emulatori. Valido in ogni versione: rinominarla in <code class="inline">fakelib</code> oppure metterla come backport.</p>
+        </div>
+        <div class="item">
+          <h4>I file degli emulatori si limitano a sostituire</h4>
+          <p>Un file da <code class="inline">emulators_path</code> viene acquisito solo se la fakelib del gioco ne ha uno con lo stesso nome. I nomi nuovi vengono saltati. Per i PKG installati (dalla 1.7beta2) non viene sostituito nulla.</p>
+        </div>
+        <div class="item">
+          <h4>Il globale batte l'emulatore</h4>
+          <p>Con <code class="inline">global_fakelib_priority=global</code> una <code class="inline">libSceAmpr.sprx</code> nella cartella globale prevale anche su una più recente da <code class="inline">emulators_path</code> — l'aggiornamento automatico di AMPR allora non arriva.</p>
+        </div>
+        <div class="item">
+          <h4>Un solo gioco alla volta</h4>
+          <p>Al cambio di gioco il vecchio mount viene rimosso per primo; se non riesce, il nuovo gioco non riceve alcuna fakelib.</p>
+        </div>
+        <div class="item">
+          <h4>Non modificare la config durante il gioco</h4>
+          <p>Fino alla 1.7 alpha13fix1 ogni modifica a una chiave fakelib rimuove subito tutti gli overlay — anche con il gioco in esecuzione. Dalla 1.7beta1 il mount resta fino alla fine del gioco e i nuovi valori hanno effetto solo al successivo avvio.</p>
+        </div>
+        <div class="item">
+          <h4>Non usare la cache come cartella globale</h4>
+          <p><code class="inline">global_fakelib_path</code> non deve trovarsi nella cartella della cache né contenerla — viene rifiutato.</p>
+        </div>
+        <div class="item">
+          <h4>Senza <code class="inline">common/lib</code> non succede nulla</h4>
+          <p>Interruzione silenziosa: nessun messaggio, nessun mount.</p>
+        </div>
+        <div class="item">
+          <h4>Commento obsoleto</h4>
+          <p>In <code class="inline">config.ini.example</code> il testo su <code class="inline">backport_fakelib</code> descrive ancora il vecchio comportamento di <code class="inline">app0</code> — nella alpha13fix1 e nella 1.7beta1. Dalla 1.7beta2 è corretto (l'interruttore riguarda solo il successivo overlay <code class="inline">common/lib</code>).</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="log">
+    <div class="sec-head"><span class="sec-mark">07</span><h2>Leggere il log</h2></div>
+    <p class="lede">File <code class="inline">/data/shadowmount/debug.log</code>, filtro <code class="inline">[FAKELIB]</code>. Le righe <code class="inline">game libraries mounted</code> e <code class="inline">global libraries mounted</code> qui non esistono più — appartengono alla vecchia versione.</p>
+    <div class="card" style="padding:8px 8px 0">
+      <div class="table-scroll">
+        <table class="log">
+          <thead><tr><th>Riga</th><th>Significato</th></tr></thead>
+          <tbody>
+            <tr><td>using cache for &lt;ID&gt;</td><td>La cache composta viene montata.</td></tr>
+            <tr><td>cache updated for &lt;ID&gt;</td><td>Cache ricreata — un'origine era cambiata.</td></tr>
+            <tr><td>cache current for &lt;ID&gt;</td><td>La cache è aggiornata, nessuna ricostruzione.</td></tr>
+            <tr><td>combined cache unavailable …</td><td>Fakelib globale omessa per questo avvio.</td></tr>
+            <tr><td>libraries mounted for &lt;ID&gt;</td><td>Il mount è attivo (fino alla 1.7beta3). Dalla 1.7beta4 la riga si chiama <code class="inline">&lt;Schicht&gt; mounted for &lt;ID&gt;: Quelle -&gt; Ziel</code> con il livello <code class="inline">fakelib2</code>, <code class="inline">game</code>, <code class="inline">global</code> o <code class="inline">directory</code>.</td></tr>
+            <tr><td>cache build failed …</td><td>Impossibile creare la cache — controllare spazio e permessi.</td></tr>
+            <tr><td>cache publish failed …</td><td>Impossibile acquisire la cache completata — controllare spazio e permessi.</td></tr>
+            <tr><td>global path unavailable …</td><td>Il percorso globale manca o non è leggibile.</td></tr>
+            <tr><td>global path is not a directory …</td><td>Il percorso globale punta a un file.</td></tr>
+            <tr><td>handoff active mount pid=X -&gt; pid=Y</td><td>Cambio di gioco, il vecchio mount viene rimosso (fino alla 1.7beta3). Dalla 1.7beta4 vi compare <code class="inline">rebuilding sandbox mounts: &lt;ID&gt; pid=N</code>.</td></tr>
+            <tr><td>… unmount deferred for …</td><td>Destinazione ancora occupata (<code class="inline">EBUSY</code>), fino alla 1.7beta3. In seguito <code class="inline">busy sandbox cleanup scheduled</code> segnala che la pulizia è stata rinviata; <code class="inline">cleanup retained for</code> e <code class="inline">sandbox cleanup wait ended; retaining owned layers</code> indicano l'esito.</td></tr>
+            <tr><td>[BKP][NSFS] …</td><td>Solo PKG installati, dalla 1.7beta2: sovrapposizione della cartella dei backport all'<code class="inline">app0</code> — attiva, saltata o non riuscita.</td></tr>
+            <tr><td style="color:var(--warn)">nessuna riga</td><td>Nessuna cartella fakelib nelle posizioni cercate (una <code class="inline">fakelib2</code> nella cartella del gioco conta solo dalla 1.7beta1) oppure <code class="inline">backport_fakelib=0</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="version">
+    <div class="sec-head"><span class="sec-mark">08</span><h2>Quale versione ho?</h2></div>
+    <p class="lede">Tre verifiche rapide — ciascuna da sola è sufficiente.</p>
+    <div class="check">
+      <div class="q">
+        <p class="qt"><code class="inline">update_emulators</code> compare in <code class="inline">config.ini.example</code>?</p>
+        <div class="verdict"><span class="yn y">sì</span> versione nuova (alpha8+) — questa guida</div>
+        <div class="verdict"><span class="yn n">no</span> versione vecchia</div>
+      </div>
+      <div class="q">
+        <p class="qt">Esiste la cartella <code class="inline">/data/shadowmount/cache/</code>?</p>
+        <div class="verdict"><span class="yn y">sì</span> versione nuova — questa guida</div>
+        <div class="verdict"><span class="yn n">no</span> versione vecchia (oppure la cache non è ancora necessaria)</div>
+      </div>
+      <div class="q">
+        <p class="qt">Nel log compare mai <code class="inline">[FAKELIB] using cache for</code>?</p>
+        <div class="verdict"><span class="yn y">sì</span> versione nuova — questa guida</div>
+        <div class="verdict"><span class="yn n">no</span> versione vecchia (oppure finora nessun avvio tramite la cache)</div>
+      </div>
+    </div>
+    <p class="note">Le tre verifiche distinguono vecchio e nuovo. Non mostrano se è in esecuzione la 1.7 alpha8 fino alla alpha13fix1 oppure la 1.7beta1 e successive — le due si differenziano solo nella cartella del gioco (sezione 02); lo rivela soltanto il numero di versione.</p>
+    <p class="note">Fornita con il programma è ShadowMountPlus 1.7beta11 (<code class="inline">shadowmountplus_v1.7beta11.elf</code>, pubblicata dall'autore come «Latest»). Supporta tutto ciò che sopra è indicato come «dalla 1.7beta2», «dalla 1.7beta3», «dalla 1.7beta4» e «dalla 1.7beta6», e legge una <code class="inline">fakelib2</code> nella cartella del gioco. Novità dalla 1.7beta6: le cartelle dei backport possono avere un suffisso dopo il Title-ID (vedi sopra); l'interfaccia web può impostare per ogni gioco «Ignora la fakelib globale» (scrive <code class="inline">global_fakelib_exclude=&lt;TITLE_ID&gt;</code>, vale dal successivo avvio, la modalità della fakelib propria resta); le applicazioni homebrew in esecuzione (quattro lettere maiuscole + cinque cifre, eccetto CUSA/PPSA/NPXS) e i giochi PS4/PS5 in esecuzione non rallentano più la scansione e la registrazione; l'ambiente di esecuzione proprio, la sua origine e le sue immagini montate restano protetti. L'ordine e la risoluzione della fakelib sono invariati. Novità della 1.7beta7: la pulizia dei livelli della sandbox funziona anche dopo che un'unità USB è stata scollegata. Novità della 1.7beta8: l'interfaccia web è stata ricostruita per televisore e gamepad e può installare pacchetti nonché aggiungere, sostituire ed eliminare backport; i giochi vengono riconosciuti anche da un <code class="inline">param.sfo</code> (invece di <code class="inline">param.json</code>) e da un <code class="inline">eboot2.bin</code>, e l'interfaccia di programmazione, di fabbrica, è in ascolto su <code class="inline">0.0.0.0</code> invece di <code class="inline">127.0.0.1</code>. Anche qui l'ordine e la risoluzione della fakelib sono invariati. Novità della 1.7beta10: l'interfaccia web può espellere in sicurezza le unità USB; le scansioni e i lavori su altri giochi proseguono anche durante un gioco in esecuzione; le connessioni guest SMB sono riparate ed esistono un interruttore ospite/autenticato e una modalità SMB di sola lettura; i giochi FPKG non vengono più chiusi forzatamente in modalità riposo. L'ordine e la risoluzione della fakelib sono invariati. Novità della 1.7beta11: la coda dei PKG è unificata per PC, memoria locale e SMB (selezione di fino a 32 file in una volta, ordine automatico gioco → aggiornamento → DLC); errori o interruzioni conservano i pacchetti non ancora completati; stima del tempo di installazione rimanente; corrette le perdite di memoria in json-c. L'ordine e la risoluzione della fakelib sono invariati. Novità dalla 1.7beta5: per ogni gioco esiste una modalità fakelib (<code class="inline">fakelib_mode=&lt;TITLE_ID&gt;:default|full|emulators|disabled</code>, valore predefinito per tutti gli altri <code class="inline">fakelib_default_mode</code>); <code class="inline">fakelib_exclude</code> vale lì come vecchio nome di <code class="inline">disabled</code>, e prevale l'ultima voce valida di un gioco. «Emulators» monta solo poche librerie di emulatori (per i pacchetti installati <code class="inline">libSceAppContent.sprx</code>, <code class="inline">libSceGameUpdate.sprx</code> e <code class="inline">libSceNpEntitlementAccess.sprx</code>, per cartelle e immagini in più <code class="inline">libSceAmpr.sprx</code> e <code class="inline">libScePlayGo.sprx</code>). Che una <code class="inline">fakelib2</code> dei backport resti esclusiva, la documentazione lo indica solo dalla alpha10.</p>
+    <p class="note">Dalla 1.7beta4 ShadowMount+, prima dell'avvio di un <b>pacchetto installato</b>, elimina <code class="inline">libSceAmpr.sprx</code>, <code class="inline">libScePlayGo.sprx</code> e <code class="inline">libkernel.sprx</code> da <code class="inline">/data/homebrew/backports/&lt;TITLE_ID&gt;/fakelib</code>. Per i giochi da un'immagine ciò non vale. L'ordine di ricerca sopra è invariato nella 1.7beta4. Nella 1.7beta11 vi elimina solo più <code class="inline">libSceAmpr.sprx</code> e <code class="inline">libScePlayGo.sprx</code> (i file mancanti sono innocui, un errore di eliminazione blocca il mount); la cartella dei backport può avere un suffisso dopo il Title-ID.</p>
+    <p class="note"><b>libkernel.sprx (secondo README e codice sorgente della 1.7beta11):</b> se la fakelib è attiva, ShadowMount+ rimuove questo file dalla fakelib della cartella scelta, se scrivibile, e dalla fakelib globale coinvolta. Per i giochi da un'immagine e per i pacchetti installati l'origine resta invariata; viene invece montata una cache senza il file. Se questa cache non si può creare, ShadowMount+ non monta nulla senza filtro. Per questo una <code class="inline">fakelib2</code> con <code class="inline">libkernel.sprx</code> non è più in ogni caso «diretta, senza cache».</p>
+  </section>
+
+  <footer>
+    <p style="margin:0 0 6px"><b>Valido per ShadowMountPlus dalla 1.7 alpha8.</b></p>
+    <p style="margin:0">Fino alla 1.7 alpha6 inclusa vale la guida separata: lì le cartelle vengono lette dalla sandbox in esecuzione e due livelli si sovrappongono.<br>
+    Verificato sul codice sorgente della 1.7 alpha13fix1: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">include/sm_paths.h</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>; indicazioni di versione sulle edizioni del README dalla alpha8 alla alpha12. Integrato sul codice sorgente della 1.7beta2: <code class="inline">src/sm_pkg_backport.c</code>, <code class="inline">src/sm_shellcore_service.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>. Ordine nella cartella del gioco rimisurato su <code class="inline">src/sm_fakelib.c</code> della 1.7 alpha8, alpha13fix1, 1.7beta1 e 1.7beta2. Confrontato con la 1.7beta3 (<code class="inline">include/sm_paths.h</code>, <code class="inline">src/sm_config_mount.c</code>, <code class="inline">src/sm_scan.c</code>, <code class="inline">src/sm_fakelib.c</code>, <code class="inline">README.md</code>): nuovo è solo il ripiego su <code class="inline">/data/homebrew/backports</code>. Confrontato con la 1.7beta4 (<code class="inline">src/sm_fakelib.c</code>, <code class="inline">src/sm_config_mount.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>): nuovi sono <code class="inline">fakelib_exclude</code> e la pulizia per i pacchetti installati, l'ordine è invariato. Confrontato con la 1.7beta6-fix2 (confronto 1.7-beta5fix1 fino alla 1.7beta6-fix2: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">src/sm_scan.c</code>, <code class="inline">src/sm_config_mount.c</code>, <code class="inline">include/sm_path_utils.h</code>, <code class="inline">README.md</code>, <code class="inline">docs/api.md</code>): nuovi sono il suffisso del nome nelle cartelle dei backport e l'esclusione dalla fakelib globale per ogni gioco, l'ordine è invariato. Confrontato con la 1.7beta7 (confronto 1.7beta6-fix2 fino alla 1.7beta7: solo <code class="inline">src/sm_fakelib.c</code> e il processo di compilazione): nuova è la pulizia dopo lo scollegamento dell'unità USB, configurazione, ordine e cartella dei backport sono invariati. Confrontato con la 1.7beta10 (confronto 1.7beta9 fino alla 1.7beta10: <code class="inline">src/sm_fakelib.c</code> acquisisce solo <code class="inline">sm_fakelib_source_is_in_use</code> (protezione di un'origine in esecuzione), <code class="inline">src/sm_pkg_backport.c</code> e <code class="inline">src/sm_path_utils.c</code> una funzione di supporto ciascuno per questo scopo; <code class="inline">src/sm_scan.c</code> e <code class="inline">config.ini.example</code> non compaiono — ordine, risoluzione e cartella dei backport valgono quindi invariati; nuovi sono l'espulsione USB, il lavoro durante un gioco e SMB ospite/sola lettura). Prima, con la 1.7beta9 (confronto 1.7beta8 fino alla 1.7beta9: né <code class="inline">src/sm_fakelib.c</code> né <code class="inline">src/sm_scan.c</code> né <code class="inline">config.ini.example</code> compaiono nel confronto, tutto ciò che è descritto qui vale quindi invariato; nuovi sono le condivisioni di rete SMB e il browser di installazione. Prima, con la 1.7beta8 (confronto 1.7beta7 fino alla 1.7beta8: <code class="inline">src/sm_fakelib.c</code> non compare nel confronto, ordine e risoluzione della fakelib quindi invariati; modificati sono <code class="inline">src/sm_scan.c</code> (riconoscimento tramite param.json o param.sfo), <code class="inline">config.ini.example</code> (valore predefinito di <code class="inline">api_bind_address</code>), <code class="inline">README.md</code> e <code class="inline">docs/api.md</code>) Confrontato con la 1.7beta11 (confronto 1.7beta10 fino alla 1.7beta11: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">src/sm_scan.c</code>, <code class="inline">src/sm_pkg_backport.c</code>, <code class="inline">src/sm_path_utils.c</code> e <code class="inline">config.ini.example</code> compaiono — <code class="inline">sm_fakelib.c</code>, <code class="inline">sm_pkg_backport.c</code> e <code class="inline">src/sm_path_utils.c</code> acquisiscono ciascuno una funzione di supporto per la protezione dell'espulsione USB; <code class="inline">src/sm_scan.c</code> rinomina <code class="inline">directory_has_param_json</code> in <code class="inline">directory_has_game_param</code> (puramente interno); <code class="inline">config.ini.example</code> non contiene chiavi nuove — ordine, risoluzione e cartella dei backport sono quindi invariati; nuove sono la coda dei PKG unificata e le correzioni di errori). Il 06.11.2026 inoltre confronto 1.7beta4 fino alla 1.7beta11 sul codice sorgente (<code class="inline">src/sm_fakelib.c</code>, <code class="inline">src/sm_scanner.c</code>, <code class="inline">src/sm_pkg_backport.c</code>, <code class="inline">src/sm_config_mount.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>, file di lingua): ordine dei candidati, regola del nome dei backport e i valori predefiniti delle chiavi sono invariati; sono stati corretti le insidie su modifiche della config e sul commento, le righe del log, il messaggio di avvio e la pulizia nella cartella dei backport, aggiunti <code class="inline">fakelib_mode</code>, <code class="inline">fakelib_default_mode</code> e la gestione di <code class="inline">libkernel.sprx</code>. Non verificato sul dispositivo. · Aggiornamento 6 novembre 2026.</p>
+  </footer>
+</main>
+
+<script>
+const links = [...document.querySelectorAll('.nav a')];
+const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.remove('active'));
+      map.get(e.target.id)?.classList.add('active');
+    }
+  });
+}, { rootMargin: '-88px 0px -70% 0px', threshold: 0 });
+document.querySelectorAll('section').forEach(s => obs.observe(s));
+</script>
+</body>
+</html>

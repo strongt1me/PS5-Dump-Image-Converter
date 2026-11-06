@@ -221,7 +221,7 @@ La barra lateral tiene dos áreas, entre las que alterna el botón **CAMBIAR DE 
 </tr>
 </table>
 
-El **[Manual de usuario](BENUTZERHANDBUCH.html)** (solo en alemán) explica con exactitud qué hace cada botón; las respuestas breves
+El **[Manual de usuario](BENUTZERHANDBUCH_ES.html)** explica con exactitud qué hace cada botón; las respuestas breves
 están en las **[FAQ](FAQ_ES.html)**. Dentro del programa, ambos se abren con los botones **MANUAL DE USUARIO** y **FAQ**
 de la barra de título, en el idioma de la interfaz.
 
@@ -229,7 +229,7 @@ de la barra de título, en el idioma de la interfaz.
 
 | Documento | Contenido | Formatos |
 | --- | --- | --- |
-| **Manual de usuario** (solo en alemán) | Manejo en lenguaje sencillo: todas las tareas, la barra de herramientas, errores típicos, particularidades en Linux y macOS | [HTML](BENUTZERHANDBUCH.html) · [PDF](BENUTZERHANDBUCH.pdf) |
+| **Manual de usuario** | Manejo en lenguaje sencillo: todas las tareas, la barra de herramientas, errores típicos, particularidades en Linux y macOS | [HTML](BENUTZERHANDBUCH_ES.html) · [PDF](BENUTZERHANDBUCH_ES.pdf) |
 | **FAQ (Deutsch)** | las preguntas más frecuentes, con respuestas breves | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
 | **FAQ (English)** | the most common questions, answered briefly | [HTML](FAQ_EN.html) · [PDF](FAQ_EN.pdf) |
 | **README (EN · ES · IT · FR)** | esta página en otros cuatro idiomas | [English](README_EN.md) · [Español](README_ES.md) · [Italiano](README_IT.md) · [Français](README_FR.md) |

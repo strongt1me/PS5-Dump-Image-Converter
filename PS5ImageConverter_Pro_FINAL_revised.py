@@ -434,6 +434,21 @@ def _bundled_resource(*parts: str) -> str:
     return ""
 
 
+def _sprachdatei(sprache: str, *parts: str) -> str:
+    """Wie :func:`_bundled_resource`, aber in der Sprache der Oberfläche.
+
+    Handbuch und Anleitungen gibt es deutsch (``Name.html``) und in ``_EN``, ``_ES``, ``_IT`` und ``_FR``
+    (``Name_EN.html`` …). Fehlt die Fassung der Sprache, kommt die deutsche; fehlt auch sie, ein leerer String.
+    Der letzte Pfadteil ist der Dateiname, vor dem Punkt kommt das Sprachkürzel.
+    """
+    if sprache in ("en", "es", "it", "fr"):
+        stamm, endung = os.path.splitext(parts[-1])
+        pfad = _bundled_resource(*parts[:-1], "%s_%s%s" % (stamm, sprache.upper(), endung))
+        if pfad:
+            return pfad
+    return _bundled_resource(*parts)
+
+
 def _logserver_absender_erlaubt(gegenstelle: str, ps5_ip: str = "") -> bool:
     """Darf diese Gegenstelle Zeilen in das Konsolenprotokoll schreiben?
 
@@ -6336,7 +6351,7 @@ class PS5ConverterGUI:
         unter Windows ``os.startfile``, sonst ``xdg-open``/``open``, und wenn
         beides nicht greift der Browser.
         """
-        pfad = _bundled_resource("BENUTZERHANDBUCH.html")
+        pfad = _sprachdatei(str(getattr(self, "_current_language", "de") or "de"), "BENUTZERHANDBUCH.html")
         if not pfad:
             logger.warning("Benutzerhandbuch nicht gefunden")
             messagebox.showwarning(
@@ -6386,7 +6401,8 @@ class PS5ConverterGUI:
         siehe die drei .spec-Dateien), deshalb zwei Pfadteile für
         :func:`_bundled_resource`.
         """
-        pfad = _bundled_resource("Anleitungen", "AMPR_Asset_Packs_Mitschnitt_Assistent.html")
+        pfad = _sprachdatei(str(getattr(self, "_current_language", "de") or "de"),
+                            "Anleitungen", "AMPR_Asset_Packs_Mitschnitt_Assistent.html")
         if not pfad:
             logger.warning("Asset-Pack-Anleitung nicht gefunden")
             messagebox.showwarning(
@@ -54641,7 +54657,7 @@ class PS5ConverterGUI:
         Namen weiss er, was abzulegen ist.
         """
         name = self._AMPR_ANLEITUNGEN.get(generation, "")
-        pfad = _bundled_resource("Anleitungen", name) if name else ""
+        pfad = _sprachdatei(str(getattr(self, "_current_language", "de") or "de"), "Anleitungen", name) if name else ""
         if not pfad:
             logger.warning("Anleitung nicht gefunden: %s", name or generation)
             messagebox.showinfo(

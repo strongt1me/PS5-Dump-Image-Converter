@@ -222,7 +222,7 @@ La barre latérale comporte deux zones, entre lesquelles le bouton **CHANGER DE 
 </tr>
 </table>
 
-Le **[manuel utilisateur](BENUTZERHANDBUCH.html)** (uniquement en allemand) explique en détail ce que fait chaque bouton ; des réponses brèves
+Le **[manuel utilisateur](BENUTZERHANDBUCH_FR.html)** explique en détail ce que fait chaque bouton ; des réponses brèves
 se trouvent dans la **[FAQ](FAQ_FR.html)**. Dans le programme, les boutons **MANUEL UTILISATEUR** et **FAQ**
 en haut de la barre de titre ouvrent les deux, dans la langue de l'interface.
 
@@ -230,7 +230,7 @@ en haut de la barre de titre ouvrent les deux, dans la langue de l'interface.
 
 | Document | Contenu | Formats |
 | --- | --- | --- |
-| **Manuel utilisateur** (uniquement en allemand) | utilisation en langage simple : toutes les tâches, la barre d'outils, erreurs typiques, particularités sous Linux et macOS | [HTML](BENUTZERHANDBUCH.html) · [PDF](BENUTZERHANDBUCH.pdf) |
+| **Manuel utilisateur** | utilisation en langage simple : toutes les tâches, la barre d'outils, erreurs typiques, particularités sous Linux et macOS | [HTML](BENUTZERHANDBUCH_FR.html) · [PDF](BENUTZERHANDBUCH_FR.pdf) |
 | **FAQ (allemand)** | les questions les plus fréquentes, avec des réponses brèves | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
 | **FAQ (anglais)** | les questions les plus fréquentes, avec des réponses brèves | [HTML](FAQ_EN.html) · [PDF](FAQ_EN.pdf) |
 | **FAQ (espagnol)** | les questions les plus fréquentes, avec des réponses brèves | [HTML](FAQ_ES.html) · [PDF](FAQ_ES.pdf) |
