@@ -1526,7 +1526,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Datei bricht den Lauf ab, bevor etwas geschrieben wird. Das Werkzeug <em>Asset-Pack pr&uuml;fen / entpacken</em> (WEITERE
     TOOLS) &ouml;ffnet auch zstd-Ordner. <strong>Ob ampr-emu-ng ein Spiel mit
     zstd-Packs an der Konsole wirklich startet, ist nicht gemessen</strong>
-    &ndash; testen Sie zuerst mit den Originalen.</p>
+    &ndash; die gepackten Originale fehlen im Ergebnis; bewahren Sie den Quell-Dump auf (er bleibt unverändert).</p>
     <p><strong>Unsignierte Programme werden fake-signiert (seit v1.9.92).</strong> Liegen <code>eboot.bin</code> und die Module eines Spiels als einfache ELF-Dateien vor, startet es an der PS5 nie – der Lader lehnt sie ab. Findet das Programm beim Start einer Aufgabe in einem Ordner solche Programme, fragt es, ob sie beim Erstellen als fake-signierte SELF geschrieben werden sollen (wie bei ps5-dump-forge). Unter <strong>EINSTELLUNGEN</strong> im Abschnitt <em>Unsignierte Programme</em> lässt sich das ohne Rückfrage immer einschalten; dann prüft das Programm auch Abbilder, die es dafür entpackt. Geschrieben wird in der Arbeitskopie bzw. im entpackten Ordner; im Originalordner bleibt von jeder Datei eine <code>.orig</code> daneben. Bereits signierte Programme bleiben unberührt, und das Protokoll nennt jede geänderte Datei.</p>
     <p><strong>Schon verdichtete Dateien bleiben lose (seit v1.9.80).</strong>
     Das allgemeine Profil packt keine Bilder und Texturen (<code>png</code>,

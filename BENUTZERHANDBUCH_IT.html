@@ -1520,7 +1520,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     difettoso interrompe l’esecuzione prima che venga scritto qualcosa. Lo strumento <em>Verifica / estrai asset pack</em> (ALTRI
     STRUMENTI) apre anche le cartelle zstd. <strong>Se ampr-emu-ng avvii davvero sulla
     console un gioco con pack zstd non è stato misurato</strong>
-    – provare prima con gli originali.</p>
+    – gli originali pacchettizzati mancano nel risultato; conservare il dump di origine (resta invariato).</p>
     <p><strong>I programmi non firmati vengono firmati con firma finta (dalla v1.9.92).</strong> Se <code>eboot.bin</code> e i moduli di un gioco sono semplici file ELF, il gioco non si avvia mai sulla PS5: il loader li rifiuta. Se all'avvio di un'attività il programma trova tali programmi in una cartella, chiede se scriverli come SELF con firma finta durante la creazione (come fa ps5-dump-forge). In <strong>IMPOSTAZIONI</strong>, nella sezione <em>Programmi non firmati</em>, è possibile attivarlo sempre senza richiesta; il programma controlla allora anche le immagini, che a tal fine estrae. Scrive nella copia di lavoro o nella cartella estratta; nella cartella originale accanto a ogni file resta un <code>.orig</code>. I programmi già firmati restano intatti e il registro nomina ogni file modificato.</p>
     <p><strong>I file già compressi restano sparsi (dalla v1.9.80).</strong>
     Il profilo generico non pacchettizza immagini e texture (<code>png</code>,
