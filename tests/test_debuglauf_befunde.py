@@ -3968,13 +3968,14 @@ class OriginaleRueckfrageTests(_TempTest):
 
     def test_zstd_ohne_asset_pack_und_in_aufgabe_sieben_bleibt_alles_beim_alten(self) -> None:
         with mock.patch.object(APP.messagebox, "askyesno",
-                               side_effect=AssertionError("kein Anlass zu fragen")):
+                               side_effect=AssertionError("kein Anlass zu fragen")) as frage:
             gui = self._gui(ampr_an=False, verfahren="zstd")
             gui._ampr_originale_klaeren("pack_folder")
             self.assertFalse(gui._ampr_originale_weglassen)
             gui = self._gui(ampr_an=True, verfahren="zstd")
             gui._ampr_originale_klaeren("ampr_manager")
             self.assertFalse(gui._ampr_originale_weglassen)
+        frage.assert_not_called()
 
     def test_lz4_fragt_weiter_mit_nein_als_vorgabe_auch_mit_ng(self) -> None:
         for variante in ("ng", "test-pack"):

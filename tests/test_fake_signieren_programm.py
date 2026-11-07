@@ -160,8 +160,9 @@ class RueckfrageTests(_Spiel):
 
     def test_einstellung_an_dann_keine_frage_und_kein_durchgang(self) -> None:
         app = _App({"fake_signieren_var": True})
-        with mock.patch.object(fs, "unsignierte_finden", side_effect=AssertionError("kein Durchgang")):
+        with mock.patch.object(fs, "unsignierte_finden", side_effect=AssertionError("kein Durchgang")) as suche:
             app._fake_vor_dem_lauf_klaeren("pack_folder", str(self.w))
+        suche.assert_not_called()
         self.assertEqual([], app.fragen)
 
     def test_kommandozeile_fragt_nicht_sondern_empfiehlt(self) -> None:
@@ -185,8 +186,9 @@ class RueckfrageTests(_Spiel):
         for quelle in (str(abbild), str(self.w / "gibt_es_nicht")):
             with self.subTest(quelle=quelle):
                 app = _App()
-                with mock.patch.object(fs, "unsignierte_finden", side_effect=AssertionError("kein Durchgang")):
+                with mock.patch.object(fs, "unsignierte_finden", side_effect=AssertionError("kein Durchgang")) as suche:
                     app._fake_vor_dem_lauf_klaeren("pack_folder", quelle)
+                suche.assert_not_called()
                 self.assertEqual([], app.fragen)
 
 

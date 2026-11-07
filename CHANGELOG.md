@@ -2,9 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.91):** Archive lassen sich direkt als Quelle wählen, ABBILD BEARBEITEN ändert einzelne Dateien in einem Abbild, Asset-Packs gibt es auch mit zstd, und Handbuch, Anleitungen, FAQ und README liegen in Deutsch, Englisch, Spanisch, Italienisch und Französisch vor.
+> **Kurz zum aktuellen Stand (v1.9.92):** Unsignierte Programme werden beim Umwandeln auf Wunsch fake-signiert, und bei AMPR EMU NG mit zstd entfällt die Rückfrage nach den Originalen.
 
 ---
+
+## v1.9.92 – 07.11.2026
+
+- **Neu:** Unsignierte Programme (einfache ELF-Dateien) werden beim Umwandeln auf Wunsch fake-signiert – per Rückfrage beim Start oder dauerhaft unter EINSTELLUNGEN.
+- **Geändert:** Bei AMPR EMU NG mit zstd entfällt die Rückfrage nach den Originalen; sie fallen in der Arbeitskopie immer weg.
 
 ## v1.9.91 – 06.11.2026
 
