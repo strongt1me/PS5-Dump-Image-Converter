@@ -1379,7 +1379,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   gepackten Originale im Ergebnis weggelassen werden sollen; die Vorgabe ist
   <em>Nein</em>. Entfernt wird ausschlie&szlig;lich in der Arbeitskopie,
   niemals in Ihrem eigenen Dump-Ordner. In der Kommandozeile hei&szlig;t der
-  Schalter <code>--ampr-originale-weglassen</code>.</p>
+  Schalter <code>--ampr-originale-weglassen</code>. Bei AMPR EMU NG mit zstd entfällt die Rückfrage: Die gepackten Originale werden in der Arbeitskopie immer weggelassen.</p>
 
   <div class="kasten warnung">
     <span class="titel">Erst der Konsolentest, dann weglassen</span>
@@ -1527,6 +1527,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     TOOLS) &ouml;ffnet auch zstd-Ordner. <strong>Ob ampr-emu-ng ein Spiel mit
     zstd-Packs an der Konsole wirklich startet, ist nicht gemessen</strong>
     &ndash; testen Sie zuerst mit den Originalen.</p>
+    <p><strong>Unsignierte Programme werden fake-signiert (seit v1.9.92).</strong> Liegen <code>eboot.bin</code> und die Module eines Spiels als einfache ELF-Dateien vor, startet es an der PS5 nie – der Lader lehnt sie ab. Findet das Programm beim Start einer Aufgabe in einem Ordner solche Programme, fragt es, ob sie beim Erstellen als fake-signierte SELF geschrieben werden sollen (wie bei ps5-dump-forge). Unter <strong>EINSTELLUNGEN</strong> im Abschnitt <em>Unsignierte Programme</em> lässt sich das ohne Rückfrage immer einschalten; dann prüft das Programm auch Abbilder, die es dafür entpackt. Geschrieben wird in der Arbeitskopie bzw. im entpackten Ordner; im Originalordner bleibt von jeder Datei eine <code>.orig</code> daneben. Bereits signierte Programme bleiben unberührt, und das Protokoll nennt jede geänderte Datei.</p>
     <p><strong>Schon verdichtete Dateien bleiben lose (seit v1.9.80).</strong>
     Das allgemeine Profil packt keine Bilder und Texturen (<code>png</code>,
     <code>jpg</code>, <code>dds</code>, <code>gnf</code> &hellip;), keine

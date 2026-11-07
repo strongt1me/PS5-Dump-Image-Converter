@@ -223,6 +223,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>My game is a plain ELF file and does not start on the PS5. What can I do?</h3>
+    <p>A game whose <code>eboot.bin</code> and modules are plain ELF files never starts on the PS5, because the loader rejects them. When a task starts and the program finds such <strong>unsigned programs</strong> in a folder, it asks whether to write them as fake-signed SELF files when creating. Under <strong>SETTINGS</strong> in the section <em>Unsigned programs</em> this can be switched on permanently without asking. Already signed programs stay untouched.</p>
+  </div>
+
+  <div class="frage">
     <h3>Which systems does the program run on?</h3>
     <p>On <strong>Windows</strong> (ready-made EXE), <strong>Linux</strong> and <strong>macOS</strong>. On Linux and macOS two paths are missing that only work with Windows tools:</p>
     <ul>

@@ -223,6 +223,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Mon jeu est un simple fichier ELF et ne démarre pas sur la PS5. Que faire ?</h3>
+    <p>Un jeu dont l'<code>eboot.bin</code> et les modules sont de simples fichiers ELF ne démarre jamais sur la PS5, car le chargeur les refuse. Si, au démarrage d'une tâche, le programme trouve de tels <strong>programmes non signés</strong> dans un dossier, il demande s'il faut les écrire en SELF à fausse signature lors de la création. Sous <strong>PARAMÈTRES</strong>, dans la section <em>Programmes non signés</em>, on peut l'activer en permanence sans question. Les programmes déjà signés restent intacts.</p>
+  </div>
+
+  <div class="frage">
     <h3>Sur quels systèmes le programme fonctionne-t-il ?</h3>
     <p>Sous <strong>Windows</strong> (EXE prêt à l’emploi), <strong>Linux</strong> et <strong>macOS</strong>. Sous Linux et macOS, deux voies manquent, car elles ne fonctionnent qu’avec des outils Windows :</p>
     <ul>

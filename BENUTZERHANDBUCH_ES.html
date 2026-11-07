@@ -1367,7 +1367,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   empaquetados deben omitirse en el resultado; el valor predeterminado es
   <em>No</em>. Solo se elimina en la copia de trabajo, nunca en la propia
   carpeta de dump. En la línea de comandos, la opción se llama
-  <code>--ampr-originale-weglassen</code>.</p>
+  <code>--ampr-originale-weglassen</code>. Con AMPR EMU NG y zstd no se hace esta pregunta: los originales empaquetados siempre se omiten en la copia de trabajo.</p>
 
   <div class="kasten warnung">
     <span class="titel">Primero la prueba en la consola, después omitir</span>
@@ -1513,6 +1513,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     HERRAMIENTAS) abre también carpetas zstd. <strong>Si ampr-emu-ng arranca de verdad en la consola un juego con
     packs zstd, no está medido</strong>
     – probar primero con los originales.</p>
+    <p><strong>Los programas sin firmar se firman con firma falsa (desde v1.9.92).</strong> Si <code>eboot.bin</code> y los módulos de un juego son archivos ELF simples, nunca arranca en la PS5: el cargador los rechaza. Si al iniciar una tarea el programa encuentra esos programas en una carpeta, pregunta si deben escribirse como SELF con firma falsa al crear (como hace ps5-dump-forge). En <strong>CONFIGURACIÓN</strong>, en la sección <em>Programas sin firmar</em>, puede activarse siempre y sin preguntar; entonces el programa también revisa las imágenes, que desempaqueta para ello. Escribe en la copia de trabajo o en la carpeta desempaquetada; en la carpeta original queda al lado un <code>.orig</code> de cada archivo. Los programas ya firmados no se tocan y el registro nombra cada archivo modificado.</p>
     <p><strong>Los archivos ya comprimidos permanecen sueltos (desde v1.9.80).</strong>
     El perfil general no empaqueta imágenes ni texturas (<code>png</code>,
     <code>jpg</code>, <code>dds</code>, <code>gnf</code> …), ni

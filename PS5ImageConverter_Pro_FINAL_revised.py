@@ -115,6 +115,7 @@ from ps5_validator.utils.self_reader import (
 )
 from ps5_validator.utils import ampr_updates
 from ps5_validator.utils import dlc_emu
+from ps5_validator.utils import fake_signieren
 from ps5_validator.utils import werkzeug_updates
 from ps5_validator.utils.tk_masse import cget_pixel
 from ps5_validator.utils.tk_bindungen import an_toplevel_binden
@@ -7999,7 +8000,8 @@ class PS5ConverterGUI:
         Beides legt vor dem Packen eine vollstaendige Arbeitskopie des Dumps
         im Temp-Ordner an - der Unterschied im Platzbedarf ist erheblich.
         """
-        for name in ("ampr_integrate_var", "ampr_playgo_var", "backport_integrate_var", "dlc_integrate_var"):
+        for name in ("ampr_integrate_var", "ampr_playgo_var", "backport_integrate_var", "dlc_integrate_var",
+                     "fake_signieren_var"):
             var = getattr(self, name, None)
             try:
                 if var is not None and bool(var.get()):
@@ -8412,6 +8414,23 @@ class PS5ConverterGUI:
         self._neu_packen_waehlen(formatname)
         return True
 
+    def _ampr_ng_zstd_gewaehlt(self) -> bool:
+        """True, wenn das Asset-Pack mit zstd gebaut wird UND eine NG-Fassung gewaehlt ist.
+
+        Beides zugleich: zstd-Packs liest nur ampr-emu-ng (Varianten ``ng`` und ``ng-debug``), die Laufzeit von
+        drakmor kennt nur LZ4. Die Fassung kommt aus der Auswahlliste des Starts; ist keine Fassung auffindbar,
+        gilt das als "nicht NG" - dann bleibt die Rueckfrage bestehen, nichts wird still entschieden.
+        """
+        if self._ampr_pack_verfahren() != "zstd":
+            return False
+        try:
+            beschriftung = self._tk_wert("ampr_version_var", "")
+        except (tk.TclError, RuntimeError):
+            return False
+        auswahl = self._ampr_auswahl_beim_start().get(beschriftung) or {}
+        variante = str(auswahl.get("variant", "")).strip().lower()
+        return variante in ampr_assetpakete.ALLROUND_VARIANTEN
+
     def _ampr_originale_klaeren(self, mode: str) -> None:
         """Fragt, ob gepackte Originale im Ergebnis wegbleiben sollen.
 
@@ -8428,9 +8447,23 @@ class PS5ConverterGUI:
         Auf der Kommandozeile entscheidet allein ``--ampr-originale-weglassen``.
         Ohne Asset-Pack und in Aufgaben ohne Zielformat (7, 8) gibt es nichts
         zu fragen.
+
+        Bei AMPR EMU NG mit dem Verfahren zstd (07.11.2026, Nutzerwunsch)
+        wird gar nicht gefragt: Der Rat der Anleitung, die Originale fuer den
+        ersten Konsolentest zu behalten, gilt fuer die LZ4-Baender, nach
+        Angabe des Nutzers nicht fuer zstd. Deshalb werden die gepackten
+        Originale in der Arbeitskopie immer weggelassen - sonst waere das
+        Ergebnis doppelt so gross und der Sinn von zstd dahin. Im Quellordner
+        selbst wird auch hier nie entfernt (``_ampr_zstdpakete_bauen`` prueft
+        ``_ampr_ordner_ist_kopie``). zstd laeuft nur mit ampr-emu-ng; LZ4
+        fragt weiter, auch mit NG.
         """
         self._ampr_originale_weglassen = False
         if mode not in self._MODE_TARGET_OPTIONS or not self._assetpack_gewaehlt():
+            return
+        if self._ampr_ng_zstd_gewaehlt():
+            self._ampr_originale_weglassen = True
+            self._append_to_log(self._t("ampr_pack.originale_zstd_weg"))
             return
         if getattr(self, "_cli_mode", False):
             antwort = bool(getattr(self, "_cli_ampr_originale_weglassen", False))
@@ -10224,6 +10257,11 @@ class PS5ConverterGUI:
         )
         self.dlc_integrate_var = tk.BooleanVar(
             value=bool(self._load_setting("integrate_dlc", False))
+        )
+        # Fake-Signatur fuer unsignierte Programme (einfache ELF): kein Kaestchen in der Pfad-Karte (die Einbauzeile ist
+        # bei Mindestbreite voll), sondern die Einstellung unter EINSTELLUNGEN; dazu die Rueckfrage vor dem Lauf.
+        self.fake_signieren_var = tk.BooleanVar(
+            value=bool(self._load_setting(self._FAKE_SIGNIEREN_SETTING, False))
         )
 
         self.ampr_integrate_check = RunderHaken(
@@ -31113,6 +31151,7 @@ class PS5ConverterGUI:
                 # entpackt wurde.
                 self._playgo_vor_dem_lauf_klaeren(mode, src)
                 self._dlc_vor_dem_lauf_klaeren(mode, src)
+                self._fake_vor_dem_lauf_klaeren(mode, src)
                 success = self._run_flexible_conversion(mode, src, dst)
             elif mode == "inspect":
                 success = self._mode_inspect(src)
@@ -35292,7 +35331,8 @@ class PS5ConverterGUI:
             return (self._assetpack_gewaehlt()
                     or bool(self._tk_wert("ampr_playgo_var", False))
                     or bool(self._tk_wert("backport_integrate_var", False))
-                    or bool(self._tk_wert("dlc_integrate_var", False)))
+                    or bool(self._tk_wert("dlc_integrate_var", False))
+                    or bool(self._tk_wert("fake_signieren_var", False)))
         return bool(getattr(self, "_umhuellt_neu_packen", False))
 
     def _assetpack_gewaehlt(self) -> bool:
@@ -35434,6 +35474,7 @@ class PS5ConverterGUI:
     #: Tk-Variablen, deren Stand ein Aufgabenlauf beim Start festhaelt.
     _LAUF_VARIABLEN: tuple[str, ...] = (
         "ampr_integrate_var", "backport_integrate_var", "backport_fw_var", "dlc_integrate_var",
+        "fake_signieren_var",
         "ampr_version_var", "ampr_playgo_var", "ampr_methode_var",
         "worker_count_var",
     )
@@ -35497,11 +35538,12 @@ class PS5ConverterGUI:
         return var.get()
 
     def _integration_gewaehlt(self) -> bool:
-        """True, wenn mindestens eines der Kaestchen (AMPR EMU, PlayGo, BACKPORT, DLC EMU) gesetzt ist."""
+        """True, wenn mindestens eines der Kaestchen (AMPR EMU, PlayGo, BACKPORT, DLC EMU) oder die Fake-Signatur gesetzt ist."""
         return bool(self._tk_wert("ampr_integrate_var", False)) or bool(
             self._tk_wert("ampr_playgo_var", False)) or bool(
             self._tk_wert("backport_integrate_var", False)) or bool(
-            self._tk_wert("dlc_integrate_var", False))
+            self._tk_wert("dlc_integrate_var", False)) or bool(
+            self._tk_wert("fake_signieren_var", False))
 
     def _integration_arbeitskopie(self, quelle: str) -> str:
         """Legt auf Nachfrage eine Arbeitskopie des Quellordners an.
@@ -35846,6 +35888,11 @@ class PS5ConverterGUI:
         if self._tk_wert("backport_integrate_var", False):
             if not self._integration_backport(arbeitsordner):
                 return ""
+        # Unsignierte Programme (einfache ELF) fake-signieren: nach dem Backport (der signiert ohnehin jede Datei neu),
+        # vor DLC EMU und AMPR EMU (deren Index zaehlt den Ordner auf und soll die endgueltigen Dateien sehen).
+        if self._tk_wert("fake_signieren_var", False):
+            if not self._integration_fake_signieren(arbeitsordner):
+                return ""
         # DLC EMU vor AMPR EMU: Dessen Index zaehlt den Ordner auf und muss die
         # neuen Bibliotheken und die dlc_emu.ini schon kennen.
         if self._tk_wert("dlc_integrate_var", False):
@@ -36004,6 +36051,82 @@ class PS5ConverterGUI:
                     patched=gepatcht, libs=kopiert, errors=fehler)
         )
         return fehler == 0
+
+    #: Einstellung "Unsignierte Programme beim Erstellen immer fake-signieren" (Vorgabe aus; ohne sie fragt das Programm,
+    #: wenn es in einem Ordner unsignierte Programme findet).
+    _FAKE_SIGNIEREN_SETTING = "integrate_fake_signieren"
+
+    def _integration_fake_signieren(self, ordner: str) -> bool:
+        """Schreibt die unsignierten Programme (einfache ELF) des Spielordners als fake-signierte SELF.
+
+        Der Lader der PS5 lehnt ein einfaches ELF ab, das Spiel startet dann nie (so macht es auch ps5-dump-forge ab
+        v0.5.4). Gearbeitet wird in der Arbeitskopie bzw. im aus einem Abbild entpackten Ordner; im Originalordner des
+        Anwenders ("Nein" zur Arbeitskopie) bleibt von jeder Datei eine ``.orig`` stehen. Ein Fehler bei einer Datei
+        meldet das Protokoll, der Lauf geht weiter - das Spiel bliebe sonst gar nicht erst nutzbar.
+
+        Returns:
+            ``False`` nur, wenn der Auftrag abgebrochen wurde.
+        """
+        self._set_status(self._t("main.fake_status"))
+        self._append_to_log(self._t("main.fake_suche", path=ordner))
+        pfade = fake_signieren.unsignierte_finden(ordner, abbruch=lambda: not getattr(self, "is_running", True))
+        if not getattr(self, "is_running", True):
+            return False
+        if not pfade:
+            self._append_to_log(self._t("main.fake_keine"))
+            return True
+        self._append_to_log(self._t("main.fake_start", count=len(pfade)))
+        sicherung = not bool(getattr(self, "_ampr_ordner_ist_kopie", True))
+        ergebnis = fake_signieren.signieren(
+            ordner, pfade, sicherung=sicherung, abbruch=lambda: not getattr(self, "is_running", True),
+            fortschritt=lambda n, g, rel: self._set_status(self._t("main.fake_fortschritt", n=n, gesamt=g, name=rel)))
+        if not getattr(self, "is_running", True):
+            return False
+        for rel in ergebnis.signiert[:20]:
+            self._append_to_log(self._t("main.fake_datei", name=rel))
+        if len(ergebnis.signiert) > 20:
+            self._append_to_log(self._t("main.fake_weitere", count=len(ergebnis.signiert) - 20))
+        if ergebnis.gesichert:
+            self._append_to_log(self._t("main.fake_gesichert", count=len(ergebnis.gesichert)))
+        for rel, grund in ergebnis.fehler[:20]:
+            self._append_to_log(self._t("main.fake_fehler", name=rel, error=grund))
+        self._append_to_log(self._t("main.fake_fertig", ok=len(ergebnis.signiert), fehler=len(ergebnis.fehler)))
+        return True
+
+    def _fake_vor_dem_lauf_klaeren(self, mode: str, src: str) -> None:
+        """Fragt vor der eigentlichen Arbeit, ob unsignierte Programme fake-signiert werden sollen.
+
+        Dasselbe Muster wie :meth:`_dlc_vor_dem_lauf_klaeren`: gefragt wird im Aufgabenfaden, bevor kopiert, entpackt
+        oder gepackt wird - aber nur bei einem **Ordner**, in den sich hineinsehen laesst (ein Abbild liefert nur die
+        Dateiliste). Findet das Programm keine unsignierten Programme, merkt der Anwender nichts. Ist die Einstellung
+        unter EINSTELLUNGEN an, entfaellt die Frage; auf der Kommandozeile und bei der Sammelkonvertierung wird nicht
+        gefragt, dort steht nur ein Hinweis im Protokoll. Gilt nur fuer diesen Lauf (die Einstellung aendert es nicht).
+        """
+        if mode not in self._MODE_TARGET_OPTIONS or mode == "batch_convert":
+            return
+        if self._tk_wert("fake_signieren_var", False) or not os.path.isdir(src):
+            return
+        self._set_status(self._t("status.fake_pruefen"))
+        pfade = fake_signieren.unsignierte_finden(src, abbruch=lambda: not getattr(self, "is_running", True))
+        if not pfade or not getattr(self, "is_running", True):
+            return
+        beispiel = ", ".join(pfade[:3]) + (" …" if len(pfade) > 3 else "")
+        if getattr(self, "_cli_mode", False):
+            self._append_to_log(self._t("main.fake_empfohlen", count=len(pfade), beispiel=beispiel))
+            return
+        ja = self._ask_yesno_threadsafe(
+            self._t("dialog.title.fake_empfohlen"),
+            self._t("dialog.msg.fake_empfohlen", count=len(pfade), beispiel=beispiel),
+            default_yes=True)
+        if not ja:
+            self._append_to_log(self._t("main.fake_bleibt_aus", count=len(pfade)))
+            return
+        stand = getattr(self, "_lauf_variablen", None)
+        if stand is None:
+            stand = {}
+            self._lauf_variablen = stand
+        stand["fake_signieren_var"] = True
+        self._append_to_log(self._t("main.fake_eingeschaltet", count=len(pfade)))
 
     def _integration_dlc(self, ordner: str) -> bool:
         """Baut DLC EMU in den Dump-Ordner ein: drei Bibliotheken in den fakelib-Ordner, dazu die dlc_emu.ini.
@@ -66313,6 +66436,37 @@ class PS5ConverterGUI:
         verfahren_combo.bind("<<ComboboxSelected>>", _verfahren_gewaehlt)
         zstd_combo.bind("<<ComboboxSelected>>", _zstd_gewaehlt)
 
+        # ── Unsignierte Programme fake-signieren ────────────────────────
+        # Wirkt beim Erstellen (Aufgaben 1 bis 6) und steht hier, nicht in der Pfad-Karte: Die Einbauzeile dort ist bei
+        # Mindestbreite schon voll. Ohne Haken fragt das Programm, wenn es in einem Ordner unsignierte Programme findet.
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(8, 14))
+        tk.Label(body, text=self._t("settings_dialog.fake_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.fake_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+        fake_var = tk.BooleanVar(value=bool(self._load_setting(self._FAKE_SIGNIEREN_SETTING, False)))
+
+        def _fake_umschalten() -> None:
+            an = bool(fake_var.get())
+            self._save_setting(self._FAKE_SIGNIEREN_SETTING, an)
+            try:
+                self.fake_signieren_var.set(an)
+            except (AttributeError, tk.TclError) as exc:
+                logger.debug("Fake-Signatur-Variable nicht nachziehbar: %s", exc)
+            logger.info("Unsignierte Programme fake-signieren: %s", "immer" if an else "nur nach Rueckfrage")
+
+        self._pw.Checkbutton(
+            body, text=self._t("settings_dialog.fake_checkbox"),
+            variable=fake_var, command=_fake_umschalten,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+            activebackground=c["bg_card"], activeforeground=c["fg_primary"],
+            selectcolor=c["bg_main"], anchor="w", justify="left",
+            highlightthickness=0, bd=0, wraplength=440).pack(anchor="w", fill="x", pady=(0, 10))
+
         # ── Farbsehschwaeche ────────────────────────────────────────────
         #
         # Nur die Farben, die eine Bedeutung tragen, werden ersetzt - Erfolg,
@@ -68464,7 +68618,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "dadurch wird das Ergebnis kleiner. Laut Anleitung des Entwicklers "
              "erst nach einem vollständigen Konsolentest mit Originalen. Im "
              "Quellordner selbst wird nie entfernt. Bewusst nicht von --ja "
-             "mitentschieden.")
+             "mitentschieden. Bei AMPR EMU NG mit zstd (--ampr-pack-verfahren) "
+             "nicht nötig: Dort werden die gepackten Originale in der "
+             "Arbeitskopie immer weggelassen.")
     parser.add_argument(
         "--ampr-lz4-stufe", type=int, default=None, metavar="1-12",
         help="LZ4-Stufe des Asset-Packs (1 bis 12; 1 bis 4 schneller Modus, "

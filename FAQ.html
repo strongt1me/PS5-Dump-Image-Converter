@@ -223,6 +223,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Mein Spiel liegt als einfache ELF-Datei vor und startet an der PS5 nicht. Was tun?</h3>
+    <p>Ein Spiel, dessen <code>eboot.bin</code> und Module einfache ELF-Dateien sind, startet an der PS5 nie, weil der Lader sie ablehnt. Findet das Programm beim Start einer Aufgabe in einem Ordner solche <strong>unsignierten Programme</strong>, fragt es, ob sie beim Erstellen als fake-signierte SELF geschrieben werden sollen. Unter <strong>EINSTELLUNGEN</strong> im Abschnitt <em>Unsignierte Programme</em> lässt sich das ohne Rückfrage immer einschalten. Bereits signierte Programme bleiben unberührt.</p>
+  </div>
+
+  <div class="frage">
     <h3>Auf welchen Systemen läuft das Programm?</h3>
     <p>Unter <strong>Windows</strong> (fertige EXE), <strong>Linux</strong> und <strong>macOS</strong>. Unter Linux und macOS fehlen zwei Wege, die nur mit Windows-Werkzeugen gehen:</p>
     <ul>

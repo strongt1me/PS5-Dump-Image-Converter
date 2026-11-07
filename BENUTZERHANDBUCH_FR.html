@@ -1367,7 +1367,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   originaux empaquetés doivent être omis du résultat ; la valeur par défaut est
   <em>Non</em>. La suppression n'a lieu que dans la copie de travail,
   jamais dans votre propre dossier de dump. En ligne de commande, l'option se nomme
-  <code>--ampr-originale-weglassen</code>.</p>
+  <code>--ampr-originale-weglassen</code>. Avec AMPR EMU NG et zstd, cette question n'est pas posée : les originaux empaquetés sont toujours omis de la copie de travail.</p>
 
   <div class="kasten warnung">
     <span class="titel">D'abord le test sur console, ensuite l'omission</span>
@@ -1512,6 +1512,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     OUTILS) ouvre aussi les dossiers zstd. <strong>Que ampr-emu-ng démarre réellement sur la console un jeu avec des
     packs zstd n'a pas été mesuré</strong>
     &ndash; tester d'abord avec les originaux.</p>
+    <p><strong>Les programmes non signés sont signés avec une fausse signature (depuis la v1.9.92).</strong> Si l'<code>eboot.bin</code> et les modules d'un jeu sont de simples fichiers ELF, il ne démarre jamais sur la PS5 : le chargeur les refuse. Si, au démarrage d'une tâche, le programme trouve de tels programmes dans un dossier, il demande s'il faut les écrire en SELF à fausse signature lors de la création (comme le fait ps5-dump-forge). Sous <strong>PARAMÈTRES</strong>, dans la section <em>Programmes non signés</em>, on peut l'activer en permanence sans question ; le programme contrôle alors aussi les images, qu'il décompresse pour cela. Il écrit dans la copie de travail ou le dossier décompressé ; dans le dossier d'origine, un <code>.orig</code> de chaque fichier reste à côté. Les programmes déjà signés restent intacts et le journal nomme chaque fichier modifié.</p>
     <p><strong>Les fichiers déjà compressés restent séparés (depuis la v1.9.80).</strong>
     Le profil général n'empaquette ni images ni textures (<code>png</code>,
     <code>jpg</code>, <code>dds</code>, <code>gnf</code> &hellip;), ni

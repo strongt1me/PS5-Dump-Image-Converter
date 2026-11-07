@@ -1368,7 +1368,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   packed originals should be left out of the result; the default is
   <em>No</em>. Removal happens only in the working copy,
   never in your own dump folder. On the command line the
-  switch is <code>--ampr-originale-weglassen</code>.</p>
+  switch is <code>--ampr-originale-weglassen</code>. With AMPR EMU NG and zstd this question is skipped: the packed originals are always left out of the working copy.</p>
 
   <div class="kasten warnung">
     <span class="titel">Console test first, then leave out</span>
@@ -1511,6 +1511,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     TOOLS) also opens zstd folders. <strong>Whether ampr-emu-ng really starts a game with
     zstd packs on the console has not been measured</strong>
     &ndash; test with the originals first.</p>
+    <p><strong>Unsigned programs are fake-signed (since v1.9.92).</strong> If a game's <code>eboot.bin</code> and modules are plain ELF files, it never starts on the PS5 – the loader rejects them. When a task starts and the program finds such programs in a folder, it asks whether to write them as fake-signed SELF files when creating (as ps5-dump-forge does). Under <strong>SETTINGS</strong> in the section <em>Unsigned programs</em> this can be switched on permanently without asking; the program then also checks images, which it unpacks for that. It writes in the working copy or the unpacked folder; in the original folder a <code>.orig</code> of every file stays next to it. Already signed programs stay untouched, and the log names every changed file.</p>
     <p><strong>Already compressed files stay loose (since v1.9.80).</strong>
     The general profile does not pack images and textures (<code>png</code>,
     <code>jpg</code>, <code>dds</code>, <code>gnf</code> &hellip;), archives

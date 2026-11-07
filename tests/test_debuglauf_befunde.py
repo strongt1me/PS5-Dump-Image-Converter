@@ -3922,7 +3922,9 @@ class OriginaleRueckfrageTests(_TempTest):
         def get(self):
             return self.wert
 
-    def _gui(self, ampr_an: bool, cli: bool = False, schalter: bool = False) -> GUI:
+    def _gui(self, ampr_an: bool, cli: bool = False, schalter: bool = False,
+             verfahren: str = "lz4", variante: str = "ng") -> GUI:
+        """``variante``: die gewaehlte AMPR-Fassung ("ng", "ng-debug", "test-pack" ...) oder "" = keine auffindbar."""
         gui = GUI.__new__(GUI)
         self.protokoll: list = []
         gui._append_to_log = self.protokoll.append
@@ -3930,9 +3932,67 @@ class OriginaleRueckfrageTests(_TempTest):
         gui.ampr_integrate_var = self._Wert(ampr_an)
         gui.ampr_methode_var = self._Wert("Asset-Pack")
         gui._ampr_methode_options = {"Asset-Pack": APP.AMPR_METHODE_ASSETPACK}
+        gui.ampr_version_var = self._Wert("Fassung X")
+        gui._ampr_versionsauswahl = {"Fassung X": {"variant": variante}} if variante else {}
         gui._cli_mode = cli
         gui._cli_ampr_originale_weglassen = schalter
+        gui._cli_ampr_pack_verfahren = verfahren
         return gui
+
+    def test_ng_mit_zstd_fragt_nicht_und_laesst_die_originale_weg(self) -> None:
+        """Bei AMPR EMU NG mit zstd gilt der Rat "Originale behalten" nicht - keine Rueckfrage."""
+        with mock.patch.object(APP.messagebox, "askyesno",
+                               side_effect=AssertionError("NG mit zstd darf nicht fragen")) as frage:
+            for variante in ("ng", "ng-debug"):
+                for cli in (False, True):
+                    for schalter in (False, True):
+                        with self.subTest(variante=variante, cli=cli, schalter=schalter):
+                            gui = self._gui(ampr_an=True, cli=cli, schalter=schalter,
+                                            verfahren="zstd", variante=variante)
+                            gui._ampr_originale_klaeren("pack_folder")
+                            self.assertTrue(gui._ampr_originale_weglassen)
+                            self.assertIn("ampr_pack.originale_zstd_weg", self.protokoll)
+                            self.assertNotIn("ampr_pack.originale_behalten_gewaehlt", self.protokoll)
+        frage.assert_not_called()
+
+    def test_zstd_ohne_ng_fassung_fragt_wie_bisher(self) -> None:
+        """zstd laeuft nur mit NG: Ist keine NG-Fassung gewaehlt (oder keine auffindbar), wird nichts still entschieden."""
+        for variante in ("test-pack", "pack", ""):
+            with self.subTest(variante=variante), \
+                    mock.patch.object(APP.messagebox, "askyesno", return_value=False) as frage:
+                gui = self._gui(ampr_an=True, verfahren="zstd", variante=variante)
+                gui._ampr_originale_klaeren("pack_folder")
+                self.assertFalse(gui._ampr_originale_weglassen)
+                frage.assert_called_once()
+                self.assertNotIn("ampr_pack.originale_zstd_weg", self.protokoll)
+
+    def test_zstd_ohne_asset_pack_und_in_aufgabe_sieben_bleibt_alles_beim_alten(self) -> None:
+        with mock.patch.object(APP.messagebox, "askyesno",
+                               side_effect=AssertionError("kein Anlass zu fragen")):
+            gui = self._gui(ampr_an=False, verfahren="zstd")
+            gui._ampr_originale_klaeren("pack_folder")
+            self.assertFalse(gui._ampr_originale_weglassen)
+            gui = self._gui(ampr_an=True, verfahren="zstd")
+            gui._ampr_originale_klaeren("ampr_manager")
+            self.assertFalse(gui._ampr_originale_weglassen)
+
+    def test_lz4_fragt_weiter_mit_nein_als_vorgabe_auch_mit_ng(self) -> None:
+        for variante in ("ng", "test-pack"):
+            with self.subTest(variante=variante), \
+                    mock.patch.object(APP.messagebox, "askyesno", return_value=False) as frage:
+                gui = self._gui(ampr_an=True, verfahren="lz4", variante=variante)
+                gui._ampr_originale_klaeren("pack_folder")
+                self.assertFalse(gui._ampr_originale_weglassen)
+                self.assertEqual(frage.call_args.kwargs.get("default"), "no")
+                self.assertIn("ampr_pack.originale_behalten_gewaehlt", self.protokoll)
+                self.assertNotIn("ampr_pack.originale_zstd_weg", self.protokoll)
+
+    def test_zstd_text_in_allen_sprachen(self) -> None:
+        from ps5_validator.utils import i18n
+        eintrag = i18n.STRINGS["ampr_pack.originale_zstd_weg"]
+        for sprache in ("de", "en", "es", "it", "fr"):
+            self.assertIn("zstd", eintrag[sprache])
+            self.assertTrue(eintrag[sprache].endswith("\n"), sprache)
 
     def test_gefragt_wird_nur_mit_asset_pack(self) -> None:
         with mock.patch.object(APP.messagebox, "askyesno", return_value=True) as frage:

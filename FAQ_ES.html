@@ -223,6 +223,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Mi juego es un archivo ELF simple y no arranca en la PS5. ¿Qué hago?</h3>
+    <p>Un juego cuyo <code>eboot.bin</code> y módulos son archivos ELF simples nunca arranca en la PS5, porque el cargador los rechaza. Si al iniciar una tarea el programa encuentra esos <strong>programas sin firmar</strong> en una carpeta, pregunta si deben escribirse como SELF con firma falsa al crear. En <strong>CONFIGURACIÓN</strong>, en la sección <em>Programas sin firmar</em>, puede activarse siempre y sin preguntar. Los programas ya firmados no se tocan.</p>
+  </div>
+
+  <div class="frage">
     <h3>¿En qué sistemas funciona el programa?</h3>
     <p>En <strong>Windows</strong> (EXE listo para usar), <strong>Linux</strong> y <strong>macOS</strong>. En Linux y macOS faltan dos vías que solo funcionan con herramientas de Windows:</p>
     <ul>

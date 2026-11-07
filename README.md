@@ -266,7 +266,7 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` mit AMPR EMU/BACKPORT: entpacken, einbauen, wieder zu `.ffpfsc` packen |
 | `--umhuellt-als-ordner` | auf demselben Weg stattdessen nur den Dump-Ordner bauen |
 | `--ampr-index-trotz-assets` | `ampr_emu.index` auch bei vorhandenem Asset-Pack neu bauen |
-| `--ampr-originale-weglassen` | beim Asset-Pack die gepackten Originale aus der Arbeitskopie entfernen (nur nach bestandenem Konsolentest sinnvoll) |
+| `--ampr-originale-weglassen` | beim Asset-Pack die gepackten Originale aus der Arbeitskopie entfernen (nur nach bestandenem Konsolentest sinnvoll; bei AMPR EMU NG mit zstd immer, ohne Rückfrage) |
 | `--param-json-reparieren` | fehlerhafte `param.json` ohne Rückfrage reparieren |
 | `--param-json-online` | Titel und Content-ID dafür im Netz nachschlagen |
 
