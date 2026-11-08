@@ -76,20 +76,20 @@ OHNE_DEBUG = "no debug"
 BAUARTEN = ("test-debug-pack", "test-nopack", "test-pack")
 
 #: Die eigenstaendige Weiterentwicklung ampr-emu-ng (seit 02.11.2026 im Bestand). Eine **eigene Fassungsreihe**:
-#: NG 0.3.2 ist neuer als 0.4.2.1 von drakmor, die Nummern gehoeren nie in denselben Vergleich.
+#: NG 0.3.3 ist neuer als 0.4.2.1 von drakmor, die Nummern gehoeren nie in denselben Vergleich.
 #:
-#: Aufbau der Veroeffentlichungen (03.11.2026 nachgesehen, 06.11.2026 an v0.3.2 gegengeprueft)::
+#: Aufbau der Veroeffentlichungen (03.11.2026 nachgesehen, 08.11.2026 an v0.3.3 gegengeprueft)::
 #:
-#:     tag v0.3.2
-#:         libSceAmpr.sprx         697.072 B   (stille Fassung)
-#:         libSceAmpr-debug.sprx   779.360 B   (Debug-Fassung, Messwerte auf Port 9090, ab 0.3.0 Absturzspur)
+#:     tag v0.3.3
+#:         libSceAmpr.sprx         701.376 B   (stille Fassung)
+#:         libSceAmpr-debug.sprx   785.120 B   (Debug-Fassung, Messwerte auf Port 9090, ab 0.3.0 Absturzspur)
 #:         SHA256SUMS
 #:
 #: Anders als bei drakmor steht die Fassung **nur in der Marke**, nicht im Anhangsnamen.
 NG_PROJEKT = "quer3q/ampr-emu-ng"
 NG = "ng"
 NG_DEBUG = "ng-debug"
-#: Anhangsname (klein geschrieben) -> Variante im Bestand (``0.3.2 ng``, ``0.3.2 ng-debug``).
+#: Anhangsname (klein geschrieben) -> Variante im Bestand (``0.3.3 ng``, ``0.3.3 ng-debug``).
 NG_ANHAENGE = {"libsceampr.sprx": NG, "libsceampr-debug.sprx": NG_DEBUG}
 
 _FASSUNG = re.compile(r"(\d+(?:\.\d+)+)")
