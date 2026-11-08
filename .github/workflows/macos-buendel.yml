@@ -100,7 +100,7 @@ on:
       - 'credits/**'
       - 'UFS2Tool-4.1/**'
       - 'helloworld/**'
-      - '7-Zip-26.05/**'
+      - '7-Zip-26.06/**'
       - 'PS5-PKG-Tool/**'
       - 'Backport_Fakelibs/**'
       - 'PS5 WebKit Autoloader/**'

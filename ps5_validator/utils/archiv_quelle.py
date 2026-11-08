@@ -7,12 +7,13 @@ entpackten Dump-Ordner wie mit jedem anderen. Die Idee stammt aus PS5 FFPFSC PRO
 
 * ``.zip`` entpackt die Standardbibliothek (``zipfile``), mit Pfadpruefung gegen ``..`` und absolute Pfade.
 * ``.7z`` und ``.rar`` entpackt **7-Zip** (LGPL; fuer RAR gilt zusaetzlich die unRAR-Einschraenkung, die nur das
-  Nachbauen des RAR-Packers verbietet): das mitgelieferte (``7-Zip-26.05/``) oder, wenn das fehlt, eines im
+  Nachbauen des RAR-Packers verbietet): das mitgelieferte (``7-Zip-26.06/``) oder, wenn das fehlt, eines im
   Suchpfad bzw. unter ``C:\\Program Files\\7-Zip``.
 """
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import stat
@@ -24,7 +25,7 @@ from typing import Callable
 
 ENDUNGEN = (".zip", ".7z", ".rar")
 #: Name des mitgelieferten 7-Zip-Ordners.
-ORDNER = "7-Zip-26.05"
+ORDNER = "7-Zip-26.06"
 
 _Melder = Callable[[str], None]
 
@@ -59,7 +60,8 @@ def _unterordner() -> str:
     if sys.platform == "win32":
         return "windows"
     if sys.platform == "darwin":
-        return "macos"
+        # Ab 7-Zip 26.06 gibt es fuer macOS je Architektur ein eigenes Paket (26.05 war ein Universal-Binary).
+        return "macos-arm64" if platform.machine().lower() in ("arm64", "aarch64") else "macos-x64"
     return "linux-x64"
 
 

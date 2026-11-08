@@ -40,7 +40,7 @@ class SiebenzipTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(gefunden))
 
     def test_alle_drei_plattformen_liegen_im_ordner(self) -> None:
-        for teil in ("windows/7z.exe", "windows/7z.dll", "linux-x64/7zz", "macos/7zz", "License.txt"):
+        for teil in ("windows/7z.exe", "windows/7z.dll", "linux-x64/7zz", "macos-arm64/7zz", "macos-x64/7zz", "License.txt"):
             with self.subTest(datei=teil):
                 self.assertTrue((PROJEKT / archiv_quelle.ORDNER / teil).is_file())
 
