@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -62,6 +63,11 @@ class ZielEnthaeltQuelleTests(unittest.TestCase):
         Path(self.quelle).write_bytes(self.inhalt)
 
     def tearDown(self) -> None:
+        # Der Sammellauf laedt die Cover nebenher in einem Faden "batch-cover" vor und liest dabei die Quelle; unter Windows
+        # laesst sich eine Datei, die dieser Faden gerade offen hat, nicht loeschen (WinError 32, in jedem fuenften Lauf).
+        for faden in threading.enumerate():
+            if faden.name == "batch-cover":
+                faden.join(30)
         self.td.cleanup()
 
     def test_die_sammelkonvertierung_ueberspringt_die_datei(self) -> None:

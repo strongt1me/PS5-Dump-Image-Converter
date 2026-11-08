@@ -7,7 +7,7 @@
 **Convert, unpack and verify PS5 dumps and images, build PS4 and PS5 packages,
 and operate the console right alongside – on Windows, Linux and macOS.**
 
-![Version](https://img.shields.io/badge/Version-v1.9.92-blue)
+![Version](https://img.shields.io/badge/Version-v1.9.93-blue)
 ![Tests](https://img.shields.io/badge/Tests-7584%20green-brightgreen)
 ![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)

@@ -2,9 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.92):** Unsignierte Programme werden beim Umwandeln auf Wunsch fake-signiert, und bei AMPR EMU NG mit zstd entfällt die Rückfrage nach den Originalen.
+> **Kurz zum aktuellen Stand (v1.9.93):** AMPR EMU NG 0.3.3, PS5Upload 11.5.2 und PS5 Cooling & System Center – Pro 1.77.1 sind eingebaut.
 
 ---
+
+## v1.9.93 – 08.11.2026
+
+- **Aktualisiert:** AMPR EMU NG 0.3.3 (u. a. vollständig installierte Spiele und Hänger bei vielen gepackten Dateien), PS5Upload 11.5.2 und PS5 Cooling & System Center – Pro 1.77.1.
 
 ## v1.9.92 – 07.11.2026
 
