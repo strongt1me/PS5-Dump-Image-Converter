@@ -393,6 +393,91 @@ class HinweisTests(unittest.TestCase):
                 self.assertIn("ShadowMount+", STRINGS["ampr.ng_update_emulators"][sprache])
                 self.assertTrue(STRINGS["ampr.ng_update_emulators_titel"][sprache].strip())
 
+    def test_die_texte_passen_vor_und_nach_dem_einbau(self) -> None:
+        """Der Hinweis steht jetzt vor der Arbeit (``hat jetzt`` / ``now has`` waere dort falsch)."""
+        for sprache, falsch in (("de", "hat jetzt"), ("en", "now has"), ("es", "tiene ahora"),
+                                ("it", "ora ha"), ("fr", "a maintenant")):
+            with self.subTest(sprache=sprache):
+                self.assertNotIn(falsch, STRINGS["ampr.ng_update_emulators"][sprache])
+
+
+class HinweisVorDemLaufTests(unittest.TestCase):
+    """Der NG-Hinweis kommt VOR der Arbeit, nicht mittendrin (gemeldet 09.11.2026).
+
+    Gemeldet: Crimson Desert Enhanced mit zstd und NG 0.3.3 ueber Nacht gepackt, "danach herunterfahren" - am
+    Morgen wartete der Rechner auf das OK der Meldung zu ``update_emulators=0``; sie kam beim Einbau der
+    Bibliothek mitten im Lauf. Jetzt fragt der Lauf sie als Erstes, wie PlayGo, DLC EMU und Fake-Signatur.
+    """
+
+    NG = BESTAND / "AMPR_EMU" / "0.3.3 ng" / "libSceAmpr.sprx"
+    DRAKMOR = BESTAND / "AMPR_EMU" / "0.4.2.1 test-nopack" / "libSceAmpr.sprx"
+
+    def setUp(self) -> None:
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory(prefix="ampr_ng_vorab_")
+        self.addCleanup(self.tmp.cleanup)
+        self.log: list[str] = []
+        self.stand = {"ampr_integrate_var": True, "ampr_version_var": "NG 0.3.3"}
+        self.auswahl = {"NG 0.3.3": {"path": str(self.NG)}, "0.4.2.1": {"path": str(self.DRAKMOR)}}
+        gui = G.__new__(G)
+        gui._t = lambda schluessel, **w: STRINGS[schluessel]["de"].format(**w)
+        gui._append_to_log = self.log.append
+        gui._fakelib_pfad = lambda root: Path(root) / "fakelib"
+        gui._ampr_ablage_pruefen = lambda root: []
+        gui._tk_wert = lambda name, vorgabe=None: self.stand.get(name, vorgabe)
+        gui._ampr_auswahl_beim_start = lambda: self.auswahl
+        gui._lauf_variablen = {}
+        gui.root = None
+        self.gui = gui
+        zeigen = mock.patch.object(APP.messagebox, "showinfo")
+        self.showinfo = zeigen.start()
+        self.addCleanup(zeigen.stop)
+
+    def test_ng_gewaehlt_zeigt_den_hinweis_vor_dem_einbau(self) -> None:
+        self.gui._ampr_ng_vor_dem_lauf_hinweisen()
+        self.assertEqual(1, self.showinfo.call_count)
+        self.assertIn("update_emulators=0", self.showinfo.call_args.args[1])
+        self.assertFalse((Path(self.tmp.name) / "fakelib").exists(), "noch nichts eingebaut")
+
+    def test_der_einbau_im_selben_lauf_zeigt_kein_zweites_fenster(self) -> None:
+        self.gui._ampr_ng_vor_dem_lauf_hinweisen()
+        self.assertTrue(self.gui._ampr_apply_library(self.tmp.name, str(self.NG), "libSceAmpr.sprx"))
+        self.assertEqual(1, self.showinfo.call_count, "mitten im Lauf darf kein Fenster mehr warten")
+        self.assertEqual(2, sum("update_emulators=0" in z for z in self.log), "das Protokoll nennt es beim Einbau noch")
+
+    def test_der_naechste_lauf_bekommt_ihn_wieder(self) -> None:
+        self.gui._ampr_ng_vor_dem_lauf_hinweisen()
+        self.gui._lauf_variablen = {}
+        self.gui._ampr_ng_vor_dem_lauf_hinweisen()
+        self.assertEqual(2, self.showinfo.call_count)
+
+    def test_drakmor_ohne_haken_und_im_cli_kein_fenster(self) -> None:
+        self.stand["ampr_version_var"] = "0.4.2.1"
+        self.gui._ampr_ng_vor_dem_lauf_hinweisen()
+        self.stand["ampr_version_var"] = "NG 0.3.3"
+        self.stand["ampr_integrate_var"] = False
+        self.gui._ampr_ng_vor_dem_lauf_hinweisen()
+        self.stand["ampr_integrate_var"] = True
+        self.gui._cli_mode = True
+        self.gui._ampr_ng_vor_dem_lauf_hinweisen()
+        self.showinfo.assert_not_called()
+
+    def test_unbekannte_fassung_bleibt_still(self) -> None:
+        self.stand["ampr_version_var"] = "gibt es nicht"
+        self.gui._ampr_ng_vor_dem_lauf_hinweisen()
+        self.showinfo.assert_not_called()
+
+    def test_im_lauf_steht_der_hinweis_vor_den_anderen_rueckfragen(self) -> None:
+        """Quelltextprobe: im Aufgabenfaden als Erstes, vor PlayGo, DLC EMU und Fake-Signatur."""
+        import inspect
+        treffer = [quelle for _n, f in inspect.getmembers(G, inspect.isfunction)
+                   if "self._playgo_vor_dem_lauf_klaeren(mode, src)" in (quelle := inspect.getsource(f))]
+        self.assertEqual(1, len(treffer), "genau eine Stelle ruft die Rueckfragen vor dem Lauf")
+        quelle = treffer[0]
+        ng = quelle.index("self._ampr_ng_vor_dem_lauf_hinweisen()")
+        self.assertLess(ng, quelle.index("self._playgo_vor_dem_lauf_klaeren(mode, src)"))
+        self.assertLess(ng, quelle.index("self._run_flexible_conversion(mode, src, dst)"))
+
 
 def _ng_antwort(*fassungen: str, vorab: str = "") -> bytes:
     """Eine Releases-Antwort von quer3q/ampr-emu-ng im Aufbau vom 03.11.2026 (gh api .../releases)."""

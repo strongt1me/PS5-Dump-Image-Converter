@@ -31183,6 +31183,9 @@ class PS5ConverterGUI:
                 # Vor dem ersten Byte Arbeit fragen, ob PlayGo mit hinein
                 # soll - nicht erst, nachdem stundenlang kopiert oder
                 # entpackt wurde.
+                # Der NG-Hinweis zu ShadowMount+ (update_emulators=0) als Erstes: ein Fenster mitten im Lauf haelt
+                # ihn auf, und "danach herunterfahren" kommt nie (gemeldet 09.11.2026).
+                self._ampr_ng_vor_dem_lauf_hinweisen()
                 self._playgo_vor_dem_lauf_klaeren(mode, src)
                 self._dlc_vor_dem_lauf_klaeren(mode, src)
                 self._fake_vor_dem_lauf_klaeren(mode, src)
@@ -38047,6 +38050,26 @@ class PS5ConverterGUI:
                                 self._t("ampr.ng_update_emulators"), parent=eltern or self.root)
         except Exception as exc:                       # noqa: BLE001 - die Zeile im Protokoll steht schon
             logger.warning("Hinweis zu ampr-emu-ng nicht darstellbar: %s", exc)
+
+    def _ampr_ng_vor_dem_lauf_hinweisen(self) -> None:
+        """Zeigt den NG-Hinweis (``update_emulators=0``) VOR der Arbeit statt mittendrin.
+
+        Gemeldet am 09.11.2026: Ein ueber Nacht gestarteter Lauf (Crimson Desert, zstd, NG 0.3.3, "danach
+        herunterfahren") stand am Morgen noch da - die Meldung aus :meth:`_ampr_ng_hinweis` wartete mitten im
+        Lauf, beim Einbau der Bibliothek, auf "OK", und das Herunterfahren kam nie. Der Hinweis kommt deshalb wie
+        die Rueckfragen zu PlayGo, DLC EMU und Fake-Signatur (``*_vor_dem_lauf_klaeren``) ganz am Anfang, solange
+        der Anwender noch davor sitzt. Der Einbau im selben Lauf zeigt das Fenster nicht noch einmal
+        (``einmal_je_lauf``); das Protokoll nennt den Hinweis dort weiter.
+
+        Dieselbe Pruefung wie beim Einbau (``_integration_ampr``): AMPR EMU ist angehakt und die gewaehlte Fassung
+        traegt die NG-Kennung (am Inhalt der Datei, nicht am Namen). Auf der Kommandozeile gibt es kein Fenster.
+        """
+        if getattr(self, "_cli_mode", False) or not self._tk_wert("ampr_integrate_var", False):
+            return
+        auswahl = self._ampr_auswahl_beim_start().get(self._tk_wert("ampr_version_var", "")) or {}
+        pfad = auswahl.get("path")
+        if pfad and self._ampr_ist_ng_datei(pfad):
+            self._ampr_ng_hinweis(einmal_je_lauf=True)
 
     def _ampr_apply_library(
         self, root: str, source_file: str, lib_name: str = "", keep_backup: bool = True
