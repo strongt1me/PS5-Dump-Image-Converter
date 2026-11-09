@@ -11,6 +11,8 @@ ist also unveraendert. Uebernommen ist die eine Verhaltensaenderung, die auch fu
 setzt der Aufruf auch `TMP`, `TEMP` und `TMPDIR` des Werkzeugs (`ps5_pkg_werkzeug._umgebung`) und legt den Ordner an, damit keine
 Zwischendatei auf dem Systemlaufwerk landet. An keinem echten Paket gemessen.
 
+Seit 08.11.2026 steht die Versionskonstante auf **2.3.4**. ps5-ultrapack 2.3.4 aendert am C#-Teil nur die Konstante und die Bibliothek: Die gepatchte `LibProsperoPkg.dll` (SHA-256 `cd43389f...`, gegen `lib/SHA256SUMS` des Autors geprueft) bekommt einen fuenften IL-Patch, der lokalisierte `icon0_NN.dds` und `pic1_NN.dds` im Paket behaelt (vorher fiel jede `.dds` ausser icon0, pic0, pic1 und pic2 heraus, und der Bau scheiterte an seiner eigenen Pruefung, wenn ein Spiel sie mitbringt). `lib/README.md`, `lib/SHA256SUMS`, `patches/README.md` und `patches/CecilPatch/Program.cs` sind die Dateien des Autors von 2.3.4; `LibProsperoPkg.dll.orig` ist unveraendert. `ffpfsc-pkg-tool.dll` und `LibProsperoPkg.dll` sind in allen vier Ordnern neu (`dotnet publish`, nur diese zwei Dateien je Ordner uebernommen); `dotnet ... version` zeigt 2.3.4 und LibProsperoPkg 1.2.0. An keinem echten Paket mit lokalisierten Bildern gemessen.
+
 Seit 29.10.2026 steht die Versionskonstante auf **2.3.3**. ps5-ultrapack 2.3.3 aendert nur die Oberflaeche der Upstream-App
 (`PS5_UltraPack.py`: mehrere Auftraege fuer dieselbe Quelle, Zusatzinhalte, die schon als gleiche Datei da sind, zaehlen als
 abgelegt) und ihre Tests - der Vergleich 2.3.2 bis 2.3.3 nennt keine C#-Datei; `lib/` und `patches/` sind unveraendert. Unsere

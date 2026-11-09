@@ -37,13 +37,14 @@ import os
 import shutil
 import ssl
 import threading
-import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import urlparse
+
+from ps5_validator.utils import netz_abbruch
 
 logger = logging.getLogger("PS5Converter.utils.ps5_updates")
 
@@ -205,18 +206,21 @@ def _anfrage(url: str, bereich_ab: int = 0) -> urllib.request.Request:
     return urllib.request.Request(url, headers=kopf)
 
 
+def _abbruch_fehler() -> UpdateFehler:
+    return UpdateFehler("ps5upd.abgebrochen")
+
+
 def holen(url: str, max_bytes: int, timeout: float = 20.0,
           abbruch: Callable[[], bool] | None = None) -> bytes:
     """Holt eine kleine Datei (version.xml, Manifest) - mit Obergrenze."""
     if not url_erlaubt(url):
         raise UpdateFehler("ps5upd.host_fremd")
     try:
-        with _oeffner().open(_anfrage(url), timeout=timeout) as antwort:
+        antwort = netz_abbruch.oeffnen(lambda: _oeffner().open(_anfrage(url), timeout=timeout), abbruch, _abbruch_fehler)
+        with antwort, netz_abbruch.wache(antwort, abbruch):
             daten = bytearray()
             while True:
-                if abbruch is not None and abbruch():
-                    raise UpdateFehler("ps5upd.abgebrochen")
-                block = antwort.read(64 * 1024)
+                block = netz_abbruch.stueck_lesen(antwort, abbruch, _abbruch_fehler)
                 if not block:
                     break
                 daten += block
@@ -427,7 +431,9 @@ def datei_laden(url: str, ziel: str,
         if abbruch is not None and abbruch():
             raise UpdateFehler("ps5upd.abgebrochen")
         try:
-            with _oeffner().open(_anfrage(url, geladen), timeout=30) as antwort:
+            antwort = netz_abbruch.oeffnen(
+                lambda ab=geladen: _oeffner().open(_anfrage(url, ab), timeout=30), abbruch, _abbruch_fehler)
+            with antwort, netz_abbruch.wache(antwort, abbruch):
                 status = getattr(antwort, "status", 200)
                 if geladen > 0 and status != 206:
                     geladen = 0
@@ -444,9 +450,7 @@ def datei_laden(url: str, ziel: str,
                     if geladen > 0:
                         datei.seek(0, 2)
                     while True:
-                        if abbruch is not None and abbruch():
-                            raise UpdateFehler("ps5upd.abgebrochen")
-                        block = antwort.read(_BLOCK)
+                        block = netz_abbruch.stueck_lesen(antwort, abbruch, _abbruch_fehler)
                         if not block:
                             break
                         datei.write(block)
@@ -466,7 +470,8 @@ def datei_laden(url: str, ziel: str,
                 http.client.HTTPException) as exc:
             if versuch >= versuche:
                 raise UpdateFehler("ps5upd.netz|%s" % exc) from exc
-            time.sleep(min(2.0 * (versuch + 1), 8.0))
+            if netz_abbruch.schlafen(min(2.0 * (versuch + 1), 8.0), abbruch):
+                raise UpdateFehler("ps5upd.abgebrochen") from exc
     os.replace(teil, ziel)
     return ziel
 
@@ -673,7 +678,8 @@ def paket_laden(manifest: Manifest, ziel: str,
                     raise UpdateFehler("ps5upd.platz|%s" % exc) from exc
                 if versuch >= versuche:
                     raise UpdateFehler("ps5upd.netz|%s" % exc) from exc
-                time.sleep(min(2.0 * (versuch + 1), 8.0))
+                if netz_abbruch.schlafen(min(2.0 * (versuch + 1), 8.0), lambda: (abbruch is not None and abbruch()) or bool(fehler)):
+                    raise UpdateFehler("ps5upd.abgebrochen") from exc
         raise UpdateFehler("ps5upd.netz|?")
 
     def _teil_einmal(i: int, stueck: Teil) -> None:
@@ -682,7 +688,13 @@ def paket_laden(manifest: Manifest, ziel: str,
             return
         if not url_erlaubt(stueck.url):
             raise UpdateFehler("ps5upd.host_fremd")
-        with _oeffner().open(_anfrage(stueck.url, ab), timeout=30) as antwort:
+        def _stopp() -> bool:
+            # Auch wenn ein anderer Faden gescheitert ist: nicht erst das ganze Teil zu Ende laden.
+            return (abbruch is not None and abbruch()) or bool(fehler)
+
+        antwort = netz_abbruch.oeffnen(lambda: _oeffner().open(_anfrage(stueck.url, ab), timeout=30),
+                                       _stopp, _abbruch_fehler)
+        with antwort, netz_abbruch.wache(antwort, _stopp):
             if ab > 0 and getattr(antwort, "status", 200) != 206:
                 # Der Server ignoriert die Bereichsanfrage: von vorn.
                 with sperre:
@@ -691,26 +703,28 @@ def paket_laden(manifest: Manifest, ziel: str,
             letzter_merk = geladen[i]
             with open(teil, "r+b") as datei:
                 datei.seek(stueck.versatz + ab)
-                while geladen[i] < stueck.groesse:
-                    # Auch wenn ein anderer Faden gescheitert ist: nicht erst das ganze Teil zu Ende laden.
-                    if (abbruch is not None and abbruch()) or fehler:
-                        datei.flush()
+                try:
+                    while geladen[i] < stueck.groesse:
+                        block = netz_abbruch.stueck_lesen(
+                            antwort, _stopp, _abbruch_fehler, min(netz_abbruch.STUECK, stueck.groesse - geladen[i]))
+                        if not block:
+                            break
+                        datei.write(block)
                         with sperre:
-                            _merk_schreiben(merk, kennung, geladen)
-                        raise UpdateFehler("ps5upd.abgebrochen")
-                    block = antwort.read(min(_BLOCK, stueck.groesse - geladen[i]))
-                    if not block:
-                        break
-                    datei.write(block)
+                            geladen[i] += len(block)
+                            stand["summe"] += len(block)
+                        _melden()
+                        if geladen[i] - letzter_merk >= _MERKPUNKT:
+                            datei.flush()
+                            with sperre:
+                                _merk_schreiben(merk, kennung, geladen)
+                            letzter_merk = geladen[i]
+                except UpdateFehler:
+                    # Abbruch: Stand sichern, damit ein neuer Start genau hier fortsetzt.
+                    datei.flush()
                     with sperre:
-                        geladen[i] += len(block)
-                        stand["summe"] += len(block)
-                    _melden()
-                    if geladen[i] - letzter_merk >= _MERKPUNKT:
-                        datei.flush()
-                        with sperre:
-                            _merk_schreiben(merk, kennung, geladen)
-                        letzter_merk = geladen[i]
+                        _merk_schreiben(merk, kennung, geladen)
+                    raise
                 datei.flush()
         if geladen[i] < stueck.groesse:
             raise ConnectionError("Antwort zu kurz (%d von %d)" % (geladen[i], stueck.groesse))

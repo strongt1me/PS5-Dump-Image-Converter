@@ -695,7 +695,13 @@ class SuchlaufSeiteTests(unittest.TestCase):
             return [fenster.quelle_var.get()] if fenster is not None else []
 
         self.app._ps4pkg_vorgabe = pfad
-        self.app._show_ps4_pkg_converter()
+        # Das Fenster liest die Vorgabe nach 200 ms ein; die Datei gibt es hier nicht, also warnt es "keine Quelle" -
+        # erwartet. Ohne eigene Attrappe hing der Test davon ab, dass ein frueherer Test den Dialog ersetzt hatte.
+        with mock.patch.object(tk.messagebox, "showwarning"):
+            self.app._show_ps4_pkg_converter()
+            self.app.root.update()
+            time.sleep(0.3)
+            self.app.root.update()
         try:
             self.assertIn(os.path.normpath(pfad), _eintraege(), "Die Datei steht nicht in der Quelle.")
             self.assertEqual("", self.app._ps4pkg_vorgabe, "Die Vorgabe gilt nur fuer ein Oeffnen.")

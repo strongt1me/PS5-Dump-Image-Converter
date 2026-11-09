@@ -355,7 +355,7 @@ class LadenTests(unittest.TestCase):
 
     def test_404_wird_zum_fehler(self):
         m = pu.Manifest(10, [pu.Teil(self.server.url("/gibtsnicht"), 0, 10, "a" * 64)])
-        with mock.patch.object(pu.time, "sleep"):
+        with mock.patch.object(pu.netz_abbruch, "schlafen", return_value=False):
             with self.assertRaises(pu.UpdateFehler):
                 pu.paket_laden(m, self.ziel, versuche=1)
 
@@ -539,7 +539,7 @@ class RobustheitTests(unittest.TestCase):
         port = self._starten(antwort)
         manifest = pu.Manifest(len(daten), [pu.Teil("http://127.0.0.1:%d/t" % port, 0, len(daten),
                                                     hashlib.sha256(daten).hexdigest())])
-        with mock.patch.object(pu.time, "sleep"):
+        with mock.patch.object(pu.netz_abbruch, "schlafen", return_value=False):
             pu.paket_laden(manifest, self.ziel, faeden=1, versuche=2)
         self.assertEqual(daten, Path(self.ziel).read_bytes())
         self.assertEqual(2, zaehler[0])
@@ -573,7 +573,7 @@ class RobustheitTests(unittest.TestCase):
                 ab = int(anfragen[-1][6:].split("-")[0])
                 return _Antwort(206, daten[ab:], len(daten) - ab)
 
-        with mock.patch.object(pu, "_oeffner", _Oeffner), mock.patch.object(pu.time, "sleep"):
+        with mock.patch.object(pu, "_oeffner", _Oeffner), mock.patch.object(pu.netz_abbruch, "schlafen", return_value=False):
             pu.datei_laden("http://127.0.0.1/x.pkg", self.ziel, versuche=2)
         self.assertEqual(["", "bytes=400-"], anfragen)
         self.assertEqual(daten, Path(self.ziel).read_bytes())
@@ -603,7 +603,7 @@ class RobustheitTests(unittest.TestCase):
             def open(self, anfrage, timeout=None):
                 return _Antwort()
 
-        with mock.patch.object(pu, "_oeffner", _Oeffner), mock.patch.object(pu.time, "sleep"):
+        with mock.patch.object(pu, "_oeffner", _Oeffner), mock.patch.object(pu.netz_abbruch, "schlafen", return_value=False):
             with self.assertRaises(pu.UpdateFehler) as ctx:
                 pu.datei_laden("http://127.0.0.1/x.pkg", self.ziel, versuche=1)
         self.assertTrue(str(ctx.exception).startswith("ps5upd.netz|"), str(ctx.exception))
@@ -681,7 +681,7 @@ class RobustheitTests(unittest.TestCase):
             return echt(pfad, modus, *a, **k)
 
         with mock.patch.object(pu, "open", falsches_open, create=True), \
-                mock.patch.object(pu.time, "sleep") as schlaf:
+                mock.patch.object(pu.netz_abbruch, "schlafen", return_value=False) as schlaf:
             with self.assertRaises(pu.UpdateFehler) as ctx:
                 pu.paket_laden(manifest, self.ziel, faeden=1, versuche=3)
         self.assertTrue(str(ctx.exception).startswith("ps5upd.platz"), str(ctx.exception))

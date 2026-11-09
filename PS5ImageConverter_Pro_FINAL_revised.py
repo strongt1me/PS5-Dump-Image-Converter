@@ -54,6 +54,8 @@ import tempfile
 import threading
 import time
 import gc
+import http.client
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -135,6 +137,7 @@ from ps5_validator.utils import bibliothek as bibliothek_bestand
 from ps5_validator.utils import ufs2_leser
 from ps5_validator.utils import ablegen_admin
 from ps5_validator.utils import hinweisfeld
+from ps5_validator.utils import netz_abbruch
 from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import ps5_updates
 from ps5_validator.utils import prosperopkg
@@ -769,7 +772,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.93"
+APP_VERSION = "v1.9.94"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -24389,7 +24392,20 @@ class PS5ConverterGUI:
                 return
             # Nur aktualisieren wenn Ergebnisse vorhanden oder final
             if results or final:
-                self._display_patches(results, title_id, elapsed_sec=_elapsed(), final=final, source="Online")
+                self._display_patches(results, title_id, elapsed_sec=_elapsed(), final=final, source="Online",
+                                      gescheitert=final and _gescheitert[0])
+        def _lebenszeichen() -> None:
+            """Zeigt die Wartezeit, solange noch keine Zeile da ist (die Seiten antworten beim ersten Mal langsam)."""
+            if _all_results or not hasattr(self, "_patch_status_var"):
+                return
+            if getattr(self, "_patch_titel", None) != tid_upper:
+                return
+            try:
+                self._patch_status_var.set(self._t("info_popup.status_loading_timed", title_id=tid_upper,
+                                                   sek=int(_elapsed())))
+            except tk.TclError:
+                pass
+
         def _worker():
             threads = []
             # Nicht "platform": Das ist der Name des Moduls aus Zeile 39.
@@ -24399,19 +24415,25 @@ class PS5ConverterGUI:
                 t = threading.Thread(target=_fetch_one, args=(base_url, konsole), daemon=True)
                 threads.append(t)
                 t.start()
-            # Warten bis alle fertig (non-blocking da daemon=True)
-            for t, (_basis, _konsole) in zip(threads, sites):
-                # 5s Timeout + 1s Puffer; Sonys Liste braucht mehrere
-                # Abfragen (Liste + je ein Manifest) und darf laenger.
-                t.join(timeout=40 if (_basis.startswith("sony:") or _basis.startswith("ps4-sony:")) else 6)
+            # Warten bis alle fertig (non-blocking da daemon=True). Bis 08.11.2026 gab die Anzeige nach 6 s auf und
+            # zeigte "Keine Updates gefunden", obwohl die Seite nur langsam war. Jetzt wartet sie bis zur Frist der
+            # Abfrage (zwei Versuche je Anfrage, siehe _PATCHSEITE_ZEITEN; Sonys Liste braucht mehrere Anfragen) und zeigt
+            # dabei die verstrichene Zeit.
+            # Ohne Frist: Jede Anfrage hat ihre eigene Zeitgrenze, und ein Fehlschlag darf nicht gemeldet werden,
+            # solange der Faden noch eine Antwort liefern kann.
+            while any(t.is_alive() for t in threads):
+                for t in threads:
+                    t.join(timeout=1.0)
+                self._hauptfaden_planen(_lebenszeichen)
             # Finale Anzeige falls noch nicht geschehen
             with _lock:
                 vollstaendig = (_done_count[0] >= _total) and not _gescheitert[0]
                 if _done_count[0] < _total:
                     _done_count[0] = _total
+                    _gescheitert[0] = True          # nicht rechtzeitig fertig: unbekannt, nicht "keine"
                     self._hauptfaden_planen(
                         lambda r=list(_all_results): self._display_patches(
-                            r, title_id, elapsed_sec=_elapsed(), final=True, source="Online"
+                            r, title_id, elapsed_sec=_elapsed(), final=True, source="Online", gescheitert=True
                         ),
                     )
                 # In den Zwischenspeicher nur eine vollstaendige Antwort - auch
@@ -24454,8 +24476,13 @@ class PS5ConverterGUI:
         elapsed_sec: float | None = None,
         final: bool = True,
         source: str = "Online",
+        gescheitert: bool = False,
     ) -> None:
-        """Zeigt die gefundenen Patches im Treeview an."""
+        """Zeigt die gefundenen Patches im Treeview an.
+
+        ``gescheitert``: Die Abfrage ist ohne Ergebnis misslungen (Netz, Seite zu langsam). Eine leere Liste heisst dann
+        "unbekannt" und wird nicht als "Keine Updates gefunden" ausgegeben.
+        """
         if not hasattr(self, "_patch_tree") or self._patch_tree is None:
             return
         try:
@@ -24484,6 +24511,13 @@ class PS5ConverterGUI:
         # ueber die Ablage als Update oder Patch.
         self._patch_latest: dict[str, bool] = {}
 
+        if not results and gescheitert:
+            self._patch_tree.insert("", "end",
+                values=("-", self._t("info_popup.update_failed_row"), "-", "-", "-", "-"))
+            if final:
+                self._patch_status_var.set(self._t(
+                    "info_popup.status_failed", source=source, elapsed=f"{(elapsed_sec or 0.0):.1f}"))
+            return
         if not results:
             self._patch_tree.insert("", "end",
                 values=("-", self._t("info_popup.no_updates_found"), "-", "-", "-", "-"))
@@ -44719,8 +44753,35 @@ class PS5ConverterGUI:
             ergebnisse[pfad] = ergebnis
         return ergebnisse
 
+    #: Zeitgrenzen der Patchseiten in Sekunden: erster Versuch, zweiter Versuch. Gemessen am 08.11.2026: Die Seiten
+    #: antworten beim ERSTEN Abruf eines Titels oft erst nach 4 bis 30 s (Seite) bzw. 16 s (Liste), danach in 0,2 s - bei
+    #: 5 Sekunden Zeitgrenze und einem einzigen Versuch fehlte in 9 von 50 Titeln die ganze Liste.
+    _PATCHSEITE_ZEITEN = (15.0, 40.0)
+
+    @staticmethod
+    def _patchseite_netz(anfrage_fn, zeiten: tuple) -> bytes:
+        """Holt eine Antwort der Patchseite; bei Zeitueberschreitung oder 5xx ein zweiter Versuch mit mehr Geduld.
+
+        Raises:
+            urllib.error.HTTPError: 4xx (und 5xx nach dem letzten Versuch) - der Aufrufer unterscheidet 404 davon.
+            OSError: kein Netz, Zeitueberschreitung nach dem letzten Versuch.
+        """
+        letzter: BaseException | None = None
+        for nr, zeit in enumerate(zeiten):
+            try:
+                with anfrage_fn(zeit) as r:
+                    return r.read(NETZ_MAX_SEITE)
+            except urllib.error.HTTPError as exc:
+                if exc.code not in (429, 500, 502, 503, 504) or nr == len(zeiten) - 1:
+                    raise
+                letzter = exc
+            except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
+                letzter = exc
+        assert letzter is not None
+        raise letzter
+
     def _patchseite_lesen(self, basis: str, plattform: str,
-                          kennung: str) -> tuple[list, bool]:
+                          kennung: str, zeiten: tuple | None = None) -> tuple[list, bool]:
         """Liest die Updateliste eines Titels von einer Patchseite.
 
         Herausgeloest am 25.09.2026 aus ``_fetch_patches_async``: Die
@@ -44745,16 +44806,20 @@ class PS5ConverterGUI:
             return s.strip()
 
         ergebnisse: list = []
+        zeiten = zeiten or self._PATCHSEITE_ZEITEN
         try:
             page_url = f"{basis}/{kennung}"
             req = urllib.request.Request(
                 page_url,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
             )
-            with urllib.request.urlopen(req, timeout=5) as r:
-                html = r.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace")
-            if "404" in html[:500] or "not here" in html.lower():
-                return ergebnisse, False
+            try:
+                html = self._patchseite_netz(
+                    lambda zeit: urllib.request.urlopen(req, timeout=zeit), zeiten).decode("utf-8", errors="replace")
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404:
+                    return ergebnisse, False           # Die Seite kennt den Titel nicht
+                raise
             key = None
             m = re.search(
                 r"data-loadparams=[\"']\s*\{\s*'titleid'\s*:\s*'[^']+',\s*'key'\s*:\s*'([a-f0-9]+)'\s*\}[\"']",
@@ -44773,6 +44838,13 @@ class PS5ConverterGUI:
                 if m3:
                     key = m3.group(1)
             if not key:
+                # Kennt die Seite den Titel nicht, liefert sie ihre Startseite (HTTP 200, ohne die Title-ID im Titel).
+                # Das ist "keine Eintraege", kein Fehlschlag. Steht die Title-ID im Titel, die Seite aber ohne
+                # Schluessel da, hat sich ihr Aufbau geaendert - das ist ein Fehlschlag. (Der fruehere Textvergleich
+                # auf "404" und "not here" traf die heutige Startseite nicht mehr und konnte auch eine Beschreibung treffen.)
+                titel = re.search(r"<title>(.*?)</title>", html, re.S | re.I)
+                if kennung.upper() not in (titel.group(1) if titel else "").upper():
+                    return ergebnisse, False
                 return ergebnisse, True
             api_url = f"{basis}/api/internal/loadpatches"
             body = json.dumps({"titleid": kennung, "key": key}).encode("utf-8")
@@ -44788,9 +44860,15 @@ class PS5ConverterGUI:
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 },
             )
-            with urllib.request.urlopen(api_req, timeout=5) as r:
-                data = json.loads(r.read(NETZ_MAX_SEITE).decode("utf-8", errors="replace"))
+            data = json.loads(self._patchseite_netz(
+                lambda zeit: urllib.request.urlopen(api_req, timeout=zeit), zeiten).decode("utf-8", errors="replace"))
             if not data.get("success"):
+                return ergebnisse, True
+            gemeldet = str(data.get("titleid") or "").strip().upper()
+            if gemeldet and not gemeldet.startswith(kennung.upper()):
+                # Die Liste gehoert zu einem anderen Titel (Zwillings-IDs wie PPSA01315/PPSA01316 teilen Fassungen und
+                # Groessen): nicht unter dem falschen Titel anzeigen.
+                logger.warning("Patchseite %s antwortete mit der Liste von %s statt %s", basis, gemeldet, kennung)
                 return ergebnisse, True
             for patch in data.get("patches", []):
                 ver = _norm_patch_text(patch.get("content_ver") or patch.get("version", "?"))
@@ -44892,6 +44970,31 @@ class PS5ConverterGUI:
             basis, ps5_downloads.art_bestimmen(ist_neueste), info["dateiname"])
         self._sony_ladefenster(info, ziel)
 
+    def _lade_status(self, geladen: int, gesamt: int, tempo: float, ruhe: float, laufzeit: float, phase: str) -> str:
+        """Der Statustext eines Update-Ladefensters (PS5 und PS4 benutzen ihn gemeinsam).
+
+        Vor dem ersten Byte: ``phase`` mit der Zeit seit dem Klick (sonst wirkt das Fenster tot). Danach Menge, Prozent
+        (unter 1 % zwei Stellen), Tempo und Rest; ab 8 s ohne neue Daten der Hinweis auf den Stillstand.
+        """
+        def _zeit(sekunden: float) -> str:
+            sekunden = int(max(0, sekunden))
+            return "%d:%02d:%02d" % (sekunden // 3600, sekunden % 3600 // 60, sekunden % 60)
+
+        if not geladen:
+            return self._t("ps5upd.status_lebt", text=phase, zeit=_zeit(laufzeit))
+        if gesamt:
+            prozent = 100.0 * geladen / gesamt
+            text = self._t(
+                "ps5upd.status_lade", geladen=self._fmt_bytes(geladen), gesamt=self._fmt_bytes(gesamt),
+                prozent="%.2f" % prozent if prozent < 1 else "%.1f" % prozent, tempo=self._fmt_bytes(int(tempo)),
+                rest=_zeit((gesamt - geladen) / tempo) if tempo > 1 else "-")
+        else:
+            text = self._t("ps5upd.status_lade", geladen=self._fmt_bytes(geladen), gesamt="?", prozent="?",
+                           tempo=self._fmt_bytes(int(tempo)) if tempo > 0 else "-", rest="-")
+        if ruhe >= 8:
+            text += " \u00b7 " + self._t("ps5upd.status_still", sek=int(ruhe))
+        return text
+
     def _sony_ladefenster(self, info: dict, ziel: str) -> None:
         """Fenster, das ein Update-Paket von Sonys Server laedt (fortsetzbar).
 
@@ -44905,8 +45008,8 @@ class PS5ConverterGUI:
         self._sony_lauf = lauf
         abbruch = threading.Event()
         stand: dict[str, Any] = {"geladen": 0, "gesamt": int(info.get("gesamt") or 0),
-                                 "fertig": False, "fehler": "", "status": ""}
-        probe = {"zeit": time.monotonic(), "bytes": 0, "tempo": 0.0}
+                                 "fertig": False, "fehler": "", "status": "", "beginn": time.monotonic()}
+        probe = {"zeit": time.monotonic(), "bytes": 0, "tempo": 0.0, "letzt": 0, "bewegt": time.monotonic()}
 
         self._build_modern_header(win, titel, self._t("ps5upd.fenster_untertitel"))
         koerper = tk.Frame(win, bg=c["bg_main"])
@@ -44953,10 +45056,6 @@ class PS5ConverterGUI:
         schliessen_btn = self._pw.Button(knoepfe, text=self._t("action.close"))
         schliessen_btn.pack(side="right")
 
-        def _zeit(sekunden: float) -> str:
-            sekunden = int(max(0, sekunden))
-            return "%d:%02d:%02d" % (sekunden // 3600, sekunden % 3600 // 60, sekunden % 60)
-
         def _fortschritt(geladen: int, gesamt: int) -> None:
             stand["geladen"] = geladen
             stand["gesamt"] = gesamt
@@ -44988,6 +45087,8 @@ class PS5ConverterGUI:
             gesamt = stand["gesamt"]
             geladen = stand["geladen"]
             jetzt = time.monotonic()
+            if geladen != probe["letzt"]:
+                probe["letzt"], probe["bewegt"] = geladen, jetzt
             if jetzt - probe["zeit"] >= 1.0:
                 tempo = (geladen - probe["bytes"]) / (jetzt - probe["zeit"])
                 probe["tempo"] = tempo if probe["tempo"] == 0 else 0.7 * probe["tempo"] + 0.3 * tempo
@@ -45001,16 +45102,11 @@ class PS5ConverterGUI:
                     status_var.set(self._t("ps5upd.abgebrochen"))
                 elif stand["fehler"]:
                     status_var.set(self._t("ps5upd.status_fehler", fehler=stand["fehler"]))
-                elif gesamt and geladen:
-                    tempo = probe["tempo"]
-                    rest = _zeit((gesamt - geladen) / tempo) if tempo > 1 else "-"
-                    status_var.set(self._t(
-                        "ps5upd.status_lade", geladen=self._fmt_bytes(geladen),
-                        gesamt=self._fmt_bytes(gesamt), prozent="%.1f" % prozent,
-                        tempo=self._fmt_bytes(int(tempo)), rest=rest))
-                elif stand.get("teile"):
-                    # 02.11.2026: Verzeichnis da, noch kein Byte - nicht weiter "Lade das Verzeichnis" zeigen.
-                    status_var.set(self._t("ps5upd.status_verbinde", teile=stand["teile"]))
+                else:
+                    phase = (self._t("ps5upd.status_verbinde", teile=stand["teile"]) if stand.get("teile")
+                             else self._t("ps5upd.status_start"))
+                    status_var.set(self._lade_status(geladen, gesamt, probe["tempo"], jetzt - probe["bewegt"],
+                                                     jetzt - stand["beginn"], phase))
             except tk.TclError:
                 return
             if aktiv:
@@ -45080,8 +45176,8 @@ class PS5ConverterGUI:
         self._ps4_lauf = lauf
         abbruch = threading.Event()
         stand: dict[str, Any] = {"geladen": 0, "gesamt": 0,
-                                 "fertig": False, "fehler": "", "status": ""}
-        probe = {"zeit": time.monotonic(), "bytes": 0, "tempo": 0.0}
+                                 "fertig": False, "fehler": "", "status": "", "beginn": time.monotonic()}
+        probe = {"zeit": time.monotonic(), "bytes": 0, "tempo": 0.0, "letzt": 0, "bewegt": time.monotonic()}
 
         self._build_modern_header(win, titel, self._t("ps5upd.fenster_untertitel"))
         koerper = tk.Frame(win, bg=c["bg_main"])
@@ -45101,7 +45197,7 @@ class PS5ConverterGUI:
             wraplength=max(200, hinweis.winfo_width() - 8)))
         balken = self._pw.Progressbar(koerper, mode="determinate", maximum=100)
         balken.pack(fill="x", pady=(4, 4))
-        status_var = tk.StringVar(value=self._t("ps5upd.status_start"))
+        status_var = tk.StringVar(value=self._t("ps5upd.status_verbinde_kurz"))
         tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w", justify="left", wraplength=660).pack(fill="x")
 
@@ -45127,10 +45223,6 @@ class PS5ConverterGUI:
         ordner_btn.pack(side="left", padx=(8, 0))
         schliessen_btn = self._pw.Button(knoepfe, text=self._t("action.close"))
         schliessen_btn.pack(side="right")
-
-        def _zeit(sekunden: float) -> str:
-            sekunden = int(max(0, sekunden))
-            return "%d:%02d:%02d" % (sekunden // 3600, sekunden % 3600 // 60, sekunden % 60)
 
         def _fortschritt(geladen: int, gesamt: int) -> None:
             stand["geladen"] = geladen
@@ -45159,6 +45251,8 @@ class PS5ConverterGUI:
             gesamt = stand["gesamt"]
             geladen = stand["geladen"]
             jetzt = time.monotonic()
+            if geladen != probe["letzt"]:
+                probe["letzt"], probe["bewegt"] = geladen, jetzt
             if jetzt - probe["zeit"] >= 1.0:
                 tempo = (geladen - probe["bytes"]) / (jetzt - probe["zeit"])
                 probe["tempo"] = tempo if probe["tempo"] == 0 else 0.7 * probe["tempo"] + 0.3 * tempo
@@ -45172,20 +45266,9 @@ class PS5ConverterGUI:
                     status_var.set(self._t("ps5upd.abgebrochen"))
                 elif stand["fehler"]:
                     status_var.set(self._t("ps5upd.status_fehler", fehler=stand["fehler"]))
-                elif geladen:
-                    tempo = probe["tempo"]
-                    if gesamt:
-                        rest = _zeit((gesamt - geladen) / tempo) if tempo > 1 else "-"
-                        status_var.set(self._t(
-                            "ps5upd.status_lade", geladen=self._fmt_bytes(geladen),
-                            gesamt=self._fmt_bytes(gesamt), prozent="%.1f" % prozent,
-                            tempo=self._fmt_bytes(int(tempo)), rest=rest))
-                    else:
-                        status_var.set(self._t(
-                            "ps5upd.status_lade", geladen=self._fmt_bytes(geladen),
-                            gesamt="?", prozent="?",
-                            tempo=self._fmt_bytes(int(tempo)) if tempo > 0 else "-",
-                            rest="-"))
+                else:
+                    status_var.set(self._lade_status(geladen, gesamt, probe["tempo"], jetzt - probe["bewegt"],
+                                                     jetzt - stand["beginn"], self._t("ps5upd.status_verbinde_kurz")))
             except tk.TclError:
                 return
             if aktiv:
@@ -45248,9 +45331,21 @@ class PS5ConverterGUI:
         ergebnisse: list = []
         gescheitert = False
         for basis, konsole in seiten:
-            teil, fehlgeschlagen = self._patchseite_lesen(basis, konsole, kennung)
+            teil, fehlgeschlagen = self._patchseite_lesen(basis, konsole, kennung, zeiten=(15.0, 30.0))
             ergebnisse.extend(teil)
             gescheitert = gescheitert or fehlgeschlagen
+        if kennung.startswith(("CUSA", "PUSA")):
+            # Sonys eigene PS4-Liste braucht nichts ausser der Title-ID. Gemessen am 08.11.2026: In 2 von 16 PS4-Titeln
+            # kam von der Drittseite nichts, Sony kannte das Update (01.32 bzw. 01.02).
+            try:
+                for nr, fassung in enumerate(ps5_updates.verxml_holen(ps5_updates.ps4_verxml_url(kennung))[:8]):
+                    ergebnisse.append(("PS4", fassung.inhalt, "-", fassung.firmware or "-", "-", nr == 0,
+                                       "sony-update:" + fassung.manifest_url))
+            except ps5_updates.UpdateFehler as exc:
+                if not str(exc).startswith("ps5upd.http|4"):           # 4xx: Sony fuehrt keine Liste, kein Fehlschlag
+                    gescheitert = True
+            except ValueError:
+                pass
         if not gescheitert:
             # Eigener Speicher: Diese Liste kennt nur die Seiten, nicht Sonys
             # Direktdownloads - das Spiel-Info-Fenster darf sie nicht anzeigen.
@@ -53437,6 +53532,9 @@ class PS5ConverterGUI:
                 eintrag = self._downloads.get(iid)
                 if eintrag and eintrag.get("status") in ("queued", "running"):
                     eintrag["abbrechen"] = True
+                    # Sofort sichtbar (gemeldet 08.11.2026: "das Abbrechen funktioniert nicht"): Der Faden merkt den
+                    # Abbruch erst beim naechsten Lesen und setzt dann "abgebrochen".
+                    baum.set(iid, "status", self._t("downloads.state_cancelling"))
 
         def _erneut() -> None:
             for iid in baum.selection():
@@ -53848,12 +53946,16 @@ class PS5ConverterGUI:
         teil = ps5_downloads.teildatei(ziel)
         beginn = time.time()
 
-        def melde(spalte: str, wert: str) -> None:
+        def melde(spalte: str, wert: str, nur_laufend: bool = False) -> None:
             baum = getattr(self, "_downloads_tree", None)
             if baum is None:
                 return
             def _setz() -> None:
                 try:
+                    # Der Herzschlag darf einen schon gesetzten Endstand ("fertig", "abgebrochen") nie ueberschreiben:
+                    # Geprueft wird erst hier im Hauptfaden, wo die Reihenfolge der gemeldeten Aenderungen feststeht.
+                    if nur_laufend and eintrag.get("status") != "running":
+                        return
                     if baum.winfo_exists() and baum.exists(iid):
                         baum.set(iid, spalte, wert)
                 except Exception:
@@ -53862,6 +53964,39 @@ class PS5ConverterGUI:
                 self._hauptfaden_planen(_setz)
             except Exception:
                 pass
+
+        def _prozent(anteil: float) -> str:
+            # Bei grossen Paketen bleibt eine ganze Prozentzahl lange auf "0 %": unter 1 % zwei Stellen zeigen.
+            return "%.2f %%" % anteil if anteil < 1 else "%.1f %%" % anteil
+
+        class _Abgebrochen(Exception):
+            """Der Anwender hat den Download abgebrochen (nur dieser Worker)."""
+
+        zaehler: dict[str, Any] = {"geladen": 0, "gesamt": 0, "basis": 0, "bewegt": time.monotonic()}
+        halt = threading.Event()
+        herz: "threading.Thread | None" = None
+
+        def _herzschlag() -> None:
+            """Zeigt jede Sekunde, dass etwas geschieht: Verbinden, Menge und Tempo, Stillstand. Kein Tk-Zugriff."""
+            start = time.monotonic()
+            vorher, zeit_vorher, tempo = zaehler["geladen"], start, 0.0
+            while not halt.wait(1.0):
+                jetzt = time.monotonic()
+                geladen = zaehler["geladen"]
+                tempo_neu = (geladen - vorher) / max(0.001, jetzt - zeit_vorher)
+                tempo = tempo_neu if tempo == 0 else 0.7 * tempo + 0.3 * tempo_neu
+                vorher, zeit_vorher = geladen, jetzt
+                if geladen <= zaehler["basis"] and not zaehler["gesamt"]:
+                    text = self._t("downloads.state_connecting", sek=int(jetzt - start))
+                else:
+                    text = self._t("downloads.state_running_detail", done=self._fmt_bytes(geladen),
+                                   speed=self._fmt_bytes(int(tempo)))
+                    ruhe = jetzt - zaehler["bewegt"]
+                    if ruhe >= 8:
+                        text += " \u00b7 " + self._t("ps5upd.status_still", sek=int(ruhe))
+                melde("status", text, nur_laufend=True)
+                if zaehler["gesamt"]:
+                    melde("fortschritt", _prozent(100.0 * geladen / zaehler["gesamt"]), nur_laufend=True)
 
         try:
             os.makedirs(os.path.dirname(ziel), exist_ok=True)
@@ -53878,8 +54013,18 @@ class PS5ConverterGUI:
                 kopfzeilen["Range"] = f"bytes={schon}-"
                 melde("status", self._t("downloads.state_resumed", done=self._fmt_bytes(schon)))
             eintrag["status"] = "running"
+            # Vor der ersten Antwort stand bisher "wartet" - bis zu 60 s lang (gemeldet 08.11.2026).
+            melde("status", self._t("downloads.state_connecting", sek=0))
+            zaehler.update(geladen=schon, basis=schon, bewegt=time.monotonic())
+            herz = threading.Thread(target=_herzschlag, daemon=True, name="download-herzschlag")
+            herz.start()
+
+            def _stopp() -> bool:
+                return bool(eintrag.get("abbrechen"))
+
             anfrage = urllib.request.Request(eintrag["url"], headers=kopfzeilen)
-            with urllib.request.urlopen(anfrage, timeout=60) as antwort:
+            antwort = netz_abbruch.oeffnen(lambda: urllib.request.urlopen(anfrage, timeout=60), _stopp, _Abgebrochen)
+            with antwort, netz_abbruch.wache(antwort, _stopp):
                 rest = int(antwort.headers.get("Content-Length", 0) or 0)
                 gesamt = schon + rest if antwort.status == 206 else rest
                 # Im Eintrag merken: gesamt ist sonst eine reine
@@ -53887,28 +54032,28 @@ class PS5ConverterGUI:
                 # einem Schliessen und Wiederoeffnen dauerhaft leer.
                 if gesamt:
                     eintrag["bytes"] = str(gesamt)
+                zaehler["gesamt"] = gesamt
                 melde("groesse", self._fmt_bytes(gesamt) if gesamt else "–")
                 melde("status", self._t("downloads.state_running"))
                 modus = "ab" if (schon and antwort.status == 206) else "wb"
                 if modus == "wb":
                     schon = 0
                 geladen = schon
+                zaehler.update(geladen=geladen, basis=geladen)
                 letzte_meldung = 0.0
                 with open(teil, modus) as datei:
                     while True:
-                        if eintrag.get("abbrechen"):
-                            eintrag["status"] = "cancelled"
-                            melde("status", self._t("downloads.state_cancelled"))
-                            return
-                        block = antwort.read(1 << 20)
+                        block = netz_abbruch.stueck_lesen(antwort, _stopp, _Abgebrochen)
                         if not block:
                             break
                         datei.write(block)
                         geladen += len(block)
+                        zaehler["geladen"] = geladen
+                        zaehler["bewegt"] = time.monotonic()
                         if time.time() - letzte_meldung > 0.5:
                             letzte_meldung = time.time()
                             if gesamt:
-                                melde("fortschritt", f"{geladen / gesamt * 100:.0f} %")
+                                melde("fortschritt", _prozent(100.0 * geladen / gesamt))
 
             if gesamt and os.path.getsize(teil) != gesamt:
                 eintrag["status"] = "failed"
@@ -53925,12 +54070,20 @@ class PS5ConverterGUI:
             self._append_to_log(self._t(
                 "downloads.finished", name=eintrag["dateiname"],
                 size=self._fmt_bytes(os.path.getsize(ziel)), seconds=time.time() - beginn))
+        except _Abgebrochen:
+            # Die Teildatei bleibt liegen; "Erneut" setzt per Bereichsanfrage fort.
+            eintrag["status"] = "cancelled"
+            melde("status", self._t("downloads.state_cancelled"))
         except Exception as exc:
             eintrag["status"] = "failed"
             eintrag["fehler"] = str(exc)[:70]
             melde("status", self._t("downloads.state_failed",
                                     error=eintrag["fehler"]))
             logger.debug("Download fehlgeschlagen (%s): %s", eintrag.get("dateiname"), exc)
+        finally:
+            halt.set()
+            if herz is not None:
+                herz.join(2.0)
 
     # ==================================================================
     # BACKPORT – setzt die SDK-Angabe aller ausführbaren Dateien eines

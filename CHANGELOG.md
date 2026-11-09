@@ -2,9 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.93):** AMPR EMU NG 0.3.3, PS5Upload 11.5.2 und PS5 Cooling & System Center – Pro 1.77.1 sind eingebaut.
+> **Kurz zum aktuellen Stand (v1.9.94):** Abbrechen und Fortschritt beim Laden von Spiel-Updates sind behoben, die Updateliste ist verlässlicher, und mehrere mitgelieferte Werkzeuge sind aktualisiert.
 
 ---
+
+## v1.9.94 – 08.11.2026
+
+- **Behoben:** ABBRECHEN beim Herunterladen eines Spiel-Updates wirkt sofort, auch bei langsamer oder schweigender Verbindung; die Fenster zeigen von Anfang an, dass etwas geschieht (Verbinden, geladene Menge, Tempo, Stillstand).
+- **Behoben:** Die Updateliste eines Spiels gibt bei einer langsamen Seite nicht mehr zu früh auf, meldet einen Fehlschlag nicht mehr als „Keine Updates gefunden“ und nimmt bei PS4-Spielen in der Bibliothek auch Sonys eigene Liste dazu.
+- **Aktualisiert:** WebKit Autoloader 0.7.1, garlic-savemgr 1.15-beta15, PS5Upload 11.6.0, PS5 Cooling & System Center – Pro 1.78.0 und 7-Zip 26.06.
+- **Aktualisiert:** ps5-ultrapack 2.3.4 im PS5-PKG-Tool; gebaute Pakete behalten lokalisierte Symbole und Hintergründe.
 
 ## v1.9.93 – 08.11.2026
 

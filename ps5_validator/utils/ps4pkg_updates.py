@@ -35,6 +35,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Callable
 
+from ps5_validator.utils import netz_abbruch
+
 logger = logging.getLogger("PS5Converter.ps4pkg_updates")
 
 #: Der ShellCore-Schluessel fuer die Update-Adressen (oeffentlich bekannt).
@@ -358,11 +360,13 @@ def herunterladen(info: UpdateInfo, ziel_ordner: str, *,
                 pruefsumme = _pruefsumme_fuer(teil.hash)
                 geschrieben = 0
                 try:
-                    with opener(teil.url) as antwort:
+                    # Oeffnen und Lesen reagieren auf ABBRECHEN sofort (netz_abbruch): Bis 08.11.2026 blockierte
+                    # ``read(1 MiB)`` bei langsamer Leitung ueber 20 s, ``urlopen`` liess sich gar nicht unterbrechen.
+                    antwort = netz_abbruch.oeffnen(lambda adresse=teil.url: opener(adresse), abbruch,
+                                                   lambda: UpdateFehler("abgebrochen"))
+                    with antwort, netz_abbruch.wache(antwort, abbruch):
                         while True:
-                            if abbruch is not None and abbruch():
-                                raise UpdateFehler("abgebrochen")
-                            block = antwort.read(1024 * 1024)
+                            block = netz_abbruch.stueck_lesen(antwort, abbruch, lambda: UpdateFehler("abgebrochen"))
                             if not block:
                                 break
                             try:

@@ -372,7 +372,7 @@ class Ps4DumpImageFenster:
         self._formate_anpassen()
         # Eine Vorgabe (aus der Bibliothek) wird gleich eingelesen - der Anwender hat sie ja gerade gewaehlt.
         if vorgabe:
-            self.win.after(200, self._einlesen)
+            self._einlesen_id = self.win.after(200, self._einlesen_verzoegert)
 
     def rest_zeigen(self, sichtbar: bool) -> bool:
         """Blendet alles unter dem Quellfeld ein oder aus (31.10.2026: Die Seite zeigt vor der ersten gueltigen Wahl nur QUELLE).
@@ -498,6 +498,19 @@ class Ps4DumpImageFenster:
             return bib.Zwischenspeicher(os.path.join(konfigurationsordner(), "ps4dib_sammlung.json"))
         except Exception:  # noqa: BLE001
             return bib.Zwischenspeicher("")
+
+    def _einlesen_verzoegert(self) -> None:
+        """Das Einlesen einer Vorgabe nach 200 ms - nur, wenn die Seite dann noch da ist.
+
+        Ein ``after``-Aufruf stirbt nicht mit seinem Widget: Wurde die Seite inzwischen zerstoert, meldete das Einlesen
+        sonst eine fehlende Quelle in einem Dialog ohne Fenster dahinter (im Test als "echter Dialog" sichtbar).
+        """
+        try:
+            if not self.win.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        self._einlesen()
 
     def _einlesen(self) -> None:
         if not self._frei():
@@ -998,6 +1011,13 @@ class Ps4DumpImageFenster:
             except (tk.TclError, ValueError):
                 pass
             self._takt_id = None
+        einlesen_id = getattr(self, "_einlesen_id", None)
+        if einlesen_id is not None:
+            try:
+                self.win.after_cancel(einlesen_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._einlesen_id = None
         if getattr(self.g, FENSTER_ATTRIBUT, None) is self:
             setattr(self.g, FENSTER_ATTRIBUT, None)
 
