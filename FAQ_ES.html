@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Preguntas frecuentes (FAQ) v1.9.94</title>
+<title>PS5 Dump &amp; Image Converter – Preguntas frecuentes (FAQ) v1.9.95</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Preguntas frecuentes (FAQ)</span></h1>
     <p class="unter">Respuestas breves a las preguntas que surgen con más frecuencia al trabajar con el programa: desde el primer inicio hasta la conversión para la PS5. El manual de usuario lo explica todo con detalle.</p>
     <div class="marken">
-      <span class="marke">Versión v1.9.94</span>
-      <span class="marke">Actualizado el 8 de noviembre de 2026</span>
+      <span class="marke">Versión v1.9.95</span>
+      <span class="marke">Actualizado el 9 de noviembre de 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -616,6 +616,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>¿Qué cambia en config.ini a partir de ShadowMount+ 1.7beta12?</h3>
+    <p>ShadowMount+ 1.7beta12 guarda <code>config.ini</code> en secciones (<code>[api]</code>, <code>[fakelib]</code>, <code>[emulators]</code> …) y guarda los ajustes por juego y por imagen en un <code>profiles.ini</code> aparte. Muchas claves tienen otro nombre: <code>api_bind_address</code> es ahora <code>[api] bind_address</code> y <code>update_emulators</code> es ahora <code>[emulators] update_enabled</code>. Por eso el programa pregunta una vez si la consola usa la versión anterior o 1.7beta12 en adelante, y recuerda la respuesta; se cambia en <strong>CONFIGURACIÓN</strong>, sección <em>ShadowMount+ – config.ini</em>. Si en la consola se ve claramente el otro formato, vale el archivo de la consola y el programa lo avisa. El editor de ShadowMount+, el <strong>botón&nbsp;7</strong>, el asistente de grabación de AMPR y el aviso de NG leen y escriben ambos formatos; los comentarios y las secciones propias se conservan. No copie un <code>config.ini</code> antiguo sobre los archivos nuevos: ShadowMount+ lo convierte solo en el primer inicio y guarda una copia en <code>config-v1-backup/</code>.</p>
+  </div>
+
+  <div class="frage">
     <h3>¿Cómo se usan otros mandos en la PS5 (AnyPad PS5)?</h3>
     <p>Desde la v1.9.60 se incluye el payload <strong>AnyPad PS5</strong> (ahora en la versión 0.9.1-beta). Permite usar mandos Bluetooth en la PS5; los juegos los ven como un DualSense. Según su autor, están verificados el DualShock&nbsp;4&nbsp;v2, el 8BitDo SF30 Pro (modo Switch) y el GameSir G7 SE; los mandos de Xbox y Switch Pro, entre otros, son compatibles pero aún no están verificados. En <em>Consola y payloads</em> se inicia con <strong>Iniciar selección</strong> y se abre su página de emparejamiento (puerto 8095) con <strong>Abrir interfaz web</strong>.</p>
     <ul>
@@ -710,8 +715,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Preguntas frecuentes <strong>v1.9.94</strong></span>
-  <span>Actualizado el 8 de noviembre de 2026 · Solo para contenido que se posee y se ha adquirido legalmente</span>
+  <span>PS5 Dump &amp; Image Converter – Preguntas frecuentes <strong>v1.9.95</strong></span>
+  <span>Actualizado el 9 de noviembre de 2026 · Solo para contenido que se posee y se ha adquirido legalmente</span>
 </footer>
 
 </body>

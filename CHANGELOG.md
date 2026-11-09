@@ -2,9 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.94):** Abbrechen und Fortschritt beim Laden von Spiel-Updates sind behoben, die Updateliste ist verlässlicher, und mehrere mitgelieferte Werkzeuge sind aktualisiert.
+> **Kurz zum aktuellen Stand (v1.9.95):** ShadowMount+ 1.7beta12 ist eingebaut – das Programm fragt einmal, ob die Konsole das alte oder das neue Format der config.ini nutzt –, und mehrere mitgelieferte Werkzeuge sind aktualisiert.
 
 ---
+
+## v1.9.95 – 09.11.2026
+
+- **Neu:** ShadowMount+ 1.7beta12 speichert die config.ini in Abschnitten und Einstellungen je Spiel und Abbild in einer profiles.ini; das Programm fragt einmal, ob die Konsole die Fassung davor oder ab 1.7beta12 nutzt, und behandelt die Dateien danach passend.
+- **Geändert:** Der Hinweis zu `update_emulators=0` bei AMPR EMU NG erscheint vor dem Lauf statt mittendrin, damit ein Lauf mit automatischem Herunterfahren nicht auf eine Bestätigung wartet.
+- **Aktualisiert:** ShadowMount+ 1.7beta12, ProsperoMgr 1.2, ftpsrv 0.22, PS5Upload 12.3.0, garlic-savemgr 1.15-beta20 und garlic-worker 1.5.2.
+- **Aktualisiert:** ps5-ultrapack 2.4.0 im PS5-PKG-Tool.
 
 ## v1.9.94 – 08.11.2026
 

@@ -28,7 +28,6 @@ Reine Logik, kein Netz, keine Oberflaeche.
 from __future__ import annotations
 
 import re
-from typing import Iterable
 
 from ps5_validator.utils.ini_config import parse_flat_ini_multi
 
@@ -415,7 +414,3 @@ def uebersetzen(text: str) -> str:
 def schluessel_bekannt(schluessel: str) -> bool:
     """Gibt es den Schluessel im Format 2 (config.ini oder profiles.ini)?"""
     return schluessel in BEKANNT
-
-
-def nur_bekannte(werte: Iterable[str]) -> list[str]:
-    return [w for w in werte if w in BEKANNT]
