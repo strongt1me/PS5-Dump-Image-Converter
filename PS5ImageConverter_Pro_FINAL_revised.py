@@ -187,6 +187,7 @@ from ps5_validator.utils import dokan_laufwerk
 from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
 from ps5_validator.utils import shadowmount_generation as sm_gen
+from ps5_validator.utils import shadowmount_config as sm_cfg
 from ps5_validator.utils import ampr_assetpakete
 from ps5_validator.utils import ampr_zstdpack
 from ps5_validator.utils import wee_tools
@@ -6316,7 +6317,12 @@ class PS5ConverterGUI:
             key: Stabiler Übersetzungsschlüssel aus ``ps5_validator.utils.i18n.STRINGS``.
             **kwargs: Optionale Platzhalterwerte für dynamische Texte (z. B. Pfade, Zahlen).
         """
-        return i18n_translate(getattr(self, "_current_language", DEFAULT_LANGUAGE), key, **kwargs)
+        text = i18n_translate(getattr(self, "_current_language", DEFAULT_LANGUAGE), key, **kwargs)
+        # ShadowMount+ ab 1.7beta12 (Nutzerwunsch 09.11.2026): Wer dieses Format gewaehlt hat, liest in den Meldungen
+        # die Schluessel der neuen config.ini (update_emulators -> [emulators] update_enabled).
+        if self._sm_format_gespeichert() == sm_cfg.FORMAT_V2:
+            text = sm_cfg.uebersetzen(text)
+        return text
 
     def _register_translatable(
         self, widget: object, key: str, config_attr: str = "text", **kwargs: object
@@ -38037,6 +38043,8 @@ class PS5ConverterGUI:
             eltern: Fenster, ueber dem die Meldung steht (sonst das Hauptfenster).
             einmal_je_lauf: Fuer Aufgabe 1 - in einer Sammelkonvertierung kaeme die Meldung sonst je Spiel.
         """
+        if not getattr(self, "_cli_mode", False):
+            self._sm_format_klaeren(parent=eltern)         # einmal gefragt, danach gemerkt: der Text nennt die richtigen Schluessel
         self._append_to_log(self._t("ampr.ng_update_emulators"))
         if getattr(self, "_cli_mode", False):
             return
@@ -55344,15 +55352,167 @@ class PS5ConverterGUI:
                 gefunden.append(name)
         return gefunden
 
-    def _ampr_gen_config_lesen(self, ftp) -> str:
-        """Holt die config.ini der Konsole als Text; leer, wenn keine da ist."""
+    # ------------------------------------------------------------------
+    # ShadowMount+ ab 1.7beta12: config.ini in Abschnitten + profiles.ini
+    #
+    # Das Programm denkt in den Schluesseln der Fassungen vor 1.7beta12. An der Dateigrenze uebersetzt
+    # ps5_validator.utils.shadowmount_config: Beim Lesen entsteht aus beiden Dateien eine flache Ansicht in den
+    # alten Schluesseln (alle Leser bleiben gleich), beim Schreiben gehen nur die Unterschiede ins neue Format zurueck.
+    # Welches Format gilt, fragt das Programm einmal (Nutzerwunsch 09.11.2026) und merkt es sich; liegt auf der Konsole
+    # erkennbar das andere, richtet es sich nach der Datei.
+    # ------------------------------------------------------------------
+    _SM_FORMAT_EINSTELLUNG = "shadowmount_config_format"
+    _sm_frage_sperre = threading.Lock()
+
+    def _sm_format_gespeichert(self) -> str:
+        """Das gewaehlte Format (``"v1"``/``"v2"``) oder ``""``, solange noch nicht gefragt wurde."""
+        fmt = self.__dict__.get("_sm_format_cache")
+        if fmt is None:
+            try:
+                wert = str(self._load_setting(self._SM_FORMAT_EINSTELLUNG, "") or "")
+            except Exception as exc:                  # noqa: BLE001 - sehr frueher Start oder halb gebaute Instanz
+                logger.debug("Format der config.ini nicht lesbar: %s", exc)
+                return ""
+            fmt = wert if wert in (sm_cfg.FORMAT_V1, sm_cfg.FORMAT_V2) else ""
+            if fmt:
+                self.__dict__["_sm_format_cache"] = fmt          # "" wird nicht gemerkt: erst die Antwort zaehlt
+        return fmt
+
+    def _sm_format_setzen(self, fmt: str) -> None:
+        """Merkt das Format (oder ``""`` fuer "wieder fragen") in den Einstellungen."""
+        self.__dict__["_sm_format_cache"] = fmt
+        self._save_setting(self._SM_FORMAT_EINSTELLUNG, fmt)
+
+    def _sm_format_name(self, fmt: str) -> str:
+        return self._t("smcfg.name_v2" if fmt == sm_cfg.FORMAT_V2 else "smcfg.name_v1")
+
+    def _sm_ja_nein(self, titel: str, text: str, parent=None, default_yes: bool = True) -> "bool | None":
+        """Ja/Nein aus jedem Faden; ``None``, wenn das Fenster nicht mehr da ist."""
+        def _frage() -> bool:
+            return bool(messagebox.askyesno(titel, text, parent=parent or self.root,
+                                            default="yes" if default_yes else "no"))
+        if threading.current_thread() is threading.main_thread():
+            return _frage()
+        return self._im_hauptfaden_warten(_frage, vorgabe=None)
+
+    def _sm_format_klaeren(self, beobachtet: str = "", parent=None) -> str:
+        """Welches Format hat die config.ini der Konsole? Fragt **einmal** und merkt die Antwort.
+
+        Nutzerwunsch 09.11.2026: ShadowMount+ 1.7beta12 schreibt die config.ini in Abschnitten und legt Einstellungen
+        je Spiel und Abbild in profiles.ini ab; das Programm soll fragen, welche Fassung laeuft, damit die Datei
+        richtig behandelt wird. ``beobachtet`` ist das Format, das die Datei auf der Konsole zeigt (oder ``""``) - es
+        steht nur als Hinweis in der Frage und als Vorbelegung des Knopfs. Ohne Fenster (Kommandozeile, Tests) wird
+        nicht gefragt: dann gilt die Wahl, sonst das Beobachtete, sonst das Format vor 1.7beta12.
+        """
+        fmt = self._sm_format_gespeichert()
+        if fmt:
+            return fmt
+        ersatz = beobachtet or sm_cfg.FORMAT_V1
+        if getattr(self, "_cli_mode", False) or getattr(self, "root", None) is None:
+            return ersatz
+        # Die Sperre gilt nur dem Merker "es wird gerade gefragt" - nie waehrend des Fensters: Der Fensterfaden
+        # darf nicht auf einen Arbeitsfaden warten, der selbst auf den Fensterfaden wartet.
+        with self._sm_frage_sperre:
+            laeuft = bool(self.__dict__.get("_sm_fragt", False))
+            if not laeuft:
+                self.__dict__["_sm_fragt"] = True
+        if laeuft:
+            if threading.current_thread() is threading.main_thread():
+                return ersatz                         # die Frage steht schon auf dem Schirm
+            for _ in range(600):                      # Arbeitsfaden: auf die Antwort des anderen warten (hoechstens 2 min)
+                time.sleep(0.2)
+                if self._sm_format_gespeichert() or not self.__dict__.get("_sm_fragt", False):
+                    break
+            return self._sm_format_gespeichert() or ersatz
+        try:
+            hinweis = ""
+            if beobachtet:
+                hinweis = self._t("smcfg.hinweis_v2" if beobachtet == sm_cfg.FORMAT_V2 else "smcfg.hinweis_v1")
+            antwort = self._sm_ja_nein(self._t("smcfg.frage_titel"), self._t("smcfg.frage", hinweis=hinweis),
+                                       parent=parent, default_yes=beobachtet != sm_cfg.FORMAT_V1)
+            if antwort is None:
+                return ersatz
+            fmt = sm_cfg.FORMAT_V2 if antwort else sm_cfg.FORMAT_V1
+            self._sm_format_setzen(fmt)
+            self._append_to_log(self._t("smcfg.gewaehlt", name=self._sm_format_name(fmt)))
+            return fmt
+        finally:
+            self.__dict__["_sm_fragt"] = False
+
+    def _sm_format_abgleichen(self, gefunden: str, parent=None) -> None:
+        """Die Datei auf der Konsole hat das andere Format als gemerkt: nach der Datei richten und es sagen."""
+        self._sm_format_setzen(gefunden)
+        text = self._t("smcfg.abweichung", name=self._sm_format_name(gefunden))
+        self._append_to_log(self._t("smcfg.log", text=text))
+        if getattr(self, "_cli_mode", False) or getattr(self, "root", None) is None:
+            return
+        try:
+            self._im_hauptfaden(messagebox.showinfo, self._t("smcfg.abweichung_titel"), text,
+                                parent=parent or self.root)
+        except Exception as exc:                      # noqa: BLE001 - die Zeile im Protokoll steht schon
+            logger.warning("Hinweis zum Format der config.ini nicht darstellbar: %s", exc)
+
+    def _sm_datei_lesen(self, ftp, pfad: str) -> str:
+        """Eine Textdatei der Konsole; leer, wenn es sie nicht gibt oder sie sich nicht lesen laesst."""
         puffer = io.BytesIO()
         try:
-            ftp.retrbinary("RETR %s" % sm_gen.CONFIG_PFAD, puffer.write)
+            ftp.retrbinary("RETR %s" % pfad, puffer.write)
         except Exception as exc:                      # noqa: BLE001
-            logger.debug("config.ini nicht lesbar: %s", exc)
+            logger.debug("%s nicht lesbar: %s", pfad, exc)
             return ""
         return puffer.getvalue().decode("utf-8", "replace")
+
+    def _sm_stand_aus_sitzung(self, ftp, config_text: str, parent=None) -> dict:
+        """Stand der config.ini (bei Format 2 samt profiles.ini) aus einer offenen FTP-Sitzung.
+
+        Returns:
+            ``{"format", "config", "profiles", "ansicht"}`` - ``ansicht`` ist der flache Text in den alten
+            Schluesseln (bei Format 1 die Datei selbst). Der Stand wird fuer das Zurueckschreiben gemerkt.
+        """
+        gefunden = sm_cfg.format_erkennen(config_text)
+        fmt = self._sm_format_klaeren(gefunden, parent=parent)
+        if gefunden and gefunden != fmt:
+            fmt = gefunden
+            self._sm_format_abgleichen(gefunden, parent=parent)
+        profile = ""
+        ansicht = config_text
+        if fmt == sm_cfg.FORMAT_V2:
+            profile = self._sm_datei_lesen(ftp, sm_cfg.PROFILES_PFAD)
+            ansicht = sm_cfg.ansicht(config_text, profile) if (config_text.strip() or profile.strip()) else ""
+        stand = {"format": fmt, "config": config_text, "profiles": profile, "ansicht": ansicht}
+        self._sm_stand = stand
+        return stand
+
+    def _ampr_gen_config_lesen(self, ftp) -> str:
+        """Holt die config.ini der Konsole als Text; leer, wenn keine da ist.
+
+        Ab ShadowMount+ 1.7beta12 (Format 2) ist das die flache Ansicht in den alten Schluesseln, siehe oben.
+        """
+        text = self._sm_datei_lesen(ftp, sm_gen.CONFIG_PFAD)
+        return self._sm_stand_aus_sitzung(ftp, text)["ansicht"]
+
+    def _sm_config_stor(self, ftp, ansicht_text: str) -> list:
+        """Schreibt die config.ini zurueck - bei Format 2 aus der Ansicht in config.ini und profiles.ini.
+
+        Returns:
+            Die Schluessel, die es im Format 2 nicht gibt und die deshalb nicht geschrieben wurden.
+        """
+        stand = self.__dict__.get("_sm_stand")
+        if stand is None and self._sm_format_gespeichert() == sm_cfg.FORMAT_V2:
+            stand = self._sm_stand_aus_sitzung(ftp, self._sm_datei_lesen(ftp, sm_gen.CONFIG_PFAD))
+        if not stand or stand["format"] != sm_cfg.FORMAT_V2:
+            ftp.storbinary("STOR %s" % sm_gen.CONFIG_PFAD, io.BytesIO(ansicht_text.encode("utf-8")))
+            return []
+        config, profile, uebergangen = sm_cfg.zurueckschreiben(ansicht_text, stand["config"], stand["profiles"])
+        if config != stand["config"] or not stand["config"]:
+            ftp.storbinary("STOR %s" % sm_cfg.CONFIG_PFAD, io.BytesIO(config.encode("utf-8")))
+        if profile != stand["profiles"]:
+            ftp.storbinary("STOR %s" % sm_cfg.PROFILES_PFAD, io.BytesIO(profile.encode("utf-8")))
+            self._append_to_log(self._t("smcfg.profiles_geschrieben", pfad=sm_cfg.PROFILES_PFAD))
+        stand.update(config=config, profiles=profile, ansicht=sm_cfg.ansicht(config, profile))
+        if uebergangen:
+            self._append_to_log(self._t("smcfg.log", text=self._t("smcfg.nicht_uebernommen", keys=", ".join(uebergangen))))
+        return uebergangen
 
     def _ampr_gen_log_lesen(self, ftp) -> str:
         """Holt debug.log; leer, wenn es (noch) keins gibt."""
@@ -56075,8 +56235,7 @@ class PS5ConverterGUI:
         """
         bestand = parse_flat_ini_multi(text or "")
         neu = merge_flat_ini(text or "", {**bestand, **aenderungen})
-        ftp.storbinary("STOR %s" % sm_gen.CONFIG_PFAD,
-                       io.BytesIO(neu.encode("utf-8")))
+        self._sm_config_stor(ftp, neu)
 
 
     def _ampr_gen_ordner_fragen(self, fenster) -> str:
@@ -57720,7 +57879,7 @@ class PS5ConverterGUI:
                 else:
                     bestand[schluessel] = [alt]
             neu = merge_flat_ini(jetzt or "", bestand)
-        ftp.storbinary("STOR %s" % sm_gen.CONFIG_PFAD, io.BytesIO(neu.encode("utf-8")))
+        self._sm_config_stor(ftp, neu)
         gelesen = parse_flat_ini(self._ampr_gen_config_lesen(ftp) or "")
         return all((gelesen.get(k) or None) == alt
                    for k, alt in config["werte"].items())
@@ -62045,7 +62204,8 @@ class PS5ConverterGUI:
                     anzeige = self._t("remote_ini.wert_liste", wert=value)
                 elif key in wiederholt and key not in WIEDERHOLBARE_SCHLUESSEL:
                     anzeige = self._t("remote_ini.wert_mehrfach", wert=value)
-                tree.insert("", "end", iid=key, values=(key, anzeige))
+                zeigen = sm_cfg.anzeigename(key) if geladen.get("format") == sm_cfg.FORMAT_V2 else key
+                tree.insert("", "end", iid=key, values=(zeigen, anzeige))
 
         _refresh_tree()
 
@@ -62169,6 +62329,7 @@ class PS5ConverterGUI:
 
                 puffer = io.BytesIO()
                 lesefehler: Exception | None = None
+                sm_stand = None
                 try:
                     ftp = _ftp_connect_blocking(zugang)
                     try:
@@ -62180,6 +62341,10 @@ class PS5ConverterGUI:
                             # Verbindungs- oder Anmeldefehler nicht.
                             lesefehler = beim_lesen
                             raise
+                        if remote_config_path == sm_gen.CONFIG_PFAD:
+                            # ShadowMount+: Format klaeren und bei 1.7beta12 oder neuer profiles.ini mitlesen.
+                            sm_stand = self._sm_stand_aus_sitzung(
+                                ftp, puffer.getvalue().decode("utf-8", errors="replace"), parent=win)
                     finally:
                         try:
                             ftp.quit()
@@ -62215,8 +62380,10 @@ class PS5ConverterGUI:
                 # einfache Leser behaelt bei wiederholbaren Schluesseln
                 # nur den letzten Wert, und aus drei Suchpfaden wuerde
                 # einer - ohne dass die Zeilenzahl es verriete.
+                if sm_stand is not None and sm_stand["format"] == sm_cfg.FORMAT_V2:
+                    text = sm_stand["ansicht"]
                 loaded = fuer_anzeige(parse_flat_ini_multi(text))
-                self._spaeter_im_fenster(win, _apply_loaded, text, loaded)
+                self._spaeter_im_fenster(win, _apply_loaded, text, loaded, sm_stand)
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -62264,15 +62431,24 @@ class PS5ConverterGUI:
                 status_var.set(self._t("smpbak.done", v0=pfad).strip())
                 self._append_to_log(self._t("smpbak.done", v0=pfad))
 
-        def _apply_loaded(text: str, loaded: dict[str, str]) -> None:
+        def _apply_loaded(text: str, loaded: dict[str, str], sm_stand: "dict | None" = None) -> None:
             # Rohtext aufheben: Beim Zurueckschreiben wird er bearbeitet statt
             # neu erzeugt, damit Kommentare und auskommentierte Vorlagen
             # erhalten bleiben (siehe merge_flat_ini).
             geladen["text"] = text
+            # ShadowMount+ ab 1.7beta12: ``text`` ist die Ansicht in den alten Schluesseln, die Dateien selbst
+            # stehen im Stand (config.ini + profiles.ini).
+            ist_v2 = bool(sm_stand and sm_stand["format"] == sm_cfg.FORMAT_V2)
+            geladen["format"] = sm_cfg.FORMAT_V2 if ist_v2 else ""
+            geladen["stand"] = sm_stand if ist_v2 else None
             # Sichern, solange der Bestand frisch von der Konsole da ist -
             # und bevor der Anwender etwas daran aendert.
-            _sicherung_anbieten(text)
+            _sicherung_anbieten(sm_stand["config"] if ist_v2 else text)
             data.update(loaded)
+            if ist_v2:
+                # Schluessel, die es im neuen Format nicht gibt (kstuff_*, recursive_scan ...), nicht anbieten.
+                for unbekannt in [k for k in data if not sm_cfg.schluessel_bekannt(k)]:
+                    del data[unbekannt]
             if vorrang_werte:
                 # Die Sollwerte des Aufrufers wieder obenauf - sonst holte das
                 # Laden genau die Konsolenwerte zurueck, die dieser Knopf
@@ -62284,6 +62460,8 @@ class PS5ConverterGUI:
                                        count=len(loaded), forced=len(vorrang_werte)))
             else:
                 status_var.set(self._t("remote_ini.status_entries_loaded", count=len(loaded)))
+            if ist_v2:
+                status_var.set(status_var.get() + " " + self._t("smcfg.editor_v2"))
 
         def _push_to_ps5() -> None:
             kopfzeile = self._t("remote_ini.written_by", title=title,
@@ -62318,13 +62496,25 @@ class PS5ConverterGUI:
             vorher = parse_flat_ini(roh)
             neu_aktiv = [k for k, v in daten.items() if str(v) != "" and k not in vorher]
             abgeschaltet = [k for k in vorher if str(daten.get(k, "")) == ""]
+            # ShadowMount+ ab 1.7beta12: geschrieben wird das neue Format - Groesse und ausgelassene Schluessel
+            # gehoeren vor den Klick.
+            stand_v2 = geladen.get("stand") if geladen.get("format") == sm_cfg.FORMAT_V2 else None
+            ergebnis_v2: dict = {}
+            groesse = len(ini_text.encode('utf-8'))
+            zusatz = ""
+            if stand_v2 is not None:
+                cfg_vorschau, _prof_vorschau, uebergangen = sm_cfg.zurueckschreiben(
+                    ini_text, stand_v2["config"], stand_v2["profiles"])
+                groesse = len(cfg_vorschau.encode("utf-8"))
+                if uebergangen:
+                    zusatz = "\n\n" + self._t("smcfg.nicht_uebernommen", keys=", ".join(uebergangen))
             if not messagebox.askyesno(
                 self._t("remote_ini.title_write_to_ps5"),
                 self._t(
                     frage,
-                    size=len(ini_text.encode('utf-8')), path=remote_config_path,
+                    size=groesse, path=remote_config_path,
                     added=len(neu_aktiv), disabled=len(abgeschaltet),
-                ),
+                ) + zusatz,
                 parent=win,
             ):
                 return
@@ -62334,6 +62524,8 @@ class PS5ConverterGUI:
                 # Was jetzt auf der Konsole liegt, ist genau dieser Text - sonst
                 # verlangte jedes weitere Schreiben ein neues Laden.
                 geladen["text"] = ini_text
+                if stand_v2 is not None and ergebnis_v2:
+                    stand_v2.update(config=ergebnis_v2["config"], profiles=ergebnis_v2["profiles"])
                 status_var.set(self._t("remote_ini.status_write_ok"))
 
             def _ziel_abweichend() -> None:
@@ -62391,7 +62583,13 @@ class PS5ConverterGUI:
                             if roh or not ist_550:
                                 raise
                             jetzt = ""
-                        if jetzt != roh:
+                        if stand_v2 is not None:
+                            # Format 2: verglichen werden die beiden Dateien selbst, nicht die Ansicht.
+                            jetzt_profile = self._sm_datei_lesen(ftp, sm_cfg.PROFILES_PFAD)
+                            if (jetzt, jetzt_profile) != (stand_v2["config"], stand_v2["profiles"]):
+                                self._spaeter_im_fenster(win, _ziel_abweichend)
+                                return
+                        elif jetzt != roh:
                             self._spaeter_im_fenster(win, _ziel_abweichend)
                             return
                         remote_dir = remote_config_path.rsplit("/", 1)[0]
@@ -62399,8 +62597,16 @@ class PS5ConverterGUI:
                             ftp.mkd(remote_dir)
                         except Exception:
                             pass
-                        buf = io.BytesIO(ini_text.encode("utf-8"))
-                        ftp.storbinary("STOR " + remote_config_path, buf)
+                        if stand_v2 is not None:
+                            neu_cfg, neu_prof, _ueberg = sm_cfg.zurueckschreiben(
+                                ini_text, stand_v2["config"], stand_v2["profiles"])
+                            ftp.storbinary("STOR " + remote_config_path, io.BytesIO(neu_cfg.encode("utf-8")))
+                            if neu_prof != stand_v2["profiles"]:
+                                ftp.storbinary("STOR " + sm_cfg.PROFILES_PFAD, io.BytesIO(neu_prof.encode("utf-8")))
+                            ergebnis_v2.update(config=neu_cfg, profiles=neu_prof)
+                        else:
+                            buf = io.BytesIO(ini_text.encode("utf-8"))
+                            ftp.storbinary("STOR " + remote_config_path, buf)
                     finally:
                         try:
                             ftp.quit()
@@ -66611,6 +66817,36 @@ class PS5ConverterGUI:
 
         verfahren_combo.bind("<<ComboboxSelected>>", _verfahren_gewaehlt)
         zstd_combo.bind("<<ComboboxSelected>>", _zstd_gewaehlt)
+
+        # ── ShadowMount+: Format der config.ini (vor / ab 1.7beta12) ───────
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(8, 14))
+        tk.Label(body, text=self._t("settings_dialog.smcfg_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.smcfg_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+        _smcfg_namen = {"": self._t("settings_dialog.smcfg_ungefragt"),
+                        sm_cfg.FORMAT_V1: self._t("settings_dialog.smcfg_v1"),
+                        sm_cfg.FORMAT_V2: self._t("settings_dialog.smcfg_v2")}
+        _smcfg_zurueck = {text: kennung for kennung, text in _smcfg_namen.items()}
+        smcfg_var = tk.StringVar(value=_smcfg_namen[self._sm_format_gespeichert()])
+        smcfg_combo = self._pw.Combobox(
+            body, textvariable=smcfg_var, state="readonly",
+            values=list(_smcfg_namen.values()), font=(UI_SCHRIFT, pt(9)))
+        smcfg_combo.pack(anchor="w", fill="x", pady=(0, 10))
+
+        def _smcfg_gewaehlt(_ereignis=None) -> None:
+            neu = _smcfg_zurueck.get(smcfg_var.get())
+            if neu is None:
+                logger.warning("ShadowMount+-Format: unbekannte Auswahl %r", smcfg_var.get())
+                return
+            self._sm_format_setzen(neu)
+            logger.info("ShadowMount+-Format der config.ini auf %r gestellt", neu)
+
+        smcfg_combo.bind("<<ComboboxSelected>>", _smcfg_gewaehlt)
 
         # ── Unsignierte Programme fake-signieren ────────────────────────
         # Wirkt beim Erstellen (Aufgaben 1 bis 6) und steht hier, nicht in der Pfad-Karte: Die Einbauzeile dort ist bei

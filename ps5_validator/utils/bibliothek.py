@@ -738,6 +738,10 @@ def rueckgaengig(protokoll: str,
 #: eingehaengt - liegt es neben ``fakelib``, wird ``fakelib`` gar nicht
 #: gelesen. 1.7alpha8 bis alpha13fix1 lasen im Spielordner nur ``fakelib``;
 #: zwischen 1.7beta3 und 1.7beta4 unveraendert (am Diff nachgesehen, 04.10.2026);
+#: Seit dem 09.11.2026 liegt 1.7beta12 bei; Diff 1.7beta11 bis 1.7beta12 gelesen: ``resolve_game_fakelib_source_for_path``
+#: und ``resolve_backport_path_for_title`` unveraendert, in ``sm_fakelib.c`` nur die Konfiguration als Parameter und das
+#: Aufraeumen jeder Sandbox-Schicht bei entferntem Datentraeger; neu ist das Format der config.ini (Abschnitte plus
+#: profiles.ini, siehe ``shadowmount_config``). Davor galt:
 #: die Fassung, die dem Programm beiliegt, ist seit dem 30.10.2026 1.7beta11 -
 #: am Diff 1.7beta10 bis 1.7beta11 nachgesehen (``sm_fakelib.c``, ``sm_pkg_backport.c``,
 #: ``sm_path_utils.c`` bekommen je eine Hilfsfunktion fuer den USB-Auswerfen-Schutz;

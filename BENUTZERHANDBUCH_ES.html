@@ -2600,7 +2600,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <thead><tr><th></th><th>método antiguo (hasta alpha6)</th><th>método nuevo (desde alpha8)</th></tr></thead>
     <tbody>
       <tr><td><strong>Dónde se busca</strong></td><td><code>app0/fakelib2</code>, si no <code>app0/fakelib</code></td><td>orden fijo: <code>backports/&lt;ID&gt;/fakelib2</code> → <code>backports/&lt;ID&gt;/fakelib</code> → <code>&lt;Spiel&gt;/fakelib2</code> → <code>&lt;Spiel&gt;/fakelib</code></td></tr>
-      <tr><td><strong><code>fakelib2</code> en la carpeta del juego</strong></td><td>funciona</td><td>1.7 alpha8 hasta alpha13fix1: <strong>se ignora</strong>; desde 1.7beta1 (incluida: 1.7beta11) vuelve a funcionar y tapa un <code>fakelib</code> que esté al lado</td></tr>
+      <tr><td><strong><code>fakelib2</code> en la carpeta del juego</strong></td><td>funciona</td><td>1.7 alpha8 hasta alpha13fix1: <strong>se ignora</strong>; desde 1.7beta1 (incluida: 1.7beta12) vuelve a funcionar y tapa un <code>fakelib</code> que esté al lado</td></tr>
       <tr><td><strong>Nombre de carpeta en <code>backports</code></strong></td><td>no existe</td><td><code>&lt;ID&gt;</code>; desde 1.7beta6 también <code>&lt;ID&gt; Zusatz</code> (gana el nombre exacto; si no, el primero en orden de bytes)</td></tr>
       <tr><td><strong>global + propio del juego</strong></td><td>dos capas superpuestas</td><td>copiadas antes juntas en una caché</td></tr>
       <tr><td><strong>Archivos de emulador</strong></td><td>no existen</td><td>desde <code>/data/shadowmount/emus/</code></td></tr>
@@ -2716,6 +2716,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p class="hinweis"><em>Ambos métodos se mantienen uno junto al otro</em>
   mientras estén en circulación ambas versiones de ShadowMount+.</p>
 
+
+  <p><strong>ShadowMount+ desde 1.7beta12 &ndash; nuevo formato de <code>config.ini</code>.</strong> Desde 1.7beta12 (versión preliminar del 08.11.2026) <code>config.ini</code> tiene secciones (<code>[general]</code>, <code>[emulators]</code> &hellip;); los ajustes por juego y por imagen están en un <code>profiles.ini</code> aparte. En el primer inicio ShadowMount+ convierte por sí mismo un archivo antiguo y guarda una copia en <code>config-v1-backup/</code>. Por eso el programa pregunta <strong>una vez</strong> qué versión se ejecuta en la consola (anterior o desde 1.7beta12), recuerda la respuesta y escribe el archivo en el formato adecuado &ndash; en el editor de ShadowMount+, en el modo automático de la tarea&nbsp;7, en la captura de AMPR y en el aviso sobre AMPR EMU NG (<code>update_emulators=0</code> pasa a ser <code>[emulators] update_enabled=0</code>). La respuesta se puede cambiar en <em>CONFIGURACIÓN</em> &rarr; <em>ShadowMount+ &ndash; config.ini</em>. Si en la consola se ve claramente el otro formato, el programa se guía por el archivo y lo indica. Las claves que ya no existen en el nuevo formato (por ejemplo <code>kstuff_*</code>) no se escriben. Comprobado en el PC con una contraparte simulada, no en la consola.</p>
 
   <h3>14.10 WebKit Autoloader &ndash; icono en la pantalla de inicio</h3>
   <p>El WebKit Autoloader crea en la consola un icono con el que se puede

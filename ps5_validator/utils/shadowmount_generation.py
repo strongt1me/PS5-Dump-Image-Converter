@@ -140,6 +140,9 @@ DEBUG_LOG = "/data/shadowmount/debug.log"
 NUR_NEU_SCHLUESSEL = ("update_emulators", "emulators_path",
                       "auto_update_ampr", "ampr_update_url")
 
+#: Erste Zeile der Ansicht, die ``shadowmount_config.ansicht`` aus einer config.ini im Format 2 baut (1.7beta12).
+ANSICHT_FORMAT_2 = "# shadowmount-config-format: v2"
+
 #: Log-Zeile, die es nur in der neuen Fassung gibt.
 NUR_NEU_LOGZEILE = "using cache for"
 
@@ -479,6 +482,7 @@ MELDUNGEN: dict[str, str] = {
         "{fakelib2!r} hat Vorrang vor {fakelib!r}; es wird immer nur einer "
         "von beiden eingehängt.",
     "beleg_config_nennt": "config.ini nennt {schluessel}",
+    "beleg_config_format2": "config.ini hat Abschnitte (Format ab 1.7beta12)",
     "beleg_config_keine_neuen":
         "config.ini nennt keinen der neuen Schlüssel – nur ein Hinweis: Nach "
         "einem Update bleibt die alte Datei stehen",
@@ -670,6 +674,10 @@ def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None =
         entscheidet aber nichts.
     """
     belege: list[tuple[str, str]] = []
+
+    if ANSICHT_FORMAT_2 in (config_text or ""):
+        # Ab 1.7beta12 (config.ini mit Abschnitten, vom Programm als Ansicht in den alten Schluesseln gelesen).
+        belege.append((NEU, _satz(texte, "beleg_config_format2")))
 
     gefunden = [s for s in NUR_NEU_SCHLUESSEL if s in (config_text or "")]
     if gefunden:
