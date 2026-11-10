@@ -8,7 +8,7 @@
 e usare la console direttamente dal programma – su Windows, Linux e macOS.**
 
 ![Versione](https://img.shields.io/badge/Versione-v1.9.96-blue)
-![Test](https://img.shields.io/badge/Test-7684%20verdi-brightgreen)
+![Test](https://img.shields.io/badge/Test-7697%20verdi-brightgreen)
 ![Licenza](https://img.shields.io/badge/Licenza-GPL--3.0--or--later-blue)
 ![Piattaforma](https://img.shields.io/badge/Piattaforma-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)
