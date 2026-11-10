@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.95):** ShadowMount+ 1.7beta12 ist eingebaut – das Programm fragt einmal, ob die Konsole das alte oder das neue Format der config.ini nutzt –, und mehrere mitgelieferte Werkzeuge sind aktualisiert.
+> **Kurz zum aktuellen Stand (v1.9.96):** AMPR EMU NG 0.3.4 und mehrere Payloads sind aktualisiert, und .ini-Dateien bleiben beim Packen eines Asset-Packs lose.
 
 ---
+
+## v1.9.96 – 10.11.2026
+
+- **Geändert:** Dateien mit der Endung .ini (etwa die dlc_emu.ini) bleiben beim Packen eines Asset-Packs lose und damit von Hand änderbar, bei zstd und bei LZ4.
+- **Aktualisiert:** AMPR EMU NG 0.3.4 (die Laufzeit passt ihre Threads dem Spiel an; behebt Schwarzbild und Hänger bei Crimson Desert).
+- **Aktualisiert:** PS5Upload 12.4.4, Web File Manager 1.14, garlic-savemgr 1.15-beta21, garlic-worker 1.5.4 und PS5 Cooling & System Center – Pro 1.79.0.
 
 ## v1.9.95 – 09.11.2026
 
