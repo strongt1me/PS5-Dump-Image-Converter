@@ -12,6 +12,7 @@ import shutil
 import struct
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -271,6 +272,195 @@ class BeschaedigungTests(_Ordner):
         with self.assertRaises(z.ZstdPackFehler) as ctx:
             z.index_lesen(bytes(daten))
         self.assertIn("index_ungueltig", str(ctx.exception))
+
+
+def _lesefaeden() -> list[str]:
+    """Die noch laufenden Lesevorlauf-Faeden (nach jedem Packen/Pruefen muessen es null sein)."""
+    return [t.name for t in threading.enumerate() if t.name == "ampr-zstd-lesen" and t.is_alive()]
+
+
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class LesevorlaufTests(_Ordner):
+    """Packen und Pruefen lesen in grossen Bloecken und in einem eigenen Faden (Platte: 25 statt 95 MB/s je Chunk-Wechsel).
+
+    Das Ergebnis darf davon nicht abhaengen, die Fehler muessen dieselben bleiben, und es darf kein Faden zurueckbleiben.
+    Ein kleiner ``LESE_BLOCK`` (zwei Chunks) legt die Blockgrenzen mitten in die Dateien des Testspiels.
+    """
+
+    def _klein(self):
+        return mock.patch.object(z, "LESE_BLOCK", 2 * z.CHUNK_SIZE)
+
+    def tearDown(self) -> None:
+        self.assertEqual([], _lesefaeden(), "ein Lesefaden ist zurueckgeblieben")
+
+    @staticmethod
+    def _nutzlast(ordner: str) -> dict[str, bytes]:
+        """Band- und Indexdateien ohne Kopf (die Archivkennung im Kopf ist je Lauf zufaellig)."""
+        aus = {}
+        for name in sorted(os.listdir(ordner)):
+            kopf = z.INDEX_HEADER_SIZE if name == z.INDEX_NAME else z.VOLUME_HEADER_SIZE
+            aus[name] = Path(ordner, name).read_bytes()[kopf:]
+        return aus
+
+    def test_band_und_index_haengen_nicht_vom_lese_block_ab(self) -> None:
+        self.packen(stufe=3, arbeiter=3)
+        gross = self._nutzlast(self.packs)
+        shutil.rmtree(self.packs)
+        with self._klein():
+            self.packen(stufe=3, arbeiter=3)
+        self.assertEqual(gross, self._nutzlast(self.packs))
+
+    def test_viele_kleine_dateien_laufen_dateiuebergreifend(self) -> None:
+        for i in range(120):
+            voll = os.path.join(self.spiel, "viele", "d%03d.bin" % i)
+            os.makedirs(os.path.dirname(voll), exist_ok=True)
+            Path(voll).write_bytes((b"%d;" % i) * (50 + 37 * i + (150_000 if i % 17 == 0 else 0)))
+        _auswahl, erg1 = self.packen(stufe=3, arbeiter=1)
+        eins = self._nutzlast(self.packs)
+        shutil.rmtree(self.packs)
+        _auswahl, erg8 = self.packen(stufe=3, arbeiter=8)
+        self.assertEqual(eins, self._nutzlast(self.packs), "die Fadenzahl darf das Band nicht aendern")
+        self.assertEqual((erg1.chunks, erg1.dateien, erg1.gespeicherte_bytes),
+                         (erg8.chunks, erg8.dateien, erg8.gespeicherte_bytes))
+        z.pruefen(self.packs, self.spiel)
+
+    def test_pruefen_ueber_blockgrenzen(self) -> None:
+        with self._klein():
+            self.packen(stufe=3)
+            z.pruefen(self.packs, self.spiel)
+            z.pruefen(self.packs)                                    # ohne Quelle: nur Entpacken
+
+    def test_geaenderte_quelle_in_jedem_stueck_wird_bemerkt(self) -> None:
+        """``Media/text.txt`` hat fuenf Chunks, mit zwei Chunks je Stueck also drei Stuecke."""
+        pfad = Path(self.spiel, "Media", "text.txt")
+        original = pfad.read_bytes()
+        with self._klein():
+            self.packen(stufe=3)
+            for stelle in (0, z.CHUNK_SIZE * 2, z.CHUNK_SIZE * 4 + 5, len(original) - 1):
+                daten = bytearray(original)
+                daten[stelle] ^= 0xFF
+                pfad.write_bytes(bytes(daten))
+                with self.assertRaises(z.ZstdPackFehler, msg=str(stelle)) as ctx:
+                    z.pruefen(self.packs, self.spiel)
+                self.assertIn("inhalt_anders", str(ctx.exception), stelle)
+            pfad.write_bytes(original)
+            z.pruefen(self.packs, self.spiel)
+
+    def test_verdorbenes_byte_im_band_hinter_dem_ersten_block(self) -> None:
+        with self._klein():
+            self.packen(stufe=3)
+            band = Path(self.packs, z.bandname(0))
+            daten = bytearray(band.read_bytes())
+            daten[len(daten) - 20] ^= 0xFF
+            band.write_bytes(bytes(daten))
+            with self.assertRaises(z.ZstdPackFehler):
+                z.pruefen(self.packs, self.spiel)
+
+    def test_quelle_fehlt_und_quelle_anders(self) -> None:
+        self.packen(stufe=3)
+        pfad = Path(self.spiel, "data", "klein.cfg")
+        pfad.write_bytes(b"laenger als vorher\n")
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel)
+        self.assertIn("quelle_anders", str(ctx.exception))
+        os.remove(pfad)
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel)
+        self.assertIn("quelle_fehlt", str(ctx.exception))
+
+    def test_abbruch_beim_pruefen_und_packen(self) -> None:
+        with self._klein():
+            auswahl = z.dateien_auswaehlen(self.spiel)
+            for arbeit in ("packen", "pruefen"):
+                zaehler = [0]
+
+                def abbruch() -> bool:
+                    zaehler[0] += 1
+                    return zaehler[0] > 3
+
+                with self.assertRaises(z.ZstdPackFehler, msg=arbeit) as ctx:
+                    if arbeit == "packen":
+                        z.packen(self.spiel, self.packs, auswahl, abbruch=abbruch)
+                    else:
+                        z.pruefen(self.packs, self.spiel, abbruch=abbruch)
+                self.assertEqual("ampr_pack.abgebrochen", str(ctx.exception), arbeit)
+                if arbeit == "packen":
+                    shutil.rmtree(self.packs)
+                    z.packen(self.spiel, self.packs, auswahl)        # fuer die Pruefung ein vollstaendiger Satz
+
+    def test_fehler_im_lesefaden_kommen_beim_aufrufer_an(self) -> None:
+        auswahl = z.dateien_auswaehlen(self.spiel)
+        Path(self.spiel, "Media", "zufall.bin").write_bytes(b"anders lang")
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.packen(self.spiel, self.packs, auswahl)
+        self.assertIn("hat sich waehrend des Packens veraendert", str(ctx.exception))
+        shutil.rmtree(self.packs)
+        os.remove(Path(self.spiel, "Media", "zufall.bin"))
+        with self.assertRaises(OSError):
+            z.packen(self.spiel, self.packs, auswahl)
+
+    def test_fortschritt_steigt_bis_eins(self) -> None:
+        with self._klein():
+            gepackt: list[float] = []
+            geprueft: list[float] = []
+            self.packen(stufe=3, fortschritt=gepackt.append)
+            z.pruefen(self.packs, self.spiel, fortschritt=geprueft.append)
+        for werte in (gepackt, geprueft):
+            self.assertTrue(werte)
+            self.assertEqual(sorted(werte), werte)
+            self.assertAlmostEqual(1.0, werte[-1])
+
+    def test_datei_bloecke(self) -> None:
+        pfad = os.path.join(self._tmp, "x.bin")
+        Path(pfad).write_bytes(b"x" * 10)
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            list(z._datei_bloecke(pfad, 20))
+        self.assertIn("kuerzer", str(ctx.exception))
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            list(z._datei_bloecke(pfad, 5))
+        self.assertIn("gewachsen", str(ctx.exception))
+        with self._klein():
+            gesamt = 5 * z.CHUNK_SIZE + 7
+            Path(pfad).write_bytes(b"y" * gesamt)
+            stuecke = list(z._datei_bloecke(pfad, gesamt))
+            self.assertEqual([2, 2, 2], [len(s) for s in stuecke])
+            self.assertEqual(7, len(stuecke[-1][-1]))
+            self.assertEqual(gesamt, sum(len(c) for s in stuecke for c in s))
+
+    def test_bandpuffer(self) -> None:
+        daten = bytes(range(256)) * 4096
+        pfad = Path(self._tmp, "b.bin")
+        pfad.write_bytes(daten)
+        with mock.patch.object(z, "LESE_BLOCK", 4096), open(pfad, "rb") as fh:
+            puffer = z._BandPuffer(fh)
+            self.assertEqual(daten[10:50], puffer.lesen(10, 40))
+            self.assertEqual(daten[50:5000], puffer.lesen(50, 4950), "laenger als ein Block")
+            self.assertEqual(daten[100:200], puffer.lesen(100, 100), "rueckwaerts")
+            self.assertEqual(daten[-10:], puffer.lesen(len(daten) - 10, 10))
+            self.assertEqual(daten[-10:], puffer.lesen(len(daten) - 10, 50), "am Dateiende kuerzer")
+
+    def test_vorlauf_gibt_fehler_weiter_und_schliesst(self) -> None:
+        def mit_fehler():
+            yield 1
+            yield 2
+            raise z.ZstdPackFehler("kaputt")
+
+        vorlauf = z._Vorlauf(mit_fehler())
+        try:
+            es = iter(vorlauf)
+            self.assertEqual([1, 2], [next(es), next(es)])
+            with self.assertRaises(z.ZstdPackFehler):
+                next(es)
+        finally:
+            vorlauf.schliessen()
+
+        def endlos():
+            while True:
+                yield b"x"
+
+        vorlauf = z._Vorlauf(endlos(), tiefe=2)
+        next(iter(vorlauf))
+        vorlauf.schliessen()                                         # der Erzeuger haengt an der vollen Schlange
 
 
 @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
