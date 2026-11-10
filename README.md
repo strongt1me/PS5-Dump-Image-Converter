@@ -168,7 +168,7 @@ Unter macOS legt `Erste Installation.command` die App ab und entfernt die Quaran
 
 ## Voraussetzungen
 
-- **Windows 10/11**, eine aktuelle Linux-Distribution oder **macOS 12+**
+- **Windows 10/11**, eine aktuelle Linux-Distribution oder **macOS** (getestet unter macOS 15; ältere Versionen sind ungetestet)
 - Genug freier Speicherplatz für Quelle, Zwischenstand und Ausgabe
 - **Windows:** Administratorrechte für UFS2-Abläufe (`.ffpkg`)
 - **Kein OSFMount nötig:** `.exFAT`-Abbilder liest das Programm mit seinem eingebetteten exFAT-Leser, ohne

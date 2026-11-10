@@ -170,7 +170,7 @@ On macOS, `Erste Installation.command` places the app and removes the quarantine
 
 ## Requirements
 
-- **Windows 10/11**, a current Linux distribution, or **macOS 12+**
+- **Windows 10/11**, a current Linux distribution, or **macOS** (tested on macOS 15; older versions are untested)
 - Enough free disk space for source, intermediate state and output
 - **Windows:** administrator rights for UFS2 workflows (`.ffpkg`)
 - **OSFMount not required:** the program reads `.exFAT` images with its embedded exFAT reader, without

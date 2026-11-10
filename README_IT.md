@@ -170,7 +170,7 @@ Su macOS, `Erste Installation.command` copia l'app nella posizione prevista e ri
 
 ## Requisiti
 
-- **Windows 10/11**, una distribuzione Linux recente oppure **macOS 12+**
+- **Windows 10/11**, una distribuzione Linux recente oppure **macOS** (testato su macOS 15; le versioni precedenti non sono state testate)
 - Spazio libero sufficiente per origine, stato intermedio e output
 - **Windows:** privilegi di amministratore per le procedure UFS2 (`.ffpkg`)
 - **OSFMount non necessario:** le immagini `.exFAT` vengono lette dal programma con il proprio lettore exFAT

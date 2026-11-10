@@ -171,7 +171,7 @@ Sous macOS, `Erste Installation.command` place l'application au bon endroit et r
 
 ## Prérequis
 
-- **Windows 10/11**, une distribution Linux récente ou **macOS 12+**
+- **Windows 10/11**, une distribution Linux récente ou **macOS** (testé sous macOS 15 ; les versions antérieures n'ont pas été testées)
 - Suffisamment d'espace disque libre pour la source, l'état intermédiaire et la sortie
 - **Windows :** droits d'administrateur pour les opérations UFS2 (`.ffpkg`)
 - **OSFMount non requis :** le programme lit les images `.exFAT` avec son lecteur exFAT intégré, sans

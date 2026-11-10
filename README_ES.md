@@ -170,7 +170,7 @@ En macOS, `Erste Installation.command` coloca la app en su sitio y elimina la ma
 
 ## Requisitos
 
-- **Windows 10/11**, una distribución de Linux actual o **macOS 12+**
+- **Windows 10/11**, una distribución de Linux actual o **macOS** (probado en macOS 15; las versiones anteriores no se han probado)
 - Espacio libre suficiente para el origen, el estado intermedio y la salida
 - **Windows:** derechos de administrador para los procesos con UFS2 (`.ffpkg`)
 - **No hace falta OSFMount:** las imágenes `.exFAT` las lee el programa con su lector exFAT integrado, sin
