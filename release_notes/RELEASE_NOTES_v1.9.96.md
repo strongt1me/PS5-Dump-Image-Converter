@@ -1,6 +1,7 @@
 ## Geändert
 
 - Dateien mit der Endung .ini (etwa die dlc_emu.ini) bleiben beim Packen eines Asset-Packs lose und damit von Hand änderbar, bei zstd und bei LZ4.
+- Packen und Prüfen eines zstd-Asset-Packs lesen die Dateien jetzt in großen Blöcken im Voraus; das Packen ist dadurch schneller, und die Prüfung läuft auf Festplatten mit weniger Kopfsprüngen.
 
 ## Aktualisiert
 
