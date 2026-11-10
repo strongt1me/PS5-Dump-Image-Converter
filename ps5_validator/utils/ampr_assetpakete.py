@@ -219,6 +219,9 @@ NIE_PACKEN: tuple[str, ...] = (
     "*.sprx", "**/*.sprx",
     "*.self", "**/*.self",
     "*.elf", "**/*.elf",
+    # Einstellungen von Hand (dlc_emu.ini, Spiel-ini): bleiben aenderbar, wie bei ps5-dump-forge ab v0.5.5
+    # (10.11.2026, "any .ini ... stay editable" - gilt dort fuer jede Packart).
+    "*.ini", "**/*.ini",
     "*.bin.sig", "**/*.bin.sig",
     "eboot.bin", "**/eboot.bin",
     "param.sfo", "**/param.sfo",

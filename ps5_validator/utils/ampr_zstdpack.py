@@ -14,8 +14,8 @@ Aufbau in Kuerze (alles little-endian, CRC-32 IEEE, Pfadhash FNV-1a 64 ueber den
   naechste Band. Die Kopfzeilen der Baender werden zuletzt geschrieben, dann der Index.
 
 Was lose bleibt, bestimmt :func:`bleibt_lose` (Systemdateien: ``eboot.bin``, Module, ``sce_sys``, ``sce_module``,
-``fakelib*`` und die eigenen Dateien der Laufzeit). Alles andere, was nicht leer ist, wird gepackt - die NG-Laufzeit
-bedient ein vollstaendig gepacktes Spiel.
+``fakelib*``, jede ``.ini`` und die eigenen Dateien der Laufzeit). Alles andere, was nicht leer ist, wird gepackt - die
+NG-Laufzeit bedient ein vollstaendig gepacktes Spiel.
 """
 
 from __future__ import annotations
@@ -131,13 +131,14 @@ def ist_packname(rel: str) -> bool:
 def bleibt_lose(rel: str) -> bool:
     """Die Dateien, die nie in ein Pack gehen (Systemschicht und Laufzeit), ohne Beachtung der Schreibung.
 
-    ``eboot.bin`` (jeder Ordner), ``.elf``/``.self``/``.prx``/``.sprx``, alles in einem Wurzelordner ``sce_sys``,
-    ``sce_module`` oder ``fakelib*`` und die Dateien der Laufzeit; dazu die Packdateien selbst.
+    ``eboot.bin`` (jeder Ordner), ``.elf``/``.self``/``.prx``/``.sprx``, **jede ``.ini``** (``dlc_emu.ini`` und andere
+    Einstellungen, die man von Hand aendert - seit ps5-dump-forge v0.5.5, 10.11.2026), alles in einem Wurzelordner
+    ``sce_sys``, ``sce_module`` oder ``fakelib*`` und die Dateien der Laufzeit; dazu die Packdateien selbst.
     """
     klein = rel.lower()
     name = klein.rsplit("/", 1)[-1]
     erster = klein.split("/", 1)[0]
-    if name == "eboot.bin" or klein.endswith((".elf", ".self", ".prx", ".sprx")):
+    if name == "eboot.bin" or klein.endswith((".elf", ".self", ".prx", ".sprx", ".ini")):
         return True
     if "/" in klein and (erster in ("sce_sys", "sce_module") or erster.startswith("fakelib")):
         return True

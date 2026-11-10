@@ -94,10 +94,13 @@ class FormatTests(unittest.TestCase):
     def test_was_lose_bleibt(self) -> None:
         lose = ["eboot.bin", "Sub/EBOOT.BIN", "a.elf", "x/y.PRX", "m.sprx", "SCE_SYS/x", "sce_module/y.prx",
                 "fakelib2/a.bin", "ampr_emu.index", "fakelib/libSceAmpr.sprx", "ampr_zstd.index",
-                "ampr_zstd-000.pak", "ampr_assets.index", "ampr_emu.log"]
+                "ampr_zstd-000.pak", "ampr_assets.index", "ampr_emu.log",
+                # ps5-dump-forge v0.5.5: jede .ini bleibt lose und damit von Hand aenderbar
+                "dlc_emu.ini", "data/prein/DLC_EMU.INI", "Engine/Config/Game.Ini"]
         for rel in lose:
             self.assertTrue(z.bleibt_lose(rel), rel)
-        gepackt = ["data/a.bin", "Media/v.mp4", "root.txt", "sce_sys_not/x", "Data/sce_sys/x", "readme.json"]
+        gepackt = ["data/a.bin", "Media/v.mp4", "root.txt", "sce_sys_not/x", "Data/sce_sys/x", "readme.json",
+                   "data/inifile.bin", "data/x.ini.bak", "data/ini"]
         for rel in gepackt:
             self.assertFalse(z.bleibt_lose(rel), rel)
 

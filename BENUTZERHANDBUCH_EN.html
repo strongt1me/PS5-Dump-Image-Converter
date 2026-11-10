@@ -1480,7 +1480,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     read packs. <strong>zstd</strong> builds <code>ampr_zstd.index</code> and
     <code>ampr_zstd-NNN.pak</code>, packs every non-empty file except
     the system files (<code>eboot.bin</code>, modules, <code>sce_sys</code>,
-    <code>sce_module</code>, <code>fakelib</code>) in 256 KiB blocks and
+    <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code> files) in 256 KiB blocks and
     usually compresses more strongly. These packs are read <em>only</em> by
     <strong>ampr-emu-ng (NG)</strong>; the runtime by drakmor does not know them.
     With zstd, the version list therefore shows only NG, and a run with a

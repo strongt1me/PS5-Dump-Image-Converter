@@ -726,6 +726,17 @@ class DirektleserTests(unittest.TestCase):
         # Die Metadaten dagegen sind klein und muessen lose bleiben.
         self.assertIn("global-metadata.dat", ap.NIE_PACKEN)
 
+    def test_ini_dateien_bleiben_lose(self):
+        """ps5-dump-forge v0.5.5 (09.11.2026): jede ``.ini`` bleibt lose, damit ``dlc_emu.ini`` und die Einstellungen
+        eines Spiels nach dem Packen von Hand aenderbar bleiben - auch ohne die Originale im Pack."""
+        import fnmatch
+        for pfad in ("dlc_emu.ini", "data/prein/dlc_emu.ini", "Engine/Config/Game.ini"):
+            with self.subTest(pfad=pfad):
+                self.assertTrue(any(fnmatch.fnmatch(pfad, m) for m in ap.NIE_PACKEN), pfad)
+        for pfad in ("data/inifile.bin", "data/a.ini.bak"):
+            with self.subTest(pfad=pfad):
+                self.assertFalse(any(fnmatch.fnmatch(pfad, m) for m in ap.NIE_PACKEN), pfad)
+
 
 class DirektleserRiegelTests(unittest.TestCase):
     """Mit dem Programmprofil bleiben die Originale - immer.

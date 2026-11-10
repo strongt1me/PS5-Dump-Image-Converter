@@ -48,6 +48,8 @@ NG_DATEIEN = {
     "0.3.2 ng-debug": "5e4f1fcbfb83c9beb06d892dcd807a7f077bd54aa57cefa1d712b6f067ddae5d",
     "0.3.3 ng": "1c1051f91bc7cba19b15362b2b832114b53a4c3d6193f50c90fdf1ae5d78d268",          # v0.3.3, 07.11.2026
     "0.3.3 ng-debug": "1ae61d604fd2da60728175a37f700a1283a8ceb0c36e6f28770ab663215ab364",
+    "0.3.4 ng": "7d1bb260f954b755ed687733e52ccfa38c31440a9b88a6fbba5b3b75e08bfa26",          # v0.3.4, 09.11.2026
+    "0.3.4 ng-debug": "717299ddd8122716ba11c89e03cc56d05207d0cae2ef898da8a9a65536640997",
 }
 
 
@@ -84,18 +86,19 @@ class BestandTests(unittest.TestCase):
         gui = G.__new__(G)
         eintraege = [e for e in gui._ampr_scan_einen_speicher(str(BESTAND)) if e["lib"] == "libSceAmpr.sprx"]
         paare = [(e["version"], e["variant"]) for e in eintraege]
-        for fassung in ("0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3"):
+        for fassung in ("0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.3.4"):
             self.assertIn((fassung, "ng"), paare)
             self.assertIn((fassung, "ng-debug"), paare)
         self.assertEqual(("0.4.2.1", "test-nopack"), paare[0], "die oberste (= Vorgabe) bleibt drakmor")
         # Nutzerwunsch 05.11.2026: die NG-Fassungen stehen unterhalb von 0.4.2.1 (mit seinen drei Bauarten),
         # neueste zuerst, und vor den aelteren Fassungen von drakmor.
         self.assertEqual({"0.4.2.1"}, {v for v, _ in paare[:3]})
-        self.assertEqual([("0.3.3", "ng"), ("0.3.3", "ng-debug"), ("0.3.2", "ng"), ("0.3.2", "ng-debug"),
+        self.assertEqual([("0.3.4", "ng"), ("0.3.4", "ng-debug"), ("0.3.3", "ng"), ("0.3.3", "ng-debug"),
+                          ("0.3.2", "ng"), ("0.3.2", "ng-debug"),
                           ("0.3.1", "ng"), ("0.3.1", "ng-debug"), ("0.3.0", "ng"), ("0.3.0", "ng-debug"),
-                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:13])
-        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[13:]), "danach nur noch Fassungen von drakmor")
-        self.assertEqual("0.3.6.6", paare[13][0])
+                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:15])
+        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[15:]), "danach nur noch Fassungen von drakmor")
+        self.assertEqual("0.3.6.6", paare[15][0])
 
 
 class BeschriftungTests(unittest.TestCase):

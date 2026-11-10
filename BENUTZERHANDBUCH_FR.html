@@ -1481,7 +1481,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     les packs. <strong>zstd</strong> crée <code>ampr_zstd.index</code> et
     <code>ampr_zstd-NNN.pak</code>, empaquette tout fichier non vide sauf
     les fichiers système (<code>eboot.bin</code>, modules, <code>sce_sys</code>,
-    <code>sce_module</code>, <code>fakelib</code>) en blocs de 256 Kio et
+    <code>sce_module</code>, <code>fakelib</code>, fichiers <code>.ini</code>) en blocs de 256 Kio et
     compresse généralement davantage. Ces packs ne sont lus <em>que</em> par
     <strong>ampr-emu-ng (NG)</strong> ; le runtime de drakmor ne les connaît pas.
     Avec zstd, la liste des versions n'affiche donc que NG, et une exécution avec une
