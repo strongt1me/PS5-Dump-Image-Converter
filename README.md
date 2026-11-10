@@ -110,7 +110,8 @@ Spielbibliothek von Rechner und PS5 mit Cover; Spiel-Info mit Updates & Patches 
 <td valign="top">
 
 🛠 **Werkzeuge**<br>
-ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro und BFpilot erreichen Sie aus der
+ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset-Pack (prüfen und entpacken)
+und der Y2JB Updater erreichen Sie aus der
 Seitenleiste. Unter WEITERE TOOLS ändert ABBILD BEARBEITEN einzelne Dateien eines Abbilds
 (entpacken, ersetzen, umbenennen, löschen, neu packen).
 
@@ -214,6 +215,8 @@ Die Seitenleiste hat zwei Bereiche, zwischen denen der Knopf **BEREICH WECHSELN*
 | 8 | BFpilot |
 | 9 | AMPR EMU Manager |
 | 10 | AMPR-Mitschnitt |
+| 11 | Asset-Pack |
+| 12 | Y2JB Updater |
 
 </td>
 </tr>
@@ -263,6 +266,11 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--yes` | Rückfragen automatisch bestätigen |
 | `--quiet` | Protokoll nicht auf stdout spiegeln |
 | `--shutdown-on-success` | nach Erfolg herunterfahren |
+| `--archiv-passwort PASSWORT` | Passwort für ein verschlüsseltes Archiv als Quelle (Aufgabe 1 und 5); ohne Angabe probiert das Programm die üblichen Passwörter |
+| `--ampr-pack-verfahren` | Packverfahren des Asset-Packs: `lz4` (Vorgabe) oder `zstd` (nur für AMPR EMU NG) |
+| `--ampr-lz4-stufe N` | LZ4-Stufe des Asset-Packs, 1–12 (Vorgabe 9) |
+| `--ampr-zstd-stufe N` | zstd-Stufe des Asset-Packs, 1–22 (Vorgabe 5) |
+| `--dump-im-arbeitsordner` | den vorübergehenden Dump-Ordner der Umpack-Wege im Arbeitsordner statt beim Ziel anlegen |
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` mit AMPR EMU/BACKPORT: entpacken, einbauen, wieder zu `.ffpfsc` packen |
 | `--umhuellt-als-ordner` | auf demselben Weg stattdessen nur den Dump-Ordner bauen |
 | `--ampr-index-trotz-assets` | `ampr_emu.index` auch bei vorhandenem Asset-Pack neu bauen |

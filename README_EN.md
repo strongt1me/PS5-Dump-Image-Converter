@@ -112,7 +112,8 @@ Game library of the computer and the PS5 with covers; Game Info with updates & p
 <td valign="top">
 
 🛠 **Tools**<br>
-ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro and BFpilot are reachable from the
+ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset Pack (check and unpack)
+and the Y2JB Updater are reachable from the
 sidebar. Under MORE TOOLS, EDIT IMAGE changes individual files of an image
 (unpack, replace, rename, delete, repack).
 
@@ -216,6 +217,8 @@ The sidebar has two areas, which the **SWITCH AREA** button toggles between.
 | 8 | BFpilot |
 | 9 | AMPR EMU Manager |
 | 10 | AMPR trace |
+| 11 | Asset Pack |
+| 12 | Y2JB Updater |
 
 </td>
 </tr>
@@ -263,6 +266,11 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--yes` | confirm prompts automatically |
 | `--quiet` | do not mirror the log to stdout |
 | `--shutdown-on-success` | shut down after success |
+| `--archiv-passwort PASSWORD` | password for an encrypted archive as source (tasks 1 and 5); without it the program tries the usual passwords |
+| `--ampr-pack-verfahren` | pack method of the asset pack: `lz4` (default) or `zstd` (AMPR EMU NG only) |
+| `--ampr-lz4-stufe N` | LZ4 level of the asset pack, 1–12 (default 9) |
+| `--ampr-zstd-stufe N` | zstd level of the asset pack, 1–22 (default 5) |
+| `--dump-im-arbeitsordner` | create the temporary dump folder of the repack paths in the working folder instead of at the destination |
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` with AMPR EMU/BACKPORT: unpack, integrate, repack to `.ffpfsc` |
 | `--umhuellt-als-ordner` | build only the dump folder along the same path instead |
 | `--ampr-index-trotz-assets` | rebuild `ampr_emu.index` even if an asset pack is present |
