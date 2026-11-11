@@ -667,7 +667,8 @@ class AbschlusspruefungTests(unittest.TestCase):
         self.assertFalse(self.defekt_befund["ok"])
 
     def test_geprueft_wird_mit_der_engine(self) -> None:
-        self.assertEqual("mkpfs-verify", self.defekt_befund["method"])
+        # Seit 10.11.2026 nimmt die Vorgabe ("schnell") eine Stichprobe statt jedes Blocks; beides ist die Engine.
+        self.assertIn(self.defekt_befund["method"], ("mkpfs-verify", "mkpfs-stichprobe"))
 
     def test_ein_ordner_ohne_spieldateien_faellt_durch(self) -> None:
         """Falsch verschachtelt liefert einen Ordner mit einem Container darin."""

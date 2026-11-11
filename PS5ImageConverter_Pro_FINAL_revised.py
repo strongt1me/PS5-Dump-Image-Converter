@@ -959,8 +959,14 @@ PROGRESS_CATCH_UP = 2.0
 PACK_PROFILE_MATRIX: dict[str, dict[str, Any]] = {
     "pack_folder": {
         "profile": "folder_pipeline_balanced",
-        "hard_cap": 4,
-        "size_caps": ((220.0, 2), (120.0, 3)),
+        # 8 statt 4 (10.11.2026, an einem echten Dump gemessen: 12,4 GB, 20 Kerne, Quelle und Ziel auf NVMe,
+        # eingebettetes MkPFS im Aufruf von Aufgabe 1, Stufe 9): 4 Faeden 97,5 s, 8 Faeden 63,2 s, 12/16/20 Faeden
+        # 62,8/70,0/67,9 s - ab 8 wird es nicht schneller, den Rest begrenzt der einzelne Zufuehrer (Lesen und
+        # exFAT-Aufbau). Der Speicher wuchs dabei nicht (Spitze 63-80 MB). Dieses Profil ist die exFAT-Bauform:
+        # MkPFS packt dort in Faeden des Programmprozesses. Die anderen Profile (``pack_file``, ``ffpkg_to_ffpfsc``)
+        # arbeiten mit einem Prozesspool und bleiben bei 4 - dafuer gibt es keine Messung.
+        "hard_cap": 8,
+        "size_caps": ((220.0, 4), (120.0, 6)),
         "block_size": 65536,
         "verify_after": True,
     },
@@ -9104,7 +9110,42 @@ class PS5ConverterGUI:
             ufs2tool_pfad=self._extract_ufs2tool,
             dokan_vorhanden=self._find_dokan_driver,
             status_melden=self._set_status,
-            validator_texte=self._validator_texte())
+            validator_texte=self._validator_texte(),
+            pruefstufe=lambda: getattr(self, "mkpfs_verify", "schnell"),
+            nutzdaten_geprueft=self._nutzdaten_vom_bau_geprueft)
+
+    def _mkpfs_pruefung_merken(self, aufruf: list[str]) -> None:
+        """Merkt sich, dass MkPFS die Nutzdaten einer Datei gerade vollstaendig geprueft hat.
+
+        Welche Aufrufe das sind, entscheidet ``abbild_pruefen.pfad_mit_geprueften_nutzdaten``: die exFAT-Bauform
+        (``pack folder`` ohne ``--raw``), solange die Pruefung nicht abgeschaltet ist - dort dekodiert MkPFS auch bei
+        der Vorgabe "schnell" jeden Block der fertigen Datei (``run_image_check`` mit Nutzdaten, ``cli.py``). Die
+        Abschlusspruefung muss dasselbe nicht noch einmal tun (siehe ``Pruefstand._abschluss_nur_aufbau``). Gemerkt
+        wird Pfad, Groesse und Aenderungszeit: Aendert sich die Datei danach - kopiert, verschoben, ersetzt -, gilt
+        der Merker nicht mehr.
+        """
+        pfad = abbild_pruefen.pfad_mit_geprueften_nutzdaten(aufruf)
+        if not pfad:
+            return
+        try:
+            stat = os.stat(pfad)
+        except (OSError, TypeError, ValueError):
+            return
+        gemerkt = self.__dict__.setdefault("_mkpfs_nutzdaten_geprueft", {})
+        gemerkt[os.path.normcase(os.path.abspath(pfad))] = (stat.st_size, stat.st_mtime_ns)
+
+    def _nutzdaten_vom_bau_geprueft(self, pfad: str) -> bool:
+        """Ob MkPFS die Nutzdaten dieser Datei beim Bauen geprueft hat und sie seitdem unveraendert ist."""
+        gemerkt = self.__dict__.get("_mkpfs_nutzdaten_geprueft") or {}
+        try:
+            schluessel = os.path.normcase(os.path.abspath(str(pfad)))
+            erwartet = gemerkt.get(schluessel)
+            if erwartet is None:
+                return False
+            stat = os.stat(pfad)
+        except (OSError, TypeError, ValueError):
+            return False
+        return erwartet == (stat.st_size, stat.st_mtime_ns)
 
     def _verify_output_artifact(self, mode: str, final_path: str, abbruch=None):
         """Prueft das Ergebnis eines Laufs. Siehe abbild_pruefen."""
@@ -9159,11 +9200,13 @@ class PS5ConverterGUI:
         cap = max(2, int(round(ceil * frac))) if ceil >= 2 else 1
         workers = max(1, min(ceil, cap))
 
-        # Extra-Schutz fuer sehr grosse Images.
+        # Extra-Schutz fuer sehr grosse Images. Bis 10.11.2026 hiess das 2 bzw. 3 Faeden; seit der Messung (siehe
+        # PACK_PROFILE_MATRIX) 4 bzw. 6 - die Profile mit Prozesspool (hard_cap 4) bleiben durch ihre eigenen
+        # size_caps bei 2 bzw. 3.
         if source_size_bytes >= int(160 * 1024**3):
-            workers = min(workers, 2)
+            workers = min(workers, 4)
         elif source_size_bytes >= int(90 * 1024**3):
-            workers = min(workers, 3)
+            workers = min(workers, 6)
         return workers, cores
 
     def _resolve_pack_profile(
@@ -30507,7 +30550,10 @@ class PS5ConverterGUI:
         Die Idee stammt aus PS5 FFPFSC PRO 1.3.0 ("Automatic retry on memory errors");
         der Code ist hier neu geschrieben.
         """
-        aufruf = list(args)
+        # Bei der Stufe "schnell" nimmt die Abschlusspruefung eine Stichprobe; MkPFS' eigene Dekodierung jedes Blocks in
+        # der exFAT-Bauform entfaellt dann (siehe abbild_pruefen.mkpfs_aufruf_fuer_stufe).
+        aufruf = abbild_pruefen.mkpfs_aufruf_fuer_stufe(
+            list(args), str(getattr(self, "mkpfs_verify", "schnell") or "schnell"))
         versuch = 0
         while True:
             self._letzter_mkpfs_speicher = False
@@ -30516,6 +30562,8 @@ class PS5ConverterGUI:
                 monitor_source_file=monitor_source_file,
                 enable_file_monitor=enable_file_monitor,
                 advance_step=advance_step, endziel=endziel)
+            if ok:
+                self._mkpfs_pruefung_merken(aufruf)
             if ok or not self.is_running or not self._letzter_mkpfs_speicher:
                 return ok
             kerne = self._kerne_im_aufruf(aufruf)

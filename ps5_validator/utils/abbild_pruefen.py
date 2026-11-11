@@ -45,6 +45,155 @@ from ps5_validator.utils.plattform import ist_administrator, prozess_flags
 logger = logging.getLogger("PS5Converter.utils.abbild_pruefen")
 
 
+def pfad_mit_geprueften_nutzdaten(aufruf: list[str]) -> str | None:
+    """Der Ausgabepfad eines MkPFS-Aufrufs, dessen Nutzdaten MkPFS nach dem Bauen vollstaendig geprueft hat.
+
+    Das trifft auf ``pack folder`` in der exFAT-Bauform zu (ohne ``--raw``): ``cli.py`` ruft dort nach dem Bauen
+    ``run_image_check`` mit Nutzdaten auf - jeder Block der fertigen Datei wird dekodiert, bei der Stufe "schnell"
+    ebenso wie bei "voll" (``--verify``). Nicht zutreffend: ``--raw`` (PFS-Bauform, bei "schnell" nur der Aufbau),
+    ``--no-verify-structure`` (Stufe "aus"), ``--skip-verification`` und alle anderen Befehle.
+
+    Args:
+        aufruf: Die Argumente des Aufrufs ohne Programmnamen; der Ausgabepfad steht zuletzt.
+
+    Returns:
+        Den Ausgabepfad, sonst ``None``.
+    """
+    try:
+        if len(aufruf) < 4 or aufruf[0] != "pack" or aufruf[1] != "folder":
+            return None
+        if any(a in aufruf for a in ("--raw", "--no-verify-structure", "--skip-verification")):
+            return None
+        pfad = str(aufruf[-1])
+    except (IndexError, TypeError):
+        return None
+    return pfad or None
+
+
+def mkpfs_aufruf_fuer_stufe(aufruf: list[str], stufe: str) -> list[str]:
+    """Stellt MkPFS' eigene Dekodierung der fertigen Datei ab, wenn die Abschlusspruefung eine Stichprobe nimmt.
+
+    Bei der Stufe "schnell" prueft das Programm das Ergebnis danach selbst (Aufbau und Stichprobe, siehe
+    :func:`stichprobe_dekodieren`). MkPFS dekodiert in der exFAT-Bauform ohnehin jeden Block - gemessen am 10.11.2026
+    rund 15 s bei 12,4 GB, auf einer Platte mit 50 GB ein Vielfaches -, das wuerde die Stichprobe zur Nebensache machen.
+    Betroffen ist nur ``pack folder`` in der exFAT-Bauform mit Vorgabepruefung; jeder andere Aufruf und jede andere
+    Stufe bleibt unveraendert.
+
+    Args:
+        aufruf: Die Argumente des Aufrufs ohne Programmnamen.
+        stufe: ``"aus"``, ``"schnell"`` oder ``"voll"``.
+
+    Returns:
+        Eine Liste, in der gegebenenfalls ``--no-verify-structure`` unmittelbar hinter ``folder`` steht (die
+        Positionsargumente stehen am Ende).
+    """
+    if stufe != "schnell" or "--verify" in aufruf or pfad_mit_geprueften_nutzdaten(aufruf) is None:
+        return list(aufruf)
+    neu = list(aufruf)
+    neu.insert(2, "--no-verify-structure")
+    return neu
+
+
+#: Die Stichprobe der Abschlusspruefung ("schnell") nach dem Vorbild von ps5-dump-forge (``verify.rs``, Modus Fast):
+#: zusammenhaengende Stuecke zu 128 PFSC-Bloecken (8 MiB) an zufaelligen Stellen - erstes und letztes Stueck immer -,
+#: zusammen etwa 1 % der Bloecke, mindestens 4 und hoechstens 128 Stuecke (1 GiB). Zusammenhaengend, weil zufaellige
+#: Einzelbloecke auf einer Platte je 64 KiB eine Kopfbewegung kosten.
+_STICHPROBE_STUECK: int = 128
+_STICHPROBE_ANTEIL: float = 0.01
+_STICHPROBE_MIN_STUECKE: int = 4
+_STICHPROBE_MAX_STUECKE: int = 128
+
+
+def stichprobe_dekodieren(bild: Path, *, progress: Any = None, abbruch: Callable[[], bool] | None = None,
+                          zufall: Any = None) -> dict[str, Any] | None:
+    """Prueft die PFSC-Tabelle ganz und dekodiert eine Stichprobe der Bloecke eines ``.ffpfsc`` in exFAT-Bauform.
+
+    Die Tabelle (Anfang und Laenge jedes Blocks) wird vollstaendig gelesen: Ein abgeschnittenes oder ueberschriebenes Ende
+    faellt dort auf. Dekodiert werden Stuecke zu je 128 Bloecken; zlib prueft dabei seine eigene Pruefsumme, und die
+    Laenge jedes Ergebnisses muss die logische Blockgroesse sein.
+
+    Args:
+        bild: Das fertige Abbild.
+        progress: Ein ``mkpfs.pbar.Progress`` fuer Statuszeile und Abbruch (siehe ``_fortschritt_argument``), oder ``None``.
+        abbruch: Wird zwischen den Stuecken gefragt.
+        zufall: Zufallsquelle mit ``randrange`` (Tests); sonst ``random.SystemRandom``.
+
+    Returns:
+        ``None``, wenn die Stichprobe hier nicht anwendbar ist (kein Abbild mit genau einer verdichteten Datei - etwa die
+        PFS-Bauform mit vielen Dateien): Dann muss jeder Block dekodiert werden. Sonst ein Dict mit ``bloecke`` (Zahl
+        aller Bloecke), ``geprueft`` (Zahl der dekodierten) und ``fehler`` (Liste, hoechstens drei Eintraege).
+    """
+    import random
+
+    from mkpfs.pfs import open_inner_file_view  # type: ignore[import-not-found]
+
+    geoeffnet = open_inner_file_view(Path(bild))
+    if geoeffnet is None:
+        return None
+    ansicht, griff, _name = geoeffnet
+    try:
+        if not getattr(ansicht, "_compressed", False):
+            return None
+        offsets = ansicht._offsets
+        bloecke = len(offsets) - 1
+        if bloecke <= 0:
+            return None
+        blockgroesse = int(ansicht._lbs)
+        fehler: list[str] = []
+
+        # 1. Die Tabelle ganz.
+        for i in range(bloecke):
+            laenge = offsets[i + 1] - offsets[i]
+            if laenge <= 0 or laenge > blockgroesse:
+                fehler.append("Block %d: unmoegliche gespeicherte Laenge %d" % (i, laenge))
+                if len(fehler) >= 3:
+                    break
+        if not fehler:
+            try:
+                dateigroesse = os.path.getsize(bild)
+            except OSError:
+                dateigroesse = 0
+            if dateigroesse and int(ansicht._base) + int(offsets[-1]) > dateigroesse:
+                fehler.append("Die Block-Tabelle reicht bis %d, die Datei ist nur %d gross" % (
+                    int(ansicht._base) + int(offsets[-1]), dateigroesse))
+        if fehler:
+            return {"bloecke": bloecke, "geprueft": 0, "fehler": fehler[:3]}
+
+        # 2. Die Stuecke waehlen: erstes, letztes und zufaellige dazwischen.
+        stuecke = -(-bloecke // _STICHPROBE_STUECK)
+        gewuenscht = -(-int(bloecke * _STICHPROBE_ANTEIL) // _STICHPROBE_STUECK)
+        anzahl = min(stuecke, max(_STICHPROBE_MIN_STUECKE, min(_STICHPROBE_MAX_STUECKE, gewuenscht)))
+        wahl = {0, stuecke - 1}
+        quelle = zufall or random.SystemRandom()
+        while len(wahl) < anzahl:
+            wahl.add(quelle.randrange(stuecke))
+
+        # 3. Dekodieren.
+        geprueft = 0
+        for nr, stueck in enumerate(sorted(wahl)):
+            if abbruch is not None and abbruch():
+                raise _PruefungAbgebrochen()
+            von = stueck * _STICHPROBE_STUECK
+            bis = min(bloecke, von + _STICHPROBE_STUECK)
+            for i in range(von, bis):
+                try:
+                    block = ansicht._decode_block(i)
+                except Exception as exc:  # noqa: BLE001 - jeder Dekodierfehler ist ein Befund
+                    fehler.append("Block %d: %s" % (i, exc))
+                    break
+                if len(block) != blockgroesse:
+                    fehler.append("Block %d: %d statt %d Bytes nach dem Entpacken" % (i, len(block), blockgroesse))
+                    break
+                geprueft += 1
+            if len(fehler) >= 3:
+                break
+            if progress is not None:
+                progress.step("verify", nr + 1, len(wahl), bytes_processed=geprueft * blockgroesse)
+        return {"bloecke": bloecke, "geprueft": geprueft, "fehler": fehler[:3]}
+    finally:
+        griff.close()
+
+
 class _PruefungAbgebrochen(Exception):
     """Der Aufrufer hat die Ergebnispruefung abgebrochen.
 
@@ -72,6 +221,11 @@ class Pruefstand:
         validator_texte: Die uebersetzten Vorlagen der Validatoren
             (``dispatcher.MELDUNGEN``) - ihre Befunde stehen in der
             Einzelheit einer .ffpkg-Pruefung (Durchsicht, Runde 17).
+        pruefstufe: Liefert die eingestellte Pruefstufe (``"aus"``, ``"schnell"``, ``"voll"``). Sie bestimmt, wie
+            tief die Abschlusspruefung eines ``.ffpfs``/``.ffpfsc`` liest (siehe ``_abschluss_nur_aufbau``).
+            Ohne Angabe gilt ``"voll"``.
+        nutzdaten_geprueft: Sagt zu einem Pfad, ob MkPFS die Nutzdaten dieser Datei gerade beim Bauen vollstaendig
+            dekodiert und geprueft hat und sie seitdem unveraendert ist. Ohne Angabe: nein.
     """
 
     def __init__(self, *,
@@ -84,8 +238,14 @@ class Pruefstand:
                  ufs2tool_pfad: Callable[[], str] | None = None,
                  dokan_vorhanden: Callable[[], Any] | None = None,
                  status_melden: Callable[[str], Any] | None = None,
-                 validator_texte: dict[str, str] | None = None) -> None:
+                 validator_texte: dict[str, str] | None = None,
+                 pruefstufe: Callable[[], str] | None = None,
+                 nutzdaten_geprueft: Callable[[str], bool] | None = None) -> None:
         self._t = text or schluessel_zeigen
+        # Ohne Angabe gilt die gruendlichste Pruefung - so verhalten sich alle, die den Pruefstand ohne diese beiden
+        # Rueckrufe bauen, wie bisher.
+        self._pruefstufe = pruefstufe or (lambda: "voll")
+        self._nutzdaten_geprueft = nutzdaten_geprueft or (lambda _pfad: False)
         self._validator_texte = validator_texte
         self._expects_dump_folder = erwartet_dump_ordner or (lambda *a: False)
         self._looks_like_dump_folder = sieht_aus_wie_dump or (lambda *a: False)
@@ -429,6 +589,40 @@ class Pruefstand:
 
         return {"progress": Progress(enabled=False, listener=_hoeren)}
 
+    def _abschluss_tiefe(self, pfad: str) -> str:
+        """Wie tief die Abschlusspruefung eines ``.ffpfs``/``.ffpfsc`` liest: ``"aufbau"``, ``"stichprobe"`` oder ``"voll"``.
+
+        Bis v1.9.95 dekodierte sie **immer** jeden Block, unabhaengig von der Pruefstufe - bei der Vorgabe ("schnell")
+        zusaetzlich zu MkPFS, das in der exFAT-Bauform dieselbe Datei nach dem Bauen schon vollstaendig dekodiert hatte.
+        Gemessen am 10.11.2026 (12,4 GB, 20 Kerne, NVMe): Bau 63 s, MkPFS-Pruefung +15 s, diese Abschlusspruefung
+        +22 s einfaedig - zusammen rund ein Viertel der Gesamtzeit; bei einem 50-GB-Titel von einer Platte eine
+        Viertelstunde und mehr. Jetzt gilt, wie bei ps5-dump-forge (Modus Fast):
+
+        * ``"aus"``: nur der Aufbau (Kopf, Inodes, Verzeichnisbaum, Tabellen).
+        * ``"schnell"`` (Vorgabe): Aufbau und Stichprobe - die Block-Tabelle ganz, dazu zusammenhaengende Stuecke zu 8 MiB
+          an zufaelligen Stellen (erstes und letztes immer), etwa 1 % der Bloecke, hoechstens 1 GiB
+          (:func:`stichprobe_dekodieren`). Ist die Datei keine exFAT-Bauform mit einer verdichteten Datei, bleibt es bei
+          jedem Block.
+        * ``"voll"``: jeder Block. Hat MkPFS diese Datei beim Bauen gerade selbst vollstaendig dekodiert (exFAT-Bauform
+          mit ``--verify``) und ist sie seitdem unveraendert, genuegt der Aufbau - derselbe Block wird nicht zweimal
+          gelesen.
+        * Jede unbekannte Angabe und ein Pruefstand ohne Rueckrufe: ``"voll"``.
+        """
+        try:
+            stufe = str(self._pruefstufe() or "voll")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Pruefstufe nicht lesbar: %s", exc)
+            return "voll"
+        if stufe == "aus":
+            return "aufbau"
+        if stufe == "schnell":
+            return "stichprobe"
+        try:
+            return "aufbau" if self._nutzdaten_geprueft(pfad) else "voll"
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Pruefmerker nicht lesbar: %s", exc)
+            return "voll"
+
     def _als_abgebrochen(self, result: dict[str, Any]) -> dict[str, Any]:
         """Kennzeichnet eine abgebrochene Pruefung - nicht bestanden, nicht geprueft."""
         result.update({"ok": False, "abgebrochen": True,
@@ -536,34 +730,62 @@ class Pruefstand:
             return result
 
         if os.path.splitext(final_path)[1].lower() in {".ffpfs", ".ffpfsc"}:
+            tiefe = self._abschluss_tiefe(final_path)
+            methode = {"aufbau": "mkpfs-struktur", "stichprobe": "mkpfs-stichprobe"}.get(tiefe, "mkpfs-verify")
+            stichprobe: dict[str, Any] | None = None
             try:
                 mkpfs_parent = self._extract_embedded_mkpfs()
                 if mkpfs_parent and mkpfs_parent not in sys.path:
                     sys.path.insert(0, mkpfs_parent)
-                from mkpfs.pfs import verify_pfs_image  # type: ignore[import-not-found]
+                if tiefe in ("aufbau", "stichprobe"):
+                    # Kopf, Inodes, Verzeichnisbaum und Tabellen - kein Block wird dekodiert (Sekunden statt einer
+                    # Viertelstunde bei einem 50-GB-Titel); bei "stichprobe" folgt eine Auswahl der Bloecke.
+                    from mkpfs.pfs import inspect_pfs_image  # type: ignore[import-not-found]
 
-                inspection = verify_pfs_image(
-                    Path(final_path),
-                    **self._fortschritt_argument(verify_pfs_image, abbruch))
-                result["method"] = "mkpfs-verify"
+                    fortschritt = self._fortschritt_argument(inspect_pfs_image, abbruch)
+                    inspection = inspect_pfs_image(
+                        image=Path(final_path), verify_payloads=False, **fortschritt)
+                    if tiefe == "stichprobe" and not (getattr(inspection, "errors", None) or []):
+                        stichprobe = stichprobe_dekodieren(
+                            Path(final_path), progress=fortschritt.get("progress"), abbruch=abbruch)
+                        if stichprobe is None:
+                            # Keine exFAT-Bauform mit einer verdichteten Datei (etwa die PFS-Bauform mit vielen
+                            # Dateien): Eine Auswahl liesse sich hier nicht zuordnen - jeder Block wie bisher.
+                            from mkpfs.pfs import verify_pfs_image  # type: ignore[import-not-found]
+
+                            methode = "mkpfs-verify"
+                            inspection = verify_pfs_image(
+                                Path(final_path),
+                                **self._fortschritt_argument(verify_pfs_image, abbruch))
+                else:
+                    from mkpfs.pfs import verify_pfs_image  # type: ignore[import-not-found]
+
+                    inspection = verify_pfs_image(
+                        Path(final_path),
+                        **self._fortschritt_argument(verify_pfs_image, abbruch))
+                result["method"] = methode
                 result["sha256"] = str(getattr(inspection, "manifest_sha256", "") or "")
                 errors = list(getattr(inspection, "errors", []) or [])
+                if stichprobe is not None:
+                    errors += list(stichprobe.get("fehler") or [])
                 warnings = list(getattr(inspection, "warnings", []) or [])
                 if errors:
                     result["detail"] = self._t("verify.mkpfs_errors", errors="; ".join(errors[:3]))
                     return result
                 result["ok"] = True
-                result["detail"] = (
-                    self._t("verify.mkpfs_valid",
-                            files=len(getattr(inspection, "file_inodes", {}) or {}))
-                    + (self._t("verify.mkpfs_warnings", count=len(warnings)) if warnings else "")
-                )
+                dateien = len(getattr(inspection, "file_inodes", {}) or {})
+                if stichprobe is not None:
+                    result["detail"] = self._t("verify.mkpfs_stichprobe", geprueft=stichprobe["geprueft"],
+                                               bloecke=stichprobe["bloecke"], files=dateien)
+                else:
+                    result["detail"] = self._t("verify.mkpfs_valid", files=dateien)
+                result["detail"] += (self._t("verify.mkpfs_warnings", count=len(warnings)) if warnings else "")
                 return result
             except _PruefungAbgebrochen:
-                result["method"] = "mkpfs-verify"
+                result["method"] = methode
                 return self._als_abgebrochen(result)
             except Exception as exc:
-                result["method"] = "mkpfs-verify"
+                result["method"] = methode
                 result["detail"] = self._t("verify.mkpfs_error", error=exc)
                 return result
 
