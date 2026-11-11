@@ -2,9 +2,18 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.96):** AMPR EMU NG 0.3.5 und mehrere Payloads sind aktualisiert, und .ini-Dateien bleiben beim Packen eines Asset-Packs lose.
+> **Kurz zum aktuellen Stand (v1.9.97):** Angefangene Downloads lassen sich löschen, die Seitenleiste zeigt die benötigte Firmware samt Backport, und rahmenlose Fenster haben runde Ecken.
 
 ---
+
+## v1.9.97 – 11.11.2026
+
+- **Neu:** Angefangene (abgebrochene) Downloads lassen sich löschen: im Download-Fenster, in den Ladefenstern der Update-Pakete und in Spiel-Info für das gezeigte Spiel; Reste früherer Läufe zeigt das Download-Fenster jetzt an.
+- **Neu:** Die Seitenleiste zeigt über dem Cover die Firmware, die das Spiel braucht, und bei eingebautem Backport dessen Firmware.
+- **Neu:** In der Einbauzeile von AMPR EMU wählst du unter der Methode das Packverfahren (LZ4 oder zstd); es ist nur bei Asset-Pack wählbar, und mit zstd wählt das Programm die neueste NG-Fassung.
+- **Geändert:** Spiel-Info und das Ressourcen-Fenster haben runde Ecken (Windows 11) und lassen sich an Seiten und unteren Ecken vergrößern; Banner, Hinweiskarten und Tooltips sind ebenfalls abgerundet.
+- **Geändert:** Auf PKG / FPKG steht der Hinweis „hierher ziehen oder wählen“ wie bei den Aufgaben 1 bis 6 grau im leeren Quellfeld.
+- **Aktualisiert:** PS5Upload 12.4.9 und garlic-worker 1.5.5.
 
 ## v1.9.96 – 10.11.2026
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Manual de usuario v1.9.96</title>
+<title>PS5 Dump &amp; Image Converter – Manual de usuario v1.9.97</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Manual de usuario</span></h1>
     <p class="unter">Una guía paso a paso, fácil de entender, para las primeras conversiones y comprobaciones seguras – además de una visión general completa de las ocho tareas y de todas las herramientas adicionales de la barra de herramientas.</p>
     <div class="marken">
-      <span class="marke">Versión v1.9.96</span>
-      <span class="marke">Actualizado el 10 de noviembre de 2026</span>
+      <span class="marke">Versión v1.9.97</span>
+      <span class="marke">Actualizado el 11 de noviembre de 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English / Español / Italiano / Français</span>
     </div>
@@ -409,7 +409,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k2">
   <h2><span class="nr">2</span> La interfaz en 60 segundos</h2>
-  <p>A la izquierda se elige una de las ocho tareas. A la derecha solo aparecen los campos necesarios para esa tarea. La amplia zona situada debajo de INICIAR muestra mensajes y resultados durante el trabajo. Debajo de las tareas, la barra lateral muestra la imagen de portada del juego seleccionado con su nombre debajo.</p>
+  <p>A la izquierda se elige una de las ocho tareas. A la derecha solo aparecen los campos necesarios para esa tarea. La amplia zona situada debajo de INICIAR muestra mensajes y resultados durante el trabajo. Debajo de las tareas, la barra lateral muestra la imagen de portada del juego seleccionado con su nombre debajo. Sobre la portada, la barra lateral muestra el firmware que necesita el juego y, si hay un backport integrado, su firmware. <em>Info del juego</em> y la ventana de recursos no tienen marco del sistema: puede arrastrar sus lados y esquinas inferiores para agrandarlas, y en Windows 11 tienen las esquinas redondeadas.</p>
 
   <div class="tabelle">
   <table>
@@ -1475,6 +1475,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     incluidos, <em>no</em> para el perfil propio
     (véase más abajo). En la línea de comandos lo establece
     <code>--ampr-lz4-stufe</code> (1 a 12).</p>
+    <p><strong>Método de empaquetado en la ventana principal.</strong> En la fila de integración, bajo el método (segunda fila), hay la misma selección <em>LZ4</em> / <em>zstd</em>; es el mismo ajuste que en AJUSTES. Solo se puede elegir con AMPR EMU marcado y el método <em>Asset Pack</em>; con <em>Normal</em> permanece gris y no se empaqueta nada con LZ4 ni zstd. Si elige zstd, el programa toma la versión NG normal más reciente, salvo que ya haya una versión NG seleccionada; con LZ4 la versión se puede elegir libremente.</p>
     <p><strong>Método de empaquetado LZ4 o zstd.</strong> En
     <strong>CONFIGURACIÓN</strong>, en la misma sección, se elige el
     <em>Método de empaquetado</em>. <strong>LZ4</strong> (predeterminado) crea los volúmenes
@@ -2440,6 +2441,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>Pausar y continuar</h4>
   <p><strong>Cancelar</strong> detiene la descarga seleccionada. <strong>Reintentar</strong> la reanuda exactamente donde se quedó, en lugar de empezar desde cero; esto también vale tras reiniciar el programa.</p>
   <p>La descarga se realiza en un archivo con la extensión <code>.teil</code>. Solo recibe su nombre definitivo cuando el tamaño coincide. Así, un archivo descargado a medias nunca puede darse por terminado por error.</p>
+  <p><strong>Borrar archivo parcial.</strong> Si ya no quiere una descarga iniciada, márquela y pulse <strong>Borrar descarga parcial</strong>: tras una confirmación, el archivo parcial (con su registro de reanudación) se borra del disco y la fila de la lista. Los archivos terminados y las descargas en curso no se tocan. La ventana también muestra las descargas iniciadas de ejecuciones anteriores como <em>incompleta</em>; si pega la misma dirección de nuevo, se reanudan. Lo mismo es posible en la ventana de carga de los paquetes de actualización (tras cancelar o un error) y en <em>Info del juego</em> con <strong>Borrar descargas iniciadas</strong> para el juego mostrado.</p>
 
   <h4>Lo que ya existe</h4>
   <p><strong>Leer existentes</strong> examina ambas carpetas y lista todos los paquetes ya guardados con su tamaño y Title-ID. Resulta útil tras un reinicio o cuando la unidad se ha vuelto a conectar. <strong>Abrir carpeta</strong> muestra la ubicación de almacenamiento en el Explorador.</p>
@@ -2454,6 +2456,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>ya existe</td><td>Ya estaba en el disco; no hay nada que hacer.</td></tr>
       <tr><td>cancelado</td><td>Detenido; <strong>Reintentar</strong> lo continúa.</td></tr>
       <tr><td>Error: …</td><td>A continuación se indica el motivo, por ejemplo, que no hay conexión.</td></tr>
+      <tr><td>incompleta (…)</td><td>Resto de una ejecución anterior; pegar la dirección de nuevo la reanuda, <strong>Borrar descarga parcial</strong> la elimina.</td></tr>
     </tbody>
   </table>
   </div>
@@ -3122,7 +3125,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 ¿Qué debe incluir un informe de error útil?</h3>
-  <p>Si necesita asistencia, anote la versión del programa (v1.9.96), la tarea seleccionada, el tipo de origen y el último mensaje visible del registro; lo más sencillo es hacerlo con el botón <strong>DIAGNÓSTICO</strong>. No comparta rutas privadas ni datos personales si no son necesarios para localizar el error.</p>
+  <p>Si necesita asistencia, anote la versión del programa (v1.9.97), la tarea seleccionada, el tipo de origen y el último mensaje visible del registro; lo más sencillo es hacerlo con el botón <strong>DIAGNÓSTICO</strong>. No comparta rutas privadas ni datos personales si no son necesarios para localizar el error.</p>
   <div class="kasten tipp">
     <span class="titel">Por favor, no eliminar de inmediato</span>
     <p>Conserve el registro y el origen sin modificar hasta haber comprendido la causa. Así resulta más fácil reconstruir un error.</p>
@@ -3323,8 +3326,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Manual de usuario <strong>v1.9.96</strong></span>
-    <span>Versión del 10 de noviembre de 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Manual de usuario <strong>v1.9.97</strong></span>
+    <span>Versión del 11 de noviembre de 2026</span>
   </div>
   <p>Este manual describe el manejo visible del programa. Los datos complementarios sobre versiones y funciones figuran en el <a href="README_ES.md">README.md</a> y el <a href="CHANGELOG.md">CHANGELOG.md</a>, que se entregan juntos.</p>
 </footer>

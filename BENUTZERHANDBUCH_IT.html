@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Manuale utente v1.9.96</title>
+<title>PS5 Dump &amp; Image Converter – Manuale utente v1.9.97</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Manuale utente</span></h1>
     <p class="unter">Una guida passo passo comprensibile per le prime conversioni e verifiche sicure – con una panoramica completa di tutte e otto le attività e di tutti gli strumenti aggiuntivi della barra degli strumenti.</p>
     <div class="marken">
-      <span class="marke">Versione v1.9.96</span>
-      <span class="marke">Aggiornato al 10 novembre 2026</span>
+      <span class="marke">Versione v1.9.97</span>
+      <span class="marke">Aggiornato al 11 novembre 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English / Español / Italiano / Français</span>
     </div>
@@ -409,7 +409,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k2">
   <h2><span class="nr">2</span> L'interfaccia in 60 secondi</h2>
-  <p>A sinistra si sceglie una delle otto attività. A destra compaiono solo i campi necessari per quell'attività. La grande area sotto AVVIA mostra, durante il lavoro, messaggi e risultati. Sotto le attività la barra laterale mostra la copertina del gioco selezionato con il suo nome sotto.</p>
+  <p>A sinistra si sceglie una delle otto attività. A destra compaiono solo i campi necessari per quell'attività. La grande area sotto AVVIA mostra, durante il lavoro, messaggi e risultati. Sotto le attività la barra laterale mostra la copertina del gioco selezionato con il suo nome sotto. Sopra la copertina, la barra laterale mostra il firmware richiesto dal gioco e, se è integrato un backport, il suo firmware. <em>Info gioco</em> e la finestra delle risorse non hanno cornice di sistema: si possono ingrandire trascinando i lati e gli angoli inferiori, e con Windows 11 hanno gli angoli arrotondati.</p>
 
   <div class="tabelle">
   <table>
@@ -1483,6 +1483,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     profili di gioco inclusi, <em>non</em> per il proprio profilo
     (vedi sotto). Da riga di comando lo imposta
     <code>--ampr-lz4-stufe</code> (da 1 a 12).</p>
+    <p><strong>Metodo di packing nella finestra principale.</strong> Nella riga di integrazione, sotto il metodo (seconda riga), c'è la stessa selezione <em>LZ4</em> / <em>zstd</em>; è la stessa impostazione delle IMPOSTAZIONI. Si può scegliere solo con AMPR EMU attivo e metodo <em>Asset Pack</em>; con <em>Normale</em> resta grigia e non viene impacchettato nulla con LZ4 o zstd. Scegliendo zstd, il programma prende la versione NG normale più recente, a meno che sia già selezionata una versione NG; con LZ4 la versione resta liberamente selezionabile.</p>
     <p><strong>Metodo di packing LZ4 o zstd.</strong> In
     <strong>IMPOSTAZIONI</strong>, nella stessa sezione, si sceglie il
     <em>Metodo di packing</em>. <strong>LZ4</strong> (predefinito) crea i volumi
@@ -2451,6 +2452,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>Mettere in pausa e riprendere</h4>
   <p><strong>Annulla</strong> ferma il download selezionato. <strong>Riprova</strong> lo riprende esattamente dal punto in cui si era fermato, invece di ricominciare da capo – anche dopo un riavvio del programma.</p>
   <p>Il download avviene in un file con l’estensione <code>.teil</code>. Il nome definitivo lo riceve solo quando la dimensione corrisponde. Un file scaricato a metà non può quindi mai essere scambiato per completo per errore.</p>
+  <p><strong>Elimina file parziale.</strong> Chi non vuole più un download avviato lo seleziona e preme <strong>Elimina file parziale</strong>: dopo una conferma il file parziale (con il suo registro di ripresa) viene rimosso dal disco e la riga dall'elenco. I file completati e i download in corso non vengono toccati. La finestra mostra anche i download avviati di esecuzioni precedenti come <em>incompleto</em>; incollando di nuovo lo stesso indirizzo si riprendono. Lo stesso è possibile nella finestra di caricamento dei pacchetti di aggiornamento (dopo un annullamento o un errore) e in <em>Info gioco</em> con <strong>Elimina download avviati</strong> per il gioco mostrato.</p>
 
   <h4>Che cosa c’è già</h4>
   <p><strong>Leggi esistenti</strong> analizza entrambe le cartelle ed elenca tutti i pacchetti già salvati con dimensione e Title-ID. Utile dopo un riavvio o quando l’unità è stata ricollegata. <strong>Apri cartella</strong> mostra la posizione di salvataggio in Esplora risorse.</p>
@@ -2465,6 +2467,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>già presente</td><td>Era già sul disco, non c’è nulla da fare.</td></tr>
       <tr><td>annullato</td><td>Fermato; <strong>Riprova</strong> riprende il download.</td></tr>
       <tr><td>Errore: …</td><td>Il motivo segue, per esempio nessuna connessione.</td></tr>
+      <tr><td>incompleto (…)</td><td>Resto di un'esecuzione precedente; incollare di nuovo l'indirizzo lo riprende, <strong>Elimina file parziale</strong> lo rimuove.</td></tr>
     </tbody>
   </table>
   </div>
@@ -3135,7 +3138,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Cosa deve contenere un buon messaggio di errore?</h3>
-  <p>Se serve assistenza, annotare la versione del programma (v1.9.96), l’attività scelta, il tipo di origine e l’ultimo messaggio visibile nel registro – il modo più semplice è il pulsante <strong>DIAGNOSTICA</strong>. Non divulgare percorsi privati o dati personali se non servono per la ricerca dell’errore.</p>
+  <p>Se serve assistenza, annotare la versione del programma (v1.9.97), l’attività scelta, il tipo di origine e l’ultimo messaggio visibile nel registro – il modo più semplice è il pulsante <strong>DIAGNOSTICA</strong>. Non divulgare percorsi privati o dati personali se non servono per la ricerca dell’errore.</p>
   <div class="kasten tipp">
     <span class="titel">Non eliminare subito</span>
     <p>Conservare il registro e l’origine non modificata finché non si è capita la causa. In questo modo un errore è più facile da ricostruire.</p>
@@ -3336,8 +3339,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Manuale utente <strong>v1.9.96</strong></span>
-    <span>Aggiornato al 10 novembre 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Manuale utente <strong>v1.9.97</strong></span>
+    <span>Aggiornato al 11 novembre 2026</span>
   </div>
   <p>Questo manuale descrive l’uso visibile del programma. Ulteriori indicazioni su versioni e funzioni si trovano nei file <a href="README_IT.md">README.md</a> e <a href="CHANGELOG.md">CHANGELOG.md</a> forniti insieme.</p>
 </footer>

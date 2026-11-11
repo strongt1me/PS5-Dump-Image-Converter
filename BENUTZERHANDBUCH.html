@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.96</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.97</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.96</span>
-      <span class="marke">Stand 10. November 2026</span>
+      <span class="marke">Version v1.9.97</span>
+      <span class="marke">Stand 11. November 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -409,7 +409,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k2">
   <h2><span class="nr">2</span> Die Oberfläche in 60 Sekunden</h2>
-  <p>Links wählen Sie eine der acht Aufgaben. Rechts erscheinen nur die Felder, die für diese Aufgabe gebraucht werden. Der große Bereich unterhalb von STARTEN zeigt während der Arbeit Meldungen und Ergebnisse. Unter den Aufgaben zeigt die Seitenleiste das Titelbild des gewählten Spiels mit seinem Namen darunter.</p>
+  <p>Links wählen Sie eine der acht Aufgaben. Rechts erscheinen nur die Felder, die für diese Aufgabe gebraucht werden. Der große Bereich unterhalb von STARTEN zeigt während der Arbeit Meldungen und Ergebnisse. Unter den Aufgaben zeigt die Seitenleiste das Titelbild des gewählten Spiels mit seinem Namen darunter. Über dem Titelbild stehen die Firmware, die das Spiel braucht, und &ndash; bei eingebautem Backport &ndash; dessen Firmware. <em>Spiel-Info</em> und das Ressourcen-Fenster haben keinen Systemrahmen: Sie lassen sich an den Seiten und unteren Ecken größer ziehen und sind unter Windows 11 abgerundet.</p>
 
   <div class="tabelle">
   <table>
@@ -1489,6 +1489,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     mitgelieferten Spielprofile, <em>nicht</em> f&uuml;r Ihr eigenes Profil
     (siehe unten). In der Kommandozeile setzt sie
     <code>--ampr-lz4-stufe</code> (1 bis 12).</p>
+    <p><strong>Packverfahren im Hauptfenster.</strong> In der Einbauzeile steht unter der Methode (zweite Zeile) dasselbe Auswahlfeld <em>LZ4</em> / <em>zstd</em>; es ist dieselbe Einstellung wie unter EINSTELLUNGEN. Es ist nur bei angehaktem AMPR EMU und Methode <em>Asset-Pack</em> wählbar; bei <em>Normal</em> bleibt es grau, und es wird nichts mit LZ4 oder zstd gepackt. Wählen Sie zstd, nimmt das Programm die neueste normale NG-Fassung, sofern nicht schon eine NG-Fassung gewählt ist; bei LZ4 bleibt die Fassung frei wählbar.</p>
     <p><strong>Packverfahren LZ4 oder zstd.</strong> Unter
     <strong>EINSTELLUNGEN</strong> w&auml;hlen Sie im selben Abschnitt das
     <em>Packverfahren</em>. <strong>LZ4</strong> (Vorgabe) baut die B&auml;nder
@@ -2461,6 +2462,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>Anhalten und fortsetzen</h4>
   <p><strong>Abbrechen</strong> hält den markierten Download an. <strong>Erneut versuchen</strong> nimmt ihn genau dort wieder auf, wo er stehen geblieben ist, statt von vorn zu beginnen – das gilt auch nach einem Programmneustart.</p>
   <p>Geladen wird dabei in eine Datei mit der Endung <code>.teil</code>. Ihren richtigen Namen bekommt sie erst, wenn die Größe stimmt. Eine halb geladene Datei kann also nie versehentlich für fertig gehalten werden.</p>
+  <p><strong>Teildatei löschen.</strong> Wer einen angefangenen Download nicht mehr will, markiert ihn und drückt <strong>Teildatei löschen</strong>: Nach einer Rückfrage verschwindet die Teildatei (samt Merkdatei) von der Platte und die Zeile aus der Liste. Fertige Dateien und laufende Downloads bleiben unberührt. Das Fenster zeigt auch angefangene Downloads früherer Läufe als <em>unvollständig</em>; wer dieselbe Adresse noch einmal einfügt, setzt sie fort. Dasselbe geht im Ladefenster der Update-Pakete (nach Abbruch oder Fehler) und in <em>Spiel-Info</em> mit <strong>Angefangene Downloads löschen</strong> für das gezeigte Spiel.</p>
 
   <h4>Was schon da ist</h4>
   <p><strong>Vorhandene einlesen</strong> durchsucht beide Ordner und listet alle bereits abgelegten Pakete mit Größe und Title-ID. Nützlich nach einem Neustart oder wenn der Datenträger neu angeschlossen wurde. <strong>Ordner öffnen</strong> zeigt den Ablageort im Explorer.</p>
@@ -2475,6 +2477,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>vorhanden</td><td>Lag schon auf der Platte, nichts zu tun.</td></tr>
       <tr><td>abgebrochen</td><td>Angehalten; <strong>Erneut versuchen</strong> setzt fort.</td></tr>
       <tr><td>Fehler: …</td><td>Der Grund steht dahinter, zum Beispiel keine Verbindung.</td></tr>
+      <tr><td>unvollständig (…)</td><td>Rest eines früheren Laufs; die Adresse erneut einfügen setzt fort, <strong>Teildatei löschen</strong> entfernt ihn.</td></tr>
     </tbody>
   </table>
   </div>
@@ -3147,7 +3150,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.96), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.97), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -3348,8 +3351,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.96</strong></span>
-    <span>Stand 10. November 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.97</strong></span>
+    <span>Stand 11. November 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

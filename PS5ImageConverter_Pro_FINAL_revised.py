@@ -784,7 +784,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.96"
+APP_VERSION = "v1.9.97"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -6725,6 +6725,8 @@ class PS5ConverterGUI:
                 (text for text, wert in self._ampr_methode_options.items()
                  if wert == _gewaehlte_methode),
                 self._t("ampr_pack.methode_normal")))
+            # Der Tooltip des Packverfahren-Felds traegt die Sprache im Text.
+            self._ampr_pack_combo_schalten()
 
         if hasattr(self, "compression_combo"):
             _selected_level = self.zstd_level
@@ -10431,10 +10433,24 @@ class PS5ConverterGUI:
         self.ampr_methode_combo.bind(
             "<<ComboboxSelected>>",
             lambda _e: (self._on_ampr_methode_changed(),
+                        self._ampr_pack_combo_schalten(),
                         self._refresh_target_format_options()
                         if hasattr(self, "format_combo") else None))
         self._tooltip(self.ampr_methode_combo, "ampr_pack.methode_hint",
                       delay_ms=900, wraplength=430)
+
+        # Packverfahren der Asset-Pack-Baender (11.11.2026, Nutzerwunsch): unter der Methode, damit man dafuer nicht in
+        # die Einstellungen wechseln muss. Dieselbe Einstellung wie dort. Nur bei angehaktem AMPR EMU und Methode
+        # Asset-Pack waehlbar - bei Normal wird nichts gepackt (_ampr_pack_combo_schalten).
+        self._ampr_pack_var = tk.StringVar(value=self._AMPR_PACK_ANZEIGE[self._ampr_pack_verfahren()])
+        self.ampr_pack_combo = ttk.Combobox(
+            path_card, textvariable=self._ampr_pack_var, state="readonly",
+            font=(UI_SCHRIFT, pt(9)), values=list(self._AMPR_PACK_ANZEIGE.values()), width=9,
+        )
+        self.ampr_pack_combo.bind("<<ComboboxSelected>>", lambda _e: self._ampr_pack_gewaehlt())
+        # Der Text wechselt mit dem Zustand (frei: Erklaerung, gesperrt: wann es freigegeben wird) und mit der Sprache
+        # - deshalb nicht ueber ``_tooltip``, sondern von ``_ampr_pack_combo_schalten`` gepflegt.
+        self._ampr_pack_tooltip = DelayedTooltip(self.ampr_pack_combo, "", delay_ms=600, wraplength=430)
 
         self.ampr_playgo_check = RunderHaken(
             path_card,
@@ -17077,12 +17093,16 @@ class PS5ConverterGUI:
     _DLC_ZEILE_ABSTAND = 10
 
     def _dlc_zeile_hoehe(self) -> int:
-        """Hoehe, die die zweite Einbauzeile (DLC EMU) in der Karte braucht - 0 ohne das Kaestchen."""
+        """Hoehe, die die zweite Einbauzeile (DLC EMU, Packverfahren) in der Karte braucht - 0 ohne das Kaestchen."""
         kaestchen = getattr(self, "dlc_integrate_check", None)
         if kaestchen is None:
             return 0
         try:
-            return int(kaestchen.winfo_reqheight()) + self._DLC_ZEILE_ABSTAND
+            hoehe = int(kaestchen.winfo_reqheight())
+            pack = getattr(self, "ampr_pack_combo", None)
+            if pack is not None:
+                hoehe = max(hoehe, int(pack.winfo_reqheight()))
+            return hoehe + self._DLC_ZEILE_ABSTAND
         except tk.TclError:
             return 0
 
@@ -17098,6 +17118,13 @@ class PS5ConverterGUI:
             return
         try:
             dlc.place(in_=erstes, relx=0.0, x=0, rely=1.0, y=self._DLC_ZEILE_ABSTAND, anchor="nw")
+            # Das Packverfahren steht in derselben Zeile, senkrecht mittig zu DLC EMU, waagerecht unter der Methode.
+            pack = getattr(self, "ampr_pack_combo", None)
+            methode = getattr(self, "ampr_methode_combo", None)
+            if pack is not None and methode is not None:
+                pack.place(in_=dlc, relx=0.0,
+                           x=max(0, int(methode.winfo_rootx()) - int(erstes.winfo_rootx())),
+                           rely=0.5, anchor="w")
             if not getattr(self, "_einbauzeile_daneben", False):
                 erstes.master.grid_rowconfigure(6, minsize=max(
                     int(erstes.master.grid_rowconfigure(6)["minsize"]), self._dlc_zeile_hoehe()))
@@ -18287,7 +18314,7 @@ class PS5ConverterGUI:
     _PILLENFELDER: tuple[tuple[str, bool], ...] = (
         ("src_entry", False), ("dest_entry", False), ("temp_entry", False),
         ("format_combo", True), ("compression_combo", True), ("verify_combo", True),
-        ("ampr_version_combo", True), ("ampr_methode_combo", True),
+        ("ampr_version_combo", True), ("ampr_methode_combo", True), ("ampr_pack_combo", True),
         ("backport_fw_combo", True), ("bauform_combo", True),
     )
 
@@ -35539,7 +35566,14 @@ class PS5ConverterGUI:
             self.ampr_version_var.set(gemerkt)
         elif beschriftungen:
             # Die Liste kommt absteigend sortiert - die neueste steht oben.
-            self.ampr_version_var.set(beschriftungen[0])
+            neueste = beschriftungen[0]
+            if nur_packfaehig and self._ampr_pack_verfahren() == "zstd":
+                # zstd: die neueste *normale* NG-Fassung, nicht die Debug-Fassung (11.11.2026, Nutzerwunsch).
+                neueste = next((b for b in beschriftungen
+                                if str(self._ampr_versionsauswahl[b].get("variant", "")).strip().lower() == "ng"),
+                               neueste)
+                self._save_setting("integrate_ampr_version", neueste)
+            self.ampr_version_var.set(neueste)
         else:
             # Das Feld leeren statt eine Fassung stehenzulassen, die in der
             # Liste gar nicht mehr vorkommt.
@@ -35615,6 +35649,7 @@ class PS5ConverterGUI:
             if methode is not None:
                 methode.configure(state="readonly" if ampr_an else "disabled")
             self.ampr_playgo_check.configure(state="normal" if hat_versionen else "disabled")
+            self._ampr_pack_combo_schalten()
             self.backport_fw_combo.configure(state="readonly" if backport_an else "disabled")
             if not hat_versionen:
                 self.ampr_integrate_check.configure(state="disabled")
@@ -35747,6 +35782,49 @@ class PS5ConverterGUI:
         cli = getattr(self, "_cli_ampr_pack_verfahren", None)
         wert = cli if cli else self._load_setting(self._AMPR_PACK_VERFAHREN_SETTING, "lz4")
         return "zstd" if str(wert or "").strip().lower() == "zstd" else "lz4"
+
+    #: Anzeige im Auswahlfeld unter der Methode (kurz; die langen Namen stehen in den Einstellungen).
+    _AMPR_PACK_ANZEIGE: dict[str, str] = {"lz4": "LZ4", "zstd": "zstd"}
+
+    def _ampr_pack_combo_schalten(self) -> None:
+        """Sperrt oder gibt das Packverfahren frei und zeigt den gespeicherten Stand.
+
+        Waehlbar ist es nur bei angehaktem AMPR EMU **und** Methode Asset-Pack: Bei Normal bleiben die Spieldateien
+        einzeln liegen, es wird nichts mit LZ4 oder zstd gepackt (Nutzerwunsch 11.11.2026). Im gesperrten Zustand
+        steht weiter der gespeicherte Wert im Feld.
+        """
+        combo = getattr(self, "ampr_pack_combo", None)
+        if combo is None:
+            return
+        try:
+            frei = bool(self.ampr_integrate_var.get()) and self._ampr_methode() == AMPR_METHODE_ASSETPACK
+            self._ampr_pack_var.set(self._AMPR_PACK_ANZEIGE[self._ampr_pack_verfahren()])
+            combo.configure(state="readonly" if frei else "disabled")
+            # Beim Verweilen mit der Maus sagt das Feld, wann es freigegeben wird.
+            tipp = getattr(self, "_ampr_pack_tooltip", None)
+            if tipp is not None:
+                tipp.text = self._t("ampr_pack.verfahren_hint" if frei else "ampr_pack.verfahren_gesperrt")
+        except (tk.TclError, AttributeError, KeyError) as exc:
+            logger.debug("Packverfahren-Feld nicht schaltbar: %s", exc)
+
+    def _ampr_pack_gewaehlt(self) -> None:
+        """Das Feld unter der Methode wurde bedient: speichern, Versionsliste angleichen.
+
+        Dieselbe Einstellung wie in den Einstellungen. Bei zstd bietet die Liste nur NG an und waehlt - wenn die
+        bisherige Fassung nicht NG ist - die neueste normale NG-Fassung (``_ampr_versionsliste_fuellen``); bei LZ4
+        bleibt die Wahl frei.
+        """
+        zurueck = {text: kennung for kennung, text in self._AMPR_PACK_ANZEIGE.items()}
+        neu = zurueck.get(self._ampr_pack_var.get())
+        if neu is None:
+            logger.warning("Packverfahren: unbekannte Auswahl %r", self._ampr_pack_var.get())
+            return
+        self._save_setting(self._AMPR_PACK_VERFAHREN_SETTING, neu)
+        logger.info("Packverfahren auf %s gestellt", neu)
+        try:
+            self._ampr_versionsliste_fuellen()
+        except Exception as exc:  # noqa: BLE001 - die Einstellung gilt trotzdem
+            logger.debug("Versionsliste nicht aktualisiert: %s", exc)
 
     def _ampr_zstd_stufe(self) -> int:
         """Die zstd-Stufe (1 bis 22) der zstd-Packs; Vorrang hat ``--ampr-zstd-stufe``."""
@@ -67343,8 +67421,9 @@ class PS5ConverterGUI:
             self._save_setting(self._AMPR_PACK_VERFAHREN_SETTING, neu)
             logger.info("Packverfahren auf %s gestellt", neu)
             try:
-                # Die Versionsliste zeigt bei zstd nur NG.
+                # Die Versionsliste zeigt bei zstd nur NG; das Feld unter der Methode zieht mit.
                 self._ampr_versionsliste_fuellen()
+                self._ampr_pack_combo_schalten()
             except Exception as exc:  # noqa: BLE001 - die Einstellung gilt trotzdem
                 logger.debug("Versionsliste nicht aktualisiert: %s", exc)
 

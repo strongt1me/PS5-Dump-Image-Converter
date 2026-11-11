@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Manuel utilisateur v1.9.96</title>
+<title>PS5 Dump &amp; Image Converter – Manuel utilisateur v1.9.97</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Manuel utilisateur</span></h1>
     <p class="unter">Un guide pas à pas, facile à suivre, pour réaliser en toute sécurité les premières conversions et vérifications – avec en plus un aperçu complet des huit tâches et de tous les outils complémentaires de la barre d'outils.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.96</span>
-      <span class="marke">Mise à jour du 10 novembre 2026</span>
+      <span class="marke">Version v1.9.97</span>
+      <span class="marke">Mise à jour du 11 novembre 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Allemand / Anglais / Espagnol / Italien / Français</span>
     </div>
@@ -409,7 +409,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k2">
   <h2><span class="nr">2</span> L'interface en 60 secondes</h2>
-  <p>À gauche, on choisit l'une des huit tâches. À droite n'apparaissent que les champs nécessaires à cette tâche. La grande zone sous DÉMARRER affiche, pendant le travail, les messages et les résultats. Sous les tâches, la barre latérale montre l'image de couverture du jeu sélectionné, avec son nom en dessous.</p>
+  <p>À gauche, on choisit l'une des huit tâches. À droite n'apparaissent que les champs nécessaires à cette tâche. La grande zone sous DÉMARRER affiche, pendant le travail, les messages et les résultats. Sous les tâches, la barre latérale montre l'image de couverture du jeu sélectionné, avec son nom en dessous. Au-dessus de la jaquette, la barre latérale affiche le firmware dont le jeu a besoin et, si un backport est intégré, son firmware. <em>Infos du jeu</em> et la fenêtre des ressources n'ont pas de cadre système : on peut les agrandir en faisant glisser leurs côtés et leurs coins inférieurs, et sous Windows 11 leurs coins sont arrondis.</p>
 
   <div class="tabelle">
   <table>
@@ -1474,6 +1474,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     profils de jeu fournis, <em>pas</em> à votre propre profil
     (voir ci-dessous). En ligne de commande, il se règle avec
     <code>--ampr-lz4-stufe</code> (1 à 12).</p>
+    <p><strong>Méthode de pack dans la fenêtre principale.</strong> Dans la ligne d'intégration, sous la méthode (deuxième ligne), se trouve la même sélection <em>LZ4</em> / <em>zstd</em> ; c'est le même réglage que dans PARAMÈTRES. Elle n'est sélectionnable qu'avec AMPR EMU coché et la méthode <em>Asset Pack</em> ; avec <em>Normal</em> elle reste grisée et rien n'est empaqueté avec LZ4 ou zstd. Si vous choisissez zstd, le programme prend la version NG normale la plus récente, sauf si une version NG est déjà sélectionnée ; avec LZ4 la version reste librement sélectionnable.</p>
     <p><strong>Méthode d'empaquetage LZ4 ou zstd.</strong> Sous
     <strong>PARAMÈTRES</strong>, dans la même section, choisir la
     <em>Méthode de pack</em>. <strong>LZ4</strong> (par défaut) crée les volumes
@@ -2441,6 +2442,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>Interrompre et reprendre</h4>
   <p><strong>Annuler</strong> interrompt le téléchargement sélectionné. <strong>Réessayer</strong> le reprend exactement là où il s'était arrêté, au lieu de recommencer depuis le début – y compris après un redémarrage du programme.</p>
   <p>Le téléchargement s'effectue dans un fichier portant l'extension <code>.teil</code>. Celui-ci ne reçoit son vrai nom que lorsque la taille est correcte. Un fichier à moitié téléchargé ne peut donc jamais être pris par erreur pour un fichier terminé.</p>
+  <p><strong>Supprimer le fichier partiel.</strong> Pour un téléchargement commencé dont vous ne voulez plus, sélectionnez-le et appuyez sur <strong>Supprimer le fichier partiel</strong> : après confirmation, le fichier partiel (avec son enregistrement de reprise) est supprimé du disque et la ligne de la liste. Les fichiers terminés et les téléchargements en cours ne sont pas touchés. La fenêtre affiche aussi les téléchargements commencés lors d'exécutions précédentes comme <em>incomplet</em> ; coller à nouveau la même adresse les reprend. Cela fonctionne aussi dans la fenêtre de chargement des paquets de mise à jour (après une annulation ou une erreur) et dans <em>Infos du jeu</em> avec <strong>Supprimer les téléchargements commencés</strong> pour le jeu affiché.</p>
 
   <h4>Ce qui est déjà présent</h4>
   <p><strong>Lire les fichiers existants</strong> parcourt les deux dossiers et liste tous les paquets déjà enregistrés avec leur taille et leur Title-ID. Utile après un redémarrage ou lorsque le support a été reconnecté. <strong>Ouvrir le dossier</strong> affiche l'emplacement de stockage dans l'Explorateur.</p>
@@ -2455,6 +2457,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>déjà présent</td><td>Se trouvait déjà sur le disque, rien à faire.</td></tr>
       <tr><td>annulé</td><td>Interrompu&nbsp;; <strong>Réessayer</strong> le reprend.</td></tr>
       <tr><td>Erreur : …</td><td>La cause figure à la suite, par exemple aucune connexion.</td></tr>
+      <tr><td>incomplet (…)</td><td>Reste d'une exécution précédente ; coller à nouveau l'adresse le reprend, <strong>Supprimer le fichier partiel</strong> le supprime.</td></tr>
     </tbody>
   </table>
   </div>
@@ -3126,7 +3129,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 Que doit contenir un message d'erreur utile&nbsp;?</h3>
-  <p>Pour obtenir de l'aide, notez la version du programme (v1.9.96), la tâche choisie, le type de source et le dernier message visible du journal – le plus simple est de passer par le bouton <strong>DIAGNOSTIC</strong>. Ne transmettez pas de chemins privés ni de données personnelles si elles ne sont pas nécessaires à la recherche de l'erreur.</p>
+  <p>Pour obtenir de l'aide, notez la version du programme (v1.9.97), la tâche choisie, le type de source et le dernier message visible du journal – le plus simple est de passer par le bouton <strong>DIAGNOSTIC</strong>. Ne transmettez pas de chemins privés ni de données personnelles si elles ne sont pas nécessaires à la recherche de l'erreur.</p>
   <div class="kasten tipp">
     <span class="titel">À ne pas supprimer tout de suite</span>
     <p>Conservez le journal et la source inchangée jusqu'à ce que la cause soit comprise. Cela facilite l'analyse d'une erreur.</p>
@@ -3327,8 +3330,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Manuel utilisateur <strong>v1.9.96</strong></span>
-    <span>État au 10 novembre 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Manuel utilisateur <strong>v1.9.97</strong></span>
+    <span>État au 11 novembre 2026</span>
   </div>
   <p>Ce manuel décrit l'utilisation visible du programme. Des informations complémentaires sur les versions et les fonctions figurent dans le <a href="README_FR.md">README.md</a> et le <a href="CHANGELOG.md">CHANGELOG.md</a> livrés avec lui.</p>
 </footer>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – User Manual v1.9.96</title>
+<title>PS5 Dump &amp; Image Converter – User Manual v1.9.97</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">User Manual</span></h1>
     <p class="unter">An easy-to-follow step-by-step guide for your first safe conversions and checks – plus a complete overview of all eight tasks and every additional tool in the toolbar.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.96</span>
-      <span class="marke">As of November 10, 2026</span>
+      <span class="marke">Version v1.9.97</span>
+      <span class="marke">As of November 11, 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English / Español / Italiano / Français</span>
     </div>
@@ -409,7 +409,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k2">
   <h2><span class="nr">2</span> The interface in 60 seconds</h2>
-  <p>On the left you choose one of the eight tasks. On the right, only the fields needed for that task appear. The large area below START shows messages and results while the work is running. Below the tasks, the sidebar shows the cover image of the selected game with its name underneath.</p>
+  <p>On the left you choose one of the eight tasks. On the right, only the fields needed for that task appear. The large area below START shows messages and results while the work is running. Below the tasks, the sidebar shows the cover image of the selected game with its name underneath. Above the cover, the sidebar shows the firmware the game needs and &ndash; if a backport is built in &ndash; its firmware. <em>Game Info</em> and the resources window have no system frame: you can drag their sides and lower corners to make them larger, and under Windows 11 their corners are rounded.</p>
 
   <div class="tabelle">
   <table>
@@ -1473,6 +1473,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     bundled game profiles, <em>not</em> to your own profile
     (see below). On the command line it is set by
     <code>--ampr-lz4-stufe</code> (1 to 12).</p>
+    <p><strong>Pack method in the main window.</strong> In the integration row, below the method (second row), there is the same <em>LZ4</em> / <em>zstd</em> selection; it is the same setting as in SETTINGS. It can only be selected with AMPR EMU ticked and the method <em>Asset pack</em>; with <em>Normal</em> it stays grey and nothing is packed with LZ4 or zstd. If you choose zstd, the program takes the newest regular NG version unless an NG version is already selected; with LZ4 the version stays freely selectable.</p>
     <p><strong>Pack method LZ4 or zstd.</strong> Under
     <strong>SETTINGS</strong>, in the same section, select the
     <em>Pack method</em>. <strong>LZ4</strong> (default) builds the volumes
@@ -2442,6 +2443,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>Pausing and resuming</h4>
   <p><strong>Cancel</strong> stops the selected download. <strong>Retry</strong> resumes it exactly where it stopped, instead of starting over – this also applies after a program restart.</p>
   <p>The download goes into a file with the extension <code>.teil</code>. It only receives its proper name once the size matches. A partially downloaded file can therefore never be mistaken for a finished one by accident.</p>
+  <p><strong>Delete partial file.</strong> If you no longer want a started download, select it and press <strong>Delete partial file</strong>: after a confirmation the partial file (with its resume record) is removed from the disk and the row from the list. Finished files and running downloads are left untouched. The window also lists started downloads of earlier runs as <em>incomplete</em>; pasting the same address again resumes them. The same is possible in the loading window of the update packages (after a cancel or error) and in <em>Game Info</em> with <strong>Delete started downloads</strong> for the game shown.</p>
 
   <h4>What is already there</h4>
   <p><strong>Scan existing</strong> searches both folders and lists all packages already stored there, with size and Title ID. Useful after a restart or when the drive has been reconnected. <strong>Open folder</strong> shows the storage location in Explorer.</p>
@@ -2456,6 +2458,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>present</td><td>Was already on the disk, nothing to do.</td></tr>
       <tr><td>cancelled</td><td>Stopped; <strong>Retry</strong> resumes it.</td></tr>
       <tr><td>error: …</td><td>The reason follows, for example no connection.</td></tr>
+      <tr><td>incomplete (…)</td><td>Leftover of an earlier run; pasting the address again resumes it, <strong>Delete partial file</strong> removes it.</td></tr>
     </tbody>
   </table>
   </div>
@@ -3123,7 +3126,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 What belongs in a helpful error report?</h3>
-  <p>If you need support, note the program version (v1.9.96), the selected task, the source type, and the last visible log message – the easiest way is the <strong>DIAGNOSTICS</strong> button. Do not pass on private paths or personal data if they are not needed for troubleshooting.</p>
+  <p>If you need support, note the program version (v1.9.97), the selected task, the source type, and the last visible log message – the easiest way is the <strong>DIAGNOSTICS</strong> button. Do not pass on private paths or personal data if they are not needed for troubleshooting.</p>
   <div class="kasten tipp">
     <span class="titel">Please do not delete right away</span>
     <p>Keep the log and the unchanged source until you have understood the cause. This makes an error easier to trace.</p>
@@ -3324,8 +3327,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – User Manual <strong>v1.9.96</strong></span>
-    <span>As of November 10, 2026</span>
+    <span>PS5 Dump &amp; Image Converter – User Manual <strong>v1.9.97</strong></span>
+    <span>As of November 11, 2026</span>
   </div>
   <p>This manual describes the visible operation of the program. Additional version and feature information is in the <a href="README_EN.md">README.md</a> and <a href="CHANGELOG.md">CHANGELOG.md</a> shipped together with it.</p>
 </footer>
