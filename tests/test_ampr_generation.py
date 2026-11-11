@@ -278,6 +278,18 @@ class BausteineTests(unittest.TestCase):
                 self.assertEqual(
                     self.GUI._ampr_gen_config_pruefen(self.GUI, generation, ""), [])
 
+    def test_on_und_eins_sind_dieselbe_einstellung(self) -> None:
+        """Gesamtpruefung 11.11.2026 (R1): Format 2 schreibt ``on``/``off``, das Soll steht als ``1``/``0``.
+
+        Die Ansicht der Datei im Format 2 reicht ``on`` unveraendert durch; ein Textvergleich meldete deshalb bei
+        jedem Lauf eine Abweichung, die sich auch nach dem "Ja" nicht beheben liess.
+        """
+        for text in ("backport_fakelib=on\n", "backport_fakelib=true\n", "backport_fakelib=yes\n"):
+            with self.subTest(text=text):
+                self.assertEqual([], self.GUI._ampr_gen_config_pruefen(self.GUI, sg.ALT, text))
+        abw = self.GUI._ampr_gen_config_pruefen(self.GUI, sg.ALT, "backport_fakelib=off\n")
+        self.assertEqual(["backport_fakelib"], [k for k, _i, _s in abw])
+
     def test_die_reine_kommentardatei_gibt_keine_abweichung(self) -> None:
         """Genau der Fall, der auf der Konsole steht."""
         text = "\n".join([

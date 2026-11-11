@@ -266,6 +266,93 @@ class ExfatFolderAufraeumenTests(unittest.TestCase):
             ok = gui._create_exfat_from_folder(str(src), str(out_file))
             self.assertTrue(ok, f"Log: {gui._log_lines}")
             self.assertGreater(out_file.stat().st_size, 0)
+            self.assertEqual([], [n for n in os.listdir(td) if n.endswith(".teil")], "keine Zwischendatei bleibt")
+
+    def test_waehrend_des_baus_gibt_es_den_endnamen_noch_nicht(self) -> None:
+        """Gesamtpruefung 11.11.2026 (D5): Gebaut wird unter ``<Ziel>.teil``. Bei Stromausfall oder beendetem Prozess
+        steht so kein abgeschnittenes Abbild unter dem Endnamen, das die Sammelkonvertierung als "vorhanden" ueberspringt."""
+        import sys
+        from unittest import mock
+
+        with TemporaryDirectory() as td:
+            src = self._quelle(td)
+            out_file = Path(td) / "out.exfat"
+            gui = _make_gui()
+            gui._extract_embedded_mkpfs()
+            if str(MKPFS_DIR) not in sys.path:
+                sys.path.insert(0, str(MKPFS_DIR))
+            import mkpfs.exfat_writer as writer
+            zwischenstand: dict[str, bool] = {}
+
+            def _beobachtet(_src, on_layout=None):
+                if on_layout is not None:
+                    on_layout(4096)
+                yield b"\0" * 2048
+                zwischenstand["endname"] = out_file.exists()
+                zwischenstand["teil"] = (Path(td) / "out.exfat.teil").exists()
+                gui.is_running = False          # danach Abbruch
+                yield b"\0" * 2048
+
+            with mock.patch.object(writer, "iter_exfat_image", _beobachtet):
+                gui._create_exfat_from_folder(str(src), str(out_file))
+            self.assertEqual({"endname": False, "teil": True}, zwischenstand)
+            self.assertFalse((Path(td) / "out.exfat.teil").exists(), "nach dem Abbruch bleibt nichts liegen")
+
+    def test_misslungener_bau_laesst_ein_vorhandenes_ziel_unberuehrt(self) -> None:
+        import sys
+        from unittest import mock
+
+        with TemporaryDirectory() as td:
+            src = self._quelle(td)
+            out_file = Path(td) / "out.exfat"
+            out_file.write_bytes(b"ALTES ABBILD")
+            gui = _make_gui()
+            gui._extract_embedded_mkpfs()
+            if str(MKPFS_DIR) not in sys.path:
+                sys.path.insert(0, str(MKPFS_DIR))
+            import mkpfs.exfat_writer as writer
+
+            def _fehler(_src, on_layout=None):
+                yield b"\0" * 2048
+                raise OSError("Platte voll")
+
+            with mock.patch.object(writer, "iter_exfat_image", _fehler):
+                ok = gui._create_exfat_from_folder(str(src), str(out_file))
+            self.assertFalse(ok)
+            self.assertEqual(b"ALTES ABBILD", out_file.read_bytes())
+            self.assertEqual([], [n for n in os.listdir(td) if n.endswith(".teil")])
+
+    def test_ein_abbild_das_der_eigene_leser_nicht_oeffnet_gilt_nicht_als_fertig(self) -> None:
+        """Gesamtpruefung 11.11.2026 (S3): Warf der Leser beim frisch geschriebenen Abbild, meldete die Pruefung
+        "uebersprungen" und der Bau galt als bestanden."""
+        import sys
+        from unittest import mock
+
+        with TemporaryDirectory() as td:
+            src = self._quelle(td)
+            out_file = Path(td) / "out.exfat"
+            gui = _make_gui()
+            gui._extract_embedded_mkpfs()
+            if str(MKPFS_DIR) not in sys.path:
+                sys.path.insert(0, str(MKPFS_DIR))
+            import mkpfs.exfat as exfat
+
+            with mock.patch.object(exfat, "ExfatReader", side_effect=ValueError("kein exFAT-Boot-Sektor")):
+                ok = gui._create_exfat_from_folder(str(src), str(out_file))
+            self.assertFalse(ok, "Ein nicht lesbares Abbild darf nicht als Erfolg gelten.")
+            self.assertFalse(out_file.exists())
+            self.assertEqual([], [n for n in os.listdir(td) if n.endswith(".teil")])
+            self.assertTrue(any("exFAT" in z and "kein exFAT-Boot-Sektor" in z for z in gui._log_lines), gui._log_lines)
+
+    def test_gelungener_bau_ersetzt_ein_vorhandenes_ziel(self) -> None:
+        with TemporaryDirectory() as td:
+            src = self._quelle(td)
+            out_file = Path(td) / "out.exfat"
+            out_file.write_bytes(b"ALTES ABBILD")
+            gui = _make_gui()
+            self.assertTrue(gui._create_exfat_from_folder(str(src), str(out_file)), f"Log: {gui._log_lines}")
+            self.assertNotEqual(b"ALTES ABBILD", out_file.read_bytes()[:12])
+            self.assertGreater(out_file.stat().st_size, 1000)
 
 
 if __name__ == "__main__":

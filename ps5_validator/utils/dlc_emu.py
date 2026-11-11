@@ -28,6 +28,8 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
+from ps5_validator.utils.sicherung import sicherung_anlegen
+
 logger = logging.getLogger("PS5Converter")
 
 #: Ordner im Versionsspeicher (``PlayGo & AMPR_EMU``), der die Fassungen enthaelt.
@@ -122,7 +124,7 @@ def bibliotheken_einbauen(quelle: str, fakelib: Path, protokoll: Callable[[str],
         ziel = fakelib / name
         sicherung = fakelib / (name + SICHERUNG)
         if ziel.is_file() and not sicherung.is_file() and not _ist_eigene_fassung(ziel, quelle):
-            shutil.copy2(ziel, sicherung)
+            sicherung_anlegen(ziel, sicherung)      # ganz oder gar nicht: eine halbe .orig galt sonst als Sicherung
             protokoll(sicherung.name)
         shutil.copy2(os.path.join(quelle, name), ziel)
         fertig.append(name)

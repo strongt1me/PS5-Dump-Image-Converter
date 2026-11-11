@@ -252,10 +252,65 @@ class ProfilTests(unittest.TestCase):
         _c, profile, _u = sc.zurueckschreiben(neu, "", "")
         self.assertIn("[image:Test.exfat]\nmount_mode = ro\nsector_size = 512", profile)
 
+    def test_abbild_wechsel_rw_nach_ro_behaelt_den_aktiven_modus(self) -> None:
+        """Gesamtpruefung 11.11.2026 (R2): ``image_ro`` und ``image_rw`` sind ein Schluessel in ``profiles.ini``.
+
+        Frueher kommentierte die Abarbeitung von ``image_rw`` (Name weg) die Zeile wieder aus, die ``image_ro``
+        (Name neu) eben geschrieben hatte; nach dem Wechsel stand kein aktiver ``mount_mode`` mehr da.
+        """
+        ansicht = sc.ansicht("", PROFILE)
+        self.assertIn("image_rw=Spiel [v1].exfat", ansicht.splitlines())
+        neu = ansicht.replace("image_rw=Spiel [v1].exfat", "image_ro=Spiel [v1].exfat")
+        _c, profile, _u = sc.zurueckschreiben(neu, "", PROFILE)
+        self.assertIn("mount_mode = ro", profile.splitlines())
+        self.assertNotIn("mount_mode = rw", profile.splitlines())
+        zeilen = sc.ansicht("", profile).splitlines()
+        self.assertIn("image_ro=Spiel [v1].exfat", zeilen)
+        self.assertNotIn("image_rw=Spiel [v1].exfat", zeilen)
+        # und zurueck, ro -> rw
+        zurueck = sc.ansicht("", profile).replace("image_ro=Spiel [v1].exfat", "image_rw=Spiel [v1].exfat")
+        _c, profile2, _u = sc.zurueckschreiben(zurueck, "", profile)
+        self.assertIn("image_rw=Spiel [v1].exfat", sc.ansicht("", profile2).splitlines())
+
+    def test_abbild_modus_ganz_entfernen_und_unveraendert_lassen(self) -> None:
+        ansicht = sc.ansicht("", PROFILE)
+        weg = ansicht.replace("image_rw=Spiel [v1].exfat\n", "")
+        _c, profile, _u = sc.zurueckschreiben(weg, "", PROFILE)
+        self.assertNotIn("Spiel [v1].exfat", [z for z in sc.ansicht("", profile).splitlines() if z.startswith("image_r")])
+        self.assertIn("# mount_mode = rw", profile)
+        _c, gleich, _u = sc.zurueckschreiben(ansicht, "", PROFILE)
+        self.assertEqual(PROFILE, gleich)
+
     def test_gross_klein_beim_titel_wird_nicht_doppelt_angelegt(self) -> None:
         neu = sc.ansicht("", PROFILE) + "fakelib_mode=ppsa13197:disabled\n"
         _c, profile, _u = sc.zurueckschreiben(neu, "", PROFILE)
         self.assertEqual(1, profile.lower().count("[game:ppsa13197]"))
+
+
+class WerteGleichTests(unittest.TestCase):
+    """R1: Das Format 2 schreibt ``on``/``off``, das Soll der Einrichtung steht als ``1``/``0``."""
+
+    def test_gleiche_bedeutung_ist_gleich(self) -> None:
+        for ist, soll in (("on", "1"), ("ON ", "1"), ("true", "1"), ("yes", "1"), ("1", "1"),
+                          ("off", "0"), ("false", "0"), ("No", "0"), ("0", "0")):
+            self.assertTrue(sc.werte_gleich(ist, soll), (ist, soll))
+
+    def test_verschiedene_bedeutung_ist_ungleich(self) -> None:
+        for ist, soll in (("off", "1"), ("0", "1"), ("on", "0"), ("true", "0"), ("2", "1"), ("", "1")):
+            self.assertFalse(sc.werte_gleich(ist, soll), (ist, soll))
+
+    def test_texte_ohne_wahrheitswert_zaehlen_wortgleich(self) -> None:
+        self.assertTrue(sc.werte_gleich("/data/fakelib", "/data/fakelib"))
+        self.assertTrue(sc.werte_gleich(" full ", "full"))
+        self.assertFalse(sc.werte_gleich("full", "emulators"))
+        self.assertFalse(sc.werte_gleich("maybe", "1"))
+
+    def test_die_ansicht_des_formats_2_hat_keine_scheinabweichung(self) -> None:
+        """Ein v2-Wert ``on`` kommt als ``backport_fakelib=on`` in der Ansicht an und muss zum Soll ``1`` passen."""
+        config = "[fakelib]\nenabled = on\n"
+        werte = dict(z.split("=", 1) for z in sc.ansicht(config, "").splitlines() if "=" in z)
+        self.assertEqual("on", werte["backport_fakelib"])
+        self.assertTrue(sc.werte_gleich(werte["backport_fakelib"], "1"))
 
 
 class TextTests(unittest.TestCase):

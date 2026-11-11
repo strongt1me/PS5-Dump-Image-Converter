@@ -30,6 +30,7 @@ import logging
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -46,6 +47,36 @@ HMAC_SCHLUESSEL = bytes([
 ])
 
 SERVER = "http://gs-sec.ww.np.dl.playstation.net/plo/np"
+
+#: Sonys Auslieferungsdomaene. Die Update-Antwort (XML, JSON) nennt weitere Adressen (``manifest_url``, ``pieces[].url``);
+#: gefolgt wird nur solchen, die auf diese Domaene zeigen (Gesamtpruefung 11.11.2026, SEC2). Das Netz kennt dort
+#: mehrere Auslieferungsrechner, darum gilt die ganze Domaene statt einer festen Hostliste.
+SONY_DOMAENE = "playstation.net"
+
+
+def url_erlaubt(adresse: str) -> bool:
+    """Nur ``http``/``https`` und nur Hosts unter ``playstation.net`` - kein ``file://``, kein fremder Rechner."""
+    try:
+        zerlegt = urllib.parse.urlparse(str(adresse or "").strip())
+    except ValueError:
+        return False
+    if zerlegt.scheme.lower() not in ("http", "https") or not zerlegt.hostname:
+        return False
+    # Sonys Adressen tragen weder Zugangsdaten noch Rueckwaertsstriche; beides sind Verwechslungstricks.
+    if zerlegt.username is not None or "\\" in str(adresse):
+        return False
+    host = zerlegt.hostname.lower()
+    return host == SONY_DOMAENE or host.endswith("." + SONY_DOMAENE)
+
+
+def _antwort_pruefen(antwort: object, adresse: str) -> None:
+    """Nach einer Umleitung muss die Endadresse noch bei Sony liegen; sonst wird nichts gelesen."""
+    endadresse = getattr(antwort, "url", None) or (antwort.geturl() if hasattr(antwort, "geturl") else None)
+    if isinstance(endadresse, str) and endadresse and not url_erlaubt(endadresse):
+        close = getattr(antwort, "close", None)
+        if callable(close):
+            close()
+        raise UpdateFehler("host_fremd", adresse)
 
 #: Wie sich das Programm beim Server meldet.
 BENUTZERAGENT = "PS5-Image-Converter-PS4-Updates"
@@ -191,8 +222,11 @@ def xml_auswerten(text: "str | bytes") -> "UpdateInfo | None":
     paket = tag.find(".//package") if tag is not None else None
     if tag is None or paket is None:
         return None
+    # Die Title-ID aus der Antwort geht in den Dateinamen des Downloads: nur die erwartete Form zaehlt, sonst gilt die
+    # angefragte (siehe ``nachsehen``). Ein ``..\..\x`` als titleid schrieb sonst ausserhalb des Zielordners.
+    titel = patch.get("titleid", "")
     return UpdateInfo(
-        title_id=patch.get("titleid", ""),
+        title_id=titel if title_id_gueltig(titel) else "",
         tag=tag.get("name", ""),
         pflicht=_bool(tag.get("mandatory", "")),
         version=paket.get("version", ""),
@@ -233,11 +267,14 @@ def standard_holen(adresse: str, zeit: float = 20.0) -> bytes:
 
     Raises:
         UpdateFehler: ``netz`` (keine Verbindung), ``nicht_gefunden`` (404 - bei
-            Sony: kein Update bekannt), ``http``.
+            Sony: kein Update bekannt), ``http``, ``host_fremd`` (die Adresse liegt nicht bei Sony).
     """
+    if not url_erlaubt(adresse):
+        raise UpdateFehler("host_fremd", adresse)
     anfrage = urllib.request.Request(adresse, headers={"User-Agent": BENUTZERAGENT})
     try:
         with urllib.request.urlopen(anfrage, timeout=zeit) as antwort:
+            _antwort_pruefen(antwort, adresse)
             return antwort.read(8 * 1024 * 1024)
     except urllib.error.HTTPError as fehler:
         if fehler.code == 404:
@@ -289,8 +326,9 @@ def ist_neuer(online: str, lokal: str) -> bool:
 
 def dateiname_vorschlag(info: UpdateInfo) -> str:
     """Ein Dateiname fuer das geladene Update: ``CUSA00001-patch-v01.05.pkg``."""
-    sauber = re.sub(r"[^A-Za-z0-9._-]+", "_", info.version or "0")
-    return "%s-patch-v%s.pkg" % (info.title_id or "TITLE", sauber)
+    sauber = re.sub(r"[^A-Za-z0-9._-]+", "_", info.version or "0").strip(".") or "0"
+    titel = info.title_id if title_id_gueltig(info.title_id) else "TITLE"
+    return "%s-patch-v%s.pkg" % (titel, sauber)
 
 
 def _pruefsumme_fuer(wert: str):
@@ -334,8 +372,16 @@ def herunterladen(info: UpdateInfo, ziel_ordner: str, *,
     verz = info.verzeichnis
     if verz is None or not verz.teile:
         raise UpdateFehler("ohne_teile", info.title_id)
-    opener = oeffnen or (lambda adresse: urllib.request.urlopen(
-        urllib.request.Request(adresse, headers={"User-Agent": BENUTZERAGENT}), timeout=zeit))
+    def _sony_oeffnen(adresse: str):
+        # Die Adressen stammen aus der Antwort des Servers (``pieces[].url``): nur Sony, auch nach Umleitungen.
+        if not url_erlaubt(adresse):
+            raise UpdateFehler("host_fremd", adresse)
+        antwort = urllib.request.urlopen(
+            urllib.request.Request(adresse, headers={"User-Agent": BENUTZERAGENT}), timeout=zeit)
+        _antwort_pruefen(antwort, adresse)
+        return antwort
+
+    opener = oeffnen or _sony_oeffnen
     os.makedirs(ziel_ordner, exist_ok=True)
     ziel = os.path.join(ziel_ordner, dateiname_vorschlag(info))
     teildatei = ziel + ".teil"

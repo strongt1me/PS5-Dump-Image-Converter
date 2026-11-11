@@ -53,6 +53,7 @@ class _Basis(unittest.TestCase):
         self.addCleanup(self.td.cleanup)
         self.ordner = Path(self.td.name)
         for ziel in (mock.patch.object(pu, "url_erlaubt", return_value=True),
+                     mock.patch.object(p4, "url_erlaubt", return_value=True),
                      mock.patch.object(pu, "_oeffner", lambda: urllib.request.build_opener())):
             ziel.start()
             self.addCleanup(ziel.stop)

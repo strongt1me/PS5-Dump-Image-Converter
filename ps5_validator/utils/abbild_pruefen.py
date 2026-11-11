@@ -939,9 +939,18 @@ class Pruefstand:
                 sys.path.insert(0, mkpfs_parent)
             from mkpfs.exfat import ExfatReader  # pyright: ignore[reportMissingImports]
 
-            with open(exfat_path, "rb") as fh:
-                reader = ExfatReader(fh)
-                actual_count = sum(1 for _ in reader.iter_files())
+            try:
+                with open(exfat_path, "rb") as fh:
+                    reader = ExfatReader(fh)
+                    actual_count = sum(1 for _ in reader.iter_files())
+            except Exception as exc:
+                # Das Abbild selbst laesst sich nicht lesen. Fuer fremde Abbilder bleibt das "uebersprungen" (der
+                # Leser kennt nicht jede Abart); wer ein Abbild eben selbst gebaut hat, wertet ``lesefehler`` als
+                # Fehler: Ein Schreiber, dessen Ergebnis der eigene Leser nicht oeffnet, hat etwas Defektes gebaut
+                # (Gesamtpruefung 11.11.2026, S3). Vorher galt auch das als bestanden.
+                result["lesefehler"] = True
+                result["detail"] = self._t("verify.count_skipped_error", error=exc)
+                return result
 
             result["checked"] = True
             result["actual_file_count"] = actual_count

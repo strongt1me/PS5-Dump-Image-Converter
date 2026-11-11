@@ -87,6 +87,38 @@ class PruefungTests(unittest.TestCase):
         erg = _im_faden(lauf)
         self.assertIsInstance(erg.get("ausnahme"), APP._EngineAbbruch, erg)
 
+    def test_das_abbruchzeichen_des_laufs_bleibt_auch_nach_einem_neustart(self):
+        """Gesamtpruefung 11.11.2026 (C1): Nach ABBRECHEN ist STARTEN frei, sobald der Aufgabenfaden endet. Eine Engine,
+        die gerade in einem Abschnitt ohne ``step`` steckt, sah beim naechsten Schritt wieder ``is_running`` und packte zu
+        Ende. Mit dem Zeichen des Laufs bricht sie trotzdem ab."""
+        from mkpfs.pbar import Progress
+
+        def lauf():
+            gui = _stub(True)
+            zeichen = threading.Event()
+            gui._engine_abbruch_hoerer_setzen(zeichen)
+            p = Progress(enabled=False)
+            p.step("compress", 1, 10)                               # laeuft: nichts passiert
+            gui.is_running = False                                  # ABBRECHEN ...
+            zeichen.set()                                           # ... der Aufgabenfaden merkt es und setzt das Zeichen
+            gui.is_running = True                                   # STARTEN: ein neuer Lauf
+            p.step("compress", 2, 10)                               # der alte darf nicht weiterlaufen
+        erg = _im_faden(lauf)
+        self.assertIsInstance(erg.get("ausnahme"), APP._EngineAbbruch, erg)
+
+    def test_ohne_zeichen_haengt_der_abbruch_nur_an_is_running(self):
+        """Gegenprobe: Ein anderer Lauf (anderes Zeichen) bleibt unberuehrt, solange ``is_running`` gilt."""
+        from mkpfs.pbar import Progress
+
+        def lauf():
+            gui = _stub(True)
+            gui._engine_abbruch_hoerer_setzen(threading.Event())    # dieses Zeichen wird nie gesetzt
+            p = Progress(enabled=False)
+            p.step("compress", 1, 10)
+            p.step("compress", 2, 10)
+        erg = _im_faden(lauf)
+        self.assertNotIn("ausnahme", erg, erg)
+
     def test_ein_progress_ausserhalb_des_engine_fadens_bleibt_unberuehrt(self):
         """Der Validator (eigene ``Progress`` im eigenen Faden) darf nie von einem Abbruch erwischt werden."""
         from mkpfs.pbar import Progress
@@ -219,10 +251,20 @@ class VerdrahtungTests(unittest.TestCase):
                                       and m.name == "_engine_abbruch_hoerer_setzen"))
 
     def test_der_hoerer_wird_vor_dem_lauf_gesetzt(self):
-        i_hoerer = self.text.find("self._engine_abbruch_hoerer_setzen()")
+        i_hoerer = self.text.find("self._engine_abbruch_hoerer_setzen(")
         i_lauf = self.text.find("cli_mkpfs_main(args)")
         self.assertGreater(i_hoerer, 0, "Der Abbruchpruefer wird nie gesetzt.")
         self.assertLess(i_hoerer, i_lauf)
+
+    def test_das_abbruchzeichen_wird_je_lauf_angelegt_uebergeben_und_beim_abbruch_gesetzt(self):
+        """C1: Der Engine-Faden bekommt das Zeichen seines Laufs; der Abbruchzweig setzt es vor dem Warten."""
+        self.assertIn("lauf_abbruch = threading.Event()", self.text)
+        self.assertIn("self._engine_abbruch_hoerer_setzen(lauf_abbruch)", self.text)
+        i_zweig = self.text.find("lauf_abbruch.set()")
+        self.assertGreater(i_zweig, 0, "Das Zeichen wird nie gesetzt.")
+        self.assertGreater(i_zweig, self.text.find("while not engine_done.wait(timeout=0.2)"))
+        self.assertLess(i_zweig, self.text.find("engine_thread.join(timeout=0.2)"))
+        self.assertIn("lauf_abbruch.is_set()", self.setzen)
 
     def test_der_abbruch_steht_vor_den_allgemeinen_fehlerzweigen(self):
         i_abbruch = self.text.find("except _EngineAbbruch")

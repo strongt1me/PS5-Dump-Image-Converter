@@ -49,6 +49,9 @@ class Huelle:
     def _append_to_log(self, text: str) -> None:
         self.log.append(text)
 
+    def _mkpfs_pruefung_merken(self, aufruf) -> None:
+        """Seit a94b103 ruft ``_execute_mkpfs`` nach jedem gelungenen Lauf das Merken der Pruefung (hier: ohne Wirkung)."""
+
     def _t(self, schluessel: str, **kw) -> str:
         return schluessel + repr(sorted(kw.items()))
 

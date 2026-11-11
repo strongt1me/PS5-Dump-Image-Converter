@@ -16,11 +16,11 @@ Nichts hier entschluesselt etwas oder ersetzt eine echte Signatur; ein bereits s
 from __future__ import annotations
 
 import os
-import shutil
 from dataclasses import dataclass, field
 from typing import Callable
 
 from ps5_validator.utils import ps5_backport
+from ps5_validator.utils.sicherung import sicherung_anlegen
 
 ENDUNGEN = (".elf", ".self", ".prx", ".sprx")
 #: ``e_type`` der PS5-Programme: ausfuehrbar mit ASLR und dynamisches Modul.
@@ -138,10 +138,14 @@ def signieren(ordner: str, pfade: list[str], *, sicherung: bool = False,
                 raise ps5_backport.BackportFehler("Ergebnis hat keine SELF-Kennung.")
             with open(zwischen, "wb") as aus:
                 aus.write(signiert)
+                aus.flush()
+                os.fsync(aus.fileno())               # auf dem Datentraeger, bevor es den Platz der eboot.bin einnimmt
             if sicherung:
                 alt = voll + ".orig"
                 if not os.path.exists(alt):
-                    shutil.copy2(voll, alt)          # kopieren, nicht verschieben: Faellt der naechste Schritt aus, steht das Original noch da
+                    # kopieren, nicht verschieben: Faellt der naechste Schritt aus, steht das Original noch da. Ganz
+                    # oder gar nicht: eine halbe .orig galt beim naechsten Lauf sonst als gueltige Sicherung.
+                    sicherung_anlegen(voll, alt)
                     ergebnis.gesichert.append(rel)
             os.replace(zwischen, voll)
             ergebnis.signiert.append(rel)

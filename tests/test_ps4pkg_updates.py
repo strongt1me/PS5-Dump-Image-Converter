@@ -198,15 +198,15 @@ class NachsehenTests(unittest.TestCase):
 
         with mock.patch.object(urllib.request, "urlopen", side_effect=wirft(404)):
             with self.assertRaises(upd.UpdateFehler) as ctx:
-                upd.standard_holen("http://x")
+                upd.standard_holen("http://gs2.ww.prod.dl.playstation.net/x")
             self.assertEqual("nicht_gefunden", ctx.exception.schluessel)
         with mock.patch.object(urllib.request, "urlopen", side_effect=wirft(500)):
             with self.assertRaises(upd.UpdateFehler) as ctx:
-                upd.standard_holen("http://x")
+                upd.standard_holen("http://gs2.ww.prod.dl.playstation.net/x")
             self.assertEqual("http", ctx.exception.schluessel)
         with mock.patch.object(urllib.request, "urlopen", side_effect=urllib.error.URLError("weg")):
             with self.assertRaises(upd.UpdateFehler) as ctx:
-                upd.standard_holen("http://x")
+                upd.standard_holen("http://gs2.ww.prod.dl.playstation.net/x")
             self.assertEqual("netz", ctx.exception.schluessel)
 
 

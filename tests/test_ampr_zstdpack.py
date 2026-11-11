@@ -499,6 +499,136 @@ class SpielordnerTests(_Ordner):
         self.assertTrue(os.path.isfile(os.path.join(self.spiel, "eboot.bin")))
 
 
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class AbsicherungTests(_Ordner):
+    """Gesamtpruefung 11.11.2026: Index-Pfade duerfen nie aus dem Zielordner ausbrechen; Abbrueche hinterlassen nichts Halbes."""
+
+    def test_ziel_pfad_bleibt_im_ordner(self) -> None:
+        wurzel = os.path.join(self._tmp, "ziel")
+        self.assertEqual(os.path.normpath(os.path.join(wurzel, "data", "a.bin")), z.ziel_pfad(wurzel, "data/a.bin"))
+        for schlecht in ("", ".", "..", "../x", "a/../../x", "a/../.."):
+            with self.assertRaises(z.ZstdPackFehler, msg=repr(schlecht)):
+                z.ziel_pfad(wurzel, schlecht)
+
+    @unittest.skipUnless(os.name == "nt", "Laufwerksbuchstaben gibt es nur unter Windows")
+    def test_ziel_pfad_weist_laufwerk_und_datenstrom_ab(self) -> None:
+        wurzel = os.path.join(self._tmp, "ziel")
+        for schlecht in ("C:x.dll", "C:/x.dll", "Q:boese.bin", "a/b:strom", "a:/b"):
+            with self.assertRaises(z.ZstdPackFehler, msg=schlecht):
+                z.ziel_pfad(wurzel, schlecht)
+
+    @unittest.skipIf(os.name == "nt", "unter Windows ist der Doppelpunkt verboten")
+    def test_ziel_pfad_doppelpunkt_ist_unter_posix_ein_gueltiger_name(self) -> None:
+        wurzel = os.path.join(self._tmp, "ziel")
+        self.assertTrue(z.ziel_pfad(wurzel, "a:b").startswith(os.path.normpath(wurzel) + os.sep))
+
+    @unittest.skipUnless(os.name == "nt", "Laufwerksbuchstaben gibt es nur unter Windows")
+    def test_entpacken_und_entfernen_folgen_keinem_fremden_pfad(self) -> None:
+        """Ein selbst gebauter Index mit ``C:/...`` darf weder schreiben noch loeschen, was ausserhalb des Ordners liegt."""
+        self.packen()
+        index = z.pruefen(self.packs, self.spiel)
+        fremd = os.path.join(self._tmp, "fremd")
+        os.makedirs(fremd)
+        boese = os.path.join(fremd, "boese.bin")
+        Path(boese).write_bytes(b"gehoert nicht ins Spiel")
+        index.dateien[0].pfad = boese.replace("\\", "/")            # absolut, mit Laufwerksbuchstaben
+        ziel = os.path.join(self._tmp, "ziel")
+        with mock.patch.object(z, "index_laden", return_value=index):
+            with self.assertRaises(z.ZstdPackFehler):
+                z.entpacken(self.packs, ziel)
+        with self.assertRaises(z.ZstdPackFehler):
+            z.originale_entfernen(self.spiel, index)
+        self.assertEqual(b"gehoert nicht ins Spiel", Path(boese).read_bytes())
+        self.assertEqual([], [n for n in os.listdir(fremd) if n != "boese.bin"])
+
+    def test_abgebrochenes_entpacken_laesst_keine_halbe_datei(self) -> None:
+        self.packen()
+        ziel = os.path.join(self._tmp, "ziel")
+        echt = z.chunk_entpacken
+        aufrufe: list[int] = []
+
+        def verdorben(*args, **kwargs):
+            aufrufe.append(1)
+            if len(aufrufe) == 3:
+                raise z.ZstdPackFehler("ampr_zstd.chunk_pruefsumme")
+            return echt(*args, **kwargs)
+
+        with mock.patch.object(z, "chunk_entpacken", side_effect=verdorben):
+            with self.assertRaises(z.ZstdPackFehler):
+                z.entpacken(self.packs, ziel)
+        halbe = [os.path.join(p, n) for p, _u, ns in os.walk(ziel) for n in ns if n.endswith(".zstd-teil")]
+        self.assertEqual([], halbe)
+
+    def test_entpacken_im_spielordner_bricht_sauber_ab(self) -> None:
+        """Bricht das Entpacken im Spielordner ab, sind die Originale ganz und keine ``.zstd-teil`` bleibt liegen."""
+        self.packen()
+        index = z.pruefen(self.packs, self.spiel)
+        z.uebernehmen(self.packs, self.spiel, index)
+        echt = z.chunk_entpacken
+        aufrufe: list[int] = []
+
+        def verdorben(*args, **kwargs):
+            aufrufe.append(1)
+            if len(aufrufe) == 4:
+                raise z.ZstdPackFehler("ampr_zstd.chunk_pruefsumme")
+            return echt(*args, **kwargs)
+
+        with mock.patch.object(z, "chunk_entpacken", side_effect=verdorben):
+            with self.assertRaises(z.ZstdPackFehler):
+                z.entpacken(self.spiel, self.spiel)
+        for rel, daten in self.inhalt.items():
+            self.assertEqual(daten, Path(self.spiel, *rel.split("/")).read_bytes(), rel)
+        self.assertFalse([n for _p, _u, ns in os.walk(self.spiel) for n in ns if n.endswith(".zstd-teil")])
+
+    def test_uebernehmen_abbruch_hinterlaesst_keinen_mischsatz(self) -> None:
+        """Ein frueherer Satz verliert zuerst den Index: bricht die Uebernahme ab, gilt der Ordner als nicht gepackt."""
+        self.packen()
+        index = z.pruefen(self.packs, self.spiel)
+        z.uebernehmen(self.packs, self.spiel, index)
+        self.assertTrue(z.ist_gepackt(self.spiel))
+        zweite = os.path.join(self._tmp, "packs2")
+        z.packen(self.spiel, zweite, z.dateien_auswaehlen(self.spiel), stufe=5)
+        index2 = z.pruefen(zweite, self.spiel)
+        aufrufe: list[int] = []
+
+        def abbruch() -> bool:
+            aufrufe.append(1)
+            return len(aufrufe) >= 2                              # nach dem ersten Band
+
+        with self.assertRaises(z.ZstdPackFehler):
+            z.uebernehmen(zweite, self.spiel, index2, abbruch=abbruch)
+        self.assertFalse(z.ist_gepackt(self.spiel), "kein alter Index neben neuen Baendern")
+
+    def test_uebernehmen_ohne_vorgaenger_und_mit_vorgaenger(self) -> None:
+        self.packen()
+        index = z.pruefen(self.packs, self.spiel)
+        z.uebernehmen(self.packs, self.spiel, index)              # ohne Vorgaenger
+        zweite = os.path.join(self._tmp, "packs2")
+        z.packen(self.spiel, zweite, z.dateien_auswaehlen(self.spiel), stufe=5)
+        index2 = z.pruefen(zweite, self.spiel)
+        z.uebernehmen(zweite, self.spiel, index2)                 # mit Vorgaenger
+        self.assertTrue(z.ist_gepackt(self.spiel))
+        self.assertEqual(index2.stufe, z.index_laden(self.spiel).stufe)
+        z.pruefen(self.spiel, self.spiel)
+
+    def test_neuer_ordner_meldet_nicht_lesbaren_unterordner(self) -> None:
+        """``os.walk`` ohne ``onerror`` liess einen nicht lesbaren Unterordner still fehlen: die Kopie galt als vollstaendig."""
+        self.packen()
+        index = z.pruefen(self.packs, self.spiel)
+        z.uebernehmen(self.packs, self.spiel, index)
+        ziel = os.path.join(self._tmp, "kopie")
+        echt = os.walk
+
+        def walk_mit_fehler(wurzel, topdown=True, onerror=None, followlinks=False):
+            if onerror is not None:
+                onerror(PermissionError(13, "Zugriff verweigert", os.path.join(wurzel, "data")))
+            return echt(wurzel, topdown, onerror, followlinks)
+
+        with mock.patch.object(z.os, "walk", side_effect=walk_mit_fehler):
+            with self.assertRaises(z.ZstdPackFehler):
+                z.entpacken_in_neuen_ordner(self.spiel, ziel)
+
+
 class RegelTests(_Ordner):
     """Eigene Packregeln (TOML) wie bei Forge: letzte treffende Regel gewinnt, Systemdateien bleiben immer lose."""
 

@@ -34,6 +34,7 @@ import http.client
 import json
 import logging
 import os
+import re
 import shutil
 import ssl
 import threading
@@ -465,6 +466,20 @@ def datei_laden(url: str, ziel: str,
         except UpdateFehler:
             raise
         except urllib.error.HTTPError as exc:
+            if exc.code == 416 and geladen > 0:
+                # "Requested Range Not Satisfiable": Ab ``geladen`` gibt es nichts mehr. Entweder ist die Teildatei
+                # schon vollstaendig (das Umbenennen war beim letzten Mal gescheitert) - dann ist sie fertig -, oder
+                # sie ist unbrauchbar und wird neu geladen. Vorher hiess das fuer jeden weiteren Start "HTTP 416".
+                if _gesamt_aus_inhaltsbereich(exc) == geladen:
+                    break
+                try:
+                    os.remove(teil)
+                except OSError as fehler:
+                    raise UpdateFehler("ps5upd.netz|%s" % fehler) from fehler
+                geladen = gesamt = 0
+                if versuch >= versuche:
+                    raise UpdateFehler("ps5upd.http|%d" % exc.code) from exc
+                continue
             raise UpdateFehler("ps5upd.http|%d" % exc.code) from exc
         except (urllib.error.URLError, OSError, ssl.SSLError,
                 http.client.HTTPException) as exc:
@@ -472,8 +487,34 @@ def datei_laden(url: str, ziel: str,
                 raise UpdateFehler("ps5upd.netz|%s" % exc) from exc
             if netz_abbruch.schlafen(min(2.0 * (versuch + 1), 8.0), abbruch):
                 raise UpdateFehler("ps5upd.abgebrochen") from exc
-    os.replace(teil, ziel)
+    _fertig_umbenennen(teil, ziel, abbruch)
     return ziel
+
+
+def _gesamt_aus_inhaltsbereich(fehler: "urllib.error.HTTPError") -> int:
+    """Die Gesamtgroesse aus ``Content-Range: bytes */<gesamt>`` einer 416-Antwort, sonst 0."""
+    try:
+        wert = str(fehler.headers.get("Content-Range") or "")
+    except AttributeError:
+        return 0
+    treffer = re.search(r"/\s*(\d+)\s*$", wert)
+    return int(treffer.group(1)) if treffer else 0
+
+
+def _fertig_umbenennen(teil: str, ziel: str, abbruch: Callable[[], bool] | None) -> None:
+    """``os.replace(teil, ziel)`` - mit Geduld: Unter Windows haelt ein Virenscanner die frisch geschriebene Datei
+    gern ein paar Sekunden fest ([WinError 32]). Scheitert es am Ende doch, bleibt die vollstaendige Teildatei liegen
+    und der naechste Start schliesst den Download ab (siehe 416 oben)."""
+    versuche = 10
+    for nummer in range(versuche):
+        try:
+            os.replace(teil, ziel)
+            return
+        except OSError as exc:
+            if nummer >= versuche - 1:
+                raise UpdateFehler("ps5upd.speichern|%s" % exc) from exc
+            if netz_abbruch.schlafen(0.5, abbruch):
+                raise UpdateFehler("ps5upd.abgebrochen") from exc
 
 
 def _kennung(manifest: Manifest) -> str:

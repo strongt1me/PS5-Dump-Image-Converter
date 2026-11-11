@@ -123,6 +123,33 @@ def pfad_gueltig(pfad: str) -> bool:
         return False
 
 
+def ziel_pfad(wurzel: str, rel: str) -> str:
+    """Der Pfad einer Datei des Packs unterhalb von ``wurzel`` - oder :class:`ZstdPackFehler`, wenn er herausfuehrt.
+
+    Der Index kommt aus einem fremden Spielordner und traegt nur Pruefsummen, keine Unterschrift; :func:`pfad_gueltig` folgt
+    den Regeln des Formats und laesst deshalb einen Doppelpunkt durch. ``os.path.join(ziel, "C:", "x.dll")`` ergibt unter
+    Windows aber ``C:x.dll`` - einen Pfad **ausserhalb** des Ziels (gefunden bei der Gesamtpruefung am 11.11.2026). Daher:
+    unter Windows kein ``:`` in einem Pfadteil (auch kein NTFS-Datenstrom ``datei:strom``), und auf jedem System muss das
+    Ergebnis unterhalb von ``wurzel`` liegen.
+
+    Args:
+        wurzel: Der Zielordner (wird absolut gemacht).
+        rel: Der Pfad aus dem Index, mit ``/`` getrennt.
+    """
+    wurzel = os.path.normpath(os.path.abspath(wurzel))
+    teile = rel.split("/")
+    if os.name == "nt" and any(":" in t for t in teile):
+        raise ZstdPackFehler("ampr_zstd.pfad_ausserhalb: %s" % rel)
+    voll = os.path.normpath(os.path.join(wurzel, *teile))
+    try:
+        innen = os.path.commonpath([os.path.normcase(voll), os.path.normcase(wurzel)]) == os.path.normcase(wurzel)
+    except ValueError:          # anderes Laufwerk
+        innen = False
+    if not innen or os.path.normcase(voll) == os.path.normcase(wurzel):
+        raise ZstdPackFehler("ampr_zstd.pfad_ausserhalb: %s" % rel)
+    return voll
+
+
 def bandname(nummer: int) -> str:
     """``ampr_zstd-000.pak`` (mindestens drei Stellen)."""
     return "%s%03d%s" % (VOLUME_PREFIX, nummer, VOLUME_SUFFIX)
@@ -979,14 +1006,18 @@ def uebernehmen(ausgabe: str, app0: str, index: Index, *, melden: Melder = _stum
                 abbruch: Callable[[], bool] = lambda: False) -> None:
     """Legt Baender und Index in den Spielordner (zuerst die Baender, der Index zuletzt, jedes per Verschieben/Kopie)."""
     namen = [bandname(i) for i in range(len(index.baender))] + [INDEX_NAME]
+    # Ein frueherer Satz verliert zuerst seinen Index: bricht die Uebernahme mitten in den Baendern ab, liegt dann
+    # kein Mischsatz aus alten und neuen Baendern mit gueltigem Index da, sondern ein Ordner, der nicht als gepackt
+    # gilt (die Originale sind zu diesem Zeitpunkt noch da, sie fallen erst nach der Pruefung weg).
+    alter_index = os.path.join(app0, INDEX_NAME)
+    if os.path.exists(alter_index):
+        os.remove(alter_index)
     for name in namen:
         if abbruch():
             raise ZstdPackFehler("ampr_pack.abgebrochen")
         quelle = os.path.join(ausgabe, name)
         ziel = os.path.join(app0, name)
         erwartet = os.path.getsize(quelle)
-        if os.path.exists(ziel):
-            os.remove(ziel)
         try:
             os.replace(quelle, ziel)
         except OSError:
@@ -1009,7 +1040,7 @@ def originale_entfernen(app0: str, index: Index, *, melden: Melder = _stumm,
             raise ZstdPackFehler("ampr_pack.abgebrochen")
         if bleibt_lose(datei.pfad):
             raise ZstdPackFehler("ampr_zstd.system_im_pack: %s" % datei.pfad)
-        voll = os.path.join(wurzel, *datei.pfad.split("/"))
+        voll = ziel_pfad(wurzel, datei.pfad)
         try:
             os.remove(voll)
         except FileNotFoundError:
@@ -1036,8 +1067,9 @@ def entpacken(ordner: str, ziel: str, *, melden: Melder = _stumm,
               fortschritt: "Callable[[float], None] | None" = None) -> int:
     """Schreibt die gepackten Dateien in ``ziel`` (der Spielordner selbst oder eine Kopie) zurueck.
 
-    Vorhandene Dateien mit gleicher Groesse und gleichem Inhalt bleiben; ein abweichender Inhalt gilt als Fehler.
-    Die Packdateien selbst werden nicht entfernt (das tut der Aufrufer nach Erfolg).
+    Eine vorhandene Datei gleichen Namens wird durch den entpackten Inhalt ersetzt, und zwar atomar: erst entsteht
+    ``<Datei>.zstd-teil``, dann ``os.replace``. Bricht ein Lauf ab, bleibt das Original unveraendert und die
+    halbe ``.zstd-teil`` wird entfernt. Die Packdateien selbst werden nicht entfernt (das tut der Aufrufer nach Erfolg).
     """
     index = index_laden(ordner)
     gesamt = max(1, index.logische_bytes)
@@ -1051,18 +1083,26 @@ def entpacken(ordner: str, ziel: str, *, melden: Melder = _stumm,
         for datei in index.dateien:
             if abbruch():
                 raise ZstdPackFehler("ampr_pack.abgebrochen")
-            voll = os.path.join(os.path.abspath(ziel), *datei.pfad.split("/"))
+            voll = ziel_pfad(os.path.abspath(ziel), datei.pfad)
             os.makedirs(os.path.dirname(voll), exist_ok=True)
             teil = voll + ".zstd-teil"
-            with open(teil, "wb") as aus:
-                for n, (offset, band, gespeichert, codec) in _datei_chunks(index, datei):
-                    handles[band].seek(offset)
-                    erwartet = min(CHUNK_SIZE, datei.groesse - n * CHUNK_SIZE)
-                    aus.write(chunk_entpacken(codec, handles[band].read(gespeichert), erwartet))
-                    erledigt += erwartet
-                    if fortschritt is not None:
-                        fortschritt(min(1.0, erledigt / gesamt))
-            os.replace(teil, voll)
+            try:
+                with open(teil, "wb") as aus:
+                    for n, (offset, band, gespeichert, codec) in _datei_chunks(index, datei):
+                        handles[band].seek(offset)
+                        erwartet = min(CHUNK_SIZE, datei.groesse - n * CHUNK_SIZE)
+                        aus.write(chunk_entpacken(codec, handles[band].read(gespeichert), erwartet))
+                        erledigt += erwartet
+                        if fortschritt is not None:
+                            fortschritt(min(1.0, erledigt / gesamt))
+                os.replace(teil, voll)
+            except BaseException:
+                # Abbruch, beschaedigter Block, Platte voll: keine halbe Datei zuruecklassen.
+                try:
+                    os.remove(teil)
+                except OSError:
+                    pass
+                raise
             anzahl += 1
     except OSError as exc:
         raise ZstdPackFehler("ampr_zstd.entpacken: %s" % exc) from exc
@@ -1142,7 +1182,12 @@ def entpacken_in_neuen_ordner(ordner: str, ziel: str, *, melden: Melder = _stumm
     os.makedirs(ziel, exist_ok=True)
     kopiert = 0
     wurzel = os.path.abspath(ordner)
-    for pfad, unter, dateien in os.walk(wurzel):
+
+    def _lesefehler(exc: OSError) -> None:
+        # Ein nicht lesbarer Unterordner darf nicht still fehlen: sonst waere die "Kopie" unvollstaendig und trotzdem "fertig".
+        raise ZstdPackFehler("ampr_zstd.entpacken: %s" % exc) from exc
+
+    for pfad, unter, dateien in os.walk(wurzel, onerror=_lesefehler):
         unter.sort()
         for name in sorted(dateien):
             if abbruch():

@@ -1586,12 +1586,26 @@ def bestand_uebernehmen(ausgabe_ordner: str, app0: str,
                 angekommen = False
             if not angekommen:
                 raise PackFehler("%s nicht vollstaendig uebernommen" % name)
-        for zwischen, ziel in kopiert:
+        # Das Manifest kommt zuletzt an seinen Platz (Gesamtpruefung 11.11.2026, D4): Es nennt die Baender und
+        # traegt die Build-ID. Frueher ging es als Erstes, und scheiterte danach ein Band (WinError 32 durch einen
+        # Virenscanner), lag ein neues Manifest neben alten oder fehlenden Baendern. Der Docstring verspricht, dass ein
+        # frueherer Satz unberuehrt bleibt: Scheitert schon das erste Ersetzen, stimmt das jetzt. Scheitert ein
+        # spaeteres, gaelte ein Mischsatz als vollstaendig - dann wird das alte Manifest entfernt, der Spielordner
+        # hat keinen Satz statt eines falschen.
+        reihenfolge = sorted(kopiert, key=lambda paar: os.path.basename(paar[1]) == MANIFEST_NAME)
+        ersetzt = 0
+        for zwischen, ziel in reihenfolge:
             try:
                 os.replace(zwischen, ziel)
             except OSError as exc:
+                if ersetzt:
+                    try:
+                        os.remove(os.path.join(str(app0), MANIFEST_NAME))
+                    except OSError:
+                        pass
                 raise PackFehler("%s nicht uebernehmbar: %s"
                                  % (os.path.basename(ziel), exc)) from exc
+            ersetzt += 1
     finally:
         for zwischen, _ziel in kopiert:
             try:
@@ -1852,10 +1866,15 @@ def entpack_platzbedarf(befund: dict[str, Any], in_ordner: bool) -> int:
     return int(befund.get("gesamt_bytes") or 0) + luft
 
 
-def _dateien_scannen(wurzel: str):
+def _dateien_scannen(wurzel: str, streng: bool = False):
     """Alle Dateien und Ordner unter ``wurzel`` als ``(rel, absolut, ist_ordner)``.
 
     Mit ``os.scandir`` und ohne Rekursion, ohne Verknuepfungen zu folgen.
+
+    Args:
+        streng: ``True`` wirft ``PackFehler`` fuer einen Ordner oder Eintrag, der sich nicht lesen laesst. Wer eine
+            Kopie baut, darf ihn nicht still auslassen (Gesamtpruefung 11.11.2026, S5); sonst bleibt es beim
+            Protokolleintrag und die Suche geht weiter.
     """
     stapel = [""]
     while stapel:
@@ -1867,12 +1886,16 @@ def _dateien_scannen(wurzel: str):
                     rel = (rel_ordner + "/" + eintrag.name) if rel_ordner else eintrag.name
                     try:
                         ist_ordner = eintrag.is_dir(follow_symlinks=False)
-                    except OSError:
+                    except OSError as exc:
+                        if streng:
+                            raise PackFehler("%s nicht lesbar: %s" % (rel, exc)) from exc
                         continue
                     if ist_ordner:
                         stapel.append(rel)
                     yield rel, eintrag.path, ist_ordner
         except OSError as exc:
+            if streng:
+                raise PackFehler("%s nicht lesbar: %s" % (rel_ordner or ".", exc)) from exc
             logger.debug("Ordner nicht lesbar (%s): %s", voll, exc)
 
 
@@ -1979,7 +2002,7 @@ def entpacken_in_neuen_ordner(ordner: str, ziel: str, melden: Melder = stumm,
     kopiert = 0
     try:
         os.makedirs(ziel, exist_ok=True)
-        for rel, voll, ist_ordner in _dateien_scannen(str(ordner)):
+        for rel, voll, ist_ordner in _dateien_scannen(str(ordner), streng=True):
             if abbruch is not None and abbruch():
                 raise PackFehler("ampr_pack.abgebrochen")
             if ist_ordner:

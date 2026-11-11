@@ -651,7 +651,9 @@ def umbenennen_ausfuehren(plan: Iterable[dict], protokoll_ordner: str,
         umbenennen: Fuer Tests; Vorgabe ``os.rename``.
 
     Returns:
-        ``{"erledigt": [(alt, neu)], "fehler": [(alt, text)], "protokoll": pfad}``.
+        ``{"erledigt": [(alt, neu)], "fehler": [(alt, text)], "protokoll": pfad, "protokoll_fehler": text}``.
+        Laesst sich das Protokoll nicht schreiben, ist ``protokoll`` leer und ``protokoll_fehler`` nennt den Grund:
+        Der Lauf ist dann nicht mehr ueber "Rueckgaengig" zurueckzunehmen (Gesamtpruefung 11.11.2026, S8).
     """
     tun = umbenennen or os.rename
     erledigt: list[tuple[str, str]] = []
@@ -671,12 +673,14 @@ def umbenennen_ausfuehren(plan: Iterable[dict], protokoll_ordner: str,
             continue
         erledigt.append((alt, neu))
     protokoll = ""
+    protokoll_fehler = ""
     if erledigt:
         try:
             protokoll = _protokoll_schreiben(protokoll_ordner, erledigt)
         except OSError as exc:
             log.warning("Umbenennen: Protokoll nicht schreibbar (%s)", exc)
-    return {"erledigt": erledigt, "fehler": fehler, "protokoll": protokoll}
+            protokoll_fehler = str(exc) or exc.__class__.__name__
+    return {"erledigt": erledigt, "fehler": fehler, "protokoll": protokoll, "protokoll_fehler": protokoll_fehler}
 
 
 def protokolle(ordner: str) -> list[str]:

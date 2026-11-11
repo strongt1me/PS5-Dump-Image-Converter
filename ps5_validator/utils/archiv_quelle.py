@@ -19,6 +19,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Callable
@@ -28,6 +29,22 @@ ENDUNGEN = (".zip", ".7z", ".rar")
 ORDNER = "7-Zip-26.06"
 
 _Melder = Callable[[str], None]
+
+#: So viel Platz muss auf dem Ziellaufwerk nach dem Entpacken noch frei sein (Gesamtpruefung 11.11.2026, SEC5): Die Pruefung
+#: vor dem Start sah nur die Groesse der Archivdatei - ein Archiv, das ausgepackt ein Vielfaches braucht (oder absichtlich
+#: aufgeblaeht ist), fuellte das Laufwerk, auf dem auch Windows liegt.
+PLATZ_RESERVE = 1 << 30
+
+
+def _platz_pruefen(ziel: str, benoetigt: int, reserve: int) -> None:
+    """Bricht ab, wenn ``benoetigt`` plus ``reserve`` nicht mehr auf das Laufwerk von ``ziel`` passt."""
+    try:
+        frei = shutil.disk_usage(ziel).free
+    except OSError:
+        return                       # nicht pruefbar - dann gilt die Pruefung des Aufrufers
+    if frei - benoetigt < reserve:
+        raise ArchivFehler("Zu wenig Platz auf dem Ziellaufwerk: %d Byte frei, %d Byte muessten entpackt werden "
+                           "(%d Byte bleiben mindestens frei)" % (frei, benoetigt, reserve))
 
 
 class ArchivFehler(Exception):
@@ -127,12 +144,14 @@ def spielwurzel(ordner: str) -> str:
 
 
 def _zip_entpacken(archiv: str, ziel: str, melden: _Melder | None, abbruch: Callable[[], bool] | None,
-                   passwort: str = "") -> None:
+                   passwort: str = "", reserve: int = PLATZ_RESERVE) -> None:
     ziel_abs = os.path.realpath(ziel)
     kennwort = passwort.encode("utf-8") if passwort else None
     try:
         with zipfile.ZipFile(archiv) as z:
             eintraege = z.infolist()
+            # Die entpackte Groesse steht im Verzeichnis des Archivs (``file_size``); ``zipfile`` liest nie mehr, als dort steht.
+            _platz_pruefen(ziel_abs, sum(max(0, i.file_size) for i in eintraege), reserve)
             gesamt = max(1, len(eintraege))
             letzte = -1
             for i, info in enumerate(eintraege, 1):
@@ -158,7 +177,8 @@ def _zip_entpacken(archiv: str, ziel: str, melden: _Melder | None, abbruch: Call
 
 
 def _siebenzip_entpacken(archiv: str, ziel: str, programm: str, melden: _Melder | None,
-                         abbruch: Callable[[], bool] | None, popen_extra: dict | None, passwort: str = "") -> None:
+                         abbruch: Callable[[], bool] | None, popen_extra: dict | None, passwort: str = "",
+                         reserve: int = PLATZ_RESERVE) -> None:
     if sys.platform != "win32":
         try:
             os.chmod(programm, os.stat(programm).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -177,11 +197,23 @@ def _siebenzip_entpacken(archiv: str, ziel: str, programm: str, melden: _Melder 
     letzte = -1
     assert prozess.stdout is not None
     puffer = b""
+    platz_geprueft = float("-inf")
     while True:
         if abbruch and abbruch():
             prozess.kill()
             prozess.wait()
             raise ArchivFehler("abgebrochen")
+        # Die entpackte Groesse nennt 7-Zip vorab nicht: Waehrend des Entpackens nachsehen, ob das Laufwerk noch Platz
+        # fuer die Reserve hat, und sonst anhalten, bevor es voll ist.
+        jetzt = time.monotonic()
+        if jetzt - platz_geprueft >= 1.0:
+            platz_geprueft = jetzt
+            try:
+                _platz_pruefen(ziel, 0, reserve)
+            except ArchivFehler:
+                prozess.kill()
+                prozess.wait()
+                raise
         stueck = prozess.stdout.read(256)
         if not stueck:
             break
@@ -208,12 +240,16 @@ def _siebenzip_entpacken(archiv: str, ziel: str, programm: str, melden: _Melder 
 
 def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melden: _Melder | None = None,
               abbruch: Callable[[], bool] | None = None, popen_extra: dict | None = None,
-              passwort: str = "") -> str:
+              passwort: str = "", platz_reserve: int = PLATZ_RESERVE) -> str:
     """Entpackt ``archiv`` nach ``ziel`` und gibt den Spiel-Ordner darin zurueck.
+
+    Args:
+        platz_reserve: Soviel Platz bleibt auf dem Ziellaufwerk mindestens frei; wird es knapp, bricht das Entpacken ab.
 
     Raises:
         PasswortFehler: Das Archiv ist verschluesselt, ``passwort`` fehlt oder stimmt nicht.
-        ArchivFehler: Archiv unlesbar, 7-Zip fehlt (bei ``.7z``/``.rar``), Abbruch oder Fehler beim Entpacken.
+        ArchivFehler: Archiv unlesbar, 7-Zip fehlt (bei ``.7z``/``.rar``), zu wenig Platz, Abbruch oder Fehler beim
+            Entpacken.
     """
     endung = os.path.splitext(archiv)[1].lower()
     if endung not in ENDUNGEN or not os.path.isfile(archiv):
@@ -231,9 +267,9 @@ def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melde
     for kandidat in kandidaten:
         try:
             if endung == ".zip":
-                _zip_entpacken(archiv, ziel, melden, abbruch, kandidat)
+                _zip_entpacken(archiv, ziel, melden, abbruch, kandidat, platz_reserve)
             else:
-                _siebenzip_entpacken(archiv, ziel, programm, melden, abbruch, popen_extra, kandidat)
+                _siebenzip_entpacken(archiv, ziel, programm, melden, abbruch, popen_extra, kandidat, platz_reserve)
             letzter = None
             break
         except PasswortFehler as exc:

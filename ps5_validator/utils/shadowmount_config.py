@@ -178,6 +178,19 @@ def _wahrheit(wert: str) -> "bool | None":
     return None
 
 
+def werte_gleich(ist: str, soll: str) -> bool:
+    """Gleicher Wert? Bei Ja/Nein-Werten zaehlt die Bedeutung: ``on`` = ``1`` = ``true`` = ``yes``.
+
+    Das Format 2 schreibt ``on``/``off``, die Sollwerte der Einrichtung stehen als ``1``/``0``. Ein reiner
+    Textvergleich meldete deshalb bei jedem Lauf eine Abweichung, die sich nicht beheben liess.
+    """
+    a, b = str(ist).strip(), str(soll).strip()
+    if a == b:
+        return True
+    wahr_a, wahr_b = _wahrheit(a), _wahrheit(b)
+    return wahr_a is not None and wahr_a == wahr_b
+
+
 def ansicht(config_text: str, profiles_text: str = "") -> str:
     """Der Zustand der Konsole als flacher Text in den **alten** Schluesseln.
 
@@ -324,9 +337,15 @@ def zurueckschreiben(neue_ansicht: str, alte_config: str, alte_profile: str = ""
     config = _Datei(alte_config)
     profile = _Datei(alte_profile)
     uebergangen: list[str] = []
+    abbild_modi = False
     for schluessel in sorted(set(alt) | set(neu)):
         vorher, nachher = alt.get(schluessel, []), neu.get(schluessel, [])
         if vorher == nachher:
+            continue
+        if schluessel in ("image_ro", "image_rw"):
+            if not abbild_modi:           # beide Schluessel teilen ``mount_mode``: einmal gemeinsam abarbeiten
+                abbild_modi = True
+                _abbild_modi_anwenden(profile, alt, neu)
             continue
         if schluessel in _NACH_V2:
             abschnitt, v2 = _NACH_V2[schluessel]
@@ -343,6 +362,31 @@ def zurueckschreiben(neue_ansicht: str, alte_config: str, alte_profile: str = ""
             uebergangen.append(schluessel)
     return (config.text() if config.geaendert else alte_config,
             profile.text() if profile.geaendert else alte_profile, uebergangen)
+
+
+def _abbild_modi_anwenden(profile: _Datei, alt: "dict[str, list[str]]", neu: "dict[str, list[str]]") -> None:
+    """Uebertraegt ``image_ro``/``image_rw`` der Ansicht auf ``[image:Name] mount_mode``.
+
+    Beide Schluessel der Ansicht sind ein und derselbe Schluessel in ``profiles.ini``. Wuerden sie getrennt
+    abgearbeitet, loeschte ``image_rw`` (Name verschwindet) die Zeile wieder, die ``image_ro`` (Name kommt hinzu)
+    gerade geschrieben hat: Ein Wechsel rw -> ro endete ohne aktiven ``mount_mode``. Darum erst die Karte
+    Name -> Modus vor und nach der Aenderung bilden, dann nur den Unterschied schreiben.
+    """
+    def karte(ansicht_werte: "dict[str, list[str]]") -> dict[str, str]:
+        ergebnis: dict[str, str] = {}
+        for modus in ("ro", "rw"):
+            for name in ansicht_werte.get("image_" + modus, []):
+                if name.strip():
+                    ergebnis[name.strip()] = modus
+        return ergebnis
+
+    vorher, nachher = karte(alt), karte(neu)
+    for name in vorher:
+        if name not in nachher:
+            profile.setzen("image:%s" % name, "mount_mode", [])
+    for name, modus in nachher.items():
+        if vorher.get(name) != modus:
+            profile.setzen("image:%s" % name, "mount_mode", [modus])
 
 
 def _profil_anwenden(profile: _Datei, schluessel: str, vorher: list[str], nachher: list[str]) -> None:
@@ -363,16 +407,7 @@ def _profil_anwenden(profile: _Datei, schluessel: str, vorher: list[str], nachhe
             if alt_map.get(titel) != wert and titel:
                 profile.setzen("game:%s" % titel, feld, [wert])
         return
-    # Abbilder: image_ro / image_rw = <Name>, image_sector = <Name>:<Groesse>
-    if schluessel in ("image_ro", "image_rw"):
-        modus = schluessel.split("_", 1)[1]
-        for name in vorher:
-            if name not in nachher:
-                profile.setzen("image:%s" % name.strip(), "mount_mode", [])
-        for name in nachher:
-            if name not in vorher and name.strip():
-                profile.setzen("image:%s" % name.strip(), "mount_mode", [modus])
-        return
+    # Abbilder: image_sector = <Name>:<Groesse> (image_ro/image_rw: siehe ``_abbild_modi_anwenden``)
     alt_map = dict(_profil_schluessel(e) for e in vorher)
     neu_map = dict(_profil_schluessel(e) for e in nachher)
     for name in alt_map:

@@ -71,6 +71,44 @@ class ProzesspoolProfileBleibenBeiVier(unittest.TestCase):
         self.assertEqual(3, _profil("ffpkg_to_ffpfsc", 100, 16)["cpu"])   # ab 90 GB: 3
         self.assertEqual(2, _profil("ffpkg_to_ffpfsc", 190, 16)["cpu"])   # ab 180 GB: 2
 
+    def test_zwischen_160_und_180_gib_bleibt_ffpkg_bei_zwei(self) -> None:
+        """Gesamtpruefung 11.11.2026 (R3): Die allgemeine Schutzgrenze ab 160 GiB lockerte sich fuer alle Profile von
+        2 auf 4 - ``ffpkg_to_ffpfsc`` (size_caps erst ab 180 GiB) bekam dort statt 2 ploetzlich 3 Prozesse."""
+        self.assertEqual(2, _profil("ffpkg_to_ffpfsc", 170, 16)["cpu"])
+        self.assertEqual(2, _profil("ffpkg_to_ffpfsc", 160, 16)["cpu"])
+        self.assertEqual(3, _profil("ffpkg_to_ffpfsc", 159, 16)["cpu"])
+        self.assertEqual(3, _profil("pack_file", 85, 16)["cpu"])
+        self.assertEqual(4, _profil("pack_file", 12, 16)["cpu"])
+
+
+class AeusseresPackFileNutztDenProzesspool(unittest.TestCase):
+    """Der aeussere ``pack file``-Aufruf der PFS-Bauform (und der verschachtelte fakelib-Weg) packt in MkPFS mit
+    ``mp.Pool``, nicht mit Faeden: Die Messung zu 8 Faeden gilt dort nicht."""
+
+    def test_aussen_hat_dieselben_grenzen_wie_vor_der_aenderung(self) -> None:
+        self.assertEqual(4, APP.PACK_PROFILE_MATRIX["pack_folder_aussen"]["hard_cap"])
+        self.assertEqual(4, _profil("pack_folder_aussen", 12, 16)["cpu"])
+        self.assertEqual(4, _profil("pack_folder_aussen", 60, 16)["cpu"])
+        self.assertEqual(3, _profil("pack_folder_aussen", 100, 16)["cpu"])
+        self.assertEqual(2, _profil("pack_folder_aussen", 170, 16)["cpu"])
+        self.assertEqual(2, _profil("pack_folder_aussen", 230, 16)["cpu"])
+
+    def test_gleiche_stufe_und_blockgroesse_wie_das_ordnerprofil(self) -> None:
+        for gib in (12, 100):
+            a, b = _profil("pack_folder", gib, 16), _profil("pack_folder_aussen", gib, 16)
+            self.assertEqual((a["level"], a["block_size"], a["profile"]), (b["level"], b["block_size"], b["profile"]))
+
+    def test_der_ordnerweg_hat_nur_8_ohne_den_pool(self) -> None:
+        self.assertGreater(_profil("pack_folder", 12, 16)["cpu"], _profil("pack_folder_aussen", 12, 16)["cpu"])
+        self.assertEqual(8, APP.PACK_HARD_CAP_MAX)
+
+    def test_beide_pack_file_aufrufe_der_ordnerwandlung_fragen_das_pool_profil(self) -> None:
+        """Wächter: Wer ``--cpu-count`` bei ``pack file`` aus dem Profil ``pack_folder`` fuellt, bringt 8 Prozesse zurueck."""
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
+        self.assertGreaterEqual(quelle.count('"pack_folder_aussen"'), 3)      # Tabelle + zwei Aufrufer
+        self.assertIn('self._resolve_pack_profile("pack_folder_aussen", self.task_total_source_bytes)', quelle)
+        self.assertIn('self._resolve_pack_profile("pack_folder_aussen", _groesse)["cpu"]', quelle)
+
 
 class HinweistextRichtetSichNachDerTabelle(unittest.TestCase):
     def test_wirksames_maximum_folgt_der_groessten_obergrenze(self) -> None:
