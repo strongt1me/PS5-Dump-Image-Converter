@@ -8,7 +8,7 @@
 y manejar la consola desde el mismo programa, en Windows, Linux y macOS.**
 
 ![Versión](https://img.shields.io/badge/Versi%C3%B3n-v1.9.96-blue)
-![Tests](https://img.shields.io/badge/Tests-7697%20verdes-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-7842%20verdes-brightgreen)
 ![Licencia](https://img.shields.io/badge/Licencia-GPL--3.0--or--later-blue)
 ![Plataforma](https://img.shields.io/badge/Plataforma-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)

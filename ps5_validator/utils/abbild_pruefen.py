@@ -775,7 +775,7 @@ class Pruefstand:
                 result["ok"] = True
                 dateien = len(getattr(inspection, "file_inodes", {}) or {})
                 if stichprobe is not None:
-                    result["detail"] = self._t("verify.mkpfs_stichprobe", geprueft=stichprobe["geprueft"],
+                    result["detail"] = self._t("verify.mkpfs_stichprobe", anzahl=stichprobe["geprueft"],
                                                bloecke=stichprobe["bloecke"], files=dateien)
                 else:
                     result["detail"] = self._t("verify.mkpfs_valid", files=dateien)

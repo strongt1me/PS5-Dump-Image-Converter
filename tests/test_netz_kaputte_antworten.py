@@ -84,6 +84,12 @@ class PayloadManagerTests(_Basis):
 
 class Ps4UpdateTests(_Basis):
 
+    def setUp(self):
+        # Der lokale Testserver ist kein Sony-Host; hier geht es nur um kaputte Antworten, nicht um die Host-Pruefung.
+        muster = mock.patch.object(ps4pkg_updates, "url_erlaubt", return_value=True)
+        muster.start()
+        self.addCleanup(muster.stop)
+
     def test_abfrage_mit_kaputter_statuszeile(self):
         port = self._starten(_statuszeile_kaputt)
         with self.assertRaises(ps4pkg_updates.UpdateFehler) as ctx:
@@ -199,7 +205,7 @@ AUFRUFER_FAENGT_ALLES = {
     # Aufrufer: die Installationswege (try/except Exception, Rueckgabe False)
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_installer_laden"),
     # Der Netzaufruf steckt im Rueckruf ``opener``; ``herunterladen`` fasst ihn in ein try mit HTTPException.
-    ("ps5_validator/utils/ps4pkg_updates.py", "herunterladen"),
+    ("ps5_validator/utils/ps4pkg_updates.py", "_sony_oeffnen"),
     # Innerer Lader; ``_teil_laden`` darueber faengt HTTPException und wiederholt.
     ("ps5_validator/utils/ps5_updates.py", "_teil_einmal"),
     # Netz-Klasse; ihre Aufrufer (``pruefen``, ``holen``) fangen Exception je Quelle bzw. Werkzeug.
