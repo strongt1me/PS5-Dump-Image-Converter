@@ -19,7 +19,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Behoben:** Installer für OSFMount, Dokan und FileZilla liegen in einem privaten Ordner; eine bei der Laufwerkssuche gefundene `filezilla.exe` startet erst nach Rückfrage; die PS4-Updateabfrage folgt nur Adressen bei Sony; beim Entpacken von Archiven bleibt Platz auf dem Laufwerk frei.
 - **Behoben:** ABBRECHEN beendet auch eine Engine, die gerade in einem langen Abschnitt steckt, nach einem sofortigen Neustart zuverlässig; die Rückfragen beim Überschreiben nennen jetzt, dass das vorhandene Ergebnis vor dem Bau gelöscht wird.
 - **Aktualisiert:** AMPR EMU NG 0.3.5 (ein neues Spiel über einem vorhandenen Spielstand hängt nicht mehr im Ladebildschirm; die Laufzeit läuft flüssiger). Davor 0.3.4: die Laufzeit passt ihre Threads dem Spiel an und behebt Schwarzbild und Hänger bei Crimson Desert.
-- **Aktualisiert:** PS5Upload 12.4.4, Web File Manager 1.14, garlic-savemgr 1.15-beta21, garlic-worker 1.5.4 und PS5 Cooling & System Center – Pro 1.79.0.
+- **Aktualisiert:** PS5Upload 12.4.8, Web File Manager 1.14, garlic-savemgr 1.15-beta21, garlic-worker 1.5.4 und PS5 Cooling & System Center – Pro 1.79.0.
 
 ## v1.9.95 – 09.11.2026
 

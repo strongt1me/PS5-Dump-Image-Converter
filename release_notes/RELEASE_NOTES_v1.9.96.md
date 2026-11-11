@@ -18,7 +18,7 @@
 ## Aktualisiert
 
 - AMPR EMU NG 0.3.5 (ein neues Spiel über einem vorhandenen Spielstand hängt nicht mehr im Ladebildschirm; die Laufzeit läuft flüssiger). Davor 0.3.4: die Laufzeit passt ihre Threads dem Spiel an und behebt Schwarzbild und Hänger bei Crimson Desert.
-- PS5Upload 12.4.4, Web File Manager 1.14, garlic-savemgr 1.15-beta21, garlic-worker 1.5.4 und PS5 Cooling & System Center – Pro 1.79.0.
+- PS5Upload 12.4.8, Web File Manager 1.14, garlic-savemgr 1.15-beta21, garlic-worker 1.5.4 und PS5 Cooling & System Center – Pro 1.79.0.
 
 ## Downloads
 
