@@ -37,6 +37,7 @@ from PIL import Image, ImageTk
 from ps5_validator.ui import ps4_dump_image
 from ps5_validator.ui import ps5_pkg_fenster
 from ps5_validator.ui import seitenbild
+from ps5_validator.utils import hinweisfeld
 from ps5_validator.utils import pkg_plattform
 
 logger = logging.getLogger("PS5Converter.ui.pkg_fpkg_seite")
@@ -130,8 +131,11 @@ class PkgFpkgSeite:
         #: Die Quellfelder der Bereiche (je eines in der Karte jedes Bereichs), nach Kennung.
         self._quellsaetze: "dict[str, dict]" = {}
         self.quelle_var = tk.StringVar(value="")
-        self._hinweis_text = self.t("pkg_fpkg_seite.source_hint")
+        #: Die Zeile unter dem Feld zeigt nur, was die Wahl ergeben hat (erkannt, Fehler). Der Hinweis "hierher ziehen
+        #: oder waehlen" steht wie bei den Aufgaben 1 bis 6 grau im leeren Feld selbst (``Hinweisfeld``, 11.11.2026).
+        self._hinweis_text = ""
         self._hinweis_farbe = c["fg_secondary"]
+        self._hinweisfelder: "list[hinweisfeld.Hinweisfeld]" = []
         # Hier stehen die beiden Bereiche (PS4 PKG / PS5 PKG), einer sichtbar.
         self.bereich = tk.Frame(self.inhalt, bg=c["bg_main"])
         self.bereich.pack(fill="both", expand=True)
@@ -166,9 +170,12 @@ class PkgFpkgSeite:
         ordner = pw.Button(feld_zeile, text=t("ps5pkg.choose_folder"), command=self._ordner_waehlen, hoehe=36, fett=True)
         ordner.pack(side="left", padx=(8, 0))
         feld.bind("<Return>", lambda _e: self._quelle_eingegeben(), add="+")
+        self._hinweisfelder.append(hinweisfeld.Hinweisfeld(feld, self.quelle_var,
+                                                           lambda: self.t("pkg_fpkg_seite.source_hint")))
         hinweis = tk.Label(zeile, text=self._hinweis_text, font=(F, pt(9)), bg=c["bg_main"],
                            fg=self._hinweis_farbe, anchor="w", justify="left", wraplength=560)
-        hinweis.pack(fill="x", pady=(5, 0))
+        if self._hinweis_text:
+            hinweis.pack(fill="x", pady=(5, 0))
         # Der Umbruch folgt der Breite der Zeile, nicht des Labels selbst (das hat die Groesse seines Textes).
         zeile.bind("<Configure>", lambda e: hinweis.configure(wraplength=max(160, e.width - 4)), add="+")
         dnd = getattr(self.h, "DND_FILES", None)
@@ -439,7 +446,13 @@ class PkgFpkgSeite:
         self._hinweis_farbe = c.get("fg_error", "#ff6b6b") if fehler else c["fg_secondary"]
         for satz in self._quellsaetze.values():
             try:
-                satz["hinweis"].configure(text=self._hinweis_text, fg=self._hinweis_farbe)
+                label = satz["hinweis"]
+                label.configure(text=self._hinweis_text, fg=self._hinweis_farbe)
+                # Leer: keine leere Zeile unter dem Feld stehen lassen.
+                if self._hinweis_text and not label.winfo_manager():
+                    label.pack(fill="x", pady=(5, 0))
+                elif not self._hinweis_text and label.winfo_manager():
+                    label.pack_forget()
             except tk.TclError:
                 pass
 

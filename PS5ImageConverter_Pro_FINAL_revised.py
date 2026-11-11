@@ -2893,6 +2893,7 @@ class DelayedTooltip:
         tip = tk.Toplevel(self.widget, bg="#111827")
         tip.wm_overrideredirect(True)
         tip.wm_geometry(f"+{x}+{y}")
+        fenster_vorn.ecken_runden(tip, 8, vorbereiten=False)     # runde Ecken wie bei den Rahmenfenstern
         label = tk.Label(
             tip,
             text=self.text,
@@ -9883,6 +9884,26 @@ class PS5ConverterGUI:
         self._register_translatable(self._sidebar_preview_label_text, "sidebar.preview_label")
         self._sidebar_preview_label_text.pack_forget()  # zunächst versteckt
 
+        # Firmware-Zeilen gleich ueber dem Cover: die Firmware, die das Spiel braucht, und - wenn ein Backport
+        # eingebaut ist - die Firmware des Backports (Nutzerwunsch 11.11.2026). Immer zwei Zeilen hoch, auch wenn die
+        # zweite leer bleibt: So steht das Cover still, wenn der Backport-Befund nachtraeglich eintrifft.
+        self._sidebar_fw_label = tk.Label(
+            sidebar,
+            text="",
+            font=(UI_SCHRIFT, pt(9)),
+            bg=self._COLORS["bg_main"],
+            fg=self._COLORS["fg_secondary"],
+            wraplength=300,
+            justify="center",
+            # Ohne Rand und Polster ist das Label vor und nach dem ersten Bildausschnitt (_redraw_sidebar_captions)
+            # gleich hoch: zwei Zeilen. Sonst rutschte das Cover um 6 px, sobald der Ausschnitt eintrifft.
+            bd=0, highlightthickness=0, padx=0, pady=0,
+        )
+        self._sidebar_fw_label.pack()
+        self._sidebar_fw_label.pack_forget()  # zunächst versteckt
+        self._sidebar_fw_label._caption_fg_role = "fg_secondary"
+        self._sidebar_caption_labels.append(self._sidebar_fw_label)
+
         # Bild-Label
         self._sidebar_preview_img_label = tk.Label(
             sidebar,
@@ -11034,7 +11055,7 @@ class PS5ConverterGUI:
     def _ansicht_erste_widgets(self) -> list:
         """Was in der ersten Ansicht in der Sidebar steht - in Packfolge."""
         widgets = [knopf for knopf, _modus in getattr(self, "mode_buttons", [])]
-        for name in ("_sidebar_preview_label_text", "_sidebar_preview_img_label",
+        for name in ("_sidebar_preview_label_text", "_sidebar_fw_label", "_sidebar_preview_img_label",
                      "_sidebar_preview_title_label", "_sidebar_footer_frame"):
             widget = getattr(self, name, None)
             if widget is not None:
@@ -15733,6 +15754,24 @@ class PS5ConverterGUI:
             fenster_vorn.rahmenlos_vorn_halten(win, eltern or self.root)
         except Exception as exc:                      # noqa: BLE001
             logger.debug("Rahmenloses Fenster nicht vorn haltbar: %s", exc)
+
+    def _rahmenlos_rund_und_ziehbar(self, win: "tk.Toplevel", min_breite: int, min_hoehe: int):
+        """Gibt einem rahmenlosen Fenster runde Ecken und einen ziehbaren Rand; liefert den Groessengriff.
+
+        Ohne Rahmen rundet Windows die Ecken nicht und das System bietet keinen Rand zum Vergroessern
+        (gemeldet 11.11.2026 an Spiel-Info - Updates & Patches). Der Rand liegt ausser an der Oberkante an
+        allen Seiten; oben bleibt die eigene Titelleiste zum Verschieben.
+        """
+        try:
+            fenster_vorn.ecken_runden(win, 14)
+        except Exception as exc:                      # noqa: BLE001 - eckig ist besser als kein Fenster
+            logger.debug("Runde Ecken nicht gesetzt: %s", exc)
+        try:
+            return fenster_vorn.GroessenGriff(win, min_breite, min_hoehe, rand=knopfmass(6, win),
+                                              ecke=knopfmass(18, win))
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Groessengriff nicht gesetzt: %s", exc)
+            return None
 
     def _build_modern_toplevel(
         self,
@@ -23117,6 +23156,8 @@ class PS5ConverterGUI:
         # Rahmenlos: ohne Besitzer faellt es nach einem Klick aufs Hauptfenster dahinter.
         self._rahmenlos_vorn_halten(popup)
         self._apply_icon_to_toplevel(popup)
+        # Runde Ecken wie bei den Rahmenfenstern, und mit der Maus an Seiten und unteren Ecken ziehbar.
+        griff = self._rahmenlos_rund_und_ziehbar(popup, min(pw, 740), min(ph, 600))
 
         def _on_close():
             self._info_popup = None
@@ -23139,12 +23180,15 @@ class PS5ConverterGUI:
         self._pw.Button(title_bar, text="✕", command=_on_close, style="Klein.TButton",
                         bg=self._COLORS["header_bg"]).pack(side="right", padx=6)
 
-        _pd = {"x": 0, "y": 0}
+        _pd = {"x": 0, "y": 0, "aktiv": True}
         def _drag_start(e):
+            # Am Seitenrand zieht der Groessengriff, nicht die Titelleiste.
+            _pd["aktiv"] = not (griff is not None and griff.zone(e.x_root, e.y_root))
             _pd["x"] = e.x_root - popup.winfo_x()
             _pd["y"] = e.y_root - popup.winfo_y()
         def _drag_move(e):
-            popup.geometry(f"+{e.x_root - _pd['x']}+{e.y_root - _pd['y']}")
+            if _pd["aktiv"]:
+                popup.geometry(f"+{e.x_root - _pd['x']}+{e.y_root - _pd['y']}")
         title_bar.bind("<ButtonPress-1>", _drag_start)
         title_bar.bind("<B1-Motion>", _drag_move)
 
@@ -23268,6 +23312,12 @@ class PS5ConverterGUI:
              font=(UI_SCHRIFT, pt(8)),
              fg=self._COLORS["fg_secondary"],
              bg=self._COLORS["bg_main"]).pack(side="right", anchor="e")
+        # Angefangene (abgebrochene) Update-Downloads dieses Spiels von der Platte nehmen.
+        _teil_knopf = self._pw.Button(patch_head, text=self._t("info_popup.teil_loeschen"),
+                                      command=self._info_teil_loeschen, style="Klein.TButton",
+                                      bg=self._COLORS["bg_main"])
+        _teil_knopf.pack(side="right", padx=(0, 12))
+        self._tooltip(_teil_knopf, "info_popup.teil_loeschen_hint", delay_ms=600, wraplength=420)
 
         # ── Auskunft und Knopf, solange der Abruf gesperrt ist ──────────────
         # Ohne diesen Bereich stand der Anwender vor einer leeren Liste ohne
@@ -23523,7 +23573,7 @@ class PS5ConverterGUI:
                 oben = int(letzter.winfo_y()) + int(letzter.winfo_height())
                 unten = int(fuss.winfo_y())
                 if oben > 1 and unten > oben:
-                    platz = (unten - oben - self._sidebar_titel_hoehe()
+                    platz = (unten - oben - self._sidebar_titel_hoehe() - self._sidebar_fw_hoehe()
                              - 3 * self._SIDEBAR_COVER_ABSTAND)
                     groesse = min(groesse, platz)
             except (tk.TclError, AttributeError, TypeError, ValueError) as exc:
@@ -23600,6 +23650,12 @@ class PS5ConverterGUI:
                 return
             bild_hoehe = int(label.winfo_reqheight())
             label_oben = int(label.winfo_y())
+            # Stehen die Firmware-Zeilen ueber dem Cover, beginnt der Block bei ihnen und ist um sie hoeher.
+            fw_zeilen = getattr(self, "_sidebar_fw_label", None)
+            fw_da = bool(fw_zeilen is not None and fw_zeilen.winfo_manager())
+            if fw_da:
+                bild_hoehe += self._sidebar_fw_hoehe()
+                label_oben = int(fw_zeilen.winfo_y())
             # Vor dem ersten Zeichnen liefert Tk noch keine brauchbare Geometrie.
             if bild_hoehe <= 1 or label_oben <= 1:
                 return
@@ -23627,10 +23683,123 @@ class PS5ConverterGUI:
             # zurueckzulesen: Tk gibt ein Tupel zurueck, an dem ein int() scheiterte -
             # die Ausnahme landete im except und die Zentrierung blieb wirkungslos.
             if neu != getattr(self, "_sidebar_cover_pady", -1):
-                label.pack_configure(pady=(neu, 0))
+                # Die Polsterung gehoert dem ersten Teil des Blocks: den Firmware-Zeilen, sonst dem Cover.
+                (fw_zeilen if fw_da else label).pack_configure(pady=(neu, 0))
                 self._sidebar_cover_pady = neu
         except (tk.TclError, ValueError, TypeError) as exc:
             logger.debug("Cover konnte nicht zentriert werden: %s", exc)
+
+    #: Abstand zwischen den Firmware-Zeilen und dem Cover.
+    _SIDEBAR_FW_ABSTAND = 4
+
+    def _sidebar_fw_hoehe(self) -> int:
+        """Hoehe der Firmware-Zeilen ueber dem Cover samt Abstand zum Bild: immer zwei Zeilen.
+
+        Aus der Schrift gerechnet wie :meth:`_sidebar_titel_hoehe` (ein Bildausschnitt im Label verstellt
+        ``winfo_reqheight``), und fest zwei Zeilen hoch - auch mit leerer zweiter Zeile -, damit das Cover nicht
+        springt, wenn der Backport-Befund spaeter eintrifft.
+        """
+        zeilen = getattr(self, "_sidebar_fw_label", None)
+        if zeilen is None:
+            return 0
+        try:
+            import tkinter.font as tkfont
+            schrift = tkfont.Font(font=zeilen.cget("font"))
+            return 2 * int(schrift.metrics("linespace")) + self._SIDEBAR_FW_ABSTAND
+        except (tk.TclError, ValueError, TypeError, AttributeError):
+            return 2 * 16 + self._SIDEBAR_FW_ABSTAND
+
+    @staticmethod
+    def _firmware_kurz(wert: object) -> str:
+        """``04.51.00.00`` -> ``4.51``; leer, wenn der Wert keine Firmware nennt."""
+        treffer = re.match(r"\s*(\d{1,2})\.(\d{1,2})", str(wert or ""))
+        return "%d.%s" % (int(treffer.group(1)), treffer.group(2)) if treffer else ""
+
+    def _sidebar_fw_text_setzen(self, benoetigt: str, backport: str = "") -> None:
+        """Setzt die beiden Firmware-Zeilen ueber dem Cover (zweite Zeile leer ohne Backport)."""
+        zeilen = getattr(self, "_sidebar_fw_label", None)
+        if zeilen is None:
+            return
+        erste = self._t("sidebar.fw_required", fw=benoetigt) if benoetigt else ""
+        # Zwei echte Zeilen, auch wenn eine leer ist (ein Leerzeichen): ein Label mit "Text\n" waere nur eine hoch,
+        # und das Cover rutschte, sobald der Backport-Befund eintrifft.
+        text = "%s\n%s" % (erste or " ", backport or " ")
+        try:
+            if str(zeilen.cget("text")) != text:
+                zeilen.config(text=text)
+                self._schedule_caption_redraw(self._redraw_sidebar_captions)
+        except tk.TclError as exc:
+            logger.debug("Firmware-Zeilen nicht setzbar: %s", exc)
+
+    def _sidebar_firmware_aktualisieren(self, meta: dict, quelle: str) -> None:
+        """Zeigt ueber dem Cover die benoetigte Firmware und - bei eingebautem Backport - dessen Firmware.
+
+        Die benoetigte Firmware kommt aus den Metadaten (param.json/param.sfo), sofort. Der Backport zeigt sich nur
+        an den Bibliotheken (``fakelib/FW<n>`` oder ``fakelib/fw<nn>``, wie in der Bibliothek:
+        :meth:`_bibliothek_einbauten`); die Zahl nennt die Firmware, fuer die die Ersatzbibliotheken gelten, bei einem
+        Dump-Ordner zusaetzlich der echte SDK-Stand der ``eboot.bin`` (``7.00``). Das Lesen laeuft im Faden und wird je
+        Datei gemerkt, wie bei AMPR EMU und SDK-Stand der Infobox.
+        """
+        quelle = str(quelle or "").strip()
+        benoetigt = self._firmware_kurz((meta or {}).get("required_firmware"))
+        gleiche_quelle = quelle == getattr(self, "_sidebar_fw_quelle", None)
+        self._sidebar_fw_quelle = quelle
+        if not benoetigt and gleiche_quelle:
+            return              # Zwischenstand ohne Metadaten (Schnellvorschau): nichts wegnehmen
+        self._sidebar_fw_benoetigt = benoetigt
+        if not gleiche_quelle:
+            self._sidebar_fw_backport = ""
+        self._sidebar_fw_text_setzen(benoetigt, getattr(self, "_sidebar_fw_backport", ""))
+        if not quelle or not os.path.exists(quelle):
+            return
+        try:
+            datei = os.stat(quelle)
+        except OSError:
+            return
+        schluessel = (os.path.normcase(os.path.abspath(quelle)), datei.st_size, datei.st_mtime_ns,
+                      getattr(self, "_current_language", ""))
+        merker = getattr(self, "_sidebar_fw_merker", None)
+        if merker is None:
+            merker = self._sidebar_fw_merker = {}
+        if schluessel in merker:
+            self._sidebar_fw_backport = merker[schluessel]
+            self._sidebar_fw_text_setzen(benoetigt, merker[schluessel])
+            return
+        laufend = getattr(self, "_sidebar_fw_laufend", None)
+        if laufend is None:
+            laufend = self._sidebar_fw_laufend = set()
+        if schluessel in laufend:
+            return
+        laufend.add(schluessel)
+
+        def _fertig(text: str) -> None:
+            laufend.discard(schluessel)
+            if len(merker) >= 64:
+                merker.clear()
+            merker[schluessel] = text
+            if getattr(self, "_sidebar_fw_quelle", None) == quelle:
+                self._sidebar_fw_backport = text
+                self._sidebar_fw_text_setzen(getattr(self, "_sidebar_fw_benoetigt", ""), text)
+
+        def _lesen() -> None:
+            text = ""
+            try:
+                ordner = os.path.isdir(quelle)
+                art = "folder" if ordner else os.path.splitext(quelle)[1].lower().lstrip(".")
+                ergebnis = self._bibliothek_einbauten({"path": quelle, "kind": art})
+                marken = list(ergebnis.get("backport") or []) if ergebnis.get("zustand") == "ok" else []
+                if marken:
+                    nummern = sorted({int(m) for n in marken for m in re.findall(r"\d+", n)})
+                    fw = ""
+                    if ordner:
+                        fw, _hinweis = self._sdk_stand_lesen(quelle)
+                    text = self._t("sidebar.fw_backport", fw=fw or ", ".join(str(n) for n in nummern))
+            except Exception as exc:  # noqa: BLE001 - ohne Backport-Zeile geht es weiter
+                logger.debug("Backport-Firmware fuer die Seitenleiste nicht ermittelbar: %s", exc)
+            if not self._spaeter_im_fenster(self.root, _fertig, text):
+                laufend.discard(schluessel)
+
+        threading.Thread(target=_lesen, daemon=True, name="seitenleiste-firmware").start()
 
     def _sidebar_titel_hoehe(self) -> int:
         """Hoehe der Titelzeile samt ihres Abstands nach oben.
@@ -23827,6 +23996,7 @@ class PS5ConverterGUI:
 
             self._sidebar_preview_img_label.config(image="")
             self._sidebar_preview_img_label.pack_forget()
+            self._sidebar_fw_label.pack_forget()
             self._sidebar_preview_photo = None
             self._sidebar_cover_source = None
             # Ohne icon0 trotzdem Titel anzeigen (falls vorhanden)
@@ -23861,17 +24031,21 @@ class PS5ConverterGUI:
             # gepackt, gezeichnet und erst danach zentriert - dabei erschien es
             # kurz direkt unter den Modusknoepfen und rutschte sichtbar nach.
             vorlauf = self._miss_sidebar_vorlauf()
-            polster = self._sidebar_block_polster(ph, True, vorlauf)
+            # Die Firmware-Zeilen gehoeren zum Block aus Cover und Spielname: Sie stehen ueber dem Cover, die
+            # Polsterung sitzt ueber ihnen.
+            polster = self._sidebar_block_polster(ph + self._sidebar_fw_hoehe(), True, vorlauf)
             if polster is None:
                 polster = int(getattr(self, "_sidebar_cover_pady", 0) or 0)
             self._sidebar_preview_img_label.config(image=self._sidebar_preview_photo)
             # anchor statt fill: ein gefuelltes Label zeichnet seinen Hintergrund
             # neben dem Bild und stand als heller Rahmen im Weg.
             if self._sidebar_preview_title_label.winfo_manager():
-                self._sidebar_preview_img_label.pack(anchor="center", padx=0, pady=(polster, 0),
+                self._sidebar_preview_img_label.pack(anchor="center", padx=0, pady=(self._SIDEBAR_FW_ABSTAND, 0),
                                                      before=self._sidebar_preview_title_label)
             else:
-                self._sidebar_preview_img_label.pack(anchor="center", padx=0, pady=(polster, 0))
+                self._sidebar_preview_img_label.pack(anchor="center", padx=0, pady=(self._SIDEBAR_FW_ABSTAND, 0))
+            self._sidebar_fw_label.pack(anchor="center", padx=0, pady=(polster, 0),
+                                        before=self._sidebar_preview_img_label)
             self._sidebar_cover_pady = polster
             # Die Breite steht erst, wenn Tk das Raster gerechnet hat - beim
             # ersten Anzeigen liefert winfo_width() noch 1. Deshalb hier ein
@@ -23894,6 +24068,7 @@ class PS5ConverterGUI:
         except Exception:
             # Fehler beim Laden: Vorschau leer lassen
             self._sidebar_preview_label_text.pack_forget()
+            self._sidebar_fw_label.pack_forget()
             self._sidebar_preview_img_label.pack_forget()
             self._sidebar_preview_title_label.pack_forget()
 
@@ -24021,6 +24196,11 @@ class PS5ConverterGUI:
         # Sidebar-Vorschau aktualisieren
         title_str = meta.get("title", "") or ""
         self._update_sidebar_preview(cover, title_str)
+        # Firmware-Zeilen ueber dem Cover (benoetigte Firmware, ggf. Backport).
+        try:
+            self._sidebar_firmware_aktualisieren(meta, self.source_path.get())
+        except Exception as exc:  # noqa: BLE001 - die Anzeige darf die Infobox nicht stoeren
+            logger.debug("Firmware-Zeilen der Seitenleiste nicht aktualisiert: %s", exc)
 
         # Patch-Suche starten (nur wenn Popup offen und Title-ID sich geändert hat)
         title_id_raw = meta.get("title_id", "").strip()
@@ -43247,6 +43427,7 @@ class PS5ConverterGUI:
             fenster.overrideredirect(True)
             fenster.transient(self.root)
             self._rahmenlos_vorn_halten(fenster)
+            fenster_vorn.ecken_runden(fenster, 10, vorbereiten=False)
             fenster.geometry("%dx%d+%d+%d" % (breite + 2, hoehe + 2, x, y))
             bild = tk.Label(fenster, image=foto, bd=0, cursor="hand2")
             bild.image = foto  # type: ignore[attr-defined]  # Referenz halten
@@ -43515,6 +43696,7 @@ class PS5ConverterGUI:
         win.geometry(f"{rw}x{rh}+{rx}+{ry}")
         win.resizable(True, True)
         self._rahmenlos_vorn_halten(win)
+        griff = self._rahmenlos_rund_und_ziehbar(win, min(rw, 480), min(rh, 360))
 
         def _on_close():
             self._res_win = None
@@ -43531,12 +43713,15 @@ class PS5ConverterGUI:
         self._pw.Button(title_bar, text="✕", command=_on_close, style="Klein.TButton",
                         bg=self._COLORS["header_bg"]).pack(side="right", padx=6)
 
-        _cd = {"x": 0, "y": 0}
+        _cd = {"x": 0, "y": 0, "aktiv": True}
         def _drag_start(e):
+            # Am Seitenrand zieht der Groessengriff, nicht die Titelleiste.
+            _cd["aktiv"] = not (griff is not None and griff.zone(e.x_root, e.y_root))
             _cd["x"] = e.x_root - win.winfo_x()
             _cd["y"] = e.y_root - win.winfo_y()
         def _drag_move(e):
-            win.geometry(f"+{e.x_root - _cd['x']}+{e.y_root - _cd['y']}")
+            if _cd["aktiv"]:
+                win.geometry(f"+{e.x_root - _cd['x']}+{e.y_root - _cd['y']}")
         title_bar.bind("<ButtonPress-1>", _drag_start)
         title_bar.bind("<B1-Motion>", _drag_move)
 
@@ -45241,7 +45426,7 @@ class PS5ConverterGUI:
         c = self._COLORS
         titel = self._t("ps5upd.fenster_titel")
         win = self._build_modern_toplevel(titel, 720, 420, min_width=560, min_height=380)
-        lauf: dict[str, Any] = {"aktiv": True, "win": win}
+        lauf: dict[str, Any] = {"aktiv": True, "win": win, "ziel": ziel}
         self._sony_lauf = lauf
         abbruch = threading.Event()
         stand: dict[str, Any] = {"geladen": 0, "gesamt": int(info.get("gesamt") or 0),
@@ -45290,6 +45475,19 @@ class PS5ConverterGUI:
             command=lambda: self._oeffnen_oder_melden(
                 os.path.dirname(ziel), titel=titel, parent=win))
         ordner_btn.pack(side="left", padx=(8, 0))
+
+        def _teil_loeschen() -> None:
+            """Nach Abbruch oder Fehler: die Teildaten dieses Downloads von der Platte nehmen (nach Rueckfrage)."""
+            if self._teildateien_loeschen_fragen([ziel], win):
+                try:
+                    loeschen_btn.configure(state="disabled")
+                    status_var.set(self._t("ps5upd.teil_geloescht"))
+                except tk.TclError:
+                    pass
+
+        loeschen_btn = self._pw.Button(knoepfe, text=self._t("ps5upd.knopf_loeschen"), state="disabled",
+                                       command=_teil_loeschen)
+        loeschen_btn.pack(side="left", padx=(8, 0))
         schliessen_btn = self._pw.Button(knoepfe, text=self._t("action.close"))
         schliessen_btn.pack(side="right")
 
@@ -45351,6 +45549,8 @@ class PS5ConverterGUI:
                 return
             try:
                 abbrechen_btn.configure(state="disabled")
+                if not stand["fertig"]:
+                    loeschen_btn.configure(state="normal")      # abgebrochen oder gescheitert: Teildaten entfernbar
                 if stand["fertig"]:
                     ordner_btn.configure(state="normal")
                     self._append_to_log(self._t("ps5upd.log_fertig", name=info["name"],
@@ -45409,7 +45609,7 @@ class PS5ConverterGUI:
         c = self._COLORS
         titel = self._t("ps5upd.fenster_titel")
         win = self._build_modern_toplevel(titel, 720, 420, min_width=560, min_height=380)
-        lauf: dict[str, Any] = {"aktiv": True, "win": win}
+        lauf: dict[str, Any] = {"aktiv": True, "win": win, "ziel": ziel}
         self._ps4_lauf = lauf
         abbruch = threading.Event()
         stand: dict[str, Any] = {"geladen": 0, "gesamt": 0,
@@ -45458,6 +45658,19 @@ class PS5ConverterGUI:
             command=lambda: self._oeffnen_oder_melden(
                 os.path.dirname(ziel), titel=titel, parent=win))
         ordner_btn.pack(side="left", padx=(8, 0))
+
+        def _teil_loeschen() -> None:
+            """Nach Abbruch oder Fehler: die Teildaten dieses Downloads von der Platte nehmen (nach Rueckfrage)."""
+            if self._teildateien_loeschen_fragen([ziel], win):
+                try:
+                    loeschen_btn.configure(state="disabled")
+                    status_var.set(self._t("ps5upd.teil_geloescht"))
+                except tk.TclError:
+                    pass
+
+        loeschen_btn = self._pw.Button(knoepfe, text=self._t("ps5upd.knopf_loeschen"), state="disabled",
+                                       command=_teil_loeschen)
+        loeschen_btn.pack(side="left", padx=(8, 0))
         schliessen_btn = self._pw.Button(knoepfe, text=self._t("action.close"))
         schliessen_btn.pack(side="right")
 
@@ -45513,6 +45726,8 @@ class PS5ConverterGUI:
                 return
             try:
                 abbrechen_btn.configure(state="disabled")
+                if not stand["fertig"]:
+                    loeschen_btn.configure(state="normal")      # abgebrochen oder gescheitert: Teildaten entfernbar
                 if stand["fertig"]:
                     ordner_btn.configure(state="normal")
                     self._append_to_log(self._t("ps5upd.log_fertig", name=info["name"],
@@ -53502,6 +53717,73 @@ class PS5ConverterGUI:
         self._show_downloads_manager()
         self._append_to_log(self._t("downloads.details_opened"))
 
+    def _info_teil_loeschen(self) -> None:
+        """Spiel-Info: loescht die angefangenen Update-Downloads des gezeigten Titels (nach Rueckfrage).
+
+        Gesucht wird im Speicherort der Downloads nach ``<Name>.pkg.teil`` mit der Title-ID des Spiels. Was gerade
+        laeuft (Download-Fenster, Update-Ladefenster), bleibt unberuehrt.
+        """
+        popup = getattr(self, "_info_popup", None)
+        eltern = popup if popup is not None else self.root
+        titel = self._t("downloads.delete_title")
+        tid = str(getattr(self, "_cached_title_id", "") or "")
+        basis = self._download_basis()
+        kandidaten = [e for e in ps5_downloads.teildateien(basis) if tid and e["title_id"] == tid]
+        aktiv = {e.get("pfad") for e in self._downloads.values() if e.get("status") in ("queued", "running")}
+        for lauf in (getattr(self, "_sony_lauf", None), getattr(self, "_ps4_lauf", None)):
+            if lauf and lauf.get("aktiv") and lauf.get("ziel"):
+                aktiv.add(lauf["ziel"])
+        laufend = [e for e in kandidaten if e["pfad"] in aktiv]
+        frei = [e for e in kandidaten if e["pfad"] not in aktiv]
+        if not frei:
+            messagebox.showinfo(titel, self._t("downloads.delete_running" if laufend else "info_popup.teil_keine"),
+                                parent=eltern)
+            return
+        geloescht = self._teildateien_loeschen_fragen([e["pfad"] for e in frei], eltern)
+        # Zeilen im Download-Fenster, die zu den geloeschten Teildaten gehoerten, verschwinden mit ihnen.
+        baum = getattr(self, "_downloads_tree", None)
+        for iid, eintrag in list(self._downloads.items()):
+            if eintrag.get("pfad") in geloescht and eintrag.get("status") in ("failed", "cancelled", "partial"):
+                self._downloads.pop(iid, None)
+                try:
+                    if baum is not None and baum.exists(iid):
+                        baum.delete(iid)
+                except tk.TclError:
+                    pass
+
+    def _teildateien_loeschen_fragen(self, zielpfade: list[str], parent: "tk.Misc | None" = None) -> list[str]:
+        """Fragt nach und loescht die Teildaten unvollstaendiger Downloads (Download-Fenster und Ladefenster).
+
+        Fertige Dateien bleiben unberuehrt (``ps5_downloads.teil_loeschen`` fasst nur ``.teil``-Dateien an). Die Frage
+        ist noetig: Was geladen war, ist danach weg, ein neuer Download beginnt von vorn.
+
+        Returns:
+            Die Zielpfade, deren Teildaten danach nicht mehr da sind (also auch solche, die gar keine hatten).
+            Leer, wenn der Anwender verneint.
+        """
+        pfade = list(dict.fromkeys(zielpfade))
+        if not pfade:
+            return []
+        gesamt = sum(ps5_downloads.teil_bytes(p) for p in pfade)
+        if not messagebox.askyesno(
+                self._t("downloads.delete_title"),
+                self._t("downloads.delete_confirm", anzahl=len(pfade), groesse=self._fmt_bytes(gesamt)),
+                default="no", parent=parent or self.root):
+            return []
+        geloescht: list[str] = []
+        for pfad in pfade:
+            frei, fehler = ps5_downloads.teil_loeschen(pfad)
+            if fehler:
+                messagebox.showerror(
+                    self._t("dialog.title.error"),
+                    self._t("downloads.delete_failed", name=os.path.basename(pfad), error=fehler),
+                    parent=parent or self.root)
+                continue
+            geloescht.append(pfad)
+            self._append_to_log(self._t("downloads.delete_log", name=os.path.basename(pfad),
+                                        size=self._fmt_bytes(frei)))
+        return geloescht
+
     def _download_basis(self) -> str:
         """Gewaehlter Speicherort; leer, wenn noch keiner feststeht."""
         return str(self._load_setting("download_dir", "") or "").strip()
@@ -53750,6 +54032,16 @@ class PS5ConverterGUI:
                     self._fmt_bytes(int(eintrag["bytes"])), "100 %",
                     self._t("downloads.state_present")))
                 self._downloads[iid] = {**eintrag, "status": "present", "abbrechen": False}
+            # Unvollstaendige Downloads von frueher (Abbruch, Neustart): Sie bleiben liegen und waren bisher nirgends zu
+            # sehen - und damit nicht zu entfernen. Wer dieselbe Adresse wieder einfuegt, setzt sie fort.
+            for teil in ps5_downloads.teildateien(basis):
+                if os.path.isfile(teil["pfad"]) or any(
+                        vorhanden.get("dateiname") == teil["dateiname"] for vorhanden in self._downloads.values()):
+                    continue            # fertig vorhanden, oder die Datei hat schon eine Zeile (laeuft, gescheitert ...)
+                iid = baum.insert("", "end", values=(
+                    teil["dateiname"], teil["title_id"], self._t(f"downloads.kind_{teil['art']}"), "–", "–",
+                    self._t("downloads.state_partial", done=self._fmt_bytes(int(teil["teil_bytes"])))))
+                self._downloads[iid] = {**teil, "status": "partial", "abbrechen": False}
 
         # Der Abstand gehoert an pack(): tk.Frame nimmt bei pady nur einen Wert.
         werkzeuge = tk.Frame(win, bg=c["bg_main"], padx=16)
@@ -53799,6 +54091,35 @@ class PS5ConverterGUI:
                 baum.set(iid, "status", self._t("downloads.state_queued"))
                 threading.Thread(target=self._download_worker,
                                  args=(iid,), daemon=True).start()
+
+        def _teil_loeschen() -> None:
+            """Loescht die Teildaten markierter abgebrochener, gescheiterter oder unvollstaendiger Downloads."""
+            ziele: list[str] = []
+            laufend = False
+            for iid in baum.selection():
+                eintrag = self._downloads.get(iid)
+                if not eintrag:
+                    continue
+                if eintrag.get("status") in ("queued", "running"):
+                    laufend = True
+                elif eintrag.get("status") in ("failed", "cancelled", "partial"):
+                    ziele.append(iid)
+            if not ziele:
+                messagebox.showinfo(
+                    self._t("downloads.delete_title"),
+                    self._t("downloads.delete_running" if laufend else "downloads.delete_nothing"), parent=win)
+                return
+            pfade = [self._downloads[iid]["pfad"] for iid in ziele]
+            geloescht = self._teildateien_loeschen_fragen(pfade, win)
+            for iid, pfad in zip(ziele, pfade):
+                if pfad not in geloescht:
+                    continue
+                self._downloads.pop(iid, None)
+                try:
+                    if baum.exists(iid):
+                        baum.delete(iid)
+                except tk.TclError:
+                    pass
 
         def _ordner_oeffnen() -> None:
             # Frueher endete die Methode stillschweigend, wenn nichts
@@ -53890,6 +54211,10 @@ class PS5ConverterGUI:
         umsortieren_btn.pack(side="left", padx=(8, 0))
         DelayedTooltip(umsortieren_btn, self._t("downloads.action_switch_kind_hint"),
                        delay_ms=800)
+        loeschen_btn = self._pw.Button(knopfreihe, text=self._t("downloads.action_delete_partial"),
+                                       command=_teil_loeschen)
+        loeschen_btn.pack(side="left", padx=(8, 0))
+        DelayedTooltip(loeschen_btn, self._t("downloads.action_delete_partial_hint"), delay_ms=800)
 
         # Feste Zeilen zuerst an den unteren Rand, die dehnbare Liste zuletzt in
         # den Rest - sonst bleibt den Knoepfen zu wenig Hoehe.
@@ -53974,7 +54299,7 @@ class PS5ConverterGUI:
             # man erneut anstossen koennen. Alles andere - wartend, laufend,
             # fertig, schon vorhanden - zaehlt als doppelt.
             if vorhanden.get("dateiname") == zerlegt["dateiname"] and \
-                    vorhanden.get("status") not in ("failed", "cancelled"):
+                    vorhanden.get("status") not in ("failed", "cancelled", "partial"):
                 if not sammel:
                     self._append_to_log(
                         self._t("downloads.already_queued", name=zerlegt["dateiname"]))
@@ -60912,6 +61237,7 @@ class PS5ConverterGUI:
             karte.overrideredirect(True)
             karte.transient(fenster)
             self._rahmenlos_vorn_halten(karte, fenster)
+            fenster_vorn.ecken_runden(karte, 10, vorbereiten=False)
         except Exception as exc:
             logger.debug("Hinweisfenster nicht erstellbar: %s", exc)
             return

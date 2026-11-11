@@ -194,6 +194,22 @@ class PkgFpkgUnterseitenTests(unittest.TestCase):
     def _ps5(self):
         return getattr(self.app, ps5_pkg_fenster.FENSTER_ATTRIBUT)
 
+    def test_der_hinweis_steht_grau_im_leeren_quellfeld(self) -> None:
+        """Wie bei den Aufgaben 1 bis 6 (11.11.2026): Der Text "hierher ziehen oder waehlen" steht im leeren Feld,
+        nicht als Zeile darunter - und weicht dem Pfad, sobald eine Quelle gewaehlt ist."""
+        s = self._seite()
+        feld = s.quelle_feld
+        hinweis = next(h for h in s._hinweisfelder if h.feld is feld)
+        s.quelle_var.set("")
+        _WURZEL.update()
+        self.assertTrue(hinweis.zeigt_hinweis)
+        self.assertEqual(self.app._t("pkg_fpkg_seite.source_hint"), feld.tk.globalgetvar(str(feld.cget("textvariable"))))
+        self.assertEqual("", s._hinweis.winfo_manager(), "keine leere Zeile unter dem Feld")
+        s.quelle_var.set(r"C:\Spiele\spiel.pkg")
+        _WURZEL.update()
+        self.assertFalse(hinweis.zeigt_hinweis)
+        self.assertEqual(r"C:\Spiele\spiel.pkg", feld.tk.globalgetvar(str(feld.cget("textvariable"))))
+
     def test_die_seite_zeigt_zuerst_ps5_ohne_fenster(self) -> None:
         vorher = self._toplevels()
         s = self._seite()

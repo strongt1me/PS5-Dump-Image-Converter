@@ -129,6 +129,86 @@ def teildatei(zielpfad_: str) -> str:
     return zielpfad_ + ".teil"
 
 
+def merkdatei(zielpfad_: str) -> str:
+    """Pfad der Merkdatei (Stand je Teil), die ``ps5_updates`` neben die Teildatei legt."""
+    return zielpfad_ + ".teil.json"
+
+
+def teil_anhaenge(zielpfad_: str) -> list[str]:
+    """Alles, was ein fortsetzbarer Download neben der fertigen Datei anlegt (Teildatei, Merkdatei und deren Zwischenstand)."""
+    return [teildatei(zielpfad_), merkdatei(zielpfad_), merkdatei(zielpfad_) + ".neu"]
+
+
+def teil_bytes(zielpfad_: str) -> int:
+    """Groesse der Teildatei; 0, wenn es keine gibt."""
+    try:
+        return os.path.getsize(teildatei(zielpfad_))
+    except OSError:
+        return 0
+
+
+def teil_loeschen(zielpfad_: str) -> tuple[int, str]:
+    """Loescht die Teildaten eines unvollstaendigen Downloads - **nie die fertige Datei**.
+
+    Entfernt ``<ziel>.teil``, ``<ziel>.teil.json`` und ``<ziel>.teil.json.neu``. Der Pfad muss auf ``.pkg`` enden;
+    ein anderer Name wird nicht angefasst, damit ein falsch uebergebener Pfad nie eine fremde Datei trifft.
+
+    Returns:
+        ``(freigegebene Bytes, Fehlertext)``; der Text ist leer, wenn alles geklappt hat (auch wenn nichts da war).
+    """
+    if not str(zielpfad_ or "").lower().endswith(".pkg"):
+        return 0, "kein Paketpfad"
+    frei = 0
+    fehler = ""
+    for pfad in teil_anhaenge(zielpfad_):
+        try:
+            groesse = os.path.getsize(pfad)
+        except OSError:
+            continue                                  # gibt es nicht - nichts zu loeschen
+        try:
+            os.remove(pfad)
+            frei += groesse
+        except OSError as exc:
+            fehler = str(exc)
+    return frei, fehler
+
+
+def teildateien(basis: str) -> list[dict[str, str]]:
+    """Listet die unvollstaendigen Downloads (``<name>.pkg.teil``) beider Zielordner.
+
+    Sie bleiben nach einem Abbruch oder Neustart liegen und werden von :func:`vorhandene_dateien` nicht gezeigt.
+    Ohne Speicherort gibt es nichts zu listen - siehe ``zielordner``.
+    """
+    gefunden: list[dict[str, str]] = []
+    if not str(basis or "").strip():
+        return gefunden
+    for art in (ART_UPDATE, ART_PATCH):
+        ordner = zielordner(basis, art)
+        try:
+            eintraege = sorted(os.listdir(ordner))
+        except OSError:
+            continue
+        for name in eintraege:
+            if not name.lower().endswith(".pkg.teil"):
+                continue
+            teil = os.path.join(ordner, name)
+            if not os.path.isfile(teil):
+                continue
+            dateiname = name[:-len(".teil")]
+            inhalt = _CONTENT_ID_RE.search(dateiname)
+            if not inhalt:
+                continue
+            gefunden.append({
+                "dateiname": dateiname,
+                "pfad": os.path.join(ordner, dateiname),
+                "art": art,
+                "content_id": inhalt.group(0),
+                "title_id": inhalt.group(2),
+                "teil_bytes": str(teil_bytes(os.path.join(ordner, dateiname))),
+            })
+    return gefunden
+
+
 def bereits_vorhanden(basis: str, dateiname: str) -> str:
     """Sucht eine fertige Datei in beiden Zielordnern.
 

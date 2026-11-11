@@ -16,6 +16,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
+from ps5_validator.utils import bibliothek_raster
+
 logger = logging.getLogger("PS5Converter.hinweisfeld")
 
 _FALLBACK_GRAU = "#8a8f98"
@@ -36,11 +38,19 @@ class Hinweisfeld:
         self._text = text
         self._hinweis = tk.StringVar(master=feld, value="")
         self.zeigt_hinweis = False
+        # Die normale Schriftfarbe merken: ein ``ttk.Entry`` kennt "" (Stilfarbe), ein ``tk.Entry`` (die runden Felder der
+        # Seiten PKG / FPKG) verlangt eine echte Farbe - ``foreground=""`` wirft dort einen TclError.
+        try:
+            self._normalfarbe = str(feld.cget("foreground") or "")
+        except tk.TclError:
+            self._normalfarbe = ""
         # Vor der Klassenbindung des Feldes: Ein Klick (auch rechts, "Einfuegen") soll schon in die echte Variable gehen.
         feld.bind("<ButtonPress>", self._fokus_rein, add="+")
         feld.bind("<FocusIn>", self._fokus_rein, add="+")
         feld.bind("<FocusOut>", lambda _e: self.aktualisieren(), add="+")
-        self.variable.trace_add("write", lambda *_a: self.aktualisieren())
+        # Die Spur verschwindet mit dem Feld: Sonst haelt der Tcl-Befehl der Spur das Feld samt Bildern fuer immer am Leben
+        # (jede zerstoerte Seite liess so Bilder und GDI-Objekte stehen, siehe ``spur_bis_zerstoert``).
+        bibliothek_raster.spur_bis_zerstoert(feld, self.variable, lambda *_a: self.aktualisieren())
         self.aktualisieren()
 
     def _grau(self) -> str:
@@ -52,7 +62,7 @@ class Hinweisfeld:
     def _verbergen(self) -> None:
         if not self.zeigt_hinweis:
             return
-        self.feld.configure(textvariable=self.variable, foreground="")
+        self.feld.configure(textvariable=self.variable, foreground=self._normalfarbe)
         self.zeigt_hinweis = False
 
     def _fokus_rein(self, _event=None) -> None:
