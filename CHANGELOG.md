@@ -2,7 +2,7 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.96):** AMPR EMU NG 0.3.4 und mehrere Payloads sind aktualisiert, und .ini-Dateien bleiben beim Packen eines Asset-Packs lose.
+> **Kurz zum aktuellen Stand (v1.9.96):** AMPR EMU NG 0.3.5 und mehrere Payloads sind aktualisiert, und .ini-Dateien bleiben beim Packen eines Asset-Packs lose.
 
 ---
 
@@ -18,7 +18,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Behoben:** Ein unvollständig verschobener Dump-Ordner (Aufgabe 4) trägt die Endung `.unvollstaendig`; ein abgebrochener Download wird beim nächsten Start abgeschlossen statt mit „HTTP 416“ zu scheitern.
 - **Behoben:** Installer für OSFMount, Dokan und FileZilla liegen in einem privaten Ordner; eine bei der Laufwerkssuche gefundene `filezilla.exe` startet erst nach Rückfrage; die PS4-Updateabfrage folgt nur Adressen bei Sony; beim Entpacken von Archiven bleibt Platz auf dem Laufwerk frei.
 - **Behoben:** ABBRECHEN beendet auch eine Engine, die gerade in einem langen Abschnitt steckt, nach einem sofortigen Neustart zuverlässig; die Rückfragen beim Überschreiben nennen jetzt, dass das vorhandene Ergebnis vor dem Bau gelöscht wird.
-- **Aktualisiert:** AMPR EMU NG 0.3.4 (die Laufzeit passt ihre Threads dem Spiel an; behebt Schwarzbild und Hänger bei Crimson Desert).
+- **Aktualisiert:** AMPR EMU NG 0.3.5 (ein neues Spiel über einem vorhandenen Spielstand hängt nicht mehr im Ladebildschirm; die Laufzeit läuft flüssiger). Davor 0.3.4: die Laufzeit passt ihre Threads dem Spiel an und behebt Schwarzbild und Hänger bei Crimson Desert.
 - **Aktualisiert:** PS5Upload 12.4.4, Web File Manager 1.14, garlic-savemgr 1.15-beta21, garlic-worker 1.5.4 und PS5 Cooling & System Center – Pro 1.79.0.
 
 ## v1.9.95 – 09.11.2026
