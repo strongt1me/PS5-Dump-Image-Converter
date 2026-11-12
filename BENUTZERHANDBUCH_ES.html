@@ -3162,7 +3162,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><code>.ffpfsc</code></td><td>Un archivo contenedor compacto y comprimido en el que se reúne un dump.</td></tr>
       <tr><td><code>.ffpfs</code></td><td>Como <code>.ffpfsc</code>, pero sin comprimir: por ello es mayor, pero más rápido de crear.</td></tr>
       <tr><td><code>.ffpkg</code></td><td>Un archivo contenedor basado en UFS2. La creación se comprueba automáticamente tras la escritura.</td></tr>
-      <tr><td><strong>Nivel de compresión</strong></td><td>Determina cuánto se comprimen <code>.ffpfsc</code> y <code>.ffpkg</code> (1 = el más rápido, 9 = el archivo más pequeño).</td></tr>
+      <tr><td><strong>Nivel de compresión</strong></td><td>Determina cuánto se comprime el contenedor <code>.ffpfsc</code> (1 = el más rápido, 9 = el archivo más pequeño). Con <code>.exFAT</code>, <code>.ffpkg</code>, <code>.ffpfs</code> o una carpeta de dump como destino el campo está bloqueado, porque allí no se comprime.</td></tr>
       <tr><td><strong>Hilos de trabajo (workers)</strong></td><td>Número de procesos de copia y de compresión que trabajan simultáneamente. Valores más altos pueden ser más rápidos, pero requieren más recursos del sistema.</td></tr>
       <tr><td><strong>Origen</strong></td><td>La carpeta o el archivo que se desea procesar o comprobar.</td></tr>
       <tr><td><strong>Carpeta temporal</strong></td><td>Una carpeta de trabajo para archivos necesarios de forma transitoria. Debe tener suficiente espacio libre.</td></tr>

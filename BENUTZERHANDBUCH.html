@@ -3187,7 +3187,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><code>.ffpfsc</code></td><td>Eine kompakte, komprimierte Containerdatei, in der ein Dump zusammengefasst wird.</td></tr>
       <tr><td><code>.ffpfs</code></td><td>Wie <code>.ffpfsc</code>, aber unkomprimiert – dadurch größer, aber schneller zu erstellen.</td></tr>
       <tr><td><code>.ffpkg</code></td><td>Eine UFS2-basierte Containerdatei. Die Erstellung wird nach dem Schreiben automatisch geprüft.</td></tr>
-      <tr><td><strong>Kompressionsstufe</strong></td><td>Bestimmt, wie stark <code>.ffpfsc</code> und <code>.ffpkg</code> komprimiert werden (1 = am schnellsten, 9 = kleinste Datei).</td></tr>
+      <tr><td><strong>Kompressionsstufe</strong></td><td>Bestimmt, wie stark der Container <code>.ffpfsc</code> komprimiert wird (1 = am schnellsten, 9 = kleinste Datei). Bei <code>.exFAT</code>, <code>.ffpkg</code>, <code>.ffpfs</code> und Dump-Ordner als Ziel ist das Feld gesperrt, dort wird nicht komprimiert.</td></tr>
       <tr><td><strong>Worker-Threads</strong></td><td>Anzahl gleichzeitig arbeitender Kopier- und Kompressionsvorgänge. Höhere Werte können schneller sein, brauchen aber mehr Systemressourcen.</td></tr>
       <tr><td><strong>Quelle</strong></td><td>Der Ordner oder die Datei, die Sie bearbeiten oder prüfen möchten.</td></tr>
       <tr><td><strong>Temp-Ordner</strong></td><td>Ein Arbeitsordner für vorübergehend benötigte Dateien. Er sollte genügend freien Platz haben.</td></tr>

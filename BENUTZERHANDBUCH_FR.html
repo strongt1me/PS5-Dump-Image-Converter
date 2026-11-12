@@ -3166,7 +3166,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><code>.ffpfsc</code></td><td>Un fichier conteneur compact et compressé, dans lequel un dump est regroupé.</td></tr>
       <tr><td><code>.ffpfs</code></td><td>Comme <code>.ffpfsc</code>, mais non compressé – donc plus volumineux, mais plus rapide à créer.</td></tr>
       <tr><td><code>.ffpkg</code></td><td>Un fichier conteneur basé sur UFS2. La création est vérifiée automatiquement après l'écriture.</td></tr>
-      <tr><td><strong>Niveau de compression</strong></td><td>Détermine le degré de compression de <code>.ffpfsc</code> et <code>.ffpkg</code> (1 = le plus rapide, 9 = le fichier le plus petit).</td></tr>
+      <tr><td><strong>Niveau de compression</strong></td><td>Détermine le degré de compression du conteneur <code>.ffpfsc</code> (1 = le plus rapide, 9 = le fichier le plus petit). Avec <code>.exFAT</code>, <code>.ffpkg</code>, <code>.ffpfs</code> ou un dossier de dump comme cible, le champ est verrouillé, car rien n'y est compressé.</td></tr>
       <tr><td><strong>Threads de worker</strong></td><td>Nombre d'opérations de copie et de compression travaillant simultanément. Des valeurs plus élevées peuvent être plus rapides, mais demandent davantage de ressources système.</td></tr>
       <tr><td><strong>Source</strong></td><td>Le dossier ou le fichier que vous voulez traiter ou vérifier.</td></tr>
       <tr><td><strong>Dossier temporaire</strong></td><td>Un dossier de travail pour les fichiers nécessaires temporairement. Il doit disposer de suffisamment d'espace libre.</td></tr>

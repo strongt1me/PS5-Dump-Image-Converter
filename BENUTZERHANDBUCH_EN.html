@@ -3163,7 +3163,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><code>.ffpfsc</code></td><td>A compact, compressed container file in which a dump is bundled.</td></tr>
       <tr><td><code>.ffpfs</code></td><td>Like <code>.ffpfsc</code>, but uncompressed – therefore larger, but faster to create.</td></tr>
       <tr><td><code>.ffpkg</code></td><td>A UFS2-based container file. The result is verified automatically after writing.</td></tr>
-      <tr><td><strong>Compression level</strong></td><td>Determines how strongly <code>.ffpfsc</code> and <code>.ffpkg</code> are compressed (1 = fastest, 9 = smallest file).</td></tr>
+      <tr><td><strong>Compression level</strong></td><td>Determines how strongly the <code>.ffpfsc</code> container is compressed (1 = fastest, 9 = smallest file). With <code>.exFAT</code>, <code>.ffpkg</code>, <code>.ffpfs</code> or a dump folder as the target the field is locked, as nothing is compressed there.</td></tr>
       <tr><td><strong>Worker threads</strong></td><td>Number of copy and compression operations working at the same time. Higher values can be faster but need more system resources.</td></tr>
       <tr><td><strong>Source</strong></td><td>The folder or file that you want to process or check.</td></tr>
       <tr><td><strong>Temp folder</strong></td><td>A work folder for temporarily needed files. It should have enough free space.</td></tr>

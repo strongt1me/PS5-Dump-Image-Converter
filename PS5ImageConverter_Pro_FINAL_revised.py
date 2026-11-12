@@ -6830,6 +6830,7 @@ class PS5ConverterGUI:
                 self._t("compression.balanced"),
             )
             self.compression_level_var.set(_new_label)
+            self._kompression_schalten()            # der Tooltip traegt die Sprache im Text
 
         # Dasselbe fuer die Pruefstufe. Ihre Tabelle wurde bisher NUR beim
         # Bauen gefuellt und beim Sprachwechsel nie - eine Asymmetrie zur
@@ -10340,6 +10341,8 @@ class PS5ConverterGUI:
         )
         self.compression_combo.grid(row=3, column=1, columnspan=2, sticky="w", pady=(5, 2))
         self.compression_combo.bind("<<ComboboxSelected>>", self._on_compression_level_changed)
+        # Der Text wechselt mit dem Zustand (wirkt / gesperrt) und der Sprache: von ``_kompression_schalten`` gepflegt.
+        self._kompression_tooltip = DelayedTooltip(self.compression_combo, "", delay_ms=600, wraplength=430)
         self.zstd_level = self._zstd_level_options.get(
             self.compression_level_var.get(), ZSTD_VORGABE)
 
@@ -14499,6 +14502,41 @@ class PS5ConverterGUI:
     #: schlimmer als keine.
     _BAUFORM_WIRKT_BEI: frozenset = frozenset({"ffpfsc"})
 
+    #: Zielformate, bei denen die Kompressionsstufe (PFS) etwas bewirkt: nur der komprimierte Container ``.ffpfsc``
+    #: (``mkpfs pack ... --compress --compression-level``). ``.ffpfs`` wird mit ``--no-compress`` gebaut, ``.exfat`` und
+    #: ``.ffpkg`` (UFS2) kennen keine Stufe, ein Dump-Ordner wird nicht gepackt. Nutzerwunsch 12.11.2026: Das Feld ist
+    #: sonst gesperrt, es stand bei ``.exFAT`` bedienbar da und tat nichts.
+    _KOMPRESSION_WIRKT_BEI: frozenset = frozenset({"ffpfsc"})
+
+    def _kompression_wirkt(self) -> bool:
+        """Ob die Kompressionsstufe fuer die gewaehlte Aufgabe und das gewaehlte Zielformat etwas bewirkt.
+
+        Aufgaben ohne Zielformat-Auswahl (AMPR-Manager, Pruefungen, ...) bleiben bedienbar - dort ist die Stufe nicht
+        sicher ohne Wirkung, und gesperrt wird nur, was nachweislich nichts tut. Ohne gewaehltes Format ebenso.
+        """
+        try:
+            modus = str(self.current_mode.get() or "").strip()
+            if modus not in self._MODE_TARGET_OPTIONS:
+                return True
+            ziel = self._get_selected_target_type()
+        except (AttributeError, tk.TclError):
+            return True
+        return (not ziel) or ziel in self._KOMPRESSION_WIRKT_BEI
+
+    def _kompression_schalten(self) -> None:
+        """Sperrt das Feld KOMPRESSION (PFS), wenn das Zielformat keine Stufe kennt; der Tooltip sagt warum."""
+        combo = getattr(self, "compression_combo", None)
+        if combo is None:
+            return
+        try:
+            wirkt = self._kompression_wirkt()
+            combo.configure(state="readonly" if wirkt else "disabled")
+            tipp = getattr(self, "_kompression_tooltip", None)
+            if tipp is not None:
+                tipp.text = self._t("main.kompression_hint" if wirkt else "main.kompression_gesperrt")
+        except (tk.TclError, AttributeError) as exc:
+            logger.debug("Kompressionsfeld nicht schaltbar: %s", exc)
+
     def _bauform_sichtbarkeit_setzen(self) -> bool:
         """Zeigt die BAUFORM-Auswahl nur, wo sie etwas bewirkt.
 
@@ -14576,6 +14614,8 @@ class PS5ConverterGUI:
         # Die BAUFORM haengt am selben Faden: Sie wirkt nur bei .ffpfsc und
         # hat bei jedem anderen Ziel nichts zu suchen.
         self._bauform_sichtbarkeit_setzen()
+        # Ebenso die Kompressionsstufe: Sie wirkt nur beim komprimierten Container (.ffpfsc).
+        self._kompression_schalten()
         # Der Text aendert die Hoehe der Beschriftung - der eingebrannte
         # Hintergrund muss neu geschnitten werden.
         try:

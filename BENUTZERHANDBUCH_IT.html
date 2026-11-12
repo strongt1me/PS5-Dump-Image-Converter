@@ -3175,7 +3175,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><code>.ffpfsc</code></td><td>Un file contenitore compatto e compresso in cui viene riunito un dump.</td></tr>
       <tr><td><code>.ffpfs</code></td><td>Come <code>.ffpfsc</code>, ma non compresso – quindi più grande, ma più veloce da creare.</td></tr>
       <tr><td><code>.ffpkg</code></td><td>Un file contenitore basato su UFS2. La creazione viene verificata automaticamente dopo la scrittura.</td></tr>
-      <tr><td><strong>Livello di compressione</strong></td><td>Determina quanto vengono compressi <code>.ffpfsc</code> e <code>.ffpkg</code> (1 = il più veloce, 9 = il file più piccolo).</td></tr>
+      <tr><td><strong>Livello di compressione</strong></td><td>Determina quanto viene compresso il contenitore <code>.ffpfsc</code> (1 = il più veloce, 9 = il file più piccolo). Con <code>.exFAT</code>, <code>.ffpkg</code>, <code>.ffpfs</code> o una cartella dump come destinazione il campo è bloccato, perché lì non si comprime.</td></tr>
       <tr><td><strong>Thread worker</strong></td><td>Numero di operazioni di copia e compressione eseguite contemporaneamente. Valori più alti possono essere più veloci, ma richiedono più risorse di sistema.</td></tr>
       <tr><td><strong>Origine</strong></td><td>La cartella o il file che si desidera elaborare o controllare.</td></tr>
       <tr><td><strong>Cartella temporanea</strong></td><td>Una cartella di lavoro per i file necessari temporaneamente. Dovrebbe avere abbastanza spazio libero.</td></tr>
