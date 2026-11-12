@@ -118,11 +118,50 @@ class SeiteTests(unittest.TestCase):
         treffer = [k for k in _suchen(self.seite, APP.RoundedButton) if str(k.cget("text")) == text]
         return treffer[index]
 
-    def test_die_seite_hat_ein_rollbares_canvas_und_vier_comboboxen(self) -> None:
-        self.assertIsNotNone(_rollbares_canvas(self.seite), "Die Seite hat kein rollbares Canvas.")
+    def test_die_seite_hat_vier_comboboxen_und_keinen_rollbereich(self) -> None:
+        """Seit 12.11.2026 (Nutzerwunsch): alles auf einer Seite, ohne Rollbalken."""
+        self.assertIsNone(_rollbares_canvas(self.seite), "Die Seite soll nicht mehr rollen muessen.")
         # Fassung (download0.dat), Titel-ID, Fassung (y2jb_update.zip), USB-Ziel.
         boxen = _suchen(self.seite, ttk.Combobox)
         self.assertEqual(4, len(boxen))
+
+    def test_zwei_karten_nebeneinander_und_alles_im_sichtbaren_bereich(self) -> None:
+        _WURZEL.update_idletasks()
+        karten = [k for k in _suchen(self.seite, tk.Frame) if k.winfo_manager() == "grid"
+                  and k.winfo_parent() == str(self.seite.winfo_children()[-1])]
+        self.assertEqual(2, len(karten), "links download0.dat, rechts der Autoloader")
+        self.assertEqual(karten[0].winfo_y(), karten[1].winfo_y(), "beide Karten stehen nebeneinander")
+        self.assertEqual(karten[0].winfo_height(), karten[1].winfo_height(), "beide Karten gleich hoch")
+        self.assertLessEqual(self.seite.winfo_reqheight(), self.seite.winfo_height() + 2,
+                             "die Seite fordert nicht mehr Hoehe an, als sie hat")
+
+    def test_hinweise_in_den_karten_haben_die_farbe_der_karte(self) -> None:
+        """Kein dunkler Streifen im Kasten: Hinweise und Beschriftungen nehmen den Grund der Karte."""
+        karte = self.app._COLORS["bg_card"]
+        falsch = []
+        for etikett in _suchen(self.seite, tk.Label):
+            text = str(etikett.cget("text"))
+            if text.startswith(("Die Titel-ID der YouTube-App", "y2jb_update.zip aktualisiert", "1  Datei", "2  Ziel")):
+                if str(etikett.cget("bg")) != karte:
+                    falsch.append(text[:30])
+        self.assertEqual([], falsch)
+
+    def test_die_adresse_der_ps5_steht_nur_einmal_auf_der_seite(self) -> None:
+        felder = [k for k in _suchen(self.seite, ttk.Entry)
+                  if not isinstance(k, ttk.Combobox) and str(k.cget("state")) != "readonly"]
+        self.assertEqual(1, len(felder), "ein Adressfeld fuer beide Karten")
+
+    def test_die_statuszeilen_beginnen_mit_noch_keine_datei(self) -> None:
+        text = self.app._t("y2jbupdater.status_keine_datei")
+        zeilen = [k for k in _suchen(self.seite, tk.Label) if str(k.cget("text")) == text]
+        self.assertEqual(2, len(zeilen))
+
+    def test_texte_in_allen_sprachen(self) -> None:
+        from ps5_validator.utils.i18n import STRINGS
+        for schluessel in ("y2jbupdater.card_download0", "y2jbupdater.step_datei",
+                           "y2jbupdater.step_ziel", "y2jbupdater.status_keine_datei"):
+            for sprache in ("de", "en", "es", "it", "fr"):
+                self.assertTrue(STRINGS[schluessel][sprache], (schluessel, sprache))
 
     def test_knoepfe_elf_und_zwoelf_fuehren_zur_seite_bzw_zum_fenster(self) -> None:
         self.assertIn(("konsole.btn_y2jbupdater", "y2jbupdater"), KLASSE._KONSOLE_KNOEPFE)
