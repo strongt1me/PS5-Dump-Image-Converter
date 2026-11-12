@@ -176,13 +176,16 @@ class KartenzeilenTests(unittest.TestCase):
     def _zeilen(self):
         eng = self.haupt.PS5ConverterGUI._ZEILE_ABSTAND_ENG
         gruppe = self.haupt.PS5ConverterGUI._ZEILE_ABSTAND_GRUPPE
+        # Seit dem 12.11.2026 steht in den Luecken zwischen Zielformat, Kompression, Worker und Pruefung sowie zwischen
+        # Methode und Fassung ein Pfeil (Nutzerwunsch); die Methode steht jetzt vor der Fassung.
+        pfeil = self.haupt.PS5ConverterGUI._ZEILE_ABSTAND_PFEIL
         return (
             ("Pruefzeile", [("compression_combo", None),
-                            ("worker_knob", gruppe),
-                            ("verify_combo", gruppe)]),
+                            ("worker_knob", pfeil),
+                            ("verify_combo", pfeil)]),
             ("Einbauzeile", [("ampr_integrate_check", None),
-                             ("ampr_version_combo", eng),
                              ("ampr_methode_combo", eng),
+                             ("ampr_version_combo", pfeil),
                              ("ampr_playgo_check", eng),
                              ("backport_integrate_check", gruppe),
                              ("backport_fw_combo", eng)]),

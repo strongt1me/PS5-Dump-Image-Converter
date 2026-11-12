@@ -3942,6 +3942,99 @@ class RunderHaken(tk.Canvas):
         return self.cget(key)
 
 
+class PackPfeil(tk.Canvas):
+    """Kleiner Pfeil nach rechts, direkt auf dem Hintergrund (Bildausschnitt wie bei ``RunderHaken``).
+
+    Steht im Hauptfenster zwischen zwei Feldern, die man von links nach rechts liest: Packverfahren (LZ4 / zstd) und
+    Packstufe, Methode und Fassung, Zielformat, Kompression, Worker und Pruefung (Nutzerwunsch 12.11.2026).
+    Gesperrt wird er blasser gezeichnet, wie die Felder daneben.
+    """
+
+    def __init__(self, master: tk.Widget, hintergrund=None, palette=None, breite: int = 18, hoehe: int = 24,
+                 **kwargs) -> None:
+        bg = kwargs.pop("bg", None)
+        if bg is None:
+            try:
+                bg = master.cget("bg")
+            except tk.TclError:
+                bg = "#000000"
+        super().__init__(master, width=breite, height=hoehe, bg=bg, highlightthickness=0, bd=0, **kwargs)
+        self._hintergrund = hintergrund
+        self._palette = palette
+        self._aktiv = True
+        self._foto = None
+        self._grund_merker: "tuple | None" = None
+        self.bind("<Configure>", lambda _e: self._redraw(), add="+")
+        self.bind("<Destroy>", lambda e: setattr(self, "_foto", None) if e.widget is self else None, add="+")
+
+    def setze_aktiv(self, aktiv: bool) -> None:
+        if bool(aktiv) != self._aktiv:
+            self._aktiv = bool(aktiv)
+            self._redraw()
+
+    def nachziehen(self) -> None:
+        """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel."""
+        self._grund_merker = None
+        self._redraw()
+
+    def _grund_holen(self, w: int, h: int) -> "Image.Image":
+        merker = self._grund_merker
+        if merker is not None and merker[0] == (w, h):
+            return merker[1]
+        bild = None
+        if self._hintergrund is not None:
+            try:
+                bild = self._hintergrund(self, w, h)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Pfeilhintergrund nicht berechenbar: %s", exc)
+        if bild is not None:
+            bild = bild.convert("RGB")
+            if bild.size != (w, h):
+                bild = bild.resize((w, h), _LANCZOS)
+            self._grund_merker = ((w, h), bild)
+            return bild
+        try:
+            r, g, b = (wert // 257 for wert in self.winfo_rgb(super().cget("background")))
+        except tk.TclError:
+            r, g, b = (0, 0, 0)
+        return Image.new("RGB", (w, h), (r, g, b))
+
+    def _redraw(self) -> None:
+        try:
+            w, h = self.winfo_width(), self.winfo_height()
+            if w <= 1 or h <= 1:
+                w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        except tk.TclError:
+            return
+        if w <= 1 or h <= 1:
+            return
+        p = self._palette() if callable(self._palette) else {}
+        sekundaer = str(p.get("fg_secondary", "#9a9ca6"))
+        tief = str(p.get("console_bg", "#121216"))
+        farbe = sekundaer if self._aktiv else bibliothek_zeichnen.mischen(sekundaer, tief, 0.6)
+        try:
+            faktor = max(1.0, float(self.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            faktor = 1.0
+        ueber = 4
+        gross = Image.new("RGBA", (w * ueber, h * ueber), (0, 0, 0, 0))
+        zeichner = ImageDraw.Draw(gross)
+        s_w, s_h = w * ueber, h * ueber
+        mitte = s_h / 2.0
+        breite_strich = max(1, int(round(1.8 * faktor * ueber)))
+        links, rechts = s_w * 0.12, s_w * 0.88
+        spitze = min(s_h * 0.22, s_w * 0.34)
+        rgba = bibliothek_zeichnen._rgba(farbe)
+        zeichner.line([(links, mitte), (rechts, mitte)], fill=rgba, width=breite_strich)
+        zeichner.line([(rechts - spitze, mitte - spitze), (rechts, mitte), (rechts - spitze, mitte + spitze)],
+                      fill=rgba, width=breite_strich, joint="curve")
+        bild = self._grund_holen(w, h).convert("RGBA")
+        bild.alpha_composite(gross.resize((w, h), _LANCZOS))
+        self.delete("all")
+        self._foto = ImageTk.PhotoImage(bild, master=self)
+        self.create_image(0, 0, image=self._foto, anchor="nw")
+
+
 # ---------------------------------------------------------------------------
 # Hauptklasse: GUI
 # ---------------------------------------------------------------------------
@@ -10175,8 +10268,9 @@ class PS5ConverterGUI:
         # Derselbe Gruppenabstand wie in der Einbauzeile darunter: ZIELFORMAT
         # ist eine eigene Gruppe, KOMPRESSION/WORKER/PRUEFUNG die zweite. Mit den
         # vorherigen 10 px lasen sich alle vier Kaesten als eine Reihe.
+        # Seit dem 12.11.2026 steht zwischen den Feldern ein Pfeil (_pfeile_setzen): Die Luecke ist so breit wie er.
         self.format_combo.grid(row=3, column=0, sticky="ew",
-                               padx=(0, self._ZEILE_ABSTAND_GRUPPE),
+                               padx=(0, self._ZEILE_ABSTAND_PFEIL),
                                pady=(5, 2))
         # Der Hinweis unter der Liste haengt am gewaehlten Zielformat,
         # nicht nur an der Aufgabe (siehe _zielformat_hinweis).
@@ -10451,6 +10545,23 @@ class PS5ConverterGUI:
         # Der Text wechselt mit dem Zustand (frei: Erklaerung, gesperrt: wann es freigegeben wird) und mit der Sprache
         # - deshalb nicht ueber ``_tooltip``, sondern von ``_ampr_pack_combo_schalten`` gepflegt.
         self._ampr_pack_tooltip = DelayedTooltip(self.ampr_pack_combo, "", delay_ms=600, wraplength=430)
+
+        # Packstufe rechts neben dem Packverfahren (Nutzerwunsch 12.11.2026): zeigt die Stufen des gewaehlten Verfahrens
+        # (LZ4 oder zstd), schreibt dieselbe Einstellung wie die Einstellungen und ist mit dem Verfahren gesperrt
+        # (_ampr_stufe_combo_schalten).
+        self._ampr_stufe_var = tk.StringVar()
+        self.ampr_stufe_combo = ttk.Combobox(
+            path_card, textvariable=self._ampr_stufe_var, state="readonly",
+            font=(UI_SCHRIFT, pt(9)), values=(), width=18,
+        )
+        self.ampr_stufe_combo.bind("<<ComboboxSelected>>", lambda _e: self._ampr_stufe_gewaehlt())
+        self._ampr_stufe_tooltip = DelayedTooltip(self.ampr_stufe_combo, "", delay_ms=600, wraplength=430)
+        # Ein Pfeil dazwischen zeigt: Die Stufe gehoert zum Verfahren links davon (Nutzerwunsch 12.11.2026).
+        self.ampr_stufe_pfeil = PackPfeil(
+            path_card, hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
+            breite=self._PFEIL_BREITE, hoehe=24)
+        self._pfeile_einrichten(path_card)
+        self._ampr_stufe_combo_schalten()
 
         self.ampr_playgo_check = RunderHaken(
             path_card,
@@ -13353,7 +13464,8 @@ class PS5ConverterGUI:
                     feld.after_idle(lambda: feld.xview_moveto(1.0))
                 except tk.TclError:
                     pass
-            variable.trace_add("write", _ans_ende)
+            # Mit dem Feld geht die Spur: Eine nackte Spur haelt ihr Tcl-Kommando - und damit das Feld - fuer immer am Leben.
+            bibliothek_raster.spur_bis_zerstoert(feld, variable, _ans_ende)
 
         def _beschriftung(eltern, schluessel: str, breite: int = 0) -> "tk.Label":
             etikett = tk.Label(eltern, text=self._t(schluessel), anchor="w", font=(UI_SCHRIFT, pt(9)),
@@ -16920,6 +17032,11 @@ class PS5ConverterGUI:
     #: Karte 657 px breit. Drei Abstaende zu je 16 px lassen 14 px Reserve,
     #: bei 20 px waeren es nur noch zwei.
     _ZEILE_ABSTAND_GRUPPE = 16
+    #: Abstand zwischen zwei Feldern, zwischen denen ein Pfeil steht: Pfeil (``_PFEIL_BREITE``) und je 3 px Luft. Mehr
+    #: geht nicht: Mit 26 px (Pfeil 16) passte die Einbauzeile bei 125 % nicht mehr neben die Pruefstufe (16 px zu breit)
+    #: und fiel in eine eigene Zeile; mit 22 px passte sie auf den Pixel genau, mit 18 hat sie rund 16 px Reserve (und
+    #: passt auch bei der Hoechstbreite der Karte von 1336 px, die ``test_kartenzeilen`` misst).
+    _ZEILE_ABSTAND_PFEIL = 18
     #: Abstand zwischen einer kleinen Beschriftung und ihrem Bedienelement.
     _ZEILE_ABSTAND_BESCHRIFTUNG = 5
 
@@ -17075,6 +17192,7 @@ class PS5ConverterGUI:
                 self._einbauzeile_setzen(self._einbauzeile_passt_daneben())
             self._kartenzeile_ausrichten(einbau, nachmessen=nachmessen)
             self._dlc_zeile_setzen()
+            self._pfeile_setzen()
             self._optionskaesten_ordnen()
             if getattr(self, "_einbauzeile_daneben", False):
                 self._kartenbeschriftung_setzen(
@@ -17087,22 +17205,26 @@ class PS5ConverterGUI:
     def _kartenzeilen(self):
         """Die beiden Bedienzeilen der Karte samt Soll-Abstaenden."""
         eng, gruppe = self._ZEILE_ABSTAND_ENG, self._ZEILE_ABSTAND_GRUPPE
+        pfeil = self._ZEILE_ABSTAND_PFEIL
         return (
             # Zielformat, Kompression, Worker und Pruefung sind vier
             # eigenstaendige Einstellungen - alle gleich weit auseinander.
             # Mit dem engen Abstand stiessen die Beschriftungen "WORKER" und
             # "PRUEFUNG" fast aneinander und lasen sich als ein Wort.
+            # Seit dem 12.11.2026 mit einem Pfeil in jeder Luecke (_pfeile_setzen): Die Abstaende sind so breit wie er.
             [(getattr(self, "compression_combo", None), 0),
-             (getattr(self, "worker_knob", None), gruppe),
-             (getattr(self, "verify_combo", None), gruppe)],
+             (getattr(self, "worker_knob", None), pfeil),
+             (getattr(self, "verify_combo", None), pfeil)],
             # AMPR EMU samt Fassung, Methode und PlayGo bilden eine Gruppe,
             # BACKPORT samt Firmware die zweite - der groessere Abstand zeigt
             # das. Die Methode steht neben der Fassung, weil beide zusammen
             # entscheiden, was am Ende im Ordner liegt: Eine test-nopack-
             # Fassung kann die Baender der neuen Methode nicht lesen.
+            # Seit dem 12.11.2026 (Nutzerwunsch): erst die Methode, dann mit einem Pfeil die Fassung - so liest sich
+            # die Wahl von links nach rechts ("Asset-Pack, dafuer NG 0.3.5").
             [(getattr(self, "ampr_integrate_check", None), 0),
-             (getattr(self, "ampr_version_combo", None), eng),
              (getattr(self, "ampr_methode_combo", None), eng),
+             (getattr(self, "ampr_version_combo", None), pfeil),
              (getattr(self, "ampr_playgo_check", None), eng),
              (getattr(self, "backport_integrate_check", None), gruppe),
              (getattr(self, "backport_fw_combo", None), eng)],
@@ -17148,6 +17270,37 @@ class PS5ConverterGUI:
 
     #: Abstand zwischen der Einbauzeile und der Zeile mit DLC EMU darunter.
     _DLC_ZEILE_ABSTAND = 10
+    #: Luft zwischen dem Packverfahren, dem Pfeil und der Packstufe rechts daneben (je Seite des Pfeils).
+    _STUFE_ABSTAND = 3
+    #: Breite der Pfeile (zwischen Packverfahren und Packstufe und in den Bedienzeilen der Karte).
+    _PFEIL_BREITE = 12
+
+    #: Die Pfeile der Bedienzeilen: Name des Attributs -> (Feld links, Feld rechts). Sie stehen in der Luecke dazwischen.
+    _PFEILE_PAARE: tuple[tuple[str, str, str], ...] = (
+        ("pfeil_format", "format_combo", "compression_combo"),
+        ("pfeil_kompression", "compression_combo", "worker_knob"),
+        ("pfeil_worker", "worker_knob", "verify_combo"),
+        ("pfeil_methode", "ampr_methode_combo", "ampr_version_combo"),
+    )
+
+    def _pfeile_einrichten(self, karte: tk.Widget) -> None:
+        """Legt die Pfeile zwischen Zielformat, Kompression, Worker und Pruefung sowie zwischen Methode und Fassung an."""
+        for name, _links, _rechts in self._PFEILE_PAARE:
+            setattr(self, name, PackPfeil(
+                karte, hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
+                breite=self._PFEIL_BREITE, hoehe=24))
+
+    def _pfeile_setzen(self) -> None:
+        """Stellt jeden Pfeil mittig in die Luecke rechts neben sein linkes Feld (nach dem Ausrichten der Zeilen)."""
+        luft = max(0, (self._ZEILE_ABSTAND_PFEIL - self._PFEIL_BREITE) // 2)
+        for name, links, _rechts in self._PFEILE_PAARE:
+            pfeil, bezug = getattr(self, name, None), getattr(self, links, None)
+            if pfeil is None or bezug is None:
+                continue
+            try:
+                pfeil.place(in_=bezug, relx=1.0, x=luft, rely=0.5, anchor="w")
+            except tk.TclError as exc:
+                logger.debug("Pfeil %s nicht setzbar: %s", name, exc)
 
     def _dlc_zeile_hoehe(self) -> int:
         """Hoehe, die die zweite Einbauzeile (DLC EMU, Packverfahren) in der Karte braucht - 0 ohne das Kaestchen."""
@@ -17175,13 +17328,25 @@ class PS5ConverterGUI:
             return
         try:
             dlc.place(in_=erstes, relx=0.0, x=0, rely=1.0, y=self._DLC_ZEILE_ABSTAND, anchor="nw")
-            # Das Packverfahren steht in derselben Zeile, senkrecht mittig zu DLC EMU, waagerecht unter der Methode.
+            # Das Packverfahren steht in derselben Zeile, senkrecht mittig zu DLC EMU, waagerecht unter dem ersten Schalter
+            # der Kette (Nutzerwunsch 12.11.2026: unter "NG"; seit dort die Methode vor der Fassung steht, ist das die
+            # Methode - der Platz bleibt derselbe). Haengte sie unter der Fassung, ragte die Stufe aus der Karte.
             pack = getattr(self, "ampr_pack_combo", None)
-            methode = getattr(self, "ampr_methode_combo", None)
-            if pack is not None and methode is not None:
+            bezug = getattr(self, "ampr_methode_combo", None)
+            if pack is not None and bezug is not None:
                 pack.place(in_=dlc, relx=0.0,
-                           x=max(0, int(methode.winfo_rootx()) - int(erstes.winfo_rootx())),
+                           x=max(0, int(bezug.winfo_rootx()) - int(erstes.winfo_rootx())),
                            rely=0.5, anchor="w")
+                # Die Packstufe sitzt rechts neben dem Packverfahren (ihre linke Kante am rechten Rand des Verfahrens).
+                # Links daneben (Nutzerwunsch 12.11., erste Fassung) lag sie ohne Luft an "DLC EMU".
+                stufe = getattr(self, "ampr_stufe_combo", None)
+                if stufe is not None:
+                    stufe.place(in_=pack, relx=1.0, x=self._STUFE_ABSTAND + self._PFEIL_BREITE + self._STUFE_ABSTAND,
+                                rely=0.5, anchor="w")
+                    # Der Pfeil liegt mittig in der Luecke zwischen Verfahren und Stufe.
+                    pfeil = getattr(self, "ampr_stufe_pfeil", None)
+                    if pfeil is not None:
+                        pfeil.place(in_=pack, relx=1.0, x=self._STUFE_ABSTAND, rely=0.5, anchor="w")
             if not getattr(self, "_einbauzeile_daneben", False):
                 erstes.master.grid_rowconfigure(6, minsize=max(
                     int(erstes.master.grid_rowconfigure(6)["minsize"]), self._dlc_zeile_hoehe()))
@@ -18353,7 +18518,7 @@ class PS5ConverterGUI:
             except tk.TclError:
                 continue
             for kind in kinder:
-                if isinstance(kind, (RunderHaken, Drehknopf)) or (
+                if isinstance(kind, (RunderHaken, Drehknopf, PackPfeil)) or (
                         isinstance(kind, RoundedButton) and kind._pille):
                     try:
                         kind.nachziehen()
@@ -18372,7 +18537,7 @@ class PS5ConverterGUI:
         ("src_entry", False), ("dest_entry", False), ("temp_entry", False),
         ("format_combo", True), ("compression_combo", True), ("verify_combo", True),
         ("ampr_version_combo", True), ("ampr_methode_combo", True), ("ampr_pack_combo", True),
-        ("backport_fw_combo", True), ("bauform_combo", True),
+        ("ampr_stufe_combo", True), ("backport_fw_combo", True), ("bauform_combo", True),
     )
 
     def _pillen_nummer(self) -> int:
@@ -18387,6 +18552,14 @@ class PS5ConverterGUI:
         """
         return int(self.root.tk.call("incr", "::ps5conv_pillenzaehler"))
 
+    #: Die schmalen Klapplisten der Einbauzeile: Ihr Text steht in der Mitte des Schalters (Nutzerwunsch 12.11.2026),
+    #: nicht links - bei so kurzen Werten ("zstd", "5 · schnell", "NG 0.3.5") wirkte der Rand rechts leer.
+    _PILLEN_ZENTRIERT: tuple[str, ...] = (
+        "ampr_version_combo", "ampr_methode_combo", "ampr_pack_combo", "ampr_stufe_combo", "backport_fw_combo",
+        # Dazu die drei Klapplisten ueber der Einbauzeile (Zielformat, Kompression, Pruefung; Nutzerwunsch 12.11.2026).
+        "format_combo", "compression_combo", "verify_combo",
+    )
+
     def _pillenfelder_einrichten(self) -> None:
         """Macht die Eingabefelder und Klapplisten des Hauptfensters zu Pillen."""
         for name, mit_pfeil in self._PILLENFELDER:
@@ -18395,6 +18568,8 @@ class PS5ConverterGUI:
                 continue
             try:
                 self._pillenfeld(feld, mit_pfeil)
+                if name in self._PILLEN_ZENTRIERT:
+                    feld.configure(justify="center")
             except tk.TclError as exc:
                 logger.debug("Pillenfeld %s nicht einrichtbar: %s", name, exc)
 
@@ -33384,6 +33559,7 @@ class PS5ConverterGUI:
                 0, self._t("progress.task.exfat_umpacken"))
             self.progress_engine.begin_prepare(
                 self._t("progress.prepare.extract_exfat"))
+            t_entpacken = time.monotonic()
             if not self._extract_exfat_to_folder_mkpfs(
                 src,
                 dump_dir,
@@ -33394,13 +33570,16 @@ class PS5ConverterGUI:
             ):
                 self._append_to_log(self._t("log.exfat_umpacken_leser_scheitert"))
                 return False
+            PS5ConverterGUI._phase_dauer_melden(self, "phase.entpacken", t_entpacken)
 
             # Ohne ist_quellordner: Der Ordner liegt schon im Temp und ist
             # damit die Arbeitskopie. Eine zweite waere nur Ballast, und die
             # Rueckfrage danach waere sinnlos.
+            t_einbau = time.monotonic()
             ordner = self._integration_anwenden(dump_dir)
             if not ordner:
                 return False
+            PS5ConverterGUI._phase_dauer_melden(self, "phase.integration", t_einbau)
 
             self.task_total_source_bytes = self._quellgroesse_mit_meldung(ordner)
             # Das Ziel ist hier meist die Quelle selbst. Bis zum 24.09.2026
@@ -33408,8 +33587,11 @@ class PS5ConverterGUI:
             # verstuemmelt und der entpackte Stand im Temp gleich mit weg.
             # Jetzt wird daneben gebaut (siehe _bauziel_neben_quelle).
             bau_ziel = self._bauziel_neben_quelle(final_output)
+            t_bau = time.monotonic()
             ok = self._create_exfat_from_folder(
                 ordner, bau_ziel, pct_start=50.0, pct_end=98.0)
+            if ok:
+                PS5ConverterGUI._phase_dauer_melden(self, "phase.abbild_bauen", t_bau)
             if ok and not self._ergebnis_im_ziel(
                     self._bauziel_uebernehmen(bau_ziel, final_output), final_output):
                 ok = False
@@ -35863,6 +36045,94 @@ class PS5ConverterGUI:
                 tipp.text = self._t("ampr_pack.verfahren_hint" if frei else "ampr_pack.verfahren_gesperrt")
         except (tk.TclError, AttributeError, KeyError) as exc:
             logger.debug("Packverfahren-Feld nicht schaltbar: %s", exc)
+        self._ampr_stufe_combo_schalten()
+        try:                                       # der Pfeil zur Fassung folgt dem Haken AMPR EMU
+            self.pfeil_methode.setze_aktiv(bool(self.ampr_integrate_var.get()))
+        except (AttributeError, tk.TclError):
+            pass
+
+    #: LZ4-Stufen, die die Auswahl anbietet (1 steht fuer 1 bis 4: im schnellen Modus ist dort alles dasselbe).
+    _AMPR_LZ4_STUFEN = (1, 5, 6, 7, 8, 9, 10, 11, 12)
+    #: zstd-Stufen, die die Auswahl anbietet.
+    _AMPR_ZSTD_STUFEN = (1, 3, 5, 7, 9, 12, 15, 19, 22)
+
+    def _ampr_stufen_tabelle(self, verfahren: str, kurz: bool = False) -> "list[tuple[int, str]]":
+        """Die Stufen eines Packverfahrens mit ihrem Anzeigetext, in Anzeigereihenfolge.
+
+        Eine Quelle fuer die Einstellungen und das Feld im Hauptfenster. ``kurz`` schneidet den Text am ersten Komma
+        ab und laesst Klammerzusaetze weg ("1 · schnell, kaum Platzgewinn" wird "1 · schnell", "5 · schnell (Vorgabe)"
+        ebenso): Im Hauptfenster ist zwischen "DLC EMU" und dem Packverfahren nur Platz fuer rund 16 Zeichen, und die
+        Liste dort ist so breit wie das Feld.
+        """
+        if verfahren == "zstd":
+            schluessel = {5: "settings_dialog.zstd_stufe_5", 9: "settings_dialog.zstd_stufe_9",
+                          19: "settings_dialog.zstd_stufe_19", 22: "settings_dialog.zstd_stufe_22"}
+            eintraege = [(s, self._t(schluessel[s]) if s in schluessel else str(s)) for s in self._AMPR_ZSTD_STUFEN]
+        else:
+            def text(stufe: int) -> str:
+                if stufe == 1:
+                    return self._t("settings_dialog.lz4_stufe_schnell")
+                if stufe == ampr_assetpakete.LZ4_STUFE_VORGABE:
+                    return self._t("settings_dialog.lz4_stufe_vorgabe", stufe=stufe)
+                if stufe == ampr_assetpakete.LZ4_STUFE_MAX:
+                    return self._t("settings_dialog.lz4_stufe_klein")
+                return str(stufe)
+            eintraege = [(s, text(s)) for s in self._AMPR_LZ4_STUFEN]
+        if kurz:
+            eintraege = [(s, re.sub(r"\s*\([^)]*\)", "", t.split(",", 1)[0]).strip()) for s, t in eintraege]
+        return eintraege
+
+    def _ampr_stufe_angezeigt(self, verfahren: str) -> int:
+        """Die gespeicherte Stufe als Wert der Tabelle (LZ4 1 bis 4 zeigt die 1; Unbrauchbares die Vorgabe)."""
+        if verfahren == "zstd":
+            jetzt = self._ampr_zstd_stufe()
+            return jetzt if jetzt in self._AMPR_ZSTD_STUFEN else ampr_zstdpack.STUFE_VORGABE
+        jetzt = self._ampr_lz4_stufe()
+        if jetzt in self._AMPR_LZ4_STUFEN:
+            return jetzt
+        return 1 if jetzt <= ampr_assetpakete.LZ4_STUFE_SCHNELL_BIS else ampr_assetpakete.LZ4_STUFE_VORGABE
+
+    def _ampr_stufe_combo_schalten(self) -> None:
+        """Fuellt die Packstufe fuer das gewaehlte Verfahren und sperrt sie wie das Verfahren (Nutzerwunsch 12.11.2026).
+
+        LZ4 zeigt die LZ4-Stufen, zstd die zstd-Stufen. Waehlbar ist sie nur bei angehaktem AMPR EMU und Methode
+        Asset-Pack - sonst wird nichts gepackt; im gesperrten Zustand steht weiter die gespeicherte Stufe darin.
+        """
+        combo = getattr(self, "ampr_stufe_combo", None)
+        if combo is None:
+            return
+        try:
+            verfahren = self._ampr_pack_verfahren()
+            tabelle = self._ampr_stufen_tabelle(verfahren, kurz=True)
+            texte = [t for _s, t in tabelle]
+            angezeigt = dict(tabelle).get(self._ampr_stufe_angezeigt(verfahren), texte[0])
+            try:
+                frei = bool(self.ampr_integrate_var.get()) and self._ampr_methode() == AMPR_METHODE_ASSETPACK
+            except (AttributeError, tk.TclError):
+                frei = False
+            combo.configure(values=texte, width=max(10, min(16, max(len(t) for t in texte))))
+            self._ampr_stufe_var.set(angezeigt)
+            combo.configure(state="readonly" if frei else "disabled")
+            pfeil = getattr(self, "ampr_stufe_pfeil", None)
+            if pfeil is not None:
+                pfeil.setze_aktiv(frei)
+            tipp = getattr(self, "_ampr_stufe_tooltip", None)
+            if tipp is not None:
+                tipp.text = self._t("ampr_pack.stufe_hint" if frei else "ampr_pack.stufe_gesperrt")
+        except (tk.TclError, AttributeError, KeyError) as exc:
+            logger.debug("Packstufe-Feld nicht schaltbar: %s", exc)
+
+    def _ampr_stufe_gewaehlt(self) -> None:
+        """Die Packstufe wurde bedient: als Stufe des gewaehlten Verfahrens speichern (wie in den Einstellungen)."""
+        verfahren = self._ampr_pack_verfahren()
+        zurueck = {text: stufe for stufe, text in self._ampr_stufen_tabelle(verfahren, kurz=True)}
+        neu = zurueck.get(self._ampr_stufe_var.get())
+        if neu is None:
+            # Unbekannter Text: aussteigen, nicht still die Vorgabe speichern (so ging die Kompressionsstufe verloren).
+            logger.warning("Packstufe: unbekannte Auswahl %r", self._ampr_stufe_var.get())
+            return
+        self._save_setting(self._AMPR_ZSTD_STUFE_SETTING if verfahren == "zstd" else self._AMPR_LZ4_STUFE_SETTING, neu)
+        logger.info("%s-Stufe auf %d gestellt", "zstd" if verfahren == "zstd" else "LZ4", neu)
 
     def _ampr_pack_gewaehlt(self) -> None:
         """Das Feld unter der Methode wurde bedient: speichern, Versionsliste angleichen.
@@ -35878,6 +36148,7 @@ class PS5ConverterGUI:
             return
         self._save_setting(self._AMPR_PACK_VERFAHREN_SETTING, neu)
         logger.info("Packverfahren auf %s gestellt", neu)
+        self._ampr_stufe_combo_schalten()          # die Packstufe zeigt gleich die Stufen des neuen Verfahrens
         try:
             self._ampr_versionsliste_fuellen()
         except Exception as exc:  # noqa: BLE001 - die Einstellung gilt trotzdem
@@ -35918,6 +36189,19 @@ class PS5ConverterGUI:
         try:
             return max(0, int(self._tk_wert("worker_count_var", 0)))
         except (AttributeError, tk.TclError, ValueError, RuntimeError):
+            return 0
+
+    def _ampr_zstd_arbeiter(self) -> int:
+        """Wie viele Faeden zstd packt: alle Kerne, ausser der Anwender hat am Drehknopf eine Zahl gestellt.
+
+        Dump Forge nimmt ohne Angabe jeden Kern (``compression_threads`` leer = ``available_parallelism``). Die
+        Vorgabe des Drehknopfs ist die halbe Kernzahl und gilt fuer das Packen des Abbilds (MkPFS); fuer zstd galt
+        sie bis v1.9.97 ebenfalls, und das Packen lief so mit der Haelfte der Kerne. Gilt hier nur, was **gespeichert**
+        ist (``_on_worker_count_changed``), nie die Vorgabe. 0 = alle Kerne (``ampr_zstdpack.packen``, hoechstens 32).
+        """
+        try:
+            return max(0, int(self._load_setting("worker_count", 0) or 0))
+        except (TypeError, ValueError):
             return 0
 
     def _on_ampr_methode_changed(self) -> None:
@@ -37125,9 +37409,15 @@ class PS5ConverterGUI:
             def _fort(phase: str):
                 return lambda anteil: self._ampr_pack_fortschritt(anteil * 100.0, phase)
 
+            arbeiter_zahl = self._ampr_zstd_arbeiter()
+            self._append_to_log(self._t(
+                "ampr_zstd.arbeiter", count=min(32, arbeiter_zahl or (os.cpu_count() or 2)),
+                cores=os.cpu_count() or 0))
+            t_packen = time.monotonic()
             ergebnis = ampr_zstdpack.packen(
-                ordner, ausgabe, gewaehlt, stufe=stufe, arbeiter=self._ampr_pack_arbeiter(),
+                ordner, ausgabe, gewaehlt, stufe=stufe, arbeiter=arbeiter_zahl,
                 melden=self._append_to_log, abbruch=lambda: not self.is_running, fortschritt=_fort("zstd"))
+            PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_packen", t_packen)
             gesamt = max(1, ergebnis.logische_bytes)
             self._append_to_log(self._t(
                 "ampr_zstd.gepackt", files=ergebnis.dateien, chunks=ergebnis.chunks, zstd=ergebnis.zstd_chunks,
@@ -37136,12 +37426,16 @@ class PS5ConverterGUI:
 
             # Jeder Chunk wird entpackt und mit der Quelle verglichen - erst danach geht etwas in den Spielordner.
             self._set_status(self._t("ampr_pack.status_pruefen"))
+            t_pruefen = time.monotonic()
             index = ampr_zstdpack.pruefen(ausgabe, ordner, melden=lambda _z: None,
                                           abbruch=lambda: not self.is_running, fortschritt=_fort("pruefen"))
             self._append_to_log(self._t("ampr_pack.geprueft"))
+            PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_pruefen", t_pruefen)
 
+            t_uebernehmen = time.monotonic()
             ampr_zstdpack.uebernehmen(ausgabe, ordner, index, melden=lambda _z: None,
                                       abbruch=lambda: not self.is_running)
+            PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_uebernehmen", t_uebernehmen)
             uebernommen = True
             self._append_to_log(self._t("ampr_zstd.uebernommen", count=len(index.baender) + 1))
             self._ampr_pack_konsolenhinweis(ordner)
@@ -37172,6 +37466,7 @@ class PS5ConverterGUI:
         if not getattr(self, "_ampr_ordner_ist_kopie", False):
             self._append_to_log(self._t("ampr_pack.originale_nicht_im_quellordner"))
             return True
+        t_originale = time.monotonic()
         try:
             ergebnis_r = ampr_zstdpack.originale_entfernen(
                 ordner, index, abbruch=lambda: not self.is_running)
@@ -37181,7 +37476,28 @@ class PS5ConverterGUI:
         self._append_to_log(self._t(
             "ampr_pack.originale_entfernt", count=ergebnis_r["files"],
             size=self._fmt_bytes(ergebnis_r["bytes"]), dirs=ergebnis_r["directories"]))
+        PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_originale", t_originale)
         return True
+
+    @staticmethod
+    def _dauer_text(sekunden: float) -> str:
+        """Eine Dauer als ``h:mm:ss`` (ein Lauf kann Stunden dauern, ``_fmt_eta`` kennt nur mm:ss)."""
+        gesamt = max(0, int(round(sekunden)))
+        return "%d:%02d:%02d" % (gesamt // 3600, gesamt % 3600 // 60, gesamt % 60)
+
+    def _phase_dauer_melden(self, phase_schluessel: str, begonnen: float) -> None:
+        """Schreibt die Dauer eines Abschnitts ins Protokoll.
+
+        Wer fragt, wo die Zeit eines langen Laufs geblieben ist, soll es dem Protokoll entnehmen koennen und nicht
+        raten muessen (Forum-Bericht 12.11.2026: ein exFAT-Spiel mit zstd brauchte fast 12 Stunden). Ein Fehler beim
+        Melden darf den Lauf nie beeintraechtigen. Aufruf auch mit Attrappen: ``PS5ConverterGUI._phase_dauer_melden(self, ...)``.
+        """
+        try:
+            self._append_to_log(self._t(
+                "log.phase_dauer", phase=self._t(phase_schluessel),
+                zeit=PS5ConverterGUI._dauer_text(time.monotonic() - begonnen)))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Phasendauer nicht gemeldet: %s", exc)
 
     def _ampr_pack_konsolenhinweis(self, ordner: str) -> None:
         """Sagt beim Bauen, was die Konsole fuer dieses Abbild braucht.
@@ -67347,23 +67663,11 @@ class PS5ConverterGUI:
                  wraplength=460, justify="left", anchor="w").pack(
                      anchor="w", fill="x", pady=(2, 6))
 
-        # 1 steht fuer 1 bis 4 (schneller Modus, dort ist alles dasselbe).
-        _lz4_wahl = (1, 5, 6, 7, 8, 9, 10, 11, 12)
-
-        def _lz4_text(stufe: int) -> str:
-            if stufe == 1:
-                return self._t("settings_dialog.lz4_stufe_schnell")
-            if stufe == ampr_assetpakete.LZ4_STUFE_VORGABE:
-                return self._t("settings_dialog.lz4_stufe_vorgabe", stufe=stufe)
-            if stufe == ampr_assetpakete.LZ4_STUFE_MAX:
-                return self._t("settings_dialog.lz4_stufe_klein")
-            return str(stufe)
-
-        _lz4_namen = {stufe: _lz4_text(stufe) for stufe in _lz4_wahl}
+        # Dieselbe Tabelle wie die Packstufe im Hauptfenster (_ampr_stufen_tabelle); 1 steht fuer 1 bis 4.
+        _lz4_namen = dict(self._ampr_stufen_tabelle("lz4"))
+        _lz4_wahl = tuple(_lz4_namen)
         _lz4_zurueck = {text: stufe for stufe, text in _lz4_namen.items()}
-        _lz4_jetzt = self._ampr_lz4_stufe()
-        if _lz4_jetzt not in _lz4_namen:
-            _lz4_jetzt = 1 if _lz4_jetzt <= ampr_assetpakete.LZ4_STUFE_SCHNELL_BIS else 9
+        _lz4_jetzt = self._ampr_stufe_angezeigt("lz4")
         lz4_var = tk.StringVar(value=_lz4_namen[_lz4_jetzt])
         lz4_combo = self._pw.Combobox(
             body, textvariable=lz4_var, state="readonly",
@@ -67380,6 +67684,7 @@ class PS5ConverterGUI:
                 return
             self._save_setting(self._AMPR_LZ4_STUFE_SETTING, neu)
             logger.info("LZ4-Stufe auf %d gestellt", neu)
+            self._ampr_stufe_combo_schalten()      # die Packstufe im Hauptfenster zieht mit
 
         lz4_combo.bind("<<ComboboxSelected>>", _lz4_gewaehlt)
 
@@ -67401,18 +67706,10 @@ class PS5ConverterGUI:
             values=list(_verfahren_namen.values()), font=(UI_SCHRIFT, pt(9)))
         verfahren_combo.pack(anchor="w", fill="x", pady=(0, 6))
 
-        _zstd_wahl = (1, 3, 5, 7, 9, 12, 15, 19, 22)
-
-        def _zstd_text(stufe: int) -> str:
-            schluessel = {5: "settings_dialog.zstd_stufe_5", 9: "settings_dialog.zstd_stufe_9",
-                          19: "settings_dialog.zstd_stufe_19", 22: "settings_dialog.zstd_stufe_22"}.get(stufe)
-            return self._t(schluessel) if schluessel else str(stufe)
-
-        _zstd_namen = {stufe: _zstd_text(stufe) for stufe in _zstd_wahl}
+        _zstd_namen = dict(self._ampr_stufen_tabelle("zstd"))
+        _zstd_wahl = tuple(_zstd_namen)
         _zstd_zurueck = {text: stufe for stufe, text in _zstd_namen.items()}
-        _zstd_jetzt = self._ampr_zstd_stufe()
-        if _zstd_jetzt not in _zstd_namen:
-            _zstd_jetzt = ampr_zstdpack.STUFE_VORGABE
+        _zstd_jetzt = self._ampr_stufe_angezeigt("zstd")
         tk.Label(body, text=self._t("settings_dialog.zstd_stufe_label"),
                  font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_card"], fg=c["fg_secondary"]).pack(anchor="w")
@@ -67491,6 +67788,7 @@ class PS5ConverterGUI:
                 return
             self._save_setting(self._AMPR_ZSTD_STUFE_SETTING, neu)
             logger.info("zstd-Stufe auf %d gestellt", neu)
+            self._ampr_stufe_combo_schalten()      # die Packstufe im Hauptfenster zieht mit
 
         verfahren_combo.bind("<<ComboboxSelected>>", _verfahren_gewaehlt)
         zstd_combo.bind("<<ComboboxSelected>>", _zstd_gewaehlt)

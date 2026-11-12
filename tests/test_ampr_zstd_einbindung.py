@@ -32,6 +32,8 @@ SCHLUESSEL = [
     "ampr_zstd.regeldatei_fehlt", "settings_dialog.regeldatei_label", "settings_dialog.regeldatei_hint",
     "settings_dialog.regeldatei_keine", "settings_dialog.regeldatei_waehlen", "settings_dialog.regeldatei_entfernen",
     "filetype.toml", "dialog.title.choose_regeldatei",
+    "ampr_zstd.arbeiter", "log.phase_dauer", "phase.entpacken", "phase.integration", "phase.zstd_packen",
+    "phase.zstd_pruefen", "phase.zstd_uebernehmen", "phase.zstd_originale", "phase.abbild_bauen",
 ]
 
 
@@ -55,6 +57,7 @@ class _Stub:
     _AMPR_NG_KENNZEICHEN = b"ampr-emu-ng"
     _ampr_ist_ng_datei = classmethod(APP.PS5ConverterGUI._ampr_ist_ng_datei.__func__)
     _ampr_zstdpakete_bauen = APP.PS5ConverterGUI._ampr_zstdpakete_bauen
+    _phase_dauer_melden = APP.PS5ConverterGUI._phase_dauer_melden
 
     def __init__(self, stufe: int = 3) -> None:
         self.protokoll: list[str] = []
@@ -97,6 +100,8 @@ class _Stub:
 
     def _ampr_pack_arbeiter(self) -> int:
         return 2
+
+    _ampr_zstd_arbeiter = APP.PS5ConverterGUI._ampr_zstd_arbeiter
 
     def _ampr_pack_fortschritt(self, prozent: float, phase: str) -> None:
         self.letzter_fortschritt = (prozent, phase)
@@ -142,6 +147,52 @@ class BauenTests(unittest.TestCase):
         self.assertEqual("", s._pack_infotext)
         z.pruefen(self.spiel, self.spiel)
         self.assertIn("ampr_zstd.hinweis_ng", s.text())
+
+    def test_protokoll_nennt_dauer_je_abschnitt_und_die_packfaeden(self) -> None:
+        """Forum-Bericht 12.11.2026: Wo die Zeit eines langen Laufs blieb, muss das Protokoll zeigen."""
+        s = _Stub()
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        zeilen = [z_ for z_ in s.protokoll if z_.startswith("log.phase_dauer")]
+        phasen = [p for z_ in zeilen for p in ("phase.zstd_packen", "phase.zstd_pruefen", "phase.zstd_uebernehmen")
+                  if "'%s'" % p in z_]
+        self.assertEqual(["phase.zstd_packen", "phase.zstd_pruefen", "phase.zstd_uebernehmen"], phasen, s.text())
+        self.assertTrue(all("0:00:0" in z_ for z_ in zeilen), zeilen)
+        alle = min(32, os.cpu_count() or 2)
+        self.assertTrue(any(z_.startswith("ampr_zstd.arbeiter") and "('count', %d)" % alle in z_
+                            for z_ in s.protokoll), "ohne gespeicherte Zahl packt zstd mit allen Kernen (wie Forge)")
+
+    def test_gespeicherte_workerzahl_gilt_fuer_zstd_die_vorgabe_nicht(self) -> None:
+        s = _Stub()
+        self.assertEqual(0, s._ampr_zstd_arbeiter(), "nichts gespeichert: alle Kerne")
+        s.einstellungen = {"worker_count": 3}
+        try:
+            self.assertEqual(3, s._ampr_zstd_arbeiter())
+            self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+            self.assertTrue(any("('count', 3)" in z_ for z_ in s.protokoll if z_.startswith("ampr_zstd.arbeiter")))
+            s.einstellungen = {"worker_count": "kaputt"}
+            self.assertEqual(0, s._ampr_zstd_arbeiter(), "unlesbar: nie ein Absturz, alle Kerne")
+        finally:
+            _Stub.einstellungen = {}
+
+    def test_originale_entfernen_hat_eine_eigene_dauerzeile(self) -> None:
+        s = _Stub()
+        s._ampr_originale_weglassen = True
+        s._ampr_ordner_ist_kopie = True
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        self.assertTrue(any("'phase.zstd_originale'" in z_ for z_ in s.protokoll), s.text())
+
+    def test_dauer_text_zeigt_stunden(self) -> None:
+        f = APP.PS5ConverterGUI._dauer_text
+        self.assertEqual("0:00:00", f(0))
+        self.assertEqual("0:01:05", f(65.4))
+        self.assertEqual("11:59:59", f(11 * 3600 + 59 * 60 + 59))
+        self.assertEqual("0:00:00", f(-3), "nie negativ")
+
+    def test_fehler_beim_melden_stoert_den_lauf_nicht(self) -> None:
+        class Kaputt(_Stub):
+            def _append_to_log(self, text: str) -> None:
+                raise RuntimeError("Protokoll kaputt")
+        Kaputt()._phase_dauer_melden("phase.zstd_packen", 0.0)   # darf nichts werfen
 
     def test_andere_fassung_wird_abgelehnt_und_nichts_geschrieben(self) -> None:
         for variante in ("test-pack", "test-debug-pack", "0.4.2.1"):
