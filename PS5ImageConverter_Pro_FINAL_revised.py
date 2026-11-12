@@ -13367,15 +13367,9 @@ class PS5ConverterGUI:
             zeile.bind("<Configure>", lambda e: zeile.configure(wraplength=max(100, e.width - 8)))
             return zeile
 
-        # ---- Leiste: Fassungen laden (links), Adresse der PS5 (rechts) ----------
+        # ---- Leiste: Adresse der PS5 (gilt fuer beide Karten) --------------------
         leiste = tk.Frame(seite, bg=c["bg_main"])
         leiste.pack(fill="x", pady=(8, 0))
-        leiste_status_var = tk.StringVar(value="")
-        release_laden_knopf = self._seitenpille(leiste, "y2jbupdater.btn_load_releases",
-                                                lambda: _releases_laden(), klein=True)
-        release_laden_knopf.pack(side="left")
-        tk.Label(leiste, textvariable=leiste_status_var, font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"], anchor="w").pack(side="left", padx=(10, 0))
         ip_rahmen = tk.Frame(leiste, bg=c["bg_main"])
         ip_rahmen.pack(side="right")
         ip_etikett = tk.Label(ip_rahmen, text=self._t("dienste.ip_label"), font=(UI_SCHRIFT, pt(9)),
@@ -13482,9 +13476,12 @@ class PS5ConverterGUI:
 
             threading.Thread(target=_lauf, daemon=True, name="y2jb-download").start()
 
+        release_laden_knopf = self._seitenpille(zeile_rel, "y2jbupdater.btn_load_releases",
+                                                lambda: _release_laden(), klein=True)
+        release_laden_knopf.grid(row=0, column=1, padx=(0, 8))
         herunterladen_knopf = self._seitenpille(zeile_rel, "y2jbupdater.btn_download", _herunterladen, klein=True)
         herunterladen_knopf.configure(state="disabled")
-        herunterladen_knopf.grid(row=0, column=1)
+        herunterladen_knopf.grid(row=0, column=2)
 
         _beschriftung(karte_datei, "y2jbupdater.step_ziel").pack(fill="x", pady=(12, 3))
         zeile_ziel = tk.Frame(karte_datei, bg=karte_bg)
@@ -13654,10 +13651,13 @@ class PS5ConverterGUI:
 
             threading.Thread(target=_lauf, daemon=True, name="y2jb-update-download").start()
 
+        update_laden_knopf = self._seitenpille(zeile_update_rel, "y2jbupdater.btn_load_releases",
+                                               lambda: _update_laden(), klein=True)
+        update_laden_knopf.grid(row=0, column=1, padx=(0, 8))
         update_herunterladen_knopf = self._seitenpille(zeile_update_rel, "y2jbupdater.btn_download",
                                                        _update_herunterladen, klein=True)
         update_herunterladen_knopf.configure(state="disabled")
-        update_herunterladen_knopf.grid(row=0, column=1)
+        update_herunterladen_knopf.grid(row=0, column=2)
 
         _beschriftung(karte_update, "y2jbupdater.step_ziel").pack(fill="x", pady=(12, 3))
         zeile_usb = tk.Frame(karte_update, bg=karte_bg)
@@ -13737,43 +13737,10 @@ class PS5ConverterGUI:
         update_upload_knopf.pack(side="right")
         _statuszeile(fuss_update, update_status_var).pack(side="left", fill="x", expand=True, padx=(0, 10))
 
-        # ---- "Fassungen laden": eine Abfrage fuellt beide Listen -----------------
-        def _releases_geladen(ergebnis) -> None:
-            nonlocal angebote_liste, angebote_liste_update
-            fehler, freigaben = ergebnis
-            release_laden_knopf.configure(state="normal")
-            if fehler:
-                leiste_status_var.set(self._t("y2jbupdater.status_releases_failed", fehler=fehler))
-                return
-            angebote_liste = y2jb_updater.angebote(freigaben)
-            angebote_liste_update = y2jb_updater.angebote(freigaben, dateiname=y2jb_updater.UPDATE_DATEINAME)
-            if angebote_liste:
-                werte = ["%s (%s)%s" % (f.tag, f.datum, self._t("y2jbupdater.vorab_suffix") if f.vorab else "")
-                         for f, _a in angebote_liste]
-                release_box.configure(values=werte, state="readonly")
-                release_box.current(0)
-                herunterladen_knopf.configure(state="normal")
-            else:
-                release_box.configure(values=[], state="disabled")
-            if angebote_liste_update:
-                werte_update = ["%s (%s)%s" % (f.tag, f.datum, self._t("y2jbupdater.vorab_suffix") if f.vorab else "")
-                                for f, _a in angebote_liste_update]
-                update_box.configure(values=werte_update, state="readonly")
-                update_box.current(0)
-                update_herunterladen_knopf.configure(state="normal")
-            else:
-                update_box.configure(values=[], state="disabled")
-            if not angebote_liste and not angebote_liste_update:
-                leiste_status_var.set(self._t("y2jbupdater.status_releases_none"))
-            else:
-                leiste_status_var.set(self._t("y2jbupdater.status_releases_ok", anzahl=len(freigaben)))
-
-        def _releases_laden() -> None:
-            release_laden_knopf.configure(state="disabled")
-            herunterladen_knopf.configure(state="disabled")
-            update_herunterladen_knopf.configure(state="disabled")
-            leiste_status_var.set(self._t("y2jbupdater.status_releases_loading"))
-
+        # ---- "Fassungen laden": jede Karte hat ihren eigenen Knopf ---------------
+        # Seit dem 12.11.2026 (Nutzerwunsch) je Karte statt einmal in der Leiste: Dort fiel er nicht auf. Beide
+        # fragen dieselbe Quelle ab, fuellen aber nur die Liste ihrer Karte und melden in ihrer Statuszeile.
+        def _fassungen_abfragen(fertig) -> None:
             def _lauf() -> None:
                 try:
                     # Netz.abfragen() will die rohe "Besitzer/Repo"-Kennung, nicht die
@@ -13786,9 +13753,60 @@ class PS5ConverterGUI:
                         ergebnis = ("", werkzeug_updates.freigaben_lesen(antwort.text))
                 except Exception as exc:                        # noqa: BLE001
                     ergebnis = (str(exc)[:200], [])
-                self._spaeter_im_fenster(seite, _releases_geladen, ergebnis)
+                self._spaeter_im_fenster(seite, fertig, ergebnis)
 
             threading.Thread(target=_lauf, daemon=True, name="y2jb-releases").start()
+
+        def _fassungsliste(angebote) -> list:
+            return ["%s (%s)%s" % (f.tag, f.datum, self._t("y2jbupdater.vorab_suffix") if f.vorab else "")
+                    for f, _a in angebote]
+
+        def _release_geladen(ergebnis) -> None:
+            nonlocal angebote_liste
+            fehler, freigaben = ergebnis
+            release_laden_knopf.configure(state="normal")
+            if fehler:
+                status_var.set(self._t("y2jbupdater.status_releases_failed", fehler=fehler))
+                return
+            angebote_liste = y2jb_updater.angebote(freigaben)
+            if angebote_liste:
+                release_box.configure(values=_fassungsliste(angebote_liste), state="readonly")
+                release_box.current(0)
+                herunterladen_knopf.configure(state="normal")
+                status_var.set(self._t("y2jbupdater.status_releases_ok", anzahl=len(angebote_liste)))
+            else:
+                release_box.configure(values=[], state="disabled")
+                status_var.set(self._t("y2jbupdater.status_releases_none"))
+
+        def _release_laden() -> None:
+            release_laden_knopf.configure(state="disabled")
+            herunterladen_knopf.configure(state="disabled")
+            status_var.set(self._t("y2jbupdater.status_releases_loading"))
+            _fassungen_abfragen(_release_geladen)
+
+        def _update_geladen(ergebnis) -> None:
+            nonlocal angebote_liste_update
+            fehler, freigaben = ergebnis
+            update_laden_knopf.configure(state="normal")
+            if fehler:
+                update_status_var.set(self._t("y2jbupdater.status_releases_failed", fehler=fehler))
+                return
+            angebote_liste_update = y2jb_updater.angebote(freigaben, dateiname=y2jb_updater.UPDATE_DATEINAME)
+            if angebote_liste_update:
+                update_box.configure(values=_fassungsliste(angebote_liste_update), state="readonly")
+                update_box.current(0)
+                update_herunterladen_knopf.configure(state="normal")
+                update_status_var.set(self._t("y2jbupdater.status_releases_ok_zip",
+                                              anzahl=len(angebote_liste_update)))
+            else:
+                update_box.configure(values=[], state="disabled")
+                update_status_var.set(self._t("y2jbupdater.status_releases_none_zip"))
+
+        def _update_laden() -> None:
+            update_laden_knopf.configure(state="disabled")
+            update_herunterladen_knopf.configure(state="disabled")
+            update_status_var.set(self._t("y2jbupdater.status_releases_loading"))
+            _fassungen_abfragen(_update_geladen)
 
     # --- Die Seite "WebKit Autoloader" (Knopf 2 der Ansicht KONSOLE) ---------------
     #

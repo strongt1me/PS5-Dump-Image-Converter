@@ -169,29 +169,52 @@ class SeiteTests(unittest.TestCase):
         self.assertEqual("_show_asset_pack_werkzeug", KLASSE._KONSOLE_FENSTER.get("assetpack"))
         self.assertEqual("_konsole_y2jb_zeigen", KLASSE._KONSOLE_SEITEN.get("y2jbupdater"))
 
-    def test_fassungen_laden_befuellt_beide_listen_ueber_dieselbe_abfrage(self) -> None:
+    def _fassungsboxen(self) -> list:
+        """Die Klapplisten mit gefuellter Fassungsliste (3 Eintraege), in Reihenfolge der Karten."""
+        return [b for b in _suchen(self.seite, ttk.Combobox)
+                if str(b.cget("state")) == "readonly" and len(b.cget("values")) == 3]
+
+    def test_jede_karte_hat_ihren_eigenen_fassungen_laden_knopf(self) -> None:
+        """Seit 12.11.2026 (Nutzerwunsch): kein gemeinsamer Knopf in der Leiste mehr, je Karte einer."""
+        knoepfe = [k for k in _suchen(self.seite, APP.RoundedButton) if str(k.cget("text")) == "Fassungen laden"]
+        self.assertEqual(2, len(knoepfe))
+        karten = {self.app.root.nametowidget(k.winfo_parent()).winfo_parent() for k in knoepfe}
+        self.assertEqual(2, len(karten), "die beiden Knoepfe stehen in verschiedenen Karten")
+
+    def test_fassungen_laden_fuellt_nur_die_liste_der_eigenen_karte(self) -> None:
         """Regressionstest: adresse_der_quelle() darf hier nicht zweimal angewandt werden."""
         netz = FakeNetz(releases={yu.QUELLE: _FREIGABEN})
         with mock.patch.object(wu, "Netz", lambda: netz), \
                 mock.patch.object(self.app, "_updates_payload_ordner", return_value=self.ordner):
-            laden_knopf = self._knopf("Fassungen laden")
-            laden_knopf._command()
-            self.assertTrue(_warten(lambda: str(laden_knopf.cget("state")) == "normal"),
+            links = self._knopf("Fassungen laden", 0)
+            links._command()
+            self.assertTrue(_warten(lambda: str(links.cget("state")) == "normal"),
                             "Der Knopf blieb gesperrt - der Hintergrundfaden ist nie fertig geworden.")
-        self.assertEqual([(yu.QUELLE, "")], netz.gefragt, "Netz.abfragen() bekam nicht die rohe Quelle.")
+            self.assertEqual(1, len(self._fassungsboxen()), "nur die Liste der linken Karte ist gefuellt")
+            self.assertEqual([(yu.QUELLE, "")], netz.gefragt, "Netz.abfragen() bekam nicht die rohe Quelle.")
+            rechts = self._knopf("Fassungen laden", 1)
+            rechts._command()
+            self.assertTrue(_warten(lambda: str(rechts.cget("state")) == "normal"))
         # Alle 3 Freigaben haben beide Dateien, Vorabfassungen zaehlen mit (y2jb_updater.angebote laesst
         # nur Entwuerfe heraus) - also 3 Eintraege in beiden Fassungslisten.
-        boxen = _suchen(self.seite, ttk.Combobox)
-        fassungs_boxen = [b for b in boxen if str(b.cget("state")) == "readonly" and len(b.cget("values")) == 3]
-        self.assertEqual(2, len(fassungs_boxen), "Beide Fassungslisten (download0.dat, y2jb_update.zip) "
-                                                  "sollten 3 Eintraege haben.")
+        self.assertEqual(2, len(self._fassungsboxen()), "Beide Fassungslisten (download0.dat, y2jb_update.zip) "
+                                                         "sollten 3 Eintraege haben.")
+        melde = {k.cget("text") for k in _suchen(self.seite, tk.Label)}
+        self.assertIn(self.app._t("y2jbupdater.status_releases_ok", anzahl=3), melde)
+        self.assertIn(self.app._t("y2jbupdater.status_releases_ok_zip", anzahl=3), melde)
+
+    def test_texte_der_statuszeilen_in_allen_sprachen(self) -> None:
+        from ps5_validator.utils.i18n import STRINGS
+        for schluessel in ("y2jbupdater.status_releases_ok_zip", "y2jbupdater.status_releases_none_zip"):
+            for sprache in ("de", "en", "es", "it", "fr"):
+                self.assertTrue(STRINGS[schluessel][sprache], (schluessel, sprache))
 
     def test_herunterladen_legt_die_echte_datei_mit_passender_pruefsumme_ab(self) -> None:
         netz = FakeNetz(releases={yu.QUELLE: _FREIGABEN})
         with mock.patch.object(wu, "Netz", lambda: netz), \
                 mock.patch.object(self.app, "_updates_payload_ordner", return_value=self.ordner), \
                 mock.patch.object(self.app, "_get_runtime_temp_dir", return_value=self.ordner):
-            laden_knopf = self._knopf("Fassungen laden")
+            laden_knopf = self._knopf("Fassungen laden", 0)    # linke Karte: download0.dat
             laden_knopf._command()
             self.assertTrue(_warten(lambda: str(laden_knopf.cget("state")) == "normal"))
 
@@ -216,7 +239,7 @@ class SeiteTests(unittest.TestCase):
         with mock.patch.object(wu, "Netz", lambda: netz), \
                 mock.patch.object(self.app, "_updates_payload_ordner", return_value=self.ordner), \
                 mock.patch.object(self.app, "_get_runtime_temp_dir", return_value=self.ordner):
-            laden_knopf = self._knopf("Fassungen laden")
+            laden_knopf = self._knopf("Fassungen laden", 1)    # rechte Karte: y2jb_update.zip
             laden_knopf._command()
             self.assertTrue(_warten(lambda: str(laden_knopf.cget("state")) == "normal"))
 
