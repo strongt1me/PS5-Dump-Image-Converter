@@ -6,6 +6,11 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ---
 
+## v1.9.98 – 12.11.2026
+
+- **Geändert:** Die Seite „Y2JB Updater“ passt ohne Scrollen ins Fenster: zwei gleich aufgebaute Karten nebeneinander (download0.dat und Autoloader), einheitliche Felder, „Fassungen laden“ in jeder Karte und die PS5-Adresse einmal oben.
+- **Aktualisiert:** PS5Upload 12.4.12 (Sicherungen auf einen anderen Benutzer wiederherstellen), PS5 Cooling & System Center – Pro 1.80.0, garlic-savemgr 1.15-beta23 und das PS5-PKG-Tool 2.4.1 (nur die Fassungsnummer).
+
 ## v1.9.97 – 11.11.2026
 
 - **Neu:** Angefangene (abgebrochene) Downloads lassen sich löschen: im Download-Fenster, in den Ladefenstern der Update-Pakete und in Spiel-Info für das gezeigte Spiel; Reste früherer Läufe zeigt das Download-Fenster jetzt an.
