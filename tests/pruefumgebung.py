@@ -80,6 +80,9 @@ def umlenken(name: str = "pruefstand", leeren: bool = False) -> str:
     os.makedirs(ordner, exist_ok=True)
     os.environ[UMGEBUNGSNAME] = ordner
     arbeitsordner_umlenken()
+    # Seit dem 12.11.2026 folgt das Programm beim Start der Systemsprache (``i18n.startsprache``); die Pruefstaende
+    # brauchen auf jedem Rechner dieselbe Sprache - die Vorgabe der Tests war immer Deutsch.
+    os.environ.setdefault("PS5CONV_SYSTEMSPRACHE", "de")
     return ordner
 
 

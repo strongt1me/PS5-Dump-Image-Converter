@@ -12,6 +12,76 @@ from __future__ import annotations
 SUPPORTED_LANGUAGES = ("de", "en", "es", "it", "fr")
 DEFAULT_LANGUAGE = "de"
 
+#: Sprache beim Start, wenn nichts gespeichert ist und die des Systems nicht im Programm vorkommt
+#: (Nutzerwunsch 12.11.2026). ``DEFAULT_LANGUAGE`` bleibt der Rueckfall fuer fehlende Uebersetzungen.
+STANDARD_SPRACHE = "en"
+
+#: Umgebungsvariable, die die Systemsprache vorgibt (Pruefstaende, Fehlersuche): ``de``, ``fr_FR.UTF-8``, ``xx`` ...
+SYSTEMSPRACHE_UMGEBUNG = "PS5CONV_SYSTEMSPRACHE"
+
+#: Hauptsprachkennung von Windows (LANGID & 0x3FF) -> Kuerzel.
+_WINDOWS_SPRACHKENNUNG = {0x07: "de", 0x09: "en", 0x0A: "es", 0x10: "it", 0x0C: "fr"}
+
+
+def _kuerzel(text: object) -> str:
+    """``de_DE.UTF-8``, ``fr-CA``, ``EN`` -> ``de`` / ``fr`` / ``en``; ``C``, ``POSIX`` und Leeres -> ``""``."""
+    import re
+    treffer = re.match(r"^([A-Za-z]{2,3})(?:[-_.@:]|$)", str(text or "").strip())
+    return treffer.group(1).lower() if treffer else ""
+
+
+def _system_kennung() -> str:
+    """Die Anzeigesprache des Systems als Rohtext (``de-DE``, ``fr_FR.UTF-8``, ...) oder ``""``, wenn unbekannt."""
+    import os
+    import sys
+    vorgabe = os.environ.get(SYSTEMSPRACHE_UMGEBUNG, "").strip()
+    if vorgabe:
+        return vorgabe
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            sprachkennung = int(ctypes.windll.kernel32.GetUserDefaultUILanguage())
+            return _WINDOWS_SPRACHKENNUNG.get(sprachkennung & 0x3FF, "")
+        except Exception:  # noqa: BLE001 - ohne Windows-Schnittstelle gilt der Rueckfall unten
+            pass
+    if sys.platform == "darwin":
+        try:
+            import re
+            import subprocess
+            ausgabe = subprocess.run(["defaults", "read", "-g", "AppleLanguages"], capture_output=True, text=True,
+                                     timeout=3, check=False).stdout
+            treffer = re.search(r'"([^"]+)"', ausgabe) or re.search(r"\b([A-Za-z]{2,3}(?:-[A-Za-z0-9]+)*)\b", ausgabe)
+            if treffer:
+                return treffer.group(1)
+        except Exception:  # noqa: BLE001
+            pass
+    for name in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        wert = os.environ.get(name, "").split(":")[0].strip()
+        if _kuerzel(wert):
+            return wert
+    try:
+        import locale
+        return str(locale.getlocale()[0] or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def systemsprache() -> str:
+    """Die Sprache des Systems, wenn das Programm sie kennt (Kuerzel aus ``SUPPORTED_LANGUAGES``), sonst ``""``."""
+    kuerzel = _kuerzel(_system_kennung())
+    return kuerzel if kuerzel in SUPPORTED_LANGUAGES else ""
+
+
+def startsprache(gespeichert: object = None) -> str:
+    """Die Sprache beim Programmstart.
+
+    Eine gespeicherte Wahl (der Anwender hat die Sprache umgeschaltet) gilt immer. Sonst folgt das Programm der Sprache
+    des Systems, und kennt es sie nicht, gilt Englisch (``STANDARD_SPRACHE``).
+    """
+    if gespeichert in SUPPORTED_LANGUAGES:
+        return str(gespeichert)
+    return systemsprache() or STANDARD_SPRACHE
+
 # Stufen der mkpfs-Pruefung nach dem Packen. Gespeichert wird die
 # Kennung ('aus'/'schnell'/'voll'), nicht der uebersetzte Text.
 VERIFY_STUFEN = (('verify.off', 'aus'),

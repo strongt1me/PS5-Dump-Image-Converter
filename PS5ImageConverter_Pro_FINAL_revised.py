@@ -212,7 +212,7 @@ from ps5_validator.utils.param_manifest import (
 from ps5_validator.utils.i18n import (AMPR_METHODE_ASSETPACK, AMPR_METHODE_KEYS,
                                       AMPR_METHODE_NORMAL, BAUFORM_KEYS,
                                       DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES,
-                                      VERIFY_STUFEN,
+                                      VERIFY_STUFEN, startsprache as i18n_startsprache,
                                       ZSTD_LEVEL_KEYS, translate as i18n_translate)
 from ps5_validator.utils.ini_config import (
     MEHRFACH_TRENNER,
@@ -5092,8 +5092,10 @@ class PS5ConverterGUI:
         self._COLORS = self._palette_bauen(self._current_theme)
 
         # 1c. Sprache aus Konfiguration laden (DE/EN/ES/IT/FR)
-        _saved_language = self._load_setting_static("language", DEFAULT_LANGUAGE)
-        self._current_language: str = str(_saved_language) if _saved_language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+        # Eine gespeicherte Wahl gilt immer; sonst folgt das Programm der Systemsprache und nimmt Englisch, wenn es sie
+        # nicht kennt (Nutzerwunsch 12.11.2026, ``i18n.startsprache``). Bis v1.9.97 war es ohne Wahl immer Deutsch.
+        _saved_language = self._load_setting_static("language", None)
+        self._current_language: str = i18n_startsprache(_saved_language)
 
         # 1d. Offene Werkzeugfenster, damit derselbe Knopf sie wieder
         # schliesst. Der Schluessel ist der Methodenname des Knopfes.
@@ -69888,9 +69890,7 @@ def _ohne_fenster_uebersetzt(schluessel: str, **werte: object) -> str:
     Stelle, an der das Programm noch gar nicht sichtbar ist und der
     Anwender nur diesen einen Satz zu lesen bekommt.
     """
-    sprache = PS5ConverterGUI._load_setting_static("language", DEFAULT_LANGUAGE)
-    if sprache not in ("de", "en"):
-        sprache = DEFAULT_LANGUAGE
+    sprache = i18n_startsprache(PS5ConverterGUI._load_setting_static("language", None))
     return i18n_translate(str(sprache), schluessel, **werte)
 
 
