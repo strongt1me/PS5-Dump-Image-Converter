@@ -420,6 +420,71 @@ class FensterTests(unittest.TestCase):
         self.assertEqual("left", str(app.bauform_combo.cget("justify")),
                          "Gegenprobe: die uebrigen Klapplisten bleiben, wie sie waren")
 
+    # ----- "Vollstaendige Pruefung" rechts neben der Packstufe (Nutzerwunsch 12.11.2026) ----------------------------
+    def _voll_zustand(self) -> str:
+        return str(self.app.ampr_voll_check.cget("state"))
+
+    def test_der_schalter_sitzt_rechts_neben_der_packstufe(self):
+        info = self.app.ampr_voll_check.place_info()
+        self.assertEqual(str(self.app.ampr_stufe_combo), str(info["in"]))
+        self.assertEqual("w", info["anchor"])
+        self.assertEqual(1.0, float(info["relx"]))
+        self.assertGreater(int(info["x"]), 0)
+
+    def test_der_schalter_ist_nur_bei_zstd_mit_asset_pack_waehlbar(self):
+        app = self.app
+        self.assertEqual("disabled", self._voll_zustand(), "ohne Haken gesperrt")
+        self._pack_frei("lz4")
+        self.assertEqual("disabled", self._voll_zustand(), "bei LZ4 gesperrt")
+        app._ampr_pack_var.set("zstd")
+        app._ampr_pack_gewaehlt()
+        self.assertEqual("normal", self._voll_zustand(), "zstd mit Asset-Pack: waehlbar")
+        self._methode("normal")
+        self.assertEqual("disabled", self._voll_zustand(), "bei Normal wieder gesperrt")
+
+    def test_bei_lz4_steht_der_schalter_angehakt_weil_dort_immer_voll_geprueft_wird(self):
+        app = self.app
+        self.addCleanup(app._save_setting, "ampr_voll_pruefen", False)
+        app._save_setting("ampr_voll_pruefen", False)
+        self._pack_frei("lz4")
+        self.assertTrue(app._ampr_voll_var.get())
+        self.assertFalse(app._ampr_voll_pruefen(), "gespeichert wird dabei nichts")
+        app._ampr_pack_var.set("zstd")
+        app._ampr_pack_gewaehlt()
+        self.assertFalse(app._ampr_voll_var.get(), "bei zstd zeigt der Schalter die gespeicherte Wahl")
+
+    def test_die_wahl_wird_gespeichert_und_beim_umschalten_wieder_gezeigt(self):
+        app = self.app
+        self.addCleanup(app._save_setting, "ampr_voll_pruefen", False)
+        self._pack_frei("zstd")
+        app._ampr_voll_var.set(True)
+        app._ampr_voll_gewaehlt()
+        self.assertTrue(app._ampr_voll_pruefen())
+        app._ampr_pack_var.set("LZ4")
+        app._ampr_pack_gewaehlt()
+        app._ampr_pack_var.set("zstd")
+        app._ampr_pack_gewaehlt()
+        self.assertTrue(app._ampr_voll_var.get())
+        app._ampr_voll_var.set(False)
+        app._ampr_voll_gewaehlt()
+        self.assertFalse(app._ampr_voll_pruefen())
+
+    def test_vorgabe_ist_die_stichprobe(self):
+        app = self.app
+        self.addCleanup(app._save_setting, "ampr_voll_pruefen", False)
+        app._save_setting("ampr_voll_pruefen", False)
+        self.assertFalse(app._ampr_voll_pruefen())
+
+    def test_tooltip_des_schalters_erklaert_je_zustand(self):
+        app = self.app
+        tipp = app._ampr_voll_tooltip
+        self.assertEqual(app._t("ampr_pack.voll_pruefen_gesperrt"), tipp.text)
+        self._pack_frei("lz4")
+        self.assertEqual(app._t("ampr_pack.voll_pruefen_lz4"), tipp.text)
+        app._ampr_pack_var.set("zstd")
+        app._ampr_pack_gewaehlt()
+        self.assertEqual(app._t("ampr_pack.voll_pruefen_hint"), tipp.text)
+
     def test_tooltip_der_packstufe_wechselt_mit_der_sperre(self):
         app = self.app
         tipp = app._ampr_stufe_tooltip

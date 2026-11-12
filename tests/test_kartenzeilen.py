@@ -410,6 +410,36 @@ class KartenzeilenTests(unittest.TestCase):
         finally:
             self.wurzel.withdraw()
 
+    def test_in_schmalen_fenstern_liegt_die_zweite_einbauzeile_nicht_ueber_bauform(self):
+        """Forum/Nutzer 12.11.2026: Die Zeile mit DLC EMU, Packverfahren, Packstufe und "Vollstaendige Pruefung" lag bei
+        Mindestbreite ueber der Zeile BAUFORM. Die Rasterzeile, die die Hoehe der Einbauzeile haelt, war die der
+        Ueberschrift (5) statt die des Kaestchens (6), und das Kaestchen stand mittig statt oben."""
+        a = self.app
+        a.ampr_integrate_var.set(True)
+        a._on_integration_changed(speichern=False)
+        self._fenster_auf(self.haupt.WINDOW_MIN_WIDTH)
+        try:
+            self.assertFalse(a._einbauzeile_daneben, "bei Mindestbreite steht die Einbauzeile in einer eigenen Zeile")
+            unten_zweite_zeile = max(w.winfo_rooty() + w.winfo_height()
+                                     for w in (a.dlc_integrate_check, a.ampr_pack_combo, a.ampr_stufe_combo,
+                                               a.ampr_voll_check))
+            oben_bauform = min(a.bauform_combo.winfo_rooty(), a.bauform_title.winfo_rooty())
+            self.assertLessEqual(unten_zweite_zeile, oben_bauform,
+                                 "die zweite Einbauzeile ragt %d px in BAUFORM" % (unten_zweite_zeile - oben_bauform))
+            master = a.ampr_integrate_check.master
+            self.assertEqual(0, int(master.grid_rowconfigure(5)["minsize"]), "die Ueberschrift bekommt keine Zusatzhoehe")
+            self.assertGreaterEqual(int(master.grid_rowconfigure(6)["minsize"]), a._dlc_zeile_hoehe())
+        finally:
+            self.wurzel.withdraw()
+
+    def test_die_hoehe_der_einbauzeile_haengt_an_der_zeile_des_kaestchens(self):
+        with io.open(HAUPTDATEI, encoding="utf-8") as datei:
+            text = datei.read()
+        quelle = text[text.index("def _integrationszeile_hoehe_setzen"):]
+        quelle = quelle[:quelle.index("def _hintergrund_ist_aktuell")]
+        self.assertRegex(quelle, r"grid_rowconfigure\(\s*6,", "das Kaestchen steht in Rasterzeile 6")
+        self.assertNotRegex(quelle, r"grid_rowconfigure\(\s*5,")
+
     def test_bauform_steht_direkt_unter_dem_hinweis_wenn_die_einbauzeile_daneben_steht(self):
         """Die beiden Rasterzeilen der Einbauzeile fallen dann zusammen - kein Loch zwischen Hinweis und BAUFORM.
 

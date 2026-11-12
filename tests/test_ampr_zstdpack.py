@@ -464,6 +464,133 @@ class LesevorlaufTests(_Ordner):
 
 
 @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class StichprobenTests(_Ordner):
+    """Fast-Pruefung wie bei Dump Forge: Aufbau immer ganz, vom Inhalt nur eine Stichprobe (Nutzerwunsch 12.11.2026).
+
+    Mit ``LESE_BLOCK`` = zwei Chunks hat die grosse Datei (20 Chunks) zehn Stuecke; erstes, letztes und ein zufaelliges
+    mittleres kommen dran, die uebrigen sieben nicht.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.gross = Path(self.spiel, "data", "gross.bin")
+        self.original = (bytes(range(256)) * 20480)[:20 * z.CHUNK_SIZE]
+        self.gross.write_bytes(self.original)
+        patcher = mock.patch.object(z, "LESE_BLOCK", 2 * z.CHUNK_SIZE)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.packen(stufe=3)
+        self.index = z.index_laden(self.packs)
+        self.nummer = next(n for n, d in enumerate(self.index.dateien) if d.pfad == "data/gross.bin")
+
+    def _aendern(self, stueck: int) -> None:
+        daten = bytearray(self.original)
+        daten[stueck * z.LESE_BLOCK + 3] ^= 0xFF
+        self.gross.write_bytes(bytes(daten))
+
+    def _ungewaehltes_stueck(self, startwert: int) -> int:
+        plan, _bytes = z.stichprobe_planen(self.index, startwert)
+        gewaehlt = plan[self.nummer]
+        return next(s for s in range(10) if s not in gewaehlt)
+
+    def test_der_plan_nimmt_erstes_letztes_und_ein_mittleres_stueck(self) -> None:
+        plan, geplant = z.stichprobe_planen(self.index, 1)
+        self.assertEqual(3, len(plan[self.nummer]))
+        self.assertIn(0, plan[self.nummer])
+        self.assertIn(9, plan[self.nummer])
+        self.assertLess(geplant, self.index.logische_bytes, "weniger als alles")
+
+    def test_kleine_dateien_kommen_ganz_dran_leere_gar_nicht(self) -> None:
+        plan, _geplant = z.stichprobe_planen(self.index, 1)
+        for nummer, datei in enumerate(self.index.dateien):
+            if datei.pfad == "data/klein.cfg":
+                self.assertIsNone(plan[nummer], "eine kleine Datei wird ganz geprueft")
+            if datei.groesse == 0:
+                self.assertNotIn(nummer, plan)
+
+    def test_gleicher_startwert_gleiche_auswahl_anderer_startwert_andere(self) -> None:
+        a = z.stichprobe_planen(self.index, 5)
+        self.assertEqual(a, z.stichprobe_planen(self.index, 5))
+        wahlen = {tuple(sorted(z.stichprobe_planen(self.index, s)[0][self.nummer])) for s in range(12)}
+        self.assertGreater(len(wahlen), 1, "der Startwert aendert die zufaelligen Stuecke")
+
+    def test_voll_findet_jede_aenderung_die_stichprobe_nur_gewaehlte_stuecke(self) -> None:
+        startwert = 7
+        frei = self._ungewaehltes_stueck(startwert)
+        self._aendern(frei)
+        z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=startwert)         # unbemerkt - so ist die Stichprobe
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel)                                          # voll
+        self.assertIn("inhalt_anders", str(ctx.exception))
+
+    def test_die_stichprobe_findet_aenderungen_im_ersten_und_letzten_stueck(self) -> None:
+        for stueck in (0, 9):
+            self._aendern(stueck)
+            with self.assertRaises(z.ZstdPackFehler, msg=str(stueck)) as ctx:
+                z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=1)
+            self.assertIn("inhalt_anders", str(ctx.exception))
+
+    def test_die_stichprobe_findet_aenderungen_an_einer_kleinen_datei(self) -> None:
+        Path(self.spiel, "data", "klein.cfg").write_bytes(b"a=2\n")
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=1)
+        self.assertIn("inhalt_anders", str(ctx.exception))
+
+    def test_aufbau_und_groessen_werden_auch_in_der_stichprobe_ganz_geprueft(self) -> None:
+        # Eine andere Groesse der Quelle faellt auf, auch wenn die Datei kaum Stuecke in der Stichprobe hat.
+        self.gross.write_bytes(self.original + b"x")
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=1)
+        self.assertIn("quelle_anders", str(ctx.exception))
+        self.gross.write_bytes(self.original)
+        band = Path(self.packs, z.bandname(0))
+        daten = bytearray(band.read_bytes())
+        daten[10] ^= 0xFF                                                         # Kopf des Bandes
+        band.write_bytes(bytes(daten))
+        with self.assertRaises(z.ZstdPackFehler):
+            z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=1)
+
+    def test_bericht_nennt_modus_und_gepruefte_bytes(self) -> None:
+        voll, stich = {}, {}
+        z.pruefen(self.packs, self.spiel, bericht=voll)
+        z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=3, bericht=stich)
+        self.assertEqual("voll", voll["modus"])
+        self.assertEqual(voll["gesamt"], voll["geprueft"], "voll liest jedes Byte")
+        self.assertEqual("stichprobe", stich["modus"])
+        self.assertEqual(3, stich["startwert"])
+        self.assertEqual(stich["geprueft"], z.stichprobe_planen(self.index, 3)[1])
+        self.assertLess(stich["geprueft"], stich["gesamt"])
+
+    def test_ohne_startwert_wird_einer_gewuerfelt_und_im_bericht_genannt(self) -> None:
+        bericht = {}
+        z.pruefen(self.packs, self.spiel, stichprobe=True, bericht=bericht)
+        self.assertIsInstance(bericht["startwert"], int)
+
+    def test_die_stichprobe_liest_weniger_vom_band_als_die_volle_pruefung(self) -> None:
+        zaehler = {"voll": 0, "stich": 0}
+        original = z._BandPuffer.lesen
+
+        def zaehlen(art):
+            def lesen(selbst, offset, laenge):
+                zaehler[art] += laenge
+                return original(selbst, offset, laenge)
+            return lesen
+
+        with mock.patch.object(z._BandPuffer, "lesen", zaehlen("voll")):
+            z.pruefen(self.packs, self.spiel)
+        with mock.patch.object(z._BandPuffer, "lesen", zaehlen("stich")):
+            z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=2)
+        self.assertLess(zaehler["stich"], zaehler["voll"])
+
+    def test_ohne_quelle_prueft_die_stichprobe_nur_das_entpacken(self) -> None:
+        z.pruefen(self.packs, stichprobe=True, startwert=1)
+
+    def test_ohne_lesefaeden_danach(self) -> None:
+        z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=1)
+        self.assertEqual([], _lesefaeden(), "ein Lesefaden ist zurueckgeblieben")
+
+
 class SpielordnerTests(_Ordner):
     def test_uebernehmen_und_erkennen(self) -> None:
         self.assertFalse(z.ist_gepackt(self.spiel))

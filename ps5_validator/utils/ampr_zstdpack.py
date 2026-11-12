@@ -23,6 +23,7 @@ from __future__ import annotations
 import concurrent.futures
 import os
 import queue
+import random
 import struct
 import threading
 import uuid
@@ -899,16 +900,77 @@ def _datei_chunks(index: Index, datei: Datei) -> Iterator[tuple[int, tuple[int, 
         yield n, index.chunks[datei.erster_chunk + n]
 
 
-def _pruef_stuecke(index: Index, handles: dict[int, Any], app0: str
+#: Fast-Pruefung wie bei Dump Forge: Dateien bis ``GANZ_BIS_STUECKE`` Stuecke werden ganz geprueft, von groesseren das
+#: erste und das letzte Stueck und dazu zufaellige Stuecke - zusammen hoechstens ``STICHPROBE_MAX`` Bytes und hoechstens
+#: ``STICHPROBE_ANTEIL`` des Rests (mindestens eines).
+GANZ_BIS_STUECKE = 2
+STICHPROBE_MAX = 1 << 30
+STICHPROBE_ANTEIL = 0.01
+
+
+def _stueck_bytes(datei: "Datei", stueck: int) -> int:
+    """Wie viele Bytes der Datei im ``stueck``-ten Stueck (zu ``LESE_BLOCK`` Bytes) liegen."""
+    return max(0, min(LESE_BLOCK, datei.groesse - stueck * LESE_BLOCK))
+
+
+def stichprobe_planen(index: "Index", startwert: int) -> "tuple[dict[int, frozenset[int] | None], int]":
+    """Welche Stuecke die Fast-Pruefung liest: ``({Dateinummer: Stuecke oder None fuer ganz}, Bytes)``.
+
+    Gleiche Pruefstuecke gleich Startwert gleich Auswahl, damit sich ein Lauf wiederholen laesst. Leere Dateien fehlen im
+    Plan (es gibt nichts zu lesen).
+    """
+    je_stueck = max(1, LESE_BLOCK // CHUNK_SIZE)
+    plan: "dict[int, set[int] | None]" = {}
+    gesamt = 0
+    kandidaten: "list[tuple[int, int]]" = []
+    rest = 0
+    for nummer, datei in enumerate(index.dateien):
+        if datei.groesse <= 0 or datei.chunk_zahl <= 0:
+            continue
+        stuecke = -(-datei.chunk_zahl // je_stueck)
+        if stuecke <= GANZ_BIS_STUECKE:
+            plan[nummer] = None
+            gesamt += datei.groesse
+            continue
+        feste = {0, stuecke - 1}
+        plan[nummer] = set(feste)
+        gesamt += sum(_stueck_bytes(datei, s) for s in feste)
+        for s in range(1, stuecke - 1):
+            kandidaten.append((nummer, s))
+            rest += _stueck_bytes(datei, s)
+    if kandidaten:
+        zufall = random.Random(startwert)
+        zufall.shuffle(kandidaten)
+        budget = max(LESE_BLOCK, min(STICHPROBE_MAX, int(rest * STICHPROBE_ANTEIL)))
+        for nummer, s in kandidaten:
+            b = _stueck_bytes(index.dateien[nummer], s)
+            if budget < b:
+                break
+            plan[nummer].add(s)       # type: ignore[union-attr]
+            budget -= b
+            gesamt += b
+    return ({n: (None if s is None else frozenset(s)) for n, s in plan.items()}, gesamt)
+
+
+def _pruef_stuecke(index: Index, handles: dict[int, Any], app0: str,
+                   plan: "dict[int, frozenset[int] | None] | None" = None
                    ) -> Iterator[tuple[Datei, int, list[tuple[int, bytes]], "bytes | None"]]:
     """Lesevorlauf der Pruefung: je Stueck ``(Datei, Nummer des ersten Chunks, [(Codec, gespeicherte Bytes)], Quelle)``.
 
     Das Band wird in grossen Bloecken gelesen (siehe :class:`_BandPuffer`), die Quelldatei je Stueck mit einem Aufruf -
     der Kopf der Platte wechselt so alle ``LESE_BLOCK`` Bytes zwischen Pack und Quelle statt nach jedem Chunk.
+
+    Mit ``plan`` (:func:`stichprobe_planen`) kommen nur die geplanten Stuecke; alles andere wird weder aus dem Band
+    noch aus der Quelle gelesen.
     """
     puffer = {nummer: _BandPuffer(fh) for nummer, fh in handles.items()}
     je_stueck = max(1, LESE_BLOCK // CHUNK_SIZE)
-    for datei in index.dateien:
+    for dateinummer, datei in enumerate(index.dateien):
+        gewaehlt = None
+        if plan is not None:
+            if dateinummer not in plan:
+                continue
+            gewaehlt = plan[dateinummer]
         quelle = None
         if app0:
             voll = os.path.join(os.path.abspath(app0), *datei.pfad.split("/"))
@@ -922,6 +984,11 @@ def _pruef_stuecke(index: Index, handles: dict[int, Any], app0: str
             n = 0
             while n < datei.chunk_zahl:
                 zahl = min(je_stueck, datei.chunk_zahl - n)
+                if gewaehlt is not None and (n // je_stueck) not in gewaehlt:
+                    n += zahl                         # nicht in der Stichprobe: weder Band noch Quelle lesen
+                    continue
+                if quelle is not None:
+                    quelle.seek(n * CHUNK_SIZE)       # nach uebersprungenen Stuecken wieder an die richtige Stelle
                 stuecke: list[tuple[int, bytes]] = []
                 for k in range(zahl):
                     offset, band, gespeichert, codec = index.chunks[datei.erster_chunk + n + k]
@@ -941,17 +1008,31 @@ def _pruef_stuecke(index: Index, handles: dict[int, Any], app0: str
 
 def pruefen(ordner_packs: str, app0: str = "", *, melden: Melder = _stumm,
             abbruch: Callable[[], bool] = lambda: False,
-            fortschritt: "Callable[[float], None] | None" = None) -> Index:
+            fortschritt: "Callable[[float], None] | None" = None,
+            stichprobe: bool = False, startwert: "int | None" = None,
+            bericht: "dict[str, Any] | None" = None) -> Index:
     """Prueft Index und Baender und - mit ``app0`` - jeden Chunk **Byte fuer Byte** gegen die Quelldateien.
 
     Ohne ``app0`` wird jeder Chunk nur entpackt (Frame-Pruefsumme, Laenge). Die Rueckgabe ist der Index.
+
+    Mit ``stichprobe`` (Fast-Pruefung wie bei Dump Forge) werden Index, Kopf jedes Bandes und die Dateigroessen wie
+    sonst vollstaendig geprueft, vom Inhalt aber nur die Stuecke aus :func:`stichprobe_planen` entpackt und verglichen.
+    ``startwert`` legt die Auswahl fest (ohne Angabe zufaellig). ``bericht`` bekommt ``modus`` ("voll" oder
+    "stichprobe"), ``geprueft`` und ``gesamt`` (Bytes) und ``startwert``.
 
     Gelesen wird in grossen Bloecken und in einem eigenen Faden (Lesevorlauf), damit die Platte nicht je Chunk zwischen
     Pack und Quelle springt und waehrend des Entpackens nicht stillsteht.
     """
     index = index_laden(ordner_packs)
     handles: dict[int, Any] = {}
-    gesamt = max(1, index.logische_bytes)
+    plan = None
+    if stichprobe:
+        if startwert is None:
+            startwert = random.SystemRandom().getrandbits(32)
+        plan, geplant = stichprobe_planen(index, startwert)
+        gesamt = max(1, geplant)
+    else:
+        gesamt = max(1, index.logische_bytes)
     erledigt = 0
     try:
         for nummer in range(len(index.baender)):
@@ -963,7 +1044,7 @@ def pruefen(ordner_packs: str, app0: str = "", *, melden: Melder = _stumm,
                 bandkopf_pruefen(handles[nummer].read(VOLUME_HEADER_SIZE), nummer, index)
             except OSError as exc:
                 raise ZstdPackFehler("ampr_zstd.band_fehlt: %s (%s)" % (bandname(nummer), exc)) from exc
-        vorlauf = _Vorlauf(_pruef_stuecke(index, handles, app0))
+        vorlauf = _Vorlauf(_pruef_stuecke(index, handles, app0, plan))
         try:
             for datei, erster, stuecke, roh in vorlauf:
                 if abbruch():
@@ -985,6 +1066,9 @@ def pruefen(ordner_packs: str, app0: str = "", *, melden: Melder = _stumm,
     finally:
         for fh in handles.values():
             fh.close()
+    if bericht is not None:
+        bericht.update(modus="stichprobe" if stichprobe else "voll", geprueft=erledigt,
+                       gesamt=index.logische_bytes, startwert=startwert)
     melden("ampr_zstd: geprueft, %d Dateien, %d Chunks" % (len(index.dateien), len(index.chunks)))
     return index
 

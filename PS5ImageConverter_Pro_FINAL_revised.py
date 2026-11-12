@@ -10336,7 +10336,7 @@ class PS5ConverterGUI:
             state="readonly",
             font=(UI_SCHRIFT, pt(10)),
             values=list(self._zstd_level_options.keys()),
-            width=16,
+            width=15,        # 16 bis v1.9.97; ein Zeichen weniger gibt den Pfeilen in den Zeilen Platz (die laengsten Werte: 15 Zeichen)
         )
         self.compression_combo.grid(row=3, column=1, columnspan=2, sticky="w", pady=(5, 2))
         self.compression_combo.bind("<<ComboboxSelected>>", self._on_compression_level_changed)
@@ -10478,11 +10478,11 @@ class PS5ConverterGUI:
             hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
         )
         self._register_translatable(self.ampr_integrate_check, "main.integrate_ampr")
-        # Ohne "n"/"s" zentriert das Raster senkrecht in der Zeile. Das ist
-        # noetig, weil die Klapplisten daneben hoeher sind als das Kaestchen
-        # und sich an dessen Mitte ausrichten - saesse es oben, ragten sie
-        # unten heraus.
-        self.ampr_integrate_check.grid(row=6, column=0, sticky="w",
+        # Das Kaestchen sitzt oben in seiner Rasterzeile ("nw", mit 5 px Luft darueber): Die Klapplisten daneben sind
+        # hoeher und ragen je 4,5 px ueber und unter das Kaestchen. Bis v1.9.97 stand es zentriert ("w"); dann
+        # blieb unter der zweiten Zeile (DLC EMU, Packverfahren) in schmalen Fenstern kein Platz, und sie lag ueber der
+        # Zeile BAUFORM (gemessen bei 1260 px Fensterbreite, 125 %: 14 px).
+        self.ampr_integrate_check.grid(row=6, column=0, sticky="nw",
                                        pady=(5, 2))
         self._tooltip(self.ampr_integrate_check, "main.integrate_ampr_hint",
                       delay_ms=900, wraplength=430)
@@ -10561,6 +10561,25 @@ class PS5ConverterGUI:
             path_card, hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
             breite=self._PFEIL_BREITE, hoehe=24)
         self._pfeile_einrichten(path_card)
+        # "Vollstaendige Pruefung" rechts neben der Packstufe (Nutzerwunsch 12.11.2026): gilt fuer zstd; aus = Stichprobe
+        # wie bei Dump Forge. Bei LZ4 gesperrt und angehakt: dort wird immer vollstaendig geprueft.
+        self._ampr_voll_var = tk.BooleanVar(value=self._ampr_voll_pruefen())
+        self.ampr_voll_check = RunderHaken(
+            path_card,
+            text=self._t("ampr_pack.voll_pruefen"),
+            variable=self._ampr_voll_var,
+            command=self._ampr_voll_gewaehlt,
+            font=(UI_SCHRIFT, pt(9)),
+            bg=self._COLORS["bg_card"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            selectcolor=self._COLORS["bg_main"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground=self._COLORS["fg_primary"],
+            anchor="w", bd=0, highlightthickness=0, padx=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
+        )
+        self._register_translatable(self.ampr_voll_check, "ampr_pack.voll_pruefen")
+        self._ampr_voll_tooltip = DelayedTooltip(self.ampr_voll_check, "", delay_ms=600, wraplength=430)
         self._ampr_stufe_combo_schalten()
 
         self.ampr_playgo_check = RunderHaken(
@@ -17347,6 +17366,10 @@ class PS5ConverterGUI:
                     pfeil = getattr(self, "ampr_stufe_pfeil", None)
                     if pfeil is not None:
                         pfeil.place(in_=pack, relx=1.0, x=self._STUFE_ABSTAND, rely=0.5, anchor="w")
+                    # "Vollstaendige Pruefung" rechts neben der Packstufe.
+                    voll = getattr(self, "ampr_voll_check", None)
+                    if voll is not None:
+                        voll.place(in_=stufe, relx=1.0, x=self._ZEILE_ABSTAND_GRUPPE, rely=0.5, anchor="w")
             if not getattr(self, "_einbauzeile_daneben", False):
                 erstes.master.grid_rowconfigure(6, minsize=max(
                     int(erstes.master.grid_rowconfigure(6)["minsize"]), self._dlc_zeile_hoehe()))
@@ -17521,8 +17544,10 @@ class PS5ConverterGUI:
                 self.ampr_integrate_check, self.ampr_version_combo,
                 self.ampr_playgo_check,
                 self.backport_integrate_check, self.backport_fw_combo))
+            # Das Kaestchen steht in Rasterzeile 6 (Zeile 5 hat nur die Ueberschrift); die Hoehe gehoert dorthin. Sie stand
+            # bis v1.9.97 an der Ueberschrift: Das gab eine Luecke unter ihr und zu wenig Platz unter der Einbauzeile.
             self.ampr_integrate_check.master.grid_rowconfigure(
-                5, minsize=max(1, int(hoehe)) + self._dlc_zeile_hoehe())
+                6, minsize=max(1, int(hoehe)) + self._dlc_zeile_hoehe())
         except Exception as exc:
             logger.debug("Höhe der Integrationszeile nicht setzbar: %s", exc)
 
@@ -36119,6 +36144,20 @@ class PS5ConverterGUI:
             tipp = getattr(self, "_ampr_stufe_tooltip", None)
             if tipp is not None:
                 tipp.text = self._t("ampr_pack.stufe_hint" if frei else "ampr_pack.stufe_gesperrt")
+            # "Vollstaendige Pruefung": nur bei zstd waehlbar; bei LZ4 gesperrt und angehakt (dort immer vollstaendig).
+            voll = getattr(self, "ampr_voll_check", None)
+            if voll is not None:
+                waehlbar = frei and verfahren == "zstd"
+                self._ampr_voll_var.set(True if verfahren != "zstd" else self._ampr_voll_pruefen())
+                voll.configure(state="normal" if waehlbar else "disabled")
+                tipp_voll = getattr(self, "_ampr_voll_tooltip", None)
+                if tipp_voll is not None:
+                    # Ohne Haken/Asset-Pack sagt der Hinweis zuerst, wann der Schalter frei wird; erst danach, dass LZ4 immer
+                    # vollstaendig prueft.
+                    tipp_voll.text = self._t(
+                        "ampr_pack.voll_pruefen_hint" if waehlbar
+                        else "ampr_pack.voll_pruefen_gesperrt" if not frei
+                        else "ampr_pack.voll_pruefen_lz4")
         except (tk.TclError, AttributeError, KeyError) as exc:
             logger.debug("Packstufe-Feld nicht schaltbar: %s", exc)
 
@@ -36203,6 +36242,30 @@ class PS5ConverterGUI:
             return max(0, int(self._load_setting("worker_count", 0) or 0))
         except (TypeError, ValueError):
             return 0
+
+    _AMPR_VOLL_PRUEFEN_SETTING = "ampr_voll_pruefen"
+
+    def _ampr_voll_pruefen(self) -> bool:
+        """Ob die zstd-Packs vollstaendig (jedes Byte gegen die Quelle) geprueft werden; sonst Stichprobe wie bei Forge.
+
+        Nutzerwunsch 12.11.2026 ("Vollstaendige Pruefung", Schalter rechts neben der Packstufe). Vorgabe aus: Aufbau, Index und
+        Bandkoepfe werden immer ganz geprueft, vom Inhalt eine Stichprobe (``ampr_zstdpack.stichprobe_planen``). Bis v1.9.97
+        wurde immer alles verglichen. Gelesen wird die gespeicherte Einstellung, nie eine Tk-Variable (Arbeitsfaden).
+        Bei LZ4 gibt es nur die volle Pruefung (das Packwerkzeug kennt keine Stichprobe).
+        """
+        wert = self._load_setting(self._AMPR_VOLL_PRUEFEN_SETTING, False)
+        if isinstance(wert, str):
+            return wert.strip().lower() in ("1", "true", "ja", "yes", "an", "on")
+        return bool(wert)
+
+    def _ampr_voll_gewaehlt(self) -> None:
+        """Der Schalter wurde bedient: speichern."""
+        try:
+            neu = bool(self._ampr_voll_var.get())
+        except (tk.TclError, AttributeError):
+            return
+        self._save_setting(self._AMPR_VOLL_PRUEFEN_SETTING, neu)
+        logger.info("Vollstaendige Pruefung der zstd-Packs: %s", "an" if neu else "aus (Stichprobe)")
 
     def _on_ampr_methode_changed(self) -> None:
         """Prueft die Voraussetzungen, sobald die neue Methode gewaehlt wird.
@@ -37427,8 +37490,16 @@ class PS5ConverterGUI:
             # Jeder Chunk wird entpackt und mit der Quelle verglichen - erst danach geht etwas in den Spielordner.
             self._set_status(self._t("ampr_pack.status_pruefen"))
             t_pruefen = time.monotonic()
+            pruefbericht: dict[str, Any] = {}
             index = ampr_zstdpack.pruefen(ausgabe, ordner, melden=lambda _z: None,
-                                          abbruch=lambda: not self.is_running, fortschritt=_fort("pruefen"))
+                                          abbruch=lambda: not self.is_running, fortschritt=_fort("pruefen"),
+                                          stichprobe=not self._ampr_voll_pruefen(), bericht=pruefbericht)
+            if pruefbericht.get("modus") == "stichprobe":
+                self._append_to_log(self._t(
+                    "ampr_zstd.pruefung_stichprobe", checked=self._fmt_bytes(pruefbericht["geprueft"]),
+                    total=self._fmt_bytes(pruefbericht["gesamt"]), seed=pruefbericht["startwert"]))
+            else:
+                self._append_to_log(self._t("ampr_zstd.pruefung_voll", size=self._fmt_bytes(pruefbericht.get("gesamt", 0))))
             self._append_to_log(self._t("ampr_pack.geprueft"))
             PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_pruefen", t_pruefen)
 

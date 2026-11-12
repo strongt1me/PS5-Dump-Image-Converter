@@ -34,6 +34,8 @@ SCHLUESSEL = [
     "filetype.toml", "dialog.title.choose_regeldatei",
     "ampr_zstd.arbeiter", "log.phase_dauer", "phase.entpacken", "phase.integration", "phase.zstd_packen",
     "phase.zstd_pruefen", "phase.zstd_uebernehmen", "phase.zstd_originale", "phase.abbild_bauen",
+    "ampr_pack.voll_pruefen", "ampr_pack.voll_pruefen_hint", "ampr_pack.voll_pruefen_gesperrt",
+    "ampr_pack.voll_pruefen_lz4", "ampr_zstd.pruefung_voll", "ampr_zstd.pruefung_stichprobe",
 ]
 
 
@@ -102,6 +104,8 @@ class _Stub:
         return 2
 
     _ampr_zstd_arbeiter = APP.PS5ConverterGUI._ampr_zstd_arbeiter
+    _AMPR_VOLL_PRUEFEN_SETTING = APP.PS5ConverterGUI._AMPR_VOLL_PRUEFEN_SETTING
+    _ampr_voll_pruefen = APP.PS5ConverterGUI._ampr_voll_pruefen
 
     def _ampr_pack_fortschritt(self, prozent: float, phase: str) -> None:
         self.letzter_fortschritt = (prozent, phase)
@@ -173,6 +177,28 @@ class BauenTests(unittest.TestCase):
             self.assertEqual(0, s._ampr_zstd_arbeiter(), "unlesbar: nie ein Absturz, alle Kerne")
         finally:
             _Stub.einstellungen = {}
+
+    def test_ohne_schalter_wird_nur_eine_stichprobe_geprueft_und_das_protokoll_sagt_es(self) -> None:
+        """Nutzerwunsch 12.11.2026 (Forge-Vorbild): Vorgabe ist die Stichprobe, mit dem Schalter alles."""
+        s = _Stub()
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        self.assertIn("ampr_zstd.pruefung_stichprobe", s.text())
+        self.assertNotIn("ampr_zstd.pruefung_voll", s.text())
+        self.assertIn("ampr_pack.geprueft", s.text())
+
+    def test_mit_schalter_wird_vollstaendig_geprueft(self) -> None:
+        s = _Stub()
+        s.einstellungen = {"ampr_voll_pruefen": True}
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        self.assertIn("ampr_zstd.pruefung_voll", s.text())
+        self.assertNotIn("ampr_zstd.pruefung_stichprobe", s.text())
+
+    def test_der_schalter_liest_auch_text_aus_einer_handgeschriebenen_einstellung(self) -> None:
+        s = _Stub()
+        for wert, soll in ((True, True), (False, False), ("true", True), ("Ja", True), ("0", False), ("", False),
+                           (None, False), (1, True)):
+            s.einstellungen = {"ampr_voll_pruefen": wert}
+            self.assertEqual(soll, s._ampr_voll_pruefen(), repr(wert))
 
     def test_originale_entfernen_hat_eine_eigene_dauerzeile(self) -> None:
         s = _Stub()
