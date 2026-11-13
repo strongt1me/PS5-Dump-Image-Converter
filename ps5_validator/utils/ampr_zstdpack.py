@@ -21,6 +21,7 @@ NG-Laufzeit bedient ein vollstaendig gepacktes Spiel.
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import os
 import queue
 import random
@@ -32,6 +33,8 @@ from array import array
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator, Sequence
+
+from ps5_validator.utils.spielbaum import BaumFehler
 
 try:  # pragma: no cover - die Bibliothek liegt dem Programm bei (requirements.txt)
     import zstandard as _zstd
@@ -625,9 +628,353 @@ class Ergebnis:
     pruefsummen: "array[int]" = field(default_factory=lambda: array("I"))
 
 
+def archiv_id_ableiten(auswahl: Auswahl, stufe: int = STUFE_VORGABE) -> bytes:
+    """Eine Archiv-ID, die nur von der Dateiliste (Pfad, Groesse) und der Stufe abhaengt.
+
+    Die Kennung steht in jedem Band und im Index. Mit einer zufaelligen (``packen`` nimmt eine) ergaebe dieselbe Quelle bei
+    jedem Lauf ein anderes Abbild; mit dieser ist es byteweise dasselbe (Stufe 3: reproduzierbares Abbild wie bei Forge).
+    """
+    h = hashlib.sha256(b"AMPRZSTD-archiv\0%d\0" % stufe_lesen(stufe))
+    for rel, groesse in sorted(auswahl.gepackt):
+        h.update(rel.encode("utf-8") + b"\0" + str(groesse).encode("ascii") + b"\0")
+    return h.digest()[:16]
+
+
+class _Plan:
+    """Die Bandaufteilung und der Index: Aus der Folge der Chunks (Codec, gespeicherte Laenge) folgt, welcher Chunk in welches
+    Band an welche Stelle kommt und wie der Index aussieht.
+
+    Das Packen in einen Ordner, der Messdurchgang und der Schreibdurchgang (Strom ohne Zwischenordner) rechnen alle damit.
+    Der Schreibdurchgang muss genau das Ergebnis des Messdurchgangs wiederholen; was beide gemeinsam haben, steht nur hier.
+    """
+
+    def __init__(self, auswahl: Auswahl, stufe: int, archiv: bytes) -> None:
+        eintraege = []
+        for rel, groesse in auswahl.gepackt:
+            roh = rel.encode("utf-8")
+            eintraege.append((pfadhash(roh), roh, rel, groesse))
+        eintraege.sort(key=lambda e: (e[0], e[1]))
+        if any(a[0] == b[0] and a[1] == b[1] for a, b in zip(eintraege, eintraege[1:])):
+            raise ZstdPackFehler("ampr_zstd.pfad_doppelt")
+        self.eintraege = eintraege
+        self.stufe = stufe
+        self.archiv = archiv
+        self.chunkwoerter: list[int] = []
+        self.dateisaetze: list[bytes] = []
+        self.strings = bytearray()
+        self.baeume: list[int] = []                        # Groesse je Band (mit Kopf), erst fuer abgeschlossene Baender
+        self.summen = array("I")                           # CRC-32 der Quellbytes je Chunk, in der Reihenfolge des Index
+        self.ergebnis = Ergebnis(stufe=stufe, archiv_id=archiv)
+        self.band = -1
+        self.offset = VOLUME_HEADER_SIZE
+        self.erster_chunk = 0
+        self.erledigt = 0
+        self.gesamt = max(1, auswahl.gepackte_bytes)
+        self._band_beginnt()
+
+    def _band_beginnt(self) -> None:
+        if self.band + 1 >= MAX_VOLUMES:
+            raise ZstdPackFehler("ampr_zstd.zu_viele_baender")
+        self.band += 1
+        self.offset = VOLUME_HEADER_SIZE
+        self.ergebnis.baender.append(bandname(self.band))
+
+    def datei_beginnt(self, nummer: int) -> None:
+        _h, roh, _rel, groesse = self.eintraege[nummer]
+        pfad_off = len(self.strings)
+        self.strings += roh
+        self.dateisaetze.append(struct.pack("<QQIIHHI", _h, groesse, self.erster_chunk, pfad_off, len(roh), 0, 0))
+        self.erster_chunk += -(-groesse // CHUNK_SIZE)
+        self.ergebnis.dateien += 1
+        self.ergebnis.logische_bytes += groesse
+
+    def chunk(self, rohlaenge: int, codec: int, gespeichert: int, summe: int) -> bool:
+        """Verbucht einen Chunk; ``True``, wenn er ein neues Band beginnt (das alte ist dann abgeschlossen)."""
+        neu = False
+        if self.offset + gespeichert > VOLUME_LIMIT:
+            self.baeume.append(self.offset)
+            self._band_beginnt()
+            neu = True
+        self.summen.append(summe)
+        self.chunkwoerter.append(_chunk_wort(self.offset, self.band, gespeichert, codec))
+        self.offset += gespeichert
+        self.ergebnis.chunks += 1
+        self.ergebnis.gespeicherte_bytes += gespeichert
+        if codec == CODEC_ZSTD:
+            self.ergebnis.zstd_chunks += 1
+        else:
+            self.ergebnis.roh_chunks += 1
+        self.erledigt += rohlaenge
+        return neu
+
+    def ende(self) -> None:
+        """Schliesst das letzte Band ab; danach stehen ``baeume`` und der Index fest."""
+        self.baeume.append(self.offset)
+        self.ergebnis.index = INDEX_NAME
+        self.ergebnis.pruefsummen = self.summen
+
+    def anteil(self) -> float:
+        return min(1.0, self.erledigt / self.gesamt)
+
+    def bandkopf(self, nummer: int) -> bytes:
+        return _bandkopf(nummer, len(self.baeume), self.archiv, self.baeume[nummer])
+
+    def index(self) -> bytes:
+        """Der ganze Inhalt von ``ampr_zstd.index``."""
+        dateien_tab = b"".join(self.dateisaetze)
+        chunks_tab = b"".join(struct.pack("<Q", w) for w in self.chunkwoerter)
+        baender_tab = b"".join(struct.pack("<Q", g) for g in self.baeume)
+        files_off = INDEX_HEADER_SIZE
+        chunks_off = files_off + len(dateien_tab)
+        volumes_off = chunks_off + len(chunks_tab)
+        strings_off = volumes_off + len(baender_tab)
+        nutzlast = dateien_tab + chunks_tab + baender_tab + bytes(self.strings)
+        kopf = bytearray(INDEX_HEADER_SIZE)
+        kopf[0:8] = INDEX_MAGIC
+        struct.pack_into("<IIBBH", kopf, 8, FORMAT_VERSION, INDEX_HEADER_SIZE, CHUNK_SHIFT, self.stufe, 0)
+        struct.pack_into("<I", kopf, 20, len(self.baeume))
+        kopf[24:40] = self.archiv
+        struct.pack_into("<QQQQQQQQ", kopf, 40, len(self.eintraege), len(self.chunkwoerter), files_off, chunks_off,
+                         volumes_off, strings_off, len(self.strings), self.ergebnis.logische_bytes)
+        struct.pack_into("<I", kopf, 112, _crc(nutzlast))
+        struct.pack_into("<I", kopf, 116, _crc(bytes(kopf[:112]) + b"\0" * 8 + bytes(kopf[120:])))
+        return bytes(kopf) + nutzlast
+
+
+def _arbeiterzahl(arbeiter: int) -> int:
+    arbeiter = arbeiter if arbeiter and arbeiter > 0 else (os.cpu_count() or 2)
+    return max(1, min(arbeiter, 32))
+
+
+def _chunk_folge(eintraege: list, bloecke_fuer: "Callable[[str, int], Iterator[list[bytes]]]", stufe: int, arbeiter: int,
+                 abbruch: Callable[[], bool]) -> "Iterator[tuple]":
+    """Liest die Quellen, verdichtet auf mehreren Faeden und liefert in der Reihenfolge des Index:
+
+    * ``("datei", nummer)`` - die Datei ``nummer`` (Index der Eintraege) beginnt,
+    * ``("chunk", rohlaenge, codec, gespeichert, summe)`` - ein Chunk (``gespeichert`` sind die Bytes, die ins Band kommen).
+
+    Die Platte liest voraus, waehrend die Faeden verdichten. Die Chunks laufen dateiuebergreifend durch die Faeden (kleine Dateien
+    halten nicht mehr alle bis auf einen auf Leerlauf); geliefert wird trotzdem Chunk fuer Chunk in Indexordnung, das Ergebnis
+    haengt nicht von den Faeden ab. Wer den Erzeuger nicht bis zum Ende laeuft, ruft ``close()`` (Faeden, Lesevorlauf).
+    """
+    arbeiter = _arbeiterzahl(arbeiter)
+    lokal = threading.local()                               # je Arbeitsfaden ein eigener Kompressor
+
+    def verdichten(daten: bytes) -> tuple[int, bytes, int]:
+        kompressor = getattr(lokal, "kompressor", None)
+        if kompressor is None:
+            kompressor = lokal.kompressor = _kompressor(stufe)
+        codec, gespeichert = chunk_verdichten(daten, stufe, kompressor)
+        return codec, gespeichert, _crc(daten)              # die Pruefsumme der Quelle merkt sich die Pruefung (kein zweites Lesen)
+
+    def quellen_lesen() -> Iterator[tuple[int, list[bytes], bool]]:
+        for nummer, (_h, _roh, rel, groesse) in enumerate(eintraege):
+            erstes = True
+            for chunks in bloecke_fuer(rel, groesse):
+                yield nummer, chunks, erstes
+                erstes = False
+            if erstes:                                      # leere Datei: kein Stueck, aber der Eintrag zaehlt
+                yield nummer, [], True
+
+    def liefern(ausstehend: "deque", bis: int) -> Iterator[tuple]:
+        while len(ausstehend) > bis:
+            daten, zukunft = ausstehend.popleft()
+            codec, gespeichert, summe = zukunft.result()
+            yield ("chunk", len(daten), codec, gespeichert, summe)
+
+    fenster = arbeiter * 4
+    ausstehend: "deque[tuple[bytes, concurrent.futures.Future]]" = deque()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=arbeiter) as pool:
+        vorlauf = _Vorlauf(quellen_lesen())
+        try:
+            for nummer, chunks, erstes in vorlauf:
+                if abbruch():
+                    raise ZstdPackFehler("ampr_pack.abgebrochen")
+                if erstes:
+                    yield ("datei", nummer)
+                for daten in chunks:
+                    ausstehend.append((daten, pool.submit(verdichten, daten)))
+                    yield from liefern(ausstehend, fenster)
+            yield from liefern(ausstehend, 0)
+        finally:
+            vorlauf.schliessen()
+
+
+def _ordner_bloecke(wurzel: str) -> "Callable[[str, int], Iterator[list[bytes]]]":
+    def fuer(rel: str, groesse: int) -> Iterator[list[bytes]]:
+        voll = os.path.join(wurzel, *rel.split("/"))
+        if os.path.getsize(voll) != groesse:
+            raise ZstdPackFehler("%s hat sich waehrend des Packens veraendert" % rel)
+        return _datei_bloecke(voll, groesse)
+    return fuer
+
+
+def _baum_bloecke(dateien: "dict[str, Any]") -> "Callable[[str, int], Iterator[list[bytes]]]":
+    """Quellen aus einem Lesebaum (``spielbaum``). Dessen Stuecke haben beliebige Laengen; die Chunks liegen aber an festen
+    Stellen der Datei, deshalb werden sie hier zu Bloecken von ``LESE_BLOCK`` Bytes zusammengesetzt."""
+    def fuer(rel: str, groesse: int) -> Iterator[list[bytes]]:
+        datei = dateien.get(rel)
+        if datei is None:
+            raise ZstdPackFehler("%s fehlt in der Quelle" % rel)
+        if datei.groesse != groesse:
+            raise ZstdPackFehler("%s hat sich waehrend des Packens veraendert" % rel)
+        return _stuecke_zu_bloecken(datei)
+    return fuer
+
+
+def _stuecke_zu_bloecken(datei: Any) -> Iterator[list[bytes]]:
+    def zerlegen(block: "bytes | bytearray") -> list[bytes]:
+        return [bytes(block[i:i + CHUNK_SIZE]) for i in range(0, len(block), CHUNK_SIZE)]
+
+    puffer = bytearray()
+    try:
+        for stueck in datei.lesen(LESE_BLOCK):
+            puffer += stueck
+            while len(puffer) >= LESE_BLOCK:
+                block = puffer[:LESE_BLOCK]
+                del puffer[:LESE_BLOCK]
+                yield zerlegen(block)
+        if puffer:
+            yield zerlegen(puffer)
+    except BaumFehler as exc:
+        raise ZstdPackFehler(str(exc)) from exc
+
+
+@dataclass
+class Messung:
+    """Das Ergebnis des Messdurchgangs: alles, was der Schreibdurchgang vorab braucht, ohne dass ein Byte gespeichert wurde."""
+
+    archiv_id: bytes
+    stufe: int
+    #: ``(Pfad, Groesse)`` der gepackten Dateien in der Reihenfolge des Index.
+    eintraege: list[tuple[str, int]]
+    chunkwoerter: list[int]
+    summen: "array[int]"
+    #: Groesse jedes Bandes mit Kopf.
+    baender: list[int]
+    #: Der ganze Inhalt von ``ampr_zstd.index``.
+    index: bytes
+    ergebnis: Ergebnis
+
+    def dateien(self) -> list[tuple[str, int]]:
+        """``(Name, Groesse)`` der Dateien, die der Schreibdurchgang liefert: erst die Baender, dann der Index."""
+        return [(bandname(n), g) for n, g in enumerate(self.baender)] + [(INDEX_NAME, len(self.index))]
+
+    @property
+    def gesamtgroesse(self) -> int:
+        return sum(g for _n, g in self.dateien())
+
+
+def _pruefen_vorab(auswahl: Auswahl) -> None:
+    if _zstd is None:
+        raise ZstdPackFehler("ampr_zstd.bibliothek_fehlt")
+    if not auswahl.gepackt:
+        raise ZstdPackFehler("ampr_zstd.nichts_zu_packen")
+
+
+def messen(baum: Any, auswahl: Auswahl, *, stufe: int = STUFE_VORGABE, arbeiter: int = 0, archiv_id: "bytes | None" = None,
+           abbruch: Callable[[], bool] = lambda: False, fortschritt: "Callable[[float], None] | None" = None) -> Messung:
+    """Messdurchgang: verdichtet alles aus dem Lesebaum und behaelt nur, was der Schreibdurchgang vorab braucht.
+
+    Nichts wird geschrieben. Der Durchgang kostet das Lesen der Quelle und das Verdichten, aber keinen Platz - das ist der Preis
+    dafuer, dass kein Zwischenordner gebraucht wird: Die Groesse eines Bandes steht in seinem Kopf, und der Kopf liegt vor den
+    Daten. ``archiv_id`` ohne Angabe ist zufaellig; :func:`archiv_id_ableiten` liefert eine, die ein Abbild reproduzierbar macht.
+    """
+    _pruefen_vorab(auswahl)
+    stufe = stufe_lesen(stufe)
+    plan = _Plan(auswahl, stufe, archiv_id or uuid.uuid4().bytes)
+    folge = _chunk_folge(plan.eintraege, _baum_bloecke(baum.suchen()), stufe, arbeiter, abbruch)
+    try:
+        for art, *rest in folge:
+            if art == "datei":
+                plan.datei_beginnt(rest[0])
+                continue
+            rohlaenge, codec, gespeichert, summe = rest
+            plan.chunk(rohlaenge, codec, len(gespeichert), summe)
+            if fortschritt is not None:
+                fortschritt(plan.anteil())
+    finally:
+        folge.close()
+    plan.ende()
+    return Messung(archiv_id=plan.archiv, stufe=stufe, eintraege=[(e[2], e[3]) for e in plan.eintraege],
+                   chunkwoerter=plan.chunkwoerter, summen=plan.summen, baender=plan.baeume, index=plan.index(),
+                   ergebnis=plan.ergebnis)
+
+
+def strom(baum: Any, auswahl: Auswahl, messung: Messung, *, arbeiter: int = 0, abbruch: Callable[[], bool] = lambda: False,
+          fortschritt: "Callable[[float], None] | None" = None) -> Iterator[tuple[str, bytes]]:
+    """Schreibdurchgang: verdichtet noch einmal und liefert ``(Dateiname, Bytes)`` in der Reihenfolge von ``messung.dateien()``.
+
+    Aufeinanderfolgende Stuecke mit demselben Namen gehoeren zu einer Datei; deren Laenge ist die in ``messung.dateien()``.
+    Jeder Chunk wird gegen die Messung verglichen (Stelle im Band und Pruefsumme der Quelle): Hat sich die Quelle zwischen den
+    Durchgaengen geaendert oder verdichtet die Bibliothek nicht reproduzierbar, bricht der Durchgang mit einem Fehler ab, ehe
+    ein falsches Pack abgeliefert ist. Der Aufrufer ruft bei vorzeitigem Ende ``close()`` auf dem Erzeuger.
+    """
+    _pruefen_vorab(auswahl)
+    plan = _Plan(auswahl, messung.stufe, messung.archiv_id)
+    if [(e[2], e[3]) for e in plan.eintraege] != messung.eintraege:
+        raise ZstdPackFehler("Dateiliste weicht von der Messung ab")
+    anzahl = len(messung.baender)
+
+    def kopf(nummer: int) -> bytes:
+        return _bandkopf(nummer, anzahl, messung.archiv_id, messung.baender[nummer])
+
+    folge = _chunk_folge(plan.eintraege, _baum_bloecke(baum.suchen()), messung.stufe, arbeiter, abbruch)
+    try:
+        yield bandname(0), kopf(0)
+        nr = 0
+        for art, *rest in folge:
+            if art == "datei":
+                plan.datei_beginnt(rest[0])
+                continue
+            rohlaenge, codec, gespeichert, summe = rest
+            neu = plan.chunk(rohlaenge, codec, len(gespeichert), summe)
+            if (nr >= len(messung.chunkwoerter) or plan.chunkwoerter[-1] != messung.chunkwoerter[nr]
+                    or summe != messung.summen[nr]):
+                raise ZstdPackFehler("Schreibdurchgang weicht vom Messdurchgang ab (Chunk %d): die Quelle hat sich "
+                                     "geaendert, oder die Verdichtung ist nicht reproduzierbar" % nr)
+            nr += 1
+            if neu:
+                yield bandname(plan.band), kopf(plan.band)
+            yield bandname(plan.band), gespeichert
+            if fortschritt is not None:
+                fortschritt(plan.anteil())
+    finally:
+        folge.close()
+    plan.ende()
+    if nr != len(messung.chunkwoerter) or plan.baeume != messung.baender or plan.index() != messung.index:
+        raise ZstdPackFehler("Schreibdurchgang weicht vom Messdurchgang ab (Baender oder Index)")
+    yield INDEX_NAME, messung.index
+
+
+def strom_in_ordner(baum: Any, auswahl: Auswahl, messung: Messung, ausgabe: str, *, arbeiter: int = 0,
+                    abbruch: Callable[[], bool] = lambda: False,
+                    fortschritt: "Callable[[float], None] | None" = None) -> None:
+    """Schreibt den Strom in Dateien unter ``ausgabe`` (ein leerer, neuer Ordner) - fuer Pruefungen und als Rueckfall."""
+    os.makedirs(ausgabe, exist_ok=True)
+    for name in os.listdir(ausgabe):
+        if ist_packname(name):
+            raise ZstdPackFehler("ampr_zstd.ausgabe_belegt")
+    erzeuger = strom(baum, auswahl, messung, arbeiter=arbeiter, abbruch=abbruch, fortschritt=fortschritt)
+    fh = None
+    aktuell = ""
+    try:
+        for name, daten in erzeuger:
+            if name != aktuell:
+                if fh is not None:
+                    fh.close()
+                fh = open(os.path.join(ausgabe, name), "wb", buffering=4 << 20)
+                aktuell = name
+            fh.write(daten)
+    finally:
+        erzeuger.close()
+        if fh is not None:
+            fh.close()
+
+
 def packen(app0: str, ausgabe: str, auswahl: Auswahl, *, stufe: int = STUFE_VORGABE, arbeiter: int = 0,
            melden: Melder = _stumm, abbruch: Callable[[], bool] = lambda: False,
-           fortschritt: "Callable[[float], None] | None" = None) -> Ergebnis:
+           fortschritt: "Callable[[float], None] | None" = None, archiv_id: "bytes | None" = None) -> Ergebnis:
     """Schreibt Baender und Index nach ``ausgabe`` (ein leerer, neuer Ordner).
 
     Die Dateien des Spielordners werden nur gelesen. Bei einem Fehler oder Abbruch bleibt in ``ausgabe`` ein
@@ -644,162 +991,48 @@ def packen(app0: str, ausgabe: str, auswahl: Auswahl, *, stufe: int = STUFE_VORG
         if ist_packname(name):
             raise ZstdPackFehler("ampr_zstd.ausgabe_belegt")
 
-    eintraege = []
-    for rel, groesse in auswahl.gepackt:
-        roh = rel.encode("utf-8")
-        eintraege.append((pfadhash(roh), roh, rel, groesse))
-    eintraege.sort(key=lambda e: (e[0], e[1]))
-    if any(a[0] == b[0] and a[1] == b[1] for a, b in zip(eintraege, eintraege[1:])):
-        raise ZstdPackFehler("ampr_zstd.pfad_doppelt")
-
-    archiv = uuid.uuid4().bytes
-    arbeiter = arbeiter if arbeiter and arbeiter > 0 else (os.cpu_count() or 2)
-    arbeiter = max(1, min(arbeiter, 32))
-    gesamt = max(1, auswahl.gepackte_bytes)
-
-    chunkwoerter: list[int] = []
-    dateisaetze: list[bytes] = []
-    strings = bytearray()
-    baeume: list[int] = []   # Groesse je Band (mit Kopf)
-    ergebnis = Ergebnis(stufe=stufe, archiv_id=archiv)
-
-    # Je Arbeitsfaden ein eigener Kompressor (der Kontext darf nicht gleichzeitig benutzt werden).
-    lokal = threading.local()
-
-    def verdichten(daten: bytes) -> tuple[int, bytes, int]:
-        kompressor = getattr(lokal, "kompressor", None)
-        if kompressor is None:
-            kompressor = lokal.kompressor = _kompressor(stufe)
-        codec, gespeichert = chunk_verdichten(daten, stufe, kompressor)
-        return codec, gespeichert, _crc(daten)          # die Pruefsumme der Quelle merkt sich die Pruefung (kein zweites Lesen)
-
-    summen = array("I")                                 # je Chunk in der Reihenfolge des Index: CRC-32 der Quellbytes
-
-    band = {"nummer": 0, "fh": None, "offset": VOLUME_HEADER_SIZE, "chunks": 0}
+    plan = _Plan(auswahl, stufe, archiv_id or uuid.uuid4().bytes)
+    ergebnis = plan.ergebnis
+    fh: Any = None
 
     def band_oeffnen() -> None:
-        if band["nummer"] >= MAX_VOLUMES:
-            raise ZstdPackFehler("ampr_zstd.zu_viele_baender")
-        pfad = os.path.join(ausgabe, bandname(band["nummer"]))
-        band["fh"] = open(pfad, "wb", buffering=4 << 20)
-        band["fh"].write(b"\0" * VOLUME_HEADER_SIZE)
-        band["offset"] = VOLUME_HEADER_SIZE
-        band["chunks"] = 0
-        ergebnis.baender.append(bandname(band["nummer"]))
+        nonlocal fh
+        fh = open(os.path.join(ausgabe, bandname(plan.band)), "wb", buffering=4 << 20)
+        fh.write(b"\0" * VOLUME_HEADER_SIZE)
 
-    def band_schliessen() -> None:
-        fh = band["fh"]
-        if fh is None:
-            return
-        fh.flush()
-        fh.close()
-        baeume.append(band["offset"])
-        band["fh"] = None
-
-    erledigt = 0
-    first_chunk = 0
-
-    def abliefern(daten: bytes, zukunft: "concurrent.futures.Future") -> None:
-        """Schreibt das Ergebnis eines Chunks ans Bandende (immer in der Reihenfolge, in der er gelesen wurde)."""
-        nonlocal erledigt
-        codec, gespeichert, summe = zukunft.result()
-        summen.append(summe)
-        if band["offset"] + len(gespeichert) > VOLUME_LIMIT:
-            band_schliessen()
-            band["nummer"] += 1
-            band_oeffnen()
-        chunkwoerter.append(_chunk_wort(band["offset"], band["nummer"], len(gespeichert), codec))
-        band["fh"].write(gespeichert)
-        band["offset"] += len(gespeichert)
-        band["chunks"] += 1
-        ergebnis.chunks += 1
-        ergebnis.gespeicherte_bytes += len(gespeichert)
-        if codec == CODEC_ZSTD:
-            ergebnis.zstd_chunks += 1
-        else:
-            ergebnis.roh_chunks += 1
-        erledigt += len(daten)
-        if fortschritt is not None:
-            fortschritt(min(1.0, erledigt / gesamt))
-
-    def quellen_lesen() -> Iterator[tuple[int, list[bytes], bool]]:
-        """Lesevorlauf: je Stueck ``(Nummer des Eintrags, Chunks, erstes Stueck der Datei)``, in der Indexordnung."""
-        for nummer, (_h, _roh, rel, groesse) in enumerate(eintraege):
-            voll = os.path.join(wurzel, *rel.split("/"))
-            if os.path.getsize(voll) != groesse:
-                raise ZstdPackFehler("%s hat sich waehrend des Packens veraendert" % rel)
-            erstes = True
-            for chunks in _datei_bloecke(voll, groesse):
-                yield nummer, chunks, erstes
-                erstes = False
-            if erstes:                                  # leere Datei: kein Stueck, aber der Eintrag zaehlt
-                yield nummer, [], True
-
-    # Die Platte liest voraus, waehrend die Faeden verdichten und das Band geschrieben wird. Die Chunks laufen
-    # dateiuebergreifend durch die Faeden (kleine Dateien halten nicht mehr alle bis auf einen auf Leerlauf); das Band
-    # entsteht trotzdem Chunk fuer Chunk in der Reihenfolge des Index, das Ergebnis haengt nicht von den Faeden ab.
-    fenster = arbeiter * 4
-    ausstehend: "deque[tuple[bytes, concurrent.futures.Future]]" = deque()
+    folge = _chunk_folge(plan.eintraege, _ordner_bloecke(wurzel), stufe, arbeiter, abbruch)
     try:
         band_oeffnen()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=arbeiter) as pool:
-            vorlauf = _Vorlauf(quellen_lesen())
-            try:
-                for nummer, chunks, erstes in vorlauf:
-                    if abbruch():
-                        raise ZstdPackFehler("ampr_pack.abgebrochen")
-                    if erstes:
-                        _h, roh, _rel, groesse = eintraege[nummer]
-                        pfad_off = len(strings)
-                        strings += roh
-                        dateisaetze.append(struct.pack("<QQIIHHI", _h, groesse, first_chunk, pfad_off, len(roh), 0, 0))
-                        first_chunk += -(-groesse // CHUNK_SIZE)
-                        ergebnis.dateien += 1
-                        ergebnis.logische_bytes += groesse
-                    for daten in chunks:
-                        ausstehend.append((daten, pool.submit(verdichten, daten)))
-                        while len(ausstehend) > fenster:
-                            abliefern(*ausstehend.popleft())
-                while ausstehend:
-                    abliefern(*ausstehend.popleft())
-            finally:
-                vorlauf.schliessen()
-        band_schliessen()
+        for art, *rest in folge:
+            if art == "datei":
+                plan.datei_beginnt(rest[0])
+                continue
+            rohlaenge, codec, gespeichert, summe = rest
+            if plan.chunk(rohlaenge, codec, len(gespeichert), summe):
+                fh.flush()
+                fh.close()
+                band_oeffnen()
+            fh.write(gespeichert)
+            if fortschritt is not None:
+                fortschritt(plan.anteil())
+        fh.flush()
+        fh.close()
+        fh = None
     finally:
-        if band["fh"] is not None:
-            band["fh"].close()
+        folge.close()
+        if fh is not None:
+            fh.close()
+    plan.ende()
 
     # Kopfzeilen der Baender (zuletzt, wenn die Groessen feststehen)
-    anzahl_baender = len(baeume)
-    for nummer, groesse in enumerate(baeume):
-        with open(os.path.join(ausgabe, bandname(nummer)), "r+b") as fh:
-            fh.write(_bandkopf(nummer, anzahl_baender, archiv, groesse))
+    for nummer in range(len(plan.baeume)):
+        with open(os.path.join(ausgabe, bandname(nummer)), "r+b") as band_fh:
+            band_fh.write(plan.bandkopf(nummer))
 
-    # Index
-    dateien_tab = b"".join(dateisaetze)
-    chunks_tab = b"".join(struct.pack("<Q", w) for w in chunkwoerter)
-    baender_tab = b"".join(struct.pack("<Q", g) for g in baeume)
-    files_off = INDEX_HEADER_SIZE
-    chunks_off = files_off + len(dateien_tab)
-    volumes_off = chunks_off + len(chunks_tab)
-    strings_off = volumes_off + len(baender_tab)
-    nutzlast = dateien_tab + chunks_tab + baender_tab + bytes(strings)
-    kopf = bytearray(INDEX_HEADER_SIZE)
-    kopf[0:8] = INDEX_MAGIC
-    struct.pack_into("<IIBBH", kopf, 8, FORMAT_VERSION, INDEX_HEADER_SIZE, CHUNK_SHIFT, stufe, 0)
-    struct.pack_into("<I", kopf, 20, anzahl_baender)
-    kopf[24:40] = archiv
-    struct.pack_into("<QQQQQQQQ", kopf, 40, len(eintraege), len(chunkwoerter), files_off, chunks_off, volumes_off,
-                     strings_off, len(strings), ergebnis.logische_bytes)
-    struct.pack_into("<I", kopf, 112, _crc(nutzlast))
-    struct.pack_into("<I", kopf, 116, _crc(bytes(kopf[:112]) + b"\0" * 8 + bytes(kopf[120:])))
-    index_pfad = os.path.join(ausgabe, INDEX_NAME)
-    with open(index_pfad, "wb") as fh:
-        fh.write(bytes(kopf) + nutzlast)
-    ergebnis.index = INDEX_NAME
-    ergebnis.pruefsummen = summen
+    with open(os.path.join(ausgabe, INDEX_NAME), "wb") as index_fh:
+        index_fh.write(plan.index())
     melden("ampr_zstd: %d Dateien, %d Chunks (%d zstd, %d roh), %d Band/Baender, Stufe %d" % (
-        ergebnis.dateien, ergebnis.chunks, ergebnis.zstd_chunks, ergebnis.roh_chunks, anzahl_baender, stufe))
+        ergebnis.dateien, ergebnis.chunks, ergebnis.zstd_chunks, ergebnis.roh_chunks, len(plan.baeume), stufe))
     return ergebnis
 
 
