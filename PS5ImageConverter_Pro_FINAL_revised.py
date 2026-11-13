@@ -11090,6 +11090,8 @@ class PS5ConverterGUI:
         )
         self._register_translatable(self.temp_btn, "main.choose_temp_button")
         self.temp_btn.grid(row=11, column=2, padx=(10, 0), pady=(5, 0))
+        # Seit Stufe 3 brauchen die Umwandlungen keinen Zwischenordner mehr; das Feld zeigt sich nur, wo noch einer angelegt wird.
+        self._arbeitsordner_sichtbarkeit_setzen()
 
         # Rechner nach erfolgreichem Abschluss herunterfahren.
         #
@@ -14858,6 +14860,44 @@ class PS5ConverterGUI:
                     widget.grid_remove()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Bauform-Zeile nicht umschaltbar: %s", exc)
+        return sichtbar
+
+    def _arbeitsordner_noetig(self) -> bool:
+        """Legt der Lauf, den die Auswahl beschreibt, noch einen Zwischenordner an (``temp_path``)?
+
+        Seit Stufe 3 laufen alle Abbild-Formate im Strom und brauchen keinen. Es bleiben: ein **LZ4**-Asset-Pack (das Werkzeug dafuer
+        braucht einen Ordner mit dem ganzen Spiel) und die Einstellung ``exfat_strom`` auf "aus". Im Zweifel (Einstellung nicht lesbar)
+        bleibt das Feld sichtbar - lieber ein Feld zu viel als einen Ordner, den man nicht waehlen kann.
+        """
+        try:
+            if not bool(self._load_setting(self._EXFAT_STROM_SETTING, True)):
+                return True
+            return bool(self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK
+                        and self._ampr_pack_verfahren() != "zstd")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Arbeitsordner-Bedarf nicht entscheidbar: %s", exc)
+            return True
+
+    def _arbeitsordner_sichtbarkeit_setzen(self) -> bool:
+        """Zeigt TEMP-ORDNER (Titel, Feld, Knopf) nur, wo er gebraucht wird - ueber ``grid()``/``grid_remove()`` wie die BAUFORM."""
+        if not hasattr(self, "temp_entry"):
+            return False
+        sichtbar = self._arbeitsordner_noetig()
+        for name in ("temp_title", "temp_entry", "temp_btn"):
+            widget = getattr(self, name, None)
+            if widget is None:
+                continue
+            try:
+                if sichtbar:
+                    widget.grid()
+                else:
+                    widget.grid_remove()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Arbeitsordner-Zeile nicht umschaltbar: %s", exc)
+        try:
+            self._schedule_caption_redraw(self._redraw_card_captions)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Beschriftung nach dem Umschalten des Arbeitsordners nicht neu gezeichnet: %s", exc)
         return sichtbar
 
     def _zielformat_hinweis(self, selected_mode: str) -> str:
@@ -36876,6 +36916,7 @@ class PS5ConverterGUI:
             self.pfeil_methode.setze_aktiv(bool(self.ampr_integrate_var.get()))
         except (AttributeError, tk.TclError):
             pass
+        self._arbeitsordner_sichtbarkeit_setzen()  # TEMP-ORDNER nur bei LZ4 (und "Strom aus")
 
     #: LZ4-Stufen, die die Auswahl anbietet (1 steht fuer 1 bis 4: im schnellen Modus ist dort alles dasselbe).
     _AMPR_LZ4_STUFEN = (1, 5, 6, 7, 8, 9, 10, 11, 12)
@@ -36994,6 +37035,7 @@ class PS5ConverterGUI:
         self._save_setting(self._AMPR_PACK_VERFAHREN_SETTING, neu)
         logger.info("Packverfahren auf %s gestellt", neu)
         self._ampr_stufe_combo_schalten()          # die Packstufe zeigt gleich die Stufen des neuen Verfahrens
+        self._arbeitsordner_sichtbarkeit_setzen()  # TEMP-ORDNER nur bei LZ4
         try:
             self._ampr_versionsliste_fuellen()
         except Exception as exc:  # noqa: BLE001 - die Einstellung gilt trotzdem

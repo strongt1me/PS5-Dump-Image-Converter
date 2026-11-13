@@ -2138,6 +2138,22 @@ class WegwahlTests(unittest.TestCase):
         self.assertTrue(probe._strom_weg_gewaehlt())
         self.assertFalse(probe._strom_fuer_ordner_gewaehlt())
 
+    def test_arbeitsordner_wird_nur_bei_lz4_oder_ohne_strom_gebraucht(self) -> None:
+        """TEMP-ORDNER erscheint in der Pfad-Karte nur, wo noch ein Zwischenordner angelegt wird."""
+        for name, kw, erwartet in (
+                ("zstd", {}, False),
+                ("LZ4", {"verfahren": "lz4"}, True),
+                ("Methode normal", {"methode": "normal", "verfahren": "lz4"}, False),
+                ("ohne AMPR", {"ampr": False, "verfahren": "lz4"}, False),
+                ("Strom aus", {"einstellungen": {"exfat_strom": False}}, True)):
+            with self.subTest(name):
+                self.assertEqual(erwartet, self._probe(**kw)._arbeitsordner_noetig())
+
+    def test_arbeitsordner_im_zweifel_sichtbar(self) -> None:
+        g = self._probe()
+        g._ampr_methode = lambda: (_ for _ in ()).throw(RuntimeError("Einstellungen nicht lesbar"))
+        self.assertTrue(g._arbeitsordner_noetig())
+
     def test_nicht_entscheidbar_ist_der_alte_weg(self) -> None:
         g = self._probe()
         g._ampr_methode = lambda: (_ for _ in ()).throw(RuntimeError("Einstellungen nicht lesbar"))
