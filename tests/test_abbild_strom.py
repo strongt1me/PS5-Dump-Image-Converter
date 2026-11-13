@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -223,17 +224,105 @@ class AbbildStromTests(unittest.TestCase):
                                     reihenfolge_liste=w.dateireihenfolge_liste))
 
     def test_abbruch_schliesst_den_strom(self) -> None:
+        """Abgebrochen wird **nach** dem ersten Stueck einer Packdatei - erst dann laeuft ``z.strom`` samt seinen Faeden."""
         import threading
         baum = sb.OrdnerBaum(self.spiel)
         messung = z.messen(baum, self.auswahl, stufe=3, archiv_id=self.archiv)
+        gestartet: list[bool] = []
+        echt = z.strom
+
+        def beobachtet(*a, **k):
+            gestartet.append(True)
+            yield from echt(*a, **k)
         vorher = threading.active_count()
-        erzeuger = ast.abbild_strom(baum, self.auswahl, messung, iter_liste=w.iter_exfat_image_liste,
-                                    reihenfolge_liste=w.dateireihenfolge_liste, arbeiter=2)
-        for i, _stueck in enumerate(erzeuger):
-            if i == 5:
+        with mock.patch.object(z, "strom", beobachtet):
+            erzeuger = ast.abbild_strom(baum, self.auswahl, messung, iter_liste=w.iter_exfat_image_liste,
+                                        reihenfolge_liste=w.dateireihenfolge_liste, arbeiter=2)
+            anzahl = 0
+            for stueck in erzeuger:
+                anzahl += 1
+                if gestartet and stueck and anzahl > 8:
+                    break
+            erzeuger.close()
+        self.assertTrue(gestartet, "der Strom der Packdateien ist nie angelaufen - der Test prueft nichts")
+        for _ in range(50):                                       # Faeden brauchen einen Augenblick zum Beenden
+            if threading.active_count() <= vorher:
                 break
-        erzeuger.close()
-        self.assertLessEqual(threading.active_count(), vorher + 1)
+            time.sleep(0.05)
+        self.assertLessEqual(threading.active_count(), vorher)
+
+
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class LeereOrdnerTests(unittest.TestCase):
+    """Leere Verzeichnisse: Der Ordnerweg kannte sie, eine Dateiliste allein nicht - das Abbild aus dem Strom muss dasselbe sein."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp(prefix="leereordner_")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.spiel = os.path.join(self.tmp, "spiel")
+        _schreiben(self.spiel, SPIEL)
+        for leer in ("savedata_leer", "data/cache", "data/cache/tief/leer", "Media/leer_neben_dateien"):
+            os.makedirs(os.path.join(self.spiel, *leer.split("/")), exist_ok=True)
+        self.auswahl = z.dateien_auswaehlen(self.spiel)
+        self.archiv = z.archiv_id_ableiten(self.auswahl, 3)
+
+    def ordnerweg(self, *, originale_weg: bool) -> bytes:
+        """Der bisherige Weg Schritt fuer Schritt: Ordner kopieren, packen, uebernehmen, Originale und leer gewordene Ordner entfernen."""
+        ziel = os.path.join(self.tmp, "ordnerweg")
+        shutil.copytree(self.spiel, ziel)
+        packs = os.path.join(self.tmp, "ordnerpacks")
+        z.packen(ziel, packs, self.auswahl, stufe=3, arbeiter=2, archiv_id=self.archiv)
+        index = z.pruefen(packs, ziel)
+        z.uebernehmen(packs, ziel, index)
+        if originale_weg:
+            z.originale_entfernen(ziel, index)
+        return _bytes(w.iter_exfat_image(Path(ziel)))
+
+    def strom(self, baum, *, behalten: bool) -> bytes:
+        messung = z.messen(baum, self.auswahl, stufe=3, archiv_id=self.archiv)
+        return _bytes(ast.abbild_strom(baum, self.auswahl, messung, iter_liste=w.iter_exfat_image_liste,
+                                       reihenfolge_liste=w.dateireihenfolge_liste, originale_behalten=behalten, arbeiter=2))
+
+    def exfat_quelle(self) -> str:
+        pfad = os.path.join(self.tmp, "quelle.exfat")
+        Path(pfad).write_bytes(_bytes(w.iter_exfat_image(Path(self.spiel))))
+        return pfad
+
+    def test_aus_ordner_gleicht_dem_ordnerweg(self) -> None:
+        self.assertEqual(self.ordnerweg(originale_weg=True), self.strom(sb.OrdnerBaum(self.spiel), behalten=False))
+
+    def test_mit_originalen_gleicht_dem_ordnerweg(self) -> None:
+        self.assertEqual(self.ordnerweg(originale_weg=False), self.strom(sb.OrdnerBaum(self.spiel), behalten=True))
+
+    def test_aus_exfat_gleicht_dem_ordnerweg(self) -> None:
+        with sb.ExfatBaum(self.exfat_quelle()) as baum:
+            self.assertEqual(self.ordnerweg(originale_weg=True), self.strom(baum, behalten=False))
+
+    def test_das_ergebnis_hat_die_leeren_verzeichnisse(self) -> None:
+        ziel = os.path.join(self.tmp, "ziel.exfat")
+        Path(ziel).write_bytes(self.strom(sb.OrdnerBaum(self.spiel), behalten=False))
+        with sb.ExfatBaum(ziel) as neu:
+            neu.dateien()
+            ordner = set(neu.ordner())
+        for erwartet in ("savedata_leer", "data/cache", "data/cache/tief", "data/cache/tief/leer", "Media/leer_neben_dateien"):
+            self.assertIn(erwartet, ordner, erwartet)
+
+    def test_ein_durch_das_packen_leer_gewordener_ordner_faellt_weg(self) -> None:
+        """``Media`` enthielt nur gepackte Dateien und einen leeren Unterordner: Der leere Unterordner haelt ``Media`` am Leben."""
+        _schreiben(self.spiel, {"nur_gepackt/a.bin": b"A" * z.CHUNK_SIZE})
+        self.auswahl = z.dateien_auswaehlen(self.spiel)
+        self.archiv = z.archiv_id_ableiten(self.auswahl, 3)
+        ordner = ast.abbild_ordner(sb.OrdnerBaum(self.spiel), self.auswahl, False)
+        self.assertNotIn("nur_gepackt", ordner)
+        self.assertIn("Media", ordner)
+        self.assertIn("Media/leer_neben_dateien", ordner)
+        self.assertEqual(self.ordnerweg(originale_weg=True), self.strom(sb.OrdnerBaum(self.spiel), behalten=False))
+
+    def test_abbild_ordner_ohne_entfernen(self) -> None:
+        ordner = ast.abbild_ordner(sb.OrdnerBaum(self.spiel), self.auswahl, True)
+        for erwartet in ("Media", "data", "sce_sys", "savedata_leer", "data/cache/tief/leer"):
+            self.assertIn(erwartet, ordner, erwartet)
+        self.assertEqual(sorted(set(ordner)), ordner)
 
 
 class SchattenTests(unittest.TestCase):
@@ -305,6 +394,26 @@ class SchattenTests(unittest.TestCase):
         # ``data/kein.bin`` ist ein ELF nach dem Inhalt, aber kein Programm nach dem Namen: ohne Backport bleibt es draussen.
         self.assertNotIn("data/kein.bin", abgelegt)
         self.assertNotIn("data/a.pak", abgelegt)
+
+    def test_die_dlc_karte_kommt_mit(self) -> None:
+        """``dlcmap.json`` in der Spielwurzel liest DLC EMU beim Anlegen der ``dlc_emu.ini``; ohne sie im Ordner fehlen die Eintraege."""
+        from ps5_validator.utils import dlc_emu
+        inhalt = {"eboot.bin": b"\x7fELF" + bytes(100), "sce_sys/param.json": b'{"x":1}',
+                  "dlcmap.json": b'{"dlcmap": {"EP0000-PPSA00000_00-DLC0000000000001": "Zusatz"}}',
+                  "data/dlcmap.json": b"{}", "data/a.pak": _zufall(5000, 9)}
+        spiel = os.path.join(self.tmp, "spiel_dlc")
+        _schreiben(spiel, inhalt)
+        abbild = os.path.join(self.tmp, "dlc.exfat")
+        with open(abbild, "wb") as fh:
+            fh.write(_bytes(w.iter_exfat_image(Path(spiel))))
+        with sb.ExfatBaum(abbild) as baum:
+            ziel = os.path.join(self.tmp, "schatten_dlc")
+            abgelegt, _n = ast.schatten_fuellen(baum, ziel)
+        self.assertIn("dlcmap.json", abgelegt)
+        self.assertNotIn("data/dlcmap.json", abgelegt, "nur die Datei in der Spielwurzel zaehlt")
+        # Wirkung: Mit der Karte entsteht die ini mit dem Eintrag, ohne sie nicht.
+        stand, anzahl = dlc_emu.ini_anlegen(ziel)
+        self.assertEqual(("angelegt", 1), (stand, anzahl))
 
     def test_abbruch(self) -> None:
         with sb.ExfatBaum(self.abbild) as baum:

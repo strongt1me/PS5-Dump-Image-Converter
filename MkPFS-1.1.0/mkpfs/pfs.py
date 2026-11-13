@@ -4598,12 +4598,8 @@ def build_pfs_stream_from_exfat(
         Build statistics for the completed image.
     """
     start: float = time.time()
-    progress: Progress = Progress(enabled=True)
     if not source_root.is_dir():
         raise BuildError(f"source must be an existing directory: {source_root}")
-    now: int = int(time.time())
-    resolved_ekpfs: bytes = resolve_ekpfs_key(ekpfs=ekpfs)
-    seed: bytes = consts.ZERO_PFS_SEED
     inner_name: str = f"{default_image_basename(source_root)}.exfat"
 
     # Plan the exFAT layout to learn the inner payload size before laying out the
@@ -4613,6 +4609,87 @@ def build_pfs_stream_from_exfat(
     first_chunk: bytes = next(exfat_blocks)
     raw_size: int = size_box[0]
     payload_stream: Iterator[bytes] = itertools.chain([first_chunk], exfat_blocks)
+    return build_pfs_stream_from_blocks(
+        payload_stream=payload_stream,
+        raw_size=raw_size,
+        inner_name=inner_name,
+        source_label=source_root,
+        output_path=output_path,
+        block_size=block_size,
+        pfs_version=pfs_version,
+        case_insensitive=case_insensitive,
+        zlib_level=zlib_level,
+        threshold_gain=threshold_gain,
+        cpu_count=cpu_count,
+        encrypted=encrypted,
+        new_crypt=new_crypt,
+        ekpfs=ekpfs,
+        verbose=verbose,
+        start_time=start,
+    )
+
+
+def build_pfs_stream_from_blocks(
+    *,
+    payload_stream: Iterator[bytes],
+    raw_size: int,
+    inner_name: str,
+    source_label: Path,
+    output_path: Path,
+    block_size: int,
+    pfs_version: int,
+    case_insensitive: bool,
+    zlib_level: int,
+    threshold_gain: int,
+    cpu_count: int = 0,
+    encrypted: bool = False,
+    new_crypt: bool = False,
+    ekpfs: bytes | None = None,
+    verbose: bool = False,
+    start_time: float | None = None,
+    progress: Progress | None = None,
+) -> BuildStats:
+    """Write a forward byte stream as the single inner file of a compressed PFS image.
+
+    This is the second half of :func:`build_pfs_stream_from_exfat`, taken out so that a
+    caller who already has an exFAT byte stream (for instance one built from a file list
+    instead of a folder) can wrap and compress it in one pass with no temporary image.
+    The payload is always PFSC-wrapped, and ``raw_size`` must equal the stream length.
+
+    Args:
+        payload_stream: Iterator yielding the inner image bytes in order.
+        raw_size: Total length of ``payload_stream`` in bytes.
+        inner_name: Name of the single inner file (``<titleId>.exfat``).
+        source_label: What the image was built from; only used for messages and statistics.
+        output_path: Final image path (``.ffpfsc``); a ``.tmp`` file next to it is used while writing.
+        block_size: PFS filesystem block size in bytes.
+        pfs_version: PFS profile version.
+        case_insensitive: Whether to set the case-insensitive mode bit.
+        zlib_level: zlib compression level.
+        threshold_gain: Minimum per-block gain percent to keep PFSC blocks.
+        cpu_count: Requested compression worker count (0 = auto).
+        encrypted: Whether to encrypt filesystem blocks.
+        new_crypt: Whether to use the alternate EKPFS derivation.
+        ekpfs: Optional EKPFS key bytes.
+        verbose: Whether to emit a verbose per-file decision line.
+        start_time: When the caller started, for the elapsed time in the statistics (default: now).
+        progress: Progress reporter (default: terminal output on stderr). A caller without a terminal passes
+            ``Progress(enabled=False, listener=...)`` and receives ``("step", phase, done, total, bytes)`` and
+            ``("status", message)``.
+
+    Returns:
+        Build statistics for the completed image.
+
+    Raises:
+        BuildError: If the stream length does not match ``raw_size``.
+    """
+    start: float = start_time if start_time is not None else time.time()
+    if progress is None:
+        progress = Progress(enabled=True)
+    now: int = int(time.time())
+    resolved_ekpfs: bytes = resolve_ekpfs_key(ekpfs=ekpfs)
+    seed: bytes = consts.ZERO_PFS_SEED
+    source_root: Path = source_label
 
     # Four-inode single-file PFS scaffolding (unsigned, contiguous).
     super_root_inode = Inode(
@@ -4775,10 +4852,17 @@ def build_pfs_stream_from_exfat(
                 )
 
             progress.status(f"\nCompressing inner exFAT ({human_readable_size(raw_size)})...")
+            delivered: list[int] = [0]
+
+            def _counted(blocks: Iterator[bytes]) -> Iterator[bytes]:
+                for piece in blocks:
+                    delivered[0] += len(piece)
+                    yield piece
+
             stored_size, hypothetical_size = _encode_pfsc_stream_into_handle(
                 out=out,
                 base_offset=payload_base,
-                source_blocks=payload_stream,
+                source_blocks=_counted(payload_stream),
                 raw_size=raw_size,
                 threshold_gain=threshold_gain,
                 zlib_level=zlib_level,
@@ -4786,6 +4870,10 @@ def build_pfs_stream_from_exfat(
                 cpu_count=cpu_count,
                 progress_callback=report,
             )
+            # The encoder only compares whole logical blocks; a stream that is a few bytes off would be padded with zeros and the
+            # inode would claim ``raw_size`` bytes. A byte-exact check keeps the function safe for callers other than the exFAT writer.
+            if delivered[0] != raw_size:
+                raise BuildError(f"stream length mismatch: expected {raw_size} bytes, got {delivered[0]}")
 
             file_inode.blocks = max(1, ceil_div(stored_size, block_size))
             file_inode.size = stored_size

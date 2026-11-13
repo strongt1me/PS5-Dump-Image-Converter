@@ -251,8 +251,6 @@ class RuecklesenAusLesebaumTests(unittest.TestCase):
         self.assertEqual(voll[:1], anfang(1))
 
     def test_pruef_eintraege_mit_packs(self):
-        from ps5_validator.utils import ampr_zstdpack as z
-
         class _Auswahl:
             gepackt = [("d0/f00.bin", 1)]
 
@@ -266,7 +264,6 @@ class RuecklesenAusLesebaumTests(unittest.TestCase):
         self.assertIsNotNone(mit["eboot.bin"][1])
         behalten = {r for r, _g, _a in self.abbild_strom.pruef_eintraege(self.baum, _Auswahl(), _Messung(), True)}
         self.assertIn("d0/f00.bin", behalten)
-        self.assertIsNotNone(z)
 
     def test_der_pruefstand_urteilt_wie_beim_ordnerweg(self):
         p = ap.Pruefstand.__new__(ap.Pruefstand)

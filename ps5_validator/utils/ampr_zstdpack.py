@@ -901,14 +901,68 @@ def messen(baum: Any, auswahl: Auswahl, *, stufe: int = STUFE_VORGABE, arbeiter:
                    ergebnis=plan.ergebnis)
 
 
+def stichprobe_chunks(messung: "Messung", startwert: int) -> "tuple[frozenset[int], int]":
+    """Welche Chunks die Fast-Pruefung im Strom entpackt: ``(Chunknummern, Bytes)``; die Regeln wie bei :func:`stichprobe_planen`.
+
+    Dateien bis ``GANZ_BIS_STUECKE`` Stuecke (zu ``LESE_BLOCK`` Bytes) ganz, von groesseren das erste und das letzte Stueck und
+    dazu zufaellige - zusammen hoechstens ``STICHPROBE_MAX`` Bytes und hoechstens ``STICHPROBE_ANTEIL`` des Rests (mindestens
+    ein Stueck). Gleicher Startwert, gleiche Auswahl. Die Nummern zaehlen ueber alle Dateien der Messung in ihrer Reihenfolge.
+    """
+    je_stueck = max(1, LESE_BLOCK // CHUNK_SIZE)
+    gewaehlt: set[int] = set()
+    gesamt = rest = 0
+    kandidaten: "list[tuple[int, int, int, int]]" = []          # (erster Chunk der Datei, Chunks der Datei, Stueck, Bytes)
+    erster = 0
+    for _pfad, groesse in messung.eintraege:
+        n = -(-groesse // CHUNK_SIZE)
+        if n <= 0:
+            continue
+        stuecke = -(-n // je_stueck)
+
+        def stueck_bytes(s: int, groesse: int = groesse) -> int:
+            return max(0, min(LESE_BLOCK, groesse - s * LESE_BLOCK))
+
+        def stueck_chunks(s: int, erster: int = erster, n: int = n) -> "range":
+            return range(erster + s * je_stueck, erster + min(n, (s + 1) * je_stueck))
+
+        if stuecke <= GANZ_BIS_STUECKE:
+            gewaehlt.update(range(erster, erster + n))
+            gesamt += groesse
+        else:
+            for s in {0, stuecke - 1}:
+                gewaehlt.update(stueck_chunks(s))
+                gesamt += stueck_bytes(s)
+            for s in range(1, stuecke - 1):
+                kandidaten.append((erster, n, s, stueck_bytes(s)))
+                rest += stueck_bytes(s)
+        erster += n
+    if kandidaten:
+        zufall = random.Random(startwert)
+        zufall.shuffle(kandidaten)
+        budget = max(LESE_BLOCK, min(STICHPROBE_MAX, int(rest * STICHPROBE_ANTEIL)))
+        for erster_chunk, n, s, b in kandidaten:
+            if budget < b:
+                break
+            gewaehlt.update(range(erster_chunk + s * je_stueck, erster_chunk + min(n, (s + 1) * je_stueck)))
+            budget -= b
+            gesamt += b
+    return frozenset(gewaehlt), gesamt
+
+
 def strom(baum: Any, auswahl: Auswahl, messung: Messung, *, arbeiter: int = 0, abbruch: Callable[[], bool] = lambda: False,
-          fortschritt: "Callable[[float], None] | None" = None) -> Iterator[tuple[str, bytes]]:
+          fortschritt: "Callable[[float], None] | None" = None,
+          pruefen: "bool | frozenset[int] | set[int] | None" = None) -> Iterator[tuple[str, bytes]]:
     """Schreibdurchgang: verdichtet noch einmal und liefert ``(Dateiname, Bytes)`` in der Reihenfolge von ``messung.dateien()``.
 
     Aufeinanderfolgende Stuecke mit demselben Namen gehoeren zu einer Datei; deren Laenge ist die in ``messung.dateien()``.
     Jeder Chunk wird gegen die Messung verglichen (Stelle im Band und Pruefsumme der Quelle): Hat sich die Quelle zwischen den
     Durchgaengen geaendert oder verdichtet die Bibliothek nicht reproduzierbar, bricht der Durchgang mit einem Fehler ab, ehe
     ein falsches Pack abgeliefert ist. Der Aufrufer ruft bei vorzeitigem Ende ``close()`` auf dem Erzeuger.
+
+    ``pruefen`` (wie beim Pack im Ordner ``pruefen``): ``True`` entpackt **jeden** Chunk, den der Durchgang abliefert, und
+    vergleicht ihn mit der Pruefsumme der Quelle; eine Menge von Chunknummern (:func:`stichprobe_chunks`) nur diese; ``None``
+    nichts. So ist das Pack auf dem Weg ins Abbild nachweislich entpackbar und gleich der Quelle - ein Fehler der Verdichtung faellt
+    auf, ehe das Abbild fertig ist.
     """
     _pruefen_vorab(auswahl)
     plan = _Plan(auswahl, messung.stufe, messung.archiv_id)
@@ -933,6 +987,11 @@ def strom(baum: Any, auswahl: Auswahl, messung: Messung, *, arbeiter: int = 0, a
                     or summe != messung.summen[nr]):
                 raise ZstdPackFehler("Schreibdurchgang weicht vom Messdurchgang ab (Chunk %d): die Quelle hat sich "
                                      "geaendert, oder die Verdichtung ist nicht reproduzierbar" % nr)
+            if pruefen is True or (pruefen and nr in pruefen):
+                if codec == CODEC_ZSTD:
+                    rahmen_pruefen(gespeichert, rohlaenge)
+                if _crc(chunk_entpacken(codec, gespeichert, rohlaenge)) != summe:
+                    raise ZstdPackFehler("ampr_zstd.inhalt_anders: Chunk %d" % nr)
             nr += 1
             if neu:
                 yield bandname(plan.band), kopf(plan.band)

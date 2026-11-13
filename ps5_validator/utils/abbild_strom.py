@@ -15,6 +15,7 @@ import os
 from typing import Any, Callable, Iterable, Iterator
 
 from ps5_validator.utils import ampr_zstdpack as z
+from ps5_validator.utils import dlc_emu
 from ps5_validator.utils import fake_signieren
 
 Oeffner = Callable[[], Iterator[bytes]]
@@ -83,7 +84,8 @@ def reihenfolge_pruefen(anforderung: Iterable[str], strom_reihe: Iterable[str]) 
 def abbild_strom(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", *, iter_liste: Callable[..., Iterator[bytes]],
                  reihenfolge_liste: Callable[[Iterable], "list[str]"], originale_behalten: bool = False, arbeiter: int = 0,
                  abbruch: Callable[[], bool] = lambda: False, fortschritt: "Callable[[float], None] | None" = None,
-                 on_layout: "Callable[[int], None] | None" = None) -> Iterator[bytes]:
+                 on_layout: "Callable[[int], None] | None" = None,
+                 pruefen: "bool | frozenset[int] | set[int] | None" = None) -> Iterator[bytes]:
     """Die Bytes eines exFAT-Abbilds mit den losen Dateien des Baums und den zstd-Packs aus dem Strom.
 
     ``iter_liste`` und ``reihenfolge_liste`` sind ``mkpfs.exfat_writer.iter_exfat_image_liste`` und ``dateireihenfolge_liste``
@@ -92,6 +94,9 @@ def abbild_strom(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", *, iter_
 
     ``fortschritt`` bekommt den Anteil des **Strom-Schreibdurchgangs** (0..1), nicht den des Abbilds - dafuer ist ``on_layout``
     mit der Gesamtgroesse und die Zahl der gelieferten Bytes da.
+
+    ``pruefen``: ``True`` entpackt jeden Chunk der Packdateien auf dem Weg ins Abbild und vergleicht ihn mit der Pruefsumme der
+    Quelle, eine Menge von Chunknummern (``ampr_zstdpack.stichprobe_chunks``) nur diese (siehe ``ampr_zstdpack.strom``).
     """
     gepackt = {rel for rel, _g in auswahl.gepackt}
     vorhanden = baum.suchen()
@@ -102,15 +107,169 @@ def abbild_strom(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", *, iter_
     fehlend = [rel for rel in gepackt if rel not in vorhanden]
     if fehlend:
         raise z.ZstdPackFehler("%s fehlt in der Quelle" % fehlend[0])
+    # Auch die leeren Verzeichnisse kommen ins Abbild, wie im Ordnerweg (eine Dateiliste zeigt sie nicht).
+    ordner = abbild_ordner(baum, auswahl, originale_behalten)
 
-    dateien = StromDateien(z.strom(baum, auswahl, messung, arbeiter=arbeiter, abbruch=abbruch, fortschritt=fortschritt),
+    dateien = StromDateien(z.strom(baum, auswahl, messung, arbeiter=arbeiter, abbruch=abbruch, fortschritt=fortschritt,
+                                   pruefen=pruefen),
                            messung.dateien())
     try:
         gesamt = lose + dateien.eintraege()
-        reihenfolge_pruefen(reihenfolge_liste(gesamt), [name for name, _g in messung.dateien()])
-        yield from iter_liste(gesamt, on_layout=on_layout)
+        reihenfolge_pruefen(reihenfolge_liste(gesamt, ordner), [name for name, _g in messung.dateien()])
+        yield from iter_liste(gesamt, on_layout=on_layout, ordner=ordner)
     finally:
         dateien.schliessen()
+
+
+def _eltern(pfad: str) -> "Iterator[str]":
+    """Alle Verzeichnispfade ueber ``pfad`` (``a/b/c.bin`` -> ``a/b``, ``a``)."""
+    while "/" in pfad:
+        pfad = pfad.rsplit("/", 1)[0]
+        yield pfad
+
+
+def abbild_ordner(baum: Any, auswahl: "z.Auswahl | None" = None, originale_behalten: bool = True) -> list[str]:
+    """Die Verzeichnisse des fertigen Abbilds **einschliesslich der leeren** (sortiert).
+
+    Der Ordnerweg kannte leere Verzeichnisse (``exfat_writer._scan_tree``, ebenso das Entpacken eines Abbilds); eine Dateiliste
+    allein zeigt sie nicht. Fallen die gepackten Originale weg (``originale_behalten=False``), geht es wie im Ordnerweg
+    (``ampr_zstdpack.originale_entfernen``): Ein Verzeichnis, das dadurch leer wird, faellt mit weg - bis hinauf zum ersten, in dem
+    noch etwas liegt. Ein Verzeichnis, das **schon vorher** leer war, bleibt.
+    """
+    dateien = {d.rel for d in baum.dateien()}
+    alle = set(baum.ordner())
+    for rel in dateien:
+        alle.update(_eltern(rel))
+    if auswahl is not None and not originale_behalten:
+        gepackt = {rel for rel, _g in auswahl.gepackt}
+        rest = dateien - gepackt
+        mit_datei: set[str] = set()
+        for rel in rest:
+            mit_datei.update(_eltern(rel))
+        kinder: dict[str, int] = {}
+        for ordner in alle:
+            vater = ordner.rsplit("/", 1)[0] if "/" in ordner else ""
+            kinder[vater] = kinder.get(vater, 0) + 1
+        kandidaten: set[str] = set()
+        for rel in gepackt:
+            kandidaten.update(_eltern(rel))
+        for ordner in sorted(kandidaten, key=len, reverse=True):
+            if ordner in alle and ordner not in mit_datei and kinder.get(ordner, 0) == 0:
+                alle.discard(ordner)
+                vater = ordner.rsplit("/", 1)[0] if "/" in ordner else ""
+                kinder[vater] = kinder.get(vater, 0) - 1
+    return sorted(alle)
+
+
+class StromAbgebrochen(RuntimeError):
+    """Der Auftrag wurde waehrend des Schreibens abgebrochen; die Teildatei ist schon weggeraeumt."""
+
+
+def ffpfsc_schreiben(erzeuger: Callable[[Callable[[int], None]], Iterator[bytes]], ziel: str, *, quelle_ordner: str,
+                     block_size: int = 65536, zlib_level: int = 6, cpu_count: int = 0, threshold_gain: int = 0,
+                     case_insensitive: bool = True, abbruch: Callable[[], bool] = lambda: False,
+                     melden: "Callable[[str, int, int, int], None] | None" = None,
+                     on_layout: "Callable[[int], None] | None" = None, backend: str = "zlib-ng") -> Any:
+    """Schreibt den exFAT-Strom als einzige Datei in ein komprimiertes PFS-Abbild (``.ffpfsc``) - ohne Zwischendatei.
+
+    ``erzeuger(on_layout)`` liefert die Bytes des exFAT-Abbilds (:func:`abbild_strom` oder ``iter_exfat_image_liste``). Das ist
+    die Bauform, die ``mkpfs pack folder --compress`` fuer einen Ordner baut: ein PFS mit **einer** Datei ``<TitleID>.exfat``,
+    deren Bytes in PFSC-Bloecke komprimiert werden. Den Namen leitet MkPFS aus ``quelle_ordner`` ab (``sce_sys/param.json``, sonst
+    der Ordnername) - hier der Ueberlagerungsordner, in dem die param.json der Ansicht liegt.
+
+    ``ziel`` ist der Pfad der fertigen Datei; MkPFS schreibt zuerst ``ziel + ".tmp"`` und setzt es nach der Strukturpruefung um.
+    ``melden(phase, fertig, gesamt, bytes)`` bekommt den Fortschritt der Kompression. Bricht ``abbruch()`` ab, kommt
+    :class:`StromAbgebrochen`; auch bei jedem anderen Fehler bleibt keine Teildatei liegen.
+
+    ``backend`` ist das Rechenwerk der PFSC-Bloecke (``MKPFS_BACKEND`` des Hauptmoduls, ``zlib-ng``). Die MkPFS-Kommandozeile bekam
+    es als ``--compression-backend`` mit; im eigenen Prozess muss es hier gesetzt werden, sonst gilt, was zuletzt jemand eingestellt
+    hat. Laesst es sich nicht laden, packt der Standard-``zlib`` - langsamer, aber derselbe Datenstrom.
+
+    Returns:
+        Die ``BuildStats`` von MkPFS.
+    """
+    import itertools
+    from pathlib import Path
+
+    from mkpfs import compression                               # pyright: ignore[reportMissingImports]
+    from mkpfs import consts                                    # pyright: ignore[reportMissingImports]
+    from mkpfs.pbar import Progress                             # pyright: ignore[reportMissingImports]
+    from mkpfs.pfs import build_pfs_stream_from_blocks          # pyright: ignore[reportMissingImports]
+    from mkpfs.utils import default_image_basename              # pyright: ignore[reportMissingImports]
+
+    try:
+        compression.set_backend(backend)
+    except (ImportError, ValueError):
+        compression.set_backend("zlib")
+
+    groesse: list[int] = []
+
+    def _layout(gesamt: int) -> None:
+        groesse.append(int(gesamt))
+        if on_layout is not None:
+            on_layout(gesamt)
+
+    strom = iter(erzeuger(_layout))
+
+    def _bewacht() -> Iterator[bytes]:
+        try:
+            for stueck in strom:
+                if abbruch():
+                    raise StromAbgebrochen("abgebrochen")
+                yield stueck
+        finally:
+            schliessen = getattr(strom, "close", None)
+            if callable(schliessen):
+                schliessen()
+
+    inner_name = "%s.exfat" % default_image_basename(Path(quelle_ordner))
+    nutzdaten = _bewacht()
+    try:
+        erstes = next(nutzdaten)                                # stoesst Planung und Layout an: danach ist die Groesse bekannt
+    except StopIteration:
+        raise RuntimeError("Der Erzeuger hat keine Daten geliefert") from None     # ein Fehler, kein Abbruch des Anwenders
+    if not groesse:
+        nutzdaten.close()
+        raise RuntimeError("Der Schreiber hat die Groesse des Abbilds nicht gemeldet")
+
+    def _hoeren(art: str, *args: Any) -> None:
+        if art == "step" and melden is not None:
+            phase, fertig, gesamt, byte_zahl = args
+            melden(str(phase), int(fertig), int(gesamt), int(byte_zahl))
+
+    return build_pfs_stream_from_blocks(
+        payload_stream=itertools.chain([erstes], nutzdaten), raw_size=groesse[0], inner_name=inner_name,
+        source_label=Path(quelle_ordner), output_path=Path(ziel), block_size=block_size,
+        pfs_version=consts.PFS_VERSION_PS5, case_insensitive=case_insensitive, zlib_level=zlib_level,
+        threshold_gain=threshold_gain, cpu_count=cpu_count, progress=Progress(enabled=False, listener=_hoeren))
+
+
+def pfs_pruefen(pfad: str, *, abbruch: Callable[[], bool] = lambda: False,
+                melden: "Callable[[int, int], None] | None" = None) -> "tuple[list[str], list[str]]":
+    """Prueft ein fertiges PFS-Abbild wie die MkPFS-Kommandozeile nach dem Packen: Aufbau, Verzeichnisse und **jeden Block** der Dateien.
+
+    Das ist die Pruefung, die ``mkpfs pack folder`` ausser bei der Stufe "aus" nach dem Bauen laufen laesst
+    (``run_image_check`` mit ``verify_payloads``): Sie entpackt jeden PFSC-Block und zaehlt die Pruefsumme. Ein beschaedigter Block in einer
+    Datei, die die Stichprobe der Rueckleseprobe nicht gezogen hat, faellt nur hier auf. ``melden(fertig, gesamt)`` bekommt die
+    Fortschritte der Pruefung; ``abbruch()`` wird dabei gefragt und beendet sie mit :class:`StromAbgebrochen`.
+
+    Returns:
+        ``(Fehler, Warnungen)`` als Texte von MkPFS; leere Fehlerliste heisst bestanden.
+    """
+    from pathlib import Path
+
+    from mkpfs.pbar import Progress                             # pyright: ignore[reportMissingImports]
+    from mkpfs.pfs import inspect_pfs_image                     # pyright: ignore[reportMissingImports]
+
+    def _hoeren(art: str, *args: Any) -> None:
+        if abbruch():
+            raise StromAbgebrochen("abgebrochen")
+        if art == "step" and melden is not None:
+            _phase, fertig, gesamt, _bytes = args
+            melden(int(fertig), int(gesamt))
+
+    befund = inspect_pfs_image(Path(pfad), verify_payloads=True, progress=Progress(enabled=False, listener=_hoeren))
+    return list(befund.errors), list(befund.warnings)
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +317,10 @@ def schatten_fuellen(baum: Any, ziel: str, *, programmdateien: bool = False, abb
             fortschritt(nummer, len(dateien))
         rel = datei.rel
         wanted = z.bleibt_lose(rel)
+        # Die Karte der Zusatzinhalte (PS5-App-Dumper): DLC EMU liest sie aus der Spielwurzel (``dlc_emu.ini_anlegen``); ohne sie
+        # im Ordner entstuende die ``dlc_emu.ini`` mit den falschen oder gar keinen Eintraegen.
+        if not wanted and rel.lower() == dlc_emu.DLCMAP_NAME.lower():
+            wanted = True
         # Programm nach dem Namen (``eboot*.bin`` auch mit anderem Namen als ``eboot.bin``): Die Fake-Signatur sucht genau so und
         # muss die Datei im Ordner finden, auch wenn kein Backport nach der ELF-Kennung fragt.
         if not wanted and fake_signieren.ist_ausfuehrbar(rel):

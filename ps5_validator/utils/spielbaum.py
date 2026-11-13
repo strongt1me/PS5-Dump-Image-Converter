@@ -34,6 +34,30 @@ class BaumFehler(RuntimeError):
     """Ein Lesebaum laesst sich nicht aufbauen oder eine Datei darin nicht lesen."""
 
 
+def _exfat_dateien_und_ordner(eintraege: Any) -> "tuple[list[Any], list[str]]":
+    """Teilt den Baum des exFAT-Lesers (``root_entries``) in die Datei-Eintraege und die Pfade aller Verzeichnisse."""
+    dateien: list[Any] = []
+    ordner: list[str] = []
+
+    def gehen(knoten: Any) -> None:
+        for k in knoten:
+            if k.is_dir:
+                ordner.append(k.rel_path)
+                gehen(k.children)
+            else:
+                dateien.append(k)
+
+    gehen(eintraege)
+    return dateien, ordner
+
+
+def _ordner_ohne_ignorierte(ordner: "Iterable[str]", ignoriert: "Callable[[str], bool] | None") -> list[str]:
+    """Sortierte Verzeichnispfade ohne die, in deren Pfad ein ignorierter Name vorkommt (Betriebssystem-Dateien)."""
+    if ignoriert is None:
+        return sorted(ordner)
+    return sorted(o for o in ordner if not any(ignoriert(t) for t in o.split("/")))
+
+
 @dataclass(frozen=True)
 class BaumDatei:
     """Eine Datei im Spiel: Pfad (mit ``/``, ohne fuehrenden Schraegstrich), Groesse und wie man sie liest."""
@@ -67,6 +91,14 @@ class _Baum:
         """Alle Dateien nach Pfad."""
         return {d.rel: d for d in self.dateien()}
 
+    def ordner(self) -> list[str]:
+        """Die Verzeichnisse des Spiels (Pfad mit ``/``, ohne Wurzel), **auch leere** - ein Ordner ohne Datei darin steht nur hier.
+
+        Ein Abbild, das aus der Dateiliste allein gebaut wird, kennt leere Verzeichnisse nicht; der Ordnerweg kannte sie
+        (``exfat_writer._scan_tree``), ebenso das Entpacken eines Abbilds. Verzeichnisse mit Dateien darin duerfen fehlen.
+        """
+        return []
+
     def schliessen(self) -> None:
         """Gibt Dateigriffe frei. Mehrfaches Rufen schadet nicht."""
 
@@ -87,6 +119,7 @@ class OrdnerBaum(_Baum):
         self._ignoriert = ignoriert
         self.uebersprungen: list[str] = []
         self._dateien: "list[BaumDatei] | None" = None
+        self._ordner: list[str] = []
         self._stempel_oeffnen: "tuple | None" = None
 
     def _leser_fuer(self, voll: str) -> Callable[[int], Iterator[bytes]]:
@@ -102,10 +135,28 @@ class OrdnerBaum(_Baum):
     def dateien(self) -> list[BaumDatei]:
         if self._dateien is not None:
             return self._dateien
+
+        def _fehler(exc: OSError) -> None:
+            # ``os.walk`` ueberging bis hier jeden Ordner, den es nicht auflisten konnte (Zugriff verweigert, zu langer Pfad):
+            # Die Dateien darin fehlten im Abbild, und die Rueckleseprobe verglich gegen dieselbe Liste. Jetzt ist es ein Fehler.
+            raise BaumFehler("Ordner nicht lesbar: %s" % exc)
+
         gefunden: list[BaumDatei] = []
+        ordner_liste: list[str] = []
         self.uebersprungen = []
-        for ordner, unter, namen in os.walk(self.wurzel):
+        for ordner, unter, namen in os.walk(self.wurzel, onerror=_fehler):
             unter.sort()
+            for name in list(unter):
+                voll = os.path.join(ordner, name)
+                rel = os.path.relpath(voll, self.wurzel).replace(os.sep, "/")
+                if self._ignoriert is not None and any(self._ignoriert(t) for t in rel.split("/")):
+                    unter.remove(name)                       # ein ignorierter Ordner wird nicht betreten
+                    continue
+                if os.path.islink(voll):
+                    unter.remove(name)                       # ein Verweis auf einen Ordner: nicht betreten, aber nicht verschweigen
+                    self.uebersprungen.append(rel)
+                    continue
+                ordner_liste.append(rel)
             for name in sorted(namen):
                 voll = os.path.join(ordner, name)
                 rel = os.path.relpath(voll, self.wurzel).replace(os.sep, "/")
@@ -116,13 +167,19 @@ class OrdnerBaum(_Baum):
                     continue
                 gefunden.append(BaumDatei(rel, os.path.getsize(voll), self._leser_fuer(voll)))
         gefunden.sort(key=lambda d: d.rel)
+        ordner_liste.sort()
+        self._ordner = ordner_liste
         self._dateien = gefunden
         # Der Stand beim Oeffnen (= beim ersten Auflisten), gegen den :meth:`unveraendert` spaeter vergleicht.
         self._stempel_oeffnen = self.stempel()
         return gefunden
 
+    def ordner(self) -> list[str]:
+        self.dateien()
+        return list(self._ordner)
+
     def stempel(self) -> tuple:
-        """Pfad, Groesse und Aenderungszeit jeder Datei - ein Spiel mit 84.000 Dateien braucht dafuer Sekunden, keine Minuten."""
+        """Pfad, Groesse und Aenderungszeit jeder Datei und die Verzeichnisse - ein Spiel mit 84.000 Dateien braucht dafuer Sekunden."""
         zeilen = []
         for d in self.dateien():
             try:
@@ -131,7 +188,7 @@ class OrdnerBaum(_Baum):
                 zeilen.append((d.rel, -1, -1))
                 continue
             zeilen.append((d.rel, st.st_size, st.st_mtime_ns))
-        return ("ordner", self.wurzel, tuple(zeilen))
+        return ("ordner", self.wurzel, tuple(zeilen), tuple(self._ordner))
 
     def unveraendert(self) -> bool:
         """Ob die Dateien noch so sind wie beim ersten Auflisten (Pfad, Groesse, Aenderungszeit); neue oder fehlende Dateien zaehlen mit."""
@@ -173,6 +230,7 @@ class ExfatBaum(_Baum):
         self._sperre = threading.Lock()
         self._stempel = self._datei_stempel()
         self._dateien: "list[BaumDatei] | None" = None
+        self._ordner: list[str] = []
         self._geschlossen = False
 
     def _datei_stempel(self) -> tuple:
@@ -200,7 +258,7 @@ class ExfatBaum(_Baum):
         if self._dateien is not None:
             return self._dateien
         try:
-            eintraege = list(self._leser().iter_files())
+            eintraege, ordner = _exfat_dateien_und_ordner(self._leser().root_entries())
         except self._ExfatError as exc:
             raise BaumFehler("exFAT-Abbild nicht lesbar: %s" % exc) from exc
         gefunden: list[BaumDatei] = []
@@ -210,8 +268,13 @@ class ExfatBaum(_Baum):
                 continue
             gefunden.append(BaumDatei(rel, int(eintrag.length), self._leser_fuer(eintrag)))
         gefunden.sort(key=lambda d: d.rel)
+        self._ordner = _ordner_ohne_ignorierte(ordner, self._ignoriert)
         self._dateien = gefunden
         return gefunden
+
+    def ordner(self) -> list[str]:
+        self.dateien()
+        return list(self._ordner)
 
     def _leser_fuer(self, eintrag: Any) -> Callable[[int], Iterator[bytes]]:
         def lesen(stueck: int) -> Iterator[bytes]:
@@ -292,6 +355,8 @@ class PfsBaum(_Baum):
         self.ebenen = 0
         self._huellen: list[tuple[Any, Any]] = []            # je Huelle (Kopf, Inode) der einen inneren Datei
         self._flach: "tuple[Any, list[Any], dict[str, int]] | None" = None     # (Kopf, Inodes, Pfad -> Inode-Nummer)
+        self._flach_ordner: list[str] = []
+        self._ordner: list[str] = []
 
     def _datei_stempel(self) -> tuple:
         st = os.stat(self.pfad)
@@ -331,7 +396,7 @@ class PfsBaum(_Baum):
                 wurzel, _fpt, _koll, _bes = pfs.parse_superroot_and_indexes(aktuell, kopf, inodes, fehler)
                 if wurzel < 0:
                     raise BaumFehler("PFS ohne Wurzelverzeichnis")
-                dateien, _ordner, _eintraege = pfs.build_tree_from_uroot(aktuell, kopf, inodes, wurzel, fehler)
+                dateien, ordner_inodes, _eintraege = pfs.build_tree_from_uroot(aktuell, kopf, inodes, wurzel, fehler)
                 if fehler:
                     raise BaumFehler("PFS-Baum fehlerhaft: %s" % "; ".join(fehler[:3]))
                 if len(dateien) == 1:
@@ -349,6 +414,7 @@ class PfsBaum(_Baum):
                             continue
                 self.art = "pfs"
                 self._flach = (kopf, inodes, dateien)
+                self._flach_ordner = [pfad for pfad in ordner_inodes if pfad]       # "" ist die Wurzel
                 return
             raise BaumFehler("mehr als %d verschachtelte Abbilder" % self.MAX_EBENEN)
         except BaumFehler:
@@ -387,10 +453,12 @@ class PfsBaum(_Baum):
         try:
             if self.art == "exfat":
                 _ansicht, leser = self._stapel()
-                for eintrag in leser.iter_files():
+                eintraege, ordner = _exfat_dateien_und_ordner(leser.root_entries())
+                for eintrag in eintraege:
                     gefunden.append(BaumDatei(eintrag.rel_path, int(eintrag.length), self._exfat_leser(eintrag)))
             else:
                 kopf, inodes, pfade = self._flach
+                ordner = list(self._flach_ordner)
                 for rel, nummer in pfade.items():
                     inode = inodes[nummer]
                     gefunden.append(BaumDatei(rel, max(0, int(inode.logical_size)), self._pfs_leser(kopf, inode, rel)))
@@ -399,8 +467,13 @@ class PfsBaum(_Baum):
         if self._ignoriert is not None:
             gefunden = [d for d in gefunden if not any(self._ignoriert(t) for t in d.rel.split("/"))]
         gefunden.sort(key=lambda d: d.rel)
+        self._ordner = _ordner_ohne_ignorierte(ordner, self._ignoriert)
         self._dateien = gefunden
         return gefunden
+
+    def ordner(self) -> list[str]:
+        self.dateien()
+        return list(self._ordner)
 
     def _exfat_leser(self, eintrag: Any) -> Callable[[int], Iterator[bytes]]:
         def lesen(stueck: int) -> Iterator[bytes]:
@@ -461,6 +534,13 @@ class UeberlagerBaum(_Baum):
         ergebnis.extend(d for rel, d in ersetzt.items() if rel not in self.entfernt)
         ergebnis.sort(key=lambda d: d.rel)
         return ergebnis
+
+    def ordner(self) -> list[str]:
+        """Die Verzeichnisse beider Baeume zusammen, auch die leeren (siehe :meth:`_Baum.ordner`)."""
+        alle = set(self.basis.ordner())
+        if self.ueberlager is not None:
+            alle.update(self.ueberlager.ordner())
+        return sorted(alle)
 
     def stempel(self) -> tuple:
         return ("ueberlagert", self.basis.stempel(),

@@ -26,6 +26,7 @@ zur Pruefung.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import inspect
 import logging
@@ -280,6 +281,29 @@ def anfang_aus_baumdatei(datei: Any) -> Callable[[int], bytes]:
             stuecke.close()
         return bytes(gelesen[:n])
     return anfang
+
+
+@contextlib.contextmanager
+def exfat_offnen(pfad: str, leser_klasse: Any, huelle: bool = False) -> Any:
+    """Ein exFAT-Leser auf ``pfad``; mit ``huelle`` auf das **innere** Abbild einer ``.ffpfsc`` (PFS mit genau einer ``.exfat``).
+
+    Die Hülle wird ueber die Ansicht von MkPFS gelesen (``open_inner_file_view``): Die PFSC-Bloecke werden erst beim Lesen
+    entpackt, nichts kommt auf die Platte. Ein Abbild ohne genau ein inneres Abbild ist ein ``ValueError``.
+    """
+    if not huelle:
+        with open(pfad, "rb") as fh:
+            yield leser_klasse(fh)
+        return
+    from mkpfs.pfs import open_inner_file_view  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+    sicht = open_inner_file_view(Path(pfad))
+    if sicht is None:
+        raise ValueError("kein einzelnes inneres Abbild in %s" % pfad)
+    view, fh, _name = sicht
+    try:
+        yield leser_klasse(view)
+    finally:
+        fh.close()
 
 
 def exfat_ruecklesen_liste(
@@ -1087,19 +1111,21 @@ class Pruefstand:
 
     def _verify_exfat_erwartet(
         self, exfat_path: str, erwartet: "Iterable[tuple[str, int, Callable[[int], bytes] | None]]",
-        laeuft: Callable[[], bool] | None = None,
+        laeuft: Callable[[], bool] | None = None, huelle: bool = False,
     ) -> dict[str, Any]:
         """Wie ``_verify_exfat_inhalt``, aber gegen eine Liste ``(Pfad, Groesse, Anfang)`` (Lesebaum und Strom, Stufe 3).
 
         Siehe ``exfat_ruecklesen_liste``. Dateien ohne ``Anfang`` (die Packdateien aus dem Strom) zaehlen nur bei Liste und
         Groesse. ``erwartet`` wird vor dem Lesen vollstaendig gebildet; der Aufrufer haelt die Quelle bis zum Ende offen.
+        ``huelle``: ``exfat_path`` ist eine ``.ffpfsc``; gelesen wird ihr inneres exFAT (``exfat_offnen``).
         """
         liste = list(erwartet)
         return self._verify_exfat_gegen(
-            exfat_path, lambda leser, ignoriert: exfat_ruecklesen_liste(leser, liste, ignoriert=ignoriert, laeuft=laeuft))
+            exfat_path, lambda leser, ignoriert: exfat_ruecklesen_liste(leser, liste, ignoriert=ignoriert, laeuft=laeuft),
+            huelle=huelle)
 
-    def _verify_exfat_gegen(self, exfat_path: str, vergleichen: Callable[[Any, Callable[[str], bool]], dict[str, Any]]
-                            ) -> dict[str, Any]:
+    def _verify_exfat_gegen(self, exfat_path: str, vergleichen: Callable[[Any, Callable[[str], bool]], dict[str, Any]],
+                            huelle: bool = False) -> dict[str, Any]:
         """Oeffnet das Abbild mit dem eigenen Leser, laesst ``vergleichen`` den Befund bilden und macht daraus das Urteil."""
         result: dict[str, Any] = {"checked": False, "ok": True, "detail": ""}
         try:
@@ -1113,8 +1139,8 @@ class Pruefstand:
             from mkpfs.utils import is_ignored_name  # pyright: ignore[reportMissingImports]
 
             try:
-                with open(exfat_path, "rb") as fh:
-                    befund = vergleichen(ExfatReader(fh), is_ignored_name)
+                with exfat_offnen(exfat_path, ExfatReader, huelle) as leser:
+                    befund = vergleichen(leser, is_ignored_name)
             except Exception as exc:
                 result["lesefehler"] = True
                 result["detail"] = self._t("verify.count_skipped_error", error=exc)

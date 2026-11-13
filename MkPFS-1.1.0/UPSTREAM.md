@@ -118,7 +118,7 @@ sonst die falsche erwischen.
 
 ## Geänderte Zeilen
 
-**Neun Stellen**, jede in einem eigenen Abschnitt unten. Alle neun sind
+**Zehn Stellen**, jede in einem eigenen Abschnitt unten. Alle zehn sind
 Zutaten dieses Projekts und **müssen bei jedem Fassungswechsel erneut
 nachgetragen werden**.
 
@@ -146,6 +146,7 @@ Tests laufen; keins von beidem ersetzt das andere.
 | `mkpfs/cli.py` | Strukturprüfung nach `pack file` ohne Kopie der Quelle, wo kein Link geht | `test_mkpfs_pruefung_exfat.py` |
 | `mkpfs/exfat.py` | FAT einmal laden, Cluster-Läufe in einem Lesen holen (`ExfatReader.read_file`) | `test_exfat_leser_tempo.py` |
 | `mkpfs/exfat_writer.py` | `iter_exfat_image_liste` und `dateireihenfolge_liste`: Abbild aus einer Dateiliste statt aus einem Ordner | `test_abbild_strom.py` |
+| `mkpfs/pfs.py` | `build_pfs_stream_from_blocks`: der Schreibteil von `build_pfs_stream_from_exfat` für einen fertigen Byte-Strom | `test_ffpfsc_strom.py` |
 
 Nicht abweichend, sondern **weggelassen**: der ganze Ordner `mkpfs/gui/`
 (18 Dateien). Dieses Projekt bringt seine eigene Oberfläche mit; siehe
@@ -325,7 +326,27 @@ der Schreibung unterscheiden, und einen Namen als Datei und als Ordner. Betriebs
 weg wie im Ordnerweg. `dateireihenfolge_liste(eintraege)` nennt vorab die Reihenfolge, in der die Öffner gerufen werden -
 ein Strom, der nur vorwärts lesbar ist, prüft damit vor dem ersten Byte, ob seine Reihenfolge stimmt.
 `iter_exfat_image` selbst ist unverändert (nur der Rumpf steht jetzt in `_iter_exfat_image_node`); ein Ordner und die
-gleiche Dateiliste ergeben **byteweise dasselbe** Abbild.
+gleiche Dateiliste ergeben **byteweise dasselbe** Abbild. Leere Verzeichnisse kennt eine Dateiliste nicht; dafür gibt es den
+Parameter `ordner` (Pfade, die es auch ohne Datei darin geben soll) bei `iter_exfat_image_liste`, `dateireihenfolge_liste` und
+`_baum_aus_liste` - so entsteht auch mit leeren Verzeichnissen dasselbe Abbild wie aus dem Ordner.
 
 Beim Fassungswechsel prüfen: Hat die Vorlage `iter_exfat_image` oder `_Node` geändert, die Zutat erneut einbringen und
 `test_abbild_strom.py` laufen lassen (`ListeSchreiberTests` vergleicht gegen den Ordnerweg).
+
+### Byte-Strom als `.ffpfsc` in `mkpfs/pfs.py`
+
+Die Vorlage schreibt eine `.ffpfsc` in der exFAT-Bauform (`mkpfs pack folder --compress`) nur aus einem **Ordner**:
+`build_pfs_stream_from_exfat(source_root)` plant das exFAT-Abbild, schreibt es als Strom in den PFSC-Kompressor und baut darum
+das PFS mit einer einzigen Datei. Wer den exFAT-Strom schon hat (aus einer Dateiliste, siehe oben), musste ihn erst als `.exfat`
+auf die Platte legen.
+
+Hier steht der Schreibteil in `build_pfs_stream_from_blocks(payload_stream, raw_size, inner_name, source_label, ...)`;
+`build_pfs_stream_from_exfat` plant nur noch und ruft ihn auf. Dazu zwei Zugaben: `start_time` (die Dauer in den Kennzahlen
+zählt ab dem Aufruf des Aufrufers) und `progress` (ein eigener `Progress` - wer kein Terminal hat, übergibt
+`Progress(enabled=False, listener=...)`; ohne Angabe bleibt es bei der Ausgabe auf `stderr`). Aus einem Ordner entsteht
+**byteweise dieselbe Datei** wie vorher (`MkpfsKernTests.test_gleiche_datei_wie_der_ordnerweg`, mit festem `time.time`).
+Dazu prüft der Kern die Länge des Stroms **bytegenau** gegen `raw_size` (der Kompressor vergleicht nur ganze 64-KiB-Blöcke; ein
+Strom, der um ein paar Bytes abweicht, würde sonst mit Nullen aufgefüllt und mit falscher Länge im Inode abgeliefert).
+
+Beim Fassungswechsel prüfen: Hat die Vorlage `build_pfs_stream_from_exfat` geändert, die Zutat erneut einbringen und
+`test_ffpfsc_strom.py` laufen lassen.

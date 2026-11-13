@@ -260,6 +260,121 @@ class FehlerTests(_Grundlage):
         self.assertEqual("ampr_zstd.ausgabe_belegt", str(ctx.exception))
 
 
+class PruefenImStromTests(_Grundlage):
+    """``pruefen``: Der Schreibdurchgang entpackt, was er abliefert, und vergleicht mit der Pruefsumme der Quelle (wie ``z.pruefen``)."""
+
+    def _strom(self, **kw):
+        baum = sb.OrdnerBaum(self.spiel)
+        messung = z.messen(baum, self.auswahl, stufe=3, archiv_id=self.archiv)
+        return baum, messung, list(z.strom(baum, self.auswahl, messung, **kw))
+
+    def _zaehlen(self, **kw) -> int:
+        echt = z.chunk_entpacken
+        n = [0]
+
+        def gezaehlt(*a, **k):
+            n[0] += 1
+            return echt(*a, **k)
+        with mock.patch.object(z, "chunk_entpacken", gezaehlt):
+            self._strom(**kw)
+        return n[0]
+
+    def test_ohne_pruefen_wird_nichts_entpackt(self) -> None:
+        self.assertEqual(0, self._zaehlen())
+
+    def test_voll_entpackt_jeden_chunk(self) -> None:
+        baum = sb.OrdnerBaum(self.spiel)
+        messung = z.messen(baum, self.auswahl, stufe=3, archiv_id=self.archiv)
+        self.assertEqual(messung.ergebnis.chunks, self._zaehlen(pruefen=True))
+
+    def test_eine_auswahl_entpackt_nur_diese(self) -> None:
+        self.assertEqual(2, self._zaehlen(pruefen=frozenset({0, 3})))
+
+    def test_das_ergebnis_ist_dasselbe_mit_und_ohne(self) -> None:
+        _b, _m, ohne = self._strom()
+        _b, _m, mit = self._strom(pruefen=True)
+        self.assertEqual(ohne, mit)
+
+    def test_ein_falsch_verdichteter_chunk_faellt_auf(self) -> None:
+        echt = z.chunk_entpacken
+
+        def verfaelscht(codec, gespeichert, erwartet):
+            daten = bytearray(echt(codec, gespeichert, erwartet))
+            daten[0] ^= 1
+            return bytes(daten)
+        with mock.patch.object(z, "chunk_entpacken", verfaelscht):
+            with self.assertRaises(z.ZstdPackFehler) as ctx:
+                self._strom(pruefen=True)
+        self.assertIn("ampr_zstd.inhalt_anders", str(ctx.exception))
+
+    def test_ein_beschaedigter_frame_faellt_auf(self) -> None:
+        def kaputt(codec, gespeichert, erwartet):
+            raise z.ZstdPackFehler("zstd-Frame beschaedigt: x")
+        with mock.patch.object(z, "chunk_entpacken", kaputt):
+            with self.assertRaises(z.ZstdPackFehler):
+                self._strom(pruefen=frozenset({1}))
+
+    def test_nicht_gewaehlte_chunks_bleiben_ungeprueft(self) -> None:
+        """Eine Auswahl ohne den verfaelschten Chunk laesst ihn durch - so arbeitet die Stichprobe."""
+        echt = z.chunk_entpacken
+        gesehen: list[int] = []
+
+        def verfaelscht(codec, gespeichert, erwartet):
+            gesehen.append(1)
+            return echt(codec, gespeichert, erwartet)
+        with mock.patch.object(z, "chunk_entpacken", verfaelscht):
+            self._strom(pruefen=frozenset())                 # leere Auswahl: nichts
+        self.assertEqual([], gesehen)
+
+
+class StichprobeChunksTests(_Grundlage):
+    def _messung(self):
+        baum = sb.OrdnerBaum(self.spiel)
+        return z.messen(baum, self.auswahl, stufe=3, archiv_id=self.archiv)
+
+    def test_kleine_dateien_werden_ganz_gewaehlt(self) -> None:
+        messung = self._messung()
+        gewaehlt, byte_zahl = z.stichprobe_chunks(messung, 1)
+        gesamt = sum(-(-g // z.CHUNK_SIZE) for _p, g in messung.eintraege)
+        # Das Spiel ist klein (alles unter 3 Stuecken zu 8 MiB): Alle Chunks.
+        self.assertEqual(set(range(gesamt)), set(gewaehlt))
+        self.assertEqual(sum(g for _p, g in messung.eintraege), byte_zahl)
+
+    def test_gleicher_startwert_gleiche_auswahl(self) -> None:
+        with mock.patch.object(z, "LESE_BLOCK", z.CHUNK_SIZE), mock.patch.object(z, "STICHPROBE_ANTEIL", 0.3):
+            messung = self._messung()
+            a = z.stichprobe_chunks(messung, 42)
+            b = z.stichprobe_chunks(messung, 42)
+            andere = [z.stichprobe_chunks(messung, s)[0] for s in range(43, 53)]
+        self.assertEqual(a, b)
+        self.assertTrue(any(x != a[0] for x in andere), "ein anderer Startwert waehlt andere Stuecke")
+
+    def test_grosse_dateien_erstes_und_letztes_stueck_plus_zufall_im_budget(self) -> None:
+        with mock.patch.object(z, "LESE_BLOCK", 2 * z.CHUNK_SIZE), mock.patch.object(z, "STICHPROBE_ANTEIL", 0.0):
+            messung = self._messung()
+            gewaehlt, byte_zahl = z.stichprobe_chunks(messung, 7)
+            erster = 0
+            for pfad, groesse in messung.eintraege:
+                n = -(-groesse // z.CHUNK_SIZE)
+                stuecke = -(-n // 2)
+                if stuecke > z.GANZ_BIS_STUECKE:
+                    self.assertIn(erster, gewaehlt, "erstes Stueck von " + pfad)
+                    self.assertIn(erster + n - 1, gewaehlt, "letztes Stueck von " + pfad)
+                    # Anteil 0: nur das Mindestbudget von einem Stueck zufaellig dazu
+                    mitte = [c for c in range(erster + 2, erster + n - 2) if c in gewaehlt]
+                    self.assertLessEqual(len(mitte), 2)
+                erster += n
+        self.assertGreater(byte_zahl, 0)
+
+    def test_hoechstens_der_anteil(self) -> None:
+        with mock.patch.object(z, "LESE_BLOCK", z.CHUNK_SIZE):
+            messung = self._messung()
+            klein, _b = z.stichprobe_chunks(messung, 1)
+            with mock.patch.object(z, "STICHPROBE_ANTEIL", 1.0):
+                gross, _b2 = z.stichprobe_chunks(messung, 1)
+        self.assertLessEqual(len(klein), len(gross))
+
+
 class FortschrittTests(_Grundlage):
     def test_fortschritt_waechst_bis_eins(self) -> None:
         baum = sb.OrdnerBaum(self.spiel)

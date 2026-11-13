@@ -92,6 +92,7 @@ class _Grundlage(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix="pfsbaum_")
         cls.spiel = os.path.join(cls.tmp, "spiel")
         _schreiben(cls.spiel, SPIEL)
+        os.makedirs(os.path.join(cls.spiel, "savedata_leer"))              # ein Verzeichnis ohne Datei darin
         a = cls.abbilder = {}
         exfat = os.path.join(cls.tmp, "spiel.exfat")
         with open(exfat, "wb") as fh:
@@ -147,6 +148,16 @@ class BauformenTests(_Grundlage):
                     teile = list(gross.lesen(stueck))
                     self.assertLessEqual(max(len(t) for t in teile), stueck, stueck)
                     self.assertEqual(SPIEL["data/text.txt"], b"".join(teile))
+
+    def test_leere_verzeichnisse_in_jeder_bauform(self) -> None:
+        """Ein exFAT-Abbild kennt leere Verzeichnisse; das flache PFS von MkPFS (``build_pfs``) legt sie gar nicht erst an."""
+        mit_leerem = sorted(["Daten", "data", "data/b", "savedata_leer", "sce_sys"])
+        ohne_leeres = sorted(["Daten", "data", "data/b", "sce_sys"])
+        for name, pfad in self.abbilder.items():
+            erwartet = mit_leerem if self.ERWARTET[name][0] == "exfat" else ohne_leeres
+            with self.subTest(bauform=name), sb.PfsBaum(pfad) as baum:
+                baum.dateien()
+                self.assertEqual(erwartet, baum.ordner())
 
     def test_leere_datei(self) -> None:
         for name in ("flach_pfsc", "huelle_pfsc"):

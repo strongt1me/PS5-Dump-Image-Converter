@@ -145,13 +145,19 @@ def _scan_tree(root: Path) -> _Node:
     return root_node
 
 
-def _baum_aus_liste(eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]]) -> _Node:
+def _baum_aus_liste(
+    eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]],
+    ordner: Iterable[str] = (),
+) -> _Node:
     """Build the same tree ``_scan_tree`` builds, from a list ``(path, size, opener)`` instead of a folder.
 
     ``path`` uses ``/`` and is relative to the volume root; ``opener()`` returns the bytes of the file (their sum must be
     ``size``). Entries are refused rather than dropped, as in ``_scan_tree``: non-ASCII names, empty / ``.`` / ``..`` /
     control-character names, names that differ only in case (the up-case hash cannot tell them apart), and a name used for a
     file and a directory. OS metadata (``is_ignored_name``) is left out, as in ``_scan_tree``.
+
+    ``ordner`` lists directories that must exist even when no file lies in them (``_scan_tree`` keeps empty directories; a
+    list of files alone cannot say so). Directories that hold files need not be named.
     """
     root_node = _Node(rel_path="", name="", is_dir=True)
     fremde_namen: list[str] = []
@@ -199,6 +205,21 @@ def _baum_aus_liste(eintraege: Iterable[tuple[str, int, Callable[[], Iterator[by
         belegt[schluessel] = teile[-1]
         vater.children.append(_Node(rel_path=pfad, name=teile[-1], is_dir=False, size=int(groesse), opener=opener))
 
+    for rel in ordner:
+        teile = rel.split("/") if rel else []
+        if not teile:
+            continue                                   # die Wurzel gibt es immer
+        if any(t in ("", ".", "..") or len(t) > 255 or "\\" in t or any(ord(c) < 32 for c in t) for t in teile):
+            unzulaessig.append(rel)
+            continue
+        if any(is_ignored_name(t) for t in teile):
+            continue
+        if not all(t.isascii() for t in teile):
+            fremde_namen.append(rel)
+            continue
+        if _ordner(rel) is None:
+            kollisionen.append(rel)
+
     if fremde_namen:
         raise ExfatBuildError(
             f"Source list contains {len(fremde_namen)} entry/entries with non-ASCII names, which exFAT name hashing "
@@ -237,13 +258,16 @@ def _dateireihenfolge(root: _Node) -> list[str]:
     return ergebnis
 
 
-def dateireihenfolge_liste(eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]]) -> list[str]:
+def dateireihenfolge_liste(
+    eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]],
+    ordner: Iterable[str] = (),
+) -> list[str]:
     """The order in which ``iter_exfat_image_liste`` will call the openers (files of size 0 are never opened).
 
     For sources that can only be read front to back (a compression stream), this lets the caller check *before* the first
     byte is written that the stream delivers its files in the order the volume needs them.
     """
-    return _dateireihenfolge(_baum_aus_liste(eintraege))
+    return _dateireihenfolge(_baum_aus_liste(eintraege, ordner))
 
 
 def _choose_cluster_size(root: _Node) -> int:
@@ -503,14 +527,15 @@ def iter_exfat_image_liste(
     eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]],
     cluster_size: int | None = None,
     on_layout: Callable[[int], None] | None = None,
+    ordner: Iterable[str] = (),
 ) -> Iterator[bytes]:
     """Like :func:`iter_exfat_image`, but the files come from a list ``(path, size, opener)`` instead of a folder.
 
     Nothing has to exist on disk: ``opener()`` is called once per non-empty file, in the order given by
     :func:`dateireihenfolge_liste`, and must yield exactly ``size`` bytes. The image is byte-for-byte the one a folder with the
-    same files would give.
+    same files would give - with ``ordner`` naming the empty directories the folder has (a list of files cannot show them).
     """
-    yield from _iter_exfat_image_node(_baum_aus_liste(eintraege), cluster_size, on_layout)
+    yield from _iter_exfat_image_node(_baum_aus_liste(eintraege, ordner), cluster_size, on_layout)
 
 
 def _iter_exfat_image_node(

@@ -8120,12 +8120,13 @@ class PS5ConverterGUI:
         # .exFAT -> .exFAT mit zstd-Asset-Pack laeuft ohne entpacktes Spiel (Stufe 3): Im Arbeitsordner liegen nur die
         # Systemdateien fuer den Einbau, ans Ziel kommt das neue Abbild (hoechstens so gross wie die Quelle, mit zstd meist
         # deutlich kleiner). Der Faktor fuer das Ziel bleibt der der .exFAT - mit Sicherheitsrand.
-        waehle_strom = getattr(self, "_strom_weg_gewaehlt", None)
+        waehle_strom = getattr(self, "_strom_nach_container_gewaehlt" if target_type == "ffpfsc"
+                               else "_strom_weg_gewaehlt", None)
         strom_temp = None
-        if target_type == "exfat" and callable(waehle_strom) and waehle_strom():
+        if target_type in ("exfat", "ffpfsc") and callable(waehle_strom) and waehle_strom():
             strom_temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
             if src.lower().endswith(".exfat") or os.path.isdir(src):
-                return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL["exfat"]), 0
+                return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL[target_type]), 0
             if not src.lower().endswith((".ffpfsc", ".ffpfs")):
                 strom_temp = None
 
@@ -33819,6 +33820,13 @@ class PS5ConverterGUI:
             True bei Erfolg.
         """
         ziel_endung = "ffpfs" if uncompressed else "ffpfsc"
+        # Mit AMPR EMU NG und zstd-Packs ohne Zwischenordner (Stufe 3, Etappe 8): Quelle als Lesebaum, Ergebnis im Strom als
+        # .ffpfsc. Nur .ffpfsc (die .ffpfs hat die Spieldateien in der Wurzel und braucht einen anderen Schreiber); nur .exfat und
+        # .ffpfsc als Quelle. Passt der Strom nicht (None), laeuft der bisherige Weg ueber den Dump-Ordner.
+        if not uncompressed and quelle in ("exfat", "ffpfsc") and self._strom_nach_container_gewaehlt():
+            ergebnis = self._mode_exfat_umpacken_strom(src, dst, pfs=(quelle == "ffpfsc"), ziel="ffpfsc")
+            if ergebnis is not None:
+                return ergebnis
         temp_root = self._mkdtemp(prefix="ps5conv_%s_%s_" % (quelle, ziel_endung),
                                   dir_path=self._dump_ordner_basis(dst))
         aussen = self._balkenbereich()
@@ -34032,8 +34040,21 @@ class PS5ConverterGUI:
             logger.debug("Strom-Weg nicht entscheidbar: %s", exc)
             return False
 
-    def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False, pfs: bool = False) -> "bool | None":
+    def _strom_nach_container_gewaehlt(self) -> bool:
+        """Soll das Ergebnis als ``.ffpfsc`` im Strom entstehen? Wie :meth:`_strom_weg_gewaehlt`, und die Bauform muss exFAT sein.
+
+        Der Strom baut immer die exFAT-Bauform (ein PFS mit einem inneren, komprimierten exFAT). Wer die Bauform PFS gewaehlt hat
+        (ein PFS in einem PFS, sinnvoll bei sehr vielen kleinen Dateien), bekommt sie vom bisherigen Weg - nicht still die andere.
+        """
+        return bool(self._strom_weg_gewaehlt() and getattr(self, "bauform", BAUFORM_VORGABE) == BAUFORM_EXFAT)
+
+    def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False, pfs: bool = False,
+                                   ziel: str = "exfat") -> "bool | None":
         """``.exfat`` mit zstd-Asset-Pack neu bauen, **ohne** das Spiel zu entpacken (Stufe 3, Dump-Forge-Vorbild).
+
+        ``ziel="ffpfsc"``: Das Ergebnis ist eine ``.ffpfsc`` (PFS mit einem inneren, komprimierten exFAT) statt einer ``.exfat``;
+        der exFAT-Strom laeuft in einem Zug durch den PFSC-Kompressor, es entsteht keine ``.exfat`` daneben
+        (Etappe 8, :meth:`_create_ffpfsc_aus_strom`).
 
         ``ordner=True``: Die Quelle ist ein Dump-Ordner (``spielbaum.OrdnerBaum``) statt einer ``.exfat`` - derselbe Weg, nur
         ohne Arbeitskopie: Der Ordner des Anwenders wird nur gelesen, nie veraendert (Etappe 6, :meth:`_mode_folder_to_exfat`).
@@ -34053,8 +34074,11 @@ class PS5ConverterGUI:
         """
         standard = (os.path.basename(os.path.normpath(src)) if ordner
                     else os.path.splitext(os.path.basename(src))[0])
-        base = self._ausgabe_stamm(src, standard, "exfat")
-        final_output = os.path.join(dst, base + ".exfat")
+        als_container = ziel == "ffpfsc"
+        endung = "ffpfsc" if als_container else "exfat"
+        base = (self._ausgabe_stamm(src, standard, "ffpfsc") if als_container
+                else self._ausgabe_stamm(src, standard, "exfat"))
+        final_output = os.path.join(dst, base + "." + endung)
         mkpfs_parent = self._extract_embedded_mkpfs()
         if not mkpfs_parent:
             self._append_to_log(self._t('log.auto.0264'))
@@ -34088,13 +34112,18 @@ class PS5ConverterGUI:
                 # Weg meldet beides mit seinem eigenen Text.
                 self._append_to_log(self._t("log.exfat_strom_ordner_alter_weg"))
                 return None
+            if not pfs and not any(d.rel.lower() == "eboot.bin" for d in dateien):
+                # Wie der bisherige Weg: Ohne eboot.bin in der Wurzel ist das kein Spiel - das sagt der Lauf gleich, nicht erst
+                # nach der Frage, ob eine param.json neu angelegt werden soll.
+                self._append_to_log(self._t('log.auto.0265', v0=os.path.join(os.path.basename(src), "eboot.bin")))
+                return False
             if any(ampr_zstdpack.ist_packname(d.rel) for d in dateien):
                 self._append_to_log(self._t("log.exfat_strom_packs_da"))
                 return None
             # Unzulaessige Namen (Nicht-ASCII, nur in der Schreibung verschieden, ...) vor der ersten Stunde Arbeit melden,
             # nicht erst beim Schreiben.
             try:
-                dateireihenfolge_liste([(d.rel, d.groesse, None) for d in dateien])
+                dateireihenfolge_liste([(d.rel, d.groesse, None) for d in dateien], quelle.ordner())
             except ExfatBuildError as exc:
                 self._append_to_log(self._t("log.exfat_strom_namen", error=exc))
                 return False
@@ -34103,11 +34132,15 @@ class PS5ConverterGUI:
             schatten = os.path.join(temp_root, base)
             self.task_final_output_path = final_output
             self._append_to_log(self._t(
-                "log.exfat_strom_start", quelle=os.path.basename(src), ziel=os.path.basename(final_output)))
-            self.progress_engine.start_task(
-                1 if pfs else 0,
-                self._t("progress.task.dump_to_exfat" if ordner else
-                        "progress.task.ffpfsc_to_exfat" if pfs else "progress.task.exfat_umpacken"))
+                "log.ffpfsc_strom_modus" if als_container else "log.exfat_strom_start",
+                quelle=os.path.basename(src), ziel=os.path.basename(final_output)))
+            if als_container:
+                self.progress_engine.start_task(0, self._t("progress.task.dump_to_format", format=endung))
+            else:
+                self.progress_engine.start_task(
+                    1 if pfs else 0,
+                    self._t("progress.task.dump_to_exfat" if ordner else
+                            "progress.task.ffpfsc_to_exfat" if pfs else "progress.task.exfat_umpacken"))
             self.progress_engine.begin_prepare(
                 self._t("progress.prepare.analyze_source_folder" if ordner else "progress.prepare.strom_lesen"))
             self._stufen_neu("exfat_strom")
@@ -34147,11 +34180,23 @@ class PS5ConverterGUI:
                 eintraege = abbild_strom.abbild_eintraege(ansicht_baum, auswahl, messung, behalten)
                 arbeiter = self._ampr_zstd_arbeiter()
 
+                # Die Pruefung des Packs wie beim Pack im Ordner (``ampr_zstdpack.pruefen``): "Vollstaendige Pruefung" entpackt jeden
+                # Chunk, sonst eine Stichprobe nach den Regeln der Fast-Pruefung. Hier geschieht es auf dem Weg ins Abbild.
+                if self._ampr_voll_pruefen():
+                    pack_pruefen: "bool | frozenset[int]" = True
+                    self._append_to_log(self._t("ampr_zstd.pruefung_voll", size=self._fmt_bytes(auswahl.gepackte_bytes)))
+                else:
+                    startwert = int.from_bytes(os.urandom(4), "little")
+                    pack_pruefen, geprueft = ampr_zstdpack.stichprobe_chunks(messung, startwert)
+                    self._append_to_log(self._t(
+                        "ampr_zstd.pruefung_stichprobe", checked=self._fmt_bytes(geprueft),
+                        total=self._fmt_bytes(auswahl.gepackte_bytes), seed=startwert))
+
                 def erzeuger(on_layout):
                     return abbild_strom.abbild_strom(
                         ansicht_baum, auswahl, messung, iter_liste=iter_exfat_image_liste,
                         reihenfolge_liste=dateireihenfolge_liste, originale_behalten=behalten, arbeiter=arbeiter,
-                        abbruch=lambda: not self.is_running, on_layout=on_layout)
+                        abbruch=lambda: not self.is_running, on_layout=on_layout, pruefen=pack_pruefen)
 
                 self._ampr_pack_konsolenhinweis(schatten)
                 self._append_to_log(self._t("ampr_zstd.hinweis_ng"))
@@ -34168,7 +34213,7 @@ class PS5ConverterGUI:
 
                 def erzeuger(on_layout):
                     return iter_exfat_image_liste([(d.rel, d.groesse, d.lesen) for d in ansicht_baum.dateien()],
-                                                  on_layout=on_layout)
+                                                  on_layout=on_layout, ordner=ansicht_baum.ordner())
 
             strom = {"erzeuger": erzeuger, "eintraege": eintraege, "ignoriert": is_ignored_name,
                      "quelle_geaendert": lambda: not quelle.unveraendert(),
@@ -34177,7 +34222,11 @@ class PS5ConverterGUI:
                          ansicht_baum, plan["auswahl"] if plan else None, plan["messung"] if plan else None, behalten)}
             self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
             bau_ziel = self._bauziel_neben_quelle(final_output)
-            ok = self._create_exfat_from_folder(schatten, bau_ziel, pct_start=50.0, pct_end=98.0, strom=strom)
+            if als_container:
+                strom["huelle"] = True                       # Rueckleseprobe ueber das innere exFAT der .ffpfsc
+                ok = self._create_ffpfsc_aus_strom(schatten, bau_ziel, pct_start=50.0, pct_end=98.0, strom=strom)
+            else:
+                ok = self._create_exfat_from_folder(schatten, bau_ziel, pct_start=50.0, pct_end=98.0, strom=strom)
             # Das Ziel ist oft die Quelle selbst: Der Lesegriff muss zu sein, ehe das neue Abbild an ihre Stelle tritt.
             quelle.schliessen()
             if ok and not self._ergebnis_im_ziel(
@@ -34186,8 +34235,19 @@ class PS5ConverterGUI:
             if ok:
                 self.progress_engine.begin_validate(self._t("progress.validate.default"))
                 self.progress_engine.commit_task()
-                self._append_to_log(self._t("log.exfat_umpacken_fertig", ziel=final_output))
+                if not als_container:
+                    self._append_to_log(self._t("log.exfat_umpacken_fertig", ziel=final_output))
             return ok
+        except ampr_zstdpack.ZstdPackFehler as exc:
+            # Abbruch (der Anwender) ist kein Fehler; alles andere (Platte voll, beschaedigter Block, Quelle waehrend des Laufs
+            # geaendert, ein Chunk, der sich nicht entpacken laesst) kommt mit seinem uebersetzten Text ins Protokoll - nicht
+            # als "Unerwarteter Fehler" mit dem rohen Schluessel aus dem Engine-Faden.
+            if str(exc) != "ampr_pack.abgebrochen":
+                self._append_to_log(self._t("ampr_zstd.fehlgeschlagen", error=self._zstd_fehler_text(exc)))
+            return False
+        except (spielbaum.BaumFehler, OSError) as exc:
+            self._append_to_log(self._t("log.exfat_strom_lesefehler", error=exc))
+            return False
         finally:
             self._strom_ansicht = None
             self._strom_plan = None
@@ -34845,6 +34905,13 @@ class PS5ConverterGUI:
             True bei Erfolg.
         """
         out_ext = "ffpfs" if uncompressed else "ffpfsc"
+        # Ordner -> .ffpfsc mit AMPR EMU NG und zstd-Packs ohne Arbeitskopie und ohne Zwischendatei (Stufe 3, Etappe 8).
+        # Nicht, wenn der Einbau schon gelaufen ist (die mehrstufigen Wege rufen hier mit ihrem fertigen Dump-Ordner an).
+        if (not uncompressed and not getattr(self, "_integration_erledigt", False)
+                and os.path.isdir(src) and self._strom_nach_container_gewaehlt()):
+            ergebnis = self._mode_exfat_umpacken_strom(src, dst, ordner=True, ziel="ffpfsc")
+            if ergebnis is not None:
+                return ergebnis
         folder_name  = self._ausgabe_stamm(src, os.path.basename(os.path.normpath(src)), out_ext)
         final_output = os.path.join(dst, f"{folder_name}.{out_ext}")
         # Die beiden Kaestchen in der Pfad-Karte greifen hier: Was integriert
@@ -38015,7 +38082,14 @@ class PS5ConverterGUI:
         self._set_status(self._t("ampr_zstd.status"))
         try:
             regeln = None
-            profil = self._ampr_zstd_regeldatei()      # neben dem Dump-Ordner liegt hier nichts: Quelle ist ein Abbild
+            # Wie im Weg ueber den Ordner (:meth:`_ampr_zstdpakete_bauen`): Liegt neben dem Dump-Ordner des Anwenders
+            # "<Name>_ampr_pack.toml" (``_ampr_quelle_original``, bei einem Ordner als Quelle vom Einbau gemerkt), entscheidet
+            # es, was lose bleibt. Bei einem Abbild als Quelle ist ``_ampr_quelle_original`` leer, dann gibt es nichts zu holen.
+            # Die Kopie landet neben dem Ueberlagerungsordner im Arbeitsordner, der am Ende weggeraeumt wird.
+            profil = self._ampr_eigenes_profil_uebernehmen(
+                os.path.join(os.path.dirname(os.path.abspath(ordner)), "ampr_profil"))
+            if not profil:
+                profil = self._ampr_zstd_regeldatei()
             if profil:
                 regeln = ampr_zstdpack.regeln_laden(profil)
                 self._append_to_log(self._t(
@@ -43936,6 +44010,11 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0272', v0=out_path))
             bau_fertig = True
             return True
+        except ampr_zstdpack.ZstdPackFehler as exc:
+            # Abbruch aus dem Strom (Erzeuger) ist kein Fehler; alles andere mit uebersetztem Text statt rohem Schluessel.
+            if str(exc) != "ampr_pack.abgebrochen":
+                self._append_to_log(self._t('log.auto.0273', v0=self._zstd_fehler_text(exc)))
+            return False
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0273', v0=exc))
             return False
@@ -43945,6 +44024,169 @@ class PS5ConverterGUI:
                     teil_path.unlink(missing_ok=True)
                 except OSError as exc:
                     logger.debug("Teildatei nicht entfernbar (%s): %s", teil_path, exc)
+
+    def _zstd_fehler_text(self, exc: BaseException) -> str:
+        """Der Text zu einer ``ZstdPackFehler``: Schluessel wie ``ampr_zstd.band_fehlt`` werden uebersetzt, anderes bleibt wie es ist."""
+        grund = str(exc)
+        schluessel = grund.split(":", 1)[0]
+        if schluessel.startswith(("ampr_pack.", "ampr_zstd.")) and ":" not in grund:
+            return self._t(grund)
+        return grund
+
+    def _create_ffpfsc_aus_strom(
+        self,
+        src_dir: str,
+        out_file: str,
+        pct_start: float = 0.0,
+        pct_end: float = 98.0,
+        strom: "dict[str, Any] | None" = None,
+    ) -> bool:
+        """Schreibt das Spiel aus Lesebaum und zstd-Strom als ``.ffpfsc`` - ohne Zwischenordner und ohne ``.exfat`` daneben.
+
+        Gegenstueck zu :meth:`_create_exfat_from_folder` (Stufe 3, Etappe 8): Der exFAT-Strom (``strom["erzeuger"]``) laeuft nicht in
+        eine Datei, sondern durch den PFSC-Kompressor von MkPFS in ein PFS mit einer einzigen Datei ``<TitleID>.exfat`` - die Bauform,
+        die ``mkpfs pack folder --compress`` fuer einen Ordner baut (:meth:`_mode_pack_folder_exfat`). ``src_dir`` ist der
+        Ueberlagerungsordner; aus seiner ``sce_sys/param.json`` stammt der Name der inneren Datei.
+
+        Gebaut wird unter ``<Ziel>.teil``, danach kommen Rueckleseprobe (Liste, Groessen, Stichprobe des Inhalts - ueber das innere
+        exFAT) und der Quellstempel; erst dann ersetzt ``os.replace`` das Ziel. Bei jedem Fehler und jedem Abbruch bleibt nichts liegen.
+        """
+        mkpfs_parent = self._extract_embedded_mkpfs()
+        if not mkpfs_parent:
+            self._append_to_log(self._t('log.auto.0264'))
+            return False
+        if mkpfs_parent not in sys.path:
+            sys.path.insert(0, mkpfs_parent)
+
+        src_path = Path(src_dir).expanduser().resolve()
+        out_path = Path(out_file).expanduser().resolve()
+        if strom is None or not src_path.is_dir():
+            self._append_to_log(self._t('log.auto.0112', v0=src_path))
+            return False
+        eboot_path = src_path / "eboot.bin"
+        if not eboot_path.is_file():
+            self._append_to_log(self._t('log.auto.0265', v0=eboot_path))
+            return False
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        # Ein zuvor abgebrochener MkPFS-Lauf des bisherigen Weges zum selben Ziel schreibt womoeglich noch: erst auf ihn warten.
+        # (Das Aufraeumen des Ziels, das der bisherige Weg danach macht, bleibt weg: Hier bleibt ein vorhandenes Ziel bis zur
+        # Uebernahme unberuehrt.)
+        if not self._wait_for_pending_mkpfs_background(str(out_path), abbruch=lambda: not self.is_running):
+            return False
+        self._append_to_log(self._t("log.ffpfsc_strom_start"))
+        self._append_to_log(self._t('log.auto.0267', v0=src_path))
+        self._append_to_log(self._t('log.auto.0268', v0=out_path))
+        profile = self._resolve_pack_profile("pack_folder", self.task_total_source_bytes)
+        self._append_to_log(self._t(
+            "log.manual.auto_profile_info", name=profile["profile"], size=profile["size_gb"], lvl=profile["level"],
+            cpu=profile["cpu"], cores=profile["cores"], blk=profile["block_size"]))
+
+        gesamt_box = [0]
+        letzte_anzeige = [0.0]
+        self._copy_total_bytes = 0
+        self._copy_done_bytes = 0
+        self._copy_total_exact = True
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
+
+        def _on_layout(total_size: int) -> None:
+            gesamt_box[0] = max(0, int(total_size))
+            self._copy_total_bytes = gesamt_box[0]
+            self.task_total_source_bytes = gesamt_box[0]
+
+        def _melden(_phase: str, _fertig: int, _gesamt: int, byte_zahl: int) -> None:
+            self._copy_done_bytes = byte_zahl
+            anteil = byte_zahl / max(1, gesamt_box[0])
+            self.task_progress = max(self.task_progress, min(pct_start + anteil * (pct_end - pct_start), pct_end))
+            jetzt = time.monotonic()
+            if jetzt - letzte_anzeige[0] >= 0.5:
+                letzte_anzeige[0] = jetzt
+                self.root.after(0, lambda s=self._fmt_bytes(byte_zahl), t=self._fmt_bytes(gesamt_box[0]) if gesamt_box[0] else "?":
+                                self.status_label.config(text=self._format_phase_status(
+                                    self._t("status.ffpfsc_strom_schreiben", done=s, total=t), prefer_current_label=False)))
+
+        teil_path = out_path.with_name(out_path.name + ".teil")
+        bau_fertig = False
+        try:
+            self.task_progress = max(self.task_progress, pct_start + (pct_end - pct_start) * 0.03)
+            for rest in (teil_path, Path(str(teil_path) + ".tmp")):
+                rest.unlink(missing_ok=True)                  # Reste eines frueheren, hart beendeten Laufs
+            t_schreiben = self._stufe_start("phase.schreiben")
+            try:
+                abbild_strom.ffpfsc_schreiben(
+                    strom["erzeuger"], str(teil_path), quelle_ordner=str(src_path), block_size=int(profile["block_size"]),
+                    zlib_level=int(profile["level"]), cpu_count=int(profile["cpu"]), backend=MKPFS_BACKEND,
+                    abbruch=lambda: not self.is_running, melden=_melden, on_layout=_on_layout)
+            except abbild_strom.StromAbgebrochen:
+                return False
+            self._phase_dauer_melden("phase.schreiben", t_schreiben)
+            t_pruefen = self._stufe_start("phase.pruefen")
+            if not teil_path.is_file():
+                self._append_to_log(self._t('log.auto.0270'))
+                return False
+            with teil_path.open("r+b") as fh:                 # auf dem Datentraeger, bevor das Abbild den Endnamen bekommt
+                fh.flush()
+                os.fsync(fh.fileno())
+
+            # Dieselbe Rueckleseprobe wie beim exFAT-Weg, nur ueber das innere Abbild der Huelle.
+            check = self._verify_exfat_liste(str(teil_path), strom, mkpfs_parent)
+            if not self.is_running:
+                return False
+            if check.get("lesefehler") or (check.get("checked") and not check.get("ok")):
+                self._append_to_log(self._t("log.ffpfsc_strom_unvollstaendig", v0=check.get("detail", "")))
+                return False
+            if check.get("checked"):
+                self._append_to_log(self._t('log.exfat_ruecklesen_ok', v0=check.get("detail", "")))
+
+            # Die Pruefstufe des Anwenders (aus / schnell / voll) wie beim MkPFS-Aufruf des bisherigen Weges: Ausser bei "aus"
+            # liest MkPFS das fertige Abbild nach dem Bauen zurueck und entpackt jeden Block. Die Rueckleseprobe oben zieht nur
+            # eine Stichprobe; ein beschaedigter Block in einer anderen Datei fiele sonst nirgends auf.
+            if getattr(self, "mkpfs_verify", "schnell") != "aus":
+                def _pruef_fortschritt(fertig: int, gesamt: int) -> None:
+                    jetzt = time.monotonic()
+                    if jetzt - letzte_anzeige[0] >= 0.5:
+                        letzte_anzeige[0] = jetzt
+                        self.root.after(0, lambda d=fertig, g=gesamt: self.status_label.config(
+                            text=self._format_phase_status(self._t("status.ffpfsc_strom_pruefen", done=d, total=g),
+                                                           prefer_current_label=False)))
+                try:
+                    fehler, warnungen = abbild_strom.pfs_pruefen(
+                        str(teil_path), abbruch=lambda: not self.is_running, melden=_pruef_fortschritt)
+                except abbild_strom.StromAbgebrochen:
+                    return False
+                for warnung in warnungen[:10]:
+                    self._append_to_log(self._t("log.ffpfsc_strom_warnung", v0=warnung))
+                if fehler:
+                    self._append_to_log(self._t("log.ffpfsc_strom_unvollstaendig", v0="; ".join(fehler[:5])))
+                    return False
+                self._append_to_log(self._t("log.ffpfsc_strom_pruefung_ok"))
+
+            self._copy_done_bytes = self._copy_total_bytes
+            self.task_progress = max(self.task_progress, pct_end)
+            self._phase_dauer_melden("phase.pruefen", t_pruefen)
+            geaendert = strom.get("quelle_geaendert")
+            if callable(geaendert) and geaendert():
+                self._append_to_log(self._t("log.exfat_strom_quelle_geaendert"))
+                return False
+            _datei_ersetzen(str(teil_path), str(out_path))
+            self._append_to_log(self._t("log.ffpfsc_strom_fertig", v0=out_path))
+            bau_fertig = True
+            return True
+        except ampr_zstdpack.ZstdPackFehler as exc:
+            if str(exc) != "ampr_pack.abgebrochen":
+                self._append_to_log(self._t("log.ffpfsc_strom_fehler", v0=self._zstd_fehler_text(exc)))
+            return False
+        except Exception as exc:  # noqa: BLE001 - jeder Fehler beendet den Bau, die Teildatei wird unten entfernt
+            self._append_to_log(self._t("log.ffpfsc_strom_fehler", v0=exc))
+            return False
+        finally:
+            if not bau_fertig:
+                for rest in (teil_path, Path(str(teil_path) + ".tmp")):
+                    try:
+                        rest.unlink(missing_ok=True)
+                    except OSError as exc:
+                        logger.debug("Teildatei nicht entfernbar (%s): %s", rest, exc)
 
     def _verify_exfat_liste(self, exfat_path: str, strom: "dict[str, Any]", mkpfs_ordner: str = "") -> "dict[str, Any]":
         """Rueckleseprobe fuer das Abbild aus dem Strom: Dateiliste und Groessen gegen ``strom["eintraege"]``.
@@ -43956,7 +44198,9 @@ class PS5ConverterGUI:
         """
         pruef = strom.get("pruef_eintraege")
         if pruef is not None:
-            return self._pruefstand()._verify_exfat_erwartet(exfat_path, pruef, lambda: self.is_running)
+            # ``huelle``: Das Ergebnis ist eine .ffpfsc; gelesen wird ihr inneres exFAT (Etappe 8).
+            return self._pruefstand()._verify_exfat_erwartet(exfat_path, pruef, lambda: self.is_running,
+                                                             huelle=bool(strom.get("huelle")))
         ergebnis: dict[str, Any] = {"checked": False, "ok": True, "detail": ""}
         try:
             befund = abbild_strom.liste_pruefen(exfat_path, strom["eintraege"], mkpfs_ordner=mkpfs_ordner,

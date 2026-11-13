@@ -577,7 +577,8 @@ class WartenAbbruchTests(unittest.TestCase):
     def test_die_aufgabenwege_geben_ihn_mit_und_halten_an(self) -> None:
         rufe = [k for k in _aufrufe(_baum(), "_wait_for_pending_mkpfs_background")
                 if k.args]
-        self.assertEqual(6, len(rufe), "Die Zahl der Aufgabenwege hat sich geaendert.")
+        # Sechs Wege des bisherigen MkPFS-Aufrufs + der Container aus dem Strom (``_create_ffpfsc_aus_strom``, Etappe 8).
+        self.assertEqual(7, len(rufe), "Die Zahl der Aufgabenwege hat sich geaendert.")
         eltern = {kind: knoten for knoten in ast.walk(_baum())
                   for kind in ast.iter_child_nodes(knoten)}
         for ruf in rufe:

@@ -15,6 +15,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -142,6 +143,84 @@ class OrdnerBaumTests(_Grundlage):
         self.assertFalse(baum.unveraendert())
 
 
+class LeereOrdnerUndFehlerTests(unittest.TestCase):
+    """Leere Verzeichnisse und was ``os.walk`` still verschluckt hat (Befunde der Durchsicht, 13.11.2026)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp(prefix="spielbaum_leer_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.ordner = os.path.join(self.tmp, "spiel")
+        _schreiben(self.ordner, SPIEL)
+        for leer in ("savedata_leer", "data/cache", "data/cache/tief/leer"):
+            os.makedirs(os.path.join(self.ordner, *leer.split("/")), exist_ok=True)
+
+    ERWARTET = ["Daten", "data", "data/b", "data/cache", "data/cache/tief", "data/cache/tief/leer", "savedata_leer", "sce_sys"]
+
+    def test_ordnerbaum_kennt_auch_die_leeren(self) -> None:
+        with sb.OrdnerBaum(self.ordner) as baum:
+            self.assertEqual(sorted(self.ERWARTET), baum.ordner())
+
+    def test_exfatbaum_kennt_auch_die_leeren(self) -> None:
+        abbild = os.path.join(self.tmp, "spiel.exfat")
+        with open(abbild, "wb") as fh:
+            for stueck in iter_exfat_image(Path(self.ordner)):
+                fh.write(stueck)
+        with sb.ExfatBaum(abbild) as baum:
+            self.assertEqual(sorted(self.ERWARTET), baum.ordner())
+
+    def test_ignorierte_ordner_werden_nicht_betreten(self) -> None:
+        _schreiben(self.ordner, {"skipme/x.bin": b"x", "skipme/tief/y.bin": b"y"})
+        with sb.OrdnerBaum(self.ordner, ignoriert=lambda t: t == "skipme") as baum:
+            self.assertNotIn("skipme", baum.ordner())
+            self.assertFalse([d for d in baum.dateien() if d.rel.startswith("skipme")])
+
+    def test_ueberlagerung_vereint_die_ordner(self) -> None:
+        neu = os.path.join(self.tmp, "neu")
+        os.makedirs(os.path.join(neu, "fakelib", "leer"))
+        with sb.UeberlagerBaum(sb.OrdnerBaum(self.ordner), sb.OrdnerBaum(neu)) as baum:
+            ordner = baum.ordner()
+        self.assertIn("fakelib/leer", ordner)
+        self.assertIn("savedata_leer", ordner)
+
+    def test_ein_neuer_leerer_ordner_ist_eine_aenderung(self) -> None:
+        baum = sb.OrdnerBaum(self.ordner)
+        baum.dateien()
+        self.assertTrue(baum.unveraendert())
+        os.makedirs(os.path.join(self.ordner, "dazu"))
+        self.assertFalse(baum.unveraendert())
+        os.rmdir(os.path.join(self.ordner, "dazu"))
+        self.assertTrue(baum.unveraendert())
+        os.rmdir(os.path.join(self.ordner, "savedata_leer"))
+        self.assertFalse(baum.unveraendert())
+
+    def test_ein_nicht_lesbarer_ordner_ist_ein_fehler_kein_stilles_weglassen(self) -> None:
+        """Bis zur Durchsicht ueberging ``os.walk`` ihn, die Dateien fehlten im Abbild, und die Rueckleseprobe vergass sie ebenso."""
+        os.makedirs(os.path.join(self.ordner, "data", "geheim"))
+        _schreiben(self.ordner, {"data/geheim/x.bin": b"x"})
+        echt = os.scandir
+
+        def scandir(pfad="."):
+            if str(pfad).endswith("geheim"):
+                raise PermissionError(13, "Zugriff verweigert", str(pfad))
+            return echt(pfad)
+        with mock.patch.object(os, "scandir", scandir):
+            with self.assertRaises(sb.BaumFehler) as ctx:
+                sb.OrdnerBaum(self.ordner).dateien()
+        self.assertIn("geheim", str(ctx.exception))
+
+    def test_ein_verweis_auf_einen_ordner_wird_gemerkt(self) -> None:
+        """Ein Ordner-Symlink steht nicht in ``dirs`` und ``files`` zugleich: Er wurde nirgends gemeldet. Jetzt steht er in ``uebersprungen``."""
+        os.makedirs(os.path.join(self.ordner, "verweisordner"))
+        _schreiben(self.ordner, {"verweisordner/x.bin": b"x"})
+        echt = os.path.islink
+        with mock.patch("os.path.islink", side_effect=lambda p: os.fspath(p).endswith("verweisordner") or echt(p)):
+            baum = sb.OrdnerBaum(self.ordner)
+            baum.dateien()
+        self.assertEqual(["verweisordner"], baum.uebersprungen)
+        self.assertNotIn("verweisordner", baum.ordner())
+        self.assertFalse([d for d in baum.dateien() if d.rel.startswith("verweisordner")])
+
+
 class ExfatBaumTests(_Grundlage):
     def test_wie_der_ordner(self) -> None:
         ordner = sb.OrdnerBaum(self.ordner)
@@ -218,7 +297,8 @@ class UeberlagerTests(_Grundlage):
             self.assertEqual(_inhalt(dateien["fakelib/libSceAmpr.sprx"]), b"ampr")
             self.assertNotIn("readme.ini", dateien)
             self.assertEqual(_inhalt(dateien["data/a.pak"]), SPIEL["data/a.pak"])      # unveraendert aus der Quelle
-            self.assertEqual(sorted(dateien), sorted(dateien))
+            erwartet = (set(SPIEL) - {"readme.ini"}) | {"fakelib/libSceAmpr.sprx"}            # +1 ergaenzt, -1 entfernt
+            self.assertEqual(sorted(erwartet), sorted(dateien))
             self.assertEqual([d.rel for d in baum.dateien()], sorted(d.rel for d in baum.dateien()))
             self.assertEqual(len(dateien), len(SPIEL))                                  # +1 ergaenzt, -1 entfernt
 
