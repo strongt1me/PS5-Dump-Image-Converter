@@ -135,6 +135,13 @@ BEKANNT_STUMM: set[tuple[str, str, str]] = {
     ("wee_tools.py", "kopie_anlegen", "shutil.copytree"),
     ("werkzeuge_bereitstellen.py", "_entpacken", "ZipFile.extractall"),
     ("werkzeuge_bereitstellen.py", "_mkpfs_eltern_finden", "os.walk"),
+    # Gemessen am 13.11.2026: Auflisten mit einem stat je Datei, an 6850 Dateien 0,08-0,09 s (drei Laeufe, warm, SSD).
+    # reste_karte._groesse laeuft nur nach einem gescheiterten Lauf und hat ein Zeitbudget (5 s, danach "mindestens").
+    ("reste_karte.py", "_groesse", "os.walk"),
+    # exfat_ruecklesen listet die Quelle einmal, ehe die Rueckleseprobe laeuft - im Abschnitt "Pruefen" der Stufenzeile.
+    ("abbild_pruefen.py", "exfat_ruecklesen", "os.walk"),
+    # spielbaum.OrdnerBaum.dateien ist die Dateiliste des Lesebaums (Stufe 3); der Aufrufer meldet seine Abschnitte.
+    ("spielbaum.py", "dateien", "os.walk"),
 }
 
 

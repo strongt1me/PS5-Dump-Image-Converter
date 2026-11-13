@@ -179,6 +179,7 @@ from ps5_validator.utils import streaming_pruefung
 from ps5_validator.utils import vorabpruefung
 from ps5_validator.utils import stufenzeile
 from ps5_validator.utils import ausgabename
+from ps5_validator.utils import reste_karte
 from ps5_validator.utils import y2jb_updater
 from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
@@ -8445,6 +8446,82 @@ class PS5ConverterGUI:
         fenster.grab_set()
         self.root.wait_window(fenster)
         return ergebnis["wahl"]
+
+    # ------------------------------------------------------------------
+    # Reste-Karte: was ein gescheiterter oder abgebrochener Lauf im Zielordner hinterlassen hat (Modul reste_karte)
+    # ------------------------------------------------------------------
+
+    #: Aufgaben, die ein Ergebnis im Zielordner ablegen (die Sammelkonvertierung hat mehrere und bleibt aussen vor).
+    _RESTE_AUFGABEN: frozenset = frozenset({
+        "pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc", "universal_convert",
+        "unpack_to_game_folder", "exfat_to_folder"})
+
+    def _reste_nach_lauf(self, mode: str, src: str, dst: str) -> None:
+        """Nach einem Lauf, der nicht gelungen ist: nennt Unfertiges im Zielordner und zeigt die Karte.
+
+        Gerufen aus dem Arbeitsfaden (``_run_engine_thread``, im ``finally``). Das Protokoll bekommt die Liste immer; die Karte
+        mit den Knoepfen "Entfernen" und "Behalten" gibt es nur mit Fenster. Entfernt wird nie ungefragt, und nie die Quelle.
+        """
+        try:
+            if mode not in self._RESTE_AUFGABEN:
+                return
+            ausgabe = str(getattr(self, "task_final_output_path", "") or "")
+            reste = reste_karte.finden(ausgabe, src, zielordner=dst)
+            if not reste:
+                return
+            gesamt = sum(r.bytes for r in reste)
+            self._append_to_log(self._t("log.reste_gefunden", anzahl=len(reste), size=self._fmt_bytes(gesamt)))
+            for rest in reste:
+                self._append_to_log(self._t("log.reste_zeile", pfad=rest.pfad, groesse=self._fmt_bytes(rest.bytes)))
+            if getattr(self, "_cli_mode", False) or getattr(self, "root", None) is None:
+                return
+            self._hauptfaden_planen(lambda r=reste, q=src: self._reste_karte_zeigen(r, q))
+        except Exception as exc:  # noqa: BLE001 - die Karte darf den Abschluss eines Laufs nie stoeren
+            logger.debug("Reste-Karte nicht aufgebaut: %s", exc)
+
+    def _reste_karte_zeigen(self, reste: "list[reste_karte.Rest]", quelle: str) -> None:
+        """Die Karte: jeder Rest mit Art und Groesse, darunter "Entfernen" und "Behalten" (Hauptfaden, ohne Warten)."""
+        c = self._COLORS
+        fenster = self._build_modern_toplevel(
+            self._t("reste.titel"), 760, 220 + 96 * min(len(reste), 4),
+            min_width=680, min_height=300, parent=self.root)
+        self._build_modern_header(fenster, self._t("reste.titel"), self._t("reste.untertitel"))
+        koerper = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=10)
+        koerper.pack(fill="both", expand=True)
+        tk.Label(koerper, text=self._t("reste.erklaerung"), bg=c["bg_main"], fg=c["fg_secondary"], justify="left",
+                 wraplength=pt(660), font=(UI_SCHRIFT, pt(9)), anchor="w").pack(fill="x", pady=(0, 12))
+        for rest in reste:
+            karte = self._pw.Karte(koerper, bg=c["console_bg"], padx=14, pady=10)
+            karte.pack(fill="x", pady=(0, 8))
+            art = ("reste.art_neben" if rest.art == reste_karte.ART_NEBEN
+                   else "reste.art_ordner" if rest.ordner else "reste.art_datei")
+            tk.Label(karte, text=self._t(art), bg=c["console_bg"], fg=c["fg_primary"],
+                     font=(UI_SCHRIFT, pt(10), "bold"), anchor="w").pack(fill="x")
+            tk.Label(karte, text=rest.pfad, bg=c["console_bg"], fg=c["fg_secondary"], font=("Consolas", pt(9)),
+                     anchor="w", wraplength=pt(620)).pack(fill="x")
+            tk.Label(karte, text=self._t("reste.groesse_mindestens" if rest.mindestens else "reste.groesse",
+                                         size=self._fmt_bytes(rest.bytes)),
+                     bg=c["console_bg"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(9)), anchor="w").pack(fill="x", pady=(6, 0))
+
+        def _entfernen() -> None:
+            weg, fehler = reste_karte.entfernen(
+                reste, quelle, ordner_loeschen=lambda p: bool(_rmtree_force(p)), datei_loeschen=os.remove)
+            for pfad in weg:
+                self._append_to_log(self._t("log.reste_entfernt", pfad=pfad))
+            for pfad, grund in fehler:
+                self._append_to_log(self._t("log.reste_fehler", pfad=pfad, fehler=grund))
+            fenster.destroy()
+
+        def _behalten() -> None:
+            self._append_to_log(self._t("log.reste_behalten"))
+            fenster.destroy()
+
+        reihe = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=14)
+        reihe.pack(side="bottom", fill="x")
+        self._pw.Button(reihe, text=self._t("reste.behalten"), command=_behalten).pack(side="right")
+        self._pw.Button(reihe, text=self._t("reste.entfernen"), style="Accent.TButton",
+                        command=_entfernen).pack(side="right", padx=(0, 8))
+        fenster.transient(self.root)
 
     def _umhuellenden_weg_klaeren(self, mode: str, src: str,
                                   target_type: str) -> bool:
@@ -32505,6 +32582,9 @@ class PS5ConverterGUI:
             # Ein halber Bau neben der Quelle (Selbst-Ziel) darf nicht liegen
             # bleiben - beim naechsten Blick saehe er wie ein Ergebnis aus.
             self._selbstziel_reste_entfernen()
+            # Hat der Lauf nicht geklappt, liegt im Zielordner vielleicht Unfertiges: nennen und auf Wunsch entfernen.
+            if not success:
+                self._reste_nach_lauf(mode, src, dst)
             self._lauf_quelle = ""
             self._content_id_antwort = None
             # Alte Reste frueherer Laeufe abraeumen - hier, weil jeder Weg hier
@@ -42201,7 +42281,7 @@ class PS5ConverterGUI:
         return None
 
     def _move_tree_into(self, quelle: str, ziel: str,
-                        melden: "Callable[[int], None] | None" = None) -> list[str]:
+                        melden: "Callable[[int], None] | None" = None, *, wurzel: bool = True) -> list[str]:
         """Verschiebt den Inhalt von ``quelle`` nach ``ziel`` und fuehrt Ordner zusammen.
 
         ``shutil.move`` legt einen Ordner IN einen gleichnamigen Zielordner,
@@ -42217,23 +42297,32 @@ class PS5ConverterGUI:
         Statuszeile sagte "Ergebnis wird verschoben" - vom Anwender
         gemeldet als "man sieht auch nicht, dass kopiert wird".
 
+        **Reihenfolge.** Im Wurzelordner kommen ``sce_sys`` und ganz am Ende ``eboot.bin`` zuletzt (``reste_karte``), nach dem
+        Vorbild von Dump Forge: Ein abgebrochenes Verschieben laesst dann einen Ordner ohne diese Dateien zurueck, den weder die
+        Konsole noch ShadowMount+ fuer ein Spiel halten.
+
         Args:
             quelle: Ordner, dessen Inhalt verschoben wird.
             ziel:   Zielordner; wird bei Bedarf angelegt.
             melden: Wird nach jedem Eintrag mit dessen Groesse in Bytes
                     gerufen. Die Rekursion reicht ihn weiter.
+            wurzel: Nur im obersten Aufruf ``True``: dort gilt die Reihenfolge der Startdateien.
 
         Returns:
             Liste der Fehlertexte. Leer heisst: alles ist im Ziel angekommen.
         """
         fehler: list[str] = []
         os.makedirs(ziel, exist_ok=True)
-        for eintrag in os.listdir(quelle):
+        eintraege = os.listdir(quelle)
+        if wurzel:
+            # Zuerst alles andere, dann sce_sys, ganz am Ende eboot.bin (an ihr haengt der Start).
+            eintraege = reste_karte.startdateien_zuletzt(eintraege)
+        for eintrag in eintraege:
             quell_pfad = os.path.join(quelle, eintrag)
             ziel_pfad = os.path.join(ziel, eintrag)
             try:
                 if os.path.isdir(quell_pfad) and os.path.isdir(ziel_pfad):
-                    fehler.extend(self._move_tree_into(quell_pfad, ziel_pfad, melden))
+                    fehler.extend(self._move_tree_into(quell_pfad, ziel_pfad, melden, wurzel=False))
                     try:
                         os.rmdir(quell_pfad)
                     except OSError:

@@ -219,7 +219,8 @@ def rest_art(name: str) -> str:
         return ART_ARBEIT
     if klein.endswith(".partial"):
         return ART_TEIL
-    if klein.endswith(".tmp") and any(e in klein for e in _PAKET_ENDUNGEN):
+    if klein.endswith((".tmp", ".teil", ".neu", ".part")) and any(e in klein for e in _PAKET_ENDUNGEN):
+        # ".teil" und ".neu": der Teilbau neben dem Ziel und der Bau neben der Quelle (Reste-Karte, 13.11.2026).
         return ART_TEIL
     return ""
 
