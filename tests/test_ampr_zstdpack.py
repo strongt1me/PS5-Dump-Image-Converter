@@ -14,6 +14,8 @@ import sys
 import tempfile
 import threading
 import unittest
+import zlib
+from array import array
 from pathlib import Path
 from unittest import mock
 
@@ -589,6 +591,132 @@ class StichprobenTests(_Ordner):
     def test_ohne_lesefaeden_danach(self) -> None:
         z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=1)
         self.assertEqual([], _lesefaeden(), "ein Lesefaden ist zurueckgeblieben")
+
+
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class PruefsummenTests(_Ordner):
+    """Pruefen ohne die Quelle noch einmal zu lesen (Nutzerwunsch 12.11.2026, Vergleichslauf mit Dump Forge).
+
+    Beim Packen wird je Chunk der CRC-32 der Quellbytes gemerkt; ``pruefen(summen=...)`` entpackt nur noch die Packs und
+    vergleicht damit. Im Lauf mit 153,76 GB kostete das zweite Lesen der Quelle (zusammen mit den Packs von derselben Platte)
+    33 Minuten, Forge brauchte fuer das Zuruecklesen des Ergebnisses 8.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.auswahl, self.erg = self.packen(stufe=3, arbeiter=2)
+        self.index = z.index_laden(self.packs)
+
+    def _quellsummen(self) -> list[int]:
+        aus: list[int] = []
+        for datei in self.index.dateien:
+            with open(os.path.join(self.spiel, *datei.pfad.split("/")), "rb") as fh:
+                while True:
+                    stueck = fh.read(z.CHUNK_SIZE)
+                    if not stueck:
+                        break
+                    aus.append(zlib.crc32(stueck) & 0xFFFFFFFF)
+        return aus
+
+    def test_packen_merkt_je_chunk_eine_summe_in_der_reihenfolge_des_index(self) -> None:
+        self.assertEqual(self.erg.chunks, len(self.erg.pruefsummen))
+        self.assertEqual(self._quellsummen(), list(self.erg.pruefsummen))
+
+    def test_pruefen_mit_summen_oeffnet_keine_quelldatei(self) -> None:
+        import builtins
+        echt = builtins.open
+        geoeffnet: list[str] = []
+
+        def spaeh(datei, *a, **k):
+            if isinstance(datei, (str, os.PathLike)) and str(datei).startswith(self.spiel):
+                geoeffnet.append(str(datei))
+            return echt(datei, *a, **k)
+
+        with mock.patch.object(builtins, "open", spaeh):
+            z.pruefen(self.packs, self.spiel, summen=self.erg.pruefsummen)
+        self.assertEqual([], geoeffnet, "die Quelle wird nicht gelesen")
+
+    def test_ohne_summen_wird_die_quelle_gelesen_wie_bisher(self) -> None:
+        import builtins
+        echt = builtins.open
+        geoeffnet: list[str] = []
+
+        def spaeh(datei, *a, **k):
+            if isinstance(datei, (str, os.PathLike)) and str(datei).startswith(self.spiel):
+                geoeffnet.append(str(datei))
+            return echt(datei, *a, **k)
+
+        with mock.patch.object(builtins, "open", spaeh):
+            z.pruefen(self.packs, self.spiel)
+        self.assertTrue(geoeffnet)
+
+    def test_eine_falsche_summe_ist_ein_inhalt_anders(self) -> None:
+        summen = array("I", self.erg.pruefsummen)
+        summen[3] ^= 1
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel, summen=summen)
+        self.assertIn("inhalt_anders", str(ctx.exception))
+
+    def test_ein_verdorbenes_band_wird_weiter_bemerkt(self) -> None:
+        band = Path(self.packs, z.bandname(0))
+        daten = bytearray(band.read_bytes())
+        daten[z.VOLUME_HEADER_SIZE + 40] ^= 0xFF                      # mitten im ersten Chunk
+        band.write_bytes(bytes(daten))
+        with self.assertRaises(z.ZstdPackFehler):
+            z.pruefen(self.packs, self.spiel, summen=self.erg.pruefsummen)
+
+    def test_die_groesse_der_quelle_wird_weiter_geprueft(self) -> None:
+        with open(os.path.join(self.spiel, "Media", "text.txt"), "ab") as fh:
+            fh.write(b"x")
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel, summen=self.erg.pruefsummen)
+        self.assertIn("quelle_anders", str(ctx.exception))
+
+    def test_eine_geaenderte_quelle_gleicher_groesse_faellt_nur_mit_dem_quellvergleich_auf(self) -> None:
+        """Bewusst so: Die Summen stammen aus den Quellbytes beim Packen; was danach in der Quelle passiert, sagen sie nicht."""
+        pfad = Path(self.spiel, "Media", "text.txt")
+        daten = bytearray(pfad.read_bytes())
+        daten[5] ^= 0xFF
+        pfad.write_bytes(bytes(daten))
+        z.pruefen(self.packs, self.spiel, summen=self.erg.pruefsummen)           # unbemerkt
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel)                                    # mit dem Quellvergleich bemerkt
+        self.assertIn("inhalt_anders", str(ctx.exception))
+
+    def test_summen_die_nicht_zum_index_passen_werden_ignoriert_und_die_quelle_gelesen(self) -> None:
+        pfad = Path(self.spiel, "Media", "text.txt")
+        daten = bytearray(pfad.read_bytes())
+        daten[5] ^= 0xFF
+        pfad.write_bytes(bytes(daten))
+        zu_kurz = array("I", self.erg.pruefsummen[:-1])
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.pruefen(self.packs, self.spiel, summen=zu_kurz)
+        self.assertIn("inhalt_anders", str(ctx.exception))
+
+    def test_bericht_nennt_den_vergleich(self) -> None:
+        a, b, c = {}, {}, {}
+        z.pruefen(self.packs, self.spiel, summen=self.erg.pruefsummen, bericht=a)
+        z.pruefen(self.packs, self.spiel, bericht=b)
+        z.pruefen(self.packs, bericht=c)
+        self.assertEqual("pruefsummen", a["vergleich"])
+        self.assertEqual("quelle", b["vergleich"])
+        self.assertEqual("keiner", c["vergleich"])
+
+    def test_auch_die_stichprobe_nutzt_die_summen(self) -> None:
+        bericht: dict = {}
+        z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=1, summen=self.erg.pruefsummen, bericht=bericht)
+        self.assertEqual(("stichprobe", "pruefsummen"), (bericht["modus"], bericht["vergleich"]))
+        summen = array("I", self.erg.pruefsummen)
+        summen[0] ^= 1                                    # ein Chunk der kleinen Datei "ampr"... im Plan: ganz geprueft
+        with self.assertRaises(z.ZstdPackFehler):
+            z.pruefen(self.packs, self.spiel, stichprobe=True, startwert=1, summen=summen)
+
+    def test_die_summen_haengen_nicht_von_der_fadenzahl_ab(self) -> None:
+        shutil.rmtree(self.packs)
+        _a, erg1 = self.packen(stufe=3, arbeiter=1)
+        shutil.rmtree(self.packs)
+        _a, erg8 = self.packen(stufe=3, arbeiter=8)
+        self.assertEqual(list(erg1.pruefsummen), list(erg8.pruefsummen))
 
 
 class SpielordnerTests(_Ordner):

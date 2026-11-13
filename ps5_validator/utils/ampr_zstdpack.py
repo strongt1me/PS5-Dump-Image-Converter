@@ -28,9 +28,10 @@ import struct
 import threading
 import uuid
 import zlib
+from array import array
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Sequence
 
 try:  # pragma: no cover - die Bibliothek liegt dem Programm bei (requirements.txt)
     import zstandard as _zstd
@@ -579,6 +580,8 @@ class Ergebnis:
     index: str = ""
     stufe: int = STUFE_VORGABE
     archiv_id: bytes = b""
+    #: CRC-32 der Quellbytes je Chunk, in der Reihenfolge des Index (``pruefen(summen=...)`` liest die Quelle dann nicht mehr).
+    pruefsummen: "array[int]" = field(default_factory=lambda: array("I"))
 
 
 def packen(app0: str, ausgabe: str, auswahl: Auswahl, *, stufe: int = STUFE_VORGABE, arbeiter: int = 0,
@@ -622,11 +625,14 @@ def packen(app0: str, ausgabe: str, auswahl: Auswahl, *, stufe: int = STUFE_VORG
     # Je Arbeitsfaden ein eigener Kompressor (der Kontext darf nicht gleichzeitig benutzt werden).
     lokal = threading.local()
 
-    def verdichten(daten: bytes) -> tuple[int, bytes]:
+    def verdichten(daten: bytes) -> tuple[int, bytes, int]:
         kompressor = getattr(lokal, "kompressor", None)
         if kompressor is None:
             kompressor = lokal.kompressor = _kompressor(stufe)
-        return chunk_verdichten(daten, stufe, kompressor)
+        codec, gespeichert = chunk_verdichten(daten, stufe, kompressor)
+        return codec, gespeichert, _crc(daten)          # die Pruefsumme der Quelle merkt sich die Pruefung (kein zweites Lesen)
+
+    summen = array("I")                                 # je Chunk in der Reihenfolge des Index: CRC-32 der Quellbytes
 
     band = {"nummer": 0, "fh": None, "offset": VOLUME_HEADER_SIZE, "chunks": 0}
 
@@ -655,7 +661,8 @@ def packen(app0: str, ausgabe: str, auswahl: Auswahl, *, stufe: int = STUFE_VORG
     def abliefern(daten: bytes, zukunft: "concurrent.futures.Future") -> None:
         """Schreibt das Ergebnis eines Chunks ans Bandende (immer in der Reihenfolge, in der er gelesen wurde)."""
         nonlocal erledigt
-        codec, gespeichert = zukunft.result()
+        codec, gespeichert, summe = zukunft.result()
+        summen.append(summe)
         if band["offset"] + len(gespeichert) > VOLUME_LIMIT:
             band_schliessen()
             band["nummer"] += 1
@@ -749,6 +756,7 @@ def packen(app0: str, ausgabe: str, auswahl: Auswahl, *, stufe: int = STUFE_VORG
     with open(index_pfad, "wb") as fh:
         fh.write(bytes(kopf) + nutzlast)
     ergebnis.index = INDEX_NAME
+    ergebnis.pruefsummen = summen
     melden("ampr_zstd: %d Dateien, %d Chunks (%d zstd, %d roh), %d Band/Baender, Stufe %d" % (
         ergebnis.dateien, ergebnis.chunks, ergebnis.zstd_chunks, ergebnis.roh_chunks, anzahl_baender, stufe))
     return ergebnis
@@ -956,7 +964,8 @@ def stichprobe_planen(index: "Index", startwert: int) -> "tuple[dict[int, frozen
 
 
 def _pruef_stuecke(index: Index, handles: dict[int, Any], app0: str,
-                   plan: "dict[int, frozenset[int] | None] | None" = None
+                   plan: "dict[int, frozenset[int] | None] | None" = None,
+                   quelle_lesen: bool = True
                    ) -> Iterator[tuple[Datei, int, list[tuple[int, bytes]], "bytes | None"]]:
     """Lesevorlauf der Pruefung: je Stueck ``(Datei, Nummer des ersten Chunks, [(Codec, gespeicherte Bytes)], Quelle)``.
 
@@ -964,7 +973,7 @@ def _pruef_stuecke(index: Index, handles: dict[int, Any], app0: str,
     der Kopf der Platte wechselt so alle ``LESE_BLOCK`` Bytes zwischen Pack und Quelle statt nach jedem Chunk.
 
     Mit ``plan`` (:func:`stichprobe_planen`) kommen nur die geplanten Stuecke; alles andere wird weder aus dem Band
-    noch aus der Quelle gelesen.
+    noch aus der Quelle gelesen. Ohne ``quelle_lesen`` wird die Quelldatei nur angesehen (Groesse), nie geoeffnet.
     """
     puffer = {nummer: _BandPuffer(fh) for nummer, fh in handles.items()}
     je_stueck = max(1, LESE_BLOCK // CHUNK_SIZE)
@@ -980,7 +989,8 @@ def _pruef_stuecke(index: Index, handles: dict[int, Any], app0: str,
             try:
                 if os.path.getsize(voll) != datei.groesse:
                     raise ZstdPackFehler("ampr_zstd.quelle_anders: %s" % datei.pfad)
-                quelle = open(voll, "rb")
+                if quelle_lesen:
+                    quelle = open(voll, "rb")
             except OSError as exc:
                 raise ZstdPackFehler("ampr_zstd.quelle_fehlt: %s" % datei.pfad) from exc
         try:
@@ -1013,7 +1023,8 @@ def pruefen(ordner_packs: str, app0: str = "", *, melden: Melder = _stumm,
             abbruch: Callable[[], bool] = lambda: False,
             fortschritt: "Callable[[float], None] | None" = None,
             stichprobe: bool = False, startwert: "int | None" = None,
-            bericht: "dict[str, Any] | None" = None) -> Index:
+            bericht: "dict[str, Any] | None" = None,
+            summen: "Sequence[int] | None" = None) -> Index:
     """Prueft Index und Baender und - mit ``app0`` - jeden Chunk **Byte fuer Byte** gegen die Quelldateien.
 
     Ohne ``app0`` wird jeder Chunk nur entpackt (Frame-Pruefsumme, Laenge). Die Rueckgabe ist der Index.
@@ -1021,13 +1032,21 @@ def pruefen(ordner_packs: str, app0: str = "", *, melden: Melder = _stumm,
     Mit ``stichprobe`` (Fast-Pruefung wie bei Dump Forge) werden Index, Kopf jedes Bandes und die Dateigroessen wie
     sonst vollstaendig geprueft, vom Inhalt aber nur die Stuecke aus :func:`stichprobe_planen` entpackt und verglichen.
     ``startwert`` legt die Auswahl fest (ohne Angabe zufaellig). ``bericht`` bekommt ``modus`` ("voll" oder
-    "stichprobe"), ``geprueft`` und ``gesamt`` (Bytes) und ``startwert``.
+    "stichprobe"), ``geprueft`` und ``gesamt`` (Bytes), ``startwert`` und ``vergleich`` ("pruefsummen" oder "quelle").
+
+    Mit ``summen`` (``Ergebnis.pruefsummen`` des Packens, ein CRC-32 je Chunk) wird die Quelle **nicht noch einmal gelesen**:
+    Jeder entpackte Chunk wird gegen die Summe verglichen, die beim Packen aus den Quellbytes berechnet wurde (Dump Forge
+    macht es mit BLAKE3 ebenso). Das erkennt ein verdorbenes Band und einen Fehler des Packers; eine Quelle, die sich
+    seit dem Packen veraendert hat, erkennt nur die Groessenpruefung. Passt die Zahl der Summen nicht zum Index, gilt der
+    Vergleich mit der Quelle wie ohne ``summen``.
 
     Gelesen wird in grossen Bloecken und in einem eigenen Faden (Lesevorlauf), damit die Platte nicht je Chunk zwischen
     Pack und Quelle springt und waehrend des Entpackens nicht stillsteht.
     """
     index = index_laden(ordner_packs)
     handles: dict[int, Any] = {}
+    if summen is not None and len(summen) != len(index.chunks):
+        summen = None                                   # gehoeren nicht zu diesem Index: wie bisher gegen die Quelle
     plan = None
     if stichprobe:
         if startwert is None:
@@ -1047,7 +1066,7 @@ def pruefen(ordner_packs: str, app0: str = "", *, melden: Melder = _stumm,
                 bandkopf_pruefen(handles[nummer].read(VOLUME_HEADER_SIZE), nummer, index)
             except OSError as exc:
                 raise ZstdPackFehler("ampr_zstd.band_fehlt: %s (%s)" % (bandname(nummer), exc)) from exc
-        vorlauf = _Vorlauf(_pruef_stuecke(index, handles, app0, plan))
+        vorlauf = _Vorlauf(_pruef_stuecke(index, handles, app0, plan, quelle_lesen=summen is None))
         try:
             for datei, erster, stuecke, roh in vorlauf:
                 if abbruch():
@@ -1060,6 +1079,8 @@ def pruefen(ordner_packs: str, app0: str = "", *, melden: Melder = _stumm,
                     entpackt = chunk_entpacken(codec, gelesen, erwartet)
                     if roh is not None and roh[position:position + erwartet] != entpackt:
                         raise ZstdPackFehler("ampr_zstd.inhalt_anders: %s" % datei.pfad)
+                    if summen is not None and app0 and _crc(entpackt) != summen[datei.erster_chunk + erster + k]:
+                        raise ZstdPackFehler("ampr_zstd.inhalt_anders: %s" % datei.pfad)
                     position += erwartet
                     erledigt += erwartet
                     if fortschritt is not None:
@@ -1071,7 +1092,8 @@ def pruefen(ordner_packs: str, app0: str = "", *, melden: Melder = _stumm,
             fh.close()
     if bericht is not None:
         bericht.update(modus="stichprobe" if stichprobe else "voll", geprueft=erledigt,
-                       gesamt=index.logische_bytes, startwert=startwert)
+                       gesamt=index.logische_bytes, startwert=startwert,
+                       vergleich="pruefsummen" if (summen is not None and app0) else ("quelle" if app0 else "keiner"))
     melden("ampr_zstd: geprueft, %d Dateien, %d Chunks" % (len(index.dateien), len(index.chunks)))
     return index
 

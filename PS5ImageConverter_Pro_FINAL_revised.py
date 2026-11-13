@@ -37544,7 +37544,8 @@ class PS5ConverterGUI:
             pruefbericht: dict[str, Any] = {}
             index = ampr_zstdpack.pruefen(ausgabe, ordner, melden=lambda _z: None,
                                           abbruch=lambda: not self.is_running, fortschritt=_fort("pruefen"),
-                                          stichprobe=not self._ampr_voll_pruefen(), bericht=pruefbericht)
+                                          stichprobe=not self._ampr_voll_pruefen(), bericht=pruefbericht,
+                                          summen=ergebnis.pruefsummen)       # die Quelle wird nicht noch einmal gelesen
             if pruefbericht.get("modus") == "stichprobe":
                 self._append_to_log(self._t(
                     "ampr_zstd.pruefung_stichprobe", checked=self._fmt_bytes(pruefbericht["geprueft"]),
