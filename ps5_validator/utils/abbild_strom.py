@@ -15,6 +15,7 @@ import os
 from typing import Any, Callable, Iterable, Iterator
 
 from ps5_validator.utils import ampr_zstdpack as z
+from ps5_validator.utils import fake_signieren
 
 Oeffner = Callable[[], Iterator[bytes]]
 
@@ -157,6 +158,10 @@ def schatten_fuellen(baum: Any, ziel: str, *, programmdateien: bool = False, abb
             fortschritt(nummer, len(dateien))
         rel = datei.rel
         wanted = z.bleibt_lose(rel)
+        # Programm nach dem Namen (``eboot*.bin`` auch mit anderem Namen als ``eboot.bin``): Die Fake-Signatur sucht genau so und
+        # muss die Datei im Ordner finden, auch wenn kein Backport nach der ELF-Kennung fragt.
+        if not wanted and fake_signieren.ist_ausfuehrbar(rel):
+            wanted = True
         if not wanted and programmdateien and datei.groesse >= 4 and not rel.lower().endswith(ps5_backport.SICHERUNGS_ENDUNGEN):
             erster = rel.split("/", 1)[0].lower()
             if erster not in ps5_backport.FAKELIB_ORDNERNAMEN:

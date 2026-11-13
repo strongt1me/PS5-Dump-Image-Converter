@@ -283,6 +283,29 @@ class SchattenTests(unittest.TestCase):
         for nein in ("data/kein.bin", "data/tiny.bin", "data/alt.bak", "data/a.pak", "data/b/leer.bin"):
             self.assertNotIn(nein, abgelegt)
 
+    def test_programme_nach_dem_namen_auch_ohne_backport(self) -> None:
+        """Die Fake-Signatur sucht nach dem Namen (``eboot*.bin``, ``.elf`` ...): Was sie finden wuerde, muss im Ordner liegen,
+        auch wenn kein Backport nach der ELF-Kennung fragt - sonst bliebe ``eboot2.bin`` unsigniert."""
+        from ps5_validator.utils import fake_signieren
+        inhalt = {"eboot.bin": b"\x7fELF" + bytes(100), "eboot2.bin": b"\x7fELF" + bytes(100),
+                  "sub/ebootmenu.bin": b"\x7fELF" + bytes(100), "tools/lauf.elf": b"\x7fELF" + bytes(100),
+                  "data/kein.bin": b"\x7fELF" + bytes(100), "data/a.pak": _zufall(2000, 4)}
+        spiel = os.path.join(self.tmp, "spiel2")
+        _schreiben(spiel, inhalt)
+        abbild = os.path.join(self.tmp, "spiel2.exfat")
+        with open(abbild, "wb") as fh:
+            fh.write(_bytes(w.iter_exfat_image(Path(spiel))))
+        with sb.ExfatBaum(abbild) as baum:
+            abgelegt, _n = ast.schatten_fuellen(baum, os.path.join(self.tmp, "schatten2"))
+        for rel in inhalt:
+            if fake_signieren.ist_ausfuehrbar(rel):
+                self.assertIn(rel, abgelegt, rel)
+        self.assertIn("eboot2.bin", abgelegt)
+        self.assertIn("sub/ebootmenu.bin", abgelegt)
+        # ``data/kein.bin`` ist ein ELF nach dem Inhalt, aber kein Programm nach dem Namen: ohne Backport bleibt es draussen.
+        self.assertNotIn("data/kein.bin", abgelegt)
+        self.assertNotIn("data/a.pak", abgelegt)
+
     def test_abbruch(self) -> None:
         with sb.ExfatBaum(self.abbild) as baum:
             with self.assertRaises(z.ZstdPackFehler):
