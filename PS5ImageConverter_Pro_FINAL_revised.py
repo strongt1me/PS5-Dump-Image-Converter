@@ -177,6 +177,7 @@ from ps5_validator.utils import konsole_ftp
 from ps5_validator.utils import fenster_vorn
 from ps5_validator.utils import streaming_pruefung
 from ps5_validator.utils import vorabpruefung
+from ps5_validator.utils import stufenzeile
 from ps5_validator.utils import y2jb_updater
 from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
@@ -5744,6 +5745,7 @@ class PS5ConverterGUI:
         self.task_num_steps: int = 1               # Anzahl Schritte der Aufgabe
         self.task_current_step: int = 0            # Aktueller Schritt (1-basiert nach Start)
         self.task_step_ends: list = []             # Gewichtete Schritt-Enden [45, 100] etc.
+        self._stufen = None                        # Stufenfolge des Laufs (stufenzeile), None ausserhalb eines Laufs
         self.task_uncompressed_str: str = ""       # "Total uncompressed size" aus Build Summary
         self.task_stored_str: str = ""             # "Total stored size" aus Build Summary
         # Byte-genaue Fortschrittsmessung (Progress Driven by Real Events)
@@ -11184,6 +11186,20 @@ class PS5ConverterGUI:
         # Sichtbar bekommt es denselben Bildausschnitt wie die uebrigen
         # Beschriftungen, damit auch waehrend einer Aufgabe kein Kasten entsteht.
         self._content_caption_labels.append(self.telemetry_label)
+
+        # Stufenzeile mit Zeiten (Modul stufenzeile): die Abschnitte des Laufs, jeder mit Zustand und Dauer. Gleiches
+        # Vorgehen wie bei der Telemetrie: aus dem Raster, solange es nichts zu zeigen gibt.
+        self.stufen_label = ttk.Label(
+            content_area,
+            text="",
+            font=(UI_SCHRIFT, pt(9)),
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            justify="right",
+            wraplength=900,
+        )
+        self.stufen_label.grid(row=7, column=0, sticky="e", pady=(2, 0))
+        self.stufen_label.grid_remove()
+        self._content_caption_labels.append(self.stufen_label)
 
         # Beschriftungen, deren Schriftfarbe direkt am Widget haengt (nicht ueber
         # den ttk-Style): Farbrolle merken, damit _apply_caption_colors() sie bei
@@ -21196,6 +21212,7 @@ class PS5ConverterGUI:
             if hasattr(self, "telemetry_label"):
                 self.telemetry_label.config(text="")
                 self.telemetry_label.grid_remove()
+            self._stufenzeile_zeigen()
             self.root.after(1000, self._telemetry_tick)
             return
         t = self._sample_system_telemetry()
@@ -21231,6 +21248,7 @@ class PS5ConverterGUI:
             else:
                 # Ohne psutil bleiben die Teile leer - dann gar nicht einblenden.
                 self.telemetry_label.grid_remove()
+        self._stufenzeile_zeigen()
         self.root.after(1000, self._telemetry_tick)
 
 
@@ -27953,6 +27971,7 @@ class PS5ConverterGUI:
         self.task_num_steps     = 1
         self.task_current_step  = 0
         self.task_step_ends     = []
+        self._stufen            = None          # die Stufenzeile des letzten Laufs ist hier zu Ende
         self._zuletzt_angezeigt = 0.0
         # Die Basis der Teilschritt-Melder gehoert zum vorigen Lauf. Bliebe
         # sie stehen, rechnete die Arbeitskopie des naechsten Laufs auf dem
@@ -33767,7 +33786,8 @@ class PS5ConverterGUI:
                 0, self._t("progress.task.exfat_umpacken"))
             self.progress_engine.begin_prepare(
                 self._t("progress.prepare.extract_exfat"))
-            t_entpacken = time.monotonic()
+            self._stufen_neu("exfat_umpacken")
+            t_entpacken = self._stufe_start("phase.entpacken")
             if not self._extract_exfat_to_folder_mkpfs(
                 src,
                 dump_dir,
@@ -33783,7 +33803,7 @@ class PS5ConverterGUI:
             # Ohne ist_quellordner: Der Ordner liegt schon im Temp und ist
             # damit die Arbeitskopie. Eine zweite waere nur Ballast, und die
             # Rueckfrage danach waere sinnlos.
-            t_einbau = time.monotonic()
+            t_einbau = self._stufe_start("phase.integration")
             ordner = self._integration_anwenden(dump_dir)
             if not ordner:
                 return False
@@ -33795,7 +33815,7 @@ class PS5ConverterGUI:
             # verstuemmelt und der entpackte Stand im Temp gleich mit weg.
             # Jetzt wird daneben gebaut (siehe _bauziel_neben_quelle).
             bau_ziel = self._bauziel_neben_quelle(final_output)
-            t_bau = time.monotonic()
+            t_bau = self._stufe_start("phase.abbild_bauen")
             ok = self._create_exfat_from_folder(
                 ordner, bau_ziel, pct_start=50.0, pct_end=98.0)
             if ok:
@@ -37664,7 +37684,7 @@ class PS5ConverterGUI:
             self._append_to_log(self._t(
                 "ampr_zstd.arbeiter", count=min(32, arbeiter_zahl or (os.cpu_count() or 2)),
                 cores=os.cpu_count() or 0))
-            t_packen = time.monotonic()
+            t_packen = self._stufe_start("phase.zstd_packen")
             ergebnis = ampr_zstdpack.packen(
                 ordner, ausgabe, gewaehlt, stufe=stufe, arbeiter=arbeiter_zahl,
                 melden=self._append_to_log, abbruch=lambda: not self.is_running, fortschritt=_fort("zstd"))
@@ -37677,7 +37697,7 @@ class PS5ConverterGUI:
 
             # Jeder Chunk wird entpackt und mit der Quelle verglichen - erst danach geht etwas in den Spielordner.
             self._set_status(self._t("ampr_pack.status_pruefen"))
-            t_pruefen = time.monotonic()
+            t_pruefen = self._stufe_start("phase.zstd_pruefen")
             pruefbericht: dict[str, Any] = {}
             index = ampr_zstdpack.pruefen(ausgabe, ordner, melden=lambda _z: None,
                                           abbruch=lambda: not self.is_running, fortschritt=_fort("pruefen"),
@@ -37695,7 +37715,7 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("ampr_pack.geprueft"))
             self._phase_dauer_melden("phase.zstd_pruefen", t_pruefen)
 
-            t_uebernehmen = time.monotonic()
+            t_uebernehmen = self._stufe_start("phase.zstd_uebernehmen")
             ampr_zstdpack.uebernehmen(ausgabe, ordner, index, melden=lambda _z: None,
                                       abbruch=lambda: not self.is_running)
             self._phase_dauer_melden("phase.zstd_uebernehmen", t_uebernehmen)
@@ -37729,7 +37749,7 @@ class PS5ConverterGUI:
         if not getattr(self, "_ampr_ordner_ist_kopie", False):
             self._append_to_log(self._t("ampr_pack.originale_nicht_im_quellordner"))
             return True
-        t_originale = time.monotonic()
+        t_originale = self._stufe_start("phase.zstd_originale")
         try:
             ergebnis_r = ampr_zstdpack.originale_entfernen(
                 ordner, index, abbruch=lambda: not self.is_running)
@@ -37761,6 +37781,65 @@ class PS5ConverterGUI:
                 zeit=self._dauer_text(time.monotonic() - begonnen)))
         except Exception as exc:  # noqa: BLE001
             logger.debug("Phasendauer nicht gemeldet: %s", exc)
+        self._stufe_ende(phase_schluessel, begonnen)
+
+    # ------------------------------------------------------------------
+    # Stufenzeile mit Zeiten (Modul stufenzeile; die Abschnitte je Weg stehen dort in FOLGEN)
+    # ------------------------------------------------------------------
+
+    def _stufen_neu(self, weg: str) -> None:
+        """Beginnt die Stufenzeile eines Wegs (``stufenzeile.FOLGEN``); Aufruf aus dem Arbeitsfaden."""
+        try:
+            self._stufen = stufenzeile.Stufenfolge.fuer(weg)
+        except Exception as exc:  # noqa: BLE001 - die Anzeige darf den Lauf nie beeintraechtigen
+            logger.debug("Stufenzeile nicht angelegt: %s", exc)
+
+    def _stufe_start(self, schluessel: str) -> float:
+        """Ein Abschnitt beginnt. Gibt den Zeitpunkt zurueck (``_phase_dauer_melden`` rechnet damit)."""
+        jetzt = time.monotonic()
+        try:
+            folge = getattr(self, "_stufen", None)
+            if folge is None:
+                folge = self._stufen = stufenzeile.Stufenfolge()
+            folge.beginne(schluessel, ab=jetzt)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Stufe nicht gemeldet: %s", exc)
+        return jetzt
+
+    def _stufe_ende(self, schluessel: str, begonnen: float) -> None:
+        try:
+            folge = getattr(self, "_stufen", None)
+            if folge is not None:
+                folge.fertig(schluessel, beginn=begonnen)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Stufenende nicht gemeldet: %s", exc)
+
+    def _stufenzeile_zeigen(self) -> None:
+        """Haelt die Stufenzeile unter der Statuszeile aktuell (Hauptfaden, im Takt der Telemetrie).
+
+        Sichtbar, sobald ein Lauf Abschnitte meldet; bleibt nach dem Lauf mit den End-Zeiten stehen, bis der naechste
+        Lauf beginnt. Was beim Lauf-Ende noch ``laeuft`` hiess, ist nicht zu Ende gekommen (Fehler oder Abbruch).
+        """
+        label = getattr(self, "stufen_label", None)
+        if label is None:
+            return
+        folge = getattr(self, "_stufen", None)
+        try:
+            if folge is None or folge.leer():
+                if label.winfo_ismapped():
+                    label.config(text="")
+                    label.grid_remove()
+                return
+            if not self.is_running and folge.ende is None:
+                folge.abschliessen_alle(erfolg=False)
+            neu = folge.zeile(self._t, mit_gesamt=self._t("stufe.gesamt"))
+            if neu != str(label.cget("text")):
+                label.config(text=neu)
+                self._schedule_caption_redraw(self._redraw_content_captions)
+            if neu and not label.winfo_ismapped():
+                label.grid()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Stufenzeile nicht aktualisiert: %s", exc)
 
     def _ampr_pack_konsolenhinweis(self, ordner: str) -> None:
         """Sagt beim Bauen, was die Konsole fuer dieses Abbild braucht.
