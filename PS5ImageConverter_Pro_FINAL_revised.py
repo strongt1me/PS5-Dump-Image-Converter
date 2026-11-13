@@ -33776,10 +33776,15 @@ class PS5ConverterGUI:
         Returns:
             True bei Erfolg.
         """
-        # .ffpfsc/.ffpfs -> .ffpfs ohne Entpacken (Etappe 11): nur die Richtung zur flachen Datei; die .ffpfsc als Ziel behaelt
-        # den Weg ueber den Dump-Ordner (sie hat einen eigenen Strom-Weg nur mit Einbau, ``_mode_abbild_zu_ffpfs``).
-        if uncompressed and self._strom_nach_ffpfs_gewaehlt():
-            ergebnis = self._mode_exfat_umpacken_strom(src, dst, pfs=True, ziel="ffpfs")
+        # .ffpfsc/.ffpfs -> .ffpfs (Etappe 11) und -> .ffpfsc (Etappe 12) ohne Entpacken: Die Quelle wird als Lesebaum gelesen
+        # (``PfsBaum``), das Ergebnis im Strom geschrieben. Die .ffpfsc nur in der exFAT-Bauform (``_strom_nach_container_gewaehlt``);
+        # wer die Bauform PFS gewaehlt hat, bekommt sie vom Weg ueber den Dump-Ordner.
+        if uncompressed:
+            strom_ok, ziel_art = self._strom_nach_ffpfs_gewaehlt(), "ffpfs"
+        else:
+            strom_ok, ziel_art = self._strom_nach_container_gewaehlt(), "ffpfsc"
+        if strom_ok:
+            ergebnis = self._mode_exfat_umpacken_strom(src, dst, pfs=True, ziel=ziel_art)
             if ergebnis is not None:
                 return ergebnis
         temp_root = self._mkdtemp(prefix="ps5conv_ffpfsc_repack_",

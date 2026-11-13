@@ -943,18 +943,25 @@ class FfpfscAusgabeTests(_Grundlage):
         self.assertEqual("strom", g._mode_ffpfsc_umpacken("a.ffpfsc", "d", uncompressed=True))
         self.assertEqual([("a.ffpfsc", "d", {"pfs": True, "ziel": "ffpfs"})], aufrufe)
 
-    def test_ffpfsc_umpacken_zur_ffpfsc_bleibt_beim_alten_weg(self) -> None:
-        """Nur die Richtung zur flachen Datei hat den Strom; ``.ffpfsc`` -> ``.ffpfsc`` ohne Einbau geht wie bisher."""
+    def test_ffpfs_zu_ffpfsc_umpacken_nimmt_den_strom(self) -> None:
+        """Etappe 12: Auch die Richtung zur ``.ffpfsc`` (z. B. eine ``.ffpfs`` neu komprimieren) braucht keinen Dump-Ordner."""
         g, aufrufe = self._verteiler()
+        self.assertEqual("strom", g._mode_ffpfsc_umpacken("a.ffpfs", "d", uncompressed=False))
+        self.assertEqual([("a.ffpfs", "d", {"pfs": True, "ziel": "ffpfsc"})], aufrufe)
+
+    def test_ffpfsc_umpacken_zur_ffpfsc_in_der_bauform_pfs_bleibt_beim_alten_weg(self) -> None:
+        g, aufrufe = self._verteiler()
+        g.bauform = APP.BAUFORM_PFS
         with self.assertRaises(RuntimeError):
-            g._mode_ffpfsc_umpacken("a.ffpfsc", "d", uncompressed=False)
+            g._mode_ffpfsc_umpacken("a.ffpfs", "d", uncompressed=False)
         self.assertEqual([], aufrufe)
 
     def test_ffpfsc_umpacken_ohne_strom_oder_bei_none_der_alte_weg(self) -> None:
         for eig in ({"strom": False}, {"ergebnis": None}):
-            g, _aufrufe = self._verteiler(**eig)
-            with self.assertRaises(RuntimeError, msg=str(eig)):
-                g._mode_ffpfsc_umpacken("a.ffpfsc", "d", uncompressed=True)
+            for unkomprimiert in (False, True):
+                g, _aufrufe = self._verteiler(**eig)
+                with self.assertRaises(RuntimeError, msg=(eig, unkomprimiert)):
+                    g._mode_ffpfsc_umpacken("a.ffpfsc", "d", uncompressed=unkomprimiert)
 
     def test_ordner_zu_ffpfsc_nimmt_den_strom(self) -> None:
         g, aufrufe = self._verteiler()
@@ -1127,6 +1134,28 @@ class FfpfsAusgabeTests(_Grundlage):
                     for rel, daten in erwartet.items():
                         self.assertEqual(daten, dateien[rel], rel)
                     self.assertFalse([r for r in dateien if z.ist_packname(r)], "es entsteht kein Pack")
+
+    def test_flache_ffpfs_als_quelle_zur_ffpfsc_und_zurueck(self) -> None:
+        """Etappe 12: ``.ffpfs`` (flach) -> ``.ffpfsc`` -> ``.ffpfs`` ohne Dump-Ordner; der Inhalt bleibt derselbe."""
+        g, ok = self.lauf(self.quelle, self.gui_nur_einbau(False))
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        flach = os.path.join(self.tmp, "flach.ffpfs")
+        shutil.move(os.path.join(self.ziel, "spiel.ffpfs"), flach)
+        ziel2 = os.path.join(self.tmp, "ziel2")
+        os.makedirs(ziel2)
+        g2 = self.gui_nur_einbau(False)
+        self.assertTrue(g2._mode_exfat_umpacken_strom(flach, ziel2, pfs=True, ziel="ffpfsc"), "\n".join(g2._log_lines))
+        with sb.PfsBaum(os.path.join(ziel2, "flach.ffpfsc")) as baum:
+            als_container = {d.rel: b"".join(d.lesen()) for d in baum.dateien()}
+            self.assertEqual("exfat", baum.art)
+        self.assertEqual(self._gelesen(flach), als_container)
+        ziel3 = os.path.join(self.tmp, "ziel3")
+        os.makedirs(ziel3)
+        g3 = self.gui_nur_einbau(False)
+        self.assertTrue(g3._mode_exfat_umpacken_strom(os.path.join(ziel2, "flach.ffpfsc"), ziel3, pfs=True, ziel="ffpfs"),
+                        "\n".join(g3._log_lines))
+        self.assertEqual(self._gelesen(flach), self._gelesen(os.path.join(ziel3, "flach.ffpfs")))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
 
     def test_quelle_unveraendert_kein_rest(self) -> None:
         vorher = {p: (os.path.getsize(p), os.stat(p).st_mtime_ns) for p in (self.quelle, self.huelle)}
