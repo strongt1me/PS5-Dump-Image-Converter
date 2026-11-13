@@ -46,6 +46,15 @@ FOLGEN: dict[str, tuple[tuple[str, str | None], ...]] = {
         ("phase.zstd_originale", "phase.integration"),
         ("phase.abbild_bauen", None),
     ),
+    # .exFAT mit zstd-Asset-Pack ohne Zwischenordner (Stufe 3): Systemdateien bereitstellen, einbauen (darin das Messen der
+    # Packs), das Abbild direkt aus Quelle und Strom schreiben, zurueckpruefen.
+    "exfat_strom": (
+        ("phase.ueberlagerung", None),
+        ("phase.integration", None),
+        ("phase.messen", "phase.integration"),
+        ("phase.schreiben", None),
+        ("phase.pruefen", None),
+    ),
 }
 
 

@@ -11,6 +11,7 @@ in der der Schreiber die Dateien anfordert, die des Stroms sein; :func:`abbild_s
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Iterable, Iterator
 
 from ps5_validator.utils import ampr_zstdpack as z
@@ -109,3 +110,119 @@ def abbild_strom(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", *, iter_
         yield from iter_liste(gesamt, on_layout=on_layout)
     finally:
         dateien.schliessen()
+
+
+# ---------------------------------------------------------------------------
+# Einbau ohne Entpacken: Ueberlagerungsordner und Ansicht
+# ---------------------------------------------------------------------------
+#: Zeitstempel, den der Schreiber jeder Datei im Abbild gibt (2024-01-01 00:00:00); der ``ampr_emu.index`` traegt ihn ebenso.
+FESTER_MTIME = 1704067200
+
+
+def _kopf(datei: Any, laenge: int = 4) -> bytes:
+    erzeuger = datei.lesen(laenge)
+    try:
+        return next(erzeuger, b"")[:laenge]
+    finally:
+        erzeuger.close()
+
+
+def _ziel_pfad(ziel: str, rel: str) -> str:
+    wurzel = os.path.normpath(os.path.abspath(ziel))
+    voll = os.path.normpath(os.path.join(wurzel, *rel.split("/")))
+    if os.path.commonpath([voll, wurzel]) != wurzel:
+        raise z.ZstdPackFehler("Pfad liegt ausserhalb des Ordners: %s" % rel)
+    return voll
+
+
+def schatten_fuellen(baum: Any, ziel: str, *, programmdateien: bool = False, abbruch: Callable[[], bool] = lambda: False,
+                     fortschritt: "Callable[[int, int], None] | None" = None) -> "tuple[list[str], int]":
+    """Legt die Dateien in einen kleinen Ordner, die der Einbau braucht: die Systemschicht (``ampr_zstdpack.bleibt_lose``:
+    ``eboot.bin``, Module, ``sce_sys``, ``fakelib*``, ``.ini``) und mit ``programmdateien`` jede Datei mit der Kennung eines
+    ELF oder SELF (der Backport patcht auch solche mit anderem Namen).
+
+    Backport, Fake-Signatur, DLC EMU und AMPR EMU arbeiten auf einem Ordner; hier ist es dieser kleine statt eines entpackten
+    Spiels. Alles andere bleibt in der Quelle und wird nur gelesen. Rueckgabe: die Pfade der abgelegten Dateien und ihre Bytes.
+    """
+    from ps5_validator.utils import ps5_backport
+
+    os.makedirs(ziel, exist_ok=True)
+    dateien = baum.dateien()
+    abgelegt: list[str] = []
+    gesamt_bytes = 0
+    for nummer, datei in enumerate(dateien, 1):
+        if abbruch():
+            raise z.ZstdPackFehler("ampr_pack.abgebrochen")
+        if fortschritt is not None and not nummer % 512:
+            fortschritt(nummer, len(dateien))
+        rel = datei.rel
+        wanted = z.bleibt_lose(rel)
+        if not wanted and programmdateien and datei.groesse >= 4 and not rel.lower().endswith(ps5_backport.SICHERUNGS_ENDUNGEN):
+            erster = rel.split("/", 1)[0].lower()
+            if erster not in ps5_backport.FAKELIB_ORDNERNAMEN:
+                wanted = _kopf(datei) in ps5_backport._KENNUNGEN
+        if not wanted:
+            continue
+        voll = _ziel_pfad(ziel, rel)
+        os.makedirs(os.path.dirname(voll), exist_ok=True)
+        try:
+            with open(voll, "wb") as fh:
+                for stueck in datei.lesen():
+                    fh.write(stueck)
+        except OSError as exc:
+            raise z.ZstdPackFehler("%s nicht schreibbar: %s" % (rel, exc)) from exc
+        abgelegt.append(rel)
+        gesamt_bytes += datei.groesse
+    if fortschritt is not None:
+        fortschritt(len(dateien), len(dateien))
+    return abgelegt, gesamt_bytes
+
+
+class Ansicht:
+    """Das Spiel, wie es nach dem Einbau aussieht: die Quelle, darueber die Dateien des Ueberlagerungsordners.
+
+    Der Einbau aendert Dateien im Ordner (patcht, signiert, ergaenzt Bibliotheken und Index). Die Ansicht liest bei jedem
+    :meth:`baum` den Ordner neu und nennt, was seit dem Fuellen dort fehlt, als entfernt.
+    """
+
+    def __init__(self, quelle: Any, ordner: str, abgelegt: Iterable[str], ignoriert: "Callable[[str], bool] | None" = None):
+        self.quelle = quelle
+        self.ordner = os.path.abspath(ordner)
+        self.ordner_norm = os.path.normcase(os.path.realpath(self.ordner))
+        self.abgelegt = set(abgelegt)
+        self._ignoriert = ignoriert
+
+    def baum(self) -> Any:
+        from ps5_validator.utils import spielbaum as sb
+
+        ueber = sb.OrdnerBaum(self.ordner, ignoriert=self._ignoriert)
+        jetzt = {d.rel for d in ueber.dateien()}
+        return sb.UeberlagerBaum(self.quelle, ueber, entfernt=self.abgelegt - jetzt)
+
+
+def abbild_eintraege(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung",
+                     originale_behalten: bool = False) -> "list[tuple[str, int]]":
+    """``(Pfad, Groesse)`` jeder Datei des fertigen Abbilds: die losen aus dem Baum, dazu Baender und Index."""
+    gepackt = {rel for rel, _g in auswahl.gepackt}
+    lose = [(d.rel, d.groesse) for d in baum.dateien() if originale_behalten or d.rel not in gepackt]
+    return lose + list(messung.dateien())
+
+
+def liste_pruefen(exfat_pfad: str, erwartet: "Iterable[tuple[str, int]]", mkpfs_ordner: str = "",
+                  ignoriert: "Callable[[str], bool] | None" = None) -> "dict[str, Any]":
+    """Liest die Dateiliste des fertigen Abbilds zurueck und vergleicht Pfade und Groessen mit ``erwartet``.
+
+    Rueckgabe wie ``abbild_pruefen.exfat_ruecklesen``: ``fehlen``, ``zuviel``, ``groesse`` (Listen von Pfaden) und ``dateien``.
+    Der Inhalt wird hier nicht verglichen - die Packdateien hat der Schreibdurchgang Chunk fuer Chunk gegen die Messung gehalten.
+    """
+    from ps5_validator.utils import spielbaum as sb
+
+    soll = {rel: groesse for rel, groesse in erwartet if not (ignoriert and any(ignoriert(t) for t in rel.split("/")))}
+    with sb.ExfatBaum(exfat_pfad, mkpfs_ordner=mkpfs_ordner) as neu:
+        ist = {d.rel: d.groesse for d in neu.dateien()}
+    return {
+        "dateien": len(ist),
+        "fehlen": sorted(set(soll) - set(ist)),
+        "zuviel": sorted(set(ist) - set(soll)),
+        "groesse": sorted(rel for rel in set(soll) & set(ist) if soll[rel] != ist[rel]),
+    }

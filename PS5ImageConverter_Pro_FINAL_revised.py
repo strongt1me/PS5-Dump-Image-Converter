@@ -192,6 +192,8 @@ from ps5_validator.utils import shadowmount_generation as sm_gen
 from ps5_validator.utils import shadowmount_config as sm_cfg
 from ps5_validator.utils import ampr_assetpakete
 from ps5_validator.utils import ampr_zstdpack
+from ps5_validator.utils import abbild_strom
+from ps5_validator.utils import spielbaum
 from ps5_validator.utils.sicherung import sicherung_anlegen
 from ps5_validator.utils import wee_tools
 from ps5_validator.utils import credits_daten
@@ -7900,6 +7902,11 @@ class PS5ConverterGUI:
     _PLATZFAKTOR_TEMP_MIT_KOPIE = 1.10
     _PLATZFAKTOR_TEMP_OHNE = 0.15
 
+    #: Temp-Platz im Strom-Weg (``_mode_exfat_umpacken_strom``): nur die Systemdateien (``eboot.bin``, Module, ``sce_sys``,
+    #: ``fakelib``, ``.ini``, beim Backport auch Programme mit anderem Namen) liegen im Ueberlagerungsordner - einige hundert MB.
+    _PLATZFAKTOR_STROM_TEMP = 0.05
+    _STROM_TEMP_MIN = 2 * 1024 ** 3
+
     #: Unter diesem Wert lohnt keine Rueckfrage - so viel ist auf jedem
     #: Datentraeger noch zu holen, und der Dialog waere nur laestig.
     _PLATZ_BAGATELLE_BYTES = 512 * 1024 ** 2
@@ -8104,6 +8111,14 @@ class PS5ConverterGUI:
         quelle = self._quellgroesse_ermitteln(src)
         if quelle <= 0:
             return 0, 0, 0
+
+        # .exFAT -> .exFAT mit zstd-Asset-Pack laeuft ohne entpacktes Spiel (Stufe 3): Im Arbeitsordner liegen nur die
+        # Systemdateien fuer den Einbau, ans Ziel kommt das neue Abbild (hoechstens so gross wie die Quelle, mit zstd meist
+        # deutlich kleiner). Der Faktor fuer das Ziel bleibt der der .exFAT - mit Sicherheitsrand.
+        waehle_strom = getattr(self, "_strom_weg_gewaehlt", None)
+        if target_type == "exfat" and src.lower().endswith(".exfat") and callable(waehle_strom) and waehle_strom():
+            temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
+            return temp, int(quelle * self._PLATZFAKTOR_ZIEL["exfat"]), 0
 
         # Beim Entpacken eines Containers ist die Quelle kleiner als das,
         # was herauskommt. Dafuer gibt es eine genauere Schaetzung, die in
@@ -33770,7 +33785,15 @@ class PS5ConverterGUI:
         Umweg ueber Aufgabe 3 und 1 - der OSFMount-Rueckfall aus
         ``_mode_exfat_to_folder`` haengt an dessen eigener Fortschrittsphase
         und liesse den Balken hier auf 100 % springen, mitten im Lauf.
+
+        Mit AMPR EMU NG und zstd-Packs geht es **ohne Zwischenordner** (Stufe 3, nach dem Vorbild von Dump Forge):
+        :meth:`_mode_exfat_umpacken_strom`. Nur wenn der nicht passt (Packs schon in der Quelle, Abbild vom Leser nicht
+        lesbar), laeuft dieser Weg wie bisher.
         """
+        if self._strom_weg_gewaehlt():
+            ergebnis = self._mode_exfat_umpacken_strom(src, dst)
+            if ergebnis is not None:
+                return ergebnis
         base = os.path.splitext(os.path.basename(src))[0]
         final_output = os.path.join(dst, base + ".exfat")
         temp_root = self._mkdtemp(prefix="ps5conv_exfat_repack_",
@@ -33832,6 +33855,160 @@ class PS5ConverterGUI:
             return ok
         finally:
             _rmtree_force(temp_root)
+
+    #: Einstellung ``exfat_strom`` (Vorgabe an): ``False`` erzwingt den Weg ueber einen entpackten Zwischenordner.
+    _EXFAT_STROM_SETTING = "exfat_strom"
+
+    def _strom_weg_gewaehlt(self) -> bool:
+        """Soll ``.exfat`` -> ``.exfat`` ohne Zwischenordner laufen?
+
+        Ja bei AMPR EMU mit der Methode Asset-Pack und zstd-Packs - dem Weg, der sonst das ganze Spiel entpackte -, solange
+        die Einstellung ``exfat_strom`` nicht ausgeschaltet ist. Alles andere (LZ4-Packs, nur PlayGo, nur Backport)
+        bleibt beim bisherigen Weg.
+        """
+        try:
+            if not ampr_zstdpack.verfuegbar():
+                return False
+            if not bool(self._load_setting(self._EXFAT_STROM_SETTING, True)):
+                return False
+            return bool(self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK
+                        and self._ampr_pack_verfahren() == "zstd")
+        except Exception as exc:  # noqa: BLE001 - im Zweifel der bisherige Weg
+            logger.debug("Strom-Weg nicht entscheidbar: %s", exc)
+            return False
+
+    def _mode_exfat_umpacken_strom(self, src: str, dst: str) -> "bool | None":
+        """``.exfat`` mit zstd-Asset-Pack neu bauen, **ohne** das Spiel zu entpacken (Stufe 3, Dump-Forge-Vorbild).
+
+        Die Quelle wird nur gelesen (``spielbaum.ExfatBaum``). In einen kleinen Ueberlagerungsordner kommen nur die
+        Systemdateien, die der Einbau braucht (``abbild_strom.schatten_fuellen``); Backport, Fake-Signatur, DLC EMU und
+        AMPR EMU laufen dort wie bisher, der AMPR-Index und die Auswahl der Packdateien aber ueber die Ansicht
+        (Quelle + Ordner). Dann misst ein Durchgang die Packs (:meth:`_ampr_zstd_messen`), und ein zweiter schreibt sie zusammen
+        mit den losen Dateien direkt ins neue Abbild (``abbild_strom.abbild_strom`` durch den Schreiber von MkPFS).
+
+        Returns:
+            ``True``/``False`` wie die anderen Wege; ``None``, wenn dieser Weg gar nicht erst anfaengt und der bisherige
+            laufen soll (Quelle vom Leser nicht lesbar, Packs schon in der Quelle).
+        """
+        base = os.path.splitext(os.path.basename(src))[0]
+        final_output = os.path.join(dst, base + ".exfat")
+        mkpfs_parent = self._extract_embedded_mkpfs()
+        if not mkpfs_parent:
+            self._append_to_log(self._t('log.auto.0264'))
+            return False
+        if mkpfs_parent not in sys.path:
+            sys.path.insert(0, mkpfs_parent)
+        from mkpfs.exfat_writer import (  # pyright: ignore[reportMissingImports]
+            ExfatBuildError, dateireihenfolge_liste, iter_exfat_image_liste)
+        from mkpfs.utils import is_ignored_name  # pyright: ignore[reportMissingImports]
+
+        quelle = None
+        temp_root = ""
+        try:
+            try:
+                quelle = spielbaum.ExfatBaum(src, mkpfs_ordner=mkpfs_parent, ignoriert=is_ignored_name)
+                dateien = quelle.dateien()
+            except (spielbaum.BaumFehler, OSError) as exc:
+                self._append_to_log(self._t("log.exfat_strom_alter_weg", error=exc))
+                return None
+            if any(ampr_zstdpack.ist_packname(d.rel) for d in dateien):
+                self._append_to_log(self._t("log.exfat_strom_packs_da"))
+                return None
+            # Unzulaessige Namen (Nicht-ASCII, nur in der Schreibung verschieden, ...) vor der ersten Stunde Arbeit melden,
+            # nicht erst beim Schreiben.
+            try:
+                dateireihenfolge_liste([(d.rel, d.groesse, None) for d in dateien])
+            except ExfatBuildError as exc:
+                self._append_to_log(self._t("log.exfat_strom_namen", error=exc))
+                return False
+
+            temp_root = self._mkdtemp(prefix="ps5conv_exfat_strom_", dir_path=self._dump_ordner_basis(dst))
+            schatten = os.path.join(temp_root, base)
+            self.task_final_output_path = final_output
+            self._append_to_log(self._t(
+                "log.exfat_strom_start", quelle=os.path.basename(src), ziel=os.path.basename(final_output)))
+            self.progress_engine.start_task(0, self._t("progress.task.exfat_umpacken"))
+            self.progress_engine.begin_prepare(self._t("progress.prepare.strom_lesen"))
+            self._stufen_neu("exfat_strom")
+
+            t_ueber = self._stufe_start("phase.ueberlagerung")
+            programmdateien = bool(self._tk_wert("backport_integrate_var", False))
+            abgelegt, abgelegt_bytes = abbild_strom.schatten_fuellen(
+                quelle, schatten, programmdateien=programmdateien, abbruch=lambda: not self.is_running,
+                fortschritt=lambda n, g: self._set_status(self._t("status.strom_ueberlagerung", n=n, gesamt=g)))
+            if not self.is_running:
+                return False
+            self._append_to_log(self._t(
+                "log.exfat_strom_ueberlagerung", count=len(abgelegt), size=self._fmt_bytes(abgelegt_bytes),
+                total=len(dateien)))
+            # ``sce_sys/param.json`` jetzt pruefen (und wenn noetig ergaenzen, samt ``.alt``): Das aendert die Datei im
+            # Ueberlagerungsordner, und der Index und die Ansicht sollen schon die endgueltige sehen. Ein Fehler hier
+            # bricht ab, ehe Stunden gearbeitet sind.
+            if not self._ensure_param_json(schatten):
+                return False
+            self._phase_dauer_melden("phase.ueberlagerung", t_ueber)
+
+            self._strom_ansicht = abbild_strom.Ansicht(quelle, schatten, abgelegt, ignoriert=is_ignored_name)
+            self._strom_plan = None
+            t_einbau = self._stufe_start("phase.integration")
+            if not self._integration_anwenden(schatten):
+                return False
+            self._phase_dauer_melden("phase.integration", t_einbau)
+
+            ansicht_baum = self._strom_ansicht.baum()
+            plan = self._strom_plan
+            behalten = not (getattr(self, "_ampr_originale_weglassen", False)
+                            and getattr(self, "_ampr_ordner_ist_kopie", False))
+            if plan:
+                auswahl, messung = plan["auswahl"], plan["messung"]
+                eintraege = abbild_strom.abbild_eintraege(ansicht_baum, auswahl, messung, behalten)
+                arbeiter = self._ampr_zstd_arbeiter()
+
+                def erzeuger(on_layout):
+                    return abbild_strom.abbild_strom(
+                        ansicht_baum, auswahl, messung, iter_liste=iter_exfat_image_liste,
+                        reihenfolge_liste=dateireihenfolge_liste, originale_behalten=behalten, arbeiter=arbeiter,
+                        abbruch=lambda: not self.is_running, on_layout=on_layout)
+
+                self._ampr_pack_konsolenhinweis(schatten)
+                self._append_to_log(self._t("ampr_zstd.hinweis_ng"))
+                if behalten:
+                    self._append_to_log(self._t("ampr_pack.quellen_bleiben"))
+                else:
+                    self._append_to_log(self._t(
+                        "ampr_zstd.strom_originale_weg", count=len(auswahl.gepackt),
+                        size=self._fmt_bytes(auswahl.gepackte_bytes)))
+            else:
+                # Kein Pack gebaut (etwa weil der vorhandene Index stehen blieb): das Abbild wird wie bisher aus allem
+                # gebaut, was nach dem Einbau im Spiel liegt.
+                eintraege = [(d.rel, d.groesse) for d in ansicht_baum.dateien()]
+
+                def erzeuger(on_layout):
+                    return iter_exfat_image_liste([(d.rel, d.groesse, d.lesen) for d in ansicht_baum.dateien()],
+                                                  on_layout=on_layout)
+
+            strom = {"erzeuger": erzeuger, "eintraege": eintraege, "ignoriert": is_ignored_name,
+                     "quelle_geaendert": lambda: not quelle.unveraendert()}
+            self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
+            bau_ziel = self._bauziel_neben_quelle(final_output)
+            ok = self._create_exfat_from_folder(schatten, bau_ziel, pct_start=50.0, pct_end=98.0, strom=strom)
+            # Das Ziel ist oft die Quelle selbst: Der Lesegriff muss zu sein, ehe das neue Abbild an ihre Stelle tritt.
+            quelle.schliessen()
+            if ok and not self._ergebnis_im_ziel(
+                    self._bauziel_uebernehmen(bau_ziel, final_output), final_output):
+                ok = False
+            if ok:
+                self.progress_engine.begin_validate(self._t("progress.validate.default"))
+                self.progress_engine.commit_task()
+                self._append_to_log(self._t("log.exfat_umpacken_fertig", ziel=final_output))
+            return ok
+        finally:
+            self._strom_ansicht = None
+            self._strom_plan = None
+            if quelle is not None:
+                quelle.schliessen()
+            if temp_root:
+                _rmtree_force(temp_root)
 
     def _mode_folder_to_exfat(self, src: str, dst: str) -> bool:
         """Erstellt aus einem Dump-Ordner direkt ein .exFAT-Image."""
@@ -37618,6 +37795,84 @@ class PS5ConverterGUI:
             return True
         return self._ampr_originale_entfernen(ordner, zeilen)
 
+    def _ampr_zstd_messen(self, ordner: str, index_pfad: str, auswahl: dict[str, Any]) -> bool:
+        """Strom ohne Zwischenordner (Stufe 3): waehlt die Dateien und misst die Packs - geschrieben wird erst ins Abbild.
+
+        Dasselbe wie der Anfang von :meth:`_ampr_zstdpakete_bauen` (NG-Pruefung, Regeln, Auswahl), aber aus der Ansicht
+        (Quelle + Ueberlagerungsordner, ``self._strom_ansicht``) statt aus einem Ordner. Statt zu packen, uebernehmen und
+        Originale zu entfernen, laeuft der **Messdurchgang** (``ampr_zstdpack.messen``): Er verdichtet alles einmal und merkt
+        Bandgroessen, Index und Pruefsummen. Das Ergebnis liegt in ``self._strom_plan``; der Schreibdurchgang geschieht beim
+        Bau des Abbilds (:meth:`_mode_exfat_umpacken_strom`).
+        """
+        if not ampr_zstdpack.verfuegbar():
+            self._append_to_log(self._t("ampr_zstd.bibliothek_fehlt"))
+            return False
+        variante = str((auswahl or {}).get("variant", "")).strip().lower()
+        ist_ng = (variante in ampr_assetpakete.ALLROUND_VARIANTEN if variante
+                  else self._ampr_ist_ng_datei(os.path.join(ordner, "fakelib", "libSceAmpr.sprx")))
+        if not ist_ng:
+            self._append_to_log(self._t("ampr_zstd.nur_ng"))
+            return False
+
+        stufe = self._ampr_zstd_stufe()
+        self._append_to_log(self._t("ampr_zstd.start", stufe=stufe))
+        self._set_status(self._t("ampr_zstd.status"))
+        try:
+            regeln = None
+            profil = self._ampr_zstd_regeldatei()      # neben dem Dump-Ordner liegt hier nichts: Quelle ist ein Abbild
+            if profil:
+                regeln = ampr_zstdpack.regeln_laden(profil)
+                self._append_to_log(self._t(
+                    "ampr_zstd.regeln", count=len(regeln.regeln), default=regeln.standard))
+                if regeln.ignoriert:
+                    self._append_to_log(self._t("ampr_zstd.regeln_ignoriert", keys=", ".join(regeln.ignoriert[:12])))
+            ansicht = self._strom_ansicht
+            baum = ansicht.baum()
+            gewaehlt = ampr_zstdpack.auswahl_aus_liste(
+                spielbaum.einordnen(baum), abbruch=lambda: not self.is_running, regeln=regeln)
+            self._append_to_log(self._t(
+                "ampr_zstd.auswahl", packed=len(gewaehlt.gepackt), loose=len(gewaehlt.lose),
+                size=self._fmt_bytes(gewaehlt.gepackte_bytes)))
+            if regeln is not None:
+                self._append_to_log(self._t("ampr_zstd.regeln_lose", count=gewaehlt.nach_regeln_lose))
+            for pfad in gewaehlt.ungueltig[:10]:
+                self._append_to_log(self._t("ampr_zstd.pfad_ungueltig", path=pfad))
+            if not gewaehlt.gepackt:
+                self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
+                return False
+
+            arbeiter_zahl = self._ampr_zstd_arbeiter()
+            self._append_to_log(self._t(
+                "ampr_zstd.arbeiter", count=min(32, arbeiter_zahl or (os.cpu_count() or 2)), cores=os.cpu_count() or 0))
+            t_messen = self._stufe_start("phase.messen")
+            messung = ampr_zstdpack.messen(
+                baum, gewaehlt, stufe=stufe, arbeiter=arbeiter_zahl,
+                archiv_id=ampr_zstdpack.archiv_id_ableiten(gewaehlt, stufe),
+                abbruch=lambda: not self.is_running,
+                fortschritt=lambda anteil: self._ampr_pack_fortschritt(anteil * 100.0, "zstd"))
+            self._phase_dauer_melden("phase.messen", t_messen)
+            ergebnis = messung.ergebnis
+            self._append_to_log(self._t(
+                "ampr_zstd.gepackt", files=ergebnis.dateien, chunks=ergebnis.chunks, zstd=ergebnis.zstd_chunks,
+                raw=ergebnis.roh_chunks, volumes=len(messung.baender),
+                percent="%.1f" % (100.0 * ergebnis.gespeicherte_bytes / max(1, ergebnis.logische_bytes))))
+            self._strom_plan = {"auswahl": gewaehlt, "messung": messung, "stufe": stufe}
+            return True
+        except ampr_zstdpack.ZstdPackFehler as exc:
+            grund = str(exc)
+            schluessel = grund.split(":", 1)[0]
+            if schluessel.startswith(("ampr_pack.", "ampr_zstd.")) and ":" not in grund:
+                self._append_to_log(self._t(grund))
+            else:
+                self._append_to_log(self._t("ampr_zstd.fehlgeschlagen", error=grund))
+            return False
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("zstd-Messdurchgang: unerwarteter Fehler")
+            self._append_to_log(self._t("ampr_zstd.fehlgeschlagen", error=exc))
+            return False
+        finally:
+            self._pack_infotext = ""
+
     def _ampr_zstdpakete_bauen(self, ordner: str, index_pfad: str, auswahl: dict[str, Any]) -> bool:
         """Asset-Pack mit zstd (``ampr_zstd.index`` + ``ampr_zstd-NNN.pak``) statt LZ4.
 
@@ -37630,6 +37885,8 @@ class PS5ConverterGUI:
         und erst dann uebernommen. Originale fallen nur weg, wenn beim Start "Originale weglassen" gewaehlt wurde und der
         Ordner eine Arbeitskopie ist. Ob das Spiel die Packs auf der Konsole wirklich liest, zeigt nur ein Lauf dort.
         """
+        if getattr(self, "_strom_ansicht", None) is not None:
+            return self._ampr_zstd_messen(ordner, index_pfad, auswahl)
         if not ampr_zstdpack.verfuegbar():
             self._append_to_log(self._t("ampr_zstd.bibliothek_fehlt"))
             return False
@@ -43265,8 +43522,15 @@ class PS5ConverterGUI:
         out_file: str,
         pct_start: float = 0.0,
         pct_end: float = 98.0,
+        strom: "dict[str, Any] | None" = None,
     ) -> bool:
-        """Erstellt eine .exfat-Datei aus einem Spielordner."""
+        """Erstellt eine .exfat-Datei aus einem Spielordner.
+
+        Mit ``strom`` (Stufe 3, ohne Zwischenordner) kommen die Bytes nicht aus dem Ordner ``src_dir``, sondern aus dem
+        Erzeuger ``strom["erzeuger"](on_layout)``; ``strom["eintraege"]`` ist die Liste ``(Pfad, Groesse)`` der Dateien, die das
+        Abbild enthalten muss (Pruefung danach), ``strom["ignoriert"]`` der Filter fuer Betriebssystem-Dateien. ``src_dir`` ist
+        dann der Ueberlagerungsordner (``eboot.bin`` und ``sce_sys/param.json`` liegen dort).
+        """
 
         mkpfs_parent = self._extract_embedded_mkpfs()
         if not mkpfs_parent:
@@ -43291,7 +43555,9 @@ class PS5ConverterGUI:
         # Ohne eine gültige sce_sys/param.json meldet die PS5 beim Mounten
         # "Missing/invalid param.json" – lieber vor dem Bau abbrechen als ein
         # exFAT-Image erzeugen, das auf der Konsole ohnehin nicht startet.
-        if not self._ensure_param_json(str(src_path)):
+        # Im Strom-Weg ist das schon vor dem Einbau geschehen (:meth:`_mode_exfat_umpacken_strom`): Aendert sich die Datei
+        # jetzt noch, stimmt die Groesse in der Ansicht nicht mehr.
+        if strom is None and not self._ensure_param_json(str(src_path)):
             return False
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -43329,8 +43595,10 @@ class PS5ConverterGUI:
         bau_fertig = False
         try:
             self.task_progress = max(self.task_progress, pct_start + (pct_end - pct_start) * 0.03)
+            t_schreiben = self._stufe_start("phase.schreiben") if strom is not None else 0.0
             with teil_path.open("wb") as out_handle:
-                for chunk in iter_exfat_image(src_path, on_layout=_on_layout):
+                for chunk in (strom["erzeuger"](_on_layout) if strom is not None
+                              else iter_exfat_image(src_path, on_layout=_on_layout)):
                     if not self.is_running:
                         return False
                     out_handle.write(chunk)
@@ -43391,6 +43659,10 @@ class PS5ConverterGUI:
                 out_handle.flush()
                 os.fsync(out_handle.fileno())      # auf dem Datentraeger, bevor das Abbild den Endnamen bekommt
 
+            t_pruefen = 0.0
+            if strom is not None:
+                self._phase_dauer_melden("phase.schreiben", t_schreiben)
+                t_pruefen = self._stufe_start("phase.pruefen")
             if not teil_path.is_file():
                 self._append_to_log(self._t('log.auto.0270'))
                 return False
@@ -43399,7 +43671,13 @@ class PS5ConverterGUI:
             # ist – nicht, ob der reine Python-Writer tatsächlich alle Quelldateien
             # geschrieben hat. Schließt dieselbe Lücke wie die Dateizahl-Prüfung für
             # .ffpkg (v1.8.9).
-            expected_file_count = self._exfat_erwartete_dateizahl(str(src_path))
+            if strom is not None:
+                ignoriert = strom.get("ignoriert")
+                expected_file_count = sum(
+                    1 for rel, _g in strom["eintraege"]
+                    if not (ignoriert and any(ignoriert(t) for t in rel.split("/"))))
+            else:
+                expected_file_count = self._exfat_erwartete_dateizahl(str(src_path))
             content_check = self._verify_exfat_file_count(str(teil_path), expected_file_count)
             if content_check.get("lesefehler"):
                 # Das eben gebaute Abbild laesst sich mit dem eigenen Leser nicht oeffnen: kein Erfolg.
@@ -43424,7 +43702,10 @@ class PS5ConverterGUI:
 
             # Rueckleseprobe mit dem eigenen Leser (nach Dump Forge): Dateiliste und Groessen gegen die Quelle, dazu
             # der Inhalt einer Stichprobe. Die Quelle wird dabei nur mit der Stichprobe gelesen, nicht noch einmal ganz.
-            inhalt_check = self._verify_exfat_inhalt(str(teil_path), str(src_path), lambda: self.is_running)
+            if strom is not None:
+                inhalt_check = self._verify_exfat_liste(str(teil_path), strom, mkpfs_parent)
+            else:
+                inhalt_check = self._verify_exfat_inhalt(str(teil_path), str(src_path), lambda: self.is_running)
             if not self.is_running:
                 return False
             if inhalt_check.get("lesefehler") or (inhalt_check.get("checked") and not inhalt_check.get("ok")):
@@ -43439,6 +43720,13 @@ class PS5ConverterGUI:
 
             self._copy_done_bytes = self._copy_total_bytes
             self.task_progress = max(self.task_progress, pct_end)
+            if strom is not None:
+                self._phase_dauer_melden("phase.pruefen", t_pruefen)
+                # Wie bei Dump Forge (SourceStamp): Hat sich die Quelle waehrend des Laufs geaendert, wird nichts ersetzt.
+                geaendert = strom.get("quelle_geaendert")
+                if callable(geaendert) and geaendert():
+                    self._append_to_log(self._t("log.exfat_strom_quelle_geaendert"))
+                    return False
             _datei_ersetzen(str(teil_path), str(out_path))
             self._append_to_log(self._t('log.auto.0272', v0=out_path))
             bau_fertig = True
@@ -43452,6 +43740,37 @@ class PS5ConverterGUI:
                     teil_path.unlink(missing_ok=True)
                 except OSError as exc:
                     logger.debug("Teildatei nicht entfernbar (%s): %s", teil_path, exc)
+
+    def _verify_exfat_liste(self, exfat_path: str, strom: "dict[str, Any]", mkpfs_ordner: str = "") -> "dict[str, Any]":
+        """Rueckleseprobe fuer das Abbild aus dem Strom: Dateiliste und Groessen gegen ``strom["eintraege"]``.
+
+        Dasselbe Ergebnisformat wie :meth:`_verify_exfat_inhalt`. Ein Abbild, das der Leser nicht oeffnet, ist ein
+        ``lesefehler``. Der Inhalt der Packdateien wurde im Schreibdurchgang Chunk fuer Chunk gegen die Messung gehalten.
+        """
+        ergebnis: dict[str, Any] = {"checked": False, "ok": True, "detail": ""}
+        try:
+            befund = abbild_strom.liste_pruefen(exfat_path, strom["eintraege"], mkpfs_ordner=mkpfs_ordner,
+                                                ignoriert=strom.get("ignoriert"))
+        except Exception as exc:  # noqa: BLE001
+            ergebnis["lesefehler"] = True
+            ergebnis["detail"] = self._t("verify.count_skipped_error", error=exc)
+            return ergebnis
+        ergebnis["checked"] = True
+        ergebnis["befund"] = befund
+        kurz = lambda liste: ", ".join(liste[:3]) + (" ..." if len(liste) > 3 else "")   # noqa: E731
+        fehler: list[str] = []
+        if befund["fehlen"]:
+            fehler.append(self._t("verify.inhalt_fehlen", n=len(befund["fehlen"]), beispiele=kurz(befund["fehlen"])))
+        if befund["zuviel"]:
+            fehler.append(self._t("verify.inhalt_zuviel", n=len(befund["zuviel"]), beispiele=kurz(befund["zuviel"])))
+        if befund["groesse"]:
+            fehler.append(self._t("verify.inhalt_groesse", n=len(befund["groesse"]), beispiele=kurz(befund["groesse"])))
+        if fehler:
+            ergebnis["ok"] = False
+            ergebnis["detail"] = "; ".join(fehler)
+        else:
+            ergebnis["detail"] = self._t("verify.liste_ok", dateien=befund["dateien"])
+        return ergebnis
 
     def _verify_exfat_inhalt(self, exfat_path: str, src_dir: str, laeuft=None):
         """Liest das gebaute exFAT zurueck und vergleicht es mit der Quelle. Siehe abbild_pruefen."""
@@ -65481,6 +65800,11 @@ class PS5ConverterGUI:
         output.parent.mkdir(parents=True, exist_ok=True)
         tmp = output.with_suffix(output.suffix + ".tmp")
 
+        # Strom ohne Zwischenordner (Stufe 3): Der Ordner ist nur die Ueberlagerung; das Spiel selbst zeigt die Ansicht.
+        ansicht = getattr(self, "_strom_ansicht", None)
+        if ansicht is not None and os.path.normcase(os.path.realpath(str(root))) == ansicht.ordner_norm:
+            return self._ampr_index_aus_ansicht(ansicht, root, output)
+
         def _hinweis(schluessel: str, **werte: Any) -> None:
             # Auch an einer halb aufgebauten Instanz (Tests bauen sie ueber
             # __new__) darf das Bauen nicht am Protokoll scheitern.
@@ -65545,6 +65869,42 @@ class PS5ConverterGUI:
                 seen[key] = indexed_path
                 rows.append((int(st.st_size), int(st.st_mtime), indexed_path))
 
+        return self._ampr_write_index(rows, output)
+
+    def _ampr_index_aus_ansicht(self, ansicht: Any, root: Path, output: Path) -> tuple[int, int]:
+        """Dieselben Regeln wie :meth:`_build_ampr_index_local`, aber ueber die Ansicht (Quelle + Ueberlagerung) statt ueber einen Ordner.
+
+        Die Zeit jeder Datei ist die, die der Abbild-Schreiber ihr gibt (``abbild_strom.FESTER_MTIME``) - was die Konsole im
+        fertigen Abbild sieht. Die Indexdatei selbst kommt nie hinein.
+        """
+        melden = getattr(self, "_append_to_log", None)
+
+        def _hinweis(schluessel: str, **werte: Any) -> None:
+            if callable(melden) and callable(getattr(self, "_t", None)):
+                melden(self._t(schluessel, **werte))
+
+        try:
+            eigene = os.path.relpath(str(output), str(root)).replace(os.sep, "/")
+        except ValueError:
+            eigene = ""
+        ausgeschlossen = {eigene, eigene + ".tmp"}
+        seen: dict[bytes, str] = {}
+        rows: list[tuple[int, int, str]] = []
+        for datei in ansicht.baum().dateien():
+            if datei.rel in ausgeschlossen:
+                continue
+            indexed_path = "/app0/" + datei.rel
+            key = self._ampr_pfadschluessel(indexed_path)
+            if key in self._AMPR_INDEX_NIE:
+                continue
+            if any(zeichen in indexed_path for zeichen in "\t\n\r"):
+                _hinweis("ampr.index_leerraum", path=indexed_path)
+                continue
+            if key in seen:
+                _hinweis("ampr.index_schreibung_doppelt", first=seen[key], second=indexed_path)
+                continue
+            seen[key] = indexed_path
+            rows.append((int(datei.groesse), abbild_strom.FESTER_MTIME, indexed_path))
         return self._ampr_write_index(rows, output)
 
     def _ampr_write_index(self, rows: list[tuple[int, int, str]], output: Path) -> tuple[int, int]:

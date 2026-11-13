@@ -236,5 +236,103 @@ class AbbildStromTests(unittest.TestCase):
         self.assertLessEqual(threading.active_count(), vorher + 1)
 
 
+class SchattenTests(unittest.TestCase):
+    """Der kleine Ueberlagerungsordner und die Ansicht darueber."""
+
+    INHALT = {
+        "eboot.bin": b"\x7fELF" + bytes(200),
+        "sce_sys/param.json": b'{"x":1}',
+        "sce_module/libc.prx": b"prx" * 50,
+        "fakelib/libSceAmpr.sprx": b"orig" * 10,
+        "dlc_emu.ini": b"[x]\n",
+        "data/a.pak": _zufall(70_000, 3),
+        "data/prog.bin": b"\x7fELF" + bytes(100),                     # Programm mit anderem Namen
+        "data/prog2.bin": b"\x54\x14\xf5\xee" + bytes(100),            # SELF
+        "data/kein.bin": b"ABCD" + bytes(100),
+        "data/tiny.bin": b"ab",
+        "data/alt.bak": b"\x7fELF" + bytes(100),                        # Sicherung zaehlt nicht
+        "data/b/leer.bin": b"",
+    }
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp(prefix="schatten_")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.spiel = os.path.join(self.tmp, "spiel")
+        _schreiben(self.spiel, self.INHALT)
+        self.abbild = os.path.join(self.tmp, "spiel.exfat")
+        with open(self.abbild, "wb") as fh:
+            fh.write(_bytes(w.iter_exfat_image(Path(self.spiel))))
+
+    def test_nur_die_systemschicht(self) -> None:
+        with sb.ExfatBaum(self.abbild) as baum:
+            ziel = os.path.join(self.tmp, "schatten")
+            abgelegt, anzahl = ast.schatten_fuellen(baum, ziel)
+        self.assertEqual(sorted(["eboot.bin", "sce_sys/param.json", "sce_module/libc.prx", "fakelib/libSceAmpr.sprx",
+                                 "dlc_emu.ini"]), sorted(abgelegt))
+        self.assertEqual(sorted(abgelegt), sorted(
+            os.path.relpath(os.path.join(w_, n), ziel).replace(os.sep, "/")
+            for w_, _d, ns in os.walk(ziel) for n in ns))
+        self.assertEqual(sum(len(self.INHALT[r]) for r in abgelegt), anzahl)
+        self.assertEqual(self.INHALT["sce_sys/param.json"], Path(ziel, "sce_sys", "param.json").read_bytes())
+
+    def test_mit_programmdateien(self) -> None:
+        with sb.ExfatBaum(self.abbild) as baum:
+            abgelegt, _n = ast.schatten_fuellen(baum, os.path.join(self.tmp, "schatten"), programmdateien=True)
+        self.assertIn("data/prog.bin", abgelegt)
+        self.assertIn("data/prog2.bin", abgelegt)
+        for nein in ("data/kein.bin", "data/tiny.bin", "data/alt.bak", "data/a.pak", "data/b/leer.bin"):
+            self.assertNotIn(nein, abgelegt)
+
+    def test_abbruch(self) -> None:
+        with sb.ExfatBaum(self.abbild) as baum:
+            with self.assertRaises(z.ZstdPackFehler):
+                ast.schatten_fuellen(baum, os.path.join(self.tmp, "schatten"), abbruch=lambda: True)
+
+    def test_pfad_ausserhalb(self) -> None:
+        with self.assertRaises(z.ZstdPackFehler):
+            ast._ziel_pfad(os.path.join(self.tmp, "s"), "../x.ini")
+
+    def test_ansicht_zeigt_aenderungen(self) -> None:
+        with sb.ExfatBaum(self.abbild) as baum:
+            ziel = os.path.join(self.tmp, "schatten")
+            abgelegt, _n = ast.schatten_fuellen(baum, ziel)
+            ansicht = ast.Ansicht(baum, ziel, abgelegt)
+            vorher = {d.rel: d.groesse for d in ansicht.baum().dateien()}
+            self.assertEqual({r: len(d) for r, d in self.INHALT.items()}, vorher)
+            Path(ziel, "eboot.bin").write_bytes(b"gepatcht")                       # ersetzt
+            Path(ziel, "fakelib", "neu.sprx").write_bytes(b"neu")                  # ergaenzt
+            os.remove(os.path.join(ziel, "dlc_emu.ini"))                           # entfernt
+            nachher = {d.rel: d for d in ansicht.baum().dateien()}
+            self.assertEqual(8, nachher["eboot.bin"].groesse)
+            self.assertEqual(b"gepatcht", b"".join(nachher["eboot.bin"].lesen()))
+            self.assertIn("fakelib/neu.sprx", nachher)
+            self.assertNotIn("dlc_emu.ini", nachher)
+            self.assertEqual(_zufall(70_000, 3), b"".join(nachher["data/a.pak"].lesen()))    # aus der Quelle
+
+    def test_abbild_eintraege_und_pruefung(self) -> None:
+        with sb.ExfatBaum(self.abbild) as baum:
+            auswahl = z.auswahl_aus_liste(sb.einordnen(baum))
+            messung = z.messen(baum, auswahl, stufe=1, archiv_id=z.archiv_id_ableiten(auswahl, 1))
+            erwartet = ast.abbild_eintraege(baum, auswahl, messung)
+            ziel = os.path.join(self.tmp, "neu.exfat")
+            with open(ziel, "wb") as fh:
+                for stueck in ast.abbild_strom(baum, auswahl, messung, iter_liste=w.iter_exfat_image_liste,
+                                               reihenfolge_liste=w.dateireihenfolge_liste):
+                    fh.write(stueck)
+        befund = ast.liste_pruefen(ziel, erwartet)
+        self.assertEqual(([], [], []), (befund["fehlen"], befund["zuviel"], befund["groesse"]))
+        self.assertEqual(len(erwartet), befund["dateien"])                          # auch die leere Datei steht im Abbild
+        self.assertNotIn("data/a.pak", [r for r, _g in erwartet])                   # gepackt und weggelassen
+        self.assertIn("ampr_zstd.index", [r for r, _g in erwartet])
+        # Abweichungen werden benannt
+        falsch = list(erwartet) + [("fehlt.bin", 3)]
+        falsch = [(r, g + 1 if r == "eboot.bin" else g) for r, g in falsch]
+        befund = ast.liste_pruefen(ziel, falsch)
+        self.assertEqual(["fehlt.bin"], befund["fehlen"])
+        self.assertEqual(["eboot.bin"], befund["groesse"])
+        befund = ast.liste_pruefen(ziel, erwartet[1:])
+        self.assertEqual([erwartet[0][0]], befund["zuviel"])
+
+
 if __name__ == "__main__":
     unittest.main()

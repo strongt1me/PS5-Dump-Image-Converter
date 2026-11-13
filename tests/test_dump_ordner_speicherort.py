@@ -130,7 +130,8 @@ class DumpOrdnerVerdrahtungTests(unittest.TestCase):
         # ueber einen Zwischen-Dump-Ordner.
         for defname in ("_mode_ffpfsc_to_ffpkg", "_mode_ffpfsc_umpacken",
                         "_mode_abbild_zu_ffpfs", "_mode_exfat_to_ffpkg",
-                        "_mode_ffpkg_to_ffpkg", "_mode_exfat_umpacken"):
+                        "_mode_ffpkg_to_ffpkg", "_mode_exfat_umpacken",
+                        "_mode_exfat_umpacken_strom"):   # Stufe 3: legt nur den kleinen Ueberlagerungsordner dort an
             rumpf = self._rumpf(defname)
             self.assertIn("_dump_ordner_basis(dst)", rumpf,
                           "%s muss den Dump-Ordner umlenkbar anlegen" % defname)
@@ -143,8 +144,8 @@ class DumpOrdnerVerdrahtungTests(unittest.TestCase):
                          "Die reine Entpack-Aufgabe darf NICHT umgelenkt werden")
 
     def test_genau_sechs_aufrufstellen(self):
-        self.assertEqual(6, self.quelle.count("self._dump_ordner_basis(dst)"),
-                         "Es sollen genau die sechs Umpack-Wege umlenken")
+        self.assertEqual(7, self.quelle.count("self._dump_ordner_basis(dst)"),
+                         "Es sollen genau die sechs Umpack-Wege und der Strom-Weg umlenken")
 
 
 @unittest.skipUnless(TK_DA, "Keine Anzeige verfuegbar")
