@@ -8120,10 +8120,15 @@ class PS5ConverterGUI:
         # .exFAT -> .exFAT mit zstd-Asset-Pack laeuft ohne entpacktes Spiel (Stufe 3): Im Arbeitsordner liegen nur die
         # Systemdateien fuer den Einbau, ans Ziel kommt das neue Abbild (hoechstens so gross wie die Quelle, mit zstd meist
         # deutlich kleiner). Der Faktor fuer das Ziel bleibt der der .exFAT - mit Sicherheitsrand.
-        waehle_strom = getattr(self, "_strom_nach_container_gewaehlt" if target_type == "ffpfsc"
-                               else "_strom_weg_gewaehlt", None)
+        ordner_quelle = os.path.isdir(src)
+        if target_type == "ffpfsc":
+            waehle_strom = getattr(self, "_strom_nach_container_gewaehlt", None)
+            waehle_args = {"ordner": ordner_quelle}
+        else:
+            waehle_strom = getattr(self, "_strom_fuer_ordner_gewaehlt" if ordner_quelle else "_strom_weg_gewaehlt", None)
+            waehle_args = {}
         strom_temp = None
-        if target_type in ("exfat", "ffpfsc") and callable(waehle_strom) and waehle_strom():
+        if target_type in ("exfat", "ffpfsc") and callable(waehle_strom) and waehle_strom(**waehle_args):
             strom_temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
             if src.lower().endswith(".exfat") or os.path.isdir(src):
                 return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL[target_type]), 0
@@ -34022,31 +34027,46 @@ class PS5ConverterGUI:
     #: Einstellung ``exfat_strom`` (Vorgabe an): ``False`` erzwingt den Weg ueber einen entpackten Zwischenordner.
     _EXFAT_STROM_SETTING = "exfat_strom"
 
-    def _strom_weg_gewaehlt(self) -> bool:
-        """Soll ``.exfat`` -> ``.exfat`` ohne Zwischenordner laufen?
+    def _strom_erlaubt(self, *, einbau_noetig: bool) -> bool:
+        """Darf der Lauf das Spiel als Lesebaum lesen und im Strom schreiben, ohne es in einen Zwischenordner zu entpacken?
 
-        Ja bei AMPR EMU mit der Methode Asset-Pack und zstd-Packs - dem Weg, der sonst das ganze Spiel entpackte -, solange
-        die Einstellung ``exfat_strom`` nicht ausgeschaltet ist. Alles andere (LZ4-Packs, nur PlayGo, nur Backport)
-        bleibt beim bisherigen Weg.
+        Nicht, wenn die Einstellung ``exfat_strom`` aus ist. Sonst kommt es auf den Einbau an:
+
+        * AMPR EMU mit der Methode Asset-Pack: nur mit **zstd**-Packs (die laufen im Strom, :meth:`_ampr_zstd_messen`); LZ4-Packs
+          baut ein Werkzeug, das einen Ordner braucht - dann der bisherige Weg.
+        * Backport, Fake-Signatur, DLC EMU, PlayGo oder AMPR ohne Pack: Sie aendern nur wenige Dateien, und die laufen auf dem
+          kleinen Ueberlagerungsordner (:func:`abbild_strom.schatten_fuellen`) - ja.
+        * Gar kein Einbau: ja, wenn die Quelle ein Abbild ist (es gibt keinen Grund, es zu entpacken); ein Ordner dagegen
+          baut der bisherige Weg ohnehin ohne Zwischenordner (``einbau_noetig``).
         """
         try:
-            if not ampr_zstdpack.verfuegbar():
-                return False
             if not bool(self._load_setting(self._EXFAT_STROM_SETTING, True)):
                 return False
-            return bool(self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK
-                        and self._ampr_pack_verfahren() == "zstd")
+            if self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK:
+                return bool(self._ampr_pack_verfahren() == "zstd" and ampr_zstdpack.verfuegbar())
+            if self._integration_gewaehlt():
+                return True
+            return not einbau_noetig
         except Exception as exc:  # noqa: BLE001 - im Zweifel der bisherige Weg
             logger.debug("Strom-Weg nicht entscheidbar: %s", exc)
             return False
 
-    def _strom_nach_container_gewaehlt(self) -> bool:
-        """Soll das Ergebnis als ``.ffpfsc`` im Strom entstehen? Wie :meth:`_strom_weg_gewaehlt`, und die Bauform muss exFAT sein.
+    def _strom_weg_gewaehlt(self) -> bool:
+        """Soll ein **Abbild** (``.exfat``, ``.ffpfs``, ``.ffpfsc``) ohne Zwischenordner umgebaut werden? Siehe :meth:`_strom_erlaubt`."""
+        return self._strom_erlaubt(einbau_noetig=False)
+
+    def _strom_fuer_ordner_gewaehlt(self) -> bool:
+        """Dasselbe fuer einen **Dump-Ordner** als Quelle: nur mit Einbau, sonst baut der bisherige Weg ohne Kopie direkt."""
+        return self._strom_erlaubt(einbau_noetig=True)
+
+    def _strom_nach_container_gewaehlt(self, ordner: bool = False) -> bool:
+        """Soll das Ergebnis als ``.ffpfsc`` im Strom entstehen? Wie oben, und die Bauform muss exFAT sein.
 
         Der Strom baut immer die exFAT-Bauform (ein PFS mit einem inneren, komprimierten exFAT). Wer die Bauform PFS gewaehlt hat
         (ein PFS in einem PFS, sinnvoll bei sehr vielen kleinen Dateien), bekommt sie vom bisherigen Weg - nicht still die andere.
         """
-        return bool(self._strom_weg_gewaehlt() and getattr(self, "bauform", BAUFORM_VORGABE) == BAUFORM_EXFAT)
+        erlaubt = self._strom_fuer_ordner_gewaehlt() if ordner else self._strom_weg_gewaehlt()
+        return bool(erlaubt and getattr(self, "bauform", BAUFORM_VORGABE) == BAUFORM_EXFAT)
 
     def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False, pfs: bool = False,
                                    ziel: str = "exfat") -> "bool | None":
@@ -34119,6 +34139,12 @@ class PS5ConverterGUI:
                 return False
             if any(ampr_zstdpack.ist_packname(d.rel) for d in dateien):
                 self._append_to_log(self._t("log.exfat_strom_packs_da"))
+                return None
+            if any("/" not in d.rel and self._ist_ampr_asset_datei(d.rel) for d in dateien):
+                # Eine gepackte Asset-Schicht (LZ4) liegt schon in der Quelle: Ein neuer ``ampr_emu.index`` machte ihr Manifest
+                # unbrauchbar. Ob er neu gebaut werden darf, fragt der bisherige Weg (``_ampr_index_neubau_erlaubt``) - und der
+                # braucht dafuer den ganzen Ordner, den der Ueberlagerungsordner nicht zeigt.
+                self._append_to_log(self._t("log.exfat_strom_assets_da"))
                 return None
             # Unzulaessige Namen (Nicht-ASCII, nur in der Schreibung verschieden, ...) vor der ersten Stunde Arbeit melden,
             # nicht erst beim Schreiben.
@@ -34262,7 +34288,7 @@ class PS5ConverterGUI:
         Mit AMPR EMU NG und zstd-Packs ohne Arbeitskopie (Stufe 3, Etappe 6): :meth:`_mode_exfat_umpacken_strom` liest den
         Ordner nur und schreibt das Abbild direkt. Nur wenn der nicht passt (Packs schon im Ordner, Verweise), laeuft es wie bisher.
         """
-        if self._strom_weg_gewaehlt():
+        if self._strom_fuer_ordner_gewaehlt():
             ergebnis = self._mode_exfat_umpacken_strom(src, dst, ordner=True)
             if ergebnis is not None:
                 return ergebnis
@@ -34908,7 +34934,7 @@ class PS5ConverterGUI:
         # Ordner -> .ffpfsc mit AMPR EMU NG und zstd-Packs ohne Arbeitskopie und ohne Zwischendatei (Stufe 3, Etappe 8).
         # Nicht, wenn der Einbau schon gelaufen ist (die mehrstufigen Wege rufen hier mit ihrem fertigen Dump-Ordner an).
         if (not uncompressed and not getattr(self, "_integration_erledigt", False)
-                and os.path.isdir(src) and self._strom_nach_container_gewaehlt()):
+                and os.path.isdir(src) and self._strom_nach_container_gewaehlt(ordner=True)):
             ergebnis = self._mode_exfat_umpacken_strom(src, dst, ordner=True, ziel="ffpfsc")
             if ergebnis is not None:
                 return ergebnis

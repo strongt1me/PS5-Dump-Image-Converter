@@ -483,7 +483,7 @@ class OrdnerStromTests(_Grundlage):
 
     def test_folder_to_exfat_nimmt_den_strom_zuerst(self) -> None:
         g = GUI.__new__(GUI)
-        g._strom_weg_gewaehlt = lambda: True
+        g._strom_fuer_ordner_gewaehlt = lambda: True
         aufrufe = []
         g._mode_exfat_umpacken_strom = lambda src, dst, ordner=False: aufrufe.append((src, dst, ordner)) or "strom"
         self.assertEqual("strom", g._mode_folder_to_exfat("a", "b"))
@@ -491,7 +491,7 @@ class OrdnerStromTests(_Grundlage):
 
     def test_folder_to_exfat_faellt_auf_den_alten_weg_zurueck(self) -> None:
         g = GUI.__new__(GUI)
-        g._strom_weg_gewaehlt = lambda: True
+        g._strom_fuer_ordner_gewaehlt = lambda: True
         g._mode_exfat_umpacken_strom = lambda src, dst, ordner=False: None
         g._ausgabe_stamm = lambda *a, **k: "x"
         g._integration_anwenden = lambda src, **k: ""                       # der alte Weg beginnt hier und endet gleich
@@ -499,7 +499,7 @@ class OrdnerStromTests(_Grundlage):
 
     def test_platzbedarf_fuer_ordner_ohne_arbeitskopie(self) -> None:
         g = GUI.__new__(GUI)
-        g._strom_weg_gewaehlt = lambda: True
+        g._strom_fuer_ordner_gewaehlt = lambda: True
         g._quellgroesse_ermitteln = lambda src: 150 * 1024 ** 3
         g._estimate_unpack_space_requirement = lambda src: None
         g._integration_gewuenscht = lambda: True
@@ -507,7 +507,7 @@ class OrdnerStromTests(_Grundlage):
         temp, ziel, dump = g._platzbedarf_je_quelle(self.spiel, "exfat")
         self.assertLess(temp, 10 * 1024 ** 3, "Eine Arbeitskopie des Spiels darf nicht mehr eingerechnet werden")
         self.assertEqual(0, dump)
-        g._strom_weg_gewaehlt = lambda: False
+        g._strom_fuer_ordner_gewaehlt = lambda: False
         self.assertGreater(g._platzbedarf_je_quelle(self.spiel, "exfat")[0], 150 * 1024 ** 3)
 
 
@@ -905,6 +905,7 @@ class FfpfscAusgabeTests(_Grundlage):
         g = GUI.__new__(GUI)
         aufrufe: list[tuple] = []
         g._strom_weg_gewaehlt = lambda: eigenschaften.get("strom", True)
+        g._strom_fuer_ordner_gewaehlt = lambda: eigenschaften.get("strom", True)
         g._mode_exfat_umpacken_strom = lambda src, dst, **kw: aufrufe.append((src, dst, kw)) or eigenschaften.get("ergebnis", "strom")
         g._ausgabe_stamm = lambda *a, **k: "x"
         g._mkdtemp = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("alter weg"))
@@ -952,6 +953,7 @@ class FfpfscAusgabeTests(_Grundlage):
     def test_platzbedarf_fuer_den_container(self) -> None:
         g = GUI.__new__(GUI)
         g._strom_weg_gewaehlt = lambda: True
+        g._strom_fuer_ordner_gewaehlt = lambda: True
         g._quellgroesse_ermitteln = lambda src: 150 * 1024 ** 3
         g._estimate_unpack_space_requirement = lambda src: None
         g._integration_gewuenscht = lambda: True
@@ -1182,6 +1184,136 @@ class DurchsichtBefundeTests(_Grundlage):
         self.assertEqual([], os.listdir(self.ziel))
 
 
+class NurEinbauTests(_Grundlage):
+    """Etappe 9: Einbau **ohne** zstd-Pack (Backport, Fake-Signatur, DLC EMU, AMPR normal) und Umbau ganz ohne Einbau - im Strom.
+
+    Der Einbau aendert nur wenige Dateien im Ueberlagerungsordner; alles andere kommt unveraendert aus der Quelle. Es gibt kein Pack
+    (``_strom_plan`` bleibt leer), das Abbild entsteht aus der Ansicht.
+    """
+
+    PATCH = b"\x7fELF" + b"EINGEBAUT"
+
+    def setUp(self) -> None:
+        super().setUp()
+        os.makedirs(os.path.join(self.spiel, "savedata_leer"))
+        with open(self.quelle, "wb") as fh:                                  # die .exfat jetzt mit dem leeren Verzeichnis
+            for stueck in iter_exfat_image(Path(self.spiel)):
+                fh.write(stueck)
+        from mkpfs import consts
+        from mkpfs.pfs import build_pfs_stream_single_file
+        self.huelle = os.path.join(self.tmp, "huelle.ffpfsc")
+        build_pfs_stream_single_file(
+            source_file=Path(self.quelle), output_path=Path(self.huelle), block_size=65536,
+            pfs_version=consts.PFS_VERSION_PS5, case_insensitive=True, zlib_level=6, threshold_gain=0, min_file_gain=0,
+            min_compress_size=0, cpu_count=1, compress=True)
+
+    def gui(self, einbau: bool = True):
+        g = _gui(self.tmp)
+        g._resolve_pack_profile = lambda mode, groesse: {
+            "profile": "t", "level": 3, "cpu": 1, "cores": 1, "block_size": 65536, "size_gb": 0.0, "verify_after": True}
+        g._format_phase_status = lambda text, **k: text
+        patch = self.PATCH
+
+        def integration(ordner, **k):
+            if einbau:
+                Path(ordner, "eboot.bin").write_bytes(patch)                  # wie der Backport: Programmdatei ersetzt
+                os.makedirs(os.path.join(ordner, "fakelib"), exist_ok=True)
+                Path(ordner, "fakelib", "neu.sprx").write_bytes(b"neue Bibliothek")
+            g._ampr_ordner_ist_kopie = True
+            return ordner
+        g._integration_anwenden = integration
+        return g
+
+    def _erwartet(self, einbau: bool) -> dict[str, bytes]:
+        erwartet = dict(self.inhalt)
+        if einbau:
+            erwartet["eboot.bin"] = self.PATCH
+            erwartet["fakelib/neu.sprx"] = b"neue Bibliothek"
+        return erwartet
+
+    def _gelesen(self, pfad: str, ziel: str) -> tuple[dict[str, bytes], list[str]]:
+        with (sb.PfsBaum(pfad) if ziel == "ffpfsc" else sb.ExfatBaum(pfad)) as baum:
+            dateien = {d.rel: b"".join(d.lesen()) for d in baum.dateien()}
+            return dateien, baum.ordner()
+
+    def _pruefen(self, g, ergebnis: str, ziel: str, einbau: bool) -> None:
+        dateien, ordner = self._gelesen(ergebnis, ziel)
+        erwartet = self._erwartet(einbau)
+        for rel in ("sce_sys/param.json", "sce_sys/param.json.alt"):          # die param.json wird vor dem Einbau geprueft
+            dateien.pop(rel, None)
+            erwartet.pop(rel, None)
+        self.assertEqual(sorted(erwartet), sorted(dateien))
+        for rel, daten in erwartet.items():
+            self.assertEqual(daten, dateien[rel], rel)
+        self.assertIn("savedata_leer", ordner, "ein leeres Verzeichnis bleibt")
+        self.assertFalse([r for r in dateien if z.ist_packname(r)], "es entsteht kein Pack")
+
+    def _lauf(self, quelle: str, ziel: str, einbau: bool, **kw):
+        g = self.gui(einbau)
+        ok = g._mode_exfat_umpacken_strom(quelle, self.ziel, ziel=ziel, **kw)
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        namen = os.listdir(self.ziel)
+        self.assertEqual(1, len(namen), namen)
+        return g, os.path.join(self.ziel, namen[0])
+
+    def test_alle_quellen_und_ziele_mit_einbau(self) -> None:
+        for quelle, kw in ((self.quelle, {}), (self.huelle, {"pfs": True}), (self.spiel, {"ordner": True})):
+            for ziel in ("exfat", "ffpfsc"):
+                with self.subTest(quelle=os.path.basename(quelle), ziel=ziel):
+                    shutil.rmtree(self.ziel)
+                    os.makedirs(self.ziel)
+                    g, ergebnis = self._lauf(quelle, ziel, True, **kw)
+                    self._pruefen(g, ergebnis, ziel, True)
+
+    def test_ohne_jeden_einbau_wird_nichts_veraendert(self) -> None:
+        """Ein Abbild umzubauen (z. B. .ffpfsc -> .exfat) braucht kein Entpacken: Das Ergebnis hat genau die Dateien der Quelle."""
+        for quelle, kw in ((self.huelle, {"pfs": True}), (self.quelle, {})):
+            with self.subTest(quelle=os.path.basename(quelle)):
+                shutil.rmtree(self.ziel)
+                os.makedirs(self.ziel)
+                g, ergebnis = self._lauf(quelle, "exfat", False, **kw)
+                self._pruefen(g, ergebnis, "exfat", False)
+
+    def test_quelle_unveraendert_kein_rest(self) -> None:
+        vorher = {p: (os.path.getsize(p), os.stat(p).st_mtime_ns) for p in (self.quelle, self.huelle)}
+        self._lauf(self.huelle, "exfat", True, pfs=True)
+        self.assertEqual(vorher, {p: (os.path.getsize(p), os.stat(p).st_mtime_ns) for p in (self.quelle, self.huelle)})
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_der_ueberlagerungsordner_ist_klein(self) -> None:
+        """Im Arbeitsordner liegt nur die Systemschicht (und was der Einbau ablegt), nicht das Spiel."""
+        g = self.gui(True)
+        gesehen: dict[str, int] = {}
+        urspruenglich = g._integration_anwenden
+
+        def integration(ordner, **k):
+            gesehen["bytes"] = sum(f.stat().st_size for f in Path(ordner).rglob("*") if f.is_file())
+            return urspruenglich(ordner, **k)
+        g._integration_anwenden = integration
+        self.assertTrue(g._mode_exfat_umpacken_strom(self.quelle, self.ziel))
+        gross = sum(len(d) for rel, d in self.inhalt.items() if rel.startswith(("Media/", "data/")))
+        self.assertLess(gesehen["bytes"], gross // 4)
+
+    def test_fehlschlag_des_einbaus_laesst_nichts_zurueck(self) -> None:
+        g = self.gui(True)
+        g._integration_anwenden = lambda ordner, **k: ""
+        self.assertFalse(g._mode_exfat_umpacken_strom(self.quelle, self.ziel))
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_eine_asset_schicht_in_der_quelle_bleibt_beim_alten_weg(self) -> None:
+        """Ein neuer ``ampr_emu.index`` machte das Manifest einer LZ4-Schicht unbrauchbar - die Rueckfrage braucht den ganzen Ordner."""
+        Path(self.spiel, APP.ampr_assetpakete.MANIFEST_NAME).write_bytes(b"manifest")
+        with open(self.quelle, "wb") as fh:
+            for stueck in iter_exfat_image(Path(self.spiel)):
+                fh.write(stueck)
+        g = self.gui(True)
+        g._ist_ampr_asset_datei = GUI._ist_ampr_asset_datei
+        self.assertIsNone(g._mode_exfat_umpacken_strom(self.quelle, self.ziel))
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertTrue(any("Asset" in z_ or "asset" in z_ for z_ in g._log_lines), "\n".join(g._log_lines))
+
+
 class WegwahlTests(unittest.TestCase):
     def _probe(self, **kw):
         g = GUI.__new__(GUI)
@@ -1190,18 +1322,42 @@ class WegwahlTests(unittest.TestCase):
         g._ampr_wird_eingebaut = lambda: kw.get("ampr", True)
         g._ampr_methode = lambda: kw.get("methode", APP.AMPR_METHODE_ASSETPACK)
         g._ampr_pack_verfahren = lambda: kw.get("verfahren", "zstd")
+        g._integration_gewaehlt = lambda: kw.get("einbau", kw.get("ampr", True))
         return g
 
     @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
-    def test_nur_ampr_assetpack_zstd(self) -> None:
+    def test_asset_pack_nur_mit_zstd(self) -> None:
+        """AMPR mit der Methode Asset-Pack: zstd laeuft im Strom, LZ4 braucht einen Ordner und ein Werkzeug."""
         self.assertTrue(self._probe()._strom_weg_gewaehlt())
+        self.assertTrue(self._probe()._strom_fuer_ordner_gewaehlt())
         self.assertFalse(self._probe(verfahren="lz4")._strom_weg_gewaehlt())
-        self.assertFalse(self._probe(methode="normal")._strom_weg_gewaehlt())
-        self.assertFalse(self._probe(ampr=False)._strom_weg_gewaehlt())
+        self.assertFalse(self._probe(verfahren="lz4")._strom_fuer_ordner_gewaehlt())
 
-    @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+    def test_jeder_andere_einbau_laeuft_im_strom(self) -> None:
+        """Backport, Fake-Signatur, DLC EMU, PlayGo und AMPR ohne Pack aendern nur wenige Dateien: kein Entpacken noetig."""
+        for name, kw in (("AMPR normal", {"methode": "normal"}),
+                         ("ohne AMPR, mit Einbau (Backport usw.)", {"ampr": False, "einbau": True})):
+            with self.subTest(name):
+                self.assertTrue(self._probe(**kw)._strom_weg_gewaehlt())
+                self.assertTrue(self._probe(**kw)._strom_fuer_ordner_gewaehlt())
+
+    def test_ohne_einbau_nur_ein_abbild_als_quelle(self) -> None:
+        """Ohne Einbau gibt es fuer ein Abbild keinen Grund zum Entpacken; ein Ordner wird vom bisherigen Weg ohnehin direkt gebaut."""
+        probe = self._probe(ampr=False, einbau=False)
+        self.assertTrue(probe._strom_weg_gewaehlt())
+        self.assertFalse(probe._strom_fuer_ordner_gewaehlt())
+
+    def test_nicht_entscheidbar_ist_der_alte_weg(self) -> None:
+        g = self._probe()
+        g._ampr_methode = lambda: (_ for _ in ()).throw(RuntimeError("Einstellungen nicht lesbar"))
+        self.assertFalse(g._strom_weg_gewaehlt())
+        self.assertFalse(g._strom_fuer_ordner_gewaehlt())
+
     def test_einstellung_schaltet_aus(self) -> None:
-        self.assertFalse(self._probe(einstellungen={"exfat_strom": False})._strom_weg_gewaehlt())
+        for kw in ({}, {"ampr": False, "einbau": True}, {"ampr": False, "einbau": False}):
+            probe = self._probe(einstellungen={"exfat_strom": False}, **kw)
+            self.assertFalse(probe._strom_weg_gewaehlt())
+            self.assertFalse(probe._strom_fuer_ordner_gewaehlt())
 
     def test_platzbedarf_ohne_entpacktes_spiel(self) -> None:
         g = self._probe()
