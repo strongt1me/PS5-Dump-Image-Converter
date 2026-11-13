@@ -178,6 +178,7 @@ from ps5_validator.utils import fenster_vorn
 from ps5_validator.utils import streaming_pruefung
 from ps5_validator.utils import vorabpruefung
 from ps5_validator.utils import stufenzeile
+from ps5_validator.utils import ausgabename
 from ps5_validator.utils import y2jb_updater
 from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
@@ -5686,6 +5687,9 @@ class PS5ConverterGUI:
         self._cli_ampr_lz4_stufe = None
         self._cli_ampr_pack_verfahren = None
         self._cli_ampr_zstd_stufe = None
+        # Vorlage fuer den Namen des Ergebnisses von der Kommandozeile (--ausgabename); None = die Einstellung gilt.
+        self._cli_ausgabe_vorlage = None
+        self._ausgabe_cache: dict = {}
         # PlayGo-Rueckfrage am Anfang des Laufs (_playgo_vor_dem_lauf_klaeren):
         # schon nachgesehen - oder erst beim Einbau fragen, weil sich das
         # Abbild vorher nicht lesen liess.
@@ -8819,6 +8823,9 @@ class PS5ConverterGUI:
         for quelle in quellen:
             stamm = os.path.basename(os.path.normpath(quelle)) if os.path.isdir(quelle) \
                 else os.path.splitext(os.path.basename(quelle))[0]
+            if mode != "batch_convert":
+                # Der Name des Ergebnisses ist der nach der Vorlage (bei der Vorgabe ``{name}`` der der Quelle).
+                stamm = self._ausgabe_stamm(quelle, stamm, target_type)
             namensbefund = vorabpruefung.ausgabename_befund(stamm, target_type)
             if namensbefund is not None:
                 befunde.append(namensbefund)
@@ -8879,6 +8886,64 @@ class PS5ConverterGUI:
         zeilen, self._vorab_log = list(getattr(self, "_vorab_log", []) or []), []
         for zeile in zeilen:
             self._append_to_log(zeile)
+
+    # ------------------------------------------------------------------
+    # Ausgabename per Vorlage (Modul ausgabename; Einstellung "Ausgabename" im Einstellungsfenster)
+    # ------------------------------------------------------------------
+
+    _AUSGABE_VORLAGE_SETTING = "ausgabe_vorlage"
+
+    def _ausgabe_vorlage(self) -> str:
+        """Die gespeicherte Vorlage fuer den Namen des Ergebnisses; unbrauchbar oder leer gilt die Vorgabe ``{name}``.
+
+        Gelesen wird die gespeicherte Einstellung, nie eine Tk-Variable: Das laeuft auch im Arbeitsfaden. Vorrang hat
+        ``--ausgabename`` der Kommandozeile.
+        """
+        cli = getattr(self, "_cli_ausgabe_vorlage", None)
+        try:
+            wert = str(cli if cli else self._load_setting(self._AUSGABE_VORLAGE_SETTING, ausgabename.STANDARD) or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Vorlage fuer den Ausgabenamen nicht lesbar: %s", exc)
+            return ausgabename.STANDARD
+        return wert if wert and ausgabename.vorlage_pruefen(wert) is None else ausgabename.STANDARD
+
+    def _ausgabe_stamm(self, src: str, standard: str, zielformat: str) -> str:
+        """Der Name des Ergebnisses ohne Endung: nach der Vorlage, sonst ``standard`` (der Name der Quelle).
+
+        Mit der Vorgabe ``{name}`` bleibt es beim bisherigen Namen. Fehlen die Angaben zum Spiel (keine lesbare
+        ``param.json``) oder ergibt die Vorlage nichts, bleibt ebenfalls ``standard``. Ein erzeugter Name wird auf die
+        Hoechstlaenge des Zielformats gekuerzt (63 Bytes, ``.ffpfsc`` 58). Die Rechnung merkt sich ihr Ergebnis je Quelle,
+        Format und Vorlage und schreibt nur beim ersten Mal ins Protokoll.
+        """
+        vorlage = self._ausgabe_vorlage()
+        if vorlage == ausgabename.STANDARD:
+            return standard
+        cache = getattr(self, "_ausgabe_cache", None)
+        if cache is None:
+            cache = self._ausgabe_cache = {}
+        schluessel = (os.path.normcase(os.path.abspath(src)), zielformat, vorlage, standard)
+        if schluessel in cache:
+            return cache[schluessel]
+        name = standard
+        try:
+            angaben = self._read_game_meta(src)
+            pack = ""
+            if self._assetpack_gewaehlt():
+                pack = self._ampr_pack_verfahren()
+            ergebnis = ausgabename.ausgabename(vorlage, angaben, name=standard, pack=pack, zielformat=zielformat)
+            name = ergebnis.name or standard
+            if ergebnis.problem is not None:
+                self._append_to_log(self._t("log.ausgabename_vorlage_unbrauchbar", vorlage=vorlage))
+            elif name != standard:
+                self._append_to_log(self._t("log.ausgabename_nach_vorlage", name=name, vorlage=vorlage,
+                                            gekuerzt=self._t("log.ausgabename_gekuerzt") if ergebnis.gekuerzt else ""))
+            else:
+                self._append_to_log(self._t("log.ausgabename_ohne_angaben", name=standard))
+        except Exception as exc:  # noqa: BLE001 - ein Fehler hier darf nie den Lauf verhindern; es bleibt der Name der Quelle
+            logger.debug("Ausgabename nach Vorlage nicht bestimmbar: %s", exc)
+            name = standard
+        cache[schluessel] = name
+        return name
 
     #: Zielformate, bei denen vor dem Erstellen auf viele Daten und Texture-Streaming
     #: geprueft wird (Nutzerauftrag 21.10.2026): Dort sind Ruckler moeglich.
@@ -27987,6 +28052,7 @@ class PS5ConverterGUI:
         self.task_current_step  = 0
         self.task_step_ends     = []
         self._stufen            = None          # die Stufenzeile des letzten Laufs ist hier zu Ende
+        self._ausgabe_cache     = {}            # Namen nach Vorlage gelten je Lauf (die Quelle kann sich aendern)
         self._zuletzt_angezeigt = 0.0
         # Die Basis der Teilschritt-Melder gehoert zum vorigen Lauf. Bliebe
         # sie stehen, rechnete die Arbeitskopie des naechsten Laufs auf dem
@@ -33794,7 +33860,7 @@ class PS5ConverterGUI:
             ergebnis = self._mode_exfat_umpacken_strom(src, dst)
             if ergebnis is not None:
                 return ergebnis
-        base = os.path.splitext(os.path.basename(src))[0]
+        base = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "exfat")
         final_output = os.path.join(dst, base + ".exfat")
         temp_root = self._mkdtemp(prefix="ps5conv_exfat_repack_",
                                   dir_path=self._dump_ordner_basis(dst))
@@ -33890,7 +33956,7 @@ class PS5ConverterGUI:
             ``True``/``False`` wie die anderen Wege; ``None``, wenn dieser Weg gar nicht erst anfaengt und der bisherige
             laufen soll (Quelle vom Leser nicht lesbar, Packs schon in der Quelle).
         """
-        base = os.path.splitext(os.path.basename(src))[0]
+        base = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "exfat")
         final_output = os.path.join(dst, base + ".exfat")
         mkpfs_parent = self._extract_embedded_mkpfs()
         if not mkpfs_parent:
@@ -34015,7 +34081,7 @@ class PS5ConverterGUI:
 
     def _mode_folder_to_exfat(self, src: str, dst: str) -> bool:
         """Erstellt aus einem Dump-Ordner direkt ein .exFAT-Image."""
-        base_name = os.path.basename(os.path.normpath(src))
+        base_name = self._ausgabe_stamm(src, os.path.basename(os.path.normpath(src)), "exfat")
         final_output = os.path.join(dst, f"{base_name}.exfat")
         # Die beiden Kaestchen in der Pfad-Karte greifen hier: Was integriert
         # werden soll, wird VOR dem Bauen in den Dump-Ordner geschrieben.
@@ -34053,7 +34119,7 @@ class PS5ConverterGUI:
 
     def _mode_ffpkg_to_folder(self, src: str, dst: str) -> bool:
         """Extrahiert eine .ffpkg in einen Dump-Ordner."""
-        base_name = os.path.splitext(os.path.basename(src))[0]
+        base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "folder")
         final_output = os.path.join(dst, base_name)
         self.task_final_output_path = final_output
         self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
@@ -34094,7 +34160,7 @@ class PS5ConverterGUI:
         """Konvertiert eine .ffpkg über einen temporären Dump-Ordner in .exFAT."""
         temp_root = self._mkdtemp(prefix="ps5conv_ffpkg_exfat_")
         temp_dump = os.path.join(temp_root, "dump")
-        base_name = os.path.splitext(os.path.basename(src))[0]
+        base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "exfat")
         final_output = os.path.join(dst, f"{base_name}.exfat")
         self.task_final_output_path = final_output
         try:
@@ -34300,6 +34366,7 @@ class PS5ConverterGUI:
                   "exfat": ".exfat", "ffpkg": ".ffpkg"}.get(zielformat)
         if endung is None:
             return True
+        name = self._ausgabe_stamm(quelle, name, zielformat)
         ziel = os.path.join(ziel_ordner, name + endung)
         # Ein Ergebnis DIESES Laufs ist kein frueherer Lauf. Liegen etwa
         # Spiel.exfat und Spiel.ffpkg zusammen in der Auswahl, zeigen beide
@@ -34401,6 +34468,7 @@ class PS5ConverterGUI:
                     # sonst vorher die Loeschung eines vorhandenen Ordners,
                     # selbst wenn danach "Original" gewaehlt wird.
                     return None
+                base_name = self._ausgabe_stamm(src, base_name, target_type)
                 if target_type == "folder":
                     return os.path.join(dst, base_name)
                 if target_type == "ffpfsc":
@@ -34413,10 +34481,10 @@ class PS5ConverterGUI:
                     return os.path.join(dst, f"{base_name}.ffpkg")
                 return None
             elif mode == "unpack_to_game_folder":
-                base_name = os.path.splitext(os.path.basename(src))[0]
+                base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "folder")
                 return os.path.join(dst, base_name)
             elif mode == "exfat_to_folder":
-                base_name = os.path.splitext(os.path.basename(src))[0]
+                base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "folder")
                 return os.path.join(dst, base_name)
             elif mode == "dump_validator":
                 return None  # Kein Ausgabepfad – nur Prüfung
@@ -34651,8 +34719,8 @@ class PS5ConverterGUI:
         Returns:
             True bei Erfolg.
         """
-        folder_name  = os.path.basename(os.path.normpath(src))
         out_ext = "ffpfs" if uncompressed else "ffpfsc"
+        folder_name  = self._ausgabe_stamm(src, os.path.basename(os.path.normpath(src)), out_ext)
         final_output = os.path.join(dst, f"{folder_name}.{out_ext}")
         # Die beiden Kaestchen in der Pfad-Karte greifen hier: Was integriert
         # werden soll, wird VOR dem Bauen in den Dump-Ordner geschrieben.
@@ -40944,7 +41012,7 @@ class PS5ConverterGUI:
         # einem anderen Index aufgerufen wird.
         aufgabe_num = progress_task_index + 1
 
-        base_name = os.path.splitext(os.path.basename(src))[0]
+        base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "folder")
         dest_folder = os.path.join(dst, base_name)
         self.task_final_output_path = dest_folder
 
@@ -41934,7 +42002,7 @@ class PS5ConverterGUI:
         Returns:
             True bei Erfolg.
         """
-        base_name = os.path.splitext(os.path.basename(src))[0]
+        base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "ffpfsc")
         if dst.lower().endswith(".ffpfsc"):
             final_output = dst
         else:
@@ -42740,7 +42808,7 @@ class PS5ConverterGUI:
         Returns:
             True bei Erfolg.
         """
-        folder_name  = os.path.splitext(os.path.basename(src))[0]
+        folder_name  = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "folder")
         final_dst    = os.path.join(dst, folder_name)
         tmp_dir      = self._mkdtemp(prefix="ps5conv_unpack_", dir_path=dst)
         tmp_base     = tmp_dir                                  # Alias für finally-Block
@@ -42894,8 +42962,8 @@ class PS5ConverterGUI:
         Returns:
             True bei Erfolg.
         """
-        base_name = os.path.splitext(os.path.basename(src))[0]
         out_ext = "ffpfs" if uncompressed else "ffpfsc"
+        base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], out_ext)
         if dst.lower().endswith((".ffpfsc", ".ffpfs")):
             final_output = dst
         else:
@@ -44001,7 +44069,7 @@ class PS5ConverterGUI:
         dst = os.path.abspath(dst)
         os.makedirs(dst, exist_ok=True)
 
-        base_name = os.path.splitext(os.path.basename(src))[0]
+        base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "exfat")
         final_output = os.path.join(dst, f"{base_name}.exfat")
         cp = getattr(self, "_active_resume_checkpoint", None)
         cp_stage = str(cp.get("stage", "")).strip() if isinstance(cp, dict) else ""
@@ -68601,6 +68669,88 @@ class PS5ConverterGUI:
             selectcolor=c["bg_main"], anchor="w", justify="left",
             highlightthickness=0, bd=0, wraplength=440).pack(anchor="w", fill="x", pady=(0, 10))
 
+        # ── Ausgabename (Vorlage) ───────────────────────────────────────
+        # Wirkt beim Erstellen jedes Ergebnisses (Modul ausgabename). Gespeichert wird sofort, aber nur eine taugliche
+        # Vorlage; bei einer untauglichen steht der Grund unter dem Feld, und die zuletzt gespeicherte gilt weiter.
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(8, 14))
+        tk.Label(body, text=self._t("settings_dialog.ausgabe_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.ausgabe_hint",
+                                    teile=" ".join("{%s}" % teil for teil in ausgabename.TEILE),
+                                    vorgabe=ausgabename.STANDARD),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+        _vorlage_gespeichert = str(self._load_setting(self._AUSGABE_VORLAGE_SETTING, ausgabename.STANDARD)
+                                   or ausgabename.STANDARD)
+        ausgabe_var = tk.StringVar(value=_vorlage_gespeichert)
+        ausgabe_eingabe = self._pw.Entry(body, textvariable=ausgabe_var, font=(UI_SCHRIFT, pt(10)))
+        ausgabe_eingabe.pack(anchor="w", fill="x", pady=(0, 6))
+        ausgabe_zeile = tk.Frame(body, bg=c["bg_card"])
+        ausgabe_zeile.pack(anchor="w", fill="x", pady=(0, 6))
+        ausgabe_beispiele = self._pw.Combobox(
+            ausgabe_zeile, state="readonly", values=list(ausgabename.BEISPIELE), font=(UI_SCHRIFT, pt(9)), width=30)
+        ausgabe_beispiele.set(self._t("settings_dialog.ausgabe_beispiele"))
+        ausgabe_beispiele.pack(side="left")
+        ausgabe_vorschau = tk.StringVar(value="")
+        ausgabe_meldung = tk.StringVar(value="")
+        tk.Label(body, textvariable=ausgabe_vorschau, font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+                 anchor="w", justify="left", wraplength=460).pack(anchor="w", fill="x")
+        ausgabe_fehler = tk.Label(body, textvariable=ausgabe_meldung, font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"],
+                                  fg=c["fg_secondary"], anchor="w", justify="left", wraplength=460)
+        ausgabe_fehler.pack(anchor="w", fill="x", pady=(2, 10))
+        _ausgabe_beispiel = {"title": "Astro Bot", "title_id": "PPSA01234", "version": "01.000.000",
+                             "required_firmware": "09.00.00.00", "content_id": "UP9000-PPSA01234_00-ASTROBOT00000000"}
+
+        def _ausgabe_auffrischen(_ereignis=None) -> None:
+            vorlage = ausgabe_var.get().strip()
+            problem = ausgabename.vorlage_pruefen(vorlage)
+            zeilen: list[str] = []
+            meldung = ""
+            if problem is not None:
+                meldung = self._t("settings_dialog.ausgabe_problem_" + problem.art, wert=problem.wert)
+            else:
+                zeilen.append(self._t("settings_dialog.ausgabe_vorschau", titel="Astro Bot", kennung="PPSA01234"))
+                for fmt, beschriftung, endung in (("exfat", "exFAT", ".exfat"), ("ffpfsc", ".ffpfsc", ".ffpfsc"),
+                                                  ("folder", self._t("format.folder"), "")):
+                    erg = ausgabename.ausgabename(vorlage, _ausgabe_beispiel, name="Astro_Bot_Dump", pack="zstd",
+                                                  zielformat=fmt)
+                    grenze = ausgabename.grenze_fuer(fmt)
+                    laenge = "%d/%d B" % (len(erg.name.encode("utf-8")), grenze) if grenze else ""
+                    zeilen.append(self._t("settings_dialog.ausgabe_zeile", format=beschriftung,
+                                          name=erg.name + endung, bytes=laenge))
+                    if erg.gekuerzt:
+                        meldung = self._t("settings_dialog.ausgabe_gekuerzt", format=beschriftung)
+                if vorlage != _vorlage_gespeichert_jetzt[0]:
+                    _vorlage_gespeichert_jetzt[0] = vorlage
+                    self._save_setting(self._AUSGABE_VORLAGE_SETTING, vorlage)
+                    self._ausgabe_cache = {}
+                    logger.info("Vorlage fuer den Ausgabenamen: %s", vorlage)
+            ausgabe_vorschau.set("\n".join(zeilen))
+            ausgabe_meldung.set(meldung)
+            ausgabe_fehler.configure(fg=c["fg_warning"] if meldung else c["fg_secondary"])
+
+        _vorlage_gespeichert_jetzt = [_vorlage_gespeichert]
+
+        def _ausgabe_beispiel_gewaehlt(_ereignis=None) -> None:
+            gewaehlt = ausgabe_beispiele.get()
+            if gewaehlt in ausgabename.BEISPIELE:
+                ausgabe_var.set(gewaehlt)
+                ausgabe_beispiele.set(self._t("settings_dialog.ausgabe_beispiele"))
+                _ausgabe_auffrischen()
+
+        def _ausgabe_vorgabe() -> None:
+            ausgabe_var.set(ausgabename.STANDARD)
+            _ausgabe_auffrischen()
+
+        self._pw.Button(ausgabe_zeile, text=self._t("settings_dialog.ausgabe_vorgabe"),
+                        command=_ausgabe_vorgabe).pack(side="left", padx=(8, 0))
+        ausgabe_eingabe.bind("<KeyRelease>", _ausgabe_auffrischen)
+        ausgabe_beispiele.bind("<<ComboboxSelected>>", _ausgabe_beispiel_gewaehlt)
+        _ausgabe_auffrischen()
+
         # ── Farbsehschwaeche ────────────────────────────────────────────
         #
         # Nur die Farben, die eine Bedeutung tragen, werden ersetzt - Erfolg,
@@ -70768,6 +70918,11 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         "--ampr-zstd-stufe", type=int, default=None, metavar="1-22",
         help="zstd-Stufe der zstd-Packs (1 bis 22; Vorgabe 5). Ohne den Schalter gilt die gespeicherte Stufe.")
     parser.add_argument(
+        "--ausgabename", default=None, metavar="VORLAGE",
+        help=("Vorlage fuer den Namen des Ergebnisses, z. B. \"{title} [{title_id}]\". Teile: {name} {title} "
+              "{title_id} {version} {region} {fw} {pack}. Vorgabe {name} (der Name der Quelle bleibt). Ohne den "
+              "Schalter gilt die in den Einstellungen gespeicherte Vorlage."))
+    parser.add_argument(
         "--archiv-passwort", default="", metavar="PASSWORT",
         help=("Passwort fuer ein verschluesseltes Archiv (.zip, .7z, .rar) als --source von Aufgabe 1 und 5. "
               "Ohne Angabe probiert das Programm die ueblichen Passwoerter der Szene."))
@@ -70994,6 +71149,7 @@ def _cli_schalter_uebernehmen(app: "PS5ConverterGUI", args: argparse.Namespace) 
     app._cli_ampr_lz4_stufe = getattr(args, "ampr_lz4_stufe", None)
     app._cli_ampr_pack_verfahren = getattr(args, "ampr_pack_verfahren", None)
     app._cli_ampr_zstd_stufe = getattr(args, "ampr_zstd_stufe", None)
+    app._cli_ausgabe_vorlage = getattr(args, "ausgabename", None)
 
 
 def _hauptfenster_anlegen():
