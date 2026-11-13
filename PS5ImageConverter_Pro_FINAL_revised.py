@@ -176,6 +176,7 @@ from ps5_validator.utils import qr_klein
 from ps5_validator.utils import konsole_ftp
 from ps5_validator.utils import fenster_vorn
 from ps5_validator.utils import streaming_pruefung
+from ps5_validator.utils import vorabpruefung
 from ps5_validator.utils import y2jb_updater
 from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
@@ -8763,7 +8764,104 @@ class PS5ConverterGUI:
                 warnings.append(self._t("preflight.einbau_schon_im_dump",
                                         dateien=", ".join(reste)))
 
+        # Namen, Tiefe, Ausgabename und FAT32-Ziel: alle Befunde auf einmal, bevor etwas geschrieben wird.
+        vorab_fehler, vorab_warnungen = self._vorab_befunde(mode, src, dst, target_type)
+        errors.extend(vorab_fehler)
+        warnings.extend(vorab_warnungen)
+
         return errors, warnings
+
+    #: Wie lange die Namensprobe eines Spielordners hoechstens liest (Sekunden), bevor der Start weitergeht.
+    _VORAB_ZEIT = 20.0
+
+    _VORAB_FORMAT_NAMEN = {"exfat": "exFAT", "ffpkg": ".ffpkg", "ffpfs": ".ffpfs", "ffpfsc": ".ffpfsc"}
+
+    def _vorab_befunde(self, mode: str, src: str, dst: str, target_type: str) -> tuple[list[str], list[str]]:
+        """Vorabpruefung (:mod:`vorabpruefung`): Liefert ``(Fehler, Warnungen)`` als Texte.
+
+        Ein Ordner wird einmal durchgesehen (Namen, Tiefe, Verknuepfungen, groesste Datei); dazu kommt der Name des
+        Ergebnisses und, wo der Zielordner FAT32 ist, die 4-GiB-Grenze. Die Sammelkonvertierung prueft nur die Namen
+        der Ergebnisse. Die Liste aller betroffenen Pfade steht danach im Protokoll (``_vorab_log_ausgeben``).
+        """
+        self._vorab_log = []
+        if mode not in self._MODE_TARGET_OPTIONS or not target_type:
+            return [], []
+        try:
+            return self._vorab_befunde_rechnen(mode, src, dst, target_type)
+        except Exception as exc:  # noqa: BLE001 - eine Vorpruefung darf den Start nie verhindern
+            logger.debug("Vorabpruefung fehlgeschlagen: %s", exc)
+            return [], []
+
+    def _vorab_befunde_rechnen(self, mode: str, src: str, dst: str, target_type: str) -> tuple[list[str], list[str]]:
+        befunde: list[vorabpruefung.Befund] = []
+        if mode == "batch_convert":
+            quellen = [str(q) for q in (getattr(self, "_batch_sources", []) or [])]
+        else:
+            quellen = [src] if src else []
+        gesamt = groesste = 0
+        for quelle in quellen:
+            stamm = os.path.basename(os.path.normpath(quelle)) if os.path.isdir(quelle) \
+                else os.path.splitext(os.path.basename(quelle))[0]
+            namensbefund = vorabpruefung.ausgabename_befund(stamm, target_type)
+            if namensbefund is not None:
+                befunde.append(namensbefund)
+        if mode != "batch_convert" and src:
+            if os.path.isdir(src):
+                try:
+                    from mkpfs.utils import is_ignored_name  # pyright: ignore[reportMissingImports]
+                except ImportError:
+                    mkpfs_ordner = self._extract_embedded_mkpfs()
+                    if mkpfs_ordner and mkpfs_ordner not in sys.path:
+                        sys.path.insert(0, mkpfs_ordner)
+                    try:
+                        from mkpfs.utils import is_ignored_name  # pyright: ignore[reportMissingImports]
+                    except ImportError:
+                        is_ignored_name = None
+                beginn = time.monotonic()
+                abtastung = vorabpruefung.scan(src, ignoriert=is_ignored_name, zeitgrenze=self._VORAB_ZEIT)
+                befunde.extend(vorabpruefung.quellbefunde(abtastung, target_type))
+                gesamt, groesste = abtastung.gesamt, abtastung.groesste
+                if not abtastung.vollstaendig:
+                    self._vorab_log.append(self._t(
+                        "preflight.vorab_unvollstaendig", sekunden=int(time.monotonic() - beginn),
+                        dateien=len(abtastung.dateien)))
+            elif os.path.isfile(src):
+                try:
+                    gesamt = groesste = os.path.getsize(src)
+                except OSError:
+                    pass
+            if dst and os.path.isdir(dst) and gesamt:
+                fat = vorabpruefung.fat32_befund(_doktor_dateisystem(dst), target_type, gesamt, groesste, dst)
+                if fat is not None:
+                    befunde.append(fat)
+        fehler: list[str] = []
+        warnungen: list[str] = []
+        for b in befunde:
+            (fehler if b.schwere == "fehler" else warnungen).append(self._vorab_text(b))
+            self._vorab_log.append(self._t("preflight.vorab_liste_kopf", art=b.art, n=b.anzahl))
+            self._vorab_log.extend("  %s\n" % pfad for pfad in b.eintraege)
+            if b.mehr:
+                self._vorab_log.append(self._t("preflight.vorab_liste_mehr", n=b.mehr))
+        return fehler, warnungen
+
+    def _vorab_text(self, b: "vorabpruefung.Befund") -> str:
+        """Der Satz zu einem Befund der Vorabpruefung."""
+        format_ = self._VORAB_FORMAT_NAMEN.get(str(b.zusatz.get("format", "")), str(b.zusatz.get("format", "")))
+        beispiele = ", ".join(b.eintraege[:3])
+        if b.art == "name_lang":
+            return self._t("preflight.vorab_name_lang", name=b.eintraege[0], laenge=b.zusatz["laenge"],
+                           grenze=b.zusatz["grenze"], format=format_)
+        if b.art == "fat32":
+            return self._t("preflight.vorab_fat32", ziel=", ".join(b.eintraege),
+                           size=self._fmt_bytes(int(b.zusatz["noetig"])))
+        return self._t("preflight.vorab_" + b.art, n=b.anzahl, beispiele=beispiele, format=format_,
+                       grenze=b.zusatz.get("grenze", ""))
+
+    def _vorab_log_ausgeben(self) -> None:
+        """Schreibt die Pfade der Vorabpruefung ins Protokoll - nach dem Leeren des Protokollfensters beim Start."""
+        zeilen, self._vorab_log = list(getattr(self, "_vorab_log", []) or []), []
+        for zeile in zeilen:
+            self._append_to_log(zeile)
 
     #: Zielformate, bei denen vor dem Erstellen auf viele Daten und Texture-Streaming
     #: geprueft wird (Nutzerauftrag 21.10.2026): Dort sind Ruckler moeglich.
@@ -27824,6 +27922,7 @@ class PS5ConverterGUI:
         if hasattr(self, "size_label"):
             self.size_label.config(text="")
         self.console_view.delete("1.0", tk.END)
+        self._vorab_log_ausgeben()
         effective_tmp = self._get_runtime_temp_dir()
         # Hat der Anwender keinen Ordner gewaehlt, arbeitet der Lauf im Standardordner (Windows: "Temp - Dump-Image
         # Converter" im Wurzelverzeichnis des Systemlaufwerks). Er steht danach im Feld - so sieht man, wo gearbeitet wird.
