@@ -6,8 +6,9 @@ Weg, der eine ``.exfat`` umbaut, das ganze Spiel in einen Ordner auf dem Ziellau
 baut daraus das Ergebnis. Ein Lesebaum kennt nur, **was** im Spiel liegt (Pfad, Groesse) und **wie** man es liest; wer ihn
 benutzt, braucht keinen Ordner mehr.
 
-Vier Arten:
+Fuenf Arten:
 
+* :class:`Ufs2Baum` - ein ``.ffpkg`` (UFS2), gelesen mit dem eigenen Leser: kein UFS2Tool, kein Dokan, keine Administratorrechte.
 * :class:`PfsBaum` - ein ``.ffpfs``/``.ffpfsc`` (flach oder mit innerem exFAT/PFS), die PFSC-Bloecke werden erst beim Lesen entpackt.
 * :class:`OrdnerBaum` - ein Ordner auf der Platte (wie bisher).
 * :class:`ExfatBaum` - eine ``.exfat``-Datei, gelesen mit dem eingebetteten Leser von MkPFS. Jeder Faden bekommt seinen eigenen
@@ -499,6 +500,101 @@ class PfsBaum(_Baum):
 
     def stempel(self) -> tuple:
         """Stand der Abbilddatei **jetzt** (Groesse und Zeit); mit dem beim Oeffnen gemerkten zu vergleichen: :meth:`unveraendert`."""
+        return self._datei_stempel()
+
+    def unveraendert(self) -> bool:
+        """Ob die Abbilddatei noch so ist wie beim Oeffnen des Baums."""
+        try:
+            return self._datei_stempel() == self._stempel
+        except OSError:
+            return False
+
+    def schliessen(self) -> None:
+        with self._sperre:
+            self._geschlossen = True
+            griffe, self._griffe = self._griffe, []
+        for fh in griffe:
+            try:
+                fh.close()
+            except OSError:
+                pass
+        self._lokal = threading.local()
+
+
+class Ufs2Baum(_Baum):
+    """Die Dateien in einem ``.ffpkg`` (UFS2), gelesen mit dem eigenen Leser (:mod:`ufs2_dateisystem`) - ohne Entpacken, ohne UFS2Tool,
+    ohne Dokan und ohne Administratorrechte. Jeder Faden bekommt seinen eigenen Dateigriff und Leser.
+
+    Verweise, Geraete und Pipes im Abbild zaehlen nicht, stehen aber in ``uebersprungen`` (wie bei :class:`OrdnerBaum`).
+    """
+
+    def __init__(self, pfad: str, ignoriert: "Callable[[str], bool] | None" = None) -> None:
+        self.pfad = os.path.abspath(pfad)
+        if not os.path.isfile(self.pfad):
+            raise BaumFehler("keine Datei: %s" % self.pfad)
+        from ps5_validator.utils import ufs2_dateisystem                  # noqa: PLC0415
+        self._modul = ufs2_dateisystem
+        self._ignoriert = ignoriert
+        self._lokal = threading.local()
+        self._griffe: list[Any] = []
+        self._sperre = threading.Lock()
+        self._stempel = self._datei_stempel()
+        self._dateien: "list[BaumDatei] | None" = None
+        self._ordner: list[str] = []
+        self.uebersprungen: list[str] = []
+        self._geschlossen = False
+
+    def _datei_stempel(self) -> tuple:
+        st = os.stat(self.pfad)
+        return ("ufs2", self.pfad, st.st_size, st.st_mtime_ns)
+
+    def _leser(self) -> Any:
+        """Der Leser dieses Fadens; der erste Aufruf je Faden oeffnet die Datei und liest den Superblock."""
+        leser = getattr(self._lokal, "leser", None)
+        if leser is None:
+            if self._geschlossen:
+                raise BaumFehler("Lesebaum ist geschlossen")
+            fh = open(self.pfad, "rb")
+            try:
+                leser = self._modul.Ufs2Leser(fh)
+            except Exception:
+                fh.close()
+                raise
+            with self._sperre:
+                self._griffe.append(fh)
+            self._lokal.leser = leser
+        return leser
+
+    def dateien(self) -> list[BaumDatei]:
+        if self._dateien is not None:
+            return self._dateien
+        try:
+            baum = self._leser().baum()
+        except (self._modul.Ufs2Fehler, OSError) as exc:
+            raise BaumFehler("UFS2-Abbild nicht lesbar: %s" % exc) from exc
+        gefunden = [BaumDatei(e.rel, int(e.groesse), self._datei_leser(e.inode, e.rel)) for e in baum.dateien
+                    if self._ignoriert is None or not any(self._ignoriert(t) for t in e.rel.split("/"))]
+        gefunden.sort(key=lambda d: d.rel)
+        self._ordner = _ordner_ohne_ignorierte(baum.ordner, self._ignoriert)
+        self.uebersprungen = list(baum.uebersprungen)
+        self._dateien = gefunden
+        return gefunden
+
+    def ordner(self) -> list[str]:
+        self.dateien()
+        return list(self._ordner)
+
+    def _datei_leser(self, nummer: int, rel: str) -> Callable[[int], Iterator[bytes]]:
+        def lesen(stueck: int) -> Iterator[bytes]:
+            leser = self._leser()
+            try:
+                yield from leser.lesen(leser.inode(nummer), stueck)
+            except (self._modul.Ufs2Fehler, OSError) as exc:
+                raise BaumFehler("%s: %s" % (rel, exc)) from exc
+        return lesen
+
+    def stempel(self) -> tuple:
+        """Stand der Abbilddatei **jetzt**; mit dem beim Oeffnen gemerkten zu vergleichen: :meth:`unveraendert`."""
         return self._datei_stempel()
 
     def unveraendert(self) -> bool:

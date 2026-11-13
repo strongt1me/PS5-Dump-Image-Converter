@@ -8132,7 +8132,7 @@ class PS5ConverterGUI:
             strom_temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
             if src.lower().endswith(".exfat") or os.path.isdir(src):
                 return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL[target_type]), 0
-            if not src.lower().endswith((".ffpfsc", ".ffpfs")):
+            if not src.lower().endswith((".ffpfsc", ".ffpfs", ".ffpkg")):
                 strom_temp = None
 
         # Beim Entpacken eines Containers ist die Quelle kleiner als das,
@@ -33828,8 +33828,11 @@ class PS5ConverterGUI:
         # Mit AMPR EMU NG und zstd-Packs ohne Zwischenordner (Stufe 3, Etappe 8): Quelle als Lesebaum, Ergebnis im Strom als
         # .ffpfsc. Nur .ffpfsc (die .ffpfs hat die Spieldateien in der Wurzel und braucht einen anderen Schreiber); nur .exfat und
         # .ffpfsc als Quelle. Passt der Strom nicht (None), laeuft der bisherige Weg ueber den Dump-Ordner.
-        if not uncompressed and quelle in ("exfat", "ffpfsc") and self._strom_nach_container_gewaehlt():
-            ergebnis = self._mode_exfat_umpacken_strom(src, dst, pfs=(quelle == "ffpfsc"), ziel="ffpfsc")
+        if not uncompressed and quelle in ("exfat", "ffpfsc", "ffpkg") and self._strom_nach_container_gewaehlt():
+            if quelle == "ffpkg":
+                ergebnis = self._mode_exfat_umpacken_strom(src, dst, ufs2=True, ziel="ffpfsc")
+            else:
+                ergebnis = self._mode_exfat_umpacken_strom(src, dst, pfs=(quelle == "ffpfsc"), ziel="ffpfsc")
             if ergebnis is not None:
                 return ergebnis
         temp_root = self._mkdtemp(prefix="ps5conv_%s_%s_" % (quelle, ziel_endung),
@@ -34069,8 +34072,11 @@ class PS5ConverterGUI:
         return bool(erlaubt and getattr(self, "bauform", BAUFORM_VORGABE) == BAUFORM_EXFAT)
 
     def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False, pfs: bool = False,
-                                   ziel: str = "exfat") -> "bool | None":
+                                   ziel: str = "exfat", ufs2: bool = False) -> "bool | None":
         """``.exfat`` mit zstd-Asset-Pack neu bauen, **ohne** das Spiel zu entpacken (Stufe 3, Dump-Forge-Vorbild).
+
+        ``ufs2=True``: Die Quelle ist eine ``.ffpkg`` (UFS2), gelesen mit dem eigenen Leser (``spielbaum.Ufs2Baum``) - ohne
+        UFS2Tool, ohne Dokan, ohne Administratorrechte (Etappe 10, :meth:`_mode_ffpkg_to_exfat`).
 
         ``ziel="ffpfsc"``: Das Ergebnis ist eine ``.ffpfsc`` (PFS mit einem inneren, komprimierten exFAT) statt einer ``.exfat``;
         der exFAT-Strom laeuft in einem Zug durch den PFSC-Kompressor, es entsteht keine ``.exfat`` daneben
@@ -34117,15 +34123,21 @@ class PS5ConverterGUI:
                     quelle = spielbaum.OrdnerBaum(src, ignoriert=is_ignored_name)
                 elif pfs:
                     quelle = spielbaum.PfsBaum(src, mkpfs_ordner=mkpfs_parent, ignoriert=is_ignored_name)
+                elif ufs2:
+                    quelle = spielbaum.Ufs2Baum(src, ignoriert=is_ignored_name)
                 else:
                     quelle = spielbaum.ExfatBaum(src, mkpfs_ordner=mkpfs_parent, ignoriert=is_ignored_name)
                 dateien = quelle.dateien()
             except (spielbaum.BaumFehler, OSError) as exc:
                 self._append_to_log(self._t("log.exfat_strom_alter_weg", error=exc))
                 return None
-            if pfs and not any(d.rel.lower() == "eboot.bin" or d.rel.lower().startswith("sce_sys/") for d in dateien):
+            if (pfs or ufs2) and not any(d.rel.lower() == "eboot.bin" or d.rel.lower().startswith("sce_sys/") for d in dateien):
                 # Liegt das Spiel in einem Unterordner des Abbilds, sucht der bisherige Weg ihn beim Entpacken (Ebene fuer Ebene).
                 self._append_to_log(self._t("log.exfat_strom_pfs_kein_spiel"))
+                return None
+            if ufs2 and (quelle.uebersprungen or not dateien):
+                # Verweise und Geraete im UFS2 kann das exFAT-Abbild nicht fassen; UFS2Tool entscheidet, was damit geschieht.
+                self._append_to_log(self._t("log.exfat_strom_ufs2_alter_weg"))
                 return None
             if ordner and (quelle.uebersprungen or not dateien):
                 # Verweise und Sonderdateien kann das exFAT-Abbild nicht fassen, ein leerer Ordner ist kein Spiel: Der bisherige
@@ -34164,7 +34176,7 @@ class PS5ConverterGUI:
                 self.progress_engine.start_task(0, self._t("progress.task.dump_to_format", format=endung))
             else:
                 self.progress_engine.start_task(
-                    1 if pfs else 0,
+                    1 if pfs else 3 if ufs2 else 0,
                     self._t("progress.task.dump_to_exfat" if ordner else
                             "progress.task.ffpfsc_to_exfat" if pfs else "progress.task.exfat_umpacken"))
             self.progress_engine.begin_prepare(
@@ -34368,7 +34380,16 @@ class PS5ConverterGUI:
         return ok
 
     def _mode_ffpkg_to_exfat(self, src: str, dst: str) -> bool:
-        """Konvertiert eine .ffpkg über einen temporären Dump-Ordner in .exFAT."""
+        """Konvertiert eine .ffpkg in .exFAT - im Strom mit dem eigenen UFS2-Leser (Etappe 10), sonst über einen temporären Dump-Ordner.
+
+        Der Strom liest die ``.ffpkg`` ohne UFS2Tool, ohne Dokan-Laufwerk und ohne Administratorrechte und entpackt nichts. Der
+        bisherige Weg bleibt, wenn die Einstellung ``exfat_strom`` aus ist oder das Abbild Verweise/Geraete enthaelt, kein Spiel in
+        der Wurzel zeigt oder sich nicht lesen laesst.
+        """
+        if self._strom_weg_gewaehlt():
+            ergebnis = self._mode_exfat_umpacken_strom(src, dst, ufs2=True)
+            if ergebnis is not None:
+                return ergebnis
         temp_root = self._mkdtemp(prefix="ps5conv_ffpkg_exfat_")
         temp_dump = os.path.join(temp_root, "dump")
         base_name = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "exfat")

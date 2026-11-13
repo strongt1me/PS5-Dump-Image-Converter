@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -924,7 +925,7 @@ class FfpfscAusgabeTests(_Grundlage):
         self.assertEqual([("a.ffpfsc", "d", {"pfs": True, "ziel": "ffpfsc"})], aufrufe)
 
     def test_ffpfs_und_ffpkg_bleiben_beim_alten_weg(self) -> None:
-        for quelle, unkomprimiert in (("exfat", True), ("ffpkg", False), ("ffpfsc", True)):
+        for quelle, unkomprimiert in (("exfat", True), ("ffpkg", True), ("ffpfsc", True)):                # .ffpfs-Ziel: kein Strom
             g, aufrufe = self._verteiler()
             with self.assertRaises(RuntimeError, msg=(quelle, unkomprimiert)):
                 g._mode_abbild_zu_ffpfs("a." + quelle, "d", quelle=quelle, uncompressed=unkomprimiert)
@@ -1312,6 +1313,187 @@ class NurEinbauTests(_Grundlage):
         self.assertIsNone(g._mode_exfat_umpacken_strom(self.quelle, self.ziel))
         self.assertEqual([], os.listdir(self.ziel))
         self.assertTrue(any("Asset" in z_ or "asset" in z_ for z_ in g._log_lines), "\n".join(g._log_lines))
+
+
+def _ufs2_werkzeug() -> "str | None":
+    if sys.platform != "win32":
+        return None
+    pfad = ROOT / "UFS2Tool-4.1" / "win-x64" / "UFS2Tool.exe"
+    return str(pfad) if pfad.is_file() else None
+
+
+@unittest.skipUnless(z.verfuegbar() and _ufs2_werkzeug(), "zstandard oder UFS2Tool (ohne Erhoehung startbar) fehlt")
+class Ufs2StromTests(_Grundlage):
+    """Etappe 10: ``.ffpkg`` (UFS2) als Quelle - gelesen mit dem eigenen Leser, ohne UFS2Tool, Dokan und Administratorrechte."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from ps5_validator.utils import ffpkg_support as ffs
+        os.makedirs(os.path.join(self.spiel, "savedata_leer"))
+        self.ffpkg = os.path.join(self.tmp, "spiel.ffpkg")
+        lauf = subprocess.run(
+            ffs.build_newfs_directory_command(_ufs2_werkzeug(), self.spiel, self.ffpkg), capture_output=True, text=True,
+            timeout=300, env=dict(os.environ, __COMPAT_LAYER="RunAsInvoker"))
+        if lauf.returncode != 0 or not os.path.isfile(self.ffpkg):
+            self.skipTest("UFS2Tool newfs scheiterte: %s" % (lauf.stdout or lauf.stderr)[-200:])
+
+    def gui(self, einbau: str = "ampr"):
+        g = _gui(self.tmp)
+        g._resolve_pack_profile = lambda mode, groesse: {
+            "profile": "t", "level": 3, "cpu": 1, "cores": 1, "block_size": 65536, "size_gb": 0.0, "verify_after": True}
+        g._format_phase_status = lambda text, **k: text
+        if einbau == "keiner":
+            g._integration_anwenden = lambda ordner, **k: ordner
+        return g
+
+    def _gelesen(self, pfad: str, ziel: str) -> "tuple[dict[str, bytes], list[str]]":
+        with (sb.PfsBaum(pfad) if ziel == "ffpfsc" else sb.ExfatBaum(pfad)) as baum:
+            return {d.rel: b"".join(d.lesen()) for d in baum.dateien()}, baum.ordner()
+
+    def test_ohne_einbau_gleicht_die_ausgabe_der_quelle(self) -> None:
+        for ziel in ("exfat", "ffpfsc"):
+            with self.subTest(ziel=ziel):
+                shutil.rmtree(self.ziel)
+                os.makedirs(self.ziel)
+                g = self.gui("keiner")
+                self.assertTrue(g._mode_exfat_umpacken_strom(self.ffpkg, self.ziel, ziel=ziel, ufs2=True), "\n".join(g._log_lines))
+                ergebnis = os.path.join(self.ziel, os.listdir(self.ziel)[0])
+                dateien, ordner = self._gelesen(ergebnis, ziel)
+                for rel in ("sce_sys/param.json", "sce_sys/param.json.alt"):
+                    dateien.pop(rel, None)
+                erwartet = {k: v for k, v in self.inhalt.items() if k != "sce_sys/param.json"}
+                self.assertEqual(sorted(erwartet), sorted(dateien))
+                for rel, daten in erwartet.items():
+                    self.assertEqual(daten, dateien[rel], rel)
+                self.assertIn("savedata_leer", ordner)
+
+    def test_mit_zstd_pack_aus_einer_ffpkg(self) -> None:
+        for ziel in ("exfat", "ffpfsc"):
+            with self.subTest(ziel=ziel):
+                shutil.rmtree(self.ziel)
+                os.makedirs(self.ziel)
+                g = self.gui()
+                self.assertTrue(g._mode_exfat_umpacken_strom(self.ffpkg, self.ziel, ziel=ziel, ufs2=True), "\n".join(g._log_lines))
+                dateien, _ordner = self._gelesen(os.path.join(self.ziel, os.listdir(self.ziel)[0]), ziel)
+                self.assertEqual(NG_LIB, dateien["fakelib/libSceAmpr.sprx"])
+                self.assertIn("ampr_zstd-000.pak", dateien)
+                self.assertNotIn("Media/text.txt", dateien)
+
+    def test_quelle_unveraendert_und_nichts_im_temp(self) -> None:
+        vorher = (os.path.getsize(self.ffpkg), os.stat(self.ffpkg).st_mtime_ns)
+        g = self.gui()
+        self.assertTrue(g._mode_exfat_umpacken_strom(self.ffpkg, self.ziel, ufs2=True), "\n".join(g._log_lines))
+        self.assertEqual(vorher, (os.path.getsize(self.ffpkg), os.stat(self.ffpkg).st_mtime_ns))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_kein_unterbefehl_kein_dokan_keine_administratorrechte(self) -> None:
+        """Der Strom braucht weder UFS2Tool noch ein Dokan-Laufwerk noch Administratorrechte."""
+        g = self.gui("keiner")
+        verboten = []
+        for name in ("_extract_ufs2tool", "_find_dokan_driver", "_extract_ffpkg_to_folder_via_ufs2tool",
+                     "_ffpkg_ueber_unterbefehl_entpacken"):
+            stub = mock.Mock(side_effect=AssertionError("%s aufgerufen" % name))
+            self.addCleanup(stub.assert_not_called)          # von aussen pruefen: ein except im Programm koennte den Fehler schlucken
+            verboten.append(stub)
+            setattr(g, name, stub)
+        admin = mock.Mock(side_effect=AssertionError("Administratorrechte abgefragt"))
+        self.addCleanup(admin.assert_not_called)
+        with mock.patch.object(APP, "_is_admin", admin):
+            self.assertTrue(g._mode_exfat_umpacken_strom(self.ffpkg, self.ziel, ufs2=True), "\n".join(g._log_lines))
+
+    def test_ein_spiel_in_einem_unterordner_bleibt_beim_alten_weg(self) -> None:
+        from ps5_validator.utils import ffpkg_support as ffs
+        tief = os.path.join(self.tmp, "tief")
+        for rel, daten in self.inhalt.items():
+            voll = os.path.join(tief, "PPSA04263", *rel.split("/"))
+            os.makedirs(os.path.dirname(voll), exist_ok=True)
+            Path(voll).write_bytes(daten)
+        abbild = os.path.join(self.tmp, "tief.ffpkg")
+        lauf = subprocess.run(ffs.build_newfs_directory_command(_ufs2_werkzeug(), tief, abbild), capture_output=True, text=True,
+                              timeout=300, env=dict(os.environ, __COMPAT_LAYER="RunAsInvoker"))
+        self.assertEqual(0, lauf.returncode, lauf.stdout)
+        g = self.gui()
+        self.assertIsNone(g._mode_exfat_umpacken_strom(abbild, self.ziel, ufs2=True))
+        self.assertEqual([], os.listdir(self.ziel))
+
+    def test_verweise_im_abbild_bleiben_beim_alten_weg(self) -> None:
+        echt = sb.Ufs2Baum.dateien
+
+        def mit_verweis(baum):
+            erg = echt(baum)
+            baum.uebersprungen = ["verweis"]
+            return erg
+        g = self.gui()
+        with mock.patch.object(sb.Ufs2Baum, "dateien", mit_verweis):
+            self.assertIsNone(g._mode_exfat_umpacken_strom(self.ffpkg, self.ziel, ufs2=True))
+        self.assertEqual([], os.listdir(self.ziel))
+
+    def test_kein_ufs2_bleibt_beim_alten_weg(self) -> None:
+        kaputt = os.path.join(self.tmp, "kaputt.ffpkg")
+        Path(kaputt).write_bytes(bytes(300_000))
+        g = self.gui()
+        self.assertIsNone(g._mode_exfat_umpacken_strom(kaputt, self.ziel, ufs2=True))
+
+    def test_abbruch_und_aenderung_waehrend_des_laufs(self) -> None:
+        g = self.gui()
+
+        def abbrechen(prozent, phase):
+            g.is_running = False
+        g._ampr_pack_fortschritt = abbrechen
+        self.assertFalse(g._mode_exfat_umpacken_strom(self.ffpkg, self.ziel, ufs2=True))
+        self.assertEqual([], os.listdir(self.ziel))
+        kopie = os.path.join(self.tmp, "kopie.ffpkg")
+        shutil.copyfile(self.ffpkg, kopie)
+        g = self.gui()
+        urspruenglich = g._integration_anwenden
+
+        def integration(ordner, **k):
+            erg = urspruenglich(ordner, **k)
+            with open(kopie, "ab") as fh:
+                fh.write(b"\0" * 512)
+            return erg
+        g._integration_anwenden = integration
+        self.assertFalse(g._mode_exfat_umpacken_strom(kopie, self.ziel, ufs2=True))
+        self.assertEqual([], os.listdir(self.ziel))
+
+    # -- Einhaengen --------------------------------------------------------------------------------------------------------------
+    def test_ffpkg_zu_exfat_nimmt_den_strom_zuerst(self) -> None:
+        g = GUI.__new__(GUI)
+        aufrufe: list[tuple] = []
+        g._strom_weg_gewaehlt = lambda: True
+        g._mode_exfat_umpacken_strom = lambda src, dst, **kw: aufrufe.append((src, dst, kw)) or "strom"
+        self.assertEqual("strom", g._mode_ffpkg_to_exfat("a.ffpkg", "d"))
+        self.assertEqual([("a.ffpkg", "d", {"ufs2": True})], aufrufe)
+
+    def test_ffpkg_zu_exfat_faellt_zurueck(self) -> None:
+        for strom, ergebnis in ((False, "strom"), (True, None)):
+            g = GUI.__new__(GUI)
+            g._strom_weg_gewaehlt = lambda s=strom: s
+            g._mode_exfat_umpacken_strom = lambda src, dst, e=ergebnis, **kw: e
+            g._mkdtemp = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("alter weg"))
+            with self.assertRaises(RuntimeError):
+                g._mode_ffpkg_to_exfat("a.ffpkg", "d")
+
+    def test_ffpkg_zu_ffpfsc_mit_einbau_nimmt_den_strom(self) -> None:
+        g = GUI.__new__(GUI)
+        aufrufe: list[tuple] = []
+        g._strom_weg_gewaehlt = lambda: True
+        g._mode_exfat_umpacken_strom = lambda src, dst, **kw: aufrufe.append((src, dst, kw)) or "strom"
+        self.assertEqual("strom", g._mode_abbild_zu_ffpfs("a.ffpkg", "d", quelle="ffpkg", uncompressed=False))
+        self.assertEqual([("a.ffpkg", "d", {"ufs2": True, "ziel": "ffpfsc"})], aufrufe)
+
+    def test_platzbedarf_ffpkg(self) -> None:
+        g = GUI.__new__(GUI)
+        g._strom_weg_gewaehlt = lambda: True
+        g._quellgroesse_ermitteln = lambda src: 100 * 1024 ** 3
+        g._estimate_unpack_space_requirement = lambda src: None
+        g._integration_gewuenscht = lambda: True
+        g._umhuellt_neu_packen = False
+        temp, _ziel, dump = g._platzbedarf_je_quelle("spiel.ffpkg", "exfat")
+        self.assertLess(temp, 10 * 1024 ** 3, "Im Arbeitsordner liegt nicht mehr das entpackte Spiel")
+        self.assertEqual(0, dump)
+        g._strom_weg_gewaehlt = lambda: False
+        self.assertGreaterEqual(g._platzbedarf_je_quelle("spiel.ffpkg", "exfat")[0], 100 * 1024 ** 3)
 
 
 class WegwahlTests(unittest.TestCase):
