@@ -447,27 +447,33 @@ class FensterTests(unittest.TestCase):
         self.assertEqual(1.0, float(info["relx"]))
         self.assertGreater(int(info["x"]), 0)
 
-    def test_der_schalter_ist_nur_bei_zstd_mit_asset_pack_waehlbar(self):
+    def test_der_schalter_ist_bei_zstd_und_lz4_mit_asset_pack_waehlbar(self):
         app = self.app
         self.assertEqual("disabled", self._voll_zustand(), "ohne Haken gesperrt")
         self._pack_frei("lz4")
-        self.assertEqual("disabled", self._voll_zustand(), "bei LZ4 gesperrt")
+        self.assertEqual("normal", self._voll_zustand(), "LZ4 mit Asset-Pack: waehlbar (Strom ohne Zwischenordner)")
         app._ampr_pack_var.set("zstd")
         app._ampr_pack_gewaehlt()
         self.assertEqual("normal", self._voll_zustand(), "zstd mit Asset-Pack: waehlbar")
         self._methode("normal")
         self.assertEqual("disabled", self._voll_zustand(), "bei Normal wieder gesperrt")
 
-    def test_bei_lz4_steht_der_schalter_angehakt_weil_dort_immer_voll_geprueft_wird(self):
+    def test_der_schalter_steht_bei_lz4_nicht_mehr_fest_angehakt(self):
+        """Vorgabe aus (Stichprobe): Er zeigt bei beiden Verfahren die gespeicherte Wahl, nicht mehr ein festes Haekchen bei LZ4."""
         app = self.app
         self.addCleanup(app._save_setting, "ampr_voll_pruefen", False)
         app._save_setting("ampr_voll_pruefen", False)
         self._pack_frei("lz4")
-        self.assertTrue(app._ampr_voll_var.get())
-        self.assertFalse(app._ampr_voll_pruefen(), "gespeichert wird dabei nichts")
+        self.assertFalse(app._ampr_voll_var.get())
+        self.assertFalse(app._ampr_voll_pruefen())
+        app._ampr_voll_var.set(True)
+        app._ampr_voll_gewaehlt()
         app._ampr_pack_var.set("zstd")
         app._ampr_pack_gewaehlt()
-        self.assertFalse(app._ampr_voll_var.get(), "bei zstd zeigt der Schalter die gespeicherte Wahl")
+        self.assertTrue(app._ampr_voll_var.get())
+        app._ampr_pack_var.set("LZ4")
+        app._ampr_pack_gewaehlt()
+        self.assertTrue(app._ampr_voll_var.get(), "bei LZ4 gilt dieselbe gespeicherte Wahl")
 
     def test_die_wahl_wird_gespeichert_und_beim_umschalten_wieder_gezeigt(self):
         app = self.app
@@ -496,7 +502,7 @@ class FensterTests(unittest.TestCase):
         tipp = app._ampr_voll_tooltip
         self.assertEqual(app._t("ampr_pack.voll_pruefen_gesperrt"), tipp.text)
         self._pack_frei("lz4")
-        self.assertEqual(app._t("ampr_pack.voll_pruefen_lz4"), tipp.text)
+        self.assertEqual(app._t("ampr_pack.voll_pruefen_hint"), tipp.text)
         app._ampr_pack_var.set("zstd")
         app._ampr_pack_gewaehlt()
         self.assertEqual(app._t("ampr_pack.voll_pruefen_hint"), tipp.text)

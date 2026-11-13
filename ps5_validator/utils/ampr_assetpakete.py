@@ -301,6 +301,23 @@ NIE_PACKEN: tuple[str, ...] = (
     # Spielplatzhalter (pgc_*_dummy_file) sind oben per Muster abgedeckt.
 )
 
+#: Was bei **ampr-emu-ng** (NG) von :data:`NIE_PACKEN` wegfaellt (Nutzerwunsch 13.11.2026, Vorbild Dump Forge: "pack everything except
+#: system files", ``docs/LZ4.md``). NG bedient normale und libc-Lesezugriffe, Verzeichnislisten und mmap aus den Packs; die Ausnahmen
+#: oben sind an der Konsole mit der Laufzeit von drakmor gemessen (nur AMPR-Lesezugriffe): Filmordner, Shader-Metadaten, Lademenue-Katalog,
+#: Scream-Audio. Es bleiben die Systemwege, ausfuehrbare Dateien, ``.ini``, die AMPR-eigenen Dateien und - vorsichtshalber, die
+#: PlayGo-Schicht liest am Emulator vorbei - ``playgo.pgm``, ``*.packman``, ``pgc_*_dummy_file`` und ``global-metadata.dat``.
+NG_NICHT_MEHR_LOSE: frozenset = frozenset({
+    "movies/**", "**/movies/**", "movie/**", "**/movie/**",
+    "*.texmeshman", "**/*.texmeshman",
+    "load_menu_catalog.log", "**/load_menu_catalog.log",
+    "sounds/scream/_generated/*.bus", "**/sounds/scream/_generated/*.bus",
+    "sounds/scream/_generated/*.dml", "**/sounds/scream/_generated/*.dml",
+    "sounds/scream/_generated/*.gmx", "**/sounds/scream/_generated/*.gmx",
+})
+
+#: Die Ausschlussmuster des Standardprofils fuer NG: :data:`NIE_PACKEN` ohne :data:`NG_NICHT_MEHR_LOSE`, und ohne :data:`LOSE_MUSTER`.
+NIE_PACKEN_NG: tuple[str, ...] = tuple(m for m in NIE_PACKEN if m not in NG_NICHT_MEHR_LOSE)
+
 #: Dateiendungen, die das **Standardprofil** lose laesst: schon verdichtete
 #: Medien, Bilder, Texturen und Archive (LZ4 bringt dort fast nichts), dazu
 #: Konfigdateien, die das Spiel oder das System auch ausserhalb des AMPR EMU
@@ -445,7 +462,8 @@ def variante_nur_packbau(variante: str) -> bool:
 
 def standardprofil_text(arbeiter: int = 0,
                         zusatz_ausschluss: "tuple[str, ...]" = (),
-                        stufe: Any = LZ4_STUFE_VORGABE) -> str:
+                        stufe: Any = LZ4_STUFE_VORGABE,
+                        ng: bool = False) -> str:
     """Ein Packprofil ohne Mitschnitte - vorsichtig, aber vollstaendig.
 
     Die Werte stammen aus der mitgelieferten ``ampr_pack.example.toml``
@@ -467,12 +485,13 @@ def standardprofil_text(arbeiter: int = 0,
         arbeiter: Anzahl der Packvorgaenge auf dem PC. 0 laesst das
             Werkzeug selbst waehlen.
         stufe: LZ4-Stufe 1 bis 12 (:data:`LZ4_STUFE_VORGABE` = 9).
+        ng: Das Profil fuer ampr-emu-ng: alles packen ausser den Systemdateien (:data:`NIE_PACKEN_NG`), ohne :data:`LOSE_MUSTER`
+            (Medien, Bilder, Konfigs und Archive werden mitgepackt) und ohne Auto-Loose - wie Dump Forge.
     """
     # Die festen Muster plus die Filmordner dieses Spiels. Letztere kommen
     # aus dem Ordnerbaum, weil das Werkzeug die Schreibung genau nimmt.
-    ausschluss = "\n".join('  "%s",' % muster
-                           for muster in (*NIE_PACKEN, *LOSE_MUSTER,
-                                          *zusatz_ausschluss))
+    feste = (*NIE_PACKEN_NG,) if ng else (*NIE_PACKEN, *LOSE_MUSTER)
+    ausschluss = "\n".join('  "%s",' % muster for muster in (*feste, *zusatz_ausschluss))
     zeilen = [
         PROFIL_KENNZEILE + " - Packprofil ohne Mitschnitte.",
         "# Einheitlich 64 KiB/mixed: die Herstellerempfehlung fuer unbekannte",
@@ -501,7 +520,7 @@ def standardprofil_text(arbeiter: int = 0,
         "io_neutral_min_savings_ratio = 0.125",
         "",
         "# Grosse, bereits verdichtete Dateien ohne Gewinn bleiben lose.",
-        "auto_loose_large_files = true",
+        "auto_loose_large_files = %s" % ("false" if ng else "true"),
         "auto_loose_hot_files = false",
         'auto_loose_min_file_size = "64MiB"',
         "auto_loose_sample_blocks = 32",
@@ -975,25 +994,29 @@ def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "",
                  if app0 else ()))
 
 
-def profil_schreiben_aus_baum(ziel: str, baum: Any, arbeiter: int = 0, stufe: Any = LZ4_STUFE_VORGABE) -> str:
+def profil_schreiben_aus_baum(ziel: str, baum: Any, arbeiter: int = 0, stufe: Any = LZ4_STUFE_VORGABE,
+                              ng: bool = False) -> str:
     """Wie :func:`profil_schreiben`, nur dass das Spiel ein Lesebaum (:mod:`spielbaum`) ist statt eines Ordners auf der Platte.
 
     Gebraucht der Weg ohne Zwischenordner (``ampr_lz4pack``): Title-ID, Engine, Film-, System- und lose Dateien kommen aus der
-    Dateiliste des Baums; ``param.sfo`` wird aus dem Baum gelesen.
+    Dateiliste des Baums; ``param.sfo`` wird aus dem Baum gelesen. ``ng=True``: Standardprofil fuer ampr-emu-ng
+    (:data:`NIE_PACKEN_NG`): alles packen ausser den Systemdateien, wie Dump Forge; mitgelieferte Titelprofile bleiben davon unberuehrt.
     """
     if os.path.isfile(ziel) and not profil_ist_eigenes(ziel):
         return ziel
 
     def zusatz() -> "tuple[str, ...]":
         dateien, ordner = _baum_merkmale(baum)
+        if ng:                              # nur die Schreibweisen der Systemdateien dieses Spiels, keine Filme und Endungen
+            return systemdateien_aus_dateien(dateien)
         return (*filmordner_aus_ordnern(ordner), *systemdateien_aus_dateien(dateien),
                 *lose_endungen_aus_dateien(dateien))
 
-    return _profil_ablegen(ziel, arbeiter, stufe, lambda: profil_integriert_aus_baum(baum), zusatz)
+    return _profil_ablegen(ziel, arbeiter, stufe, lambda: profil_integriert_aus_baum(baum), zusatz, ng=ng)
 
 
 def _profil_ablegen(ziel: str, arbeiter: int, stufe: Any, integriert: "Callable[[], tuple[str, str]]",
-                    zusatz_ausschluss: "Callable[[], tuple[str, ...]]") -> str:
+                    zusatz_ausschluss: "Callable[[], tuple[str, ...]]", ng: bool = False) -> str:
     """Schreibt das Profil: das mitgelieferte, wenn ``integriert()`` eines nennt, sonst das Standardprofil."""
     ordner = os.path.dirname(os.path.abspath(ziel))
     if ordner:
@@ -1017,7 +1040,7 @@ def _profil_ablegen(ziel: str, arbeiter: int, stufe: Any, integriert: "Callable[
     # Fallback: Standardprofil (vorsichtig, unbekannte Daten)
     zusatz = zusatz_ausschluss()
     with open(ziel, "w", encoding="utf-8", newline="\n") as datei:
-        datei.write(standardprofil_text(arbeiter, zusatz, stufe))
+        datei.write(standardprofil_text(arbeiter, zusatz, stufe, ng=ng))
     return ziel
 
 

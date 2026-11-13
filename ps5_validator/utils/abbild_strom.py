@@ -113,11 +113,12 @@ def _vorbereiten(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", original
     """Die losen Dateien des Baums, die Packdateien als Strom und die Verzeichnisse - fuer jede Art von Ausgabe dasselbe."""
     packer = packer_der(messung)
     gepackt = {rel for rel, _g in auswahl.gepackt}
+    entfallen = entfallende(auswahl)
     vorhanden = baum.suchen()
     for rel in vorhanden:
         if packer.ist_packname(rel):
             raise z.ZstdPackFehler("ampr_zstd.ausgabe_belegt")
-    lose = [(d.rel, d.groesse, d.lesen) for d in baum.dateien() if originale_behalten or d.rel not in gepackt]
+    lose = [(d.rel, d.groesse, d.lesen) for d in baum.dateien() if originale_behalten or d.rel not in entfallen]
     fehlend = [rel for rel in gepackt if rel not in vorhanden]
     if fehlend:
         raise z.ZstdPackFehler("%s fehlt in der Quelle" % fehlend[0])
@@ -128,6 +129,16 @@ def _vorbereiten(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", original
                                          pruefen=pruefen),
                            messung.dateien())
     return lose, dateien, ordner
+
+
+def entfallende(auswahl: Any) -> "set[str]":
+    """Die gepackten Dateien, die ohne ``originale_behalten`` nicht ins Abbild kommen: alle ausser den **leeren**.
+
+    Das LZ4-Werkzeug fuehrt eine leere Datei als gepackte Datei ohne Block. Die PS5 prueft solche Platzhalter aber ausserhalb des
+    Spiels (Schwarzbild bei den Sprachplatzhaltern von Ghost of Yotei, ``ampr_assetpakete.NIE_PACKEN``): Sie bleiben als Datei im Abbild,
+    wie ``ampr_assetpakete.leere_dateien_zurueckschreiben`` es im Weg ueber den Ordner tut.
+    """
+    return {rel for rel, groesse in auswahl.gepackt if groesse > 0}
 
 
 def ist_packname(rel: str) -> bool:
@@ -228,7 +239,7 @@ def abbild_ordner(baum: Any, auswahl: "z.Auswahl | None" = None, originale_behal
     for rel in dateien:
         alle.update(_eltern(rel))
     if auswahl is not None and not originale_behalten:
-        gepackt = {rel for rel, _g in auswahl.gepackt}
+        gepackt = entfallende(auswahl)
         rest = dateien - gepackt
         mit_datei: set[str] = set()
         for rel in rest:
@@ -496,7 +507,7 @@ class Ansicht:
 def abbild_eintraege(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung",
                      originale_behalten: bool = False) -> "list[tuple[str, int]]":
     """``(Pfad, Groesse)`` jeder Datei des fertigen Abbilds: die losen aus dem Baum, dazu Baender und Index."""
-    gepackt = {rel for rel, _g in auswahl.gepackt}
+    gepackt = entfallende(auswahl)
     lose = [(d.rel, d.groesse) for d in baum.dateien() if originale_behalten or d.rel not in gepackt]
     return lose + list(messung.dateien())
 
@@ -512,7 +523,7 @@ def pruef_eintraege(baum: Any, auswahl: "z.Auswahl | None", messung: "z.Messung 
     """
     from ps5_validator.utils.abbild_pruefen import anfang_aus_baumdatei
 
-    gepackt = {rel for rel, _g in auswahl.gepackt} if auswahl is not None else set()
+    gepackt = entfallende(auswahl) if auswahl is not None else set()
     lose = [(d.rel, d.groesse, anfang_aus_baumdatei(d)) for d in baum.dateien() if originale_behalten or d.rel not in gepackt]
     packs = [(name, groesse, None) for name, groesse in messung.dateien()] if messung is not None else []
     return lose + packs

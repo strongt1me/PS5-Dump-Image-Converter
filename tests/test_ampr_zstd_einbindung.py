@@ -35,7 +35,7 @@ SCHLUESSEL = [
     "ampr_zstd.arbeiter", "log.phase_dauer", "phase.entpacken", "phase.integration", "phase.zstd_packen",
     "phase.zstd_pruefen", "phase.zstd_uebernehmen", "phase.zstd_originale", "phase.abbild_bauen",
     "ampr_pack.voll_pruefen", "ampr_pack.voll_pruefen_hint", "ampr_pack.voll_pruefen_gesperrt",
-    "ampr_pack.voll_pruefen_lz4", "ampr_zstd.pruefung_voll", "ampr_zstd.pruefung_stichprobe",
+    "ampr_zstd.pruefung_voll", "ampr_zstd.pruefung_stichprobe",
 ]
 
 

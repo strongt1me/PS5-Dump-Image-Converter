@@ -34377,20 +34377,19 @@ class PS5ConverterGUI:
 
                 # Die Pruefung des Packs wie beim Pack im Ordner (``ampr_zstdpack.pruefen``): "Vollstaendige Pruefung" entpackt jeden
                 # Chunk, sonst eine Stichprobe nach den Regeln der Fast-Pruefung. Hier geschieht es auf dem Weg ins Abbild.
-                lz4_im_strom = abbild_strom.packer_der(messung) is ampr_lz4pack
-                # Bei LZ4 prueft es immer vollstaendig (der Schalter steht dort gesperrt und angehakt, ``_ampr_stufe_combo_schalten``):
-                # Entpacken ist bei LZ4 schnell, und der Weg ueber den Ordner (Packwerkzeug) kennt auch nur die volle Pruefung.
-                if lz4_im_strom or self._ampr_voll_pruefen():
+                packer = abbild_strom.packer_der(messung)
+                lz4_im_strom = packer is ampr_lz4pack
+                if self._ampr_voll_pruefen():
                     pack_pruefen: "bool | frozenset[int]" = True
                     self._append_to_log(self._t(
                         "ampr_pack.strom_pruefung_voll" if lz4_im_strom else "ampr_zstd.pruefung_voll",
                         size=self._fmt_bytes(auswahl.gepackte_bytes)))
                 else:
                     startwert = int.from_bytes(os.urandom(4), "little")
-                    pack_pruefen, geprueft = ampr_zstdpack.stichprobe_chunks(messung, startwert)
+                    pack_pruefen, geprueft = packer.stichprobe_chunks(messung, startwert)
                     self._append_to_log(self._t(
-                        "ampr_zstd.pruefung_stichprobe", checked=self._fmt_bytes(geprueft),
-                        total=self._fmt_bytes(auswahl.gepackte_bytes), seed=startwert))
+                        "ampr_pack.strom_pruefung_stichprobe" if lz4_im_strom else "ampr_zstd.pruefung_stichprobe",
+                        checked=self._fmt_bytes(geprueft), total=self._fmt_bytes(auswahl.gepackte_bytes), seed=startwert))
 
                 def erzeuger(on_layout):
                     return abbild_strom.abbild_strom(
@@ -37033,20 +37032,16 @@ class PS5ConverterGUI:
             tipp = getattr(self, "_ampr_stufe_tooltip", None)
             if tipp is not None:
                 tipp.text = self._t("ampr_pack.stufe_hint" if frei else "ampr_pack.stufe_gesperrt")
-            # "Vollstaendige Pruefung": nur bei zstd waehlbar; bei LZ4 gesperrt und angehakt (dort immer vollstaendig).
+            # "Vollstaendige Pruefung": waehlbar wie das Packverfahren (bei zstd und bei LZ4 im Strom ohne Zwischenordner gilt die
+            # Wahl; Vorgabe aus = Stichprobe). Nur der Weg ueber einen Zwischenordner prueft LZ4 immer ganz (Packwerkzeug), das
+            # steht im Hinweis.
             voll = getattr(self, "ampr_voll_check", None)
             if voll is not None:
-                waehlbar = frei and verfahren == "zstd"
-                self._ampr_voll_var.set(True if verfahren != "zstd" else self._ampr_voll_pruefen())
-                voll.configure(state="normal" if waehlbar else "disabled")
+                self._ampr_voll_var.set(self._ampr_voll_pruefen())
+                voll.configure(state="normal" if frei else "disabled")
                 tipp_voll = getattr(self, "_ampr_voll_tooltip", None)
                 if tipp_voll is not None:
-                    # Ohne Haken/Asset-Pack sagt der Hinweis zuerst, wann der Schalter frei wird; erst danach, dass LZ4 immer
-                    # vollstaendig prueft.
-                    tipp_voll.text = self._t(
-                        "ampr_pack.voll_pruefen_hint" if waehlbar
-                        else "ampr_pack.voll_pruefen_gesperrt" if not frei
-                        else "ampr_pack.voll_pruefen_lz4")
+                    tipp_voll.text = self._t("ampr_pack.voll_pruefen_hint" if frei else "ampr_pack.voll_pruefen_gesperrt")
         except (tk.TclError, AttributeError, KeyError) as exc:
             logger.debug("Packstufe-Feld nicht schaltbar: %s", exc)
 
@@ -37141,7 +37136,8 @@ class PS5ConverterGUI:
         Nutzerwunsch 12.11.2026 ("Vollstaendige Pruefung", Schalter rechts neben der Packstufe). Vorgabe aus: Aufbau, Index und
         Bandkoepfe werden immer ganz geprueft, vom Inhalt eine Stichprobe (``ampr_zstdpack.stichprobe_planen``). Bis v1.9.97
         wurde immer alles verglichen. Gelesen wird die gespeicherte Einstellung, nie eine Tk-Variable (Arbeitsfaden).
-        Bei LZ4 gibt es nur die volle Pruefung (das Packwerkzeug kennt keine Stichprobe; der Strom, Etappe 14, haelt es genauso).
+        Gilt bei zstd und bei LZ4 im Strom ohne Zwischenordner (Etappe 14, ``ampr_lz4pack.stichprobe_chunks``). Nur der Weg ueber einen
+        Zwischenordner prueft LZ4 immer vollstaendig (das Packwerkzeug kennt keine Stichprobe).
         """
         wert = self._load_setting(self._AMPR_VOLL_PRUEFEN_SETTING, False)
         if isinstance(wert, str):
@@ -38355,10 +38351,14 @@ class PS5ConverterGUI:
         try:
             baum = self._strom_ansicht.baum()
             arbeiter_zahl = self._ampr_zstd_arbeiter()
-            # Neben dem Ueberlagerungsordner (im Arbeitsordner, der am Ende weggeraeumt wird), nicht im Spiel.
+            marke = variante.strip().lower()
+            ist_ng = (marke in ampr_assetpakete.ALLROUND_VARIANTEN if marke
+                      else self._ampr_ist_ng_datei(os.path.join(ordner, "fakelib", "libSceAmpr.sprx")))
+            # Neben dem Ueberlagerungsordner (im Arbeitsordner, der am Ende weggeraeumt wird), nicht im Spiel. Mit ampr-emu-ng
+            # (NG) packt das Standardprofil alles ausser den Systemdateien, wie Dump Forge (``ampr_assetpakete.NIE_PACKEN_NG``).
             profil = ampr_assetpakete.profil_schreiben_aus_baum(
                 os.path.join(os.path.dirname(os.path.abspath(ordner)), "ampr_profil", "ampr_pack.toml"), baum,
-                arbeiter=self._ampr_pack_arbeiter(), stufe=stufe)
+                arbeiter=self._ampr_pack_arbeiter(), stufe=stufe, ng=ist_ng)
             if not ampr_assetpakete.profil_ist_eigenes(profil):
                 self._strom_alter_weg = "Packprofil des Anwenders"
                 return False
@@ -38387,8 +38387,10 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t("ampr_pack.systemdatei_gepackt", path=pfad))
                 self._append_to_log(self._t("ampr_pack.systemdatei_folge", count=len(systemdateien)))
                 return False
-            videos = [rel for rel, _g in gewaehlt.gepackt
-                      if any(t.lower() in ampr_assetpakete.FILMORDNER for t in rel.replace("\\", "/").split("/")[:-1])]
+            # Bei NG sind Filme im Band gewollt (NG bedient sie wie jede andere Datei): keine Warnung.
+            videos = [] if ist_ng else [
+                rel for rel, _g in gewaehlt.gepackt
+                if any(t.lower() in ampr_assetpakete.FILMORDNER for t in rel.replace("\\", "/").split("/")[:-1])]
             for pfad in videos[:10]:
                 self._append_to_log(self._t("ampr_pack.video_gepackt", path=pfad))
             if videos:
@@ -38426,9 +38428,6 @@ class PS5ConverterGUI:
             # aus den Packs. Die Laufzeit von drakmor liest nur ueber AMPR; ohne Konsolen-Mitschnitt weiss niemand, was der Titel am
             # Emulator vorbei liest, also bleiben die Originale (``_ampr_direktleser_riegel``), auch wenn "weglassen" gewaehlt war.
             if getattr(self, "_ampr_originale_weglassen", False):
-                marke = variante.strip().lower()
-                ist_ng = (marke in ampr_assetpakete.ALLROUND_VARIANTEN if marke
-                          else self._ampr_ist_ng_datei(os.path.join(ordner, "fakelib", "libSceAmpr.sprx")))
                 if not ist_ng:
                     self._ampr_direktleser_riegel(ordner, True, baum)
                     self._ampr_originale_weglassen = False

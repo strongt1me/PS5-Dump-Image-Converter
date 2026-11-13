@@ -652,12 +652,12 @@ class _HauptGrundlage(unittest.TestCase):
 
 class StromWegTests(_HauptGrundlage):
     def test_ganzer_weg_aus_exfat(self) -> None:
-        g, ok = self.lauf()
+        g, ok = self.lauf(lib=b"drakmor-ampr-emu-lib" * 30)
         self.assertTrue(ok, "\n".join(g._log_lines))
         ausgabe = os.path.join(self.ziel, "spiel.exfat")
         with sb.ExfatBaum(ausgabe) as neu:
             dateien = neu.suchen()
-            self.assertEqual(NG_LIB, b"".join(dateien["fakelib/libSceAmpr.sprx"].lesen()))
+            self.assertEqual(b"drakmor-ampr-emu-lib" * 30, b"".join(dateien["fakelib/libSceAmpr.sprx"].lesen()))
             self.assertIn("ampr_assets.index", dateien)
             self.assertIn("ampr_assets.index.crc", dateien)
             self.assertIn("ampr_assets.index.runtime", dateien)
@@ -677,6 +677,43 @@ class StromWegTests(_HauptGrundlage):
             self.assertNotIn("sce_sys/param.json", packen)
         self.assertEqual([], [z for z in ap.systemdateien_im_pack(zeilen)])
 
+    def test_ng_packt_alles_ausser_den_systemdateien_wie_forge(self) -> None:
+        """Mit ampr-emu-ng: Texte, Filme und Konfigs kommen mit in die Baender; Systemwege, ``.ini`` und leere Dateien bleiben."""
+        g, ok = self.lauf(weglassen=True)
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        with sb.ExfatBaum(os.path.join(self.ziel, "spiel.exfat")) as neu:
+            dateien = neu.suchen()
+            gepackt = self.packs_ausgelesen(dateien)
+            manifest = os.path.join(gepackt, ap.MANIFEST_NAME)
+            ap.pruefen(manifest, app0=self.spiel, melden=lambda _z: None)
+            zeilen = ap.liste(manifest, melden=lambda _z: None)
+            packen = {z["path"][len("/app0/"):] for z in zeilen if z.get("packed")}
+            for rel in ("Media/text.txt", "movies/film.bin", "Media/zufall.bin", "data/genau.bin", "data/klein.cfg",
+                        "Media/text.txt"):
+                self.assertIn(rel, packen, rel)
+            for rel in ("eboot.bin", "sce_sys/param.json", "sce_sys/icon0.png", "sce_module/libc.prx"):
+                self.assertNotIn(rel, packen, rel)
+                self.assertIn(rel, dateien, rel)
+            # Die gepackten Originale fehlen im Abbild, die losen nicht
+            for rel in ("Media/text.txt", "movies/film.bin", "data/klein.cfg"):
+                self.assertNotIn(rel, dateien, rel)
+        self.assertFalse(any("Video im Band" in z for z in g._log_lines))
+
+    def test_pruefung_vorgabe_stichprobe_und_auf_wunsch_vollstaendig(self) -> None:
+        """Die Wahl "Vollstaendige Pruefung" gilt auch bei LZ4: Vorgabe aus = Stichprobe, an = jeder Block."""
+        stich, ok = self.lauf()
+        self.assertTrue(ok, "\n".join(stich._log_lines))
+        text = "\n".join(stich._log_lines)
+        self.assertIn("Stichprobe", text)
+        self.assertNotIn("Prüfung: vollständig", text)
+        voll = _gui(self.tmp)
+        voll._ampr_voll_pruefen = lambda: True
+        shutil.rmtree(self.ziel)
+        os.makedirs(self.ziel)
+        ok = voll._mode_exfat_umpacken_strom(self.quelle, self.ziel)
+        self.assertTrue(ok, "\n".join(voll._log_lines))
+        self.assertIn("Prüfung: vollständig", "\n".join(voll._log_lines))
+
     def test_ng_laesst_die_gepackten_originale_weg(self) -> None:
         """Mit ampr-emu-ng wie bei zstd und Dump Forge: gepackte Originale kommen nicht ins Abbild, nur in die Baender."""
         g, ok = self.lauf(weglassen=True)
@@ -684,10 +721,10 @@ class StromWegTests(_HauptGrundlage):
         self.assertTrue(g._ampr_originale_weglassen)
         with sb.ExfatBaum(os.path.join(self.ziel, "spiel.exfat")) as neu:
             dateien = neu.suchen()
-            for rel in ("Media/zufall.bin", "data/genau.bin"):
+            for rel in ("Media/zufall.bin", "data/genau.bin", "Media/text.txt", "movies/film.bin", "data/klein.cfg"):
                 self.assertNotIn(rel, dateien, rel)
-            # Lose Dateien, Systemdateien und leere Dateien bleiben
-            for rel in ("Media/text.txt", "movies/film.bin", "eboot.bin", "data/klein.cfg"):
+            # Systemdateien und leere Dateien bleiben
+            for rel in ("eboot.bin", "sce_sys/param.json", "sce_module/libc.prx", "data/leer.bin"):
                 self.assertIn(rel, dateien, rel)
             # Die Baender tragen den Inhalt: das Werkzeug liest sie und vergleicht gegen den Ausgangsordner
             gepackt = self.packs_ausgelesen(dateien)
@@ -918,12 +955,13 @@ class VorabTests(_HauptGrundlage):
         """Erst ``auswaehlen`` sieht, dass mehr als eine Gruppe gepackte Dateien hat: Der Lauf kehrt um, ohne dass etwas liegen bleibt."""
         echt = ap.profil_schreiben_aus_baum
 
-        def zwei_gruppen(ziel, baum, arbeiter=0, stufe=ap.LZ4_STUFE_VORGABE):
-            echt(ziel, baum, arbeiter, stufe)
+        def zwei_gruppen(ziel, baum, arbeiter=0, stufe=ap.LZ4_STUFE_VORGABE, ng=False):
+            echt(ziel, baum, arbeiter, stufe, ng)
             text = Path(ziel).read_text(encoding="utf-8")
-            text = text.replace('[[rule]]\naction = "compress"', '[groups.zweite]\npack_count = 1\nassignment = "balanced"\n'
-                                'max_pack_size = "8GiB"\n\n[[rule]]\naction = "compress"\ninclude = ["Media/**"]\n'
-                                'block_size = "64KiB"\ngroup = "zweite"\nlayout = "mixed"\n\n[[rule]]\naction = "compress"', 1)
+            # Die letzte passende Regel gewinnt: eine zweite Gruppe fuer Media/ muss hinter der Hauptregel stehen.
+            text += ('\n[groups.zweite]\npack_count = 1\nassignment = "balanced"\nmax_pack_size = "8GiB"\n\n'
+                     '[[rule]]\naction = "compress"\ninclude = ["Media/**"]\nblock_size = "64KiB"\n'
+                     'group = "zweite"\nlayout = "mixed"\n')
             Path(ziel).write_text(text, encoding="utf-8", newline="\n")
             return ziel
         with mock.patch.object(ap, "profil_schreiben_aus_baum", zwei_gruppen):
@@ -966,7 +1004,7 @@ class MessenImHauptmodulTests(_HauptGrundlage):
         text = ap.standardprofil_text(arbeiter=2)
         text = text.replace("*.packman", "*.nichtda").replace("playgo.pgm", "nichtda.pgm")
 
-        def profil_ohne_ausschluss(ziel, baum, arbeiter=0, stufe=9):
+        def profil_ohne_ausschluss(ziel, baum, arbeiter=0, stufe=9, ng=False):
             os.makedirs(os.path.dirname(ziel), exist_ok=True)
             Path(ziel).write_text(text, encoding="utf-8", newline="\n")
             return ziel
@@ -991,7 +1029,7 @@ class MessenImHauptmodulTests(_HauptGrundlage):
         _schreiben(self.spiel, {"Media/Videos/x.bin": b"V" * 100_000})
         g, index = self.vorbereiten()
 
-        def profil_ohne_filmordner(ziel, baum, arbeiter=0, stufe=9):
+        def profil_ohne_filmordner(ziel, baum, arbeiter=0, stufe=9, ng=False):
             os.makedirs(os.path.dirname(ziel), exist_ok=True)
             Path(ziel).write_text(ap.standardprofil_text(arbeiter=2), encoding="utf-8", newline="\n")
             return ziel
@@ -1002,7 +1040,7 @@ class MessenImHauptmodulTests(_HauptGrundlage):
     def test_ein_profil_des_anwenders_geht_zum_alten_weg(self) -> None:
         g, index = self.vorbereiten()
 
-        def anwender(ziel, baum, arbeiter=0, stufe=9):
+        def anwender(ziel, baum, arbeiter=0, stufe=9, ng=False):
             os.makedirs(os.path.dirname(ziel), exist_ok=True)
             Path(ziel).write_text("# aus Mitschnitten\n", encoding="utf-8")
             return ziel
