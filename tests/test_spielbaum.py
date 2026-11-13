@@ -106,6 +106,41 @@ class OrdnerBaumTests(_Grundlage):
             fh.write(b"x")
         self.assertNotEqual(vorher, baum.stempel())
 
+    def test_unveraendert_vor_der_ersten_auflistung(self) -> None:
+        baum = sb.OrdnerBaum(self.ordner)
+        self.assertTrue(baum.unveraendert())                    # nichts gemerkt, nichts zu vergleichen
+
+    def test_unveraendert_nach_dem_oeffnen(self) -> None:
+        baum = sb.OrdnerBaum(self.ordner)
+        baum.dateien()
+        self.assertTrue(baum.unveraendert())
+        self.assertTrue(baum.unveraendert())                    # wiederholbar, aendert den gemerkten Stand nicht
+
+    def test_geaenderte_datei(self) -> None:
+        baum = sb.OrdnerBaum(self.ordner)
+        baum.dateien()
+        with open(os.path.join(self.ordner, "eboot.bin"), "ab") as fh:
+            fh.write(b"x")
+        self.assertFalse(baum.unveraendert())
+
+    def test_neue_und_fehlende_datei(self) -> None:
+        baum = sb.OrdnerBaum(self.ordner)
+        baum.dateien()
+        neu = os.path.join(self.ordner, "data", "neu.bin")
+        with open(neu, "wb") as fh:
+            fh.write(b"n")
+        self.assertFalse(baum.unveraendert(), "eine dazugekommene Datei zaehlt als Aenderung")
+        os.remove(neu)
+        self.assertTrue(baum.unveraendert())
+        os.remove(os.path.join(self.ordner, "eboot.bin"))
+        self.assertFalse(baum.unveraendert(), "eine fehlende Datei zaehlt als Aenderung")
+
+    def test_ordner_verschwunden(self) -> None:
+        baum = sb.OrdnerBaum(self.ordner)
+        baum.dateien()
+        shutil.rmtree(self.ordner)
+        self.assertFalse(baum.unveraendert())
+
 
 class ExfatBaumTests(_Grundlage):
     def test_wie_der_ordner(self) -> None:

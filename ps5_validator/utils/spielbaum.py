@@ -86,6 +86,7 @@ class OrdnerBaum(_Baum):
         self._ignoriert = ignoriert
         self.uebersprungen: list[str] = []
         self._dateien: "list[BaumDatei] | None" = None
+        self._stempel_oeffnen: "tuple | None" = None
 
     def _leser_fuer(self, voll: str) -> Callable[[int], Iterator[bytes]]:
         def lesen(stueck: int) -> Iterator[bytes]:
@@ -115,6 +116,8 @@ class OrdnerBaum(_Baum):
                 gefunden.append(BaumDatei(rel, os.path.getsize(voll), self._leser_fuer(voll)))
         gefunden.sort(key=lambda d: d.rel)
         self._dateien = gefunden
+        # Der Stand beim Oeffnen (= beim ersten Auflisten), gegen den :meth:`unveraendert` spaeter vergleicht.
+        self._stempel_oeffnen = self.stempel()
         return gefunden
 
     def stempel(self) -> tuple:
@@ -128,6 +131,18 @@ class OrdnerBaum(_Baum):
                 continue
             zeilen.append((d.rel, st.st_size, st.st_mtime_ns))
         return ("ordner", self.wurzel, tuple(zeilen))
+
+    def unveraendert(self) -> bool:
+        """Ob die Dateien noch so sind wie beim ersten Auflisten (Pfad, Groesse, Aenderungszeit); neue oder fehlende Dateien zaehlen mit."""
+        if self._stempel_oeffnen is None:
+            return True
+        # Neu auflisten: eine Datei, die dazugekommen ist, steht nicht in der gemerkten Liste.
+        try:
+            jetzt = OrdnerBaum(self.wurzel, ignoriert=self._ignoriert)
+            jetzt.dateien()                       # merkt den Stand dieses Augenblicks in ``_stempel_oeffnen``
+            return jetzt._stempel_oeffnen == self._stempel_oeffnen
+        except (OSError, BaumFehler):
+            return False
 
 
 class ExfatBaum(_Baum):

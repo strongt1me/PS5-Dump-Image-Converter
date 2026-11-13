@@ -349,6 +349,167 @@ class StromWegTests(_Grundlage):
                         "\n".join(g._log_lines))
 
 
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class OrdnerStromTests(_Grundlage):
+    """Etappe 6: Dump-Ordner -> ``.exfat`` mit zstd-Asset-Pack, ohne Arbeitskopie des Spiels."""
+
+    def lauf(self, **kw):
+        g = _gui(self.tmp, **kw)
+        return g, g._mode_exfat_umpacken_strom(self.spiel, self.ziel, ordner=True)
+
+    def _abzug(self) -> dict[str, tuple[int, int]]:
+        """Pfad -> (Groesse, Aenderungszeit) aller Dateien des Spielordners."""
+        erg = {}
+        for wurzel, _o, namen in os.walk(self.spiel):
+            for n in namen:
+                voll = os.path.join(wurzel, n)
+                st = os.stat(voll)
+                erg[os.path.relpath(voll, self.spiel)] = (st.st_size, st.st_mtime_ns)
+        return erg
+
+    def test_ganzer_weg_gleicht_dem_exfat_weg(self) -> None:
+        g, ok = self.lauf()
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        ausgabe = os.path.join(self.ziel, "spiel.exfat")
+        self.assertTrue(os.path.isfile(ausgabe))
+        # Dasselbe Ergebnis wie aus der .exfat-Quelle desselben Spiels (Ablauf, Packs, Index byteweise)
+        ziel2 = os.path.join(self.tmp, "ziel2")
+        os.makedirs(ziel2)
+        g2 = _gui(self.tmp)
+        self.assertTrue(g2._mode_exfat_umpacken_strom(self.quelle, ziel2), "\n".join(g2._log_lines))
+        with sb.ExfatBaum(ausgabe) as a, sb.ExfatBaum(os.path.join(ziel2, "spiel.exfat")) as b:
+            da, db = a.suchen(), b.suchen()
+            self.assertEqual(sorted(da), sorted(db))
+            for rel in da:
+                if rel in ("sce_sys/param.json", "sce_sys/param.json.alt"):
+                    continue                         # die contentId steht in beiden, aber nicht notwendig gleich
+                self.assertEqual(b"".join(db[rel].lesen()), b"".join(da[rel].lesen()), rel)
+            for rel in ("eboot.bin", "sce_sys/icon0.png"):
+                self.assertEqual(self.inhalt[rel], b"".join(da[rel].lesen()), rel)
+            self.assertEqual(NG_LIB, b"".join(da["fakelib/libSceAmpr.sprx"].lesen()))
+            self.assertNotIn("Media/text.txt", da)               # gepackt, Original weg
+            self.assertIn("ampr_zstd-000.pak", da)
+
+    def test_ordner_bleibt_unberuehrt_und_nichts_im_temp(self) -> None:
+        vorher = self._abzug()
+        g, ok = self.lauf()
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        self.assertEqual(vorher, self._abzug(), "Der Spielordner des Anwenders wurde veraendert")
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+        self.assertEqual(["spiel.exfat"], os.listdir(self.ziel))
+
+    def test_einbau_bekommt_den_ordner_als_herkunft(self) -> None:
+        """Eigenes Packprofil und DLC-Nachbarn werden neben dem Spielordner gesucht (``herkunft``), eine Arbeitskopie gibt es nicht."""
+        g = _gui(self.tmp)
+        gesehen = {}
+        urspruenglich = g._integration_anwenden
+
+        def integration(ordner, **k):
+            gesehen.update(k)
+            gesehen["ordner"] = ordner
+            return urspruenglich(ordner, **k)
+        g._integration_anwenden = integration
+        self.assertTrue(g._mode_exfat_umpacken_strom(self.spiel, self.ziel, ordner=True))
+        self.assertEqual(self.spiel, gesehen["herkunft"])
+        self.assertNotEqual(os.path.abspath(self.spiel), os.path.abspath(gesehen["ordner"]))
+        self.assertNotIn("ist_quellordner", gesehen)                         # nie nach einer Arbeitskopie fragen
+
+    def test_exfat_quelle_gibt_keine_herkunft(self) -> None:
+        g = _gui(self.tmp)
+        gesehen = {}
+        urspruenglich = g._integration_anwenden
+        g._integration_anwenden = lambda ordner, **k: (gesehen.update(k), urspruenglich(ordner, **k))[1]
+        self.assertTrue(g._mode_exfat_umpacken_strom(self.quelle, self.ziel))
+        self.assertEqual("", gesehen["herkunft"])
+
+    def test_ausgabename_aus_dem_ordnernamen(self) -> None:
+        andere = os.path.join(self.tmp, "Mein Spiel 1.05")
+        os.rename(self.spiel, andere)
+        self.spiel = andere
+        g, ok = self.lauf()
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        self.assertEqual(["Mein Spiel 1.05.exfat"], os.listdir(self.ziel))
+
+    def test_packs_schon_im_ordner_bleibt_beim_alten_weg(self) -> None:
+        Path(self.spiel, "ampr_zstd.index").write_bytes(b"alt")
+        g, ergebnis = self.lauf()
+        self.assertIsNone(ergebnis)
+        self.assertEqual([], os.listdir(self.ziel))
+
+    def test_verweise_im_ordner_bleiben_beim_alten_weg(self) -> None:
+        """Ein Verweis (hier: eine Datei, die ``islink`` als Verweis meldet - echte Symlinks brauchen unter Windows Rechte)."""
+        from unittest import mock
+        Path(self.spiel, "verweis.bin").write_bytes(b"x")
+        echt = os.path.islink
+        with mock.patch("os.path.islink", side_effect=lambda p: os.fspath(p).endswith("verweis.bin") or echt(p)):
+            g, ergebnis = self.lauf()
+        self.assertIsNone(ergebnis)
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertTrue(any("Verweise" in z_ or "links" in z_ for z_ in g._log_lines), "\n".join(g._log_lines))
+
+    def test_leerer_ordner_bleibt_beim_alten_weg(self) -> None:
+        leer = os.path.join(self.tmp, "leer")
+        os.makedirs(leer)
+        g = _gui(self.tmp)
+        self.assertIsNone(g._mode_exfat_umpacken_strom(leer, self.ziel, ordner=True))
+
+    def test_kein_ordner(self) -> None:
+        g = _gui(self.tmp)
+        self.assertIsNone(g._mode_exfat_umpacken_strom(os.path.join(self.tmp, "gibtsnicht"), self.ziel, ordner=True))
+
+    def test_ordner_aendert_sich_waehrend_des_laufs(self) -> None:
+        g = _gui(self.tmp)
+        urspruenglich = g._integration_anwenden
+
+        def integration(ordner, **k):
+            erg = urspruenglich(ordner, **k)
+            Path(self.spiel, "data", "neu.bin").write_bytes(b"jemand hat etwas abgelegt")
+            return erg
+        g._integration_anwenden = integration
+        self.assertFalse(g._mode_exfat_umpacken_strom(self.spiel, self.ziel, ordner=True))
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_abbruch_laesst_nichts_zurueck(self) -> None:
+        g = _gui(self.tmp)
+
+        def abbrechen(prozent, phase):
+            g.is_running = False
+        g._ampr_pack_fortschritt = abbrechen
+        self.assertFalse(g._mode_exfat_umpacken_strom(self.spiel, self.ziel, ordner=True))
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_folder_to_exfat_nimmt_den_strom_zuerst(self) -> None:
+        g = GUI.__new__(GUI)
+        g._strom_weg_gewaehlt = lambda: True
+        aufrufe = []
+        g._mode_exfat_umpacken_strom = lambda src, dst, ordner=False: aufrufe.append((src, dst, ordner)) or "strom"
+        self.assertEqual("strom", g._mode_folder_to_exfat("a", "b"))
+        self.assertEqual([("a", "b", True)], aufrufe)
+
+    def test_folder_to_exfat_faellt_auf_den_alten_weg_zurueck(self) -> None:
+        g = GUI.__new__(GUI)
+        g._strom_weg_gewaehlt = lambda: True
+        g._mode_exfat_umpacken_strom = lambda src, dst, ordner=False: None
+        g._ausgabe_stamm = lambda *a, **k: "x"
+        g._integration_anwenden = lambda src, **k: ""                       # der alte Weg beginnt hier und endet gleich
+        self.assertFalse(g._mode_folder_to_exfat("a", "b"))
+
+    def test_platzbedarf_fuer_ordner_ohne_arbeitskopie(self) -> None:
+        g = GUI.__new__(GUI)
+        g._strom_weg_gewaehlt = lambda: True
+        g._quellgroesse_ermitteln = lambda src: 150 * 1024 ** 3
+        g._estimate_unpack_space_requirement = lambda src: None
+        g._integration_gewuenscht = lambda: True
+        g._umhuellt_neu_packen = False
+        temp, ziel, dump = g._platzbedarf_je_quelle(self.spiel, "exfat")
+        self.assertLess(temp, 10 * 1024 ** 3, "Eine Arbeitskopie des Spiels darf nicht mehr eingerechnet werden")
+        self.assertEqual(0, dump)
+        g._strom_weg_gewaehlt = lambda: False
+        self.assertGreater(g._platzbedarf_je_quelle(self.spiel, "exfat")[0], 150 * 1024 ** 3)
+
+
 class WegwahlTests(unittest.TestCase):
     def _probe(self, **kw):
         g = GUI.__new__(GUI)

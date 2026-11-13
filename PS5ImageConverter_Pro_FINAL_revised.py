@@ -8121,7 +8121,8 @@ class PS5ConverterGUI:
         # Systemdateien fuer den Einbau, ans Ziel kommt das neue Abbild (hoechstens so gross wie die Quelle, mit zstd meist
         # deutlich kleiner). Der Faktor fuer das Ziel bleibt der der .exFAT - mit Sicherheitsrand.
         waehle_strom = getattr(self, "_strom_weg_gewaehlt", None)
-        if target_type == "exfat" and src.lower().endswith(".exfat") and callable(waehle_strom) and waehle_strom():
+        if (target_type == "exfat" and (src.lower().endswith(".exfat") or os.path.isdir(src))
+                and callable(waehle_strom) and waehle_strom()):
             temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
             return temp, int(quelle * self._PLATZFAKTOR_ZIEL["exfat"]), 0
 
@@ -34023,8 +34024,11 @@ class PS5ConverterGUI:
             logger.debug("Strom-Weg nicht entscheidbar: %s", exc)
             return False
 
-    def _mode_exfat_umpacken_strom(self, src: str, dst: str) -> "bool | None":
+    def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False) -> "bool | None":
         """``.exfat`` mit zstd-Asset-Pack neu bauen, **ohne** das Spiel zu entpacken (Stufe 3, Dump-Forge-Vorbild).
+
+        ``ordner=True``: Die Quelle ist ein Dump-Ordner (``spielbaum.OrdnerBaum``) statt einer ``.exfat`` - derselbe Weg, nur
+        ohne Arbeitskopie: Der Ordner des Anwenders wird nur gelesen, nie veraendert (Etappe 6, :meth:`_mode_folder_to_exfat`).
 
         Die Quelle wird nur gelesen (``spielbaum.ExfatBaum``). In einen kleinen Ueberlagerungsordner kommen nur die
         Systemdateien, die der Einbau braucht (``abbild_strom.schatten_fuellen``); Backport, Fake-Signatur, DLC EMU und
@@ -34036,7 +34040,9 @@ class PS5ConverterGUI:
             ``True``/``False`` wie die anderen Wege; ``None``, wenn dieser Weg gar nicht erst anfaengt und der bisherige
             laufen soll (Quelle vom Leser nicht lesbar, Packs schon in der Quelle).
         """
-        base = self._ausgabe_stamm(src, os.path.splitext(os.path.basename(src))[0], "exfat")
+        standard = (os.path.basename(os.path.normpath(src)) if ordner
+                    else os.path.splitext(os.path.basename(src))[0])
+        base = self._ausgabe_stamm(src, standard, "exfat")
         final_output = os.path.join(dst, base + ".exfat")
         mkpfs_parent = self._extract_embedded_mkpfs()
         if not mkpfs_parent:
@@ -34052,10 +34058,18 @@ class PS5ConverterGUI:
         temp_root = ""
         try:
             try:
-                quelle = spielbaum.ExfatBaum(src, mkpfs_ordner=mkpfs_parent, ignoriert=is_ignored_name)
+                if ordner:
+                    quelle = spielbaum.OrdnerBaum(src, ignoriert=is_ignored_name)
+                else:
+                    quelle = spielbaum.ExfatBaum(src, mkpfs_ordner=mkpfs_parent, ignoriert=is_ignored_name)
                 dateien = quelle.dateien()
             except (spielbaum.BaumFehler, OSError) as exc:
                 self._append_to_log(self._t("log.exfat_strom_alter_weg", error=exc))
+                return None
+            if ordner and (quelle.uebersprungen or not dateien):
+                # Verweise und Sonderdateien kann das exFAT-Abbild nicht fassen, ein leerer Ordner ist kein Spiel: Der bisherige
+                # Weg meldet beides mit seinem eigenen Text.
+                self._append_to_log(self._t("log.exfat_strom_ordner_alter_weg"))
                 return None
             if any(ampr_zstdpack.ist_packname(d.rel) for d in dateien):
                 self._append_to_log(self._t("log.exfat_strom_packs_da"))
@@ -34073,8 +34087,10 @@ class PS5ConverterGUI:
             self.task_final_output_path = final_output
             self._append_to_log(self._t(
                 "log.exfat_strom_start", quelle=os.path.basename(src), ziel=os.path.basename(final_output)))
-            self.progress_engine.start_task(0, self._t("progress.task.exfat_umpacken"))
-            self.progress_engine.begin_prepare(self._t("progress.prepare.strom_lesen"))
+            self.progress_engine.start_task(
+                0, self._t("progress.task.dump_to_exfat" if ordner else "progress.task.exfat_umpacken"))
+            self.progress_engine.begin_prepare(
+                self._t("progress.prepare.analyze_source_folder" if ordner else "progress.prepare.strom_lesen"))
             self._stufen_neu("exfat_strom")
 
             t_ueber = self._stufe_start("phase.ueberlagerung")
@@ -34097,7 +34113,9 @@ class PS5ConverterGUI:
             self._strom_ansicht = abbild_strom.Ansicht(quelle, schatten, abgelegt, ignoriert=is_ignored_name)
             self._strom_plan = None
             t_einbau = self._stufe_start("phase.integration")
-            if not self._integration_anwenden(schatten):
+            # ``herkunft``: Bei einem Ordner als Quelle merkt sich der Einbau, woher der Lauf kommt (ein eigenes Packprofil neben
+            # dem Spielordner), und fragt nicht nach einer Arbeitskopie - der Ueberlagerungsordner ist ohnehin eine.
+            if not self._integration_anwenden(schatten, herkunft=src if ordner else ""):
                 return False
             self._phase_dauer_melden("phase.integration", t_einbau)
 
@@ -34160,7 +34178,15 @@ class PS5ConverterGUI:
                 _rmtree_force(temp_root)
 
     def _mode_folder_to_exfat(self, src: str, dst: str) -> bool:
-        """Erstellt aus einem Dump-Ordner direkt ein .exFAT-Image."""
+        """Erstellt aus einem Dump-Ordner direkt ein .exFAT-Image.
+
+        Mit AMPR EMU NG und zstd-Packs ohne Arbeitskopie (Stufe 3, Etappe 6): :meth:`_mode_exfat_umpacken_strom` liest den
+        Ordner nur und schreibt das Abbild direkt. Nur wenn der nicht passt (Packs schon im Ordner, Verweise), laeuft es wie bisher.
+        """
+        if self._strom_weg_gewaehlt():
+            ergebnis = self._mode_exfat_umpacken_strom(src, dst, ordner=True)
+            if ergebnis is not None:
+                return ergebnis
         base_name = self._ausgabe_stamm(src, os.path.basename(os.path.normpath(src)), "exfat")
         final_output = os.path.join(dst, f"{base_name}.exfat")
         # Die beiden Kaestchen in der Pfad-Karte greifen hier: Was integriert
