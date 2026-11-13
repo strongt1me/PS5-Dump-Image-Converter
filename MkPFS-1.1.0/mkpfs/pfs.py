@@ -22,7 +22,7 @@ import unicodedata
 import uuid
 import zlib as _zlib
 from collections import deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -787,6 +787,8 @@ class FileNode:
     gain_pct: float = 0.0
     hypothetical_compressed_size: int = 0
     inode: Inode | None = None
+    #: Projekt-Zutat (Dateiliste statt Ordner): liefert die Bytes einer Datei, die nicht auf der Platte liegen muss.
+    opener: Callable[[], Iterator[bytes]] | None = None
 
 
 def _generate_safe_single_file_fallback_stem() -> str:
@@ -1900,6 +1902,32 @@ def write_source_to_offset(out: BinaryIO, source_path: Path, payload_size: int, 
         )
 
 
+def write_stream_to_offset(
+    out: BinaryIO, opener: Callable[[], Iterator[bytes]], payload_size: int, offset: int
+) -> None:
+    """Projekt-Zutat: wie ``write_source_to_offset``, aber die Bytes kommen aus einem Oeffner statt aus einer Datei.
+
+    Die Summe der gelieferten Bytes muss ``payload_size`` sein; sonst bliebe eine Luecke oder ein Rest im Abbild.
+    """
+    if payload_size <= 0:
+        return
+    out.seek(offset)
+    written: int = 0
+    stream: Iterator[bytes] = iter(opener())
+    try:
+        for chunk in stream:
+            if written + len(chunk) > payload_size:
+                raise BuildError(f"Source stream is longer than its announced size ({payload_size} bytes)")
+            out.write(chunk)
+            written += len(chunk)
+    finally:
+        close = getattr(stream, "close", None)
+        if callable(close):
+            close()
+    if written != payload_size:
+        raise BuildError(f"Source stream ended after {written} of {payload_size} bytes")
+
+
 def _drain_compression_progress_queue(progress_queue: SupportsIntQueue) -> int:
     """Drain queued compression progress deltas.
 
@@ -2870,6 +2898,79 @@ def scan_source_tree(root: Path, progress: Progress) -> tuple[dict[str, DirNode]
     return dirs, files, total
 
 
+def scan_liste(
+    eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]],
+    progress: Progress,
+) -> tuple[dict[str, DirNode], dict[str, FileNode], int]:
+    """Projekt-Zutat: dieselben Knoten wie ``scan_source_tree``, aber aus einer Liste ``(Pfad, Groesse, Oeffner)``.
+
+    ``Pfad`` nutzt ``/`` und ist relativ zur Abbildwurzel. Wie im Ordnerweg fallen Betriebssystem-Dateien
+    (``is_ignored_name``) weg und Nicht-ASCII-Namen sind ein Fehler; leere Verzeichnisse kennt ein flaches PFS nie.
+    Sonst unbrauchbare Pfade (leer, ``.``/``..``, doppelt) sind ebenfalls ein Fehler - der Ordnerweg kann sie nicht erzeugen.
+    """
+    progress.status("\nDiscovering files...")
+    liste: list[tuple[str, int, Callable[[], Iterator[bytes]]]] = []
+    unzulaessig: list[str] = []
+    non_ascii: list[str] = []
+    for pfad, groesse, oeffner in eintraege:
+        teile = pfad.split("/")
+        if any(t in ("", ".", "..") or "\\" in t for t in teile):
+            unzulaessig.append(pfad)
+            continue
+        if any(is_ignored_name(t) for t in teile):
+            continue
+        if not all(t.isascii() for t in teile):
+            non_ascii.append(pfad)
+            continue
+        liste.append((pfad, int(groesse), oeffner))
+    if non_ascii:
+        offenders: str = "\n  ".join(non_ascii)
+        raise BuildError(
+            f"Source list contains {len(non_ascii)} file(s) with non-ASCII names."
+            f" PFS images only support ASCII filenames:\n  {offenders}"
+        )
+    if unzulaessig:
+        raise BuildError(f"Source list contains {len(unzulaessig)} unusable path(s): {', '.join(unzulaessig[:5])}")
+    liste.sort(key=lambda e: e[0].lower())
+
+    dirs: dict[str, DirNode] = {"": DirNode(rel_dir="", name="uroot", parent_rel_dir=None)}
+    files: dict[str, FileNode] = {}
+    total: int = len(liste)
+    total_bytes: int = 0
+    for i, (rel, raw_size, oeffner) in enumerate(liste, start=1):
+        if rel in files:
+            raise BuildError(f"Source list names '{rel}' twice")
+        parts: list[str] = rel.split("/")[:-1]
+        curr: str = ""
+        for part in parts:
+            next_rel: str = f"{curr}/{part}" if curr else part
+            if next_rel not in dirs:
+                if next_rel in files:
+                    raise BuildError(f"Source list uses '{next_rel}' as a file and as a directory")
+                dirs[next_rel] = DirNode(rel_dir=next_rel, name=part, parent_rel_dir=curr)
+                dirs[curr].children_dirs.append(next_rel)
+            curr = next_rel
+        if rel in dirs:
+            raise BuildError(f"Source list uses '{rel}' as a file and as a directory")
+        total_bytes += raw_size
+        files[rel] = FileNode(
+            rel_path=rel,
+            abs_path=Path(rel),
+            parent_rel_dir=curr,
+            name=rel.rsplit("/", 1)[-1],
+            raw_size=raw_size,
+            opener=oeffner,
+        )
+        dirs[curr].children_files.append(rel)
+        progress.step("scan", i, total, bytes_processed=total_bytes)
+
+    for d in dirs.values():
+        d.children_dirs.sort(key=str.lower)
+        d.children_files.sort(key=str.lower)
+
+    return dirs, files, total
+
+
 def signed_inode_sig_offset(inode_number: int, ptr_index: int, block_size: int, inode_bits: int) -> int:
     """Compute the file offset of a signed inode pointer signature entry.
 
@@ -3225,8 +3326,17 @@ def build_pfs(
     min_file_gain: int = 0,
     min_compress_size: int = 0,
     temp_folder: Path | None = None,
+    eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]] | None = None,
+    reihenfolge: Iterable[str] | None = None,
+    progress: Progress | None = None,
 ) -> BuildStats:
     """Build a PFS image from a source tree.
+
+    Projekt-Zutat: Mit ``eintraege`` (``(Pfad, Groesse, Oeffner)``) kommen die Dateien aus einer Liste statt aus
+    ``source_root`` (dann nur noch Bezeichnung). Das geht nur fuer ein flaches Abbild ohne Kompression, Signatur und
+    Verschluesselung - die Bytes gehen unveraendert an den Platz, den die Groessen vorgeben. ``reihenfolge`` nennt die Pfade,
+    deren Oeffner zuerst gerufen werden (ein Strom, der nur vorwaerts lesbar ist, braucht seine Reihenfolge); der Rest folgt in
+    Abbildreihenfolge. ``progress`` ersetzt die Ausgabe auf ``stderr`` (``Progress(enabled=False, listener=...)``).
 
     Args:
         source_root: Source directory to pack.
@@ -3254,7 +3364,8 @@ def build_pfs(
         Build statistics for the completed image.
     """
     start: float = time.time()
-    progress: Progress = Progress(enabled=True)
+    if progress is None:
+        progress = Progress(enabled=True)
     temp_root: Path = resolve_temp_root(temp_folder=temp_folder)
     signed_inode_bits: int = 64 if signed and inode_bits == 64 else 32
     resolved_ekpfs: bytes = resolve_ekpfs_key(ekpfs=ekpfs)
@@ -3263,10 +3374,15 @@ def build_pfs(
         raise BuildError("min_file_gain must be within 0..100")
     if min_compress_size < 0:
         raise BuildError("min_compress_size must be non-negative")
+    if eintraege is not None and (compress or signed or encrypted):
+        raise BuildError("A file list can only be packed into a flat, uncompressed, unsigned, unencrypted image")
 
     dirs: dict[str, DirNode]
     files: dict[str, FileNode]
-    dirs, files, _ = scan_source_tree(source_root, progress)
+    if eintraege is not None:
+        dirs, files, _ = scan_liste(eintraege, progress)
+    else:
+        dirs, files, _ = scan_source_tree(source_root, progress)
 
     dir_nodes_sorted: list[DirNode] = sorted(dirs.values(), key=lambda d: d.rel_dir.lower())
     file_nodes_sorted: list[FileNode] = sorted(files.values(), key=lambda f: f.rel_path.lower())
@@ -3724,7 +3840,7 @@ def build_pfs(
     inodes_per_block = block_size // inode_size
     inode_block_count = ceil_div(inode_count, inodes_per_block)
 
-    all_nodes_data: list[tuple[Inode, int, bool, bytes | None, Path | None]] = []
+    all_nodes_data: list[tuple[Inode, int, bool, bytes | None, Path | Callable[[], Iterator[bytes]] | None]] = []
 
     # Root directory first, then nested dirs, then files.
     root_blob = b"".join(d.to_bytes() for d in dirs[""].dirents)
@@ -3735,7 +3851,19 @@ def build_pfs(
     for f in file_nodes_sorted:
         if f.stored_source_path is None:
             raise BuildError(f"Internal error: missing stored payload source for {f.rel_path}")
-        all_nodes_data.append((f.inode, f.stored_size, False, None, f.stored_source_path))
+        all_nodes_data.append((f.inode, f.stored_size, False, None, f.opener or f.stored_source_path))
+
+    # Projekt-Zutat: die Reihenfolge, in der die Nutzdaten geschrieben (und die Oeffner gerufen) werden. Das Layout steht
+    # fest; im unsignierten Abbild haengt der Platz einer Datei nur an ihrer Groesse, nicht an der Schreibreihenfolge.
+    schreib_daten = all_nodes_data
+    if reihenfolge is not None:
+        rang: dict[str, int] = {rel: i for i, rel in enumerate(reihenfolge)}
+        dir_teil = all_nodes_data[: 1 + len(non_root_dirs)]
+        datei_teil = sorted(
+            zip(file_nodes_sorted, all_nodes_data[1 + len(non_root_dirs) :], strict=True),
+            key=lambda paar: rang.get(paar[0].rel_path, len(rang)),
+        )
+        schreib_daten = dir_teil + [daten for _knoten, daten in datei_teil]
 
     signature_targets: list[SignatureTarget] = []
     indirect_block_records: dict[int, list[int]] = {}
@@ -3987,7 +4115,7 @@ def build_pfs(
                 _is_dir,
                 payload_bytes,
                 payload_source_path,
-            ) in all_nodes_data:
+            ) in schreib_daten:
                 if payload_bytes is not None:
                     if signed:
                         write_payload_to_blocks(
@@ -4019,6 +4147,13 @@ def build_pfs(
                                 signed_inode_bits,
                             ),
                             block_size=block_size,
+                        )
+                    elif callable(payload_source_path):
+                        write_stream_to_offset(
+                            out=out,
+                            opener=payload_source_path,
+                            payload_size=payload_size,
+                            offset=inode.db[0] * block_size,
                         )
                     else:
                         write_source_to_offset(

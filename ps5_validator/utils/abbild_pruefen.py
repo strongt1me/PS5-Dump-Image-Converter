@@ -37,7 +37,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 from ps5_validator.utils import dokan_laufwerk
 from ps5_validator.utils.archiv_quelle import ENDUNGEN as _ARCHIV_ENDUNGEN
@@ -283,13 +283,48 @@ def anfang_aus_baumdatei(datei: Any) -> Callable[[int], bytes]:
     return anfang
 
 
+class _FlachLeser:
+    """Gibt dem Lesebaum eines flachen PFS die Schnittstelle des exFAT-Lesers (``iter_files`` / ``read_file``).
+
+    So prueft dieselbe Rueckleseprobe (``exfat_ruecklesen_liste``) ein ``.ffpfs``, dessen Spieldateien direkt im PFS liegen.
+    """
+
+    class _Eintrag:
+        def __init__(self, datei: Any) -> None:
+            self.rel_path = datei.rel
+            self.length = datei.groesse
+            self.datei = datei
+
+    def __init__(self, baum: Any) -> None:
+        self._dateien = baum.dateien()
+
+    def iter_files(self) -> "Iterator[Any]":
+        for datei in self._dateien:
+            yield self._Eintrag(datei)
+
+    def read_file(self, eintrag: Any) -> "Iterator[bytes]":
+        return eintrag.datei.lesen(1 << 20)
+
+
 @contextlib.contextmanager
-def exfat_offnen(pfad: str, leser_klasse: Any, huelle: bool = False) -> Any:
+def exfat_offnen(pfad: str, leser_klasse: Any, huelle: bool = False, flach: bool = False) -> Any:
     """Ein exFAT-Leser auf ``pfad``; mit ``huelle`` auf das **innere** Abbild einer ``.ffpfsc`` (PFS mit genau einer ``.exfat``).
 
     Die Hülle wird ueber die Ansicht von MkPFS gelesen (``open_inner_file_view``): Die PFSC-Bloecke werden erst beim Lesen
     entpackt, nichts kommt auf die Platte. Ein Abbild ohne genau ein inneres Abbild ist ein ``ValueError``.
+
+    ``flach``: ``pfad`` ist ein ``.ffpfs`` mit den Spieldateien direkt im PFS (kein inneres Abbild); gelesen wird es mit dem
+    Lesebaum (``spielbaum.PfsBaum``) hinter der Schnittstelle des exFAT-Lesers. Alles andere ist ein ``ValueError``.
     """
+    if flach:
+        from ps5_validator.utils import spielbaum  # noqa: PLC0415
+
+        with spielbaum.PfsBaum(pfad) as baum:
+            leser = _FlachLeser(baum)               # listet auch: erst danach steht die Bauform fest
+            if baum.art != "pfs":
+                raise ValueError("kein flaches PFS: %s" % pfad)
+            yield leser
+        return
     if not huelle:
         with open(pfad, "rb") as fh:
             yield leser_klasse(fh)
@@ -1111,21 +1146,22 @@ class Pruefstand:
 
     def _verify_exfat_erwartet(
         self, exfat_path: str, erwartet: "Iterable[tuple[str, int, Callable[[int], bytes] | None]]",
-        laeuft: Callable[[], bool] | None = None, huelle: bool = False,
+        laeuft: Callable[[], bool] | None = None, huelle: bool = False, flach: bool = False,
     ) -> dict[str, Any]:
         """Wie ``_verify_exfat_inhalt``, aber gegen eine Liste ``(Pfad, Groesse, Anfang)`` (Lesebaum und Strom, Stufe 3).
 
         Siehe ``exfat_ruecklesen_liste``. Dateien ohne ``Anfang`` (die Packdateien aus dem Strom) zaehlen nur bei Liste und
         Groesse. ``erwartet`` wird vor dem Lesen vollstaendig gebildet; der Aufrufer haelt die Quelle bis zum Ende offen.
         ``huelle``: ``exfat_path`` ist eine ``.ffpfsc``; gelesen wird ihr inneres exFAT (``exfat_offnen``).
+        ``flach``: ``exfat_path`` ist ein ``.ffpfs`` mit den Spieldateien direkt im PFS.
         """
         liste = list(erwartet)
         return self._verify_exfat_gegen(
             exfat_path, lambda leser, ignoriert: exfat_ruecklesen_liste(leser, liste, ignoriert=ignoriert, laeuft=laeuft),
-            huelle=huelle)
+            huelle=huelle, flach=flach)
 
     def _verify_exfat_gegen(self, exfat_path: str, vergleichen: Callable[[Any, Callable[[str], bool]], dict[str, Any]],
-                            huelle: bool = False) -> dict[str, Any]:
+                            huelle: bool = False, flach: bool = False) -> dict[str, Any]:
         """Oeffnet das Abbild mit dem eigenen Leser, laesst ``vergleichen`` den Befund bilden und macht daraus das Urteil."""
         result: dict[str, Any] = {"checked": False, "ok": True, "detail": ""}
         try:
@@ -1139,7 +1175,7 @@ class Pruefstand:
             from mkpfs.utils import is_ignored_name  # pyright: ignore[reportMissingImports]
 
             try:
-                with exfat_offnen(exfat_path, ExfatReader, huelle) as leser:
+                with exfat_offnen(exfat_path, ExfatReader, huelle, flach) as leser:
                     befund = vergleichen(leser, is_ignored_name)
             except Exception as exc:
                 result["lesefehler"] = True

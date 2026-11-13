@@ -118,7 +118,7 @@ sonst die falsche erwischen.
 
 ## Geänderte Zeilen
 
-**Zehn Stellen**, jede in einem eigenen Abschnitt unten. Alle zehn sind
+**Elf Stellen**, jede in einem eigenen Abschnitt unten. Alle elf sind
 Zutaten dieses Projekts und **müssen bei jedem Fassungswechsel erneut
 nachgetragen werden**.
 
@@ -147,6 +147,7 @@ Tests laufen; keins von beidem ersetzt das andere.
 | `mkpfs/exfat.py` | FAT einmal laden, Cluster-Läufe in einem Lesen holen (`ExfatReader.read_file`) | `test_exfat_leser_tempo.py` |
 | `mkpfs/exfat_writer.py` | `iter_exfat_image_liste` und `dateireihenfolge_liste`: Abbild aus einer Dateiliste statt aus einem Ordner | `test_abbild_strom.py` |
 | `mkpfs/pfs.py` | `build_pfs_stream_from_blocks`: der Schreibteil von `build_pfs_stream_from_exfat` für einen fertigen Byte-Strom | `test_ffpfsc_strom.py` |
+| `mkpfs/pfs.py` | `build_pfs(eintraege=, reihenfolge=, progress=)`, `scan_liste`, `write_stream_to_offset`, `FileNode.opener`: flaches PFS aus einer Dateiliste | `test_ffpfs_strom.py` |
 
 Nicht abweichend, sondern **weggelassen**: der ganze Ordner `mkpfs/gui/`
 (18 Dateien). Dieses Projekt bringt seine eigene Oberfläche mit; siehe
@@ -350,3 +351,23 @@ Strom, der um ein paar Bytes abweicht, würde sonst mit Nullen aufgefüllt und m
 
 Beim Fassungswechsel prüfen: Hat die Vorlage `build_pfs_stream_from_exfat` geändert, die Zutat erneut einbringen und
 `test_ffpfsc_strom.py` laufen lassen.
+
+### Flaches PFS aus einer Dateiliste in `mkpfs/pfs.py`
+
+Die Vorlage baut ein flaches, unkomprimiertes PFS (`pack folder --raw --no-compress`, die Bauform der `.ffpfs`) nur aus einem
+**Ordner**: `build_pfs(source_root)` liest ihn mit `scan_source_tree` und kopiert jede Datei mit `write_source_to_offset` an ihren
+Platz. Wer das Spiel schon als Lesebaum hat (Abbild als Quelle, zstd-Strom), musste es erst in einen Ordner entpacken.
+
+Hier nimmt `build_pfs` daneben `eintraege=[(Pfad, Größe, Öffner), ...]`: `scan_liste` baut dieselben `DirNode`/`FileNode` wie
+`scan_source_tree` (sortiert nach `lower()`, Betriebssystem-Dateien fallen weg, Nicht-ASCII-Namen, leere und `.`/`..`-Pfade, doppelte
+Pfade und ein Name als Datei und als Ordner sind Fehler), `FileNode.opener` trägt den Öffner, und die Schreibschleife ruft
+`write_stream_to_offset`, die die Summe der gelieferten Bytes bytegenau gegen die Größe hält. Das geht nur ohne Kompression,
+Signatur und Verschlüsselung (sonst `BuildError`): Dann hängt der Platz einer Datei nur an ihrer Größe, nicht an der
+Schreibreihenfolge. `reihenfolge=` nennt die Pfade, deren Öffner zuerst gerufen werden - ein Strom, der nur vorwärts lesbar ist
+(die zstd-Packdateien), braucht seine Reihenfolge. `progress=` ersetzt die Ausgabe auf `stderr`
+(`Progress(enabled=False, listener=...)`). Aus einem Ordner entsteht **byteweise dieselbe Datei** wie aus der gleichen Liste
+(`MkpfsListeTests.test_gleiche_datei_wie_der_ordnerweg`, mit festem `time.time`); der Ordnerweg selbst ist unverändert
+(`schreib_daten` ist ohne `reihenfolge` dieselbe Liste wie `all_nodes_data`).
+
+Beim Fassungswechsel prüfen: Hat die Vorlage `build_pfs` oder `scan_source_tree` geändert, die Zutat erneut einbringen und
+`test_ffpfs_strom.py` laufen lassen.

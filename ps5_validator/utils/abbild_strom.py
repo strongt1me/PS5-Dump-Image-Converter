@@ -98,6 +98,19 @@ def abbild_strom(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", *, iter_
     ``pruefen``: ``True`` entpackt jeden Chunk der Packdateien auf dem Weg ins Abbild und vergleicht ihn mit der Pruefsumme der
     Quelle, eine Menge von Chunknummern (``ampr_zstdpack.stichprobe_chunks``) nur diese (siehe ``ampr_zstdpack.strom``).
     """
+    lose, dateien, ordner = _vorbereiten(baum, auswahl, messung, originale_behalten, arbeiter, abbruch, fortschritt, pruefen)
+    try:
+        gesamt = lose + dateien.eintraege()
+        reihenfolge_pruefen(reihenfolge_liste(gesamt, ordner), [name for name, _g in messung.dateien()])
+        yield from iter_liste(gesamt, on_layout=on_layout, ordner=ordner)
+    finally:
+        dateien.schliessen()
+
+
+def _vorbereiten(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", originale_behalten: bool, arbeiter: int,
+                 abbruch: Callable[[], bool], fortschritt: "Callable[[float], None] | None",
+                 pruefen: "bool | frozenset[int] | set[int] | None") -> "tuple[list[tuple[str, int, Oeffner]], StromDateien, list[str]]":
+    """Die losen Dateien des Baums, die Packdateien als Strom und die Verzeichnisse - fuer jede Art von Ausgabe dasselbe."""
     gepackt = {rel for rel, _g in auswahl.gepackt}
     vorhanden = baum.suchen()
     for rel in vorhanden:
@@ -113,12 +126,73 @@ def abbild_strom(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", *, iter_
     dateien = StromDateien(z.strom(baum, auswahl, messung, arbeiter=arbeiter, abbruch=abbruch, fortschritt=fortschritt,
                                    pruefen=pruefen),
                            messung.dateien())
-    try:
-        gesamt = lose + dateien.eintraege()
-        reihenfolge_pruefen(reihenfolge_liste(gesamt, ordner), [name for name, _g in messung.dateien()])
-        yield from iter_liste(gesamt, on_layout=on_layout, ordner=ordner)
-    finally:
-        dateien.schliessen()
+    return lose, dateien, ordner
+
+
+def abbild_liste(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", *, originale_behalten: bool = False, arbeiter: int = 0,
+                 abbruch: Callable[[], bool] = lambda: False, fortschritt: "Callable[[float], None] | None" = None,
+                 pruefen: "bool | frozenset[int] | set[int] | None" = None
+                 ) -> "tuple[list[tuple[str, int, Oeffner]], list[str], Callable[[], None]]":
+    """Die Dateien eines **flachen** Abbilds (``.ffpfs``): ``(Pfad, Groesse, Oeffner)``, die Schreibreihenfolge und ``schliessen``.
+
+    Wie :func:`abbild_strom`, nur ohne exFAT: Ein flaches PFS legt die Dateien nach ihrer Groesse an feste Plaetze, es kennt die
+    Reihenfolge nicht - die Oeffner duerfen in jeder Reihenfolge gerufen werden, solange die Packdateien in der des Stroms kommen.
+    Die Schreibreihenfolge nennt deshalb erst die losen Dateien, dann die Packdateien in Stromreihenfolge. ``schliessen()`` beendet
+    den Strom (Faeden, Lesevorlauf); mehrfaches Rufen schadet nicht. Leere Verzeichnisse kennt ein flaches PFS nie.
+    """
+    lose, dateien, _ordner = _vorbereiten(baum, auswahl, messung, originale_behalten, arbeiter, abbruch, fortschritt, pruefen)
+    gesamt = lose + dateien.eintraege()
+    reihenfolge = [rel for rel, _g, _o in lose] + [name for name, _g in messung.dateien()]
+    return gesamt, reihenfolge, dateien.schliessen
+
+
+def ffpfs_schreiben(eintraege: "Iterable[tuple[str, int, Oeffner]]", ziel: str, *, reihenfolge: Iterable[str] = (),
+                    block_size: int = 65536, case_insensitive: bool = True, abbruch: Callable[[], bool] = lambda: False,
+                    melden: "Callable[[str, int, int, int], None] | None" = None, bezeichnung: str = "") -> Any:
+    """Schreibt eine Dateiliste als flaches, unkomprimiertes PFS (``.ffpfs``) - ohne Zwischenordner.
+
+    Das ist, was ``mkpfs pack folder --raw --no-compress`` fuer einen Ordner baut: die Spieldateien liegen in der Wurzel des PFS.
+    ``eintraege`` sind ``(Pfad, Groesse, Oeffner)``; ``reihenfolge`` nennt die Pfade, deren Oeffner zuerst gerufen werden (siehe
+    :func:`abbild_liste`). ``ziel`` ist die fertige Datei; MkPFS schreibt zuerst ``ziel + ".tmp"`` und setzt es nach der
+    Strukturpruefung um. ``melden(phase, fertig, gesamt, bytes)`` bekommt den Fortschritt. Bricht ``abbruch()`` ab, kommt
+    :class:`StromAbgebrochen` - auch mitten in einer grossen Datei -, und es bleibt keine Teildatei liegen.
+
+    Returns:
+        Die ``BuildStats`` von MkPFS.
+    """
+    from pathlib import Path
+
+    from mkpfs import consts                                    # pyright: ignore[reportMissingImports]
+    from mkpfs.pbar import Progress                             # pyright: ignore[reportMissingImports]
+    from mkpfs.pfs import build_pfs                             # pyright: ignore[reportMissingImports]
+
+    def _hoeren(art: str, *args: Any) -> None:
+        if abbruch():
+            raise StromAbgebrochen("abgebrochen")
+        if art == "step" and melden is not None:
+            phase, fertig, gesamt, byte_zahl = args
+            melden(str(phase), int(fertig), int(gesamt), int(byte_zahl))
+
+    def _bewacht(oeffner: Oeffner) -> Oeffner:
+        def lesen() -> Iterator[bytes]:
+            strom = iter(oeffner())
+            try:
+                for stueck in strom:
+                    if abbruch():
+                        raise StromAbgebrochen("abgebrochen")
+                    yield stueck
+            finally:
+                schliessen = getattr(strom, "close", None)
+                if callable(schliessen):
+                    schliessen()
+        return lesen
+
+    liste = [(rel, groesse, _bewacht(oeffner)) for rel, groesse, oeffner in eintraege]
+    return build_pfs(
+        source_root=Path(bezeichnung or "stream"), output_path=Path(ziel), block_size=block_size,
+        pfs_version=consts.PFS_VERSION_PS5, inode_bits=32, case_insensitive=case_insensitive, signed=False, compress=False,
+        threshold_gain=0, cpu_count=1, zlib_level=6, dry_run=False, verbose=False, eintraege=liste,
+        reihenfolge=list(reihenfolge), progress=Progress(enabled=False, listener=_hoeren))
 
 
 def _eltern(pfad: str) -> "Iterator[str]":
