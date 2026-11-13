@@ -36,7 +36,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from ps5_validator.utils import dokan_laufwerk
 from ps5_validator.utils.archiv_quelle import ENDUNGEN as _ARCHIV_ENDUNGEN
@@ -243,8 +243,7 @@ def exfat_ruecklesen(
         ``{"dateien", "fehlen", "zuviel", "groesse", "inhalt", "stichprobe_dateien", "stichprobe_bytes",
         "abgebrochen"}``; die vier Listen sind vollstaendig (der Aufrufer kuerzt fuer die Anzeige).
     """
-    zufall = zufall or random.Random()
-    erwartet: dict[str, tuple[str, int]] = {}
+    erwartet: list[tuple[str, int, Callable[[int], bytes]]] = []
     for wurzel, unterordner, dateien in os.walk(quelle):
         unterordner[:] = [d for d in unterordner if not ignoriert(d)]
         for name in dateien:
@@ -253,10 +252,58 @@ def exfat_ruecklesen(
             voll = os.path.join(wurzel, name)
             rel = os.path.relpath(voll, quelle).replace(os.sep, "/")
             try:
-                erwartet[rel] = (voll, os.stat(voll).st_size)
+                erwartet.append((rel, os.stat(voll).st_size, _anfang_aus_datei(voll)))
             except OSError:
-                erwartet[rel] = (voll, -1)
-    klein = {rel.lower(): rel for rel in erwartet}
+                erwartet.append((rel, -1, _anfang_aus_datei(voll)))
+    return exfat_ruecklesen_liste(leser, erwartet, zufall=zufall, laeuft=laeuft)
+
+
+def _anfang_aus_datei(pfad: str) -> Callable[[int], bytes]:
+    """Eine Funktion, die die ersten ``n`` Bytes einer Datei auf der Platte liefert."""
+    def anfang(n: int) -> bytes:
+        with open(pfad, "rb") as fh:
+            return fh.read(n)
+    return anfang
+
+
+def anfang_aus_baumdatei(datei: Any) -> Callable[[int], bytes]:
+    """Eine Funktion, die die ersten ``n`` Bytes einer Datei des Lesebaums (``spielbaum.BaumDatei``) liefert."""
+    def anfang(n: int) -> bytes:
+        gelesen = bytearray()
+        stuecke = datei.lesen(max(1, min(n, 4 << 20)))
+        try:
+            for stueck in stuecke:
+                gelesen += stueck
+                if len(gelesen) >= n:
+                    break
+        finally:
+            stuecke.close()
+        return bytes(gelesen[:n])
+    return anfang
+
+
+def exfat_ruecklesen_liste(
+    leser: Any,
+    erwartet: "Iterable[tuple[str, int, Callable[[int], bytes] | None]]",
+    *,
+    ignoriert: Callable[[str], bool] | None = None,
+    zufall: Any = None,
+    laeuft: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    """Wie ``exfat_ruecklesen``, aber gegen eine Liste statt gegen einen Ordner (Stufe 3: Lesebaum und Strom).
+
+    ``erwartet`` sind ``(Pfad, Groesse, Anfang)``; ``Anfang(n)`` liefert die ersten ``n`` Bytes der Quelldatei, oder ist ``None``,
+    wenn es zur Datei keine Quelle zum Vergleichen gibt (die Packdateien aus dem Strom: Sie hat der Schreibdurchgang Chunk fuer
+    Chunk gegen die Messung gehalten). Solche Dateien zaehlen bei Liste und Groesse mit, kommen aber nicht in die Stichprobe.
+    Was ``ignoriert`` meldet (ein Pfadteil), laesst der Schreiber weg und zaehlt hier nicht.
+    """
+    zufall = zufall or random.Random()
+    soll: dict[str, tuple[int, Callable[[int], bytes] | None]] = {}
+    for rel, groesse, anfang in erwartet:
+        if ignoriert is not None and any(ignoriert(teil) for teil in rel.split("/")):
+            continue
+        soll[rel] = (groesse, anfang)
+    klein = {rel.lower(): rel for rel in soll}
 
     ergebnis: dict[str, Any] = {
         "dateien": 0, "fehlen": [], "zuviel": [], "groesse": [], "inhalt": [],
@@ -266,17 +313,19 @@ def exfat_ruecklesen(
     paare: list[tuple[Any, str]] = []
     for eintrag in leser.iter_files():
         ergebnis["dateien"] += 1
-        rel = eintrag.rel_path if eintrag.rel_path in erwartet else klein.get(eintrag.rel_path.lower())
+        rel = eintrag.rel_path if eintrag.rel_path in soll else klein.get(eintrag.rel_path.lower())
         if rel is None:
             ergebnis["zuviel"].append(eintrag.rel_path)
             continue
         gefunden.add(rel)
-        if erwartet[rel][1] != eintrag.length:
-            ergebnis["groesse"].append("%s (%d <> %d)" % (rel, eintrag.length, erwartet[rel][1]))
+        if soll[rel][0] != eintrag.length:
+            ergebnis["groesse"].append("%s (%d <> %d)" % (rel, eintrag.length, soll[rel][0]))
             continue
         paare.append((eintrag, rel))
-    ergebnis["fehlen"] = sorted(rel for rel in erwartet if rel not in gefunden)
+    ergebnis["fehlen"] = sorted(rel for rel in soll if rel not in gefunden)
 
+    # Nur Dateien mit einer Quelle zum Vergleichen kommen in die Stichprobe; das Budget rechnet mit ihnen.
+    paare = [p for p in paare if soll[p[1]][1] is not None]
     gesamt = sum(e.length for e, _ in paare)
     budget = min(gesamt, max(EXFAT_RUECKLESEN_MINDEST,
                              min(EXFAT_RUECKLESEN_MAX, int(gesamt * EXFAT_RUECKLESEN_ANTEIL))))
@@ -292,15 +341,15 @@ def exfat_ruecklesen(
         if ergebnis["stichprobe_bytes"] >= budget and nr >= len(pflicht):
             break
         n = eintrag.length if eintrag.length <= EXFAT_RUECKLESEN_GANZ_BIS else EXFAT_RUECKLESEN_ANFANG
-        if not _exfat_anfang_gleich(leser, eintrag, erwartet[rel][0], n):
+        if not _exfat_anfang_gleich(leser, eintrag, soll[rel][1], n):
             ergebnis["inhalt"].append(rel)
         ergebnis["stichprobe_dateien"] += 1
         ergebnis["stichprobe_bytes"] += n
     return ergebnis
 
 
-def _exfat_anfang_gleich(leser: Any, eintrag: Any, quelle_datei: str, n: int) -> bool:
-    """Vergleicht die ersten ``n`` Bytes einer Abbild-Datei mit denen der Quelldatei."""
+def _exfat_anfang_gleich(leser: Any, eintrag: Any, quelle_anfang: Callable[[int], bytes], n: int) -> bool:
+    """Vergleicht die ersten ``n`` Bytes einer Abbild-Datei mit denen der Quelldatei (``quelle_anfang(n)``)."""
     gelesen = bytearray()
     try:
         for stueck in leser.read_file(eintrag):
@@ -311,10 +360,9 @@ def _exfat_anfang_gleich(leser: Any, eintrag: Any, quelle_datei: str, n: int) ->
         return False                         # der Leser kommt an der Datei nicht durch: gilt als Abweichung
     del gelesen[n:]
     try:
-        with open(quelle_datei, "rb") as fh:
-            return fh.read(n) == bytes(gelesen)
-    except OSError:
-        return True                          # die Quelle laesst sich nicht lesen: das ist kein Fehler des Abbilds
+        return quelle_anfang(n) == bytes(gelesen)
+    except Exception:  # noqa: BLE001 - OSError, BaumFehler: die Quelle laesst sich nicht lesen, das ist kein Fehler des Abbilds
+        return True
 
 
 class Pruefstand:
@@ -1034,6 +1082,25 @@ class Pruefstand:
         Siehe ``exfat_ruecklesen``. ``ok`` ist False bei fehlenden oder zusaetzlichen Dateien, abweichender Groesse
         oder abweichendem Inhalt der Stichprobe; ``lesefehler`` bei einem Abbild, das der Leser nicht oeffnet.
         """
+        return self._verify_exfat_gegen(
+            exfat_path, lambda leser, ignoriert: exfat_ruecklesen(leser, src_dir, ignoriert=ignoriert, laeuft=laeuft))
+
+    def _verify_exfat_erwartet(
+        self, exfat_path: str, erwartet: "Iterable[tuple[str, int, Callable[[int], bytes] | None]]",
+        laeuft: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
+        """Wie ``_verify_exfat_inhalt``, aber gegen eine Liste ``(Pfad, Groesse, Anfang)`` (Lesebaum und Strom, Stufe 3).
+
+        Siehe ``exfat_ruecklesen_liste``. Dateien ohne ``Anfang`` (die Packdateien aus dem Strom) zaehlen nur bei Liste und
+        Groesse. ``erwartet`` wird vor dem Lesen vollstaendig gebildet; der Aufrufer haelt die Quelle bis zum Ende offen.
+        """
+        liste = list(erwartet)
+        return self._verify_exfat_gegen(
+            exfat_path, lambda leser, ignoriert: exfat_ruecklesen_liste(leser, liste, ignoriert=ignoriert, laeuft=laeuft))
+
+    def _verify_exfat_gegen(self, exfat_path: str, vergleichen: Callable[[Any, Callable[[str], bool]], dict[str, Any]]
+                            ) -> dict[str, Any]:
+        """Oeffnet das Abbild mit dem eigenen Leser, laesst ``vergleichen`` den Befund bilden und macht daraus das Urteil."""
         result: dict[str, Any] = {"checked": False, "ok": True, "detail": ""}
         try:
             mkpfs_parent = self._extract_embedded_mkpfs()
@@ -1047,7 +1114,7 @@ class Pruefstand:
 
             try:
                 with open(exfat_path, "rb") as fh:
-                    befund = exfat_ruecklesen(ExfatReader(fh), src_dir, ignoriert=is_ignored_name, laeuft=laeuft)
+                    befund = vergleichen(ExfatReader(fh), is_ignored_name)
             except Exception as exc:
                 result["lesefehler"] = True
                 result["detail"] = self._t("verify.count_skipped_error", error=exc)

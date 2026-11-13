@@ -208,6 +208,23 @@ def abbild_eintraege(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung",
     return lose + list(messung.dateien())
 
 
+def pruef_eintraege(baum: Any, auswahl: "z.Auswahl | None", messung: "z.Messung | None",
+                    originale_behalten: bool = False) -> "list[tuple[str, int, Callable[[int], bytes] | None]]":
+    """``(Pfad, Groesse, Anfang)`` jeder Datei des fertigen Abbilds fuers Zuruecklesen (Stufe 3, Etappe 5).
+
+    Wie :func:`abbild_eintraege`, aber mit einer Funktion je loser Datei, die ihre ersten ``n`` Bytes aus dem Baum liefert
+    (``abbild_pruefen.exfat_ruecklesen_liste`` vergleicht damit eine Stichprobe). Baender und Index aus dem Strom haben keinen
+    Anfang (``None``): Ihre Bytes hat der Schreibdurchgang Chunk fuer Chunk gegen die Messung gehalten. Ohne Auswahl und Messung
+    (kein Pack gebaut) kommt alles aus dem Baum.
+    """
+    from ps5_validator.utils.abbild_pruefen import anfang_aus_baumdatei
+
+    gepackt = {rel for rel, _g in auswahl.gepackt} if auswahl is not None else set()
+    lose = [(d.rel, d.groesse, anfang_aus_baumdatei(d)) for d in baum.dateien() if originale_behalten or d.rel not in gepackt]
+    packs = [(name, groesse, None) for name, groesse in messung.dateien()] if messung is not None else []
+    return lose + packs
+
+
 def liste_pruefen(exfat_pfad: str, erwartet: "Iterable[tuple[str, int]]", mkpfs_ordner: str = "",
                   ignoriert: "Callable[[str], bool] | None" = None) -> "dict[str, Any]":
     """Liest die Dateiliste des fertigen Abbilds zurueck und vergleicht Pfade und Groessen mit ``erwartet``.

@@ -180,6 +180,118 @@ class ReproduzierbarTests(unittest.TestCase):
             self.assertNotEqual(h1, self._sha(a))
 
 
+class RuecklesenAusLesebaumTests(unittest.TestCase):
+    """Stufe 3, Etappe 5: Zuruecklesen gegen den Lesebaum und den Strom statt gegen einen Ordner."""
+
+    def setUp(self) -> None:
+        from mkpfs.exfat_writer import iter_exfat_image_liste
+        from ps5_validator.utils import abbild_strom, spielbaum
+        self.abbild_strom, self.spielbaum = abbild_strom, spielbaum
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.q = Path(self._tmp.name) / "Spiel"
+        _baum(self.q)
+        self.baum = spielbaum.OrdnerBaum(str(self.q))
+        self.addCleanup(self.baum.schliessen)
+        self.abbild = b"".join(iter_exfat_image_liste(
+            [(d.rel, d.groesse, d.lesen) for d in self.baum.dateien()]))
+
+    def _lesen(self, abbild=None, erwartet=None, **kw):
+        erwartet = erwartet if erwartet is not None else self.abbild_strom.pruef_eintraege(self.baum, None, None)
+        return ap.exfat_ruecklesen_liste(ExfatReader(io.BytesIO(abbild or self.abbild)), erwartet,
+                                         zufall=random.Random(1), **kw)
+
+    def test_ein_richtiges_abbild_besteht_und_wird_ganz_verglichen(self):
+        e = self._lesen()
+        self.assertEqual(32, e["dateien"])
+        self.assertEqual([], e["fehlen"] + e["zuviel"] + e["groesse"] + e["inhalt"])
+        self.assertEqual(32, e["stichprobe_dateien"])
+
+    def test_ein_verdorbenes_byte_im_abbild_wird_gefunden(self):
+        leser = ExfatReader(io.BytesIO(self.abbild))
+        eintrag = next(x for x in leser.iter_files() if x.rel_path == "eboot.bin")
+        kaputt = bytearray(self.abbild)
+        kaputt[leser._cluster_byte_offset(eintrag.first_cluster) + 50] ^= 0x01
+        self.assertEqual(["eboot.bin"], self._lesen(bytes(kaputt))["inhalt"])
+
+    def test_eine_nachtraeglich_veraenderte_quelle_wird_gefunden(self):
+        pfad = self.q / "d1" / "f04.bin"
+        daten = bytearray(pfad.read_bytes())
+        daten[len(daten) // 2] ^= 0xFF
+        pfad.write_bytes(bytes(daten))
+        self.assertEqual(["d1/f04.bin"], self._lesen()["inhalt"])
+
+    def test_dateien_ohne_anfang_zaehlen_bei_liste_und_groesse_aber_nicht_in_der_stichprobe(self):
+        erwartet = [(rel, g, None if rel == "d0/f00.bin" else a)
+                    for rel, g, a in self.abbild_strom.pruef_eintraege(self.baum, None, None)]
+        e = self._lesen(erwartet=erwartet)
+        self.assertEqual(31, e["stichprobe_dateien"])
+        falsch = [(rel, g + 1 if rel == "d0/f00.bin" else g, a) for rel, g, a in erwartet]
+        self.assertEqual(1, len(self._lesen(erwartet=falsch)["groesse"]))
+        fehlt = [x for x in erwartet if x[0] != "d0/f00.bin"]
+        self.assertEqual(["d0/f00.bin"], self._lesen(erwartet=fehlt)["zuviel"])
+
+    def test_eine_nicht_lesbare_quelle_ist_kein_fehler_des_abbilds(self):
+        def kaputt(_n):
+            raise self.spielbaum.BaumFehler("weg")
+        erwartet = [(rel, g, kaputt) for rel, g, _a in self.abbild_strom.pruef_eintraege(self.baum, None, None)]
+        self.assertEqual([], self._lesen(erwartet=erwartet)["inhalt"])
+
+    def test_was_der_schreiber_weglaesst_zaehlt_nicht(self):
+        erwartet = self.abbild_strom.pruef_eintraege(self.baum, None, None) + [("desktop.ini", 5, None)]
+        e = self._lesen(erwartet=erwartet, ignoriert=is_ignored_name)
+        self.assertEqual([], e["fehlen"])
+
+    def test_der_anfang_aus_dem_baum(self):
+        datei = next(d for d in self.baum.dateien() if d.rel == "eboot.bin")
+        anfang = ap.anfang_aus_baumdatei(datei)
+        voll = (self.q / "eboot.bin").read_bytes()
+        self.assertEqual(voll[:100], anfang(100))
+        self.assertEqual(voll, anfang(10 ** 9), "mehr als da ist: die ganze Datei")
+        self.assertEqual(voll[:1], anfang(1))
+
+    def test_pruef_eintraege_mit_packs(self):
+        from ps5_validator.utils import ampr_zstdpack as z
+
+        class _Auswahl:
+            gepackt = [("d0/f00.bin", 1)]
+
+        class _Messung:
+            def dateien(self):
+                return [("ampr_zstd-000.pak", 123), ("ampr_zstd.index", 45)]
+        mit = {r: (g, a) for r, g, a in self.abbild_strom.pruef_eintraege(self.baum, _Auswahl(), _Messung(), False)}
+        self.assertNotIn("d0/f00.bin", mit, "ein gepacktes Original faellt weg")
+        self.assertEqual((123, None), mit["ampr_zstd-000.pak"])
+        self.assertIsNone(mit["ampr_zstd.index"][1])
+        self.assertIsNotNone(mit["eboot.bin"][1])
+        behalten = {r for r, _g, _a in self.abbild_strom.pruef_eintraege(self.baum, _Auswahl(), _Messung(), True)}
+        self.assertIn("d0/f00.bin", behalten)
+        self.assertIsNotNone(z)
+
+    def test_der_pruefstand_urteilt_wie_beim_ordnerweg(self):
+        p = ap.Pruefstand.__new__(ap.Pruefstand)
+        p._t = lambda k, **w: k + " " + " ".join("%s=%s" % kv for kv in sorted(w.items()))
+        p._extract_embedded_mkpfs = lambda: str(ROOT / "MkPFS-1.1.0")
+        pfad = Path(self._tmp.name) / "x.exfat"
+        pfad.write_bytes(self.abbild)
+        erwartet = self.abbild_strom.pruef_eintraege(self.baum, None, None)
+        ok = p._verify_exfat_erwartet(str(pfad), erwartet)
+        self.assertTrue(ok["checked"] and ok["ok"], ok)
+        self.assertIn("verify.inhalt_ok", ok["detail"])
+        (self.q / "eboot.bin").write_bytes(b"X" * 15000)                 # gleiche Groesse, anderer Inhalt
+        schlecht = p._verify_exfat_erwartet(str(pfad), erwartet)
+        self.assertFalse(schlecht["ok"])
+        self.assertIn("verify.inhalt_inhalt", schlecht["detail"])
+        pfad.write_bytes(b"kein exfat" * 100)
+        kaputt = p._verify_exfat_erwartet(str(pfad), erwartet)
+        self.assertTrue(kaputt.get("lesefehler"))
+
+    def test_das_hauptprogramm_nutzt_die_stichprobe_im_stromweg(self):
+        quelle = (ROOT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
+        self.assertIn('"pruef_eintraege": abbild_strom.pruef_eintraege(', quelle)
+        self.assertIn("_verify_exfat_erwartet(exfat_path, pruef,", quelle)
+
+
 class VerdrahtungTests(unittest.TestCase):
     def test_der_text_steht_in_allen_sprachen(self):
         from ps5_validator.utils.i18n import STRINGS, SUPPORTED_LANGUAGES

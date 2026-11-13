@@ -33988,7 +33988,10 @@ class PS5ConverterGUI:
                                                   on_layout=on_layout)
 
             strom = {"erzeuger": erzeuger, "eintraege": eintraege, "ignoriert": is_ignored_name,
-                     "quelle_geaendert": lambda: not quelle.unveraendert()}
+                     "quelle_geaendert": lambda: not quelle.unveraendert(),
+                     # Fuers Zuruecklesen: je lose Datei eine Funktion, die ihren Anfang aus dem Baum liest (Stichprobe).
+                     "pruef_eintraege": abbild_strom.pruef_eintraege(
+                         ansicht_baum, plan["auswahl"] if plan else None, plan["messung"] if plan else None, behalten)}
             self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
             bau_ziel = self._bauziel_neben_quelle(final_output)
             ok = self._create_exfat_from_folder(schatten, bau_ziel, pct_start=50.0, pct_end=98.0, strom=strom)
@@ -43746,7 +43749,12 @@ class PS5ConverterGUI:
 
         Dasselbe Ergebnisformat wie :meth:`_verify_exfat_inhalt`. Ein Abbild, das der Leser nicht oeffnet, ist ein
         ``lesefehler``. Der Inhalt der Packdateien wurde im Schreibdurchgang Chunk fuer Chunk gegen die Messung gehalten.
+        Mit ``strom["pruef_eintraege"]`` (Pfad, Groesse, Anfang aus dem Baum) wird zusaetzlich der Inhalt einer Stichprobe der
+        losen Dateien verglichen (Etappe 5), genau wie beim Weg aus einem Ordner (``abbild_pruefen.exfat_ruecklesen_liste``).
         """
+        pruef = strom.get("pruef_eintraege")
+        if pruef is not None:
+            return self._pruefstand()._verify_exfat_erwartet(exfat_path, pruef, lambda: self.is_running)
         ergebnis: dict[str, Any] = {"checked": False, "ok": True, "detail": ""}
         try:
             befund = abbild_strom.liste_pruefen(exfat_path, strom["eintraege"], mkpfs_ordner=mkpfs_ordner,
