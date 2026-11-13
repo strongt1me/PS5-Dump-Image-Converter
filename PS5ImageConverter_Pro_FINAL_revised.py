@@ -8121,10 +8121,13 @@ class PS5ConverterGUI:
         # Systemdateien fuer den Einbau, ans Ziel kommt das neue Abbild (hoechstens so gross wie die Quelle, mit zstd meist
         # deutlich kleiner). Der Faktor fuer das Ziel bleibt der der .exFAT - mit Sicherheitsrand.
         waehle_strom = getattr(self, "_strom_weg_gewaehlt", None)
-        if (target_type == "exfat" and (src.lower().endswith(".exfat") or os.path.isdir(src))
-                and callable(waehle_strom) and waehle_strom()):
-            temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
-            return temp, int(quelle * self._PLATZFAKTOR_ZIEL["exfat"]), 0
+        strom_temp = None
+        if target_type == "exfat" and callable(waehle_strom) and waehle_strom():
+            strom_temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
+            if src.lower().endswith(".exfat") or os.path.isdir(src):
+                return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL["exfat"]), 0
+            if not src.lower().endswith((".ffpfsc", ".ffpfs")):
+                strom_temp = None
 
         # Beim Entpacken eines Containers ist die Quelle kleiner als das,
         # was herauskommt. Dafuer gibt es eine genauere Schaetzung, die in
@@ -8146,6 +8149,11 @@ class PS5ConverterGUI:
             faktor = self._PLATZFAKTOR_ZIEL.get(target_type,
                                                 self._PLATZFAKTOR_ZIEL[""])
             ziel = int(quelle * faktor)
+
+        if strom_temp is not None:
+            # .ffpfsc/.ffpfs -> .exFAT im Strom: Das Ziel braucht, was das neue Abbild braucht (wie oben gerechnet), im
+            # Arbeitsordner liegen nur die Systemdateien fuer den Einbau - aber nicht das entpackte Spiel.
+            return strom_temp, ziel, 0
 
         mit_kopie = bool(self._integration_gewuenscht())
         if target_type == "folder" and os.path.isdir(src):
@@ -34024,11 +34032,14 @@ class PS5ConverterGUI:
             logger.debug("Strom-Weg nicht entscheidbar: %s", exc)
             return False
 
-    def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False) -> "bool | None":
+    def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False, pfs: bool = False) -> "bool | None":
         """``.exfat`` mit zstd-Asset-Pack neu bauen, **ohne** das Spiel zu entpacken (Stufe 3, Dump-Forge-Vorbild).
 
         ``ordner=True``: Die Quelle ist ein Dump-Ordner (``spielbaum.OrdnerBaum``) statt einer ``.exfat`` - derselbe Weg, nur
         ohne Arbeitskopie: Der Ordner des Anwenders wird nur gelesen, nie veraendert (Etappe 6, :meth:`_mode_folder_to_exfat`).
+
+        ``pfs=True``: Die Quelle ist ein ``.ffpfs``/``.ffpfsc`` (``spielbaum.PfsBaum``: flach, mit innerem exFAT oder PFS in PFS);
+        die PFSC-Bloecke werden erst beim Lesen entpackt (Etappe 7, :meth:`_mode_unpack_to_exfat`).
 
         Die Quelle wird nur gelesen (``spielbaum.ExfatBaum``). In einen kleinen Ueberlagerungsordner kommen nur die
         Systemdateien, die der Einbau braucht (``abbild_strom.schatten_fuellen``); Backport, Fake-Signatur, DLC EMU und
@@ -34060,11 +34071,17 @@ class PS5ConverterGUI:
             try:
                 if ordner:
                     quelle = spielbaum.OrdnerBaum(src, ignoriert=is_ignored_name)
+                elif pfs:
+                    quelle = spielbaum.PfsBaum(src, mkpfs_ordner=mkpfs_parent, ignoriert=is_ignored_name)
                 else:
                     quelle = spielbaum.ExfatBaum(src, mkpfs_ordner=mkpfs_parent, ignoriert=is_ignored_name)
                 dateien = quelle.dateien()
             except (spielbaum.BaumFehler, OSError) as exc:
                 self._append_to_log(self._t("log.exfat_strom_alter_weg", error=exc))
+                return None
+            if pfs and not any(d.rel.lower() == "eboot.bin" or d.rel.lower().startswith("sce_sys/") for d in dateien):
+                # Liegt das Spiel in einem Unterordner des Abbilds, sucht der bisherige Weg ihn beim Entpacken (Ebene fuer Ebene).
+                self._append_to_log(self._t("log.exfat_strom_pfs_kein_spiel"))
                 return None
             if ordner and (quelle.uebersprungen or not dateien):
                 # Verweise und Sonderdateien kann das exFAT-Abbild nicht fassen, ein leerer Ordner ist kein Spiel: Der bisherige
@@ -34088,7 +34105,9 @@ class PS5ConverterGUI:
             self._append_to_log(self._t(
                 "log.exfat_strom_start", quelle=os.path.basename(src), ziel=os.path.basename(final_output)))
             self.progress_engine.start_task(
-                0, self._t("progress.task.dump_to_exfat" if ordner else "progress.task.exfat_umpacken"))
+                1 if pfs else 0,
+                self._t("progress.task.dump_to_exfat" if ordner else
+                        "progress.task.ffpfsc_to_exfat" if pfs else "progress.task.exfat_umpacken"))
             self.progress_engine.begin_prepare(
                 self._t("progress.prepare.analyze_source_folder" if ordner else "progress.prepare.strom_lesen"))
             self._stufen_neu("exfat_strom")
@@ -44190,6 +44209,13 @@ class PS5ConverterGUI:
         cp_stage = str(cp.get("stage", "")).strip() if isinstance(cp, dict) else ""
         cp_tmp_dir = str(cp.get("tmp_dir", "")).strip() if isinstance(cp, dict) else ""
         cp_game_dump_dir = str(cp.get("game_dump_dir", "")).strip() if isinstance(cp, dict) else ""
+
+        # Mit AMPR EMU NG und zstd-Packs ohne Zwischenordner (Stufe 3, Etappe 7). Ein unterbrochener Lauf des bisherigen
+        # Weges mit vorhandenem Zwischenstand wird dort fortgesetzt - der Entpackstand soll nicht umsonst gewesen sein.
+        if not (cp_tmp_dir and os.path.isdir(cp_tmp_dir)) and self._strom_weg_gewaehlt():
+            ergebnis = self._mode_exfat_umpacken_strom(src, dst, pfs=True)
+            if ergebnis is not None:
+                return ergebnis
 
         if cp_tmp_dir and os.path.isdir(cp_tmp_dir):
             tmp_dir = cp_tmp_dir

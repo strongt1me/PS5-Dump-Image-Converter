@@ -510,6 +510,178 @@ class OrdnerStromTests(_Grundlage):
         self.assertGreater(g._platzbedarf_je_quelle(self.spiel, "exfat")[0], 150 * 1024 ** 3)
 
 
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class PfsStromTests(_Grundlage):
+    """Etappe 7: ``.ffpfsc``/``.ffpfs`` -> ``.exfat`` mit zstd-Asset-Pack, ohne das Spiel zu entpacken."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from mkpfs import consts
+        from mkpfs.pfs import build_pfs, build_pfs_stream_single_file
+        self.huelle = os.path.join(self.tmp, "huelle.ffpfsc")
+        build_pfs_stream_single_file(
+            source_file=Path(self.quelle), output_path=Path(self.huelle), block_size=65536,
+            pfs_version=consts.PFS_VERSION_PS5, case_insensitive=True, zlib_level=6, threshold_gain=0, min_file_gain=0,
+            min_compress_size=0, cpu_count=1, compress=True)
+        self.flach = os.path.join(self.tmp, "flach.ffpfs")
+        build_pfs(source_root=Path(self.spiel), output_path=Path(self.flach), block_size=65536,
+                  pfs_version=consts.PFS_VERSION_PS5, inode_bits=32, case_insensitive=True, signed=False, compress=False,
+                  threshold_gain=0, cpu_count=1, zlib_level=6, dry_run=False, verbose=False)
+
+    def lauf(self, quelle: str, **kw):
+        g = _gui(self.tmp, **kw)
+        return g, g._mode_exfat_umpacken_strom(quelle, self.ziel, pfs=True)
+
+    def test_huelle_gleicht_dem_weg_aus_der_exfat(self) -> None:
+        g, ok = self.lauf(self.huelle)
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        ziel2 = os.path.join(self.tmp, "ziel2")
+        os.makedirs(ziel2)
+        g2 = _gui(self.tmp)
+        self.assertTrue(g2._mode_exfat_umpacken_strom(self.quelle, ziel2), "\n".join(g2._log_lines))
+        with sb.ExfatBaum(os.path.join(self.ziel, "huelle.exfat")) as a, sb.ExfatBaum(os.path.join(ziel2, "spiel.exfat")) as b:
+            da, db = a.suchen(), b.suchen()
+            self.assertEqual(sorted(da), sorted(db))
+            for rel in da:
+                if rel in ("sce_sys/param.json", "sce_sys/param.json.alt"):
+                    continue
+                self.assertEqual(b"".join(db[rel].lesen()), b"".join(da[rel].lesen()), rel)
+            self.assertNotIn("Media/text.txt", da)                  # gepackt, Original weg
+            self.assertIn("ampr_zstd-000.pak", da)
+
+    def test_flaches_pfs(self) -> None:
+        g, ok = self.lauf(self.flach)
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        with sb.ExfatBaum(os.path.join(self.ziel, "flach.exfat")) as neu:
+            dateien = neu.suchen()
+            self.assertEqual(NG_LIB, b"".join(dateien["fakelib/libSceAmpr.sprx"].lesen()))
+            self.assertEqual(self.inhalt["eboot.bin"], b"".join(dateien["eboot.bin"].lesen()))
+            self.assertIn("ampr_zstd.index", dateien)
+
+    def test_quelle_unveraendert_kein_rest(self) -> None:
+        vorher = {p: (os.path.getsize(p), os.stat(p).st_mtime_ns) for p in (self.huelle, self.flach)}
+        for quelle in (self.huelle, self.flach):
+            g, ok = self.lauf(quelle)
+            self.assertTrue(ok, "\n".join(g._log_lines))
+        self.assertEqual(vorher, {p: (os.path.getsize(p), os.stat(p).st_mtime_ns) for p in (self.huelle, self.flach)})
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_spiel_nicht_im_wurzelordner_bleibt_beim_alten_weg(self) -> None:
+        """Liegt das Spiel in einem Unterordner des Abbilds, packt der bisherige Weg es aus (er sucht die Ebene)."""
+        from mkpfs import consts
+        from mkpfs.pfs import build_pfs
+        tief = os.path.join(self.tmp, "tief")
+        for rel, daten in self.inhalt.items():
+            voll = os.path.join(tief, "PPSA04263", *rel.split("/"))
+            os.makedirs(os.path.dirname(voll), exist_ok=True)
+            Path(voll).write_bytes(daten)
+        abbild = os.path.join(self.tmp, "tief.ffpfs")
+        build_pfs(source_root=Path(tief), output_path=Path(abbild), block_size=65536, pfs_version=consts.PFS_VERSION_PS5,
+                  inode_bits=32, case_insensitive=True, signed=False, compress=False, threshold_gain=0, cpu_count=1,
+                  zlib_level=6, dry_run=False, verbose=False)
+        g, ergebnis = self.lauf(abbild)
+        self.assertIsNone(ergebnis)
+        self.assertEqual([], os.listdir(self.ziel))
+
+    def test_kein_abbild_bleibt_beim_alten_weg(self) -> None:
+        kaputt = os.path.join(self.tmp, "kaputt.ffpfsc")
+        Path(kaputt).write_bytes(b"\0" * 8192)
+        g, ergebnis = self.lauf(kaputt)
+        self.assertIsNone(ergebnis)
+        self.assertEqual([], os.listdir(self.ziel))
+
+    def test_packs_schon_im_abbild_bleibt_beim_alten_weg(self) -> None:
+        from mkpfs import consts
+        from mkpfs.pfs import build_pfs
+        Path(self.spiel, "ampr_zstd.index").write_bytes(b"alt")
+        abbild = os.path.join(self.tmp, "mit_packs.ffpfs")
+        build_pfs(source_root=Path(self.spiel), output_path=Path(abbild), block_size=65536,
+                  pfs_version=consts.PFS_VERSION_PS5, inode_bits=32, case_insensitive=True, signed=False, compress=False,
+                  threshold_gain=0, cpu_count=1, zlib_level=6, dry_run=False, verbose=False)
+        g, ergebnis = self.lauf(abbild)
+        self.assertIsNone(ergebnis)
+
+    def test_abbruch_laesst_nichts_zurueck(self) -> None:
+        g = _gui(self.tmp)
+
+        def abbrechen(prozent, phase):
+            g.is_running = False
+        g._ampr_pack_fortschritt = abbrechen
+        self.assertFalse(g._mode_exfat_umpacken_strom(self.huelle, self.ziel, pfs=True))
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_abbild_aendert_sich_waehrend_des_laufs(self) -> None:
+        kopie = os.path.join(self.tmp, "kopie.ffpfsc")
+        shutil.copyfile(self.huelle, kopie)
+        g = _gui(self.tmp)
+        urspruenglich = g._integration_anwenden
+
+        def integration(ordner, **k):
+            erg = urspruenglich(ordner, **k)
+            with open(kopie, "ab") as fh:
+                fh.write(b"\0" * 512)
+            return erg
+        g._integration_anwenden = integration
+        self.assertFalse(g._mode_exfat_umpacken_strom(kopie, self.ziel, pfs=True))
+        self.assertEqual([], os.listdir(self.ziel))
+
+    # -- Aufgabe 2 nimmt den Strom zuerst -------------------------------------------------------------------------------
+    def _aufgabe2(self, *, checkpoint=None, strom_ergebnis="strom"):
+        g = GUI.__new__(GUI)
+        aufrufe: list[tuple] = []
+        g._strom_weg_gewaehlt = lambda: True
+        g._mode_exfat_umpacken_strom = lambda src, dst, **kw: aufrufe.append((src, dst, kw)) or strom_ergebnis
+        g._ausgabe_stamm = lambda *a, **k: "x"
+        g._active_resume_checkpoint = checkpoint
+
+        class _Stopp(Exception):
+            pass
+
+        def stopp(*a, **k):
+            raise _Stopp()
+        g._mkdtemp = stopp
+        g._quellgroesse_mit_meldung = stopp
+        g._append_to_log = lambda *a, **k: None
+        try:
+            ergebnis = g._mode_unpack_to_exfat(self.huelle, self.ziel)
+        except _Stopp:
+            ergebnis = "alter weg"
+        except Exception:                                             # noqa: BLE001 - alles danach gehoert dem alten Weg
+            ergebnis = "alter weg"
+        return ergebnis, aufrufe
+
+    def test_aufgabe2_ruft_den_strom_zuerst(self) -> None:
+        ergebnis, aufrufe = self._aufgabe2()
+        self.assertEqual("strom", ergebnis)
+        self.assertEqual([(os.path.abspath(self.huelle), os.path.abspath(self.ziel), {"pfs": True})], aufrufe)
+
+    def test_aufgabe2_faellt_auf_den_alten_weg_zurueck(self) -> None:
+        ergebnis, aufrufe = self._aufgabe2(strom_ergebnis=None)
+        self.assertEqual("alter weg", ergebnis)
+        self.assertEqual(1, len(aufrufe))
+
+    def test_aufgabe2_setzt_einen_unterbrochenen_lauf_fort(self) -> None:
+        zwischenstand = os.path.join(self.tmp, "alter_zwischenstand")
+        os.makedirs(zwischenstand)
+        ergebnis, aufrufe = self._aufgabe2(checkpoint={"tmp_dir": zwischenstand, "stage": "task2_step1_done"})
+        self.assertEqual([], aufrufe, "Mit vorhandenem Zwischenstand soll der alte Weg fortsetzen, nicht der Strom neu anfangen")
+
+    def test_platzbedarf_ffpfsc_ohne_entpacktes_spiel(self) -> None:
+        g = GUI.__new__(GUI)
+        g._strom_weg_gewaehlt = lambda: True
+        g._quellgroesse_ermitteln = lambda src: 60 * 1024 ** 3
+        g._estimate_unpack_space_requirement = lambda src: 150 * 1024 ** 3
+        g._integration_gewuenscht = lambda: True
+        g._umhuellt_neu_packen = False
+        temp, ziel, dump = g._platzbedarf_je_quelle("spiel.ffpfsc", "exfat")
+        self.assertLess(temp, 10 * 1024 ** 3, "Das entpackte Spiel darf nicht mehr im Arbeitsordner eingerechnet werden")
+        self.assertEqual(0, dump)
+        self.assertEqual(int(150 * 1024 ** 3 // 2 * g._PLATZFAKTOR_ZIEL["exfat"]), ziel)
+        g._strom_weg_gewaehlt = lambda: False
+        self.assertGreaterEqual(g._platzbedarf_je_quelle("spiel.ffpfsc", "exfat")[0], 150 * 1024 ** 3)
+
+
 class WegwahlTests(unittest.TestCase):
     def _probe(self, **kw):
         g = GUI.__new__(GUI)
