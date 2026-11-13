@@ -60,6 +60,7 @@ class _Stub:
     _ampr_ist_ng_datei = classmethod(APP.PS5ConverterGUI._ampr_ist_ng_datei.__func__)
     _ampr_zstdpakete_bauen = APP.PS5ConverterGUI._ampr_zstdpakete_bauen
     _phase_dauer_melden = APP.PS5ConverterGUI._phase_dauer_melden
+    _dauer_text = staticmethod(APP.PS5ConverterGUI._dauer_text)
 
     def __init__(self, stufe: int = 3) -> None:
         self.protokoll: list[str] = []

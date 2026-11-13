@@ -393,6 +393,22 @@ class FensterTests(unittest.TestCase):
         app._save_setting("ampr_lz4_stufe", "kaputt")
         self.assertEqual(9, app._ampr_stufe_angezeigt("lz4"))
 
+    def test_eine_stufe_ausserhalb_der_auswahl_wird_mit_angezeigt(self):
+        """Code-Review 12.11.2026: ``--ampr-zstd-stufe 4`` oder eine handgeschriebene Einstellung zeigte die Vorgabe 5,
+        waehrend mit 4 gepackt wurde."""
+        app = self.app
+        self.addCleanup(app._save_setting, "ampr_zstd_stufe", 5)
+        self._pack_frei("zstd")
+        app._save_setting("ampr_zstd_stufe", 4)
+        app._ampr_stufe_combo_schalten()
+        werte = self._stufe_werte()
+        self.assertIn("4", werte, werte)
+        self.assertEqual("4", app._ampr_stufe_var.get(), "das Feld zeigt, womit gepackt wird")
+        self.assertEqual(["1", "3", "4", "5", "7", "9", "12", "15", "19", "22"], [w.split(" ")[0] for w in werte])
+        app._save_setting("ampr_zstd_stufe", 5)
+        app._ampr_stufe_combo_schalten()
+        self.assertEqual(9, len(self._stufe_werte()), "mit einer Stufe aus der Auswahl bleibt es bei den neun")
+
     def test_unbekannte_stufenauswahl_aendert_nichts(self):
         app = self.app
         app._ampr_stufe_var.set("irgendwas")

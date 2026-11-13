@@ -432,6 +432,22 @@ class KartenzeilenTests(unittest.TestCase):
         finally:
             self.wurzel.withdraw()
 
+    def test_bei_mindestbreite_bleiben_die_bedienzeilen_innerhalb_der_karte(self):
+        """Code-Review 12.11.2026: Mit den Pfeilen in den Luecken reichte die Einbauzeile bis auf 10 px an den Kartenrand und
+        die Pruefstufe ueber den Innenrand. Rechte Kanten gegen die Karte, nicht nur Abstaende untereinander."""
+        a = self.app
+        self._fenster_auf(self.haupt.WINDOW_MIN_WIDTH)
+        try:
+            karte = a.path_card
+            rechts = lambda w: w.winfo_rootx() - karte.winfo_rootx() + w.winfo_width()
+            grenze = karte.winfo_width() - a._KARTEN_INNENRAND
+            self.assertLessEqual(rechts(a.verify_combo), grenze,
+                                 "die Pruefstufe ragt %d px ueber den Innenrand" % (rechts(a.verify_combo) - grenze))
+            self.assertLessEqual(rechts(a.backport_fw_combo), karte.winfo_width() - 10,
+                                 "die Firmware-Liste reicht bis %d px an den Kartenrand" % (karte.winfo_width() - rechts(a.backport_fw_combo)))
+        finally:
+            self.wurzel.withdraw()
+
     def test_die_hoehe_der_einbauzeile_haengt_an_der_zeile_des_kaestchens(self):
         with io.open(HAUPTDATEI, encoding="utf-8") as datei:
             text = datei.read()

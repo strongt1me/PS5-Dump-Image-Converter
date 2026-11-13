@@ -97,6 +97,8 @@ class ExfatReader:
             ExfatError: If the source is not a recognizable exFAT volume.
         """
         self._fh: BinaryIO = fh
+        self._fat: bytes | None = None
+        self._fat_versucht: bool = False
         self.geometry: ExfatGeometry = self._parse_boot_sector()
 
     def _parse_boot_sector(self) -> ExfatGeometry:
@@ -128,7 +130,27 @@ class ExfatReader:
         sector: int = geo.cluster_heap_offset_sectors + (cluster - 2) * geo.sectors_per_cluster
         return sector * geo.bytes_per_sector
 
+    #: Groesste FAT (ein 4-Byte-Eintrag je Cluster), die ganz in den Speicher geladen wird; groessere werden je Eintrag gelesen.
+    _FAT_SPEICHER_MAX: int = 64 * 1024 * 1024
+
+    def _fat_laden(self) -> None:
+        """Laedt die FAT einmal ganz. Ein Lesen je Eintrag holte durch den Puffer der Datei jedes Mal 128 KiB (4-facher Lesefaktor)."""
+        self._fat_versucht = True
+        geo: ExfatGeometry = self.geometry
+        laenge: int = (geo.cluster_count + 2) * 4
+        if laenge > self._FAT_SPEICHER_MAX:
+            return
+        self._fh.seek(geo.fat_offset_sectors * geo.bytes_per_sector)
+        daten: bytes = self._fh.read(laenge)
+        if len(daten) == laenge:
+            self._fat = daten
+
     def _fat_next(self, cluster: int) -> int:
+        if self._fat is None and not self._fat_versucht:
+            self._fat_laden()
+        fat: bytes | None = self._fat
+        if fat is not None and cluster * 4 + 4 <= len(fat):
+            return struct.unpack_from("<I", fat, cluster * 4)[0]
         geo: ExfatGeometry = self.geometry
         offset: int = geo.fat_offset_sectors * geo.bytes_per_sector + cluster * 4
         self._fh.seek(offset)
@@ -259,18 +281,46 @@ class ExfatReader:
             raise ExfatError(f"not a file: {entry.rel_path}")
         cluster_size: int = self.geometry.cluster_size
         remaining: int = entry.length
+        # Aufeinanderfolgende Cluster werden zu einem Lauf von hoechstens ``chunk_size`` Bytes zusammengefasst und mit
+        # einem Lesen geholt (ein Lesen je Cluster samt FAT-Zugriff dazwischen kostete das Vierfache vom Datentraeger).
+        max_lauf: int = max(1, chunk_size // cluster_size)
+        lauf_start: int = 0
+        lauf_zahl: int = 0
+
+        def lauf_lesen() -> bytes:
+            self._fh.seek(self._cluster_byte_offset(lauf_start))
+            return self._fh.read(min(lauf_zahl * cluster_size, remaining))
+
         for cluster in self._iter_clusters(entry.first_cluster, entry.no_fat_chain, entry.length):
             if remaining <= 0:
                 break
-            self._fh.seek(self._cluster_byte_offset(cluster))
-            want: int = min(cluster_size, remaining)
-            data: bytes = self._fh.read(want)
+            if lauf_zahl and cluster == lauf_start + lauf_zahl and lauf_zahl < max_lauf:
+                lauf_zahl += 1
+                continue
+            if lauf_zahl:
+                data: bytes = lauf_lesen()
+                remaining -= len(data)
+                yield from self._chunks(data, chunk_size)
+                lauf_zahl = 0
+                if remaining <= 0:
+                    break
+            lauf_start, lauf_zahl = cluster, 1
+        if lauf_zahl and remaining > 0:
+            data = lauf_lesen()
             remaining -= len(data)
-            # Re-chunk to the requested size for bounded memory on large clusters.
-            for pos in range(0, len(data), chunk_size):
-                yield data[pos : pos + chunk_size]
+            yield from self._chunks(data, chunk_size)
         if remaining > 0:
             raise ExfatError(f"file '{entry.rel_path}' truncated: {remaining} bytes short")
+
+    @staticmethod
+    def _chunks(data: bytes, chunk_size: int) -> Iterator[bytes]:
+        """Re-chunk to the requested size for bounded memory on large clusters."""
+        if len(data) <= chunk_size:
+            if data:
+                yield data
+            return
+        for pos in range(0, len(data), chunk_size):
+            yield data[pos : pos + chunk_size]
 
 
 def render_exfat_tree(entries: list[ExfatEntry], prefix: str = "") -> list[str]:

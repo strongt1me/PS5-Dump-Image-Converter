@@ -140,20 +140,21 @@ class StartspracheTests(_Ohne):
 
     def test_die_pruefumgebung_stellt_deutsch_ein(self):
         """Damit die Testreihe auf jedem Rechner dieselbe Sprache hat."""
-        self.assertEqual("de", pruefumgebung_sprache())
+        pruefumgebung.umlenken("startsprache")      # setzt die Variable, wo sie fehlt (setUp hat sie entfernt, patch.dict raeumt auf)
+        self.assertEqual("de", os.environ.get(UMGEBUNG))
+        self.assertEqual("de", i18n.startsprache(None))
 
-
-def pruefumgebung_sprache() -> str:
-    """Die Sprache, die ein Pruefstand nach ``pruefumgebung.umlenken`` sieht (ohne die Aufraeumerei der Testklasse)."""
-    import importlib
-    gemerkt = os.environ.pop(UMGEBUNG, None)
-    try:
-        pruefumgebung.umlenken("startsprache")
-        return i18n.startsprache(None)
-    finally:
-        os.environ.pop(UMGEBUNG, None)
-        if gemerkt is not None:
-            os.environ[UMGEBUNG] = gemerkt
+    def test_das_protokoll_nennt_die_quelle_der_sprache(self):
+        self.assertEqual("gespeicherte Wahl", i18n.sprachquelle("fr"))
+        os.environ[UMGEBUNG] = "fr"
+        self.assertIn(UMGEBUNG, i18n.sprachquelle(None), "eine vergessene Umgebungsvariable faellt im Protokoll auf")
+        os.environ[UMGEBUNG] = "ja_JP"
+        self.assertIn(UMGEBUNG, i18n.sprachquelle(None))
+        os.environ.pop(UMGEBUNG)
+        with mock.patch.object(i18n, "_system_kennung", return_value="de_DE"):
+            self.assertEqual("Systemsprache", i18n.sprachquelle(None))
+        with mock.patch.object(i18n, "_system_kennung", return_value="ja_JP"):
+            self.assertIn("Standard", i18n.sprachquelle(None))
 
 
 def _lade():

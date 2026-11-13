@@ -118,7 +118,7 @@ sonst die falsche erwischen.
 
 ## Geänderte Zeilen
 
-**Sieben Stellen**, jede in einem eigenen Abschnitt unten. Alle sieben sind
+**Acht Stellen**, jede in einem eigenen Abschnitt unten. Alle acht sind
 Zutaten dieses Projekts und **müssen bei jedem Fassungswechsel erneut
 nachgetragen werden**.
 
@@ -144,6 +144,7 @@ Tests laufen; keins von beidem ersetzt das andere.
 | `mkpfs/pfs.py` | Aufräumen fängt `OSError` statt nur `FileNotFoundError` | `test_mkpfs_aufraeumen.py` |
 | `mkpfs/pfs.py` | `progress` für `inspect_pfs_image()` und `verify_pfs_image()` | `test_mkpfs_pruefung_exfat.py` |
 | `mkpfs/cli.py` | Strukturprüfung nach `pack file` ohne Kopie der Quelle, wo kein Link geht | `test_mkpfs_pruefung_exfat.py` |
+| `mkpfs/exfat.py` | FAT einmal laden, Cluster-Läufe in einem Lesen holen (`ExfatReader.read_file`) | `test_exfat_leser_tempo.py` |
 
 Nicht abweichend, sondern **weggelassen**: der ganze Ordner `mkpfs/gui/`
 (18 Dateien). Dieses Projekt bringt seine eigene Oberfläche mit; siehe
@@ -287,3 +288,24 @@ Namens- und Größenabgleich mit der Quelle. Nur die vollständige Prüfung
 bleibt gültig, weil ohne den neuen Schalter weiter kopiert wird.
 
 Bewacht von `test_mkpfs_pruefung_exfat.py`.
+
+### FAT einmal laden und Cluster-Läufe lesen in `mkpfs/exfat.py`
+
+Die Vorlage liest in `ExfatReader.read_file` je Cluster mit `seek` und `read`
+und fragt bei Dateien mit FAT-Kette vor jedem Cluster die FAT mit `seek` und
+`read(4)`. Durch den 128-KiB-Puffer, den Python für `open(..., "rb")` anlegt,
+holt jedes dieser Lesen 128 KiB vom Datenträger: Für ein 64-KiB-Cluster sind das
+zwei Zugriffe zu 128 KiB, also das **Vierfache** der Nutzdaten (gemessen am
+12.11.2026 an einem 153,76-GB-Abbild mit 84.219 Dateien, alle mit FAT-Kette:
+315 MB Ausgabe kosteten 1258 MB Lesen; im echten Lauf 596 GB gelesen für 151 GB
+geschrieben).
+
+Hier wird die FAT beim ersten Zugriff ganz in den Speicher geladen (bis 64 MiB;
+darüber bleibt es beim Lesen je Eintrag), und aufeinanderfolgende Cluster einer
+Datei werden zu einem Lauf von höchstens `chunk_size` (4 MiB) Bytes
+zusammengefasst und mit **einem** Lesen geholt. Die ausgegebenen Bytes und die
+Fehlermeldung bei einer abgeschnittenen Datei sind dieselben wie vorher.
+
+Beim Fassungswechsel prüfen: Hat die Vorlage `read_file` oder `_fat_next`
+geändert, die Zutat erneut einbringen und `test_exfat_leser_tempo.py` laufen
+lassen.

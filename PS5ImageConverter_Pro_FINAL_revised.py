@@ -212,7 +212,8 @@ from ps5_validator.utils.param_manifest import (
 from ps5_validator.utils.i18n import (AMPR_METHODE_ASSETPACK, AMPR_METHODE_KEYS,
                                       AMPR_METHODE_NORMAL, BAUFORM_KEYS,
                                       DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES,
-                                      VERIFY_STUFEN, startsprache as i18n_startsprache,
+                                      VERIFY_STUFEN, sprachquelle as i18n_sprachquelle,
+                                      startsprache as i18n_startsprache,
                                       ZSTD_LEVEL_KEYS, translate as i18n_translate)
 from ps5_validator.utils.ini_config import (
     MEHRFACH_TRENNER,
@@ -5096,6 +5097,8 @@ class PS5ConverterGUI:
         # nicht kennt (Nutzerwunsch 12.11.2026, ``i18n.startsprache``). Bis v1.9.97 war es ohne Wahl immer Deutsch.
         _saved_language = self._load_setting_static("language", None)
         self._current_language: str = i18n_startsprache(_saved_language)
+        # Das Protokoll sagt, wer die Sprache bestimmt hat (auch eine vergessene Umgebungsvariable faellt so auf).
+        logger.info("Startsprache %s (%s)", self._current_language, i18n_sprachquelle(_saved_language))
 
         # 1d. Offene Werkzeugfenster, damit derselbe Knopf sie wieder
         # schliesst. Der Schluessel ist der Methodenname des Knopfes.
@@ -14508,7 +14511,7 @@ class PS5ConverterGUI:
     #: (``mkpfs pack ... --compress --compression-level``). ``.ffpfs`` wird mit ``--no-compress`` gebaut, ``.exfat`` und
     #: ``.ffpkg`` (UFS2) kennen keine Stufe, ein Dump-Ordner wird nicht gepackt. Nutzerwunsch 12.11.2026: Das Feld ist
     #: sonst gesperrt, es stand bei ``.exFAT`` bedienbar da und tat nichts.
-    _KOMPRESSION_WIRKT_BEI: frozenset = frozenset({"ffpfsc"})
+    _KOMPRESSION_WIRKT_BEI: frozenset = _BAUFORM_WIRKT_BEI      # dieselbe Tatsache: nur der .ffpfsc-Container zaehlt
 
     def _kompression_wirkt(self) -> bool:
         """Ob die Kompressionsstufe fuer die gewaehlte Aufgabe und das gewaehlte Zielformat etwas bewirkt.
@@ -17093,11 +17096,12 @@ class PS5ConverterGUI:
     #: Karte 657 px breit. Drei Abstaende zu je 16 px lassen 14 px Reserve,
     #: bei 20 px waeren es nur noch zwei.
     _ZEILE_ABSTAND_GRUPPE = 16
-    #: Abstand zwischen zwei Feldern, zwischen denen ein Pfeil steht: Pfeil (``_PFEIL_BREITE``) und je 3 px Luft. Mehr
+    #: Abstand zwischen zwei Feldern, zwischen denen ein Pfeil steht: Pfeil (``_PFEIL_BREITE``) und je 2 px Luft. Mehr
     #: geht nicht: Mit 26 px (Pfeil 16) passte die Einbauzeile bei 125 % nicht mehr neben die Pruefstufe (16 px zu breit)
-    #: und fiel in eine eigene Zeile; mit 22 px passte sie auf den Pixel genau, mit 18 hat sie rund 16 px Reserve (und
-    #: passt auch bei der Hoechstbreite der Karte von 1336 px, die ``test_kartenzeilen`` misst).
-    _ZEILE_ABSTAND_PFEIL = 18
+    #: und fiel in eine eigene Zeile; mit 22 px passte sie auf den Pixel genau, mit 18 hatte sie rund 16 px Reserve. Mit
+    #: 16 bleibt bei Mindestbreite die Pruefstufe innerhalb des Innenrands und die Einbauzeile 12 px vor dem Kartenrand
+    #: (bei 18 waren es 10 px und die Pruefstufe 2 px ueber dem Innenrand; ``test_kartenzeilen`` misst beides).
+    _ZEILE_ABSTAND_PFEIL = 16
     #: Abstand zwischen einer kleinen Beschriftung und ihrem Bedienelement.
     _ZEILE_ABSTAND_BESCHRIFTUNG = 5
 
@@ -33637,7 +33641,7 @@ class PS5ConverterGUI:
             ):
                 self._append_to_log(self._t("log.exfat_umpacken_leser_scheitert"))
                 return False
-            PS5ConverterGUI._phase_dauer_melden(self, "phase.entpacken", t_entpacken)
+            self._phase_dauer_melden("phase.entpacken", t_entpacken)
 
             # Ohne ist_quellordner: Der Ordner liegt schon im Temp und ist
             # damit die Arbeitskopie. Eine zweite waere nur Ballast, und die
@@ -33646,7 +33650,7 @@ class PS5ConverterGUI:
             ordner = self._integration_anwenden(dump_dir)
             if not ordner:
                 return False
-            PS5ConverterGUI._phase_dauer_melden(self, "phase.integration", t_einbau)
+            self._phase_dauer_melden("phase.integration", t_einbau)
 
             self.task_total_source_bytes = self._quellgroesse_mit_meldung(ordner)
             # Das Ziel ist hier meist die Quelle selbst. Bis zum 24.09.2026
@@ -33658,7 +33662,7 @@ class PS5ConverterGUI:
             ok = self._create_exfat_from_folder(
                 ordner, bau_ziel, pct_start=50.0, pct_end=98.0)
             if ok:
-                PS5ConverterGUI._phase_dauer_melden(self, "phase.abbild_bauen", t_bau)
+                self._phase_dauer_melden("phase.abbild_bauen", t_bau)
             if ok and not self._ergebnis_im_ziel(
                     self._bauziel_uebernehmen(bau_ziel, final_output), final_output):
                 ok = False
@@ -36134,7 +36138,13 @@ class PS5ConverterGUI:
         if verfahren == "zstd":
             schluessel = {5: "settings_dialog.zstd_stufe_5", 9: "settings_dialog.zstd_stufe_9",
                           19: "settings_dialog.zstd_stufe_19", 22: "settings_dialog.zstd_stufe_22"}
-            eintraege = [(s, self._t(schluessel[s]) if s in schluessel else str(s)) for s in self._AMPR_ZSTD_STUFEN]
+            # Eine Stufe, die nicht in der Auswahl steht (``--ampr-zstd-stufe 4``, von Hand eingetragen), kommt dazu:
+            # Sonst zeigte das Feld die Vorgabe, waehrend mit der anderen Stufe gepackt wird.
+            stufen = set(self._AMPR_ZSTD_STUFEN)
+            aktuell = self._ampr_zstd_stufe()
+            if ampr_zstdpack.STUFE_MIN <= aktuell <= ampr_zstdpack.STUFE_MAX:
+                stufen.add(aktuell)
+            eintraege = [(s, self._t(schluessel[s]) if s in schluessel else str(s)) for s in sorted(stufen)]
         else:
             def text(stufe: int) -> str:
                 if stufe == 1:
@@ -36152,8 +36162,7 @@ class PS5ConverterGUI:
     def _ampr_stufe_angezeigt(self, verfahren: str) -> int:
         """Die gespeicherte Stufe als Wert der Tabelle (LZ4 1 bis 4 zeigt die 1; Unbrauchbares die Vorgabe)."""
         if verfahren == "zstd":
-            jetzt = self._ampr_zstd_stufe()
-            return jetzt if jetzt in self._AMPR_ZSTD_STUFEN else ampr_zstdpack.STUFE_VORGABE
+            return self._ampr_zstd_stufe()      # auch eine Stufe ausserhalb der Auswahl: die Tabelle fuehrt sie dann mit
         jetzt = self._ampr_lz4_stufe()
         if jetzt in self._AMPR_LZ4_STUFEN:
             return jetzt
@@ -37522,7 +37531,7 @@ class PS5ConverterGUI:
             ergebnis = ampr_zstdpack.packen(
                 ordner, ausgabe, gewaehlt, stufe=stufe, arbeiter=arbeiter_zahl,
                 melden=self._append_to_log, abbruch=lambda: not self.is_running, fortschritt=_fort("zstd"))
-            PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_packen", t_packen)
+            self._phase_dauer_melden("phase.zstd_packen", t_packen)
             gesamt = max(1, ergebnis.logische_bytes)
             self._append_to_log(self._t(
                 "ampr_zstd.gepackt", files=ergebnis.dateien, chunks=ergebnis.chunks, zstd=ergebnis.zstd_chunks,
@@ -37540,15 +37549,18 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t(
                     "ampr_zstd.pruefung_stichprobe", checked=self._fmt_bytes(pruefbericht["geprueft"]),
                     total=self._fmt_bytes(pruefbericht["gesamt"]), seed=pruefbericht["startwert"]))
+                # Fallen danach die Originale der Arbeitskopie weg, sagt das Protokoll es (Code-Review 12.11.2026).
+                if getattr(self, "_ampr_originale_weglassen", False) and getattr(self, "_ampr_ordner_ist_kopie", False):
+                    self._append_to_log(self._t("ampr_zstd.stichprobe_originale_weg"))
             else:
                 self._append_to_log(self._t("ampr_zstd.pruefung_voll", size=self._fmt_bytes(pruefbericht.get("gesamt", 0))))
             self._append_to_log(self._t("ampr_pack.geprueft"))
-            PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_pruefen", t_pruefen)
+            self._phase_dauer_melden("phase.zstd_pruefen", t_pruefen)
 
             t_uebernehmen = time.monotonic()
             ampr_zstdpack.uebernehmen(ausgabe, ordner, index, melden=lambda _z: None,
                                       abbruch=lambda: not self.is_running)
-            PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_uebernehmen", t_uebernehmen)
+            self._phase_dauer_melden("phase.zstd_uebernehmen", t_uebernehmen)
             uebernommen = True
             self._append_to_log(self._t("ampr_zstd.uebernommen", count=len(index.baender) + 1))
             self._ampr_pack_konsolenhinweis(ordner)
@@ -37589,7 +37601,7 @@ class PS5ConverterGUI:
         self._append_to_log(self._t(
             "ampr_pack.originale_entfernt", count=ergebnis_r["files"],
             size=self._fmt_bytes(ergebnis_r["bytes"]), dirs=ergebnis_r["directories"]))
-        PS5ConverterGUI._phase_dauer_melden(self, "phase.zstd_originale", t_originale)
+        self._phase_dauer_melden("phase.zstd_originale", t_originale)
         return True
 
     @staticmethod
@@ -37603,12 +37615,12 @@ class PS5ConverterGUI:
 
         Wer fragt, wo die Zeit eines langen Laufs geblieben ist, soll es dem Protokoll entnehmen koennen und nicht
         raten muessen (Forum-Bericht 12.11.2026: ein exFAT-Spiel mit zstd brauchte fast 12 Stunden). Ein Fehler beim
-        Melden darf den Lauf nie beeintraechtigen. Aufruf auch mit Attrappen: ``PS5ConverterGUI._phase_dauer_melden(self, ...)``.
+        Melden darf den Lauf nie beeintraechtigen. Aufruf auch mit Attrappen: ``self._phase_dauer_melden(...)``.
         """
         try:
             self._append_to_log(self._t(
                 "log.phase_dauer", phase=self._t(phase_schluessel),
-                zeit=PS5ConverterGUI._dauer_text(time.monotonic() - begonnen)))
+                zeit=self._dauer_text(time.monotonic() - begonnen)))
         except Exception as exc:  # noqa: BLE001
             logger.debug("Phasendauer nicht gemeldet: %s", exc)
 
@@ -65242,24 +65254,42 @@ class PS5ConverterGUI:
 
         seen: dict[bytes, str] = {}
         rows: list[tuple[int, int, str]] = []
+        # Die Indexdatei selbst (und ihre .tmp) kommt nie hinein. ``fpath.resolve()`` je Datei kostete 140 us (gemessen,
+        # warmer Cache) - bei 84.219 Dateien 12 s und auf einer kalten Platte weit mehr, ohne dass die Anzeige sich ruehrte
+        # ("Anzeige steht seit 120 s still", 12.11.2026). Unterhalb des aufgeloesten ``root`` liegt kein Verweis auf einen
+        # Ordner (``os.walk`` folgt keinem), also ist ``fpath`` schon der aufgeloeste Pfad; nur eine Datei, die selbst ein
+        # Verweis ist, wird noch aufgeloest.
+        ausgeschlossen = {os.path.normcase(str(output)), os.path.normcase(str(tmp))}
+        gezaehlt = 0
+        letzte_meldung = time.monotonic()
+        status_melden = getattr(self, "_set_status", None)
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames.sort(key=self._ampr_pfadschluessel)
             filenames.sort(key=self._ampr_pfadschluessel)
             for filename in filenames:
                 fpath = Path(dirpath) / filename
+                gezaehlt += 1
+                if callable(status_melden) and not gezaehlt % 256:
+                    jetzt = time.monotonic()
+                    if jetzt - letzte_meldung >= 1.0:      # ein Lebenszeichen je Sekunde, damit nichts "stillsteht"
+                        letzte_meldung = jetzt
+                        try:
+                            status_melden(self._t("ampr.index_zaehlt", count=gezaehlt))
+                        except Exception as exc:  # noqa: BLE001 - die Anzeige darf den Bau nie stoeren
+                            logger.debug("Indexstand nicht angezeigt: %s", exc)
                 try:
-                    resolved = fpath.resolve()
+                    st = fpath.lstat()
+                    if stat.S_ISLNK(st.st_mode):
+                        if fpath.resolve() in (output, tmp):
+                            continue
+                        st = fpath.stat()
                 except OSError:
                     continue
-                if resolved in (output, tmp):
+                if os.path.normcase(str(fpath)) in ausgeschlossen:
                     continue
                 indexed_path = "/app0/" + fpath.relative_to(root).as_posix()
                 key = self._ampr_pfadschluessel(indexed_path)
                 if key in self._AMPR_INDEX_NIE:
-                    continue
-                try:
-                    st = fpath.stat()
-                except OSError:
                     continue
                 # Nur gewoehnliche Dateien. ``os.walk`` legt in ``filenames``
                 # alles ab, was kein Verzeichnis ist - unter Linux und macOS

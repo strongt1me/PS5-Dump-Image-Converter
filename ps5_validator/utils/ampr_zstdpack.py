@@ -920,7 +920,8 @@ def stichprobe_planen(index: "Index", startwert: int) -> "tuple[dict[int, frozen
     Plan (es gibt nichts zu lesen).
     """
     je_stueck = max(1, LESE_BLOCK // CHUNK_SIZE)
-    plan: "dict[int, set[int] | None]" = {}
+    ganz: list[int] = []                         # Dateien, die ganz geprueft werden
+    teile: dict[int, set[int]] = {}              # grosse Dateien: die gewaehlten Stuecke
     gesamt = 0
     kandidaten: "list[tuple[int, int]]" = []
     rest = 0
@@ -929,11 +930,11 @@ def stichprobe_planen(index: "Index", startwert: int) -> "tuple[dict[int, frozen
             continue
         stuecke = -(-datei.chunk_zahl // je_stueck)
         if stuecke <= GANZ_BIS_STUECKE:
-            plan[nummer] = None
+            ganz.append(nummer)
             gesamt += datei.groesse
             continue
         feste = {0, stuecke - 1}
-        plan[nummer] = set(feste)
+        teile[nummer] = set(feste)
         gesamt += sum(_stueck_bytes(datei, s) for s in feste)
         for s in range(1, stuecke - 1):
             kandidaten.append((nummer, s))
@@ -946,10 +947,12 @@ def stichprobe_planen(index: "Index", startwert: int) -> "tuple[dict[int, frozen
             b = _stueck_bytes(index.dateien[nummer], s)
             if budget < b:
                 break
-            plan[nummer].add(s)       # type: ignore[union-attr]
+            teile[nummer].add(s)
             budget -= b
             gesamt += b
-    return ({n: (None if s is None else frozenset(s)) for n, s in plan.items()}, gesamt)
+    plan: "dict[int, frozenset[int] | None]" = dict.fromkeys(ganz)
+    plan.update({n: frozenset(s) for n, s in teile.items()})
+    return plan, gesamt
 
 
 def _pruef_stuecke(index: Index, handles: dict[int, Any], app0: str,
