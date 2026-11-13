@@ -8134,7 +8134,8 @@ class PS5ConverterGUI:
             waehle_strom = getattr(self, "_strom_fuer_ordner_gewaehlt" if ordner_quelle else "_strom_weg_gewaehlt", None)
             waehle_args = {}
         strom_temp = None
-        if target_type in ("exfat", "ffpfsc", "ffpfs", "ffpkg") and callable(waehle_strom) and waehle_strom(**waehle_args):
+        if (target_type in ("exfat", "ffpfsc", "ffpfs", "ffpkg") and callable(waehle_strom) and waehle_strom(**waehle_args)
+                and not self._lz4_strom_im_voraus_ausgeschlossen(src, ordner_quelle)):
             strom_temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
             if src.lower().endswith(".exfat") or os.path.isdir(src):
                 return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL[target_type]), 0
@@ -34292,7 +34293,7 @@ class PS5ConverterGUI:
             grund_lz4 = self._lz4_strom_vorab(src, ordner, quelle)
             if grund_lz4:
                 # LZ4-Packs im Strom (Etappe 14) schreiben nicht jedes Profil: dann der bisherige Weg, ehe etwas gearbeitet ist.
-                self._append_to_log(self._t("log.lz4_strom_alter_weg", grund=grund_lz4))
+                self._lz4_rueckfall_melden(src, grund_lz4)
                 return None
             # Unzulaessige Namen (Nicht-ASCII, nur in der Schreibung verschieden, ...) vor der ersten Stunde Arbeit melden,
             # nicht erst beim Schreiben.
@@ -34361,7 +34362,7 @@ class PS5ConverterGUI:
                 if self._strom_alter_weg:
                     # Der LZ4-Packer im Strom kann das Profil dieses Titels nicht schreiben (``Lz4NichtImStrom``). Die Quelle ist
                     # nie angefasst worden: Der bisherige Weg faengt von vorn an, der Ueberlagerungsordner wird weggeraeumt.
-                    self._append_to_log(self._t("log.lz4_strom_alter_weg", grund=self._strom_alter_weg))
+                    self._lz4_rueckfall_melden(src, self._strom_alter_weg)
                     return None
                 return False
             self._phase_dauer_melden("phase.integration", t_einbau)
@@ -38298,6 +38299,42 @@ class PS5ConverterGUI:
         if not self._ampr_direktleser_riegel(ordner, eigenes_profil):
             return True
         return self._ampr_originale_entfernen(ordner, zeilen)
+
+    def _lz4_strom_im_voraus_ausgeschlossen(self, src: str, ordner: bool) -> bool:
+        """Steht schon vor dem Start fest, dass LZ4 nicht im Strom gepackt wird (und der Zwischenordner das ganze Spiel braucht)?
+
+        Die billige Fassung von :meth:`_lz4_strom_vorab` fuer die Platzpruefung (Hauptfaden, nur kleine Dateien): ein Packprofil des Anwenders
+        neben dem Dump-Ordner, oder ein Titelprofil mit mehreren Gruppen (nach ``param.sfo``). Was nur ein Blick in das Abbild zeigen wuerde
+        (Engine-Profile, Abbilder als Quelle), bleibt hier unentschieden: Der Lauf selbst faellt dann zurueck und warnt vor dem Platz
+        (:meth:`_lz4_rueckfall_melden`).
+        """
+        try:
+            if not (ordner and self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK
+                    and self._ampr_pack_verfahren() == "lz4"):
+                return False
+            kandidat = os.path.normpath(os.path.abspath(src)) + self._EIGENES_PROFIL_ENDUNG
+            if os.path.isfile(kandidat) and not ampr_assetpakete.profil_ist_eigenes(kandidat):
+                return True
+            _bezeichnung, pfad = ampr_assetpakete.profil_integriert_nach_title_id(src)
+            return bool(pfad and ampr_lz4pack.verfuegbar() and ampr_lz4pack.grund_gegen_strom(pfad))
+        except Exception as exc:  # noqa: BLE001 - im Zweifel gilt die Strom-Schaetzung
+            logger.debug("LZ4-Strom vor dem Start nicht beurteilbar: %s", exc)
+            return False
+
+    def _lz4_rueckfall_melden(self, src: str, grund: str) -> None:
+        """Meldet, dass LZ4 doch ueber einen Zwischenordner gepackt wird, und warnt, wenn der Arbeitsordner dafuer zu klein ist.
+
+        Der Zwischenordner (Arbeitskopie plus Packen) braucht etwa so viel Platz wie das Spiel (``_PLATZFAKTOR_TEMP_MIT_KOPIE``); die
+        Platzpruefung vor dem Start ging vom Strom aus, wenn die Quelle ein Abbild ist.
+        """
+        self._append_to_log(self._t("log.lz4_strom_alter_weg", grund=grund))
+        try:
+            noetig = int(self._quellgroesse_ermitteln(src) * self._PLATZFAKTOR_TEMP_MIT_KOPIE)
+            frei = self._freier_platz(self._get_runtime_temp_dir(anlegen=False))
+            if noetig > 0 and frei is not None and frei < noetig:
+                self._append_to_log(self._t("log.lz4_rueckfall_platz", need=self._fmt_bytes(noetig), free=self._fmt_bytes(frei)))
+        except Exception as exc:  # noqa: BLE001 - die Warnung darf den Lauf nie stoeren
+            logger.debug("Platz fuer den Zwischenordner nicht pruefbar: %s", exc)
 
     def _lz4_strom_vorab(self, src: str, ordner: bool, quelle: Any) -> str:
         """Kann der LZ4-Packer im Strom (``ampr_lz4pack``) das Profil dieses Laufs schreiben? ``""`` = ja, sonst der Grund.

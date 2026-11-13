@@ -973,6 +973,92 @@ class VorabTests(_HauptGrundlage):
         self.assertIsNone(g._strom_ansicht)
 
 
+class PlatzSchaetzungTests(_HauptGrundlage):
+    """Die Platzpruefung vor dem Start kennt die Faelle, in denen LZ4 doch ueber einen Zwischenordner packt (Nachbesserung zu Etappe 14)."""
+
+    def gui(self, quelle_gb: int = 100) -> "GUI":
+        g = _gui(self.tmp)
+        g._quellgroesse_ermitteln = lambda src: quelle_gb * 1024 ** 3
+        g._estimate_unpack_space_requirement = lambda src: None
+        g._integration_gewuenscht = lambda: True
+        g._umhuellt_neu_packen = False
+        g._integration_gewaehlt = lambda: True
+        return g
+
+    def temp_fuer(self, g, src: str) -> int:
+        return g._platzbedarf_je_quelle(src, "exfat")[0]
+
+    def test_ordner_ohne_besonderheit_braucht_wenig_temp(self) -> None:
+        g = self.gui()
+        self.assertLess(self.temp_fuer(g, self.spiel), 10 * 1024 ** 3)
+
+    def test_anwenderprofil_neben_dem_ordner_rechnet_den_zwischenordner(self) -> None:
+        Path(self.spiel + "_ampr_pack.toml").write_text("# aus Mitschnitten\n", encoding="utf-8")
+        g = self.gui()
+        self.assertTrue(g._lz4_strom_im_voraus_ausgeschlossen(self.spiel, True))
+        self.assertGreater(self.temp_fuer(g, self.spiel), 100 * 1024 ** 3, "der Zwischenordner braucht das ganze Spiel")
+
+    def test_profil_des_programms_neben_dem_ordner_zaehlt_nicht(self) -> None:
+        Path(self.spiel + "_ampr_pack.toml").write_text(ap.PROFIL_KENNZEILE + "\n", encoding="utf-8")
+        self.assertFalse(self.gui()._lz4_strom_im_voraus_ausgeschlossen(self.spiel, True))
+
+    def test_titelprofil_mit_mehreren_gruppen(self) -> None:
+        _schreiben(self.spiel, {"sce_sys/param.sfo": _sfo("PPSA23566")})                  # EA Sports UFC 6: drei Gruppen
+        g = self.gui()
+        self.assertTrue(g._lz4_strom_im_voraus_ausgeschlossen(self.spiel, True))
+        self.assertGreater(self.temp_fuer(g, self.spiel), 100 * 1024 ** 3)
+
+    def test_titelprofil_mit_einer_gruppe_bleibt_im_strom(self) -> None:
+        _schreiben(self.spiel, {"sce_sys/param.sfo": _sfo("PPSA21567")})                  # ASTRO BOT
+        g = self.gui()
+        self.assertFalse(g._lz4_strom_im_voraus_ausgeschlossen(self.spiel, True))
+        self.assertLess(self.temp_fuer(g, self.spiel), 10 * 1024 ** 3)
+
+    def test_abbild_als_quelle_bleibt_unentschieden(self) -> None:
+        """Ein Abbild muesste geoeffnet werden, um das Profil zu kennen: Die Schaetzung bleibt beim Strom, der Lauf warnt dann selbst."""
+        Path(self.quelle + "_ampr_pack.toml").write_text("# aus Mitschnitten\n", encoding="utf-8")
+        self.assertFalse(self.gui()._lz4_strom_im_voraus_ausgeschlossen(self.quelle, False))
+
+    def test_nur_bei_lz4_mit_asset_pack(self) -> None:
+        Path(self.spiel + "_ampr_pack.toml").write_text("# aus Mitschnitten\n", encoding="utf-8")
+        g = self.gui()
+        g._ampr_pack_verfahren = lambda: "zstd"
+        self.assertFalse(g._lz4_strom_im_voraus_ausgeschlossen(self.spiel, True))
+        g = self.gui()
+        g._ampr_methode = lambda: APP.AMPR_METHODE_NORMAL
+        self.assertFalse(g._lz4_strom_im_voraus_ausgeschlossen(self.spiel, True))
+
+    def test_rueckfall_warnt_vor_zu_wenig_platz(self) -> None:
+        g = self.gui(quelle_gb=100)
+        g._get_runtime_temp_dir = lambda anlegen=True: self.tmp
+        g._freier_platz = lambda pfad: 20 * 1024 ** 3
+        g._lz4_rueckfall_melden(self.quelle, "Packprofil des Anwenders")
+        text = "\n".join(g._log_lines)
+        self.assertIn("Zwischenordner", text)
+        self.assertIn("Achtung", text)
+        self.assertIn(str(int(100 * 1024 ** 3 * g._PLATZFAKTOR_TEMP_MIT_KOPIE)), text)
+
+    def test_rueckfall_ohne_platzmangel_meldet_nur_den_grund(self) -> None:
+        g = self.gui(quelle_gb=100)
+        g._get_runtime_temp_dir = lambda anlegen=True: self.tmp
+        g._freier_platz = lambda pfad: 500 * 1024 ** 3
+        g._lz4_rueckfall_melden(self.quelle, "2 Gruppen: a, b")
+        text = "\n".join(g._log_lines)
+        self.assertIn("2 Gruppen", text)
+        self.assertNotIn("Achtung", text)
+
+    def test_rueckfall_im_lauf_warnt(self) -> None:
+        """Ein Anwenderprofil neben dem Ordner schickt den Lauf zum alten Weg - mit Warnung, wenn der Arbeitsordner zu klein ist."""
+        Path(self.spiel + "_ampr_pack.toml").write_text("# aus Mitschnitten\n", encoding="utf-8")
+        g = _gui(self.tmp)
+        g._freier_platz = lambda pfad: 1
+        g._quellgroesse_ermitteln = lambda src: 5 * 1024 ** 3
+        g._get_runtime_temp_dir = lambda anlegen=True: self.tmp
+        ergebnis = g._mode_exfat_umpacken_strom(self.spiel, self.ziel, ordner=True)
+        self.assertIsNone(ergebnis)
+        self.assertTrue(any("Achtung" in z for z in g._log_lines), "\n".join(g._log_lines))
+
+
 class MessenImHauptmodulTests(_HauptGrundlage):
     """``_ampr_lz4_messen`` mit einer Ansicht aus einem Ordner (ohne Bau des Abbilds): die Riegel des Weges ueber den Ordner."""
 

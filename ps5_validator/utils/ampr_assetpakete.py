@@ -912,6 +912,17 @@ def _profil_waehlen(title_id: str, engine: str, ist_insomniac: "Callable[[], boo
     return "", ""
 
 
+def profil_integriert_nach_title_id(app0: str) -> tuple[str, str]:
+    """Das mitgelieferte Profil, das genau zur Title-ID in ``sce_sys/param.sfo`` passt - ohne den Spielordner zu durchlaufen.
+
+    Billig genug fuer die Platzpruefung vor dem Start (eine kleine Datei): Engine-Profile (Unity, Insomniac) brauchen einen Lauf durch den
+    ganzen Ordner und fehlen hier. Gibt ``("", "")`` zurueck, wenn die Title-ID kein Profil hat.
+    """
+    if not app0:
+        return "", ""
+    return _profil_waehlen(title_id_aus_sfo(app0), "", lambda: False)
+
+
 def _baum_merkmale(baum: Any) -> "tuple[dict[str, Any], list[str]]":
     """``(Dateien nach Pfad, Ordnerpfade)`` eines Lesebaums (:mod:`spielbaum`) - Pfade mit ``/``, ohne Anfangsstrich."""
     dateien = {rel.replace("\\", "/").lstrip("/"): d for rel, d in baum.suchen().items()}
