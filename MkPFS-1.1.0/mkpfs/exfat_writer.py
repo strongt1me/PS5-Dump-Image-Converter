@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import struct
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -66,6 +66,8 @@ class _Node:
     is_dir: bool
     size: int = 0
     abs_path: Path | None = None
+    #: Statt ``abs_path``: liefert die Bytes einer Datei, die es nicht auf der Platte gibt (``iter_exfat_image_liste``).
+    opener: Callable[[], Iterator[bytes]] | None = None
     children: list[_Node] = field(default_factory=list)
     first_cluster: int = 0
     cluster_count: int = 0
@@ -141,6 +143,107 @@ def _scan_tree(root: Path) -> _Node:
             f"first: {beispiele}"
         )
     return root_node
+
+
+def _baum_aus_liste(eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]]) -> _Node:
+    """Build the same tree ``_scan_tree`` builds, from a list ``(path, size, opener)`` instead of a folder.
+
+    ``path`` uses ``/`` and is relative to the volume root; ``opener()`` returns the bytes of the file (their sum must be
+    ``size``). Entries are refused rather than dropped, as in ``_scan_tree``: non-ASCII names, empty / ``.`` / ``..`` /
+    control-character names, names that differ only in case (the up-case hash cannot tell them apart), and a name used for a
+    file and a directory. OS metadata (``is_ignored_name``) is left out, as in ``_scan_tree``.
+    """
+    root_node = _Node(rel_path="", name="", is_dir=True)
+    fremde_namen: list[str] = []
+    unzulaessig: list[str] = []
+    kollisionen: list[str] = []
+    verzeichnisse: dict[str, _Node] = {"": root_node}
+    belegt: dict[tuple[str, str], str] = {}        # (Ordner, name.lower()) -> Schreibung
+
+    def _ordner(rel: str) -> _Node | None:
+        if rel in verzeichnisse:
+            return verzeichnisse[rel]
+        eltern, _, name = rel.rpartition("/")
+        vater = _ordner(eltern)
+        if vater is None:
+            return None
+        schluessel = (eltern, name.lower())
+        if schluessel in belegt:
+            kollisionen.append(rel)
+            return None
+        belegt[schluessel] = name
+        node = _Node(rel_path=rel, name=name, is_dir=True)
+        vater.children.append(node)
+        verzeichnisse[rel] = node
+        return node
+
+    for pfad, groesse, opener in eintraege:
+        teile = pfad.split("/")
+        if any(t in ("", ".", "..") or len(t) > 255 or "\\" in t or any(ord(c) < 32 for c in t) for t in teile):
+            unzulaessig.append(pfad)
+            continue
+        if any(is_ignored_name(t) for t in teile):
+            continue
+        if not all(t.isascii() for t in teile):
+            fremde_namen.append(pfad)
+            continue
+        eltern = "/".join(teile[:-1])
+        vater = _ordner(eltern) if eltern else root_node
+        if vater is None:
+            kollisionen.append(pfad)
+            continue
+        schluessel = (eltern, teile[-1].lower())
+        if schluessel in belegt:
+            kollisionen.append(pfad)
+            continue
+        belegt[schluessel] = teile[-1]
+        vater.children.append(_Node(rel_path=pfad, name=teile[-1], is_dir=False, size=int(groesse), opener=opener))
+
+    if fremde_namen:
+        raise ExfatBuildError(
+            f"Source list contains {len(fremde_namen)} entry/entries with non-ASCII names, which exFAT name hashing "
+            f"cannot represent here: {', '.join(fremde_namen[:5])}"
+        )
+    if unzulaessig:
+        raise ExfatBuildError(f"Source list contains {len(unzulaessig)} unusable path(s): {', '.join(unzulaessig[:5])}")
+    if kollisionen:
+        raise ExfatBuildError(
+            f"Source list contains {len(kollisionen)} path(s) that collide (same name apart from case, or used as file "
+            f"and as directory): {', '.join(kollisionen[:5])}"
+        )
+
+    def _sortieren(node: _Node) -> None:
+        node.children.sort(key=lambda c: c.name.lower())
+        for kind in node.children:
+            if kind.is_dir:
+                _sortieren(kind)
+
+    _sortieren(root_node)
+    return root_node
+
+
+def _dateireihenfolge(root: _Node) -> list[str]:
+    """Paths of the files whose bytes ``iter_exfat_image`` emits (size > 0), in emission order."""
+    ergebnis: list[str] = []
+
+    def _gehen(node: _Node) -> None:
+        for child in node.children:
+            if child.is_dir:
+                _gehen(child)
+            elif child.size > 0:
+                ergebnis.append(child.rel_path)
+
+    _gehen(root)
+    return ergebnis
+
+
+def dateireihenfolge_liste(eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]]) -> list[str]:
+    """The order in which ``iter_exfat_image_liste`` will call the openers (files of size 0 are never opened).
+
+    For sources that can only be read front to back (a compression stream), this lets the caller check *before* the first
+    byte is written that the stream delivers its files in the order the volume needs them.
+    """
+    return _dateireihenfolge(_baum_aus_liste(eintraege))
 
 
 def _choose_cluster_size(root: _Node) -> int:
@@ -393,7 +496,28 @@ def iter_exfat_image(
     Yields:
         Image byte chunks in increasing offset order; concatenation is the volume.
     """
-    root: _Node = _scan_tree(source_root)
+    yield from _iter_exfat_image_node(_scan_tree(source_root), cluster_size, on_layout)
+
+
+def iter_exfat_image_liste(
+    eintraege: Iterable[tuple[str, int, Callable[[], Iterator[bytes]]]],
+    cluster_size: int | None = None,
+    on_layout: Callable[[int], None] | None = None,
+) -> Iterator[bytes]:
+    """Like :func:`iter_exfat_image`, but the files come from a list ``(path, size, opener)`` instead of a folder.
+
+    Nothing has to exist on disk: ``opener()`` is called once per non-empty file, in the order given by
+    :func:`dateireihenfolge_liste`, and must yield exactly ``size`` bytes. The image is byte-for-byte the one a folder with the
+    same files would give.
+    """
+    yield from _iter_exfat_image_node(_baum_aus_liste(eintraege), cluster_size, on_layout)
+
+
+def _iter_exfat_image_node(
+    root: _Node,
+    cluster_size: int | None,
+    on_layout: Callable[[int], None] | None,
+) -> Iterator[bytes]:
     cluster_size = cluster_size or _choose_cluster_size(root)
     spc: int = cluster_size // BYTES_PER_SECTOR
     spc_shift: int = (cluster_size // BYTES_PER_SECTOR).bit_length() - 1
@@ -452,15 +576,22 @@ def iter_exfat_image(
                 yield _emit_dir_bytes(child, is_root=False)
                 yield from _emit(child)
             elif child.size > 0:
-                assert child.abs_path is not None
                 written: int = 0
-                with child.abs_path.open("rb") as fh:
-                    while True:
-                        chunk: bytes = fh.read(1024 * 1024)
-                        if not chunk:
-                            break
+                if child.opener is not None:
+                    for chunk in child.opener():
                         written += len(chunk)
+                        if written > child.size:
+                            break                               # reported below; no need to emit what does not fit
                         yield chunk
+                else:
+                    assert child.abs_path is not None
+                    with child.abs_path.open("rb") as fh:
+                        while True:
+                            chunk = fh.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            written += len(chunk)
+                            yield chunk
                 # A source that ends early used to pass silently: the padding
                 # below simply grew, the image kept its planned size, and the
                 # directory entry still claimed the full length. The missing
@@ -471,7 +602,7 @@ def iter_exfat_image(
                 # ended before expected size"); this path stayed quiet.
                 if written != child.size:
                     raise ExfatBuildError(
-                        f"Source file changed while reading: {child.abs_path} "
+                        f"Source file changed while reading: {child.abs_path or child.rel_path} "
                         f"reported {child.size} bytes at scan time but "
                         f"delivered {written}."
                     )

@@ -118,7 +118,7 @@ sonst die falsche erwischen.
 
 ## Geänderte Zeilen
 
-**Acht Stellen**, jede in einem eigenen Abschnitt unten. Alle acht sind
+**Neun Stellen**, jede in einem eigenen Abschnitt unten. Alle neun sind
 Zutaten dieses Projekts und **müssen bei jedem Fassungswechsel erneut
 nachgetragen werden**.
 
@@ -145,6 +145,7 @@ Tests laufen; keins von beidem ersetzt das andere.
 | `mkpfs/pfs.py` | `progress` für `inspect_pfs_image()` und `verify_pfs_image()` | `test_mkpfs_pruefung_exfat.py` |
 | `mkpfs/cli.py` | Strukturprüfung nach `pack file` ohne Kopie der Quelle, wo kein Link geht | `test_mkpfs_pruefung_exfat.py` |
 | `mkpfs/exfat.py` | FAT einmal laden, Cluster-Läufe in einem Lesen holen (`ExfatReader.read_file`) | `test_exfat_leser_tempo.py` |
+| `mkpfs/exfat_writer.py` | `iter_exfat_image_liste` und `dateireihenfolge_liste`: Abbild aus einer Dateiliste statt aus einem Ordner | `test_abbild_strom.py` |
 
 Nicht abweichend, sondern **weggelassen**: der ganze Ordner `mkpfs/gui/`
 (18 Dateien). Dieses Projekt bringt seine eigene Oberfläche mit; siehe
@@ -309,3 +310,22 @@ Fehlermeldung bei einer abgeschnittenen Datei sind dieselben wie vorher.
 Beim Fassungswechsel prüfen: Hat die Vorlage `read_file` oder `_fat_next`
 geändert, die Zutat erneut einbringen und `test_exfat_leser_tempo.py` laufen
 lassen.
+
+### Abbild aus einer Dateiliste in `mkpfs/exfat_writer.py`
+
+Die Vorlage baut ein exFAT-Abbild nur aus einem **Ordner** (`iter_exfat_image(source_root)`): `_scan_tree` liest den
+Ordner, der Schreiber öffnet jede Datei mit `abs_path.open`. Wer ein Spiel aus einer `.exfat` umpackt, musste es deshalb
+erst in einen Ordner entpacken (151 GB geschrieben für ein 153-GB-Spiel, vor dem eigentlichen Bauen).
+
+Hier gibt es daneben `iter_exfat_image_liste(eintraege)` mit `eintraege = [(Pfad, Größe, Öffner), ...]`: Der Öffner liefert
+die Bytes einer Datei, die nicht auf der Platte liegen muss (Lesebaum über eine `.exfat`, zstd-Strom). `_Node` hat dafür das
+Feld `opener`; `_baum_aus_liste` baut denselben Baum wie `_scan_tree` (sortiert nach `name.lower()`) und lehnt ab statt
+auszulassen: Nicht-ASCII-Namen, leere, `.`/`..`-Namen, Namen mit Rückstrich oder Steuerzeichen, Namen, die sich nur in
+der Schreibung unterscheiden, und einen Namen als Datei und als Ordner. Betriebssystem-Dateien (`is_ignored_name`) fallen
+weg wie im Ordnerweg. `dateireihenfolge_liste(eintraege)` nennt vorab die Reihenfolge, in der die Öffner gerufen werden -
+ein Strom, der nur vorwärts lesbar ist, prüft damit vor dem ersten Byte, ob seine Reihenfolge stimmt.
+`iter_exfat_image` selbst ist unverändert (nur der Rumpf steht jetzt in `_iter_exfat_image_node`); ein Ordner und die
+gleiche Dateiliste ergeben **byteweise dasselbe** Abbild.
+
+Beim Fassungswechsel prüfen: Hat die Vorlage `iter_exfat_image` oder `_Node` geändert, die Zutat erneut einbringen und
+`test_abbild_strom.py` laufen lassen (`ListeSchreiberTests` vergleicht gegen den Ordnerweg).
