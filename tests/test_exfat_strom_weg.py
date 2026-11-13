@@ -907,6 +907,8 @@ class FfpfscAusgabeTests(_Grundlage):
         aufrufe: list[tuple] = []
         g._strom_weg_gewaehlt = lambda: eigenschaften.get("strom", True)
         g._strom_fuer_ordner_gewaehlt = lambda: eigenschaften.get("strom", True)
+        g._strom_erlaubt = lambda *, einbau_noetig: eigenschaften.get("strom", True)
+        g._ffpkg_output_path = lambda *a: (_ for _ in ()).throw(RuntimeError("alter weg"))
         g._mode_exfat_umpacken_strom = lambda src, dst, **kw: aufrufe.append((src, dst, kw)) or eigenschaften.get("ergebnis", "strom")
         g._ausgabe_stamm = lambda *a, **k: "x"
         g._mkdtemp = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("alter weg"))
@@ -963,6 +965,29 @@ class FfpfscAusgabeTests(_Grundlage):
                 with self.assertRaises(RuntimeError, msg=(eig, unkomprimiert)):
                     g._mode_ffpfsc_umpacken("a.ffpfsc", "d", uncompressed=unkomprimiert)
 
+    def test_ffpkg_als_ziel_nimmt_den_strom(self) -> None:
+        """Etappe 13: Auch die ``.ffpkg`` als Ausgabe entsteht im Strom (eigener UFS2-Schreiber), aus jeder Quelle."""
+        for name, aufruf, erwartet in (
+                ("exfat", lambda g: g._mode_exfat_to_ffpkg("a.exfat", "d"), ("a.exfat", "d", {"ziel": "ffpkg"})),
+                ("ffpfsc", lambda g: g._mode_ffpfsc_to_ffpkg("a.ffpfsc", "d"), ("a.ffpfsc", "d", {"pfs": True, "ziel": "ffpkg"})),
+                ("ffpkg", lambda g: g._mode_ffpkg_to_ffpkg("a.ffpkg", "d"), ("a.ffpkg", "d", {"ufs2": True, "ziel": "ffpkg"})),
+                ("ordner", lambda g: g._mode_folder_to_ffpkg(self.spiel, "d"), (self.spiel, "d", {"ordner": True, "ziel": "ffpkg"}))):
+            with self.subTest(name):
+                g, aufrufe = self._verteiler()
+                self.assertEqual("strom", aufruf(g))
+                self.assertEqual([erwartet], aufrufe)
+
+    def test_ffpkg_als_ziel_ohne_strom_oder_bei_none_der_alte_weg(self) -> None:
+        for eig in ({"strom": False}, {"ergebnis": None}):
+            for name, aufruf in (("exfat", lambda g: g._mode_exfat_to_ffpkg("a.exfat", "d")),
+                                 ("ffpfsc", lambda g: g._mode_ffpfsc_to_ffpkg("a.ffpfsc", "d")),
+                                 ("ffpkg", lambda g: g._mode_ffpkg_to_ffpkg("a.ffpkg", "d")),
+                                 ("ordner", lambda g: g._mode_folder_to_ffpkg(self.spiel, "d"))):
+                with self.subTest(eig=eig, quelle=name):
+                    g, _aufrufe = self._verteiler(**eig)
+                    with self.assertRaises(RuntimeError):
+                        aufruf(g)
+
     def test_ordner_zu_ffpfsc_nimmt_den_strom(self) -> None:
         g, aufrufe = self._verteiler()
         self.assertEqual("strom", g._mode_pack_folder(self.spiel, "d"))
@@ -994,6 +1019,21 @@ class FfpfscAusgabeTests(_Grundlage):
         self.assertEqual(int(150 * 1024 ** 3 * g._PLATZFAKTOR_ZIEL["ffpfsc"]), ziel)
         temp, _ziel, _dump = g._platzbedarf_je_quelle("spiel.exfat", "ffpfsc")
         self.assertLess(temp, 10 * 1024 ** 3)
+
+    def test_platzbedarf_fuer_die_ffpkg(self) -> None:
+        g = GUI.__new__(GUI)
+        g._strom_erlaubt = lambda *, einbau_noetig: True
+        g._quellgroesse_ermitteln = lambda src: 150 * 1024 ** 3
+        g._estimate_unpack_space_requirement = lambda src: None
+        g._integration_gewuenscht = lambda: True
+        g._umhuellt_neu_packen = False
+        for quelle in (self.spiel, "spiel.exfat"):
+            temp, ziel, dump = g._platzbedarf_je_quelle(quelle, "ffpkg")
+            self.assertLess(temp, 10 * 1024 ** 3, quelle)
+            self.assertEqual(0, dump)
+            self.assertEqual(int(150 * 1024 ** 3 * g._PLATZFAKTOR_ZIEL["ffpkg"]), ziel)
+        g._strom_erlaubt = lambda *, einbau_noetig: False                    # ohne Strom wieder der Zwischenordner
+        self.assertGreater(g._platzbedarf_je_quelle("spiel.exfat", "ffpkg")[0], 10 * 1024 ** 3)
 
     def test_platzbedarf_fuer_die_flache_datei(self) -> None:
         g = GUI.__new__(GUI)
@@ -1283,6 +1323,257 @@ class FfpfsAusgabeTests(_Grundlage):
         with sb.PfsBaum(os.path.join(self.ziel, os.listdir(self.ziel)[0])) as baum:
             baum.dateien()
             self.assertNotIn("savedata_leer", baum.ordner())
+
+
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class FfpkgAusgabeTests(_Grundlage):
+    """Etappe 13: Ergebnis als ``.ffpkg`` (UFS2) im Strom - eigener Schreiber, ohne UFS2Tool, ohne Administratorrechte."""
+
+    PATCH = b"\x7fELF" + b"EINGEBAUT"
+
+    def setUp(self) -> None:
+        super().setUp()
+        from ps5_validator.utils import ufs2_schreiber
+        from mkpfs import consts
+        from mkpfs.pfs import build_pfs_stream_single_file
+        os.makedirs(os.path.join(self.spiel, "savedata_leer"))
+        with open(self.quelle, "wb") as fh:                                  # die .exfat jetzt mit dem leeren Verzeichnis
+            for stueck in iter_exfat_image(Path(self.spiel)):
+                fh.write(stueck)
+        self.huelle = os.path.join(self.tmp, "huelle.ffpfsc")
+        build_pfs_stream_single_file(
+            source_file=Path(self.quelle), output_path=Path(self.huelle), block_size=65536,
+            pfs_version=consts.PFS_VERSION_PS5, case_insensitive=True, zlib_level=6, threshold_gain=0, min_file_gain=0,
+            min_compress_size=0, cpu_count=1, compress=True)
+        # eine .ffpkg als Quelle - ebenfalls mit dem eigenen Schreiber gebaut, kein UFS2Tool noetig
+        self.ffpkg = os.path.join(self.tmp, "quelle.ffpkg")
+        inhalte = dict(self.inhalt)
+        plan = ufs2_schreiber.planen(
+            [(rel, len(d), (lambda d=d: iter([d]))) for rel, d in inhalte.items()], ["savedata_leer"],
+            profil=ufs2_schreiber.profil_aus_newfs(__import__("ps5_validator.utils.ffpkg_support",
+                                                              fromlist=["x"]).primary_newfs_profile()))
+        plan.schreiben(self.ffpkg)
+
+    def gui(self, **kw):
+        g = _gui(self.tmp, **kw)
+        g._resolve_pack_profile = lambda mode, groesse: {
+            "profile": "t", "level": 3, "cpu": 1, "cores": 1, "block_size": 65536, "size_gb": 0.0, "verify_after": True}
+        g._format_phase_status = lambda text, **k: text
+        # ohne Administratorrechte und ohne UFS2Tool: Der Strom darf beides nicht brauchen
+        g._extract_ufs2tool = lambda *a, **k: (_ for _ in ()).throw(AssertionError("UFS2Tool wurde gebraucht"))
+        return g
+
+    def gui_nur_einbau(self, einbau: bool = True):
+        g = self.gui()
+        patch = self.PATCH
+
+        def integration(ordner, **k):
+            if einbau:
+                Path(ordner, "eboot.bin").write_bytes(patch)
+                os.makedirs(os.path.join(ordner, "fakelib"), exist_ok=True)
+                Path(ordner, "fakelib", "neu.sprx").write_bytes(b"neue Bibliothek")
+            g._ampr_ordner_ist_kopie = True
+            return ordner
+        g._integration_anwenden = integration
+        return g
+
+    def lauf(self, quelle, g=None, **kw):
+        g = g or self.gui()
+        with mock.patch.object(APP, "_is_admin", return_value=False):
+            return g, g._mode_exfat_umpacken_strom(quelle, self.ziel, ziel="ffpkg", **kw)
+
+    def _gelesen(self, pfad: str) -> "tuple[dict[str, bytes], list[str]]":
+        with sb.Ufs2Baum(pfad) as baum:
+            return {d.rel: b"".join(d.lesen()) for d in baum.dateien()}, baum.ordner()
+
+    def test_aus_jeder_quelle_mit_zstd_pack(self) -> None:
+        for quelle, kw in ((self.quelle, {}), (self.huelle, {"pfs": True}), (self.spiel, {"ordner": True}),
+                           (self.ffpkg, {"ufs2": True})):
+            with self.subTest(quelle=os.path.basename(quelle)):
+                shutil.rmtree(self.ziel)
+                os.makedirs(self.ziel)
+                g, ok = self.lauf(quelle, **kw)
+                self.assertTrue(ok, "\n".join(g._log_lines))
+                namen = os.listdir(self.ziel)
+                self.assertEqual([os.path.splitext(os.path.basename(quelle.rstrip("/\\")))[0] + ".ffpkg"], namen)
+                dateien, ordner = self._gelesen(os.path.join(self.ziel, namen[0]))
+                self.assertEqual(self.inhalt["eboot.bin"], dateien["eboot.bin"])
+                self.assertEqual(NG_LIB, dateien["fakelib/libSceAmpr.sprx"])
+                self.assertNotIn("Media/text.txt", dateien)                  # gepackt, Original weg
+                self.assertIn("ampr_zstd-000.pak", dateien)
+                self.assertIn("ampr_zstd.index", dateien)
+                self.assertIn("savedata_leer", ordner, "ein leeres Verzeichnis bleibt")
+
+    def test_ohne_pack_nur_einbau_und_ohne_jeden_einbau(self) -> None:
+        for einbau in (True, False):
+            for quelle, kw in ((self.quelle, {}), (self.huelle, {"pfs": True}), (self.spiel, {"ordner": True}),
+                               (self.ffpkg, {"ufs2": True})):
+                with self.subTest(einbau=einbau, quelle=os.path.basename(quelle)):
+                    shutil.rmtree(self.ziel)
+                    os.makedirs(self.ziel)
+                    g, ok = self.lauf(quelle, self.gui_nur_einbau(einbau), **kw)
+                    self.assertTrue(ok, "\n".join(g._log_lines))
+                    dateien, ordner = self._gelesen(os.path.join(self.ziel, os.listdir(self.ziel)[0]))
+                    erwartet = dict(self.inhalt)
+                    if einbau:
+                        erwartet["eboot.bin"] = self.PATCH
+                        erwartet["fakelib/neu.sprx"] = b"neue Bibliothek"
+                    for rel in ("sce_sys/param.json", "sce_sys/param.json.alt"):
+                        dateien.pop(rel, None)
+                        erwartet.pop(rel, None)
+                    self.assertEqual(sorted(erwartet), sorted(dateien))
+                    for rel, daten in erwartet.items():
+                        self.assertEqual(daten, dateien[rel], rel)
+                    self.assertIn("savedata_leer", ordner)
+                    self.assertFalse([r for r in dateien if z.ist_packname(r)], "es entsteht kein Pack")
+
+    def test_dasselbe_abbild_wie_der_schreiber_aus_der_liste(self) -> None:
+        """Der Strom aendert nichts am Ergebnis: Aus den Dateien, die er geschrieben hat, baut der Schreiber (mit festem Zeitstempel) dasselbe."""
+        from ps5_validator.utils import ffpkg_support as ffs
+        from ps5_validator.utils import ufs2_schreiber
+        fest = {"zeit": 1_700_000_000, "fs_id": (5, 6)}
+        echt = ufs2_schreiber.planen
+
+        def festgelegt(*a, **k):
+            return echt(*a, **dict(k, **fest))
+        with mock.patch.object(ufs2_schreiber, "planen", side_effect=festgelegt):
+            g, ok = self.lauf(self.quelle, self.gui_nur_einbau(False))
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        pfad = os.path.join(self.ziel, "spiel.ffpkg")
+        dateien, ordner = self._gelesen(pfad)
+        plan = echt([(rel, len(d), (lambda d=d: iter([d]))) for rel, d in dateien.items()], ordner,
+                    profil=ufs2_schreiber.profil_aus_newfs(ffs.primary_newfs_profile()), **fest)
+        daneben = os.path.join(self.tmp, "daneben.ffpkg")
+        plan.schreiben(daneben)
+        self.assertEqual(Path(daneben).read_bytes(), Path(pfad).read_bytes())
+
+    def test_quelle_unveraendert_kein_rest(self) -> None:
+        vorher = {p: (os.path.getsize(p), os.stat(p).st_mtime_ns) for p in (self.quelle, self.huelle, self.ffpkg)}
+        for quelle, kw in ((self.quelle, {}), (self.huelle, {"pfs": True}), (self.ffpkg, {"ufs2": True})):
+            shutil.rmtree(self.ziel)
+            os.makedirs(self.ziel)
+            g, ok = self.lauf(quelle, **kw)
+            self.assertTrue(ok, "\n".join(g._log_lines))
+            self.assertEqual(1, len(os.listdir(self.ziel)), os.listdir(self.ziel))
+        self.assertEqual(vorher, {p: (os.path.getsize(p), os.stat(p).st_mtime_ns) for p in (self.quelle, self.huelle, self.ffpkg)})
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_ersetzt_ein_vorhandenes_ziel_erst_am_ende(self) -> None:
+        altes = os.path.join(self.ziel, "spiel.ffpkg")
+        Path(altes).write_bytes(b"alt")
+        g = self.gui()
+        echt = g._verify_exfat_liste
+        gesehen: list[bytes] = []
+
+        def pruefen(pfad, strom, mkpfs_ordner=""):
+            gesehen.append(Path(altes).read_bytes())
+            self.assertTrue(pfad.endswith(".ffpkg.teil"), pfad)
+            return echt(pfad, strom, mkpfs_ordner)
+        g._verify_exfat_liste = pruefen
+        g, ok = self.lauf(self.quelle, g)
+        self.assertTrue(ok, "\n".join(g._log_lines))
+        self.assertEqual([b"alt"], gesehen, "das alte Ziel bleibt bis zur Uebernahme unberuehrt")
+        self.assertNotEqual(b"alt", Path(altes).read_bytes())
+
+    def test_abbruch_laesst_nichts_zurueck(self) -> None:
+        g = self.gui()
+
+        def abbrechen(prozent, phase):
+            g.is_running = False
+        g._ampr_pack_fortschritt = abbrechen
+        g, ok = self.lauf(self.quelle, g)
+        self.assertFalse(ok)
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_abbruch_beim_schreiben_laesst_nichts_zurueck(self) -> None:
+        g = self.gui()
+        echt = APP.abbild_strom.ufs2_schreiben
+
+        def abbrechen(plan, ziel, **kw):
+            g.is_running = False
+            return echt(plan, ziel, **kw)
+        with mock.patch.object(APP.abbild_strom, "ufs2_schreiben", side_effect=abbrechen):
+            g, ok = self.lauf(self.quelle, g)
+        self.assertFalse(ok)
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+
+    def test_quelle_aendert_sich_waehrend_des_laufs(self) -> None:
+        kopie = os.path.join(self.tmp, "kopie.exfat")
+        shutil.copyfile(self.quelle, kopie)
+        g = self.gui()
+        urspruenglich = g._integration_anwenden
+
+        def integration(ordner, **k):
+            erg = urspruenglich(ordner, **k)
+            with open(kopie, "ab") as fh:
+                fh.write(b"\0" * 512)
+            return erg
+        g._integration_anwenden = integration
+        g, ok = self.lauf(kopie, g)
+        self.assertFalse(ok)
+        self.assertEqual([], os.listdir(self.ziel))
+
+    def test_fehler_beim_schreiben_laesst_nichts_zurueck(self) -> None:
+        g = self.gui()
+        with mock.patch.object(APP.abbild_strom, "ufs2_schreiben", side_effect=OSError("Platte voll")):
+            g, ok = self.lauf(self.quelle, g)
+        self.assertFalse(ok)
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertTrue(any("Platte voll" in z_ for z_ in g._log_lines), "\n".join(g._log_lines))
+
+    def test_ein_beschaedigtes_ergebnis_wird_nicht_uebernommen(self) -> None:
+        g = self.gui()
+        echt = APP.abbild_strom.ufs2_schreiben
+        inhalt = self.inhalt
+
+        def beschaedigt(plan, ziel, **kw):
+            erg = echt(plan, ziel, **kw)
+            daten = bytearray(Path(ziel).read_bytes())
+            kopf = daten.find(inhalt["eboot.bin"])                         # gleiche Groesse, anderer Inhalt
+            self.assertGreater(kopf, 0)
+            daten[kopf + 100] ^= 0xFF
+            Path(ziel).write_bytes(bytes(daten))
+            return erg
+        with mock.patch.object(APP.abbild_strom, "ufs2_schreiben", side_effect=beschaedigt):
+            g, ok = self.lauf(self.quelle, g)
+        self.assertFalse(ok)
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertTrue(any("unvollständig" in z_ or "incomplete" in z_ for z_ in g._log_lines), "\n".join(g._log_lines))
+
+    def test_stufe_voll_prueft_zusaetzlich_mit_ufs2tool_wo_es_geht(self) -> None:
+        for stufe, moeglich, erwartet in (("voll", True, 1), ("voll", False, 0), ("schnell", True, 0), ("aus", True, 0)):
+            with self.subTest(stufe=stufe, moeglich=moeglich):
+                shutil.rmtree(self.ziel)
+                os.makedirs(self.ziel)
+                g = self.gui()
+                g.mkpfs_verify = stufe
+                g._ufs2tool_pruefung_moeglich = lambda m=moeglich: m
+                aufrufe: list[str] = []
+                g._validate_ffpkg_artifact = lambda pfad, **kw: aufrufe.append(pfad) or {"ok": True, "detail": "ok"}
+                g, ok = self.lauf(self.quelle, g)
+                self.assertTrue(ok, "\n".join(g._log_lines))
+                self.assertEqual(erwartet, len(aufrufe))
+
+    def test_eine_nicht_bestandene_ufs2tool_pruefung_verwirft_das_ergebnis(self) -> None:
+        g = self.gui()
+        g.mkpfs_verify = "voll"
+        g._ufs2tool_pruefung_moeglich = lambda: True
+        g._validate_ffpkg_artifact = lambda pfad, **kw: {"ok": False, "detail": "fsck: kaputt"}
+        g, ok = self.lauf(self.quelle, g)
+        self.assertFalse(ok)
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertTrue(any("fsck: kaputt" in z_ for z_ in g._log_lines), "\n".join(g._log_lines))
+
+    def test_namen_die_ufs2_nicht_fasst_bleiben_beim_alten_weg(self) -> None:
+        Path(self.spiel, "data").mkdir(exist_ok=True)
+        Path(self.spiel, "data", "ü.bin").write_bytes(b"x")
+        g, ergebnis = self.lauf(self.spiel, ordner=True)
+        self.assertIsNone(ergebnis)
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
+        self.assertTrue(any("UFS2" in z_ for z_ in g._log_lines), "\n".join(g._log_lines))
 
 
 @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")

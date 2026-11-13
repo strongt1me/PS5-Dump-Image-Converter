@@ -272,6 +272,46 @@ your own risk. The authors take no responsibility for misuse.
 
 ---
 
+## Eigener UFS2-Schreiber nach UFS2Tool (`ps5_validator/utils/ufs2_schreiber.py`)
+
+Das Programm schreibt eine `.ffpkg` selbst, ohne UFS2Tool aufzurufen
+(Datei `ps5_validator/utils/ufs2_schreiber.py`). Das ist ein **Nachbau des Erzeugers von
+UFS2Tool 4.1** (`Ufs2ImageCreator.cs`, `Ufs2Superblock.cs`, `Ufs2Inode.cs`, `Ufs2DirectoryEntry.cs`
+von SvenGDK) in Python: Größenschätzung, Aufbau von Superblock und Zylindergruppen, Blockvergabe und
+Verzeichnisblöcke folgen seinem Quelltext, damit dasselbe Abbild entsteht (die Tests vergleichen
+byteweise gegen `UFS2Tool newfs -D`). Es gilt deshalb dessen Lizenz, BSD 2-Clause, die hier mit
+dem Hinweis auf den Urheber wiedergegeben wird:
+
+```
+BSD 2-Clause License
+
+Copyright (c) 2026, SvenGDK
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+---
+
 ## Die .NET-Laufzeit von Microsoft in `UFS2Tool`
 
 UFS2Tool selbst steht unter BSD-2-Clause. Die hier gebündelte Fassung ist

@@ -115,18 +115,34 @@ class PlatzbedarfTests(unittest.TestCase):
         self.assertLess(ffpfsc, ffpkg)
 
     def test_integration_hebt_den_temp_bedarf(self):
-        """AMPR und BACKPORT legen eine vollständige Arbeitskopie an."""
-        ohne, _z = self.app._platzbedarf_schaetzen(
-            "pack_folder", self.quelle, "ffpfsc")
-        self.app.ampr_integrate_var.set(True)
-        try:
-            mit, _z2 = self.app._platzbedarf_schaetzen(
+        """AMPR und BACKPORT legen eine vollständige Arbeitskopie an - auf dem Weg über den Zwischenordner.
+
+        Seit Stufe 3 (Strom ohne Zwischenordner, ``exfat_strom`` an) ist das nicht mehr so: Dort liegen nur die Systemdateien im
+        Arbeitsordner (siehe ``test_im_strom_bleibt_der_temp_bedarf_klein``). Die Annahme gilt, wo der Strom aus ist.
+        """
+        with mock.patch.object(self.app, "_strom_erlaubt", return_value=False):
+            ohne, _z = self.app._platzbedarf_schaetzen(
                 "pack_folder", self.quelle, "ffpfsc")
-        finally:
-            self.app.ampr_integrate_var.set(False)
+            self.app.ampr_integrate_var.set(True)
+            try:
+                mit, _z2 = self.app._platzbedarf_schaetzen(
+                    "pack_folder", self.quelle, "ffpfsc")
+            finally:
+                self.app.ampr_integrate_var.set(False)
         self.assertGreater(mit, ohne * 2,
                            "Eine Arbeitskopie ist so groß wie der Dump - das "
                            "muss sich im Temp-Bedarf zeigen.")
+
+    def test_im_strom_bleibt_der_temp_bedarf_klein(self):
+        """Mit dem Strom braucht auch ein Einbau keine Arbeitskopie: Temp wächst nicht mit dem Spiel."""
+        with mock.patch.object(self.app, "_strom_erlaubt", return_value=True):
+            self.app.ampr_integrate_var.set(True)
+            try:
+                for ziel in ("ffpfsc", "ffpfs", "ffpkg", "exfat"):
+                    temp, _z = self.app._platzbedarf_schaetzen("pack_folder", self.quelle, ziel)
+                    self.assertLess(temp, 10 * GB, ziel)
+            finally:
+                self.app.ampr_integrate_var.set(False)
 
     def test_neu_packen_rechnet_den_dump_ordner_im_ziel_mit(self):
         """Entpacken, einbauen, neu packen (13.09.2026): Dump-Ordner und

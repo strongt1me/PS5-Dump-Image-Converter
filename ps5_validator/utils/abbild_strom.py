@@ -318,6 +318,44 @@ def ffpfsc_schreiben(erzeuger: Callable[[Callable[[int], None]], Iterator[bytes]
         threshold_gain=threshold_gain, cpu_count=cpu_count, progress=Progress(enabled=False, listener=_hoeren))
 
 
+def ufs2_planen(eintraege: "Iterable[tuple[str, int, Oeffner]]", ordner: Iterable[str] = (),
+                abbruch: Callable[[], bool] = lambda: False) -> "tuple[Any, str]":
+    """Plant das UFS2-Abbild (``.ffpkg``) fuer diese Dateiliste: erst mit dem Profil, das UFS2Tool zuerst versucht, dann mit dem zweiten.
+
+    Wie der bisherige Bau (``_build_ffpkg_from_folder``: Referenzprofil 64 KiB, danach Kompatibilitaetsprofil 32 KiB/4 KiB).
+    Planen rechnet nur - es liest keine Datei. Gibt ``(Plan, Profilkennung)`` zurueck; scheitern beide, kommt der Fehler des zweiten
+    (:class:`ufs2_schreiber.Ufs2SchreibFehler`).
+    """
+    from ps5_validator.utils import ffpkg_support as ffs
+    from ps5_validator.utils import ufs2_schreiber as w
+
+    eintraege = list(eintraege)
+    ordner = list(ordner)
+    fehler: "Exception | None" = None
+    for profil in (ffs.primary_newfs_profile(), ffs.compatibility_newfs_profile()):
+        try:
+            return w.planen(eintraege, ordner, profil=w.profil_aus_newfs(profil), abbruch=abbruch), profil.identifier
+        except w.Ufs2SchreibFehler as exc:
+            fehler = exc
+        except InterruptedError:
+            raise StromAbgebrochen("abgebrochen") from None
+    assert fehler is not None
+    raise fehler
+
+
+def ufs2_schreiben(plan: Any, ziel: str, *, reihenfolge: Iterable[str] = (), abbruch: Callable[[], bool] = lambda: False,
+                   melden: "Callable[[str, int, int, int], None] | None" = None) -> int:
+    """Schreibt den Plan (:func:`ufs2_planen`) als ``.ffpkg`` nach ``ziel`` - ohne Zwischenordner, ohne UFS2Tool, ohne Administratorrechte.
+
+    ``melden(phase, fertig, gesamt, bytes)`` bekommt ``"write"`` nach jeder Datei. Bricht ``abbruch()`` ab (auch mitten in einer grossen
+    Datei), kommt :class:`StromAbgebrochen`; das halbe ``ziel`` raeumt der Aufrufer weg. Gibt die Groesse des Abbilds zurueck.
+    """
+    try:
+        return int(plan.schreiben(ziel, reihenfolge=reihenfolge, abbruch=abbruch, melden=melden))
+    except InterruptedError:
+        raise StromAbgebrochen("abgebrochen") from None
+
+
 def pfs_pruefen(pfad: str, *, abbruch: Callable[[], bool] = lambda: False,
                 melden: "Callable[[int, int], None] | None" = None) -> "tuple[list[str], list[str]]":
     """Prueft ein fertiges PFS-Abbild wie die MkPFS-Kommandozeile nach dem Packen: Aufbau, Verzeichnisse und **jeden Block** der Dateien.
