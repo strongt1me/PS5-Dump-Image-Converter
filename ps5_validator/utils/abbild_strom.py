@@ -111,10 +111,11 @@ def _vorbereiten(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", original
                  abbruch: Callable[[], bool], fortschritt: "Callable[[float], None] | None",
                  pruefen: "bool | frozenset[int] | set[int] | None") -> "tuple[list[tuple[str, int, Oeffner]], StromDateien, list[str]]":
     """Die losen Dateien des Baums, die Packdateien als Strom und die Verzeichnisse - fuer jede Art von Ausgabe dasselbe."""
+    packer = packer_der(messung)
     gepackt = {rel for rel, _g in auswahl.gepackt}
     vorhanden = baum.suchen()
     for rel in vorhanden:
-        if z.ist_packname(rel):
+        if packer.ist_packname(rel):
             raise z.ZstdPackFehler("ampr_zstd.ausgabe_belegt")
     lose = [(d.rel, d.groesse, d.lesen) for d in baum.dateien() if originale_behalten or d.rel not in gepackt]
     fehlend = [rel for rel in gepackt if rel not in vorhanden]
@@ -123,10 +124,22 @@ def _vorbereiten(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", original
     # Auch die leeren Verzeichnisse kommen ins Abbild, wie im Ordnerweg (eine Dateiliste zeigt sie nicht).
     ordner = abbild_ordner(baum, auswahl, originale_behalten)
 
-    dateien = StromDateien(z.strom(baum, auswahl, messung, arbeiter=arbeiter, abbruch=abbruch, fortschritt=fortschritt,
-                                   pruefen=pruefen),
+    dateien = StromDateien(packer.strom(baum, auswahl, messung, arbeiter=arbeiter, abbruch=abbruch, fortschritt=fortschritt,
+                                         pruefen=pruefen),
                            messung.dateien())
     return lose, dateien, ordner
+
+
+def ist_packname(rel: str) -> bool:
+    """Ist ``rel`` der Name einer Datei, die einer der beiden Packer (zstd, LZ4) schreibt - Band, Manifest oder Beilage?"""
+    from ps5_validator.utils import ampr_lz4pack
+
+    return bool(z.ist_packname(rel) or ampr_lz4pack.ist_packname(rel))
+
+
+def packer_der(messung: Any) -> Any:
+    """Das Modul, das die ``messung`` gemacht hat und ihren Strom schreibt: ``ampr_lz4pack`` oder (ohne ``modul``) ``ampr_zstdpack``."""
+    return getattr(messung, "modul", None) or z
 
 
 def abbild_liste(baum: Any, auswahl: "z.Auswahl", messung: "z.Messung", *, originale_behalten: bool = False, arbeiter: int = 0,

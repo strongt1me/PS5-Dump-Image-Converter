@@ -355,7 +355,10 @@ class AlleBaustellenTests(unittest.TestCase):
 
     #: Die Weiterleitungen selbst - dort gehoert kein Riegel hin, sie bauen
     #: nur, was ihre Aufrufer entschieden haben.
-    WEITERLEITUNGEN = frozenset({"_build_ampr_index_local", "_ampr_write_index"})
+    #: ``_ampr_index_aus_ansicht`` ist die Fassung von ``_build_ampr_index_local`` fuer den Strom ohne Zwischenordner (Stufe 3):
+    #: Sie wird nur von dort gerufen; ob eine gepackte Asset-Schicht in der Quelle liegt, entscheidet vorher
+    #: ``_mode_exfat_umpacken_strom`` ("log.exfat_strom_assets_da") und lässt dann den bisherigen Weg laufen.
+    WEITERLEITUNGEN = frozenset({"_build_ampr_index_local", "_ampr_write_index", "_ampr_index_aus_ansicht"})
 
     RIEGEL = ("_ampr_index_neubau_erlaubt", "_ampr_index_neubau_erlaubt_roh")
 

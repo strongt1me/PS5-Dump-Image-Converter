@@ -37,7 +37,7 @@ import shutil
 import subprocess
 import threading
 import sys
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from ps5_validator.utils.nahtstellen import (Melder, Textquelle,
                                              schluessel_zeigen, stumm)
@@ -584,16 +584,22 @@ def filmordner_muster(app0: str) -> tuple[str, ...]:
         Muster wie ``"Media/StreamingAssets/Movies/**"`` - je gefundenem
         Ordner eines, in der Schreibung des Dateisystems.
     """
-    gefunden: list[str] = []
+    ordner_rels: list[str] = []
     try:
         for wurzel, ordner, _dateien in os.walk(str(app0)):
             for name in ordner:
-                if name.lower() not in FILMORDNER:
-                    continue
                 rel = os.path.relpath(os.path.join(wurzel, name), str(app0))
-                gefunden.append(rel.replace("\\", "/") + "/**")
+                ordner_rels.append(rel.replace("\\", "/"))
     except OSError as exc:
         logger.debug("Filmordner nicht suchbar (%s): %s", app0, exc)
+    return filmordner_aus_ordnern(ordner_rels)
+
+
+def filmordner_aus_ordnern(ordner_rels: "Iterable[str]") -> tuple[str, ...]:
+    """Kern von :func:`filmordner_muster` fuer eine Liste relativer Ordnerpfade (Lesebaum statt Platte)."""
+    gefunden = [rel.replace("\\", "/").strip("/") + "/**"
+                for rel in ordner_rels
+                if rel and rel.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1].lower() in FILMORDNER]
     return tuple(sorted(set(gefunden)))
 
 
@@ -610,19 +616,27 @@ def systemdateien_muster(app0: str) -> tuple[str, ...]:
     Returns:
         Genau die Pfade, die im Spielordner wirklich liegen.
     """
-    import fnmatch
-
-    gefunden: list[str] = []
+    rels: list[str] = []
     try:
         for wurzel, _ordner, dateien in os.walk(str(app0)):
             for name in dateien:
-                klein = name.lower()
-                if not any(fnmatch.fnmatch(klein, m) for m in SYSTEMDATEIEN):
-                    continue
                 rel = os.path.relpath(os.path.join(wurzel, name), str(app0))
-                gefunden.append(rel.replace("\\", "/"))
+                rels.append(rel.replace("\\", "/"))
     except OSError as exc:
         logger.debug("Systemdateien nicht suchbar (%s): %s", app0, exc)
+    return systemdateien_aus_dateien(rels)
+
+
+def systemdateien_aus_dateien(dateien_rels: "Iterable[str]") -> tuple[str, ...]:
+    """Kern von :func:`systemdateien_muster` fuer eine Liste relativer Dateipfade (Lesebaum statt Platte)."""
+    import fnmatch
+
+    gefunden = []
+    for rel in dateien_rels:
+        rel = rel.replace("\\", "/")
+        klein = rel.rsplit("/", 1)[-1].lower()
+        if any(fnmatch.fnmatch(klein, m) for m in SYSTEMDATEIEN):
+            gefunden.append(rel)
     return tuple(sorted(set(gefunden)))
 
 
@@ -640,8 +654,7 @@ def lose_endungen_muster(app0: str) -> tuple[str, ...]:
     Returns:
         Muster wie ``"*.PNG"`` - nur fuer Schreibweisen ungleich der kleinen.
     """
-    bekannt = set(LOSE_ENDUNGEN)
-    gefunden: set[str] = set()
+    namen: list[str] = []
     stapel = [str(app0)]
     while stapel:
         ordner = stapel.pop()
@@ -654,12 +667,21 @@ def lose_endungen_muster(app0: str) -> tuple[str, ...]:
                             continue
                     except OSError:
                         continue
-                    endung = os.path.splitext(eintrag.name)[1][1:]
-                    if endung and endung != endung.lower() \
-                            and endung.lower() in bekannt:
-                        gefunden.add("*.%s" % endung)
+                    namen.append(eintrag.name)
         except OSError as exc:
             logger.debug("Endungen nicht suchbar (%s): %s", ordner, exc)
+    return lose_endungen_aus_dateien(namen)
+
+
+def lose_endungen_aus_dateien(dateien_rels: "Iterable[str]") -> tuple[str, ...]:
+    """Kern von :func:`lose_endungen_muster` fuer eine Liste von Dateinamen oder relativen Pfaden (Lesebaum statt Platte)."""
+    bekannt = set(LOSE_ENDUNGEN)
+    gefunden: set[str] = set()
+    for rel in dateien_rels:
+        name = rel.replace("\\", "/").rsplit("/", 1)[-1]
+        endung = os.path.splitext(name)[1][1:]
+        if endung and endung != endung.lower() and endung.lower() in bekannt:
+            gefunden.add("*.%s" % endung)
     return tuple(sorted(gefunden))
 
 
@@ -730,20 +752,28 @@ def direktleser_merkmale(app0: str) -> tuple[str, tuple[str, ...]]:
         der Schreibung des Dateisystems - oder ``("", ())``, wenn nichts
         darauf hindeutet.
     """
+    rels: list[str] = []
+    try:
+        for wurzel, _ordner, dateien in os.walk(str(app0)):
+            for name in dateien:
+                rel = os.path.relpath(os.path.join(wurzel, name), str(app0))
+                rels.append(rel.replace("\\", "/"))
+    except OSError as exc:
+        logger.debug("Direktleser nicht suchbar (%s): %s", app0, exc)
+    return direktleser_aus_dateien(rels)
+
+
+def direktleser_aus_dateien(dateien_rels: "Iterable[str]") -> tuple[str, tuple[str, ...]]:
+    """Kern von :func:`direktleser_merkmale` fuer eine Liste relativer Dateipfade (Lesebaum statt Platte)."""
     gesucht = {name.lower(): engine
                for engine, namen in DIREKTLESER.items()
                for name in namen}
     gefunden: dict[str, list[str]] = {}
-    try:
-        for wurzel, _ordner, dateien in os.walk(str(app0)):
-            for name in dateien:
-                engine = gesucht.get(name.lower())
-                if not engine:
-                    continue
-                rel = os.path.relpath(os.path.join(wurzel, name), str(app0))
-                gefunden.setdefault(engine, []).append(rel.replace("\\", "/"))
-    except OSError as exc:
-        logger.debug("Direktleser nicht suchbar (%s): %s", app0, exc)
+    for rel in dateien_rels:
+        rel = rel.replace("\\", "/")
+        engine = gesucht.get(rel.rsplit("/", 1)[-1].lower())
+        if engine:
+            gefunden.setdefault(engine, []).append(rel)
     if not gefunden:
         return "", ()
     # Bei mehreren Treffern gewinnt die Engine mit den meisten Merkmalen -
@@ -774,13 +804,18 @@ def title_id_aus_sfo(app0: str) -> str:
     Nur lesend, nie werfend. Format: Big-Endian-Magic + Tabelleneintraege -
     gleicher Aufbau wie in ``ps4pkg_bibliothek.sfo_lesen``.
     """
-    import struct as _struct
     pfad = os.path.join(str(app0 or ""), "sce_sys", "param.sfo")
     try:
         with open(pfad, "rb") as dat:
             roh = dat.read()
     except OSError:
         return ""
+    return title_id_aus_sfo_bytes(roh)
+
+
+def title_id_aus_sfo_bytes(roh: bytes) -> str:
+    """Kern von :func:`title_id_aus_sfo` fuer den Inhalt der ``param.sfo`` (Lesebaum statt Platte)."""
+    import struct as _struct
     if len(roh) < 0x14 or roh[:4] != b"\x00PSF":
         return ""
     try:
@@ -828,8 +863,13 @@ def profil_integriert_fuer(app0: str) -> tuple[str, str]:
     """
     if not app0:
         return "", ""
+    return _profil_waehlen(title_id_aus_sfo(app0), direktleser_merkmale(app0)[0],
+                           lambda: _erkennt_insomniac(app0))
+
+
+def _profil_waehlen(title_id: str, engine: str, ist_insomniac: "Callable[[], bool]") -> tuple[str, str]:
+    """Gemeinsamer Teil von :func:`profil_integriert_fuer` und :func:`profil_integriert_aus_baum` (Reihenfolge siehe dort)."""
     # 1. Title-ID (genaues Profil hat Vorrang vor allgemeinem Engine-Profil)
-    title_id = title_id_aus_sfo(app0)
     if title_id:
         dateiname = MITGELIEFERTE_PROFILE.get(title_id, "")
         if dateiname:
@@ -837,7 +877,6 @@ def profil_integriert_fuer(app0: str) -> tuple[str, str]:
             if os.path.isfile(pfad):
                 return title_id, pfad
     # 2. Engine-Erkennung (Unity)
-    engine, _ = direktleser_merkmale(app0)
     if engine:
         dateiname = MITGELIEFERTE_PROFILE.get(engine, "")
         if dateiname:
@@ -845,13 +884,46 @@ def profil_integriert_fuer(app0: str) -> tuple[str, str]:
             if os.path.isfile(pfad):
                 return engine, pfad
     # 3. Insomniac anhand Ordnerstruktur (nicht ueber DIREKTLESER)
-    if _erkennt_insomniac(app0):
+    if ist_insomniac():
         dateiname = MITGELIEFERTE_PROFILE.get("Insomniac", "")
         if dateiname:
             pfad = os.path.join(profil_ordner(), dateiname)
             if os.path.isfile(pfad):
                 return "Insomniac", pfad
     return "", ""
+
+
+def _baum_merkmale(baum: Any) -> "tuple[dict[str, Any], list[str]]":
+    """``(Dateien nach Pfad, Ordnerpfade)`` eines Lesebaums (:mod:`spielbaum`) - Pfade mit ``/``, ohne Anfangsstrich."""
+    dateien = {rel.replace("\\", "/").lstrip("/"): d for rel, d in baum.suchen().items()}
+    # ``ordner()`` darf Verzeichnisse mit Dateien darin auslassen: die Elternpfade der Dateien kommen dazu.
+    ordner = {rel.replace("\\", "/").strip("/") for rel in baum.ordner()}
+    for rel in dateien:
+        teile = rel.split("/")[:-1]
+        for i in range(1, len(teile) + 1):
+            ordner.add("/".join(teile[:i]))
+    return dateien, sorted(o for o in ordner if o)
+
+
+def _title_id_aus_baum(dateien: "dict[str, Any]") -> str:
+    """Die TITLE_ID aus ``sce_sys/param.sfo`` im Lesebaum - oder ``''`` (nie werfend)."""
+    sfo = dateien.get("sce_sys/param.sfo")
+    if sfo is None or sfo.groesse > (1 << 20):
+        return ""
+    try:
+        return title_id_aus_sfo_bytes(b"".join(sfo.lesen()))
+    except Exception as exc:       # noqa: BLE001 - ein unlesbares SFO ist kein Grund abzubrechen
+        logger.debug("param.sfo im Lesebaum nicht lesbar: %s", exc)
+        return ""
+
+
+def profil_integriert_aus_baum(baum: Any) -> tuple[str, str]:
+    """Wie :func:`profil_integriert_fuer`, aber fuer einen Lesebaum statt eines Spielordners."""
+    dateien, ordner = _baum_merkmale(baum)
+    engine = direktleser_aus_dateien(dateien)[0]
+    ordnerset = set(ordner)
+    return _profil_waehlen(_title_id_aus_baum(dateien), engine,
+                           lambda: "dag" in dateien and "toc" in dateien and "d" in ordnerset)
 
 
 def videos_im_pack(zeilen: list[dict[str, Any]]) -> list[str]:
@@ -897,11 +969,37 @@ def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "",
     """
     if os.path.isfile(ziel) and not profil_ist_eigenes(ziel):
         return ziel
+    return _profil_ablegen(
+        ziel, arbeiter, stufe, lambda: profil_integriert_fuer(app0),
+        lambda: ((*filmordner_muster(app0), *systemdateien_muster(app0), *lose_endungen_muster(app0))
+                 if app0 else ()))
+
+
+def profil_schreiben_aus_baum(ziel: str, baum: Any, arbeiter: int = 0, stufe: Any = LZ4_STUFE_VORGABE) -> str:
+    """Wie :func:`profil_schreiben`, nur dass das Spiel ein Lesebaum (:mod:`spielbaum`) ist statt eines Ordners auf der Platte.
+
+    Gebraucht der Weg ohne Zwischenordner (``ampr_lz4pack``): Title-ID, Engine, Film-, System- und lose Dateien kommen aus der
+    Dateiliste des Baums; ``param.sfo`` wird aus dem Baum gelesen.
+    """
+    if os.path.isfile(ziel) and not profil_ist_eigenes(ziel):
+        return ziel
+
+    def zusatz() -> "tuple[str, ...]":
+        dateien, ordner = _baum_merkmale(baum)
+        return (*filmordner_aus_ordnern(ordner), *systemdateien_aus_dateien(dateien),
+                *lose_endungen_aus_dateien(dateien))
+
+    return _profil_ablegen(ziel, arbeiter, stufe, lambda: profil_integriert_aus_baum(baum), zusatz)
+
+
+def _profil_ablegen(ziel: str, arbeiter: int, stufe: Any, integriert: "Callable[[], tuple[str, str]]",
+                    zusatz_ausschluss: "Callable[[], tuple[str, ...]]") -> str:
+    """Schreibt das Profil: das mitgelieferte, wenn ``integriert()`` eines nennt, sonst das Standardprofil."""
     ordner = os.path.dirname(os.path.abspath(ziel))
     if ordner:
         os.makedirs(ordner, exist_ok=True)
     # Mitgeliefertes Profil (Title-ID oder Engine-Erkennung)?
-    bezeichnung, quell_pfad = profil_integriert_fuer(app0)
+    bezeichnung, quell_pfad = integriert()
     if quell_pfad:
         try:
             with open(quell_pfad, "r", encoding="utf-8") as quelle:
@@ -917,10 +1015,8 @@ def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "",
             logger.warning("integriertes Profil nicht lesbar (%s): %s",
                            quell_pfad, exc)
     # Fallback: Standardprofil (vorsichtig, unbekannte Daten)
+    zusatz = zusatz_ausschluss()
     with open(ziel, "w", encoding="utf-8", newline="\n") as datei:
-        zusatz = ((*filmordner_muster(app0), *systemdateien_muster(app0),
-                   *lose_endungen_muster(app0))
-                  if app0 else ())
         datei.write(standardprofil_text(arbeiter, zusatz, stufe))
     return ziel
 

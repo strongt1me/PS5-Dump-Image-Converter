@@ -2117,12 +2117,17 @@ class WegwahlTests(unittest.TestCase):
         return g
 
     @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
-    def test_asset_pack_nur_mit_zstd(self) -> None:
-        """AMPR mit der Methode Asset-Pack: zstd laeuft im Strom, LZ4 braucht einen Ordner und ein Werkzeug."""
+    def test_asset_pack_mit_zstd_und_lz4_im_strom(self) -> None:
+        """AMPR mit der Methode Asset-Pack: zstd und (seit Etappe 14) LZ4 laufen im Strom, sofern der Packer da ist."""
+        from ps5_validator.utils import ampr_lz4pack
         self.assertTrue(self._probe()._strom_weg_gewaehlt())
         self.assertTrue(self._probe()._strom_fuer_ordner_gewaehlt())
-        self.assertFalse(self._probe(verfahren="lz4")._strom_weg_gewaehlt())
-        self.assertFalse(self._probe(verfahren="lz4")._strom_fuer_ordner_gewaehlt())
+        with mock.patch.object(ampr_lz4pack, "verfuegbar", lambda: True):
+            self.assertTrue(self._probe(verfahren="lz4")._strom_weg_gewaehlt())
+            self.assertTrue(self._probe(verfahren="lz4")._strom_fuer_ordner_gewaehlt())
+        with mock.patch.object(ampr_lz4pack, "verfuegbar", lambda: False):
+            self.assertFalse(self._probe(verfahren="lz4")._strom_weg_gewaehlt())
+            self.assertFalse(self._probe(verfahren="lz4")._strom_fuer_ordner_gewaehlt())
 
     def test_jeder_andere_einbau_laeuft_im_strom(self) -> None:
         """Backport, Fake-Signatur, DLC EMU, PlayGo und AMPR ohne Pack aendern nur wenige Dateien: kein Entpacken noetig."""
@@ -2138,11 +2143,11 @@ class WegwahlTests(unittest.TestCase):
         self.assertTrue(probe._strom_weg_gewaehlt())
         self.assertFalse(probe._strom_fuer_ordner_gewaehlt())
 
-    def test_arbeitsordner_wird_nur_bei_lz4_oder_ohne_strom_gebraucht(self) -> None:
-        """TEMP-ORDNER erscheint in der Pfad-Karte nur, wo noch ein Zwischenordner angelegt wird."""
+    def test_arbeitsordner_wird_nur_ohne_strom_gebraucht(self) -> None:
+        """TEMP-ORDNER erscheint in der Pfad-Karte nur, wo noch ein Zwischenordner angelegt wird (Etappe 14: auch LZ4 im Strom)."""
         for name, kw, erwartet in (
                 ("zstd", {}, False),
-                ("LZ4", {"verfahren": "lz4"}, True),
+                ("LZ4", {"verfahren": "lz4"}, False),
                 ("Methode normal", {"methode": "normal", "verfahren": "lz4"}, False),
                 ("ohne AMPR", {"ampr": False, "verfahren": "lz4"}, False),
                 ("Strom aus", {"einstellungen": {"exfat_strom": False}}, True)):
@@ -2151,7 +2156,7 @@ class WegwahlTests(unittest.TestCase):
 
     def test_arbeitsordner_im_zweifel_sichtbar(self) -> None:
         g = self._probe()
-        g._ampr_methode = lambda: (_ for _ in ()).throw(RuntimeError("Einstellungen nicht lesbar"))
+        g._load_setting = lambda name, vorgabe=None: (_ for _ in ()).throw(RuntimeError("Einstellungen nicht lesbar"))
         self.assertTrue(g._arbeitsordner_noetig())
 
     def test_nicht_entscheidbar_ist_der_alte_weg(self) -> None:
@@ -2179,9 +2184,10 @@ class WegwahlTests(unittest.TestCase):
         # kleine Quelle: nie mehr als die Quelle selbst
         g._quellgroesse_ermitteln = lambda src: 500 * 1024 ** 2
         self.assertEqual(500 * 1024 ** 2, g._platzbedarf_je_quelle("spiel.exfat", "exfat")[0])
-        # LZ4 (alter Weg): der Arbeitsordner braucht wieder das ganze Spiel
+        # Weg ueber den Ordner (Strom aus): der Arbeitsordner braucht wieder das ganze Spiel
         g._quellgroesse_ermitteln = lambda src: 150 * 1024 ** 3
         g._ampr_pack_verfahren = lambda: "lz4"
+        g._strom_weg_gewaehlt = lambda: False
         self.assertGreater(g._platzbedarf_je_quelle("spiel.exfat", "exfat")[0], 150 * 1024 ** 3)
 
     def test_umpacken_ruft_den_strom_zuerst(self) -> None:

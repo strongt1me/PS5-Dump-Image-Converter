@@ -195,6 +195,7 @@ from ps5_validator.utils import shadowmount_generation as sm_gen
 from ps5_validator.utils import shadowmount_config as sm_cfg
 from ps5_validator.utils import ampr_assetpakete
 from ps5_validator.utils import ampr_zstdpack
+from ps5_validator.utils import ampr_lz4pack
 from ps5_validator.utils import abbild_strom
 from ps5_validator.utils import spielbaum
 from ps5_validator.utils.sicherung import sicherung_anlegen
@@ -8682,8 +8683,10 @@ class PS5ConverterGUI:
         drakmor kennt nur LZ4. Die Fassung kommt aus der Auswahlliste des Starts; ist keine Fassung auffindbar,
         gilt das als "nicht NG" - dann bleibt die Rueckfrage bestehen, nichts wird still entschieden.
         """
-        if self._ampr_pack_verfahren() != "zstd":
-            return False
+        return self._ampr_pack_verfahren() == "zstd" and self._ampr_ng_gewaehlt()
+
+    def _ampr_ng_gewaehlt(self) -> bool:
+        """True, wenn in der Auswahl des Starts eine NG-Fassung (``ng``, ``ng-debug``) steht; ohne auffindbare Fassung False."""
         try:
             beschriftung = self._tk_wert("ampr_version_var", "")
         except (tk.TclError, RuntimeError):
@@ -8691,6 +8694,18 @@ class PS5ConverterGUI:
         auswahl = self._ampr_auswahl_beim_start().get(beschriftung) or {}
         variante = str(auswahl.get("variant", "")).strip().lower()
         return variante in ampr_assetpakete.ALLROUND_VARIANTEN
+
+    def _ampr_ng_lz4_im_strom_gewaehlt(self) -> bool:
+        """True, wenn LZ4-Packs mit einer NG-Fassung **ohne Zwischenordner** gebaut werden (Etappe 14).
+
+        Wie bei zstd mit NG fallen dann die gepackten Originale weg (Nutzerwunsch 13.11.2026, Vorbild Dump Forge: ampr-emu-ng bedient
+        normale Lesezugriffe und mmap aus den Packs, nichts muss daneben liegen). Die Laufzeit von drakmor liest dagegen nur ueber
+        AMPR; dort bleiben die Originale (Riegel ``_ampr_direktleser_riegel``). Ist der Strom aus oder nicht moeglich, bleibt es bei der
+        Rueckfrage.
+        """
+        if self._ampr_pack_verfahren() != "lz4" or not self._ampr_ng_gewaehlt():
+            return False
+        return bool(self._strom_erlaubt(einbau_noetig=False))
 
     def _ampr_originale_klaeren(self, mode: str) -> None:
         """Fragt, ob gepackte Originale im Ergebnis wegbleiben sollen.
@@ -8725,6 +8740,10 @@ class PS5ConverterGUI:
         if self._ampr_ng_zstd_gewaehlt():
             self._ampr_originale_weglassen = True
             self._append_to_log(self._t("ampr_pack.originale_zstd_weg"))
+            return
+        if self._ampr_ng_lz4_im_strom_gewaehlt():
+            self._ampr_originale_weglassen = True
+            self._append_to_log(self._t("ampr_pack.originale_ng_lz4_weg"))
             return
         if getattr(self, "_cli_mode", False):
             antwort = bool(getattr(self, "_cli_ampr_originale_weglassen", False))
@@ -14865,15 +14884,14 @@ class PS5ConverterGUI:
     def _arbeitsordner_noetig(self) -> bool:
         """Legt der Lauf, den die Auswahl beschreibt, noch einen Zwischenordner an (``temp_path``)?
 
-        Seit Stufe 3 laufen alle Abbild-Formate im Strom und brauchen keinen. Es bleiben: ein **LZ4**-Asset-Pack (das Werkzeug dafuer
-        braucht einen Ordner mit dem ganzen Spiel) und die Einstellung ``exfat_strom`` auf "aus". Im Zweifel (Einstellung nicht lesbar)
-        bleibt das Feld sichtbar - lieber ein Feld zu viel als einen Ordner, den man nicht waehlen kann.
+        Seit Stufe 3 laufen alle Abbild-Formate im Strom und brauchen keinen - auch LZ4-Asset-Packs seit Etappe 14 (``ampr_lz4pack``).
+        Es bleibt die Einstellung ``exfat_strom`` auf "aus". Im Zweifel (Einstellung nicht lesbar) bleibt das Feld sichtbar - lieber
+        ein Feld zu viel als einen Ordner, den man nicht waehlen kann. Die seltenen Faelle, in denen der Strom ein LZ4-Profil nicht
+        schreiben kann (Anwenderprofil, mehrere Gruppen) und der Lauf auf den Weg ueber den Ordner zurueckfaellt, nehmen den
+        Temp-Ordner des Systems, wenn hier keiner eingetragen ist.
         """
         try:
-            if not bool(self._load_setting(self._EXFAT_STROM_SETTING, True)):
-                return True
-            return bool(self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK
-                        and self._ampr_pack_verfahren() != "zstd")
+            return not bool(self._load_setting(self._EXFAT_STROM_SETTING, True))
         except Exception as exc:  # noqa: BLE001
             logger.debug("Arbeitsordner-Bedarf nicht entscheidbar: %s", exc)
             return True
@@ -34116,8 +34134,10 @@ class PS5ConverterGUI:
 
         Nicht, wenn die Einstellung ``exfat_strom`` aus ist. Sonst kommt es auf den Einbau an:
 
-        * AMPR EMU mit der Methode Asset-Pack: nur mit **zstd**-Packs (die laufen im Strom, :meth:`_ampr_zstd_messen`); LZ4-Packs
-          baut ein Werkzeug, das einen Ordner braucht - dann der bisherige Weg.
+        * AMPR EMU mit der Methode Asset-Pack: ja, mit **zstd** (:meth:`_ampr_zstd_messen`) und mit **LZ4** (Etappe 14,
+          :meth:`_ampr_lz4_messen`, ``ampr_lz4pack``). Bei LZ4 entscheidet erst :meth:`_lz4_strom_vorab` und im Strom selbst
+          ``ampr_lz4pack.auswaehlen``, ob das Profil dieses Titels dort geschrieben werden kann (ein Packprofil des Anwenders, mehrere
+          Gruppen und Striping nicht) - sonst der bisherige Weg ueber den Ordner.
         * Backport, Fake-Signatur, DLC EMU, PlayGo oder AMPR ohne Pack: Sie aendern nur wenige Dateien, und die laufen auf dem
           kleinen Ueberlagerungsordner (:func:`abbild_strom.schatten_fuellen`) - ja.
         * Gar kein Einbau: ja, wenn die Quelle ein Abbild ist (es gibt keinen Grund, es zu entpacken); ein Ordner dagegen
@@ -34127,7 +34147,8 @@ class PS5ConverterGUI:
             if not bool(self._load_setting(self._EXFAT_STROM_SETTING, True)):
                 return False
             if self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK:
-                return bool(self._ampr_pack_verfahren() == "zstd" and ampr_zstdpack.verfuegbar())
+                return bool(ampr_zstdpack.verfuegbar() if self._ampr_pack_verfahren() == "zstd"
+                            else ampr_lz4pack.verfuegbar())
             if self._integration_gewaehlt():
                 return True
             return not einbau_noetig
@@ -34268,6 +34289,11 @@ class PS5ConverterGUI:
                 # braucht dafuer den ganzen Ordner, den der Ueberlagerungsordner nicht zeigt.
                 self._append_to_log(self._t("log.exfat_strom_assets_da"))
                 return None
+            grund_lz4 = self._lz4_strom_vorab(src, ordner, quelle)
+            if grund_lz4:
+                # LZ4-Packs im Strom (Etappe 14) schreiben nicht jedes Profil: dann der bisherige Weg, ehe etwas gearbeitet ist.
+                self._append_to_log(self._t("log.lz4_strom_alter_weg", grund=grund_lz4))
+                return None
             # Unzulaessige Namen (Nicht-ASCII, nur in der Schreibung verschieden, ...) vor der ersten Stunde Arbeit melden,
             # nicht erst beim Schreiben.
             try:
@@ -34327,10 +34353,16 @@ class PS5ConverterGUI:
 
             self._strom_ansicht = abbild_strom.Ansicht(quelle, schatten, abgelegt, ignoriert=is_ignored_name)
             self._strom_plan = None
+            self._strom_alter_weg = ""
             t_einbau = self._stufe_start("phase.integration")
             # ``herkunft``: Bei einem Ordner als Quelle merkt sich der Einbau, woher der Lauf kommt (ein eigenes Packprofil neben
             # dem Spielordner), und fragt nicht nach einer Arbeitskopie - der Ueberlagerungsordner ist ohnehin eine.
             if not self._integration_anwenden(schatten, herkunft=src if ordner else ""):
+                if self._strom_alter_weg:
+                    # Der LZ4-Packer im Strom kann das Profil dieses Titels nicht schreiben (``Lz4NichtImStrom``). Die Quelle ist
+                    # nie angefasst worden: Der bisherige Weg faengt von vorn an, der Ueberlagerungsordner wird weggeraeumt.
+                    self._append_to_log(self._t("log.lz4_strom_alter_weg", grund=self._strom_alter_weg))
+                    return None
                 return False
             self._phase_dauer_melden("phase.integration", t_einbau)
 
@@ -34345,9 +34377,14 @@ class PS5ConverterGUI:
 
                 # Die Pruefung des Packs wie beim Pack im Ordner (``ampr_zstdpack.pruefen``): "Vollstaendige Pruefung" entpackt jeden
                 # Chunk, sonst eine Stichprobe nach den Regeln der Fast-Pruefung. Hier geschieht es auf dem Weg ins Abbild.
-                if self._ampr_voll_pruefen():
+                lz4_im_strom = abbild_strom.packer_der(messung) is ampr_lz4pack
+                # Bei LZ4 prueft es immer vollstaendig (der Schalter steht dort gesperrt und angehakt, ``_ampr_stufe_combo_schalten``):
+                # Entpacken ist bei LZ4 schnell, und der Weg ueber den Ordner (Packwerkzeug) kennt auch nur die volle Pruefung.
+                if lz4_im_strom or self._ampr_voll_pruefen():
                     pack_pruefen: "bool | frozenset[int]" = True
-                    self._append_to_log(self._t("ampr_zstd.pruefung_voll", size=self._fmt_bytes(auswahl.gepackte_bytes)))
+                    self._append_to_log(self._t(
+                        "ampr_pack.strom_pruefung_voll" if lz4_im_strom else "ampr_zstd.pruefung_voll",
+                        size=self._fmt_bytes(auswahl.gepackte_bytes)))
                 else:
                     startwert = int.from_bytes(os.urandom(4), "little")
                     pack_pruefen, geprueft = ampr_zstdpack.stichprobe_chunks(messung, startwert)
@@ -34367,13 +34404,16 @@ class PS5ConverterGUI:
                         abbruch=lambda: not self.is_running, fortschritt=fortschritt, pruefen=pack_pruefen)
 
                 self._ampr_pack_konsolenhinweis(schatten)
-                self._append_to_log(self._t("ampr_zstd.hinweis_ng"))
+                if not lz4_im_strom:
+                    self._append_to_log(self._t("ampr_zstd.hinweis_ng"))
+                elif not behalten:
+                    self._append_to_log(self._t("ampr_pack.strom_hinweis_ng"))
                 if behalten:
                     self._append_to_log(self._t("ampr_pack.quellen_bleiben"))
                 else:
                     self._append_to_log(self._t(
-                        "ampr_zstd.strom_originale_weg", count=len(auswahl.gepackt),
-                        size=self._fmt_bytes(auswahl.gepackte_bytes)))
+                        "ampr_pack.strom_originale_weg" if lz4_im_strom else "ampr_zstd.strom_originale_weg",
+                        count=len(auswahl.gepackt), size=self._fmt_bytes(auswahl.gepackte_bytes)))
             else:
                 # Kein Pack gebaut (etwa weil der vorhandene Index stehen blieb): das Abbild wird wie bisher aus allem
                 # gebaut, was nach dem Einbau im Spiel liegt.
@@ -34426,7 +34466,9 @@ class PS5ConverterGUI:
             # geaendert, ein Chunk, der sich nicht entpacken laesst) kommt mit seinem uebersetzten Text ins Protokoll - nicht
             # als "Unerwarteter Fehler" mit dem rohen Schluessel aus dem Engine-Faden.
             if str(exc) != "ampr_pack.abgebrochen":
-                self._append_to_log(self._t("ampr_zstd.fehlgeschlagen", error=self._zstd_fehler_text(exc)))
+                self._append_to_log(self._t(
+                    "ampr_pack.fehlgeschlagen" if isinstance(exc, ampr_lz4pack.Lz4PackFehler) else "ampr_zstd.fehlgeschlagen",
+                    error=self._zstd_fehler_text(exc)))
             return False
         except (spielbaum.BaumFehler, OSError) as exc:
             self._append_to_log(self._t("log.exfat_strom_lesefehler", error=exc))
@@ -36916,7 +36958,7 @@ class PS5ConverterGUI:
             self.pfeil_methode.setze_aktiv(bool(self.ampr_integrate_var.get()))
         except (AttributeError, tk.TclError):
             pass
-        self._arbeitsordner_sichtbarkeit_setzen()  # TEMP-ORDNER nur bei LZ4 (und "Strom aus")
+        self._arbeitsordner_sichtbarkeit_setzen()  # TEMP-ORDNER nur bei "Strom aus"
 
     #: LZ4-Stufen, die die Auswahl anbietet (1 steht fuer 1 bis 4: im schnellen Modus ist dort alles dasselbe).
     _AMPR_LZ4_STUFEN = (1, 5, 6, 7, 8, 9, 10, 11, 12)
@@ -37035,7 +37077,7 @@ class PS5ConverterGUI:
         self._save_setting(self._AMPR_PACK_VERFAHREN_SETTING, neu)
         logger.info("Packverfahren auf %s gestellt", neu)
         self._ampr_stufe_combo_schalten()          # die Packstufe zeigt gleich die Stufen des neuen Verfahrens
-        self._arbeitsordner_sichtbarkeit_setzen()  # TEMP-ORDNER nur bei LZ4
+        self._arbeitsordner_sichtbarkeit_setzen()  # TEMP-ORDNER nur bei "Strom aus"
         try:
             self._ampr_versionsliste_fuellen()
         except Exception as exc:  # noqa: BLE001 - die Einstellung gilt trotzdem
@@ -37099,7 +37141,7 @@ class PS5ConverterGUI:
         Nutzerwunsch 12.11.2026 ("Vollstaendige Pruefung", Schalter rechts neben der Packstufe). Vorgabe aus: Aufbau, Index und
         Bandkoepfe werden immer ganz geprueft, vom Inhalt eine Stichprobe (``ampr_zstdpack.stichprobe_planen``). Bis v1.9.97
         wurde immer alles verglichen. Gelesen wird die gespeicherte Einstellung, nie eine Tk-Variable (Arbeitsfaden).
-        Bei LZ4 gibt es nur die volle Pruefung (das Packwerkzeug kennt keine Stichprobe).
+        Bei LZ4 gibt es nur die volle Pruefung (das Packwerkzeug kennt keine Stichprobe; der Strom, Etappe 14, haelt es genauso).
         """
         wert = self._load_setting(self._AMPR_VOLL_PRUEFEN_SETTING, False)
         if isinstance(wert, str):
@@ -38045,6 +38087,9 @@ class PS5ConverterGUI:
         """
         if self._ampr_pack_verfahren() == "zstd":
             return self._ampr_zstdpakete_bauen(ordner, index_pfad, auswahl)
+        if getattr(self, "_strom_ansicht", None) is not None:
+            # Im Strom (Etappe 14): kein Ordner zum Packen, die Baender entstehen beim Bau des Abbilds.
+            return self._ampr_lz4_messen(ordner, index_pfad, auswahl)
 
         bereit, grund = ampr_assetpakete.einsatzbereit()
         if not bereit:
@@ -38257,6 +38302,148 @@ class PS5ConverterGUI:
         if not self._ampr_direktleser_riegel(ordner, eigenes_profil):
             return True
         return self._ampr_originale_entfernen(ordner, zeilen)
+
+    def _lz4_strom_vorab(self, src: str, ordner: bool, quelle: Any) -> str:
+        """Kann der LZ4-Packer im Strom (``ampr_lz4pack``) das Profil dieses Laufs schreiben? ``""`` = ja, sonst der Grund.
+
+        Gefragt wird, **ehe** der Strom anfaengt: Dann geht der bisherige Weg ueber den Ordner ohne Verlust weiter. Nein heisst:
+
+        * Neben dem Dump-Ordner liegt ein Packprofil des Anwenders (``<Name>_ampr_pack.toml``): Es entscheidet, was lose bleibt,
+          mit Auto-Loose, Spuren und Gruppen - das kennt der Strom nicht (bei einem Abbild als Quelle gibt es keines).
+        * Das mitgelieferte Profil, das zum Titel gehoert (``ampr_assetpakete.profil_integriert_aus_baum``), hat mehrere Gruppen
+          oder Striping.
+
+        Ohne AMPR EMU mit Asset-Pack und LZ4 gibt es nichts zu pruefen.
+        """
+        try:
+            if not (self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK
+                    and self._ampr_pack_verfahren() == "lz4"):
+                return ""
+            if ordner:
+                kandidat = os.path.normpath(os.path.abspath(src)) + self._EIGENES_PROFIL_ENDUNG
+                if os.path.isfile(kandidat) and not ampr_assetpakete.profil_ist_eigenes(kandidat):
+                    return "Packprofil des Anwenders: %s" % os.path.basename(kandidat)
+            _bezeichnung, pfad = ampr_assetpakete.profil_integriert_aus_baum(quelle)
+            return ampr_lz4pack.grund_gegen_strom(pfad) if pfad else ""
+        except Exception as exc:  # noqa: BLE001 - im Zweifel entscheidet die genauere Pruefung im Strom
+            logger.debug("LZ4-Strom: Vorabpruefung ohne Ergebnis: %s", exc)
+            return ""
+
+    def _ampr_lz4_messen(self, ordner: str, index_pfad: str, auswahl: dict[str, Any]) -> bool:
+        """Strom ohne Zwischenordner fuer **LZ4**-Packs (Etappe 14, Dump-Forge-Vorbild): waehlt die Dateien und misst die Baender.
+
+        Gegenstueck zu :meth:`_ampr_zstd_messen` und zum Weg ueber den Ordner (:meth:`_ampr_assetpakete_bauen`), aber aus der
+        Ansicht (Quelle + Ueberlagerungsordner, ``self._strom_ansicht``): Das Profil entsteht aus der Dateiliste des Lesebaums,
+        ``ampr_lz4pack.messen`` verdichtet alles einmal und merkt, was der Schreibdurchgang braucht (Lage jedes Blocks, Bandgroessen,
+        Manifest, Pruefsummen, Laufzeitprofil). Die Riegel des Weges ueber den Ordner gelten hier wie dort: harte Grenzen der Laufzeit,
+        Systemdateien im Band, der Speicherblock. Das Ergebnis liegt in ``self._strom_plan``; geschrieben wird beim Bau des Abbilds
+        (:meth:`_mode_exfat_umpacken_strom`). Kann der Strom das Profil doch nicht schreiben (``Lz4NichtImStrom``), steht der Grund in
+        ``self._strom_alter_weg`` und der Aufrufer nimmt den Weg ueber den Ordner.
+        """
+        bereit, grund = ampr_assetpakete.einsatzbereit()
+        if not bereit or not ampr_lz4pack.verfuegbar():
+            self._append_to_log(self._t(grund or "ampr_pack.lz4_fehlt"))
+            return False
+        variante = str((auswahl or {}).get("variant", ""))
+        if variante and not ampr_assetpakete.variante_kann_packen(variante):
+            self._append_to_log(self._t("ampr_pack.variante_kann_nicht", variant=variante))
+            return False
+
+        stufe = self._ampr_lz4_stufe()
+        self._append_to_log(self._t("ampr_pack.start"))
+        self._set_status(self._t("ampr_pack.status"))
+        try:
+            baum = self._strom_ansicht.baum()
+            arbeiter_zahl = self._ampr_zstd_arbeiter()
+            # Neben dem Ueberlagerungsordner (im Arbeitsordner, der am Ende weggeraeumt wird), nicht im Spiel.
+            profil = ampr_assetpakete.profil_schreiben_aus_baum(
+                os.path.join(os.path.dirname(os.path.abspath(ordner)), "ampr_profil", "ampr_pack.toml"), baum,
+                arbeiter=self._ampr_pack_arbeiter(), stufe=stufe)
+            if not ampr_assetpakete.profil_ist_eigenes(profil):
+                self._strom_alter_weg = "Packprofil des Anwenders"
+                return False
+            self._append_to_log(self._t("ampr_pack.profil", path=profil))
+            self._append_to_log(self._t(
+                "ampr_pack.stufe_schnell" if stufe <= ampr_assetpakete.LZ4_STUFE_SCHNELL_BIS else "ampr_pack.stufe_hc",
+                stufe=stufe))
+            try:
+                gewaehlt = ampr_lz4pack.auswaehlen(baum, index_pfad, profil, abbruch=lambda: not self.is_running)
+            except ampr_lz4pack.Lz4NichtImStrom as exc:
+                self._strom_alter_weg = str(exc)
+                return False
+            gepackt_bytes = gewaehlt.gepackte_bytes
+            self._append_to_log(self._t(
+                "ampr_pack.strom_auswahl", packed=len(gewaehlt.gepackt), loose=len(gewaehlt.lose),
+                size=self._fmt_bytes(gepackt_bytes)))
+            if gewaehlt.auto_loose_uebergangen:
+                self._append_to_log(self._t("ampr_pack.strom_auto_loose", count=gewaehlt.auto_loose_uebergangen))
+            if not gewaehlt.gepackt:
+                self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
+                return False
+            # Dieselben Riegel wie nach dem Packen im Ordner - nur frueher, vor dem ersten Byte Arbeit.
+            systemdateien = ampr_assetpakete.systemdateien_aus_dateien([rel for rel, _g in gewaehlt.gepackt])
+            if systemdateien:
+                for pfad in systemdateien[:20]:
+                    self._append_to_log(self._t("ampr_pack.systemdatei_gepackt", path=pfad))
+                self._append_to_log(self._t("ampr_pack.systemdatei_folge", count=len(systemdateien)))
+                return False
+            videos = [rel for rel, _g in gewaehlt.gepackt
+                      if any(t.lower() in ampr_assetpakete.FILMORDNER for t in rel.replace("\\", "/").split("/")[:-1])]
+            for pfad in videos[:10]:
+                self._append_to_log(self._t("ampr_pack.video_gepackt", path=pfad))
+            if videos:
+                self._append_to_log(self._t("ampr_pack.video_folge", count=len(videos)))
+
+            self._append_to_log(self._t(
+                "ampr_pack.strom_arbeiter", count=min(32, arbeiter_zahl or (os.cpu_count() or 2)), cores=os.cpu_count() or 0))
+            t_messen = self._stufe_start("phase.messen")
+            try:
+                messung = ampr_lz4pack.messen(
+                    baum, gewaehlt, arbeiter=arbeiter_zahl, abbruch=lambda: not self.is_running,
+                    fortschritt=lambda anteil: self._ampr_pack_fortschritt(anteil * 100.0, "lz4"),
+                    einpassen=ampr_assetpakete.laufzeit_einpassen)
+            except ampr_lz4pack.Lz4SpeicherZuKlein as exc:
+                self._ampr_speicher_zu_klein_melden(exc.manifest_bytes, exc.index_bytes, exc.bisher)
+                return False
+            self._phase_dauer_melden("phase.messen", t_messen)
+            ergebnis = messung.ergebnis
+            self._append_to_log(self._t(
+                "ampr_pack.strom_gemessen", files=ergebnis.dateien, chunks=ergebnis.chunks, lz4=ergebnis.lz4_chunks,
+                raw=ergebnis.rohe_chunks, shared=ergebnis.geteilte_chunks, volumes=len(messung.baender),
+                percent="%.1f" % (100.0 * ergebnis.gespeichert_bytes / max(1, ergebnis.roh_bytes))))
+            # Harte Grenzen der Laufzeit (Anleitung des Autors): ein Bestand darueber wird gar nicht erst geladen.
+            risse = ampr_assetpakete.grenzen_ueberschritten({
+                "files": len(gewaehlt.punkte), "chunks": ergebnis.chunks, "packs": list(messung.baender)})
+            if risse:
+                for name, gemessen, erlaubt in risse:
+                    self._append_to_log(self._t("ampr_pack.grenze_gerissen", name=name, gemessen=gemessen, erlaubt=erlaubt))
+                self._append_to_log(self._t("ampr_pack.grenze_folge"))
+                return False
+            if messung.laufzeit_bisher is not None and messung.laufzeit_werte is not None:
+                self._ampr_speicher_melden(len(messung.manifest), gewaehlt.index_bytes, messung.laufzeit_bisher,
+                                           messung.laufzeit_werte)
+            # Originale weglassen: Mit ampr-emu-ng (NG) ja, wie bei zstd und Dump Forge - NG bedient auch normale Lesezugriffe und mmap
+            # aus den Packs. Die Laufzeit von drakmor liest nur ueber AMPR; ohne Konsolen-Mitschnitt weiss niemand, was der Titel am
+            # Emulator vorbei liest, also bleiben die Originale (``_ampr_direktleser_riegel``), auch wenn "weglassen" gewaehlt war.
+            if getattr(self, "_ampr_originale_weglassen", False):
+                marke = variante.strip().lower()
+                ist_ng = (marke in ampr_assetpakete.ALLROUND_VARIANTEN if marke
+                          else self._ampr_ist_ng_datei(os.path.join(ordner, "fakelib", "libSceAmpr.sprx")))
+                if not ist_ng:
+                    self._ampr_direktleser_riegel(ordner, True, baum)
+                    self._ampr_originale_weglassen = False
+            self._strom_plan = {"auswahl": gewaehlt, "messung": messung, "stufe": stufe}
+            return True
+        except ampr_lz4pack.Lz4PackFehler as exc:
+            if str(exc) != "ampr_pack.abgebrochen":                    # Abbruch durch den Anwender ist kein Fehler
+                self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=self._zstd_fehler_text(exc)))
+            return False
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("LZ4-Messdurchgang: unerwarteter Fehler")
+            self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=exc))
+            return False
+        finally:
+            self._pack_infotext = ""
 
     def _ampr_zstd_messen(self, ordner: str, index_pfad: str, auswahl: dict[str, Any]) -> bool:
         """Strom ohne Zwischenordner (Stufe 3): waehlt die Dateien und misst die Packs - geschrieben wird erst ins Abbild.
@@ -38646,7 +38833,7 @@ class PS5ConverterGUI:
                                     path=kandidat))
         return ziel
 
-    def _ampr_direktleser_riegel(self, ordner: str, eigenes_profil: bool) -> bool:
+    def _ampr_direktleser_riegel(self, ordner: str, eigenes_profil: bool, baum: Any = None) -> bool:
         """Darf bei diesem Titel ueberhaupt ohne Originale gebaut werden?
 
         Die Baender bedienen nur Lesevorgaenge, die ueber APR laufen. Was
@@ -38688,7 +38875,9 @@ class PS5ConverterGUI:
             # Ein Profil aus Konsolen-Mitschnitten: Der Anwender entscheidet.
             return True
         try:
-            engine, merkmale = ampr_assetpakete.direktleser_merkmale(ordner)
+            # Im Strom gibt es keinen Spielordner: die Dateiliste des Lesebaums genuegt.
+            engine, merkmale = (ampr_assetpakete.direktleser_aus_dateien(list(baum.suchen())) if baum is not None
+                                else ampr_assetpakete.direktleser_merkmale(ordner))
         except Exception as exc:  # noqa: BLE001
             logger.debug("Direktleser nicht pruefbar: %s", exc)
             engine, merkmale = "", ()
@@ -38774,38 +38963,46 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=exc))
             return False
 
-        def _mib(anzahl: int) -> str:
-            return "%.1f" % (anzahl / (1024 * 1024))
-
         vorgabe = ampr_assetpakete.LAUFZEIT_VORGABE
         roh = uebersicht.get("runtime") or {}
         bisher = {schluessel: int(roh[schluessel]) if roh.get(schluessel) is not None
                   else wert for schluessel, wert in vorgabe.items()}
         passend = ampr_assetpakete.laufzeit_einpassen(manifest_bytes, index_bytes, bisher)
         if passend is None:
-            self._append_to_log(self._t(
-                "ampr_pack.speicher_zu_klein",
-                bedarf=_mib(ampr_assetpakete.speicherbedarf(
-                    manifest_bytes, index_bytes, bisher)),
-                block=_mib(ampr_assetpakete.POOL_BYTES),
-                manifest=_mib(manifest_bytes), index=_mib(index_bytes)))
+            self._ampr_speicher_zu_klein_melden(manifest_bytes, index_bytes, bisher)
             return False
         if passend != bisher:
             ampr_assetpakete.laufzeit_schreiben(manifest, passend,
                                                 melden=self._append_to_log)
+        self._ampr_speicher_melden(manifest_bytes, index_bytes, bisher, passend)
+        return True
+
+    @staticmethod
+    def _mib_text(anzahl: int) -> str:
+        return "%.1f" % (anzahl / (1024 * 1024))
+
+    def _ampr_speicher_zu_klein_melden(self, manifest_bytes: int, index_bytes: int, bisher: "dict[str, int]") -> None:
+        """Schreibt ins Protokoll, dass Manifest und Index den Speicherblock sprengen (Weg ueber den Ordner wie Strom)."""
+        mib = self._mib_text
+        self._append_to_log(self._t(
+            "ampr_pack.speicher_zu_klein",
+            bedarf=mib(ampr_assetpakete.speicherbedarf(manifest_bytes, index_bytes, bisher)),
+            block=mib(ampr_assetpakete.POOL_BYTES), manifest=mib(manifest_bytes), index=mib(index_bytes)))
+
+    def _ampr_speicher_melden(self, manifest_bytes: int, index_bytes: int, bisher: "dict[str, int]",
+                              passend: "dict[str, int]") -> None:
+        """Protokolliert die Speicherrechnung: gekuerzte Caches (falls noetig) und die Belegung des Blocks."""
+        mib = self._mib_text
+        if passend != bisher:
             self._append_to_log(self._t(
                 "ampr_pack.speicher_angepasst",
-                decoded_vorher=_mib(bisher["decoded_cache_bytes"]),
-                decoded=_mib(passend["decoded_cache_bytes"]),
-                physical_vorher=_mib(bisher["physical_cache_bytes"]),
-                physical=_mib(passend["physical_cache_bytes"])))
+                decoded_vorher=mib(bisher["decoded_cache_bytes"]), decoded=mib(passend["decoded_cache_bytes"]),
+                physical_vorher=mib(bisher["physical_cache_bytes"]), physical=mib(passend["physical_cache_bytes"])))
         bedarf = ampr_assetpakete.speicherbedarf(manifest_bytes, index_bytes, passend)
         self._append_to_log(self._t(
             "ampr_pack.speicher_ok",
-            bedarf=_mib(bedarf), block=_mib(ampr_assetpakete.POOL_BYTES),
-            frei=_mib(ampr_assetpakete.POOL_BYTES - bedarf),
-            manifest=_mib(manifest_bytes), index=_mib(index_bytes)))
-        return True
+            bedarf=mib(bedarf), block=mib(ampr_assetpakete.POOL_BYTES),
+            frei=mib(ampr_assetpakete.POOL_BYTES - bedarf), manifest=mib(manifest_bytes), index=mib(index_bytes)))
 
     #: Welche PlayGo-Variante zu welcher AMPR-Variante passt. libScePlayGo
     #: stammt aus einem eigenen Projekt (pgo_stub) und zaehlt seine Versionen
@@ -44451,7 +44648,7 @@ class PS5ConverterGUI:
         eintraege, reihenfolge, schliessen = strom["flach_liste"](_strom_fortschritt)
         try:
             gesamt = sum(groesse for _rel, groesse, _oeffner in eintraege)
-            stand["packs"] = sum(groesse for rel, groesse, _oeffner in eintraege if ampr_zstdpack.ist_packname(rel))
+            stand["packs"] = sum(groesse for rel, groesse, _oeffner in eintraege if abbild_strom.ist_packname(rel))
             stand["lose"] = gesamt - stand["packs"]
             auf_groesse(gesamt)
             nur_schreiben = (lambda phase, fertig, gesamt_n, byte_zahl: melden(phase, fertig, gesamt_n, byte_zahl)
