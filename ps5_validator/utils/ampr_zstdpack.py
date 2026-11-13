@@ -389,21 +389,62 @@ def dateien_auswaehlen(app0: str, abbruch: Callable[[], bool] = lambda: False,
             if os.path.islink(voll) or not os.path.isfile(voll):
                 ergebnis.lose.append((rel, 0))
                 continue
-            groesse = os.path.getsize(voll)
-            if bleibt_lose(rel):
-                ergebnis.lose.append((rel, groesse))
-            elif groesse == 0:
-                ergebnis.leer.append(rel)
-                ergebnis.lose.append((rel, 0))
-            elif not pfad_gueltig(rel):
-                ergebnis.ungueltig.append(rel)
-                ergebnis.lose.append((rel, groesse))
-            elif regeln is not None and regeln.aktion(rel) == "loose":
-                ergebnis.lose.append((rel, groesse))
-                ergebnis.nach_regeln_lose += 1
-            else:
-                ergebnis.gepackt.append((rel, groesse))
+            _einordnen(ergebnis, rel, os.path.getsize(voll), regeln)
     # Ein Dateipfad darf nicht der Ordner einer anderen sein - im Dateisystem ausgeschlossen, hier nur zur Sicherheit.
+    return ergebnis
+
+
+def _einordnen(ergebnis: Auswahl, rel: str, groesse: int, regeln: "Regeln | None") -> None:
+    """Sortiert eine Datei in ``gepackt`` oder ``lose`` (und ``leer``/``ungueltig``); die Regeln der Auswahl in einer Stelle."""
+    if bleibt_lose(rel):
+        ergebnis.lose.append((rel, groesse))
+    elif groesse == 0:
+        ergebnis.leer.append(rel)
+        ergebnis.lose.append((rel, 0))
+    elif not pfad_gueltig(rel):
+        ergebnis.ungueltig.append(rel)
+        ergebnis.lose.append((rel, groesse))
+    elif regeln is not None and regeln.aktion(rel) == "loose":
+        ergebnis.lose.append((rel, groesse))
+        ergebnis.nach_regeln_lose += 1
+    else:
+        ergebnis.gepackt.append((rel, groesse))
+
+
+def auswahl_aus_liste(dateien: "Sequence[tuple[str, int]]", abbruch: Callable[[], bool] = lambda: False,
+                      regeln: "Regeln | None" = None) -> Auswahl:
+    """Wie :func:`dateien_auswaehlen`, aber aus einer Liste ``(Pfad, Groesse)`` - etwa der eines Lesebaums (``spielbaum``).
+
+    Die Liste wird so geordnet wie der Gang durch einen Ordner (je Ordner erst die Dateien, dann die Unterordner, jeweils nach
+    Namen), damit beide Wege dieselbe Auswahl in derselben Reihenfolge liefern.
+    """
+    def schluessel(eintrag: "tuple[str, int]") -> "tuple[tuple[str, ...], str]":
+        teile = eintrag[0].split("/")
+        return tuple(teile[:-1]), teile[-1]
+
+    ergebnis = Auswahl()
+    for rel, groesse in _ordner_reihenfolge(dateien, schluessel):
+        if abbruch():
+            raise ZstdPackFehler("ampr_pack.abgebrochen")
+        _einordnen(ergebnis, rel, groesse, regeln)
+    return ergebnis
+
+
+def _ordner_reihenfolge(dateien: "Sequence[tuple[str, int]]", schluessel: Callable) -> "list[tuple[str, int]]":
+    """Die Reihenfolge von ``os.walk`` mit sortierten Namen: ein Ordner zuerst mit seinen Dateien, dann seine Unterordner."""
+    baum: dict[tuple[str, ...], list[tuple[str, int]]] = {}
+    kinder: dict[tuple[str, ...], set[str]] = {}
+    for eintrag in dateien:
+        ordner = schluessel(eintrag)[0]
+        baum.setdefault(ordner, []).append(eintrag)
+        for i in range(len(ordner)):                            # auch Ordner, die nur Unterordner enthalten
+            kinder.setdefault(ordner[:i], set()).add(ordner[i])
+    ergebnis: list[tuple[str, int]] = []
+    stapel: list[tuple[str, ...]] = [()]
+    while stapel:                                               # ohne Rekursion: Pfade koennen tief sein
+        ordner = stapel.pop()
+        ergebnis.extend(sorted(baum.get(ordner, ()), key=lambda e: e[0].split("/")[-1]))
+        stapel.extend(ordner + (name,) for name in sorted(kinder.get(ordner, ()), reverse=True))
     return ergebnis
 
 
