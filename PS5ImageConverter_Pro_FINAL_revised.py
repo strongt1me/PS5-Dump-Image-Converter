@@ -30996,6 +30996,29 @@ class PS5ConverterGUI:
         except (OSError, TypeError, ValueError):
             return False
 
+    @staticmethod
+    def _quellstempel(pfad: str) -> "tuple[int, int, int, int] | None":
+        """Merkmale einer Quelldatei: Groesse, Aenderungszeit (ns), Datei-ID und Laufwerk - oder ``None`` (keine Datei).
+
+        Dump Forge prueft vor dem Veroeffentlichen Laenge, Zeit und Datei-ID der Quelle (``SourceStamp``). Wird die
+        Quelle waehrend eines Laufs ueberschrieben oder ausgetauscht, passt das Ergebnis nicht mehr zu ihr.
+        """
+        try:
+            st = os.stat(pfad)
+        except (OSError, TypeError, ValueError):
+            return None
+        if not stat.S_ISREG(st.st_mode):
+            return None
+        return (int(st.st_size), int(st.st_mtime_ns), int(st.st_ino), int(st.st_dev))
+
+    def _quelle_unveraendert(self, pfad: str) -> bool:
+        """Ob die Quelle noch ist, wie sie beim Bau war. Ohne gemerkten Stempel (anderer Weg, Test) gilt: ja."""
+        merker = getattr(self, "_selbstziel_stempel", None) or {}
+        alt = merker.get(os.path.normcase(os.path.abspath(pfad)))
+        if alt is None:
+            return True
+        return self._quellstempel(pfad) == alt
+
     def _bauziel_neben_quelle(self, final_output: str) -> str:
         """Wohin ein Weg baut: ans Ziel - oder daneben, wenn dort die Quelle liegt.
 
@@ -31022,6 +31045,13 @@ class PS5ConverterGUI:
         if baustellen is None:
             baustellen = self._selbstziel_baustellen = set()
         baustellen.add(bau_ziel)
+        # Wie bei Dump Forge (SourceStamp): Was die Quelle beim Start war, wird gemerkt und vor dem Ersetzen verglichen.
+        stempel = self._quellstempel(final_output)
+        if stempel is not None:
+            merker = getattr(self, "_selbstziel_stempel", None)
+            if merker is None:
+                merker = self._selbstziel_stempel = {}
+            merker[os.path.normcase(os.path.abspath(final_output))] = stempel
         self._append_to_log(self._t("log.selbstziel_daneben",
                                     neu=os.path.basename(bau_ziel)))
         return bau_ziel
@@ -31047,6 +31077,14 @@ class PS5ConverterGUI:
         # Das Ergebnis gilt ab hier nicht mehr als Rest - weder nach der
         # Uebernahme noch, wenn sie scheitert.
         baustellen.discard(bau_ziel)
+        unveraendert = self._quelle_unveraendert(final_output)
+        # Der Stempel gilt nur fuer diesen Lauf - ein spaeterer Lauf mit demselben Pfad merkt sich seinen eigenen.
+        (getattr(self, "_selbstziel_stempel", None) or {}).pop(os.path.normcase(os.path.abspath(final_output)), None)
+        if not unveraendert:
+            # Wer die Quelle waehrend des Laufs veraendert hat (Groesse, Datum oder die Datei selbst), bekommt sie nicht
+            # durch ein Ergebnis ersetzt, das aus dem alten Stand gebaut ist. Das Ergebnis bleibt als ``.neu`` liegen.
+            self._append_to_log(self._t("log.selbstziel_quelle_geaendert", quelle=final_output, neu=bau_ziel))
+            return ist
         try:
             # Ein Schreibschutz auf der Quelle laesst os.replace unter
             # Windows scheitern.
@@ -43206,6 +43244,21 @@ class PS5ConverterGUI:
             else:
                 self._append_to_log(self._t('log.auto.0101', v0=content_check.get('detail', self._t('verify.skipped'))))
 
+            # Rueckleseprobe mit dem eigenen Leser (nach Dump Forge): Dateiliste und Groessen gegen die Quelle, dazu
+            # der Inhalt einer Stichprobe. Die Quelle wird dabei nur mit der Stichprobe gelesen, nicht noch einmal ganz.
+            inhalt_check = self._verify_exfat_inhalt(str(teil_path), str(src_path), lambda: self.is_running)
+            if not self.is_running:
+                return False
+            if inhalt_check.get("lesefehler") or (inhalt_check.get("checked") and not inhalt_check.get("ok")):
+                self._append_to_log(self._t('log.auto.0271', v0=inhalt_check.get("detail", "")))
+                try:
+                    teil_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return False
+            if inhalt_check.get("checked"):
+                self._append_to_log(self._t('log.exfat_ruecklesen_ok', v0=inhalt_check.get("detail", "")))
+
             self._copy_done_bytes = self._copy_total_bytes
             self.task_progress = max(self.task_progress, pct_end)
             _datei_ersetzen(str(teil_path), str(out_path))
@@ -43221,6 +43274,10 @@ class PS5ConverterGUI:
                     teil_path.unlink(missing_ok=True)
                 except OSError as exc:
                     logger.debug("Teildatei nicht entfernbar (%s): %s", teil_path, exc)
+
+    def _verify_exfat_inhalt(self, exfat_path: str, src_dir: str, laeuft=None):
+        """Liest das gebaute exFAT zurueck und vergleicht es mit der Quelle. Siehe abbild_pruefen."""
+        return self._pruefstand()._verify_exfat_inhalt(exfat_path, src_dir, laeuft)
 
     def _verify_exfat_file_count(self, exfat_path: str,
                                  expected_file_count: int):

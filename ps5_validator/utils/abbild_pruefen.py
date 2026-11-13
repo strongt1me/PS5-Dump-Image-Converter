@@ -30,6 +30,7 @@ import hashlib
 import inspect
 import logging
 import os
+import random
 import struct
 import subprocess
 import sys
@@ -202,6 +203,118 @@ class _PruefungAbgebrochen(Exception):
     eigene Klasse kommt also bis hierher durch (am Quelltext von
     ``MkPFS-1.1.0/mkpfs/pfs.py`` belegt, Durchsicht Runde 19).
     """
+
+
+EXFAT_RUECKLESEN_GANZ_BIS = 16 << 20       # bis hierher wird eine Stichprobendatei ganz verglichen
+EXFAT_RUECKLESEN_ANFANG = 1 << 20          # von groesseren nur der Anfang
+EXFAT_RUECKLESEN_MINDEST = 64 << 20        # so viel wird mindestens verglichen (kleine Titel ganz)
+EXFAT_RUECKLESEN_MAX = 1 << 30             # und hoechstens so viel
+EXFAT_RUECKLESEN_ANTEIL = 0.01             # dazwischen ein Hundertstel der Quelle
+EXFAT_RUECKLESEN_PFLICHT = ("eboot.bin", "sce_sys/param.json")   # werden immer verglichen
+
+
+def exfat_ruecklesen(
+    leser: Any,
+    quelle: str,
+    *,
+    ignoriert: Callable[[str], bool],
+    zufall: Any = None,
+    laeuft: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    """Liest ein gebautes exFAT mit dem eigenen Leser zurueck und vergleicht es mit der Quelle.
+
+    Nach Dump Forge (Nutzerwahl 13.11.2026: "Ergebnis durch eigenen Leser pruefen"): Der Schreiber wird nicht an seinem
+    eigenen Urteil gemessen, sondern an einem unabhaengigen Leser. Verglichen wird
+
+    * die Dateiliste: jede Quelldatei steht im Abbild, und das Abbild kennt keine, die in der Quelle fehlt;
+    * die Groesse jeder Datei;
+    * der Inhalt einer Stichprobe: die Pflichtdateien (``eboot.bin``, ``sce_sys/param.json``) immer, dazu zufaellig
+      gewaehlte Dateien, bis ``EXFAT_RUECKLESEN_MINDEST`` bis ``EXFAT_RUECKLESEN_MAX`` Bytes (ein Hundertstel der
+      Quelle) gelesen sind. Dateien bis 16 MiB werden ganz verglichen, groessere am Anfang (1 MiB).
+
+    Args:
+        leser: Ein ``mkpfs.exfat.ExfatReader`` (oder etwas mit ``iter_files`` und ``read_file``).
+        quelle: Der Spielordner, aus dem das Abbild gebaut wurde.
+        ignoriert: ``mkpfs.utils.is_ignored_name`` - was der Schreiber bewusst weglaesst.
+        zufall: ``random.Random`` fuer die Auswahl (Tests geben einen festen).
+        laeuft: Liefert False, sobald der Lauf abgebrochen wurde.
+
+    Returns:
+        ``{"dateien", "fehlen", "zuviel", "groesse", "inhalt", "stichprobe_dateien", "stichprobe_bytes",
+        "abgebrochen"}``; die vier Listen sind vollstaendig (der Aufrufer kuerzt fuer die Anzeige).
+    """
+    zufall = zufall or random.Random()
+    erwartet: dict[str, tuple[str, int]] = {}
+    for wurzel, unterordner, dateien in os.walk(quelle):
+        unterordner[:] = [d for d in unterordner if not ignoriert(d)]
+        for name in dateien:
+            if ignoriert(name):
+                continue
+            voll = os.path.join(wurzel, name)
+            rel = os.path.relpath(voll, quelle).replace(os.sep, "/")
+            try:
+                erwartet[rel] = (voll, os.stat(voll).st_size)
+            except OSError:
+                erwartet[rel] = (voll, -1)
+    klein = {rel.lower(): rel for rel in erwartet}
+
+    ergebnis: dict[str, Any] = {
+        "dateien": 0, "fehlen": [], "zuviel": [], "groesse": [], "inhalt": [],
+        "stichprobe_dateien": 0, "stichprobe_bytes": 0, "abgebrochen": False,
+    }
+    gefunden: set[str] = set()
+    paare: list[tuple[Any, str]] = []
+    for eintrag in leser.iter_files():
+        ergebnis["dateien"] += 1
+        rel = eintrag.rel_path if eintrag.rel_path in erwartet else klein.get(eintrag.rel_path.lower())
+        if rel is None:
+            ergebnis["zuviel"].append(eintrag.rel_path)
+            continue
+        gefunden.add(rel)
+        if erwartet[rel][1] != eintrag.length:
+            ergebnis["groesse"].append("%s (%d <> %d)" % (rel, eintrag.length, erwartet[rel][1]))
+            continue
+        paare.append((eintrag, rel))
+    ergebnis["fehlen"] = sorted(rel for rel in erwartet if rel not in gefunden)
+
+    gesamt = sum(e.length for e, _ in paare)
+    budget = min(gesamt, max(EXFAT_RUECKLESEN_MINDEST,
+                             min(EXFAT_RUECKLESEN_MAX, int(gesamt * EXFAT_RUECKLESEN_ANTEIL))))
+    pflicht = [p for p in paare if p[1].lower() in EXFAT_RUECKLESEN_PFLICHT]
+    rest = [p for p in paare if p[1].lower() not in EXFAT_RUECKLESEN_PFLICHT and p[0].length > 0]
+    zufall.shuffle(rest)
+    for nr, (eintrag, rel) in enumerate(pflicht + rest):
+        if laeuft is not None and not laeuft():
+            ergebnis["abgebrochen"] = True
+            break
+        if eintrag.length <= 0:
+            continue
+        if ergebnis["stichprobe_bytes"] >= budget and nr >= len(pflicht):
+            break
+        n = eintrag.length if eintrag.length <= EXFAT_RUECKLESEN_GANZ_BIS else EXFAT_RUECKLESEN_ANFANG
+        if not _exfat_anfang_gleich(leser, eintrag, erwartet[rel][0], n):
+            ergebnis["inhalt"].append(rel)
+        ergebnis["stichprobe_dateien"] += 1
+        ergebnis["stichprobe_bytes"] += n
+    return ergebnis
+
+
+def _exfat_anfang_gleich(leser: Any, eintrag: Any, quelle_datei: str, n: int) -> bool:
+    """Vergleicht die ersten ``n`` Bytes einer Abbild-Datei mit denen der Quelldatei."""
+    gelesen = bytearray()
+    try:
+        for stueck in leser.read_file(eintrag):
+            gelesen += stueck
+            if len(gelesen) >= n:
+                break
+    except Exception:
+        return False                         # der Leser kommt an der Datei nicht durch: gilt als Abweichung
+    del gelesen[n:]
+    try:
+        with open(quelle_datei, "rb") as fh:
+            return fh.read(n) == bytes(gelesen)
+    except OSError:
+        return True                          # die Quelle laesst sich nicht lesen: das ist kein Fehler des Abbilds
 
 
 class Pruefstand:
@@ -912,6 +1025,57 @@ class Pruefstand:
         finally:
             if mount_proc is not None:
                 dokan_laufwerk.aushaengen(drive, mount_proc)
+
+    def _verify_exfat_inhalt(
+        self, exfat_path: str, src_dir: str, laeuft: Callable[[], bool] | None = None
+    ) -> dict[str, Any]:
+        """Liest das fertige exFAT mit dem eigenen Leser zurueck und vergleicht es mit der Quelle.
+
+        Siehe ``exfat_ruecklesen``. ``ok`` ist False bei fehlenden oder zusaetzlichen Dateien, abweichender Groesse
+        oder abweichendem Inhalt der Stichprobe; ``lesefehler`` bei einem Abbild, das der Leser nicht oeffnet.
+        """
+        result: dict[str, Any] = {"checked": False, "ok": True, "detail": ""}
+        try:
+            mkpfs_parent = self._extract_embedded_mkpfs()
+            if not mkpfs_parent:
+                result["detail"] = self._t("verify.count_skipped_no_mkpfs")
+                return result
+            if mkpfs_parent not in sys.path:
+                sys.path.insert(0, mkpfs_parent)
+            from mkpfs.exfat import ExfatReader  # pyright: ignore[reportMissingImports]
+            from mkpfs.utils import is_ignored_name  # pyright: ignore[reportMissingImports]
+
+            try:
+                with open(exfat_path, "rb") as fh:
+                    befund = exfat_ruecklesen(ExfatReader(fh), src_dir, ignoriert=is_ignored_name, laeuft=laeuft)
+            except Exception as exc:
+                result["lesefehler"] = True
+                result["detail"] = self._t("verify.count_skipped_error", error=exc)
+                return result
+        except Exception as exc:
+            result["detail"] = self._t("verify.count_skipped_error", error=exc)
+            return result
+
+        result["checked"] = not befund["abgebrochen"]
+        result["befund"] = befund
+        kurz = lambda liste: ", ".join(liste[:3]) + (" ..." if len(liste) > 3 else "")   # noqa: E731
+        fehler: list[str] = []
+        if befund["fehlen"]:
+            fehler.append(self._t("verify.inhalt_fehlen", n=len(befund["fehlen"]), beispiele=kurz(befund["fehlen"])))
+        if befund["zuviel"]:
+            fehler.append(self._t("verify.inhalt_zuviel", n=len(befund["zuviel"]), beispiele=kurz(befund["zuviel"])))
+        if befund["groesse"]:
+            fehler.append(self._t("verify.inhalt_groesse", n=len(befund["groesse"]), beispiele=kurz(befund["groesse"])))
+        if befund["inhalt"]:
+            fehler.append(self._t("verify.inhalt_inhalt", n=len(befund["inhalt"]), beispiele=kurz(befund["inhalt"])))
+        if fehler:
+            result["ok"] = False
+            result["detail"] = "; ".join(fehler)
+        else:
+            result["detail"] = self._t("verify.inhalt_ok", dateien=befund["dateien"],
+                                       stichprobe=befund["stichprobe_dateien"],
+                                       mb=befund["stichprobe_bytes"] // (1 << 20))
+        return result
 
     def _verify_exfat_file_count(
         self, exfat_path: str, expected_file_count: int
