@@ -212,6 +212,7 @@ EXFAT_RUECKLESEN_MINDEST = 64 << 20        # so viel wird mindestens verglichen 
 EXFAT_RUECKLESEN_MAX = 1 << 30             # und hoechstens so viel
 EXFAT_RUECKLESEN_ANTEIL = 0.01             # dazwischen ein Hundertstel der Quelle
 EXFAT_RUECKLESEN_PFLICHT = ("eboot.bin", "sce_sys/param.json")   # werden immer verglichen
+EXFAT_RUECKLESEN_QUELLE_VERSUCHE = 5      # so viele Stichprobendateien hintereinander ohne lesbare Quelle, dann ist die Stichprobe zu Ende
 
 
 def exfat_ruecklesen(
@@ -375,9 +376,11 @@ def exfat_ruecklesen_liste(
     ergebnis: dict[str, Any] = {
         "dateien": 0, "fehlen": [], "zuviel": [], "groesse": [], "inhalt": [],
         "stichprobe_dateien": 0, "stichprobe_bytes": 0, "abgebrochen": False,
+        "quelle_nicht_lesbar": 0,                  # Stichprobendateien, deren Quelle sich nicht lesen liess: nicht verglichen
     }
     gefunden: set[str] = set()
     paare: list[tuple[Any, str]] = []
+    ohne_quelle_in_folge = 0
     for eintrag in leser.iter_files():
         ergebnis["dateien"] += 1
         rel = eintrag.rel_path if eintrag.rel_path in soll else klein.get(eintrag.rel_path.lower())
@@ -408,15 +411,31 @@ def exfat_ruecklesen_liste(
         if ergebnis["stichprobe_bytes"] >= budget and nr >= len(pflicht):
             break
         n = eintrag.length if eintrag.length <= EXFAT_RUECKLESEN_GANZ_BIS else EXFAT_RUECKLESEN_ANFANG
-        if not _exfat_anfang_gleich(leser, eintrag, soll[rel][1], n):
+        gleich = _exfat_anfang_gleich(leser, eintrag, soll[rel][1], n)
+        if gleich is None:                       # nichts verglichen: weder ein Fehler des Abbilds noch eine geprueft gezaehlte Datei
+            ergebnis["quelle_nicht_lesbar"] += 1
+            ohne_quelle_in_folge += 1
+            if ohne_quelle_in_folge >= EXFAT_RUECKLESEN_QUELLE_VERSUCHE:
+                break                            # die Quelle ist weg oder gesperrt: nicht das ganze Abbild fuer nichts lesen
+            continue
+        ohne_quelle_in_folge = 0
+        if not gleich:
             ergebnis["inhalt"].append(rel)
         ergebnis["stichprobe_dateien"] += 1
         ergebnis["stichprobe_bytes"] += n
     return ergebnis
 
 
-def _exfat_anfang_gleich(leser: Any, eintrag: Any, quelle_anfang: Callable[[int], bytes], n: int) -> bool:
-    """Vergleicht die ersten ``n`` Bytes einer Abbild-Datei mit denen der Quelldatei (``quelle_anfang(n)``)."""
+def _exfat_anfang_gleich(leser: Any, eintrag: Any, quelle_anfang: Callable[[int], bytes], n: int) -> "bool | None":
+    """Vergleicht die ersten ``n`` Bytes einer Abbild-Datei mit denen der Quelldatei (``quelle_anfang(n)``); die Quelle zuerst (billig).
+
+    ``None``: Die Quelle liess sich nicht lesen - es wurde nichts verglichen (das ist kein Fehler des Abbilds, zaehlt aber auch nicht als
+    geprueft; bis zum 14.11.2026 gab es hier ``True`` und die Datei ging in die Zahl der verglichenen ein).
+    """
+    try:
+        soll = quelle_anfang(n)
+    except Exception:  # noqa: BLE001 - OSError, BaumFehler: die Quelle laesst sich nicht lesen, das ist kein Fehler des Abbilds
+        return None
     gelesen = bytearray()
     try:
         for stueck in leser.read_file(eintrag):
@@ -426,10 +445,7 @@ def _exfat_anfang_gleich(leser: Any, eintrag: Any, quelle_anfang: Callable[[int]
     except Exception:
         return False                         # der Leser kommt an der Datei nicht durch: gilt als Abweichung
     del gelesen[n:]
-    try:
-        return quelle_anfang(n) == bytes(gelesen)
-    except Exception:  # noqa: BLE001 - OSError, BaumFehler: die Quelle laesst sich nicht lesen, das ist kein Fehler des Abbilds
-        return True
+    return soll == bytes(gelesen)
 
 
 class Pruefstand:
@@ -1213,6 +1229,9 @@ class Pruefstand:
             result["detail"] = self._t("verify.inhalt_ok", dateien=befund["dateien"],
                                        stichprobe=befund["stichprobe_dateien"],
                                        mb=befund["stichprobe_bytes"] // (1 << 20))
+        if befund.get("quelle_nicht_lesbar"):
+            # Die Liste und die Groessen sind geprueft, der Inhalt aber nicht ganz: Das soll im Protokoll stehen.
+            result["detail"] += " " + self._t("verify.inhalt_quelle_unlesbar", n=befund["quelle_nicht_lesbar"])
         return result
 
     def _verify_exfat_file_count(

@@ -882,11 +882,11 @@ def profil_integriert_fuer(app0: str) -> tuple[str, str]:
     """
     if not app0:
         return "", ""
-    return _profil_waehlen(title_id_aus_sfo(app0), direktleser_merkmale(app0)[0],
+    return _profil_waehlen(title_id_aus_sfo(app0), lambda: direktleser_merkmale(app0)[0],
                            lambda: _erkennt_insomniac(app0))
 
 
-def _profil_waehlen(title_id: str, engine: str, ist_insomniac: "Callable[[], bool]") -> tuple[str, str]:
+def _profil_waehlen(title_id: str, engine: "str | Callable[[], str]", ist_insomniac: "Callable[[], bool]") -> tuple[str, str]:
     """Gemeinsamer Teil von :func:`profil_integriert_fuer` und :func:`profil_integriert_aus_baum` (Reihenfolge siehe dort)."""
     # 1. Title-ID (genaues Profil hat Vorrang vor allgemeinem Engine-Profil)
     if title_id:
@@ -895,7 +895,8 @@ def _profil_waehlen(title_id: str, engine: str, ist_insomniac: "Callable[[], boo
             pfad = os.path.join(profil_ordner(), dateiname)
             if os.path.isfile(pfad):
                 return title_id, pfad
-    # 2. Engine-Erkennung (Unity)
+    # 2. Engine-Erkennung (Unity) - erst hier, sie laeuft durch den ganzen Spielordner
+    engine = engine() if callable(engine) else engine
     if engine:
         dateiname = MITGELIEFERTE_PROFILE.get(engine, "")
         if dateiname:

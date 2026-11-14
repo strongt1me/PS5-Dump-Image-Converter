@@ -235,7 +235,59 @@ class RuecklesenAusLesebaumTests(unittest.TestCase):
         def kaputt(_n):
             raise self.spielbaum.BaumFehler("weg")
         erwartet = [(rel, g, kaputt) for rel, g, _a in self.abbild_strom.pruef_eintraege(self.baum, None, None)]
-        self.assertEqual([], self._lesen(erwartet=erwartet)["inhalt"])
+        e = self._lesen(erwartet=erwartet)
+        self.assertEqual([], e["inhalt"])
+        # ... aber auch keine verglichene Datei: Die Zahl der geprueften Dateien nennt nur, was wirklich verglichen wurde.
+        self.assertEqual(0, e["stichprobe_dateien"])
+        self.assertEqual(0, e["stichprobe_bytes"])
+        self.assertEqual(ap.EXFAT_RUECKLESEN_QUELLE_VERSUCHE, e["quelle_nicht_lesbar"])      # dann ist die Stichprobe zu Ende
+
+    def test_die_quelle_wird_zuerst_gelesen_das_abbild_nicht_fuer_nichts(self):
+        """Eine weggefallene Quelle darf nicht dazu fuehren, dass fuer jede Stichprobendatei erst das Abbild gelesen wird."""
+        class _Zaehlt:
+            def __init__(self, leser):
+                self.leser, self.gelesen = leser, 0
+
+            def iter_files(self):
+                return self.leser.iter_files()
+
+            def read_file(self, eintrag):
+                self.gelesen += 1
+                return self.leser.read_file(eintrag)
+
+        def kaputt(_n):
+            raise OSError("Quelle weg")
+        erwartet = [(rel, g, kaputt) for rel, g, _a in self.abbild_strom.pruef_eintraege(self.baum, None, None)]
+        zaehler = _Zaehlt(ExfatReader(io.BytesIO(self.abbild)))
+        e = ap.exfat_ruecklesen_liste(zaehler, erwartet, zufall=random.Random(1))
+        self.assertEqual(0, zaehler.gelesen)
+        self.assertEqual(ap.EXFAT_RUECKLESEN_QUELLE_VERSUCHE, e["quelle_nicht_lesbar"])
+
+    def test_eine_lesbare_quelle_setzt_die_zaehlung_zurueck(self):
+        """Nur Dateien hintereinander ohne lesbare Quelle beenden die Stichprobe; ein einzelner Ausfall nicht."""
+        echt = {rel: (g, a) for rel, g, a in self.abbild_strom.pruef_eintraege(self.baum, None, None)}
+
+        def kaputt(_n):
+            raise OSError("gesperrt")
+        erwartet = [(rel, g, kaputt if nr % 2 == 0 else a) for nr, (rel, (g, a)) in enumerate(sorted(echt.items()))]
+        e = self._lesen(erwartet=erwartet)
+        self.assertEqual([], e["inhalt"])
+        self.assertGreater(e["stichprobe_dateien"], 10)
+        self.assertGreaterEqual(e["quelle_nicht_lesbar"], 10)
+
+    def test_der_pruefstand_nennt_die_unlesbare_quelle_im_urteil(self):
+        p = ap.Pruefstand.__new__(ap.Pruefstand)
+        p._t = lambda k, **w: k + " " + " ".join("%s=%s" % kv for kv in sorted(w.items()))
+        p._extract_embedded_mkpfs = lambda: str(ROOT / "MkPFS-1.1.0")
+        pfad = Path(self._tmp.name) / "y.exfat"
+        pfad.write_bytes(self.abbild)
+
+        def kaputt(_n):
+            raise OSError("weg")
+        erwartet = [(rel, g, kaputt) for rel, g, _a in self.abbild_strom.pruef_eintraege(self.baum, None, None)]
+        urteil = p._verify_exfat_erwartet(str(pfad), erwartet)
+        self.assertTrue(urteil["checked"] and urteil["ok"], urteil)
+        self.assertIn("verify.inhalt_quelle_unlesbar", urteil["detail"])
 
     def test_was_der_schreiber_weglaesst_zaehlt_nicht(self):
         erwartet = self.abbild_strom.pruef_eintraege(self.baum, None, None) + [("desktop.ini", 5, None)]
@@ -297,7 +349,9 @@ class VerdrahtungTests(unittest.TestCase):
                                    ("verify.inhalt_groesse", ("n", "beispiele")),
                                    ("verify.inhalt_inhalt", ("n", "beispiele")),
                                    ("verify.inhalt_ok", ("dateien", "stichprobe", "mb")),
-                                   ("log.exfat_ruecklesen_ok", ("v0",))):
+                                   ("log.exfat_ruecklesen_ok", ("v0",)),
+                                   ("log.ruecklesen_uebersprungen", ("v0",)),
+                                   ("verify.inhalt_quelle_unlesbar", ("n",))):
             for sprache in SUPPORTED_LANGUAGES:
                 text = STRINGS[schluessel][sprache]
                 for feld in felder:

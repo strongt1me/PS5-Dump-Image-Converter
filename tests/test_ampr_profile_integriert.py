@@ -91,6 +91,20 @@ class Erkennung(unittest.TestCase):
             self.assertEqual("", ap.title_id_aus_sfo(str(app0)))
             self.assertEqual(("", ""), ap.profil_integriert_fuer(""))
 
+    def test_die_engine_wird_nur_gesucht_wenn_die_title_id_nichts_ergibt(self):
+        """Die Engine-Erkennung laeuft durch den ganzen Spielordner: Bei einem Treffer ueber die Title-ID darf sie nicht anlaufen."""
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as basis:
+            app0 = _spiel(Path(basis), "PPSA21567")
+            with mock.patch.object(ap, "direktleser_merkmale", side_effect=AssertionError("Engine gesucht")) as suche, \
+                    mock.patch.object(ap, "_erkennt_insomniac", side_effect=AssertionError("Insomniac gesucht")):
+                self.assertEqual("PPSA21567", ap.profil_integriert_fuer(str(app0))[0])
+            suche.assert_not_called()
+            app0 = _spiel(Path(basis) / "zwei", "PPSA00001")
+            with mock.patch.object(ap, "direktleser_merkmale", return_value=("Unity", ())) as suche:
+                self.assertEqual("Unity", ap.profil_integriert_fuer(str(app0))[0])
+            suche.assert_called_once()
+
     def test_unity_an_den_metadaten(self):
         with tempfile.TemporaryDirectory() as basis:
             app0 = _spiel(Path(basis), "PPSA00002")

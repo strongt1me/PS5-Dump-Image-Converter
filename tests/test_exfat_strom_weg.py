@@ -302,6 +302,19 @@ class StromWegTests(_Grundlage):
         self.assertIsNone(ergebnis)
         self.assertEqual([], os.listdir(self.ziel))
 
+    def test_packs_in_der_quelle_schicken_den_lauf_auch_ohne_ampr_einbau_zum_alten_weg(self) -> None:
+        """Auch PlayGo oder die Behebung einer fremden Bibliothek bauen den ``ampr_emu.index`` neu, und die Frage, ob das sein darf, sieht nur
+        den ganzen Ordner, nicht die Ueberlagerung (Pruefbericht 14.11.2026): Mit Packs in der Quelle gilt immer der bisherige Weg."""
+        Path(self.spiel, "ampr_zstd.index").write_bytes(b"alt")
+        with open(self.quelle, "wb") as fh:
+            for stueck in iter_exfat_image(Path(self.spiel)):
+                fh.write(stueck)
+        g = _gui(self.tmp, weglassen=False)
+        g._ampr_wird_eingebaut = lambda: False
+        g._integration_anwenden = lambda ordner, **_k: ordner
+        self.assertIsNone(g._mode_exfat_umpacken_strom(self.quelle, self.ziel), "\n".join(g._log_lines))
+        self.assertEqual([], os.listdir(self.ziel))
+
     def test_kein_exfat(self) -> None:
         Path(self.quelle).write_bytes(b"\0" * 4096)
         g, ergebnis = self.lauf()
@@ -437,6 +450,16 @@ class OrdnerStromTests(_Grundlage):
         g, ergebnis = self.lauf()
         self.assertIsNone(ergebnis)
         self.assertEqual([], os.listdir(self.ziel))
+
+    def test_ziel_im_spielordner_bleibt_beim_alten_weg(self) -> None:
+        """Das Ergebnis entstuende im Spielordner, den der Strom bis zum Ende unveraendert halten muss: gleich der bisherige Weg."""
+        ziel = os.path.join(self.spiel, "ausgabe")
+        os.makedirs(ziel)
+        g = _gui(self.tmp)
+        ergebnis = g._mode_exfat_umpacken_strom(self.spiel, ziel, ordner=True)
+        self.assertIsNone(ergebnis, "\n".join(g._log_lines))
+        self.assertEqual([], os.listdir(ziel))
+        self.assertTrue(any("Spielordner" in z or "game folder" in z for z in g._log_lines), "\n".join(g._log_lines))
 
     def test_verweise_im_ordner_bleiben_beim_alten_weg(self) -> None:
         """Ein Verweis (hier: eine Datei, die ``islink`` als Verweis meldet - echte Symlinks brauchen unter Windows Rechte)."""
@@ -2105,6 +2128,36 @@ class Ufs2StromTests(_Grundlage):
         self.assertGreaterEqual(g._platzbedarf_je_quelle("spiel.ffpkg", "exfat")[0], 100 * 1024 ** 3)
 
 
+class MeldungenTests(unittest.TestCase):
+    """Meldungen, die ein Lauf nur im Sonderfall erreicht: Der Text steht in allen Sprachen, und der Lauf ruft ihn."""
+
+    QUELLE = (ROOT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
+
+    def _rumpf(self, name: str) -> str:
+        i = self.QUELLE.index("def %s(" % name)
+        j = self.QUELLE.find("\n    def ", i + 1)
+        return self.QUELLE[i:j]
+
+    def test_die_texte_stehen_in_allen_sprachen(self) -> None:
+        from ps5_validator.utils.i18n import STRINGS, SUPPORTED_LANGUAGES
+        for schluessel in ("log.ffpkg_strom_ufs2tool_uebersprungen", "log.exfat_strom_ziel_in_quelle", "log.ruecklesen_uebersprungen",
+                           "log.reste_laeuft_noch"):
+            for sprache in SUPPORTED_LANGUAGES:
+                self.assertTrue(STRINGS[schluessel][sprache].strip(), "%s/%s" % (schluessel, sprache))
+
+    def test_uebersprungene_pruefungen_stehen_im_protokoll(self) -> None:
+        self.assertEqual(1, self._rumpf("_create_exfat_from_folder").count('"log.ruecklesen_uebersprungen"'))
+        rumpf = self._rumpf("_create_ffpfsc_aus_strom")
+        self.assertEqual(1, rumpf.count('"log.ruecklesen_uebersprungen"'))
+        self.assertIn('"log.ffpkg_strom_ufs2tool_uebersprungen"', rumpf)
+
+    def test_fehler_im_strom_nennen_ihren_grund_auch_ohne_text(self) -> None:
+        """``MemoryError`` hat keinen Text; ``_fehlertext_der_ausnahme`` gibt ihm seinen Satz (zstd und LZ4, beide Schreibwege)."""
+        for name in ("_ampr_zstd_messen", "_ampr_lz4_messen", "_create_exfat_from_folder", "_create_ffpfsc_aus_strom"):
+            with self.subTest(name):
+                self.assertIn("self._fehlertext_der_ausnahme(exc)", self._rumpf(name))
+
+
 class WegwahlTests(unittest.TestCase):
     def _probe(self, **kw):
         g = GUI.__new__(GUI)
@@ -2147,7 +2200,8 @@ class WegwahlTests(unittest.TestCase):
         """TEMP-ORDNER erscheint in der Pfad-Karte nur, wo noch ein Zwischenordner angelegt wird (Etappe 14: auch LZ4 im Strom)."""
         for name, kw, erwartet in (
                 ("zstd", {}, False),
-                ("LZ4", {"verfahren": "lz4"}, False),
+                # LZ4-Asset-Pack: Der Strom schreibt nicht jedes Profil (Anwenderprofil, mehrere Gruppen); dann entsteht der Zwischenordner doch.
+                ("LZ4", {"verfahren": "lz4"}, True),
                 ("Methode normal", {"methode": "normal", "verfahren": "lz4"}, False),
                 ("ohne AMPR", {"ampr": False, "verfahren": "lz4"}, False),
                 ("Strom aus", {"einstellungen": {"exfat_strom": False}}, True)):
@@ -2158,6 +2212,12 @@ class WegwahlTests(unittest.TestCase):
         g = self._probe()
         g._load_setting = lambda name, vorgabe=None: (_ for _ in ()).throw(RuntimeError("Einstellungen nicht lesbar"))
         self.assertTrue(g._arbeitsordner_noetig())
+
+    def test_arbeitsordner_ohne_auskunft_zum_pack_bleibt_verborgen(self) -> None:
+        """Nur die Einstellung ``exfat_strom`` ist lesbar, das Packverfahren nicht: Es bleibt beim Strom, das Feld verborgen."""
+        g = self._probe()
+        g._ampr_pack_verfahren = lambda: (_ for _ in ()).throw(RuntimeError("nicht lesbar"))
+        self.assertFalse(g._arbeitsordner_noetig())
 
     def test_nicht_entscheidbar_ist_der_alte_weg(self) -> None:
         g = self._probe()

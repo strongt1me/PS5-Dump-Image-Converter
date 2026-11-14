@@ -6,9 +6,9 @@ UFS2Tool: unter Windows mit einem Dokan-Laufwerk und Administratorrechten, ander
 in einen Ordner**. Dieses Modul liest Superblock, Inodes, Verzeichnisse und Dateiinhalt selbst und liefert die Dateien als Strom;
 :class:`spielbaum.Ufs2Baum` macht daraus einen Lesebaum.
 
-Daneben gibt es ``ufs2_leser``: ein Leser fuer **einzelne** Dateien (``sce_sys/param.json``, ``icon0.png`` fuer die Bibliothek), ueber
-einen Pfad hinunter, ohne den Baum zu kennen. Dieses Modul geht durch das **ganze** Dateisystem und liest beliebig grosse Dateien als
-Strom (indirekte Bloecke, Loecher); es teilt sich nur das Wissen ueber das Format.
+Das ist **der eine** Parser fuer UFS2 im Programm: ``ufs2_leser`` (einzelne Dateien nach Pfad, fuer die Bibliothek: ``sce_sys/param.json``,
+``icon0.png``) ist seit dem 14.11.2026 nur noch eine Huelle darum, und ``ufs2_schreiber`` uebernimmt die Konstanten des Formats von hier.
+Dieses Modul geht durch das **ganze** Dateisystem und liest beliebig grosse Dateien als Strom (indirekte Bloecke, Loecher).
 
 Gelesen wird nur, was UFS2Tool ``newfs`` anlegt: UFS2 (Magic ``0x19540119``), Inodes zu 256 Bytes, 12 direkte und 3 indirekte Zeiger,
 Verzeichniseintraege im ``struct direct``-Format. Aufbau nach dem Leser in ``UFS2Tool-4.1/patch/Ufs2Image.cs`` (BSD-2-Clause, SvenGDK)
@@ -41,6 +41,9 @@ S_IFREG = 0o100000
 #: Wie viele Inode-Bloecke der Leser zwischenspeichert (ein Block = ``bsize`` Bytes).
 INODE_CACHE_BLOECKE = 64
 LESE_STUECK = 4 * 1024 * 1024
+
+#: Ein Verzeichnis ist nie so gross (14.000 Eintraege sind rund 1 MiB); mehr ist ein beschaedigtes Abbild.
+VERZEICHNIS_MAX = 256 << 20
 MAX_TIEFE = 256
 
 
@@ -192,10 +195,22 @@ class Ufs2Leser:
             raise Ufs2Fehler("Inode %d: Datei (%d Bytes) laenger als ihre Zeiger tragen" % (inode.nummer, inode.groesse))
 
     def lesen(self, inode: Ufs2Inode, stueck: int = LESE_STUECK) -> Iterator[bytes]:
-        """Der Inhalt einer Datei in Stuecken zu hoechstens ``stueck`` Bytes; Loecher (Zeiger 0) kommen als Nullen. Die Summe ist ``groesse``."""
+        """Der Inhalt einer Datei in Stuecken zu hoechstens ``stueck`` Bytes; Loecher (Zeiger 0) kommen als Nullen. Die Summe ist ``groesse``.
+
+        Intern wird in Stuecken von mindestens einem Block gelesen (ein Lesen je zusammenhaengendem Lauf); ein kleineres ``stueck`` schneidet
+        die Stuecke hier zu, so dass der Vertrag "hoechstens ``stueck``" auch dann haelt.
+        """
+        stueck = max(1, int(stueck))
+        for daten in self._lesen_stuecke(inode, max(self.bsize, stueck)):
+            if len(daten) <= stueck:
+                yield daten
+            else:
+                for ab in range(0, len(daten), stueck):
+                    yield daten[ab:ab + stueck]
+
+    def _lesen_stuecke(self, inode: Ufs2Inode, stueck: int) -> Iterator[bytes]:
         if not inode.ist_datei and not inode.ist_verzeichnis:
             raise Ufs2Fehler("Inode %d ist keine Datei" % inode.nummer)
-        stueck = max(self.bsize, int(stueck))
         groesse = inode.groesse
         geliefert = 0
         lauf_start = -1                       # Byte-Offset im Abbild des laufenden zusammenhaengenden Stuecks (-1 = keins)
@@ -232,23 +247,36 @@ class Ufs2Leser:
 
     # -- Verzeichnisse --------------------------------------------------------------------------------------------------------
 
-    def verzeichnis(self, inode: Ufs2Inode) -> list[tuple[str, int, int]]:
-        """Die Eintraege eines Verzeichnisses als ``(Name, Inode-Nummer, Typ)`` ohne ``.`` und ``..`` und ohne freie Plaetze."""
+    def verzeichnis(self, inode: Ufs2Inode, *, nachsichtig: bool = False) -> list[tuple[str, int, int]]:
+        """Die Eintraege eines Verzeichnisses als ``(Name, Inode-Nummer, Typ)`` ohne ``.`` und ``..`` und ohne freie Plaetze.
+
+        Streng (Vorgabe): Jede Abweichung ist ein ``Ufs2Fehler``; so liest der Lesebaum, denn ein still uebergangener Eintrag waere eine
+        Datei, die in der Umwandlung fehlt. ``nachsichtig`` (``ufs2_leser``, ein Blick auf ``param.json`` und ``icon0.png``): Eine
+        unbrauchbare Eintragslaenge springt zum naechsten 512-Byte-Abschnitt, ein Eintrag mit unbrauchbarem Namen wird uebergangen.
+        """
         if not inode.ist_verzeichnis:
             raise Ufs2Fehler("Inode %d ist kein Verzeichnis" % inode.nummer)
+        if inode.groesse > VERZEICHNIS_MAX:
+            # Ein beschaedigtes oder manipuliertes Abbild kann eine riesige Groesse nennen (Zeiger 0 = Loch = Nullen im Speicher).
+            raise Ufs2Fehler("Verzeichnis (Inode %d): unglaubwuerdige Groesse %d Bytes" % (inode.nummer, inode.groesse))
         daten = b"".join(self.lesen(inode))
         eintraege: list[tuple[str, int, int]] = []
         pos = 0
         while pos + 8 <= len(daten):
             ino, reclen, typ, namlen = struct.unpack_from("<IHBB", daten, pos)
             if reclen < 8 or reclen % 4 or pos + reclen > len(daten):
+                if nachsichtig:
+                    pos = (pos // 512 + 1) * 512                 # DIRBLKSIZ: der naechste Abschnitt
+                    continue
                 raise Ufs2Fehler("Verzeichnis (Inode %d): unbrauchbare Eintragslaenge %d bei %d" % (inode.nummer, reclen, pos))
             if ino != 0:
                 if namlen == 0 or 8 + namlen > reclen:
-                    raise Ufs2Fehler("Verzeichnis (Inode %d): unbrauchbare Namenslaenge %d bei %d" % (inode.nummer, namlen, pos))
-                name = daten[pos + 8:pos + 8 + namlen].decode("utf-8", errors="replace")
-                if name not in (".", ".."):
-                    eintraege.append((name, ino, typ))
+                    if not nachsichtig:
+                        raise Ufs2Fehler("Verzeichnis (Inode %d): unbrauchbare Namenslaenge %d bei %d" % (inode.nummer, namlen, pos))
+                else:
+                    name = daten[pos + 8:pos + 8 + namlen].decode("utf-8", errors="replace")
+                    if name not in (".", ".."):
+                        eintraege.append((name, ino, typ))
             pos += reclen
         return eintraege
 

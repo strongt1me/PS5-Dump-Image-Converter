@@ -78,6 +78,23 @@ class VorlageTests(unittest.TestCase):
         app._cli_ausgabe_vorlage = "{kaputt}"
         self.assertEqual(an.STANDARD, app._ausgabe_vorlage(), "eine unbrauchbare Vorlage von der Kommandozeile gilt nicht")
 
+    def test_eine_unbrauchbare_vorlage_wird_einmal_je_lauf_gemeldet(self):
+        app = _app({"ausgabe_vorlage": "{unsinn}"})
+        for _ in range(3):
+            self.assertEqual(an.STANDARD, app._ausgabe_vorlage())
+        meldungen = [z for z in app.protokoll if "log.ausgabename_vorlage_unbrauchbar" in z]
+        self.assertEqual(1, len(meldungen), app.protokoll)
+        self.assertIn("{unsinn}", meldungen[0])
+        app._ausgabe_vorlage_gemeldet = ""                       # der naechste Lauf (``_launch_task``) setzt es zurueck
+        app._ausgabe_vorlage()
+        self.assertEqual(2, len([z for z in app.protokoll if "log.ausgabename_vorlage_unbrauchbar" in z]))
+
+    def test_die_vorgabe_und_eine_leere_einstellung_sind_keine_meldung_wert(self):
+        for wert in (an.STANDARD, "", "   "):
+            app = _app({"ausgabe_vorlage": wert})
+            self.assertEqual(an.STANDARD, app._ausgabe_vorlage())
+            self.assertEqual([], app.protokoll, repr(wert))
+
     def test_eine_kaputte_einstellung_stoert_nicht(self):
         app = _app()
 
@@ -146,6 +163,7 @@ class StammTests(unittest.TestCase):
     def test_der_merkzettel_wird_beim_start_eines_laufs_geleert(self):
         i = QUELLE.index("def _launch_task")
         self.assertIn("self._ausgabe_cache     = {}", QUELLE[i:i + 80000])
+        self.assertIn('self._ausgabe_vorlage_gemeldet = ""', QUELLE[i:i + 80000], "eine unbrauchbare Vorlage wird je Lauf neu gemeldet")
 
 
 class ErwarteterPfadTests(unittest.TestCase):
@@ -169,6 +187,22 @@ class ErwarteterPfadTests(unittest.TestCase):
         app._get_selected_target_type = lambda: "folder"
         self.assertIsNone(app._get_expected_output_path("pack_folder", "C:/x/D", "D:/Ziel"))
 
+    def test_die_ffpkg_folgt_der_vorlage_wie_jedes_andere_format(self):
+        """Ausgabepfad, Rueckfrage zum Ueberschreiben und Vorabpruefung nennen denselben Namen (Pruefbericht 14.11.2026)."""
+        app = _app({"ausgabe_vorlage": "[{title}]-[{title_id}]"})
+        app._ffpkg_support_texte = lambda: {}
+        app._resolve_mode_source_type = lambda mode, src: "folder"
+        app._get_selected_target_type = lambda: "ffpkg"
+        erwartet = os.path.join("D:/Ziel", "[Astro Bot]-[PPSA01234].ffpkg")
+        self.assertEqual(erwartet, app._get_expected_output_path("pack_folder", "C:/x/Mein_Dump", "D:/Ziel"))
+        self.assertEqual(os.path.normpath(erwartet), os.path.normpath(app._ffpkg_output_path("C:/x/Mein_Dump", "D:/Ziel")))
+
+    def test_die_vorgabe_laesst_den_ffpkg_namen_wie_er_war(self):
+        app = _app()
+        app._ffpkg_support_texte = lambda: {}
+        self.assertEqual(os.path.normpath(os.path.join("D:/Ziel", "Mein_Dump.ffpkg")),
+                         os.path.normpath(app._ffpkg_output_path("C:/x/Mein_Dump", "D:/Ziel")))
+
     def test_entpacken_in_einen_ordner(self):
         app = _app({"ausgabe_vorlage": "{title_id}"})
         self.assertEqual(os.path.join("D:/Ziel", "PPSA01234"),
@@ -191,6 +225,8 @@ class AusgabestellenTests(unittest.TestCase):
             self.assertRegex(m.group(0), r"self\._ausgabe_stamm\(src, .*?, %s\)" % re.escape(format_), name)
 
     def test_die_sammelkonvertierung_und_die_vorabpruefung_fragen_sie_auch(self):
+        m = re.search(r"    def _ffpkg_output_path\(.*?(?=\n    def )", QUELLE, re.S)
+        self.assertIn('self._ausgabe_stamm(src, source_name, "ffpkg")', m.group(0))
         m = re.search(r"    def _batch_ueberschreiben_klaeren\(.*?(?=\n    def )", QUELLE, re.S)
         self.assertIn("self._ausgabe_stamm(quelle, name, zielformat)", m.group(0))
         m = re.search(r"    def _vorab_befunde_rechnen\(.*?(?=\n    def )", QUELLE, re.S)

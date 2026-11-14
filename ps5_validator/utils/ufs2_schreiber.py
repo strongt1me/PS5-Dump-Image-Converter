@@ -28,16 +28,23 @@ from array import array
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Iterator
 
+# Das Wissen ueber das Format teilen sich Schreiber und Leser: Ein Wert, der hier und dort verschieden waere, machte aus jedem Abbild einen
+# Fehlerfall (``test_ufs2_schreiber`` liest es mit ``ufs2_dateisystem`` zurueck).
+from ps5_validator.utils.ufs2_dateisystem import (  # noqa: E402
+    INODE_GROESSE,
+    N_DIREKT,
+    S_IFDIR as IF_DIR,
+    S_IFREG as IF_REG,
+    SUPERBLOCK_OFFSET,
+    UFS2_MAGIC,
+    WURZEL_INODE,
+)
+
 Oeffner = Callable[[], Iterator[bytes]]
 
-SUPERBLOCK_OFFSET = 65536
-SUPERBLOCK_GROESSE = 8192
-UFS2_MAGIC = 0x19540119
+SUPERBLOCK_GROESSE = 8192              # so viel schreibt der Schreiber (der Leser braucht nur die ersten 1376 Bytes)
 CG_MAGIC = 0x090255
-INODE_GROESSE = 256
-WURZEL_INODE = 2
 DIRBLKSIZ = 512
-N_DIREKT = 12
 MAX_BSIZE = 65536
 MAX_CONTIG = 16
 CG_KOPF_GRUNDGROESSE = 168
@@ -45,8 +52,6 @@ CSUM_GROESSE = 16
 SEKTOR = 512                       # UFS2Tool legt jedes -S auf 512 zurueck (NormalizeSectorSizeForLayout)
 DT_DIR = 4
 DT_REG = 8
-IF_DIR = 0x4000
-IF_REG = 0x8000
 PERM = 0x16D                       # 0555
 FS_FLAGS_UPDATED = 0x80
 FS_44INODEFMT = 2
@@ -65,10 +70,6 @@ class Ufs2SchreibFehler(ValueError):
 def _tdiv(a: int, b: int) -> int:
     q = abs(a) // abs(b)
     return q if (a >= 0) == (b > 0) else -q
-
-
-def _tmod(a: int, b: int) -> int:
-    return a - _tdiv(a, b) * b
 
 
 def _hochrunden(wert: int, schritt: int) -> int:
@@ -687,7 +688,7 @@ class _Planer:
         self.dateien_belegt = 0
         self.schwanz_frei: "set[int]" = set()
         self.inode_tabelle: "dict[int, bytes]" = {}
-        self.regionen: "list[tuple[int, bytes]]" = []
+        self.regionen: "list[tuple[int, bytes | Callable[[], bytes]]]" = []
         self.dateiliste: "list[tuple[str, int, Oeffner, array]]" = []
         self.max_inodes = g.ncg * g.ipg
 
@@ -799,9 +800,12 @@ class _Planer:
                 self._verarbeiten(kind, unter, tiefe + 1)
                 noetig = _verzeichnisbloecke_noetig(unter, g.bs)
                 bloecke = [self._block() for _b in range(noetig)]
-                inhalt = _verzeichnisbloecke(ino, knoten.inode, unter, g.bs, noetig)
-                for frag, daten in zip(bloecke, inhalt):
-                    self.regionen.append((frag * g.fs, daten))
+                _verzeichnisbloecke(ino, knoten.inode, unter, g.bs, noetig)          # prueft jetzt (Fehler sollen vor dem Schreiben kommen)
+                for i, frag in enumerate(bloecke):
+                    # Der Block (64 KiB, fast nur Leereintraege) entsteht erst beim Schreiben: Hunderte Verzeichnisse waeren sonst
+                    # bis zum Ende des Schreibens als Bytes im Plan.
+                    self.regionen.append((frag * g.fs, lambda i=i, ino=ino, par=knoten.inode, unter=unter, bs=g.bs, noetig=noetig:
+                                          _verzeichnisbloecke(ino, par, unter, bs, noetig)[i]))
                 zuteilung = self._verzeichnis_zuteilen(bloecke)
                 for frag, zeiger in zuteilung.zeiger:
                     self.regionen.append((frag * g.fs, zeiger.tobytes()))
@@ -856,9 +860,10 @@ class _Planer:
         bloecke = [g.wurzel_frag]
         for _b in range(1, noetig):
             bloecke.append(self._block())
-        inhalt = _verzeichnisbloecke(WURZEL_INODE, WURZEL_INODE, wurzel_eintraege, g.bs, noetig)
-        for frag, daten in zip(bloecke, inhalt):
-            self.regionen.append((frag * g.fs, daten))
+        _verzeichnisbloecke(WURZEL_INODE, WURZEL_INODE, wurzel_eintraege, g.bs, noetig)
+        for i, frag in enumerate(bloecke):
+            self.regionen.append((frag * g.fs, lambda i=i, eintraege=wurzel_eintraege, bs=g.bs, noetig=noetig:
+                                  _verzeichnisbloecke(WURZEL_INODE, WURZEL_INODE, eintraege, bs, noetig)[i]))
         zuteilung = self._verzeichnis_zuteilen(bloecke)
         for frag, zeiger in zuteilung.zeiger:
             self.regionen.append((frag * g.fs, zeiger.tobytes()))

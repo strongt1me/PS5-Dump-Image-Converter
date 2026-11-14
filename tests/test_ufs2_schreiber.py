@@ -200,9 +200,35 @@ class GroesseTests(_Grundlage):
         w.planen(_liste(SPIEL, aufrufe), ["x"], profil=PRIMAER[1])
         self.assertEqual([], aufrufe)
 
+    def test_verzeichnisbloecke_entstehen_erst_beim_schreiben(self) -> None:
+        """Ein Verzeichnisblock (64 KiB, fast nur Leereintraege) liegt nicht als fertige Bytes im Plan: Hunderte Verzeichnisse
+        waeren sonst bis zum Ende des Schreibens im Speicher (Pruefbericht 14.11.2026). Das Ergebnis bleibt dasselbe."""
+        inhalte = _viele(12, 4)
+        profil = PRIMAER[1]
+        plan = w.planen(_liste(inhalte), ["leer/unter"], profil=profil)
+        gross = [len(d) for _o, d in plan._regionen if isinstance(d, (bytes, bytearray)) and len(d) >= profil.block_size]
+        self.assertLessEqual(len(gross), 1, "ausser dem Zusammenfassungsblock der Gruppen (``dblkno``) darf kein Block als Bytes im Plan liegen")
+        self.assertGreaterEqual(sum(1 for _o, d in plan._regionen if callable(d)), plan.verzeichnisse)
+        ziel = self.pfad("lazy.ffpkg")
+        plan.schreiben(ziel)
+        gelesen, ordner = self.gelesen(ziel)
+        self.assertEqual(inhalte, gelesen)
+        self.assertIn("leer/unter", ordner)
+
 
 class RoundtripTests(_Grundlage):
     """Ohne UFS2Tool: Der eigene Leser liest, was der Schreiber gebaut hat."""
+
+    def test_ein_beim_lesen_geschlossener_griff_ist_ein_baumfehler(self) -> None:
+        """Ein Abbruch schliesst die Griffe, waehrend ein Lesefaden noch liest: ``ValueError`` wird ein ``BaumFehler`` (``Ufs2Baum``)."""
+        ziel = self.bauen({"eboot.bin": b"\x7fELF", "data/gross.bin": _zufall(300_000, 9)})
+        baum = sb.Ufs2Baum(ziel)
+        datei = baum.suchen()["data/gross.bin"]
+        erzeuger = datei.lesen(4096)
+        next(erzeuger)                                          # der Griff dieses Fadens ist offen
+        baum.schliessen()
+        with self.assertRaises(sb.BaumFehler):
+            list(erzeuger)
 
     def test_inhalt_und_leere_verzeichnisse(self) -> None:
         for name, profil in (("primaer", PRIMAER[1]), ("kompat", KOMPAT[1])):
@@ -415,6 +441,23 @@ class BruecheTests(unittest.TestCase):
         self.assertEqual((65536, 65536, 0, 262144), (p.block_size, p.fragment_size, p.min_free_percent, p.bytes_per_inode))
         k = w.profil_aus_newfs(ffs.compatibility_newfs_profile())
         self.assertEqual((32768, 4096, 8, 0), (k.block_size, k.fragment_size, k.min_free_percent, k.bytes_per_inode))
+
+
+class GemeinsameKonstantenTests(unittest.TestCase):
+    """Schreiber und Leser haben einen Satz Formatkonstanten (Pruefbericht 14.11.2026: vorher standen sie dreimal da)."""
+
+    def test_die_konstanten_sind_dieselben(self) -> None:
+        from ps5_validator.utils import ufs2_dateisystem as d
+        for name in ("SUPERBLOCK_OFFSET", "UFS2_MAGIC", "INODE_GROESSE", "WURZEL_INODE", "N_DIREKT"):
+            self.assertEqual(getattr(d, name), getattr(w, name), name)
+        self.assertEqual(d.S_IFDIR, w.IF_DIR)
+        self.assertEqual(d.S_IFREG, w.IF_REG)
+
+    def test_der_schreiber_definiert_sie_nicht_selbst(self) -> None:
+        quelle = (Path(w.__file__)).read_text(encoding="utf-8")
+        for zeile in ("SUPERBLOCK_OFFSET = ", "UFS2_MAGIC = ", "INODE_GROESSE = ", "WURZEL_INODE = ", "N_DIREKT = ",
+                      "IF_DIR = ", "IF_REG = "):
+            self.assertNotIn("\n" + zeile, quelle, zeile)
 
 
 class WaechterTests(unittest.TestCase):

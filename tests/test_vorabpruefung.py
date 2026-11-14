@@ -321,6 +321,42 @@ class VerdrahtungTests(unittest.TestCase):
         with mock.patch.object(vp, "scan", side_effect=RuntimeError("kaputt")):
             self.assertEqual(([], []), self._lauf())
 
+    def test_eine_unvollstaendige_probe_rechnet_fuer_ein_abbild_mit_der_bekannten_groesse(self):
+        """Nach der Zeitgrenze fehlt ein Teil der Ordner; die Datei ueber 4 GiB koennte dort liegen: Fuer ein Abbild zaehlt die Gesamtgroesse."""
+        original = vp.scan
+
+        def kurz(*a, **kw):
+            erg = original(*a, **kw)
+            erg.vollstaendig = False
+            return erg
+        self.app._quellgroesse_ermitteln = lambda src: 10 * 1024 ** 3
+        with mock.patch.object(vp, "scan", kurz), mock.patch.object(HAUPT, "_doktor_dateisystem", lambda _pfad: "FAT32"):
+            fehler, _w = self._lauf(fmt="exfat")
+            fehler_ordner, _w2 = self._lauf(fmt="folder")
+        self.assertTrue(any("vorab_fat32" in f for f in fehler), fehler)
+        self.assertEqual([], fehler_ordner, "fuer einen Ordner zaehlt die groesste Datei, und die kennt die Probe nicht")
+
+    def test_eine_vollstaendige_probe_nimmt_die_bekannte_groesse_nicht(self):
+        self.app._quellgroesse_ermitteln = lambda src: 10 * 1024 ** 3
+        with mock.patch.object(HAUPT, "_doktor_dateisystem", lambda _pfad: "FAT32"):
+            fehler, _w = self._lauf(fmt="exfat")
+        self.assertEqual([], fehler)
+
+    def test_die_namensprobe_haelt_den_hauptfaden_nicht_lange_an(self):
+        self.assertLessEqual(GUI._VORAB_ZEIT, 10.0)
+
+    def test_aus_einer_abbilddatei_in_einen_ordner_gibt_es_keinen_fat32_befund(self):
+        """Die Groesse der Abbilddatei sagt nichts ueber die groesste Datei darin: Dateien im Ordner sind einzeln kleiner."""
+        datei = Path(self._tmp.name) / "Spiel.exfat"
+        datei.write_bytes(b"x")
+        echt = os.path.getsize
+        gross = lambda p: 10 * 1024 ** 3 if str(p) == str(datei) else echt(p)          # noqa: E731
+        with mock.patch.object(HAUPT, "_doktor_dateisystem", lambda _pfad: "FAT32"), mock.patch("os.path.getsize", gross):
+            fehler_abbild, _w = self._lauf(mode="pack_file", fmt="exfat", src=datei)
+            fehler_ordner, _w2 = self._lauf(mode="pack_file", fmt="folder", src=datei)
+        self.assertTrue(any("vorab_fat32" in f for f in fehler_abbild), "Gegenprobe: ein Abbild ueber 4 GiB passt nicht auf FAT32")
+        self.assertEqual([], fehler_ordner)
+
     def test_die_unvollstaendige_probe_steht_im_protokoll(self):
         original = vp.scan
 

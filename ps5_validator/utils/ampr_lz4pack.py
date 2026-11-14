@@ -373,7 +373,7 @@ class _Plan:
         if name in self.namen:
             raise Lz4PackFehler("pack_pattern ergibt einen Namen doppelt: %s" % name)
         self.namen.add(name)
-        band = _Band(fmt, pack_id, name, self.config, self.gruppe)
+        band = _Band(fmt, pack_id, name, config=self.config, gruppe=self.gruppe)
         self.baender.append(band)
         self.band = band
         return band

@@ -281,7 +281,7 @@ class ExfatBaum(_Baum):
         def lesen(stueck: int) -> Iterator[bytes]:
             try:
                 yield from self._leser().read_file(eintrag, chunk_size=stueck)
-            except self._ExfatError as exc:
+            except (self._ExfatError, ValueError) as exc:        # ValueError: der Griff wurde (Abbruch) schon geschlossen
                 raise BaumFehler("%s: %s" % (eintrag.rel_path, exc)) from exc
         return lesen
 
@@ -375,6 +375,9 @@ class PfsBaum(_Baum):
     def _aufloesen(self) -> None:
         """Erkennt die Bauform: liest Kopf, Inode-Tabelle und Verzeichnisse (keine Nutzdaten) und merkt sie sich."""
         pfs, consts = self._pfs, self._consts
+        self._huellen = []                      # eine zweite Aufloesung (nach einem BaumFehler) beginnt wieder bei der aeusseren Huelle
+        self.art = ""
+        self._flach = None
         try:
             fh = open(self.pfad, "rb")
         except OSError as exc:
@@ -589,7 +592,7 @@ class Ufs2Baum(_Baum):
             leser = self._leser()
             try:
                 yield from leser.lesen(leser.inode(nummer), stueck)
-            except (self._modul.Ufs2Fehler, OSError) as exc:
+            except (self._modul.Ufs2Fehler, OSError, ValueError) as exc:      # ValueError: der Griff wurde (Abbruch) schon geschlossen
                 raise BaumFehler("%s: %s" % (rel, exc)) from exc
         return lesen
 

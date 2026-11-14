@@ -16,8 +16,8 @@ ebenfalls, eine Folge gleicher Trenner (``-``, ``_``, Leerzeichen) wird einer, u
 
 Die Vorgabe ``{name}`` aendert nichts: Der Name der Quelle bleibt, wie er ist; ist er zu lang, warnt die Vorabpruefung
 (``vorabpruefung.ausgabename_befund``). Ein **erzeugter** Name dagegen wird auf die Hoechstlaenge des Zielformats
-gekuerzt (63 Bytes, bei ``.ffpfsc`` 58, nach dem Einhaengepfad von ShadowMount+) - zuerst der Titel -, und mit ``-2``,
-``-3`` ... eindeutig gemacht, wenn der Name schon vergeben ist.
+gekuerzt (63 Bytes, bei ``.ffpfsc`` 58, nach dem Einhaengepfad von ShadowMount+) - zuerst der Titel. Ist der Name schon vergeben,
+fragt der Lauf wie immer "ueberschreiben?" (in der Sammelkonvertierung: "namensgleich" uebersprungen).
 
 Das Modul rechnet nur: keine Einstellungen, keine Dateien, kein Tk. Die Angaben kommen als Woerterbuch wie aus
 ``abbild_metadaten`` (``title``, ``title_id``, ``version``, ``required_firmware``, ``content_id``, ``region``).
@@ -117,7 +117,7 @@ def zerlegen(vorlage: str) -> "list[tuple[bool, str]] | Problem":
             continue
         if zeichen == "}":
             return Problem("zu")
-        if unicodedata.category(zeichen) == "Cc":
+        if unicodedata.category(zeichen) in ("Cc", "Cf"):          # auch Format-Zeichen (U+202E, Null-Breite-Leerzeichen)
             return Problem("steuerzeichen")
         if zeichen in VERBOTEN:
             return Problem("zeichen", zeichen)
@@ -138,7 +138,8 @@ def vorlage_pruefen(vorlage: str) -> Problem | None:
 def bereinigen(wert: str) -> str:
     """Macht aus einem Wert (Titel, ...) einen Namensteil: ohne unzulaessige Zeichen, NFC, einfache Leerzeichen."""
     text = unicodedata.normalize("NFC", str(wert or ""))
-    text = "".join(z for z in text if z not in VERBOTEN and unicodedata.category(z) != "Cc")
+    # Auch Format-Zeichen (Cf: Null-Breite-Leerzeichen, Umkehr der Schreibrichtung U+202E) fallen weg: Sie machen einen Namen unlesbar oder taeuschen.
+    text = "".join(z for z in text if z not in VERBOTEN and unicodedata.category(z) not in ("Cc", "Cf"))
     return " ".join(text.split())
 
 
@@ -185,6 +186,11 @@ def rendern(vorlage: str, werte: Mapping[str, str]) -> str:
     stuecke: list[tuple[bool, str]] = [
         (eigen, inhalt if eigen else str(werte.get(inhalt, "") or "")) for eigen, inhalt in zerlegt]
     stuecke = [(e, t) for e, t in stuecke if e or t]
+    # Ein Trenner im Text der Vorlage unmittelbar hinter einer oeffnenden oder vor einer schliessenden Klammer ("[ 9.00]") faellt weg.
+    stuecke = [s for k, s in enumerate(stuecke)
+               if not (s[0] and s[1] in _TRENNER
+                       and ((k > 0 and stuecke[k - 1][0] and stuecke[k - 1][1] in ("[", "("))
+                            or (k + 1 < len(stuecke) and stuecke[k + 1][0] and stuecke[k + 1][1] in ("]", ")"))))]
     i = 0
     while i + 1 < len(stuecke):
         (e1, t1), (e2, t2) = stuecke[i], stuecke[i + 1]
@@ -213,6 +219,28 @@ def grenze_fuer(zielformat: str) -> int | None:
     return vorabpruefung.name_max(zielformat) if zielformat in vorabpruefung.ABBILD_FORMATE else None
 
 
+#: Namen, die Windows als Geraet liest (auch mit Endung): ``CON``, ``PRN``, ``AUX``, ``NUL``, ``COM1`` ... ``LPT9``.
+_GERAETE = frozenset({"CON", "PRN", "AUX", "NUL"} | {"COM%d" % n for n in range(1, 10)} | {"LPT%d" % n for n in range(1, 10)})
+
+
+def _windows_tauglich(text: str, grenze: "int | None" = None) -> "tuple[str, bool]":
+    """Kein Punkt oder Leerzeichen am Ende, und kein Geraetename: ``Aux`` wird ``Aux_`` (ein Ordner dieses Namens laesst sich unter Windows nicht anlegen).
+
+    ``grenze``: Hoechstlaenge in UTF-8-Bytes. Der Unterstrich macht den Namen ein Zeichen laenger; reicht die Grenze dann nicht mehr, faellt
+    am Ende des Namens etwas weg (der Unterstrich steht vorn und bleibt). Rueckgabe: der Name und ob dabei gekuerzt wurde.
+    """
+    text = text.rstrip(". ")
+    gekuerzt = False
+    stamm, punkt, rest = text.partition(".")
+    if stamm.strip().upper() in _GERAETE:
+        # Windows liest ``Aux.Game`` wie ``AUX``: der Unterstrich gehoert direkt hinter den Geraetenamen, vor den ersten Punkt.
+        text = stamm.rstrip() + "_" + punkt + rest
+        if grenze is not None and len(text.encode("utf-8")) > grenze:
+            text = kuerzen(text, grenze)
+            gekuerzt = True
+    return text, gekuerzt
+
+
 def ausgabename(vorlage: str, angaben: Mapping[str, Any], *, name: str, pack: str = "", zielformat: str = "") -> Ergebnis:
     """Der Name des Ergebnisses ohne Endung.
 
@@ -228,34 +256,26 @@ def ausgabename(vorlage: str, angaben: Mapping[str, Any], *, name: str, pack: st
     if problem is not None:
         return Ergebnis(name=name, problem=problem)
     werte = werte_aus_angaben(angaben, name=name, pack=pack)
+    # Liefert kein einziger Teil der Vorlage einen Wert (etwa "PS5 {title}" bei einem Spiel ohne lesbare param.json), bleibt der Name der
+    # Quelle: Sonst hiessen alle solchen Quellen gleich ("PS5").
+    # Nur die Teile, die das Spiel kennzeichnen (wie ``braucht_namen`` in ``zerlegen``): ``{pack}`` kommt aus der Auswahl und ist immer gesetzt,
+    # ``{title} [{pack}]`` ergaebe sonst bei jeder Quelle ohne Angaben denselben Namen.
+    zerlegt = zerlegen(vorlage)
+    benutzt = ({inhalt for eigen, inhalt in zerlegt if not eigen} & {"name", "title", "title_id"}
+               if not isinstance(zerlegt, Problem) else set())
+    if not any(werte.get(teil) for teil in benutzt):
+        return Ergebnis(name=name)
     text = rendern(vorlage, werte)
     if not text:
         return Ergebnis(name=name)
     grenze = grenze_fuer(zielformat)
     if grenze is None or len(text.encode("utf-8")) <= grenze:
-        return Ergebnis(name=text)
+        name_ok, gekuerzt = _windows_tauglich(text, grenze)
+        return Ergebnis(name=name_ok, gekuerzt=gekuerzt)
     ueber = len(text.encode("utf-8")) - grenze
     if werte["title"]:
         titel = kuerzen(werte["title"], max(0, len(werte["title"].encode("utf-8")) - ueber))
         text = rendern(vorlage, {**werte, "title": titel})
     if len(text.encode("utf-8")) > grenze:
         text = kuerzen(text, grenze)
-    return Ergebnis(name=text or name, gekuerzt=True)
-
-
-def eindeutig(stamm: str, endung: str, existiert: Callable[[str], bool], zielformat: str = "") -> str:
-    """Macht ``stamm`` eindeutig: ist ``stamm + endung`` vergeben, wird ``-2``, ``-3`` ... angehaengt.
-
-    ``existiert`` bekommt den ganzen Dateinamen. Der Stamm wird dabei so gekuerzt, dass er mit dem Zusatz in die
-    Hoechstlaenge des Zielformats passt.
-    """
-    if not existiert(stamm + endung):
-        return stamm
-    grenze = grenze_fuer(zielformat)
-    for n in range(2, 10000):
-        zusatz = "-%d" % n
-        basis = stamm if grenze is None else kuerzen(stamm, grenze - len(zusatz))
-        kandidat = basis + zusatz
-        if not existiert(kandidat + endung):
-            return kandidat
-    raise ValueError("kein freier Name fuer %r" % stamm)
+    return Ergebnis(name=_windows_tauglich(text, grenze)[0] or name, gekuerzt=True)

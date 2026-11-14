@@ -325,6 +325,24 @@ class LeereOrdnerTests(unittest.TestCase):
         self.assertEqual(sorted(set(ordner)), ordner)
 
 
+class EntfallendeTests(unittest.TestCase):
+    """``entfallende``: gepackte Dateien, die ohne "Originale behalten" nicht ins Abbild kommen (Pruefbericht 14.11.2026)."""
+
+    def test_nur_gepackte_mit_inhalt(self) -> None:
+        auswahl = z.Auswahl(gepackt=[("data/a.pak", 100), ("data/leer.bin", 0), ("data/b.pak", 5)],
+                            lose=[("data/lose.bin", 9)])
+        self.assertEqual({"data/a.pak", "data/b.pak"}, ast.entfallende(auswahl))
+
+    def test_programme_und_systemdateien_bleiben_auch_wenn_das_profil_sie_packt(self) -> None:
+        """Ein Profil unterscheidet Gross- und Kleinschreibung (``FOO.SPRX``), ``bleibt_lose`` nicht: Ein Programm steht nie nur im Band."""
+        auswahl = z.Auswahl(gepackt=[("FOO.SPRX", 100), ("Game.INI", 50), ("sce_sys/param.json", 10), ("eboot.bin", 99),
+                                     ("data/ok.pak", 7)])
+        self.assertEqual({"data/ok.pak"}, ast.entfallende(auswahl))
+
+    def test_ohne_gepackte_ist_die_menge_leer(self) -> None:
+        self.assertEqual(set(), ast.entfallende(z.Auswahl()))
+
+
 class SchattenTests(unittest.TestCase):
     """Der kleine Ueberlagerungsordner und die Ansicht darueber."""
 
@@ -395,6 +413,35 @@ class SchattenTests(unittest.TestCase):
         self.assertNotIn("data/kein.bin", abgelegt)
         self.assertNotIn("data/a.pak", abgelegt)
 
+    def test_packdateien_gehen_nie_in_den_ueberlagerungsordner(self) -> None:
+        """``bleibt_lose`` zaehlt Baender und Index zur Systemschicht; in den kleinen Ordner gehoeren sie trotzdem nicht (viele GB)."""
+        inhalt = {"eboot.bin": b"\x7fELF" + bytes(100), "sce_sys/param.json": b"{}", "ampr_emu.index": b"idx" * 10,
+                  "ampr_zstd-000.pak": b"P" * 5000, "ampr_zstd-001.pak": b"Q" * 5000, "ampr_zstd.index": b"i" * 100,
+                  "ampr_assets-000.pak": b"R" * 5000, "ampr_assets.index": b"j" * 100, "data/a.pak": _zufall(3000, 4)}
+        for name in ("ampr_zstd-000.pak", "ampr_zstd.index", "ampr_assets-000.pak", "ampr_assets.index"):
+            self.assertTrue(ast.ist_packname(name), name)
+        spiel = os.path.join(self.tmp, "spiel_packs")
+        _schreiben(spiel, inhalt)
+        abbild = os.path.join(self.tmp, "spiel_packs.exfat")
+        with open(abbild, "wb") as fh:
+            fh.write(_bytes(w.iter_exfat_image(Path(spiel))))
+        with sb.ExfatBaum(abbild) as baum:
+            abgelegt, _n = ast.schatten_fuellen(baum, os.path.join(self.tmp, "schatten_packs"))
+        self.assertEqual(sorted(["eboot.bin", "sce_sys/param.json", "ampr_emu.index"]), sorted(abgelegt))
+
+    def test_packdateien_mit_programmkennung_bleiben_auch_mit_backport_in_der_quelle(self) -> None:
+        """Ein Band, dessen erster Block roh gespeichert ist, kann mit ``7F 45 4C 46`` beginnen: Die ELF-Kennung darf ihn nicht in den kleinen Ordner holen."""
+        elf = b"\x7fELF" + bytes(2000)
+        inhalt = {"eboot.bin": elf, "sce_sys/param.json": b"{}", "data/prog.bin": elf, "ampr_assets-000.pak": elf, "ampr_zstd-001.pak": elf}
+        spiel = os.path.join(self.tmp, "spiel_elf")
+        _schreiben(spiel, inhalt)
+        abbild = os.path.join(self.tmp, "spiel_elf.exfat")
+        with open(abbild, "wb") as fh:
+            fh.write(_bytes(w.iter_exfat_image(Path(spiel))))
+        with sb.ExfatBaum(abbild) as baum:
+            abgelegt, _n = ast.schatten_fuellen(baum, os.path.join(self.tmp, "schatten_elf"), programmdateien=True)
+        self.assertEqual(sorted(["eboot.bin", "sce_sys/param.json", "data/prog.bin"]), sorted(abgelegt))
+
     def test_die_dlc_karte_kommt_mit(self) -> None:
         """``dlcmap.json`` in der Spielwurzel liest DLC EMU beim Anlegen der ``dlc_emu.ini``; ohne sie im Ordner fehlen die Eintraege."""
         from ps5_validator.utils import dlc_emu
@@ -423,6 +470,16 @@ class SchattenTests(unittest.TestCase):
     def test_pfad_ausserhalb(self) -> None:
         with self.assertRaises(z.ZstdPackFehler):
             ast._ziel_pfad(os.path.join(self.tmp, "s"), "../x.ini")
+
+    @unittest.skipUnless(os.name == "nt", "ein Doppelpunkt im Pfadteil ist nur unter Windows ein Datenstrom")
+    def test_pfad_mit_doppelpunkt_unter_windows(self) -> None:
+        for rel in ("data/a:b.bin", "a:strom"):
+            with self.subTest(rel), self.assertRaises(z.ZstdPackFehler):
+                ast._ziel_pfad(os.path.join(self.tmp, "s"), rel)
+
+    def test_ziel_pfad_im_ordner(self) -> None:
+        ziel = os.path.join(self.tmp, "s")
+        self.assertEqual(os.path.join(ziel, "data", "a.bin"), ast._ziel_pfad(ziel, "data/a.bin"))
 
     def test_ansicht_zeigt_aenderungen(self) -> None:
         with sb.ExfatBaum(self.abbild) as baum:

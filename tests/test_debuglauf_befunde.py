@@ -3937,6 +3937,9 @@ class OriginaleRueckfrageTests(_TempTest):
         gui._cli_mode = cli
         gui._cli_ampr_originale_weglassen = schalter
         gui._cli_ampr_pack_verfahren = verfahren
+        # Seit Etappe 14 faellt bei NG mit LZ4 im Strom (ohne Zwischenordner) die Rueckfrage weg (``test_ampr_lz4_strom``, OriginaleKlaerenTests).
+        # Diese Tests pruefen den Weg ueber den Ordner, auf dem LZ4 weiter fragt: Der Strom gilt hier als nicht moeglich.
+        gui._strom_erlaubt = lambda einbau_noetig: False
         return gui
 
     def test_ng_mit_zstd_fragt_nicht_und_laesst_die_originale_weg(self) -> None:

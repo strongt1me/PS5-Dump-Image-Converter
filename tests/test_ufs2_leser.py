@@ -36,7 +36,10 @@ def _verzeichnis(eintraege: list[tuple[int, str, int]]) -> bytes:
         teile.append((ino, name, typ, laenge))
     letzter = teile[-1]
     teile[-1] = (letzter[0], letzter[1], letzter[2], 512 - sum(t[3] for t in teile[:-1]))
-    return b"".join(_dirent(*t) for t in teile).ljust(BS, b"\0")
+    erster = b"".join(_dirent(*t) for t in teile)
+    # Wie in echten Abbildern: Jeder weitere 512-Byte-Abschnitt ist ein leerer Eintrag (ino 0, reclen 512), nicht rohe Nullen.
+    rest = b"".join(_dirent(0, "", 0, 512) for _ in range((BS - 512) // 512))
+    return erster + rest
 
 
 def _inode(modus: int, groesse: int, direkt: list[int], indirekt: list[int] = ()) -> bytes:
@@ -78,6 +81,7 @@ def baue_abbild(pfad: str) -> dict[str, bytes]:
 
     sb = bytearray(0x600)
     struct.pack_into("<i", sb, 16, 20)             # fs_iblkno (Fragmente)
+    struct.pack_into("<I", sb, 44, 1)              # fs_ncg (der eine Leser fuer Baum und Pfad prueft die Zahl der Gruppen)
     struct.pack_into("<i", sb, 24, 0)              # fs_old_cgoffset
     struct.pack_into("<i", sb, 28, -1)             # fs_old_cgmask
     struct.pack_into("<i", sb, 48, BS)             # fs_bsize
@@ -179,6 +183,55 @@ class FremdeDateienTests(unittest.TestCase):
         with u.Ufs2Leser(pfad) as leser:
             with self.assertRaises((u.Ufs2Fehler, FileNotFoundError)):
                 leser.datei_lesen("sce_sys/param.json")
+
+
+class NachsichtigTests(unittest.TestCase):
+    """Die Huelle liest Verzeichnisse nachsichtig wie der alte Leser; der Baum fuer die Umwandlung bleibt streng."""
+
+    def test_rohe_nullen_hinter_dem_ersten_abschnitt(self) -> None:
+        from ps5_validator.utils import ufs2_dateisystem as d
+        ordner = tempfile.TemporaryDirectory()
+        self.addCleanup(ordner.cleanup)
+        pfad = os.path.join(ordner.name, "x.ffpkg")
+        inhalte = baue_abbild(pfad)
+        roh = bytearray(Path(pfad).read_bytes())
+        for block in (30, 31):                                   # Wurzel und sce_sys: alles hinter dem ersten 512-Byte-Abschnitt wird Null
+            roh[block * BS + 512:(block + 1) * BS] = bytes(BS - 512)
+        Path(pfad).write_bytes(bytes(roh))
+        with u.Ufs2Leser(pfad) as leser:
+            self.assertEqual(inhalte["sce_sys/param.json"], leser.datei_lesen("sce_sys/param.json"))
+            self.assertEqual({"sce_sys", "eboot.bin"}, {n for n, _o, _g in leser.auflisten("")})
+        with open(pfad, "rb") as fh, self.assertRaises(d.Ufs2Fehler):
+            d.Ufs2Leser(fh).baum()
+
+
+class EinLeserTests(unittest.TestCase):
+    """Es gibt nur noch **einen** Parser fuer UFS2: Dieses Modul ist die Pfad-Huelle um ``ufs2_dateisystem`` (Pruefbericht 14.11.2026)."""
+
+    def test_konstanten_und_fehlerklasse_sind_dieselben(self) -> None:
+        from ps5_validator.utils import ufs2_dateisystem as d
+        self.assertIs(u.Ufs2Fehler, d.Ufs2Fehler)
+        self.assertEqual((d.SUPERBLOCK_OFFSET, d.MAGIC_OFFSET, d.UFS2_MAGIC, d.WURZEL_INODE),
+                         (u.SUPERBLOCK_LAGE, u.MAGIC_LAGE, u.UFS2_MAGIC, u.WURZEL_INODE))
+
+    def test_das_modul_parst_nichts_selbst(self) -> None:
+        quelle = (PROJEKT / "ps5_validator" / "utils" / "ufs2_leser.py").read_text(encoding="utf-8")
+        for verboten in ("unpack_from", "_superblock_lesen", "_datenbloecke", "<12Q"):
+            self.assertNotIn(verboten, quelle, "Die Formatkenntnis steht in ufs2_dateisystem, nicht hier: %s" % verboten)
+
+    def test_dieselbe_datei_liefert_beiden_lesern_dasselbe(self) -> None:
+        from ps5_validator.utils import ufs2_dateisystem as d
+        ordner = tempfile.TemporaryDirectory()
+        self.addCleanup(ordner.cleanup)
+        pfad = os.path.join(ordner.name, "x.ffpkg")
+        inhalte = baue_abbild(pfad)
+        with open(pfad, "rb") as fh:
+            baum = d.Ufs2Leser(fh).baum()
+            nach_baum = {e.rel: e.groesse for e in baum.dateien}
+        self.assertEqual({k: len(v) for k, v in inhalte.items()}, nach_baum)
+        with u.Ufs2Leser(pfad) as leser:
+            self.assertEqual({(n, g) for n, o, g in leser.auflisten("sce_sys") if not o},
+                             {(rel.split("/", 1)[1], g) for rel, g in nach_baum.items() if rel.startswith("sce_sys/")})
 
 
 def _echte_ffpkg() -> list[str]:

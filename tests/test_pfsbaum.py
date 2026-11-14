@@ -293,6 +293,36 @@ class FehlerTests(_Grundlage):
         with self.assertRaises(sb.BaumFehler):
             sb.PfsBaum(self.abbilder["doppelt"]).dateien()
 
+    def test_zweite_aufloesung_nach_einem_fehler_beginnt_von_vorn(self) -> None:
+        """Nach einem BaumFehler (hier: zu viele Ebenen) darf ein neuer Versuch nicht die Huellen des ersten mitschleppen."""
+        vorher = sb.PfsBaum.MAX_EBENEN
+        sb.PfsBaum.MAX_EBENEN = 1
+        try:
+            baum = sb.PfsBaum(self.abbilder["doppelt"])
+            self.addCleanup(baum.schliessen)
+            with self.assertRaises(sb.BaumFehler):
+                baum.dateien()
+        finally:
+            sb.PfsBaum.MAX_EBENEN = vorher
+        dateien = baum.dateien()
+        self.assertEqual({d.rel: d.groesse for d in dateien}, {k: len(v) for k, v in SPIEL.items()})
+        self.assertEqual(("exfat", 2), (baum.art, baum.ebenen))
+        for d in dateien:
+            self.assertEqual(SPIEL[d.rel], _inhalt(d, 70_001), d.rel)
+
+    def test_ein_beim_lesen_geschlossener_griff_ist_ein_baumfehler(self) -> None:
+        """Waechter, keine Gegenprobe: Der Lesepfad des ``PfsBaum`` faengt das schon immer; die Aenderung vom 14.11.2026 betrifft
+        ``ExfatBaum`` (``test_spielbaum``) und ``Ufs2Baum`` (``test_ufs2_schreiber``)."""
+        for name in ("huelle_roh", "flach_roh"):
+            with self.subTest(bauform=name):
+                baum = sb.PfsBaum(self.abbilder[name])
+                datei = next(d for d in baum.dateien() if d.rel == "data/text.txt")
+                erzeuger = datei.lesen(1000)
+                next(erzeuger)
+                baum.schliessen()
+                with self.assertRaises(sb.BaumFehler):
+                    list(erzeuger)
+
     def test_geschlossener_baum_liest_nicht_mehr(self) -> None:
         baum = sb.PfsBaum(self.abbilder["huelle_roh"])
         datei = baum.dateien()[0]

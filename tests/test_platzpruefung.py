@@ -89,7 +89,10 @@ class PlatzbedarfTests(unittest.TestCase):
         # sie gemessen wurde. Die nackte Zahl traf zuvor auch jede andere
         # Quelle - genau der behobene Fehler.
         self.app._quellgroesse_merken(self.quelle, int(self.QUELLE_GB * GB))
-        for name in ("ampr_integrate_var", "backport_integrate_var"):
+        # Alle fuenf Haken des Einbaus (``_integration_gewaehlt``): Das Programm laedt sie aus den gespeicherten Einstellungen, und die
+        # Prüfumgebung leert ihren Ordner nie - ein Haken, den ein anderer Test in derselben Sitzung gesetzt hat, kehrte sonst die
+        # Wegwahl um (Strom oder Zwischenordner) und damit die Schaetzung.
+        for name in ("ampr_integrate_var", "ampr_playgo_var", "backport_integrate_var", "dlc_integrate_var", "fake_signieren_var"):
             var = getattr(self.app, name, None)
             if var is not None:
                 var.set(False)

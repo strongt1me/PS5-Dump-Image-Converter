@@ -810,6 +810,18 @@ class StromWegTests(_HauptGrundlage):
         self.assertFalse(ok)
         self.assertEqual([], os.listdir(self.ziel))
 
+    def test_asset_schicht_in_der_quelle_schickt_den_lauf_auch_ohne_ampr_einbau_zum_alten_weg(self) -> None:
+        """Wie bei den zstd-Packs: Ein Einbau, der den Index anfasst (PlayGo), braucht die Frage des alten Weges."""
+        Path(self.spiel, "ampr_assets.index").write_bytes(b"alt")
+        with open(self.quelle, "wb") as fh:
+            for stueck in iter_exfat_image(Path(self.spiel)):
+                fh.write(stueck)
+        g = _gui(self.tmp)
+        g._ampr_wird_eingebaut = lambda: False
+        g._integration_anwenden = lambda ordner, **_k: ordner
+        self.assertIsNone(g._mode_exfat_umpacken_strom(self.quelle, self.ziel), "\n".join(g._log_lines))
+        self.assertEqual([], os.listdir(self.ziel))
+
     def test_packs_schon_in_der_quelle_bleibt_beim_alten_weg(self) -> None:
         Path(self.spiel, "ampr_assets.index").write_bytes(b"alt")
         with open(self.quelle, "wb") as fh:
@@ -860,6 +872,67 @@ class OriginaleKlaerenTests(unittest.TestCase):
         g = self.gui(variante="ng", strom=False)
         self.assertFalse(self.lauf(g))
         self.assertEqual(1, len(g.fragen))
+
+    def test_rueckfall_nimmt_den_selbsttaetigen_verzicht_zurueck(self) -> None:
+        """Gefragt wurde nie: Faellt der Lauf auf den Weg ueber den Ordner zurueck, bleiben die Originale (Vorgabe "Nein")."""
+        g = self.gui(variante="ng")
+        self.assertTrue(self.lauf(g))
+        self.assertTrue(g._ampr_weglassen_auto_lz4)
+        g._lz4_rueckfall_melden("irgendwo", "Packprofil des Anwenders")
+        self.assertFalse(g._ampr_originale_weglassen)
+        self.assertFalse(g._ampr_weglassen_auto_lz4)
+        self.assertIn(g._t("ampr_pack.originale_behalten_gewaehlt"), g._log_lines)
+
+    def test_rueckfall_auf_der_kommandozeile_gilt_die_option(self) -> None:
+        g = self.gui(variante="ng")
+        self.assertTrue(self.lauf(g))
+        g._cli_mode = True
+        g._cli_ampr_originale_weglassen = True
+        g._lz4_rueckfall_melden("irgendwo", "2 Gruppen: a, b")
+        self.assertTrue(g._ampr_originale_weglassen)
+        self.assertIn(g._t("ampr_pack.originale_weglassen_gewaehlt"), g._log_lines)
+        g = self.gui(variante="ng")
+        self.assertTrue(self.lauf(g))
+        g._cli_mode = True
+        g._cli_ampr_originale_weglassen = False
+        g._lz4_rueckfall_melden("irgendwo", "2 Gruppen: a, b")
+        self.assertFalse(g._ampr_originale_weglassen)
+
+    def test_eine_antwort_des_anwenders_bleibt_beim_rueckfall(self) -> None:
+        """Bei drakmor fragt der Lauf; sagt der Anwender Ja, nimmt der Rueckfall das nicht zurueck."""
+        g = self.gui(variante="no debug")
+        with mock.patch.object(APP.messagebox, "askyesno", lambda *a, **k: True):
+            g._ampr_originale_klaeren(next(iter(GUI._MODE_TARGET_OPTIONS)))
+        self.assertTrue(g._ampr_originale_weglassen)
+        self.assertFalse(g._ampr_weglassen_auto_lz4)
+        g._lz4_rueckfall_melden("irgendwo", "Packprofil des Anwenders")
+        self.assertTrue(g._ampr_originale_weglassen)
+
+    def test_ziel_dump_ordner_bekommt_keinen_selbsttaetigen_verzicht(self) -> None:
+        """Der Strom schreibt nur Abbilder; bei einem Dump-Ordner als Ziel gilt weiter die Rueckfrage."""
+        g = self.gui(variante="ng")
+        modus = next(iter(GUI._MODE_TARGET_OPTIONS))
+        with mock.patch.object(APP.messagebox, "askyesno", lambda *a, **k: g.fragen.append(a) or False):
+            g._ampr_originale_klaeren(modus, "folder")
+        self.assertFalse(g._ampr_originale_weglassen)
+        self.assertFalse(g._ampr_weglassen_auto_lz4)
+        self.assertEqual(1, len(g.fragen))
+        g = self.gui(variante="ng")
+        with mock.patch.object(APP.messagebox, "askyesno", lambda *a, **k: g.fragen.append(a) or False):
+            g._ampr_originale_klaeren(modus, "exfat")
+        self.assertTrue(g._ampr_originale_weglassen)
+        self.assertEqual([], g.fragen)
+
+    def test_jedes_spiel_der_sammelkonvertierung_beginnt_mit_der_entscheidung_des_laufs(self) -> None:
+        g = self.gui(variante="ng")
+        g._ampr_weglassen_lauf = (True, True)
+        g._ampr_originale_weglassen, g._ampr_weglassen_auto_lz4 = False, False       # ein Rueckfall bei Spiel 1
+        g._ampr_weglassen_herstellen()
+        self.assertEqual((True, True), (g._ampr_originale_weglassen, g._ampr_weglassen_auto_lz4))
+        del g._ampr_weglassen_lauf                                                  # ohne Lauf-Entscheidung (Einzellauf in Tests): nichts tun
+        g._ampr_originale_weglassen = False
+        g._ampr_weglassen_herstellen()
+        self.assertFalse(g._ampr_originale_weglassen)
 
     def test_zstd_bleibt_wie_es_war(self) -> None:
         g = self.gui(variante="ng", verfahren="zstd")
@@ -942,6 +1015,25 @@ class VorabTests(_HauptGrundlage):
         self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
         self.assertTrue(any("Zwischenordner" in z or "intermediate folder" in z for z in g._log_lines), "\n".join(g._log_lines))
 
+    def test_jede_umkehr_nimmt_den_selbsttaetigen_verzicht_zurueck(self) -> None:
+        """Nicht nur ``_lz4_rueckfall_melden``: An jeder Stelle, an der der Strom ``None`` zurueckgibt, gilt wieder die Rueckfrage-Vorgabe."""
+        ziel = os.path.join(self.spiel, "ausgabe")                        # Ziel im Spielordner: der Strom kehrt gleich um
+        os.makedirs(ziel)
+        g = _gui(self.tmp)
+        g._ampr_originale_weglassen, g._ampr_weglassen_auto_lz4 = True, True
+        self.assertIsNone(g._mode_exfat_umpacken_strom(self.spiel, ziel, ordner=True))
+        self.assertFalse(g._ampr_originale_weglassen)
+        self.assertFalse(g._ampr_weglassen_auto_lz4)
+        self.assertIn(g._t("ampr_pack.originale_behalten_gewaehlt"), g._log_lines)
+
+    def test_eine_antwort_des_anwenders_ueberlebt_die_umkehr(self) -> None:
+        ziel = os.path.join(self.spiel, "ausgabe")
+        os.makedirs(ziel)
+        g = _gui(self.tmp)
+        g._ampr_originale_weglassen, g._ampr_weglassen_auto_lz4 = True, False        # "Ja" auf die Rueckfrage
+        self.assertIsNone(g._mode_exfat_umpacken_strom(self.spiel, ziel, ordner=True))
+        self.assertTrue(g._ampr_originale_weglassen)
+
     def test_mehrere_gruppen_schicken_ein_abbild_zum_alten_weg(self) -> None:
         _schreiben(self.spiel, {"sce_sys/param.sfo": _sfo("PPSA23566")})
         with open(self.quelle, "wb") as fh:
@@ -971,6 +1063,7 @@ class VorabTests(_HauptGrundlage):
         self.assertEqual([], os.listdir(os.path.join(self.tmp, "temp")))
         self.assertTrue(any("2 Gruppen" in z for z in g._log_lines), "\n".join(g._log_lines))
         self.assertIsNone(g._strom_ansicht)
+        self.assertIsNone(g._stufen, "die Stufenzeile des Stroms gehoert nicht zum bisherigen Weg")
 
 
 class PlatzSchaetzungTests(_HauptGrundlage):
@@ -1138,6 +1231,23 @@ class MessenImHauptmodulTests(_HauptGrundlage):
         g, index = self.vorbereiten()
         with mock.patch.object(l4, "verfuegbar", lambda: False):
             self.assertFalse(self.messen(g, index))
+
+    def test_ein_spaetes_nicht_im_strom_aus_der_messung_geht_zum_alten_weg(self) -> None:
+        """Dass die Baender nicht in der Reihenfolge ihrer Namen entstuenden, zeigt erst die Messung: kein "fehlgeschlagen", sondern der alte Weg."""
+        g, index = self.vorbereiten()
+        grund = "die Baender entstehen nicht in der Reihenfolge ihrer Namen (pack_pattern)"
+        with mock.patch.object(l4, "messen", side_effect=l4.Lz4NichtImStrom(grund)):
+            self.assertFalse(self.messen(g, index))
+        self.assertEqual(grund, g._strom_alter_weg)
+        self.assertFalse(any("fehlgeschlagen" in z.lower() for z in g._log_lines), "\n".join(g._log_lines))
+
+    def test_ein_speicherfehler_bekommt_seinen_satz(self) -> None:
+        """``MemoryError`` hat keinen Text: Die Meldung endete sonst mit einem Doppelpunkt und nichts dahinter."""
+        g, index = self.vorbereiten()
+        with mock.patch.object(l4, "messen", side_effect=MemoryError()):
+            self.assertFalse(self.messen(g, index))
+        text = "\n".join(g._log_lines)
+        self.assertIn(g._t("fehler.speicher_erschoepft"), text)
 
 
 if __name__ == "__main__":

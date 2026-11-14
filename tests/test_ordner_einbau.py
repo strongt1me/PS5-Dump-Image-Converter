@@ -608,8 +608,17 @@ class AuswahllisteTests(unittest.TestCase):
         app = self.app
         vorher = (app.current_mode.get(), app.target_format.get(),
                   app.backport_integrate_var.get(), app.ampr_integrate_var.get())
+        # Die anderen drei Haken des Einbaus (``_integration_gewaehlt``) kommen aus den gespeicherten Einstellungen, die die
+        # Pruefumgebung nie leert: Ein Haken aus einem anderen Test derselben Sitzung liesse den Eintrag "Dump-Ordner (mit Einbau)"
+        # stehen, obwohl AMPR EMU und BACKPORT abgewaehlt sind.
+        weitere = {n: getattr(app, n) for n in ("ampr_playgo_var", "dlc_integrate_var", "fake_signieren_var") if hasattr(app, n)}
+        gemerkt = {n: v.get() for n, v in weitere.items()}
+        for var in weitere.values():
+            var.set(False)
 
         def _zurueck() -> None:
+            for n, var in weitere.items():
+                var.set(gemerkt[n])
             app.backport_integrate_var.set(vorher[2])
             app.ampr_integrate_var.set(vorher[3])
             app._on_integration_changed(speichern=False)
@@ -644,7 +653,9 @@ class AuswahllisteTests(unittest.TestCase):
         _on_integration_changed die Liste auf. Bis zum 01.10.2026 wurde dabei
         aus "--format ffpkg" in Aufgabe 4 still ein Dump-Ordner."""
         app = self.app
-        with TemporaryDirectory(prefix="ordner_einbau_cli_") as tmp:
+        # ``source_path.set`` startet Vorschau-Faeden, die ``param.json`` noch lesen, wenn der Ordner weggeraeumt wird: Unter Windows
+        # scheitert das Aufraeumen dann sporadisch mit WinError 32 (vor dem 14.11.2026 in etwa jedem zehnten Lauf).
+        with TemporaryDirectory(prefix="ordner_einbau_cli_", ignore_cleanup_errors=True) as tmp:
             dump = Path(tmp) / "spiel"
             _dump_anlegen(dump)
             pkg = Path(tmp) / "Spiel.ffpkg"

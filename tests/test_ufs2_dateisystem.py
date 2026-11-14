@@ -352,6 +352,34 @@ class HandgebauteAbbilderTests(unittest.TestCase):
         self.assertEqual(["ordner/datei.txt"], [d.rel for d in baum.dateien])
         self.assertEqual(["leer", "ordner"], baum.ordner)
 
+    def test_stueck_ist_eine_obergrenze_auch_unter_der_blockgroesse(self) -> None:
+        """``lesen(inode, stueck)`` liefert nie mehr als ``stueck`` Bytes - auch bei einem ``stueck`` unter einem Block (Pruefbericht 14.11.2026)."""
+        b = Abbildbauer()
+        adressen = [b.block(bytes([i + 1]) * BSIZE) for i in range(3)]
+        self._mit_datei(b, 3, 3 * BSIZE - 7, direkt=adressen)
+        self._wurzel(b, (3, "x.bin"))
+        leser = _leser(b)
+        erwartet = b"".join(bytes([i + 1]) * BSIZE for i in range(3))[:3 * BSIZE - 7]
+        for stueck in (1, 7, 1000, BSIZE - 1, BSIZE, BSIZE + 1, 2 * BSIZE, 1 << 20):
+            with self.subTest(stueck=stueck):
+                teile = list(leser.lesen(leser.inode(3), stueck))
+                self.assertTrue(all(0 < len(t) <= stueck for t in teile), [len(t) for t in teile][:5])
+                self.assertEqual(erwartet, b"".join(teile))
+
+    def test_verzeichnis_mit_unglaubwuerdiger_groesse_wird_abgelehnt(self) -> None:
+        """Ein beschaedigtes Abbild nennt eine riesige Verzeichnisgroesse (Zeiger 0 = Loch = Nullen): kein Speicherfressen, sondern Ufs2Fehler."""
+        b = Abbildbauer()
+        e = Abbildbauer.eintrag
+        b.verzeichnis(2, [e(2, 4, "."), e(2, 4, "..")])
+        b.inode(2, ul.S_IFDIR | 0o755, ul.VERZEICHNIS_MAX + 1, direkt=[b.block(b"")])
+        leser = _leser(b)
+        gelesen = []
+        echt = leser.lesen
+        leser.lesen = lambda *a, **k: gelesen.append(1) or echt(*a, **k)
+        with self.assertRaisesRegex(ul.Ufs2Fehler, "unglaubw"):
+            leser.verzeichnis(leser.inode(2))
+        self.assertEqual([], gelesen, "Gelesen werden darf nichts: sonst stuende die ganze Groesse als Nullen im Speicher")
+
     # -- Fehler ---------------------------------------------------------------------------------------------------------------
     def test_kein_ufs2(self) -> None:
         import io

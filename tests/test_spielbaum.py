@@ -278,6 +278,16 @@ class ExfatBaumTests(_Grundlage):
         with self.assertRaises(sb.BaumFehler):
             _inhalt(datei)
 
+    def test_ein_beim_lesen_geschlossener_griff_ist_ein_baumfehler(self) -> None:
+        """Ein Abbruch schliesst die Griffe, waehrend ein Lesefaden noch liest: ``ValueError`` ("seek of closed file") wird ein BaumFehler."""
+        baum = sb.ExfatBaum(self.abbild)
+        datei = baum.suchen()["data/a.pak"]
+        erzeuger = datei.lesen(4096)
+        next(erzeuger)                                          # der Griff dieses Fadens ist offen und liegt im Leser
+        baum.schliessen()
+        with self.assertRaises(sb.BaumFehler):
+            list(erzeuger)
+
     def test_kein_exfat(self) -> None:
         kaputt = os.path.join(self.tmp, "kaputt.exfat")
         with open(kaputt, "wb") as fh:

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import queue
 import re
 import shutil
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -349,6 +352,10 @@ class FensterTests(unittest.TestCase):
         self._alt = self.app._append_to_log
         self.app._append_to_log = self.log.append
         self.addCleanup(lambda: setattr(self.app, "_append_to_log", self._alt))
+        # Der Loeschfaden gibt dem Hauptfaden Rueckrufe auf; ohne ``mainloop`` wuerde ``root.after`` aus dem Faden abgewiesen.
+        self._geplant: "queue.Queue[tuple]" = queue.Queue()
+        self.app._hauptfaden_planen = lambda rueckruf, *args, ms=0: (self._geplant.put((rueckruf, args)), True)[1]
+        self.addCleanup(lambda: self.app.__dict__.pop("_hauptfaden_planen", None))
 
     def _sammle(self, widget, art, treffer=None):
         treffer = [] if treffer is None else treffer
@@ -387,10 +394,63 @@ class FensterTests(unittest.TestCase):
         halb.write_bytes(b"x" * 10)
         fenster = self._fenster(rk.finden(str(halb), str(self.src), zielordner=str(self.ziel)))
         self._knopf(fenster, self.app._t("reste.entfernen")).invoke()
+        self._warten(fenster)                                # das Loeschen laeuft in einem eigenen Faden, nicht im Hauptfaden
         self.assertFalse(halb.exists())
         self.assertTrue(self.src.exists())
         self.assertTrue(any("log.reste_entfernt" in z or "Rest entfernt" in z for z in self.log), self.log)
         self.assertFalse(fenster.winfo_exists())
+
+    def test_entfernen_loescht_nicht_im_hauptfaden_und_sperrt_den_knopf(self):
+        halb = self.ziel / "Spiel.ffpfsc"
+        halb.write_bytes(b"x" * 10)
+        fenster = self._fenster(rk.finden(str(halb), str(self.src), zielordner=str(self.ziel)))
+        knopf = self._knopf(fenster, self.app._t("reste.entfernen"))
+        faeden = []
+        echt = rk.entfernen
+
+        def aufzeichnen(*args, **kwargs):
+            faeden.append(threading.current_thread())
+            return echt(*args, **kwargs)
+        with mock.patch.object(rk, "entfernen", aufzeichnen):
+            knopf.invoke()
+            self.assertEqual(("disabled",), knopf.state(), "kein zweiter Klick, solange geloescht wird")
+            self._warten(fenster)
+        self.assertEqual(1, len(faeden))
+        self.assertIsNot(threading.main_thread(), faeden[0], "ein grosser Ordner darf die Oberflaeche nicht anhalten")
+        self.assertFalse(halb.exists())
+
+    def test_entfernen_wartet_bis_keine_aufgabe_mehr_laeuft(self):
+        """Eine neue Aufgabe kann in denselben Zielordner schreiben: Die Karte bleibt offen, nichts wird geloescht."""
+        halb = self.ziel / "Spiel.ffpfsc"
+        halb.write_bytes(b"x" * 10)
+        fenster = self._fenster(rk.finden(str(halb), str(self.src), zielordner=str(self.ziel)))
+        alt = getattr(self.app, "is_running", False)
+        self.app.is_running = True
+        self.addCleanup(setattr, self.app, "is_running", alt)
+        self._knopf(fenster, self.app._t("reste.entfernen")).invoke()
+        self.wurzel.update()
+        self.assertTrue(halb.exists())
+        self.assertTrue(fenster.winfo_exists())
+        self.assertTrue(any(self.app._t("log.reste_laeuft_noch") in z for z in self.log), self.log)
+        self.app.is_running = False                          # danach geht es
+        self._knopf(fenster, self.app._t("reste.entfernen")).invoke()
+        self._warten(fenster)
+        self.assertFalse(halb.exists())
+
+    def _warten(self, fenster, sekunden=15.0):
+        """Fuehrt die Rueckrufe aus, die der Loeschfaden dem Hauptfaden aufgibt (``root.after`` aus einem Faden geht nur in ``mainloop``)."""
+        ende = time.monotonic() + sekunden
+        while time.monotonic() < ende:
+            try:
+                rueckruf, args = self._geplant.get(timeout=0.05)
+            except queue.Empty:
+                if not fenster.winfo_exists():
+                    break
+                continue
+            rueckruf(*args)
+            self.wurzel.update()
+            if not fenster.winfo_exists():
+                break
 
     def test_behalten_laesst_alles_liegen(self):
         halb = self.ziel / "Spiel.ffpfsc"
@@ -408,13 +468,69 @@ class TexteTests(unittest.TestCase):
                   "reste.art_ordner": (), "reste.art_neben": (), "reste.groesse": ("size",),
                   "reste.groesse_mindestens": ("size",), "reste.entfernen": (), "reste.behalten": (),
                   "log.reste_gefunden": ("anzahl", "size"), "log.reste_zeile": ("pfad", "groesse"),
-                  "log.reste_entfernt": ("pfad",), "log.reste_fehler": ("pfad", "fehler"), "log.reste_behalten": ()}
+                  "log.reste_entfernt": ("pfad",), "log.reste_fehler": ("pfad", "fehler"), "log.reste_behalten": (),
+                  "log.reste_laeuft_noch": ()}
         for key, namen in felder.items():
             for sprache in SUPPORTED_LANGUAGES:
                 text = STRINGS[key][sprache]
                 self.assertTrue(text, "%s/%s" % (key, sprache))
                 for feld in namen:
                     self.assertIn("{%s}" % feld, text, "%s/%s" % (key, sprache))
+
+
+class StandUndNebenendungenTests(unittest.TestCase):
+    """Pruefbericht 14.11.2026: Die Karte darf kein inzwischen neues Ergebnis entfernen; ``.neu.teil`` und ``.teil.tmp`` sind Reste."""
+
+    def setUp(self) -> None:
+        import tempfile
+        self.tmp = tempfile.mkdtemp(prefix="reste_stand_")
+        self.addCleanup(__import__("shutil").rmtree, self.tmp, True)
+        self.ziel = os.path.join(self.tmp, "ziel")
+        os.makedirs(self.ziel)
+        self.quelle = os.path.join(self.tmp, "quelle", "spiel.exfat")
+        os.makedirs(os.path.dirname(self.quelle))
+        open(self.quelle, "wb").write(b"q")
+
+    def datei(self, name: str, inhalt: bytes = b"x" * 100) -> str:
+        pfad = os.path.join(self.ziel, name)
+        open(pfad, "wb").write(inhalt)
+        return pfad
+
+    def test_ein_inzwischen_geaendertes_ergebnis_bleibt_stehen(self) -> None:
+        ergebnis = self.datei("Spiel.exfat")
+        reste = rk.finden(ergebnis, self.quelle, zielordner=self.ziel)
+        self.assertEqual([ergebnis], [r.pfad for r in reste])
+        self.datei("Spiel.exfat", b"y" * 5000)                       # ein neuer Lauf hat das Ergebnis fertig geschrieben
+        weg, fehler = rk.entfernen(reste, self.quelle, ordner_loeschen=lambda p: False, datei_loeschen=os.remove)
+        self.assertEqual([], weg)
+        self.assertEqual([(ergebnis, "geaendert seit dem Finden")], fehler)
+        self.assertTrue(os.path.exists(ergebnis))
+
+    def test_ein_unveraenderter_rest_wird_entfernt(self) -> None:
+        teil = self.datei("Spiel.exfat.teil")
+        reste = rk.finden(os.path.join(self.ziel, "Spiel.exfat"), self.quelle, zielordner=self.ziel)
+        weg, fehler = rk.entfernen(reste, self.quelle, ordner_loeschen=lambda p: False, datei_loeschen=os.remove)
+        self.assertEqual([teil], weg)
+        self.assertEqual([], fehler)
+        self.assertFalse(os.path.exists(teil))
+
+    def test_selbstziel_und_zwischendatei_werden_gefunden(self) -> None:
+        ergebnis = os.path.join(self.ziel, "Spiel.exfat")
+        namen = [self.datei("Spiel.exfat.neu.teil"), self.datei("Spiel.exfat.teil.tmp"), self.datei("Spiel.exfat.teil"),
+                 self.datei("Spiel.exfat.neu.teil.tmp")]
+        gefunden = {r.pfad for r in rk.finden(ergebnis, self.quelle, zielordner=self.ziel)}
+        self.assertEqual(set(namen), gefunden)
+
+    def test_ein_ordner_wird_an_seiner_zeit_erkannt(self) -> None:
+        ordner = os.path.join(self.ziel, "Spiel")
+        os.makedirs(ordner)
+        reste = rk.finden(ordner, self.quelle, zielordner=self.ziel)
+        self.assertEqual(1, len(reste))
+        os.makedirs(os.path.join(ordner, "neu"))                      # Inhalt kam hinzu (die Zeit des Ordners bewegt sich dabei nicht immer: gesetzt wird sie unten)
+        os.utime(ordner, ns=(reste[0].stand[1] + 10**9, reste[0].stand[1] + 10**9))
+        weg, fehler = rk.entfernen(reste, self.quelle, ordner_loeschen=lambda p: True, datei_loeschen=os.remove)
+        self.assertEqual([], weg)
+        self.assertEqual(1, len(fehler))
 
 
 if __name__ == "__main__":

@@ -18,7 +18,9 @@ from dataclasses import dataclass
 from typing import Callable
 
 #: Was ein Lauf neben seinem Ergebnis hinterlassen kann (Teilbau, Bau neben der Quelle, Vorgaenger-Endungen).
-NEBEN_ENDUNGEN: tuple[str, ...] = (".teil", ".neu", ".part", ".partial")
+# ``.neu.teil``: das Selbst-Ziel (``X.exfat`` baut als ``X.exfat.neu``) mit seinem Teilbau; ``.teil.tmp``: die Zwischendatei von MkPFS neben dem
+# Teilbau eines ``.ffpfsc``; ``.neu.teil.tmp``: dieselbe Zwischendatei beim Bau eines Selbst-Ziels.
+NEBEN_ENDUNGEN: tuple[str, ...] = (".teil", ".neu", ".part", ".partial", ".neu.teil", ".teil.tmp", ".neu.teil.tmp")
 
 #: Die Dateien im Wurzelordner eines Spiels, an denen die Konsole und ShadowMount+ ein Spiel erkennen. Sie kommen beim Schreiben
 #: oder Verschieben zuletzt, ``eboot.bin`` als Allerletzte: Bricht der Lauf ab, sieht der halbe Ordner nicht wie ein Spiel aus.
@@ -44,6 +46,8 @@ class Rest:
     bytes: int
     ordner: bool
     mindestens: bool = False
+    #: Groesse und Aenderungszeit beim Finden (bei einem Ordner nur die Zeit): ``entfernen`` laesst stehen, was sich seitdem geaendert hat.
+    stand: tuple = ()
 
 
 def _norm(pfad: str) -> str:
@@ -72,6 +76,15 @@ def schuetzen(pfad: str, quelle: str) -> bool:
     if not quelle:
         return False
     return liegt_in(quelle, pfad) or liegt_in(pfad, quelle)
+
+
+def _stand(pfad: str) -> tuple:
+    """``(Groesse, Zeit)`` einer Datei, bei einem Ordner ``(0, Zeit)``; leer, wenn der Pfad nicht lesbar ist."""
+    try:
+        st = os.lstat(pfad)
+    except OSError:
+        return ()
+    return (0 if os.path.isdir(pfad) and not os.path.islink(pfad) else st.st_size, st.st_mtime_ns)
 
 
 def _groesse(pfad: str, frist: float) -> tuple[int, bool]:
@@ -114,7 +127,7 @@ def finden(ausgabe: str, quelle: str, *, zielordner: str = "", zeitbudget: float
             continue
         ordner = os.path.isdir(pfad) and not os.path.islink(pfad)
         groesse, abgebrochen = _groesse(pfad, frist) if not os.path.islink(pfad) else (0, False)
-        reste.append(Rest(pfad, art, groesse, ordner, abgebrochen))
+        reste.append(Rest(pfad, art, groesse, ordner, abgebrochen, _stand(pfad)))
     return reste
 
 
@@ -123,13 +136,18 @@ def entfernen(reste: list[Rest], quelle: str, *, ordner_loeschen: Callable[[str]
     """Entfernt die ``reste``. Rueckgabe: ``(entfernte Pfade, [(Pfad, Fehler)])``.
 
     ``ordner_loeschen(pfad)`` liefert ``False``, wenn der Ordner nicht ganz weg ist. Jeder Pfad wird vor dem Entfernen noch einmal
-    gegen die Quelle geschuetzt; ein Pfad, den es nicht mehr gibt, zaehlt als entfernt.
+    gegen die Quelle geschuetzt; ein Pfad, den es nicht mehr gibt, zaehlt als entfernt. Hat sich ein Pfad seit dem Finden geaendert (Groesse oder
+    Zeit), bleibt er stehen und steht bei den Fehlern ("geaendert seit dem Finden"): Die Karte kann offen geblieben sein, waehrend ein neuer
+    Lauf an derselben Stelle ein fertiges Ergebnis geschrieben hat.
     """
     weg: list[str] = []
     fehler: list[tuple[str, str]] = []
     for rest in reste:
         if schuetzen(rest.pfad, quelle):
             fehler.append((rest.pfad, "geschuetzt"))
+            continue
+        if rest.stand and os.path.lexists(rest.pfad) and _stand(rest.pfad) != rest.stand:
+            fehler.append((rest.pfad, "geaendert seit dem Finden"))
             continue
         try:
             if os.path.isdir(rest.pfad) and not os.path.islink(rest.pfad):

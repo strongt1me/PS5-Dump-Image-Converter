@@ -136,9 +136,11 @@ def entfallende(auswahl: Any) -> "set[str]":
 
     Das LZ4-Werkzeug fuehrt eine leere Datei als gepackte Datei ohne Block. Die PS5 prueft solche Platzhalter aber ausserhalb des
     Spiels (Schwarzbild bei den Sprachplatzhaltern von Ghost of Yotei, ``ampr_assetpakete.NIE_PACKEN``): Sie bleiben als Datei im Abbild,
-    wie ``ampr_assetpakete.leere_dateien_zurueckschreiben`` es im Weg ueber den Ordner tut.
+    wie ``ampr_assetpakete.leere_dateien_zurueckschreiben`` es im Weg ueber den Ordner tut. Ebenso bleibt, was ``ampr_zstdpack.bleibt_lose``
+    nennt (Programme, ``.ini``, ``sce_sys``, ``fakelib`` ...), auch wenn das Profil es gepackt hat: Die Muster eines Profils unterscheiden
+    Gross- und Kleinschreibung (``FOO.SPRX``), ``bleibt_lose`` nicht. Ein Programm darf nie nur in einem Band stehen.
     """
-    return {rel for rel, groesse in auswahl.gepackt if groesse > 0}
+    return {rel for rel, groesse in auswahl.gepackt if groesse > 0 and not z.bleibt_lose(rel)}
 
 
 def ist_packname(rel: str) -> bool:
@@ -424,11 +426,8 @@ def _kopf(datei: Any, laenge: int = 4) -> bytes:
 
 
 def _ziel_pfad(ziel: str, rel: str) -> str:
-    wurzel = os.path.normpath(os.path.abspath(ziel))
-    voll = os.path.normpath(os.path.join(wurzel, *rel.split("/")))
-    if os.path.commonpath([voll, wurzel]) != wurzel:
-        raise z.ZstdPackFehler("Pfad liegt ausserhalb des Ordners: %s" % rel)
-    return voll
+    """Der Pfad einer Datei unterhalb von ``ziel`` - oder ``ZstdPackFehler``, wenn er herausfuehrt (auch ein ``:`` in einem Pfadteil unter Windows)."""
+    return z.ziel_pfad(ziel, rel)
 
 
 def schatten_fuellen(baum: Any, ziel: str, *, programmdateien: bool = False, abbruch: Callable[[], bool] = lambda: False,
@@ -452,6 +451,11 @@ def schatten_fuellen(baum: Any, ziel: str, *, programmdateien: bool = False, abb
         if fortschritt is not None and not nummer % 512:
             fortschritt(nummer, len(dateien))
         rel = datei.rel
+        # Packdateien (Baender, Index) gehen nie in den Ueberlagerungsordner, auch wenn ``bleibt_lose`` sie zur Systemschicht zaehlt und
+        # auch nicht ueber die ELF-Kennung ihres ersten Blocks: Sie waeren viele GB, und die Platzpruefung rechnet dort nur mit einem
+        # Bruchteil der Quelle. (Mit Packs in der Quelle laeuft der Strom ohnehin nicht, ``_mode_exfat_umpacken_strom``; das hier ist der Riegel.)
+        if ist_packname(rel):
+            continue
         wanted = z.bleibt_lose(rel)
         # Die Karte der Zusatzinhalte (PS5-App-Dumper): DLC EMU liest sie aus der Spielwurzel (``dlc_emu.ini_anlegen``); ohne sie
         # im Ordner entstuende die ``dlc_emu.ini`` mit den falschen oder gar keinen Eintraegen.

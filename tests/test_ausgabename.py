@@ -180,29 +180,88 @@ class AusgabenameTests(unittest.TestCase):
         self.assertFalse(e.name.endswith((".", " ")))
 
 
-class EindeutigTests(unittest.TestCase):
-    def test_ein_freier_name_bleibt(self):
-        self.assertEqual("A", an.eindeutig("A", ".exfat", lambda n: False))
+class WindowsNamenTests(unittest.TestCase):
+    """Ein erzeugter Name taugt unter Windows als Datei- und Ordnername (Pruefbericht 14.11.2026)."""
 
-    def test_ein_vergebener_name_bekommt_eine_nummer(self):
-        vergeben = {"A.exfat", "A-2.exfat", "A-3.exfat"}
-        self.assertEqual("A-4", an.eindeutig("A", ".exfat", lambda n: n in vergeben))
+    def test_geraetename_bekommt_einen_unterstrich(self):
+        for titel in ("Aux", "CON", "nul", "COM1", "lpt9", "Aux.txt", "NUL.v2"):
+            with self.subTest(titel):
+                e = an.ausgabename("{title}", dict(SPIEL, title=titel), name="Q")
+                self.assertTrue(e.name.split(".", 1)[0].endswith("_"), e.name)
 
-    def test_der_stamm_wird_fuer_den_zusatz_gekuerzt(self):
-        stamm = "S" * 63
-        vergeben = {stamm + ".exfat"}
-        neu = an.eindeutig(stamm, ".exfat", lambda n: n in vergeben, zielformat="exfat")
-        self.assertEqual("S" * 61 + "-2", neu)
-        self.assertEqual(63, len(neu))
+    def test_der_unterstrich_steht_vor_dem_ersten_punkt(self):
+        """Windows liest ``Aux.Game`` wie ``AUX``: ``Aux.Game_`` hiesse weiter so."""
+        self.assertEqual("Aux_.Game", an.ausgabename("{title}", dict(SPIEL, title="Aux.Game"), name="Q").name)
+        self.assertEqual("NUL_.v2", an.ausgabename("{title}", dict(SPIEL, title="NUL.v2"), name="Q").name)
+        self.assertEqual("Aux_", an.ausgabename("{title}", dict(SPIEL, title="Aux"), name="Q").name)
 
-    def test_ein_ordner_wird_nicht_gekuerzt(self):
-        stamm = "S" * 100
-        neu = an.eindeutig(stamm, "", lambda n: n == stamm, zielformat="folder")
-        self.assertEqual(stamm + "-2", neu)
+    def test_aehnliche_namen_bleiben(self):
+        for titel in ("Console", "Auxiliary", "COM10", "Nullpunkt"):
+            with self.subTest(titel):
+                self.assertEqual(titel, an.ausgabename("{title}", dict(SPIEL, title=titel), name="Q").name)
 
-    def test_eine_unendliche_folge_endet_mit_einem_fehler(self):
-        with self.assertRaises(ValueError):
-            an.eindeutig("A", "", lambda n: True)
+    def test_punkt_und_leerzeichen_am_ende_fallen_weg(self):
+        e = an.ausgabename("{title}", dict(SPIEL, title="Ende mit Punkt. . "), name="Q")
+        self.assertEqual("Ende mit Punkt", e.name)
+
+    def test_formatzeichen_aus_der_param_json_fallen_weg(self):
+        e = an.ausgabename("{title}", dict(SPIEL, title="A\u202eB\u200bC"), name="Q")
+        self.assertEqual("ABC", e.name)
+
+
+class GekuerztWindowsTests(unittest.TestCase):
+    def test_gekuerzt_gilt_auch_wenn_nur_der_geraetename_gekuerzt_hat(self):
+        """Genau 63 Bytes mit einem Geraetenamen vorn: Der Unterstrich schiebt den Namen ueber die Grenze, das letzte Zeichen faellt weg."""
+        e = an.ausgabename("{title}", dict(SPIEL, title="Con." + "x" * 59), name="Q", zielformat="exfat")
+        self.assertTrue(e.gekuerzt)
+        self.assertEqual(an.grenze_fuer("exfat"), len(e.name.encode("utf-8")))
+        self.assertTrue(e.name.startswith("Con_."), e.name)
+        kurz = an.ausgabename("{title}", dict(SPIEL, title="Con.x"), name="Q", zielformat="exfat")
+        self.assertFalse(kurz.gekuerzt)
+
+
+    def test_ein_gekuerzter_name_mit_geraetenamen_wird_auch_windows_tauglich(self):
+        e = an.ausgabename("{title}", dict(SPIEL, title="CON." + "x" * 90), name="Q", zielformat="exfat")
+        self.assertTrue(e.gekuerzt)
+        self.assertTrue(e.name.startswith("CON_."), e.name)
+        self.assertLessEqual(len(e.name.encode("utf-8")), an.grenze_fuer("exfat"))
+
+
+class OhneAngabenTests(unittest.TestCase):
+    """Liefert kein Teil der Vorlage einen Wert, bleibt der Name der Quelle."""
+
+    def test_nur_eigener_text_bleibt_der_name_der_quelle(self):
+        for angaben in ({}, {"title": ""}):
+            with self.subTest(angaben):
+                self.assertEqual("Quelle", an.ausgabename("PS5 {title}", angaben, name="Quelle").name)
+
+    def test_das_pack_allein_macht_keinen_namen(self):
+        """``{pack}`` kommt aus der Auswahl und ist immer gesetzt: Es darf den Namen der Quelle nicht verdraengen."""
+        for vorlage in ("{title} [{pack}]", "{title_id}-{pack}", "{title}{pack}"):
+            with self.subTest(vorlage):
+                self.assertEqual("Quelle", an.ausgabename(vorlage, {}, name="Quelle", pack="lz4").name)
+        self.assertEqual("Astro Bot [lz4]", an.ausgabename("{title} [{pack}]", SPIEL, name="Q", pack="lz4").name)
+
+    def test_ein_format_zeichen_im_text_der_vorlage_ist_ein_fehler(self):
+        for vorlage in ("{title}\u202e", "A\u200b{title}"):
+            with self.subTest(vorlage):
+                problem = an.vorlage_pruefen(vorlage)
+                self.assertIsNotNone(problem)
+                self.assertEqual("steuerzeichen", problem.art)
+
+    def test_ein_teil_mit_wert_genuegt(self):
+        self.assertEqual("PS5 Astro Bot", an.ausgabename("PS5 {title}", SPIEL, name="Q").name)
+
+    def test_leere_klammerreste_fallen_weg(self):
+        spiel = {"title": "Astro Bot", "title_id": "PPSA01234", "required_firmware": "9.00"}
+        e = an.ausgabename("{title} [{region} {fw}]", spiel, name="Q")
+        self.assertNotIn("[ ", e.name)
+        self.assertNotIn(" ]", e.name)
+        self.assertEqual("Astro Bot [9.00]", e.name)
+
+    def test_nur_leere_teile_in_klammern_fallen_ganz_weg(self):
+        spiel = {"title": "Astro Bot", "title_id": "PPSA01234"}
+        self.assertEqual("Astro Bot", an.ausgabename("{title} [{region} {fw}]", spiel, name="Q").name)
 
 
 class GrenzenTests(unittest.TestCase):

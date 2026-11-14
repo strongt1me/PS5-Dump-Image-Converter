@@ -193,6 +193,8 @@ class PlatzTests(unittest.TestCase):
         gui._integration_gewuenscht = lambda: False
         gui._umhuellt_neu_packen = False
         gui._dump_im_arbeitsordner = lambda: False
+        # Diese Tests schaetzen den Weg ueber den Zwischenordner; seit Stufe 3 liest .ffpfsc -> .exFAT im Strom (ohne Zwischenordner).
+        gui._strom_weg_gewaehlt = lambda: False
         return gui
 
     def test_schaetzung_bucht_das_entpacken_im_arbeitsordner(self) -> None:

@@ -145,6 +145,19 @@ class LesenTests(unittest.TestCase):
         self.assertEqual([], pu.fassungen_lesen("<title_patch/>"))
 
 
+class TitelIdLaengeTests(unittest.TestCase):
+    def test_eine_ps4_kennung_falscher_laenge_wird_abgelehnt(self):
+        for kennung in ("", "CUSA1", "CUSA123456"):
+            with self.subTest(kennung), self.assertRaises(pu.UpdateFehler) as ctx:
+                pu.ps4_verxml_url(kennung)
+            self.assertEqual("ps5upd.title_id_ungueltig", str(ctx.exception))
+
+    def test_der_text_steht_in_allen_sprachen(self):
+        from ps5_validator.utils.i18n import STRINGS, SUPPORTED_LANGUAGES
+        for sprache in SUPPORTED_LANGUAGES:
+            self.assertTrue(STRINGS["ps5upd.title_id_ungueltig"][sprache], sprache)
+
+
 class AdressenTests(unittest.TestCase):
 
     def test_erlaubt(self):

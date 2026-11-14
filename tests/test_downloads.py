@@ -532,6 +532,9 @@ class I18nTests(unittest.TestCase):
         benutzt = set(re.findall(
             r'_t\(\s*["\']((?:downloads|settings_dialog)\.[a-z_0-9]+)', self.quelle))
         benutzt |= {"downloads.kind_update", "downloads.kind_patch", "titlebar.downloads"}
+        # Ein Schluessel, der auf ``_`` endet, ist ein Anfang (``"settings_dialog.ausgabe_problem_" + art``): Die ganzen Schluessel prueft
+        # ``test_ausgabename_einbindung`` (alle Problemarten in allen Sprachen).
+        benutzt = {k for k in benutzt if not k.endswith("_")}
         fehlend = sorted(k for k in benutzt if k not in i18n.STRINGS)
         self.assertEqual(fehlend, [], f"Nicht uebersetzt: {fehlend}")
         for sprache in ("de", "en"):

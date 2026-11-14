@@ -92,6 +92,12 @@ class QuelltextTests(unittest.TestCase):
         ende = self.quelltext.index("def _get_config_path")
         self.assertIn("_kartenzeilen_ordnen", self.quelltext[anfang:ende])
 
+    def test_sprachwechsel_passt_den_drehknopf_an_seine_beschriftung_an(self):
+        """Der Knopf ist so breit wie seine Beschriftung; WORKERS ist breiter als WORKER (Volllauf 14.11.2026)."""
+        anfang = self.quelltext.index("def _apply_language")
+        ende = self.quelltext.index("def _get_config_path")
+        self.assertIn("self.root.after_idle(self._worker_knopf_hoehe_angleichen)", self.quelltext[anfang:ende])
+
     def test_wache_zieht_spaetere_breitenaenderungen_nach(self):
         """Das Zahlenfeld wird nach dem ersten Ausrichten noch schmaler."""
         self.assertIn("def _kartenzeilen_ueberwachen", self.quelltext)
@@ -153,6 +159,11 @@ class KartenzeilenTests(unittest.TestCase):
         cls.app = haupt.PS5ConverterGUI(cls.wurzel)
         # Nichts aus dem Netz holen.
         cls.app._online_nachschlag_erlaubt = lambda: False
+        # Die Sprache kommt aus dem Einstellungsordner, und der gehoert im ganzen Lauf allen Testdateien: Ein Test, der
+        # "en" gespeichert hat, liess diese Karte im Volllauf vom 14.11.2026 englisch bauen ("WORKERS" statt "WORKER",
+        # der Drehknopf 8 px breiter) - die Masse hingen am Zufall der Reihenfolge. Die Messungen unten gelten fuer Deutsch.
+        cls.app._current_language = "de"
+        cls.app._apply_language()
         cls._beruhigen(cls.wurzel)
 
     @classmethod
@@ -435,7 +446,24 @@ class KartenzeilenTests(unittest.TestCase):
     def test_bei_mindestbreite_bleiben_die_bedienzeilen_innerhalb_der_karte(self):
         """Code-Review 12.11.2026: Mit den Pfeilen in den Luecken reichte die Einbauzeile bis auf 10 px an den Kartenrand und
         die Pruefstufe ueber den Innenrand. Rechte Kanten gegen die Karte, nicht nur Abstaende untereinander."""
+        self._rand_bei_mindestbreite_pruefen()
+
+    def _rand_bei_mindestbreite_pruefen(self, wie_gebaut=False):
+        """``wie_gebaut``: Den Drehknopf so breit machen, wie ihn das Programm beim Bauen misst.
+
+        ``_worker_knopf_hoehe_angleichen`` misst die Beschriftung beim Bauen als reinen Text (samt Textrand), bevor das erste
+        Neuzeichnen ihr ein Bild gibt - gemessen am 14.11.2026 auf 125 %: 68 px (WORKER) und 76 px (WORKERS) statt 64 und 72.
+        Wer englisch, spanisch, italienisch oder franzoesisch startet, hat den Knopf also so breit, nicht wie nach einem Wechsel.
+        """
         a = self.app
+        if wie_gebaut:
+            from tkinter import ttk
+            probe = ttk.Label(a.path_card, text=a.worker_title.cget("text"), font=a.worker_title.cget("font"))
+            try:
+                breite = probe.winfo_reqwidth()
+            finally:
+                probe.destroy()
+            a.worker_knob.durchmesser_setzen(a.worker_knob.winfo_reqheight(), breite=breite)
         self._fenster_auf(self.haupt.WINDOW_MIN_WIDTH)
         try:
             karte = a.path_card
@@ -446,6 +474,9 @@ class KartenzeilenTests(unittest.TestCase):
             self.assertLessEqual(rechts(a.backport_fw_combo), karte.winfo_width() - 10,
                                  "die Firmware-Liste reicht bis %d px an den Kartenrand" % (karte.winfo_width() - rechts(a.backport_fw_combo)))
         finally:
+            if wie_gebaut:
+                a._worker_knopf_hoehe_angleichen()
+                self._beruhigen(self.wurzel, 0.6)
             self.wurzel.withdraw()
 
     def test_die_hoehe_der_einbauzeile_haengt_an_der_zeile_des_kaestchens(self):
@@ -564,13 +595,22 @@ class KartenzeilenTests(unittest.TestCase):
     def test_sprachwechsel_laesst_die_zeilen_in_ordnung(self):
         vorher = self.app._current_language
         try:
-            for sprache in ("en", "de"):
+            # Volllauf 14.11.2026: Auf Englisch, Spanisch, Italienisch und Franzoesisch heisst die Beschriftung
+            # ueber dem Drehknopf "WORKERS" - 8 px breiter als "WORKER" - und die Pruefstufe stand bei Mindestbreite 4 px
+            # ueber dem Innenrand. Deutsch allein sah es nicht.
+            for sprache in ("en", "es", "it", "fr", "de"):
                 self.app._current_language = sprache
                 self.app._apply_language()
                 self._beruhigen(self.wurzel, 1.2)
                 with self.subTest(sprache=sprache):
                     self.test_die_abstaende_stimmen_genau()
                     self.test_die_beschriftungen_ueberlappen_einander_nicht()
+                    # Der Knopf folgt der Beschriftung: ohne das stuende er nach dem Wechsel noch in der Breite der Startsprache.
+                    titel = self.app.worker_title.winfo_reqwidth()
+                    self.assertEqual(self.app.worker_knob.winfo_reqwidth(), max(titel, self.app.worker_knob.winfo_reqheight()),
+                                     "der Drehknopf ist nicht so breit wie seine Beschriftung (%d px)" % titel)
+                    self._rand_bei_mindestbreite_pruefen()
+                    self._rand_bei_mindestbreite_pruefen(wie_gebaut=True)
         finally:
             self.app._current_language = vorher
             self.app._apply_language()

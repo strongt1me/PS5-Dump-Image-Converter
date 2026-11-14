@@ -41,6 +41,7 @@ import pkgutil       # noqa: F401
 import platform
 import posixpath     # Pfade auf der Konsole sind immer Unix-Pfade
 from collections import deque
+import functools
 import queue
 import re
 import shutil
@@ -4354,6 +4355,17 @@ class Drehknopf(tk.Canvas):
 
 
 
+def _strom_rueckfall_nimmt_verzicht_zurueck(methode):
+    """Gibt ein Weg ohne Zwischenordner ``None`` zurueck, uebernimmt der bisherige Weg den Lauf: An welcher Stelle er auch umkehrt,
+    das selbsttaetig gesetzte "Originale weglassen" (NG + LZ4 im Strom) gilt dann nicht mehr (``_ampr_weglassen_nach_rueckfall``)."""
+    @functools.wraps(methode)
+    def huelle(self, *args, **kwargs):
+        ergebnis = methode(self, *args, **kwargs)
+        if ergebnis is None:
+            self._ampr_weglassen_nach_rueckfall()
+        return ergebnis
+    return huelle
+
 
 class PS5ConverterGUI:
     """Grafische Benutzeroberfläche für den PS5 DUMP & IMAGE Converter."""
@@ -5684,6 +5696,9 @@ class PS5ConverterGUI:
         # (_ampr_ordner_ist_kopie, gesetzt von _integration_anwenden).
         self._cli_ampr_originale_weglassen = False
         self._ampr_originale_weglassen = False
+        # True, wenn "weglassen" nur die selbsttaetige Regel fuer NG + LZ4 im Strom gesetzt hat (nicht die Antwort des Anwenders):
+        # Faellt der Lauf auf den Weg ueber den Ordner zurueck, gilt dort wieder die Rueckfrage (_lz4_rueckfall_melden).
+        self._ampr_weglassen_auto_lz4 = False
         self._ampr_ordner_ist_kopie = False
         # LZ4-Stufe des Asset-Packs von der Kommandozeile (--ampr-lz4-stufe);
         # None = die gespeicherte Einstellung gilt (_ampr_lz4_stufe).
@@ -6875,6 +6890,9 @@ class PS5ConverterGUI:
         if hasattr(self, "root"):
             self.root.after_idle(self._redraw_card_captions)
             self.root.after_idle(self._redraw_sidebar_captions)
+            # Der Drehknopf ist so breit wie seine Beschriftung ("WORKER" 68 px, "WORKERS" 76 px). Er wurde nur beim Bauen
+            # angepasst und behielt nach einem Sprachwechsel die Breite der Startsprache (gemessen am 14.11.2026).
+            self.root.after_idle(self._worker_knopf_hoehe_angleichen)
             # Nach dem Neuzeichnen: Die Textbreiten der Karte haben sich mit
             # der Sprache geaendert, also stimmen auch die Abstaende nicht mehr.
             self.root.after_idle(self._kartenzeilen_ordnen)
@@ -8526,13 +8544,31 @@ class PS5ConverterGUI:
                      bg=c["console_bg"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(9)), anchor="w").pack(fill="x", pady=(6, 0))
 
         def _entfernen() -> None:
-            weg, fehler = reste_karte.entfernen(
-                reste, quelle, ordner_loeschen=lambda p: bool(_rmtree_force(p)), datei_loeschen=os.remove)
-            for pfad in weg:
-                self._append_to_log(self._t("log.reste_entfernt", pfad=pfad))
-            for pfad, grund in fehler:
-                self._append_to_log(self._t("log.reste_fehler", pfad=pfad, fehler=grund))
-            fenster.destroy()
+            if getattr(self, "is_running", False):
+                # Eine neue Aufgabe laeuft: Sie kann in denselben Zielordner schreiben. Die Karte bleibt offen und gilt danach weiter.
+                self._append_to_log(self._t("log.reste_laeuft_noch"))
+                return
+            try:
+                knopf_entfernen.state(["disabled"])        # nicht doppelt klicken, solange geloescht wird
+            except (tk.TclError, AttributeError) as exc:
+                logger.debug("Knopf Entfernen nicht gesperrt: %s", exc)
+
+            def _loeschen() -> None:                     # ein grosser Ordner dauert: nicht im Hauptfaden
+                weg, fehler = reste_karte.entfernen(
+                    reste, quelle, ordner_loeschen=lambda p: bool(_rmtree_force(p)), datei_loeschen=os.remove)
+
+                def _fertig() -> None:
+                    for pfad in weg:
+                        self._append_to_log(self._t("log.reste_entfernt", pfad=pfad))
+                    for pfad, grund in fehler:
+                        self._append_to_log(self._t("log.reste_fehler", pfad=pfad, fehler=grund))
+                    try:
+                        fenster.destroy()
+                    except tk.TclError as exc:
+                        logger.debug("Reste-Karte schon geschlossen: %s", exc)
+                self._hauptfaden_planen(_fertig)
+
+            threading.Thread(target=_loeschen, name="reste-entfernen", daemon=True).start()
 
         def _behalten() -> None:
             self._append_to_log(self._t("log.reste_behalten"))
@@ -8541,8 +8577,8 @@ class PS5ConverterGUI:
         reihe = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=14)
         reihe.pack(side="bottom", fill="x")
         self._pw.Button(reihe, text=self._t("reste.behalten"), command=_behalten).pack(side="right")
-        self._pw.Button(reihe, text=self._t("reste.entfernen"), style="Accent.TButton",
-                        command=_entfernen).pack(side="right", padx=(0, 8))
+        knopf_entfernen = self._pw.Button(reihe, text=self._t("reste.entfernen"), style="Accent.TButton", command=_entfernen)
+        knopf_entfernen.pack(side="right", padx=(0, 8))
         fenster.transient(self.root)
 
     def _umhuellenden_weg_klaeren(self, mode: str, src: str,
@@ -8708,7 +8744,7 @@ class PS5ConverterGUI:
             return False
         return bool(self._strom_erlaubt(einbau_noetig=False))
 
-    def _ampr_originale_klaeren(self, mode: str) -> None:
+    def _ampr_originale_klaeren(self, mode: str, target_type: str = "") -> None:
         """Fragt, ob gepackte Originale im Ergebnis wegbleiben sollen.
 
         Abschnitt 6 der Anleitung des AMPR-EMU-Entwicklers: Die Originale
@@ -8732,18 +8768,25 @@ class PS5ConverterGUI:
         Originale in der Arbeitskopie immer weggelassen - sonst waere das
         Ergebnis doppelt so gross und der Sinn von zstd dahin. Im Quellordner
         selbst wird auch hier nie entfernt (``_ampr_zstdpakete_bauen`` prueft
-        ``_ampr_ordner_ist_kopie``). zstd laeuft nur mit ampr-emu-ng; LZ4
-        fragt weiter, auch mit NG.
+        ``_ampr_ordner_ist_kopie``). zstd laeuft nur mit ampr-emu-ng.
+
+        Ebenso bei AMPR EMU NG mit LZ4, solange der Strom ohne Zwischenordner packt (Etappe 14, wie Dump Forge): Auch hier
+        bedient NG normale Lesezugriffe aus den Packs, die Frage entfaellt. Faellt der Lauf spaeter auf den Weg ueber den
+        Ordner zurueck (``_lz4_rueckfall_melden``), merkt ``_ampr_weglassen_auto_lz4``, dass die Antwort nie gegeben wurde:
+        Dort gilt wieder die Vorgabe "Nein" (auf der Kommandozeile ``--ampr-originale-weglassen``). Mit drakmor und bei LZ4
+        im Ordner fragt es weiter.
         """
         self._ampr_originale_weglassen = False
+        self._ampr_weglassen_auto_lz4 = False
         if mode not in self._MODE_TARGET_OPTIONS or not self._assetpack_gewaehlt():
             return
         if self._ampr_ng_zstd_gewaehlt():
             self._ampr_originale_weglassen = True
             self._append_to_log(self._t("ampr_pack.originale_zstd_weg"))
             return
-        if self._ampr_ng_lz4_im_strom_gewaehlt():
+        if target_type != "folder" and self._ampr_ng_lz4_im_strom_gewaehlt():       # nur wo der Strom wirklich ein Abbild schreibt
             self._ampr_originale_weglassen = True
+            self._ampr_weglassen_auto_lz4 = True
             self._append_to_log(self._t("ampr_pack.originale_ng_lz4_weg"))
             return
         if getattr(self, "_cli_mode", False):
@@ -8910,7 +8953,7 @@ class PS5ConverterGUI:
         return errors, warnings
 
     #: Wie lange die Namensprobe eines Spielordners hoechstens liest (Sekunden), bevor der Start weitergeht.
-    _VORAB_ZEIT = 20.0
+    _VORAB_ZEIT = 5.0
 
     _VORAB_FORMAT_NAMEN = {"exfat": "exFAT", "ffpkg": ".ffpkg", "ffpfs": ".ffpfs", "ffpfsc": ".ffpfsc"}
 
@@ -8963,6 +9006,11 @@ class PS5ConverterGUI:
                 befunde.extend(vorabpruefung.quellbefunde(abtastung, target_type))
                 gesamt, groesste = abtastung.gesamt, abtastung.groesste
                 if not abtastung.vollstaendig:
+                    # Nach der Zeitgrenze fehlt ein Teil der Ordner: Fuer ein Abbild zaehlt dann mindestens die bekannte Gesamtgroesse.
+                    try:
+                        gesamt = max(gesamt, int(self._quellgroesse_ermitteln(src) or 0))
+                    except (OSError, ValueError, AttributeError) as exc:
+                        logger.debug("Quellgroesse fuer die Vorabpruefung nicht bekannt: %s", exc)
                     self._vorab_log.append(self._t(
                         "preflight.vorab_unvollstaendig", sekunden=int(time.monotonic() - beginn),
                         dateien=len(abtastung.dateien)))
@@ -8971,7 +9019,8 @@ class PS5ConverterGUI:
                     gesamt = groesste = os.path.getsize(src)
                 except OSError:
                     pass
-            if dst and os.path.isdir(dst) and gesamt:
+            if dst and os.path.isdir(dst) and gesamt and not (os.path.isfile(src) and target_type in ("folder", "")):
+                # (Ein Ordner als Ziel aus einer Abbilddatei: die Dateien darin sind einzeln kleiner als das Abbild.)
                 fat = vorabpruefung.fat32_befund(_doktor_dateisystem(dst), target_type, gesamt, groesste, dst)
                 if fat is not None:
                     befunde.append(fat)
@@ -9022,7 +9071,17 @@ class PS5ConverterGUI:
         except Exception as exc:  # noqa: BLE001
             logger.debug("Vorlage fuer den Ausgabenamen nicht lesbar: %s", exc)
             return ausgabename.STANDARD
-        return wert if wert and ausgabename.vorlage_pruefen(wert) is None else ausgabename.STANDARD
+        if wert and ausgabename.vorlage_pruefen(wert) is None:
+            return wert
+        if wert and getattr(self, "_ausgabe_vorlage_gemeldet", "") != wert:
+            # Eine gespeicherte oder per ``--ausgabename`` gegebene Vorlage, die nicht taugt, galt bisher still als Vorgabe: Das Ergebnis
+            # hiess dann wie die Quelle, ohne dass ein Wort davon im Protokoll stand. Einmal je Lauf melden.
+            self._ausgabe_vorlage_gemeldet = wert
+            try:
+                self._append_to_log(self._t("log.ausgabename_vorlage_unbrauchbar", vorlage=wert))
+            except Exception as exc:  # noqa: BLE001 - die Meldung darf nie den Namen verhindern
+                logger.debug("Hinweis zur unbrauchbaren Vorlage nicht ausgegeben: %s", exc)
+        return ausgabename.STANDARD
 
     def _ausgabe_stamm(self, src: str, standard: str, zielformat: str) -> str:
         """Der Name des Ergebnisses ohne Endung: nach der Vorlage, sonst ``standard`` (der Name der Quelle).
@@ -11433,6 +11492,7 @@ class PS5ConverterGUI:
             # und hatten deshalb dasselbe Leseproblem.
             (self.status_label, self._KARTEN_TEXT_ROLLE),
             (self.telemetry_label, self._KARTEN_TEXT_ROLLE),
+            (self.stufen_label, self._KARTEN_TEXT_ROLLE),
             (self.percent_label, "fg_accent"),
         ):
             _label._caption_fg_role = _rolle
@@ -14885,17 +14945,25 @@ class PS5ConverterGUI:
     def _arbeitsordner_noetig(self) -> bool:
         """Legt der Lauf, den die Auswahl beschreibt, noch einen Zwischenordner an (``temp_path``)?
 
-        Seit Stufe 3 laufen alle Abbild-Formate im Strom und brauchen keinen - auch LZ4-Asset-Packs seit Etappe 14 (``ampr_lz4pack``).
-        Es bleibt die Einstellung ``exfat_strom`` auf "aus". Im Zweifel (Einstellung nicht lesbar) bleibt das Feld sichtbar - lieber
-        ein Feld zu viel als einen Ordner, den man nicht waehlen kann. Die seltenen Faelle, in denen der Strom ein LZ4-Profil nicht
-        schreiben kann (Anwenderprofil, mehrere Gruppen) und der Lauf auf den Weg ueber den Ordner zurueckfaellt, nehmen den
-        Temp-Ordner des Systems, wenn hier keiner eingetragen ist.
+        Seit Stufe 3 laufen alle Abbild-Formate im Strom und brauchen keinen. Es bleiben zwei Faelle: die Einstellung ``exfat_strom``
+        auf "aus", und AMPR EMU mit **LZ4**-Asset-Pack - dort schreibt der Strom (``ampr_lz4pack``, Etappe 14) nicht jedes Profil
+        (Anwenderprofil, mehrere Gruppen, Striping), und der Lauf faellt dann auf den Weg ueber den Ordner zurueck. Im Zweifel
+        (Einstellung nicht lesbar) bleibt das Feld sichtbar - lieber ein Feld zu viel als einen Ordner, den man nicht waehlen kann.
         """
         try:
-            return not bool(self._load_setting(self._EXFAT_STROM_SETTING, True))
+            if not bool(self._load_setting(self._EXFAT_STROM_SETTING, True)):
+                return True
         except Exception as exc:  # noqa: BLE001
             logger.debug("Arbeitsordner-Bedarf nicht entscheidbar: %s", exc)
             return True
+        # LZ4-Asset-Pack: Ein Packprofil des Anwenders oder ein Titelprofil mit mehreren Gruppen schreibt der Strom nicht (``Lz4NichtImStrom``);
+        # dann entsteht der Zwischenordner doch, und der Platz dafuer soll waehlbar sein (``log.lz4_rueckfall_platz`` verweist darauf).
+        try:
+            return bool(self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK
+                        and self._ampr_pack_verfahren() == "lz4")
+        except Exception as exc:  # noqa: BLE001 - ohne Auskunft zum Pack bleibt es beim Strom
+            logger.debug("Packverfahren fuer den Arbeitsordner nicht lesbar: %s", exc)
+            return False
 
     def _arbeitsordner_sichtbarkeit_setzen(self) -> bool:
         """Zeigt TEMP-ORDNER (Titel, Feld, Knopf) nur, wo er gebraucht wird - ueber ``grid()``/``grid_remove()`` wie die BAUFORM."""
@@ -17446,12 +17514,15 @@ class PS5ConverterGUI:
     #: Karte 657 px breit. Drei Abstaende zu je 16 px lassen 14 px Reserve,
     #: bei 20 px waeren es nur noch zwei.
     _ZEILE_ABSTAND_GRUPPE = 16
-    #: Abstand zwischen zwei Feldern, zwischen denen ein Pfeil steht: Pfeil (``_PFEIL_BREITE``) und je 2 px Luft. Mehr
+    #: Abstand zwischen zwei Feldern, zwischen denen ein Pfeil steht: Pfeil (``_PFEIL_BREITE``) und je 1 px Luft. Mehr
     #: geht nicht: Mit 26 px (Pfeil 16) passte die Einbauzeile bei 125 % nicht mehr neben die Pruefstufe (16 px zu breit)
     #: und fiel in eine eigene Zeile; mit 22 px passte sie auf den Pixel genau, mit 18 hatte sie rund 16 px Reserve. Mit
-    #: 16 bleibt bei Mindestbreite die Pruefstufe innerhalb des Innenrands und die Einbauzeile 12 px vor dem Kartenrand
-    #: (bei 18 waren es 10 px und die Pruefstufe 2 px ueber dem Innenrand; ``test_kartenzeilen`` misst beides).
-    _ZEILE_ABSTAND_PFEIL = 16
+    #: 16 blieb bei Mindestbreite die Pruefstufe nur auf Deutsch innerhalb des Innenrands: In den anderen Sprachen heisst die
+    #: Beschriftung ueber dem Drehknopf "WORKERS" statt "WORKER", der Knopf ist 8 px breiter und die Pruefstufe stand 4 px
+    #: ueber dem Innenrand (gemessen am 14.11.2026 in allen fuenf Sprachen). Die Pruefzeile hat drei solche Luecken (Zielformat,
+    #: Kompression, Worker), mit 14 gewinnt sie 6 px: Deutsch 8 px Reserve, die anderen 2 px. ``test_kartenzeilen`` misst
+    #: beides, in jeder Sprache.
+    _ZEILE_ABSTAND_PFEIL = 14
     #: Abstand zwischen einer kleinen Beschriftung und ihrem Bedienelement.
     _ZEILE_ABSTAND_BESCHRIFTUNG = 5
 
@@ -28029,7 +28100,9 @@ class PS5ConverterGUI:
         target_type = self._get_selected_target_type()
         # Asset-Pack: Originale behalten oder weglassen - vor dem Start, damit
         # ein stundenlanger Lauf nicht mittendrin auf eine Antwort wartet.
-        self._ampr_originale_klaeren(mode)
+        self._ampr_originale_klaeren(mode, target_type)
+        # Die Entscheidung gilt fuer den ganzen Lauf; in der Sammelkonvertierung stellt jedes Spiel sie wieder her.
+        self._ampr_weglassen_lauf = (bool(self._ampr_originale_weglassen), bool(self._ampr_weglassen_auto_lz4))
 
         # Viele Daten oder Texture-Streaming: In einem .ffpfsc/.ffpfs sind Ruckler moeglich -
         # vor dem Start fragen, nicht mittendrin. Nein = Abbruch, Ja = wie gewohnt weiter.
@@ -28209,6 +28282,7 @@ class PS5ConverterGUI:
         self.task_step_ends     = []
         self._stufen            = None          # die Stufenzeile des letzten Laufs ist hier zu Ende
         self._ausgabe_cache     = {}            # Namen nach Vorlage gelten je Lauf (die Quelle kann sich aendern)
+        self._ausgabe_vorlage_gemeldet = ""     # eine unbrauchbare Vorlage wird je Lauf einmal gemeldet
         self._zuletzt_angezeigt = 0.0
         # Die Basis der Teilschritt-Melder gehoert zum vorigen Lauf. Bliebe
         # sie stehen, rechnete die Arbeitskopie des naechsten Laufs auf dem
@@ -32890,6 +32964,7 @@ class PS5ConverterGUI:
                     })
                     continue
                 # Jede Datei ist ihre eigene Quelle - siehe _bauziel_neben_quelle.
+                self._ampr_weglassen_herstellen()
                 self._lauf_quelle = candidate
                 converted = self._execute_conversion_by_type(
                     source_type, target_type, candidate, dst
@@ -33038,6 +33113,9 @@ class PS5ConverterGUI:
     def _ffpkg_output_path(self, src: str, dst: str) -> str:
         """Ermittelt einen kanonischen `.ffpkg`-Ausgabepfad."""
         source_name = os.path.basename(os.path.normpath(src)) if os.path.isdir(src) else os.path.splitext(os.path.basename(src))[0]
+        # Der Name nach der Vorlage (Einstellung "Ausgabename"); bei der Vorgabe ``{name}`` bleibt es der Name der Quelle. Dieselbe Rechnung
+        # machen ``_get_expected_output_path``, ``_batch_ueberschreiben_klaeren`` und die Vorabpruefung (je Quelle gemerkt).
+        source_name = self._ausgabe_stamm(src, source_name, "ffpkg")
         return str(normalize_output_path(os.path.join(dst, f"{source_name}.ffpkg"),
                                          texte=self._ffpkg_support_texte()))
 
@@ -34190,6 +34268,7 @@ class PS5ConverterGUI:
         """
         return bool(self._strom_erlaubt(einbau_noetig=False))
 
+    @_strom_rueckfall_nimmt_verzicht_zurueck
     def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False, pfs: bool = False,
                                    ziel: str = "exfat", ufs2: bool = False) -> "bool | None":
         """``.exfat`` mit zstd-Asset-Pack neu bauen, **ohne** das Spiel zu entpacken (Stufe 3, Dump-Forge-Vorbild).
@@ -34263,6 +34342,11 @@ class PS5ConverterGUI:
             except (spielbaum.BaumFehler, OSError) as exc:
                 self._append_to_log(self._t("log.exfat_strom_alter_weg", error=exc))
                 return None
+            if ordner and self._pfad_liegt_in(dst, src):
+                # Das Ergebnis (und seine Teildatei) entstuende im Spielordner, den der Strom bis zum Ende unveraendert halten muss:
+                # sonst ginge der Lauf nach Stunden mit "Quelle hat sich geaendert" zu Ende. Der bisherige Weg kopiert zuerst.
+                self._append_to_log(self._t("log.exfat_strom_ziel_in_quelle"))
+                return None
             if (pfs or ufs2) and not any(d.rel.lower() == "eboot.bin" or d.rel.lower().startswith("sce_sys/") for d in dateien):
                 # Liegt das Spiel in einem Unterordner des Abbilds, sucht der bisherige Weg ihn beim Entpacken (Ebene fuer Ebene).
                 self._append_to_log(self._t("log.exfat_strom_pfs_kein_spiel"))
@@ -34281,6 +34365,10 @@ class PS5ConverterGUI:
                 # nach der Frage, ob eine param.json neu angelegt werden soll.
                 self._append_to_log(self._t('log.auto.0265', v0=os.path.join(os.path.basename(src), "eboot.bin")))
                 return False
+            # Packs und Asset-Schicht in der Quelle: Jeder Einbau, der den ``ampr_emu.index`` anfasst (AMPR EMU, PlayGo, die Behebung einer
+            # fremden Bibliothek), machte ihr Manifest unbrauchbar, und die Frage, ob er neu gebaut werden darf, sieht nur den ganzen Ordner,
+            # nicht die Ueberlagerung. Welcher Einbau es wird, steht hier noch nicht fest: Mit Packs in der Quelle immer der bisherige Weg
+            # (ein Versuch am 14.11.2026, sie ohne AMPR-Einbau durch den Strom zu lassen, baute bei PlayGo allein den Index still neu).
             if any(ampr_zstdpack.ist_packname(d.rel) for d in dateien):
                 self._append_to_log(self._t("log.exfat_strom_packs_da"))
                 return None
@@ -34363,6 +34451,7 @@ class PS5ConverterGUI:
                     # Der LZ4-Packer im Strom kann das Profil dieses Titels nicht schreiben (``Lz4NichtImStrom``). Die Quelle ist
                     # nie angefasst worden: Der bisherige Weg faengt von vorn an, der Ueberlagerungsordner wird weggeraeumt.
                     self._lz4_rueckfall_melden(src, self._strom_alter_weg)
+                    self._stufen = None                      # die Stufenzeile des Stroms gehoert nicht zum bisherigen Weg
                     return None
                 return False
             self._phase_dauer_melden("phase.integration", t_einbau)
@@ -38321,6 +38410,31 @@ class PS5ConverterGUI:
             logger.debug("LZ4-Strom vor dem Start nicht beurteilbar: %s", exc)
             return False
 
+    def _ampr_weglassen_nach_rueckfall(self) -> None:
+        """Nimmt ein selbsttaetig gesetztes "Originale weglassen" zurueck, wenn der Lauf auf den Weg ueber den Ordner umkehrt.
+
+        Bei NG mit LZ4 im Strom setzt ``_ampr_originale_klaeren`` den Verzicht ohne Frage (``_ampr_weglassen_auto_lz4``). Der Weg ueber den
+        Ordner haette gefragt (Vorgabe "Nein"); im Arbeitsfaden kann hier nicht mehr gefragt werden. Auf der Kommandozeile entscheidet
+        ``--ampr-originale-weglassen``. Eine Antwort des Anwenders (Marke nicht gesetzt) bleibt unberuehrt.
+        """
+        if not getattr(self, "_ampr_weglassen_auto_lz4", False):
+            return
+        self._ampr_weglassen_auto_lz4 = False
+        antwort = bool(getattr(self, "_cli_ampr_originale_weglassen", False)) if getattr(self, "_cli_mode", False) else False
+        self._ampr_originale_weglassen = antwort
+        self._append_to_log(self._t(
+            "ampr_pack.originale_weglassen_gewaehlt" if antwort else "ampr_pack.originale_behalten_gewaehlt"))
+
+    def _ampr_weglassen_herstellen(self) -> None:
+        """Stellt vor jedem Spiel der Sammelkonvertierung die Entscheidung des Laufs wieder her (``_ampr_weglassen_lauf``).
+
+        Ein Rueckfall oder ein Riegel bei einem Spiel (``_ampr_weglassen_nach_rueckfall``, ``_ampr_lz4_messen``) darf nicht auf die
+        folgenden wirken: Jedes Spiel prueft von neuem.
+        """
+        lauf = getattr(self, "_ampr_weglassen_lauf", None)
+        if lauf is not None:
+            self._ampr_originale_weglassen, self._ampr_weglassen_auto_lz4 = lauf
+
     def _lz4_rueckfall_melden(self, src: str, grund: str) -> None:
         """Meldet, dass LZ4 doch ueber einen Zwischenordner gepackt wird, und warnt, wenn der Arbeitsordner dafuer zu klein ist.
 
@@ -38328,6 +38442,7 @@ class PS5ConverterGUI:
         Platzpruefung vor dem Start ging vom Strom aus, wenn die Quelle ein Abbild ist.
         """
         self._append_to_log(self._t("log.lz4_strom_alter_weg", grund=grund))
+        self._ampr_weglassen_nach_rueckfall()
         try:
             noetig = int(self._quellgroesse_ermitteln(src) * self._PLATZFAKTOR_TEMP_MIT_KOPIE)
             frei = self._freier_platz(self._get_runtime_temp_dir(anlegen=False))
@@ -38441,6 +38556,11 @@ class PS5ConverterGUI:
                     baum, gewaehlt, arbeiter=arbeiter_zahl, abbruch=lambda: not self.is_running,
                     fortschritt=lambda anteil: self._ampr_pack_fortschritt(anteil * 100.0, "lz4"),
                     einpassen=ampr_assetpakete.laufzeit_einpassen)
+            except ampr_lz4pack.Lz4NichtImStrom as exc:
+                # Erst die Messung zeigt es (die Baender entstuenden nicht in der Reihenfolge ihrer Namen): wie bei ``auswaehlen``
+                # nimmt der Aufrufer den Weg ueber den Ordner, statt "fehlgeschlagen" zu melden.
+                self._strom_alter_weg = str(exc)
+                return False
             except ampr_lz4pack.Lz4SpeicherZuKlein as exc:
                 self._ampr_speicher_zu_klein_melden(exc.manifest_bytes, exc.index_bytes, exc.bisher)
                 return False
@@ -38476,7 +38596,7 @@ class PS5ConverterGUI:
             return False
         except Exception as exc:  # noqa: BLE001
             logger.exception("LZ4-Messdurchgang: unerwarteter Fehler")
-            self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=exc))
+            self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=self._fehlertext_der_ausnahme(exc)))
             return False
         finally:
             self._pack_infotext = ""
@@ -38561,7 +38681,7 @@ class PS5ConverterGUI:
             return False
         except Exception as exc:  # noqa: BLE001
             logger.exception("zstd-Messdurchgang: unerwarteter Fehler")
-            self._append_to_log(self._t("ampr_zstd.fehlgeschlagen", error=exc))
+            self._append_to_log(self._t("ampr_zstd.fehlgeschlagen", error=self._fehlertext_der_ausnahme(exc)))
             return False
         finally:
             self._pack_infotext = ""
@@ -44429,6 +44549,8 @@ class PS5ConverterGUI:
                 return False
             if inhalt_check.get("checked"):
                 self._append_to_log(self._t('log.exfat_ruecklesen_ok', v0=inhalt_check.get("detail", "")))
+            else:
+                self._append_to_log(self._t("log.ruecklesen_uebersprungen", v0=inhalt_check.get("detail") or self._t("verify.skipped")))
 
             self._copy_done_bytes = self._copy_total_bytes
             self.task_progress = max(self.task_progress, pct_end)
@@ -44449,7 +44571,7 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t('log.auto.0273', v0=self._zstd_fehler_text(exc)))
             return False
         except Exception as exc:
-            self._append_to_log(self._t('log.auto.0273', v0=exc))
+            self._append_to_log(self._t('log.auto.0273', v0=self._fehlertext_der_ausnahme(exc)))
             return False
         finally:
             if not bau_fertig:
@@ -44589,13 +44711,19 @@ class PS5ConverterGUI:
                 return False
             if check.get("checked"):
                 self._append_to_log(self._t('log.exfat_ruecklesen_ok', v0=check.get("detail", "")))
+            else:
+                self._append_to_log(self._t("log.ruecklesen_uebersprungen", v0=check.get("detail") or self._t("verify.skipped")))
 
             # Die Pruefstufe des Anwenders (aus / schnell / voll) wie beim MkPFS-Aufruf des bisherigen Weges: Ausser bei "aus"
             # liest MkPFS das fertige Abbild nach dem Bauen zurueck und entpackt jeden Block. Die Rueckleseprobe oben zieht nur
             # eine Stichprobe; ein beschaedigter Block in einer anderen Datei fiele sonst nirgends auf.
             if ufs2:
                 # Kein PFS: Die Struktur prueft bei "voll" UFS2Tool (``info`` und ``fsck_ufs -fn``) - wo es sich starten laesst.
-                if getattr(self, "mkpfs_verify", "schnell") == "voll" and self._ufs2tool_pruefung_moeglich():
+                ufs2tool_voll = getattr(self, "mkpfs_verify", "schnell") == "voll"
+                ufs2tool_geht = ufs2tool_voll and self._ufs2tool_pruefung_moeglich()
+                if ufs2tool_voll and not ufs2tool_geht:
+                    self._append_to_log(self._t("log.ffpkg_strom_ufs2tool_uebersprungen"))
+                if ufs2tool_geht:
                     pruefung = self._validate_ffpkg_artifact(str(teil_path), abbruch=lambda: not self.is_running)
                     if not self.is_running:
                         return False
@@ -44642,7 +44770,8 @@ class PS5ConverterGUI:
                                             v0=self._zstd_fehler_text(exc)))
             return False
         except Exception as exc:  # noqa: BLE001 - jeder Fehler beendet den Bau, die Teildatei wird unten entfernt
-            self._append_to_log(self._t("log.ffpkg_strom_fehler" if ufs2 else "log.ffpfsc_strom_fehler", v0=exc))
+            self._append_to_log(self._t("log.ffpkg_strom_fehler" if ufs2 else "log.ffpfsc_strom_fehler",
+                                        v0=self._fehlertext_der_ausnahme(exc)))
             return False
         finally:
             if not bau_fertig:
@@ -71804,7 +71933,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "Quellordner selbst wird nie entfernt. Bewusst nicht von --ja "
              "mitentschieden. Bei AMPR EMU NG mit zstd (--ampr-pack-verfahren) "
              "nicht nötig: Dort werden die gepackten Originale in der "
-             "Arbeitskopie immer weggelassen.")
+             "Arbeitskopie immer weggelassen. Ebenso bei NG mit LZ4, solange "
+             "ohne Zwischenordner gepackt wird; geht der Lauf auf den Weg über "
+             "den Ordner zurück, entscheidet wieder diese Option.")
     parser.add_argument(
         "--ampr-lz4-stufe", type=int, default=None, metavar="1-12",
         help="LZ4-Stufe des Asset-Packs (1 bis 12; 1 bis 4 schneller Modus, "
