@@ -22,11 +22,13 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from typing import Any, Callable
 
 from ps5_validator.utils import abbild_bearbeiten as ab
+from ps5_validator.utils import exfat_bearbeiten as exfat_direkt
 
 logger = logging.getLogger("PS5Converter.abbild_bearbeiten_fenster")
 
@@ -150,6 +152,10 @@ class BearbeitenFenster:
         self.protokoll = ab.Protokoll()
         self.gespeichert_bei = 0    # Anzahl der Aenderungen, die schon in einem gespeicherten Abbild stecken
         self.beschaeftigt = False
+        self.direkt: "exfat_direkt.ExfatAbbild | None" = None   # ein .exfat, das direkt geaendert wird (ohne Entpacken)
+        self.direkt_offen = 0                                   # Aenderungen daran, die noch nicht geschrieben sind
+        self.direkt_ordner: "set[str]" = set()
+        self.baum_status = ""
         self._bauen()
         win.protocol("WM_DELETE_WINDOW", self._schliessen)
         win.bind("<Destroy>", self._beim_zerstoeren, add="+")
@@ -178,6 +184,8 @@ class BearbeitenFenster:
         self.entpacken_knopf = pw.Button(zeile, text=self.t("bearbeiten.entpacken"), style="Accent.TButton",
                                          command=self._entpacken)
         self.entpacken_knopf.grid(row=0, column=3, padx=(8, 0))
+        self.direkt_knopf = pw.Button(zeile, text=self.t("bearbeiten.direkt"), command=self._direkt_oeffnen)
+        self.direkt_knopf.grid(row=0, column=4, padx=(8, 0))
 
         self.baum = pw.Treeview(koerper, columns=("groesse",), show="tree headings", selectmode="browse", height=14)
         self.baum.heading("#0", text=self.t("bearbeiten.spalte_name"), anchor="w")
@@ -224,19 +232,35 @@ class BearbeitenFenster:
     # ---- Zustand ---------------------------------------------------------------------------------------------
     def _zustand_setzen(self) -> None:
         """Knoepfe freigeben oder sperren, je nachdem, ob ein Spielordner da ist und ob etwas laeuft."""
-        da = bool(self.ordner) and os.path.isdir(self.ordner)
+        direkt = self.direkt is not None
+        da = direkt or (bool(self.ordner) and os.path.isdir(self.ordner))
         frei = not self.beschaeftigt
         for knopf in self.aenderungs_knoepfe:
             knopf.config(state="normal" if (da and frei) else "disabled")
-        self.speichern_knopf.config(state="normal" if (da and frei) else "disabled")
-        self.format_box.config(state="readonly" if (da and frei) else "disabled")
+        # Direkt im Abbild gibt es nichts zu speichern, solange nichts vorgemerkt ist; das Format bleibt .exfat.
+        anwenden = direkt and self.direkt_offen > 0
+        self.speichern_knopf.config(text=self.t("bearbeiten.anwenden" if direkt else "bearbeiten.speichern"),
+                                    state="normal" if (frei and (anwenden if direkt else da)) else "disabled")
+        self.format_box.config(state="readonly" if (da and frei and not direkt) else "disabled")
         self.entpacken_knopf.config(state="normal" if frei else "disabled")
+        self.direkt_knopf.config(state="normal" if frei else "disabled")
         self.waehlen_knopf.config(state="normal" if frei else "disabled")
-        offen = self.protokoll.anzahl() - self.gespeichert_bei
-        self.zaehler_var.set(self.t("bearbeiten.zaehler", n=self.protokoll.anzahl(), offen=max(0, offen)))
+        if direkt:
+            n, offen = self.direkt_offen, self.direkt_offen
+        else:
+            n, offen = self.protokoll.anzahl(), self.protokoll.anzahl() - self.gespeichert_bei
+        self.zaehler_var.set(self.t("bearbeiten.zaehler", n=n, offen=max(0, offen)))
 
     def _hat_ungespeichertes(self) -> bool:
+        if self.direkt is not None and self.direkt_offen > 0:
+            return True
         return bool(self.ordner) and self.protokoll.anzahl() > self.gespeichert_bei
+
+    def _ist_ordner(self, rel: str) -> bool:
+        """Ist ``rel`` im Baum ein Ordner (im Arbeitsordner oder direkt im Abbild)?"""
+        if self.direkt is not None:
+            return rel in self.direkt_ordner
+        return os.path.isdir(os.path.join(self.ordner, *rel.split("/")))
 
     def _status(self, text: str) -> None:
         self.status_var.set(text)
@@ -251,6 +275,9 @@ class BearbeitenFenster:
     def _baum_fuellen(self, auswahl: str = "") -> None:
         for kind in self.baum.get_children(""):
             self.baum.delete(kind)
+        if self.direkt is not None:
+            self._direkt_baum_fuellen(auswahl)
+            return
         if not self.ordner:
             return
         eintraege = ab.auflisten(self.ordner)
@@ -274,7 +301,7 @@ class BearbeitenFenster:
             messagebox.showinfo(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.nichts_gewaehlt"),
                                 parent=self.win)
             return ""
-        if not ordner_erlaubt and os.path.isdir(os.path.join(self.ordner, *rel.split("/"))):
+        if not ordner_erlaubt and self._ist_ordner(rel):
             messagebox.showinfo(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.keine_datei"),
                                 parent=self.win)
             return ""
@@ -285,7 +312,7 @@ class BearbeitenFenster:
         rel = self._gewaehlt()
         if not rel:
             return ""
-        if os.path.isdir(os.path.join(self.ordner, *rel.split("/"))):
+        if self._ist_ordner(rel):
             return rel
         return rel.rsplit("/", 1)[0] if "/" in rel else ""
 
@@ -300,6 +327,8 @@ class BearbeitenFenster:
         self._zustand_setzen()
 
     def _loeschen(self) -> None:
+        if self.direkt is not None:
+            return self._direkt_loeschen()
         rel = self._gewaehlt_pruefen()
         if not rel:
             return
@@ -317,6 +346,8 @@ class BearbeitenFenster:
             pass
 
     def _umbenennen(self) -> None:
+        if self.direkt is not None:
+            return self._direkt_umbenennen()
         rel = self._gewaehlt_pruefen()
         if not rel:
             return
@@ -329,6 +360,8 @@ class BearbeitenFenster:
         self._aendern(lambda: ab.umbenennen(self.ordner, rel, neu, protokoll=self.protokoll))
 
     def _ersetzen(self) -> None:
+        if self.direkt is not None:
+            return self._direkt_ersetzen()
         rel = self._gewaehlt_pruefen(ordner_erlaubt=False)
         if not rel:
             return
@@ -339,6 +372,8 @@ class BearbeitenFenster:
         self._aendern(lambda: (ab.ersetzen(self.ordner, rel, quelle, protokoll=self.protokoll), rel)[1])
 
     def _hinzufuegen(self) -> None:
+        if self.direkt is not None:
+            return self._direkt_hinzufuegen()
         if not self._gewaehlt():
             messagebox.showinfo(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.nichts_gewaehlt"),
                                 parent=self.win)
@@ -359,6 +394,8 @@ class BearbeitenFenster:
         self._zustand_setzen()
 
     def _neuer_ordner(self) -> None:
+        if self.direkt is not None:
+            return self._direkt_neuer_ordner()
         if not self._gewaehlt():
             messagebox.showinfo(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.nichts_gewaehlt"),
                                 parent=self.win)
@@ -395,6 +432,7 @@ class BearbeitenFenster:
                 self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.frage_verwerfen"),
                 icon="warning", parent=self.win):
             return
+        self._direkt_schliessen()
         self._arbeitsordner_leeren()
         self.protokoll = ab.Protokoll()
         self.gespeichert_bei = 0
@@ -447,6 +485,8 @@ class BearbeitenFenster:
         self._zustand_setzen()
 
     def _speichern(self) -> None:
+        if self.direkt is not None:
+            return self._direkt_anwenden()
         if not self.ordner or not os.path.isdir(self.ordner):
             return
         endung = self.format_var.get() or os.path.splitext(self.bild)[1].lower()
@@ -490,6 +530,176 @@ class BearbeitenFenster:
             self._zustand_setzen()
             self._status(self.t("bearbeiten.nicht_gestartet"))
 
+    # ---- Direkt im Abbild (.exfat) ---------------------------------------------------------------------------
+    def _direkt_schliessen(self) -> None:
+        """Gibt die Abbilddatei frei (nicht geschriebene Aenderungen verfallen)."""
+        if self.direkt is not None:
+            try:
+                self.direkt.schliessen()
+            except Exception as exc:  # noqa: BLE001 - ein Griff, der sich nicht schliessen laesst, haelt das Fenster nicht auf
+                logger.debug("Abbild nicht geschlossen: %s", exc)
+        self.direkt = None
+        self.direkt_offen = 0
+        self.direkt_ordner = set()
+
+    def _direkt_oeffnen(self) -> None:
+        bild = self.bild_var.get().strip()
+        if not bild or not os.path.isfile(bild) or not bild.lower().endswith(".exfat"):
+            messagebox.showwarning(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_nur_exfat"), parent=self.win)
+            return
+        if self._hat_ungespeichertes() and not messagebox.askyesno(
+                self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.frage_verwerfen"), icon="warning", parent=self.win):
+            return
+        if not messagebox.askyesno(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_frage", pfad=bild),
+                                   icon="warning", parent=self.win):
+            return
+        self._direkt_schliessen()
+        self._arbeitsordner_leeren()
+        rueckgaengig = os.path.exists(exfat_direkt.journal_pfad(bild))
+        try:
+            self.direkt = exfat_direkt.ExfatAbbild(bild)
+        except (exfat_direkt.ExfatBearbeitenFehler, OSError) as exc:
+            messagebox.showerror(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_fehler", fehler=exc), parent=self.win)
+            return
+        self.bild = os.path.normpath(bild)
+        self.protokoll = ab.Protokoll()
+        self.gespeichert_bei = 0
+        self.direkt_offen = 0
+        self.format_var.set(".exfat")
+        self._baum_fuellen()
+        if rueckgaengig:
+            self._status(self.t("bearbeiten.direkt_rueckgaengig") + " " + self.baum_status)
+        self._zustand_setzen()
+
+    def _direkt_baum_fuellen(self, auswahl: str = "") -> None:
+        eintraege: "list[tuple[str, bool, int]]" = []
+
+        def gehen(rel: str) -> None:
+            for name, ist_ordner, groesse in self.direkt.auflisten(rel):
+                pfad = (rel + "/" + name) if rel else name
+                eintraege.append((pfad, ist_ordner, groesse))
+                if ist_ordner:
+                    gehen(pfad)
+
+        gehen("")
+        self.direkt_ordner = {p for p, ist_ordner, _g in eintraege if ist_ordner}
+        for pfad, ist_ordner, groesse in eintraege:
+            eltern = pfad.rsplit("/", 1)[0] if "/" in pfad else ""
+            self.baum.insert(eltern, "end", iid=pfad, text=pfad.rsplit("/", 1)[-1],
+                             values=("" if ist_ordner else self.g._fmt_bytes(groesse),), open=(eltern == ""))
+        if auswahl and self.baum.exists(auswahl):
+            self.baum.selection_set(auswahl)
+            self.baum.see(auswahl)
+        frei = self.direkt.freie_cluster() * self.direkt.cluster_groesse
+        self.baum_status = self.t("bearbeiten.direkt_status", n=len(eintraege), frei=self.g._fmt_bytes(frei))
+        self._status(self.baum_status)
+
+    def _direkt_aendern(self, aktion: Callable[[], object], auswahl_danach: str = "") -> bool:
+        """Fuehrt eine Aenderung im Abbild aus (im Speicher geplant, geschrieben wird mit "Anwenden"). ``False``, wenn sie abgelehnt wurde."""
+        try:
+            aktion()
+            ok = True
+        except exfat_direkt.PlatzFehlt as exc:
+            ok = False
+            messagebox.showerror(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_platz", detail=exc), parent=self.win)
+        except (exfat_direkt.ExfatBearbeitenFehler, OSError) as exc:
+            ok = False
+            messagebox.showerror(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_fehler", fehler=exc), parent=self.win)
+        if ok:
+            self.direkt_offen += 1
+        self._baum_fuellen(auswahl_danach)
+        self._zustand_setzen()
+        return ok
+
+    def _direkt_loeschen(self) -> None:
+        rel = self._gewaehlt_pruefen()
+        if not rel:
+            return
+        if not messagebox.askyesno(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.frage_loeschen", name=rel),
+                                   icon="warning", parent=self.win):
+            return
+        self._direkt_aendern(lambda: self.direkt.loeschen(rel))
+
+    def _direkt_umbenennen(self) -> None:
+        rel = self._gewaehlt_pruefen()
+        if not rel:
+            return
+        alt = rel.rsplit("/", 1)[-1]
+        neu = simpledialog.askstring(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.frage_umbenennen", name=alt),
+                                     initialvalue=alt, parent=self.win)
+        if neu is None or neu == alt:
+            return
+        eltern = rel.rsplit("/", 1)[0] if "/" in rel else ""
+        self._direkt_aendern(lambda: self.direkt.umbenennen(rel, neu), (eltern + "/" if eltern else "") + neu)
+
+    def _direkt_ersetzen(self) -> None:
+        rel = self._gewaehlt_pruefen(ordner_erlaubt=False)
+        if not rel:
+            return
+        quelle = filedialog.askopenfilename(parent=self.win, title=self.t("bearbeiten.dateidialog_ersetzen",
+                                                                          name=rel.rsplit("/", 1)[-1]))
+        if quelle:
+            self._direkt_aendern(lambda: self.direkt.ersetzen(rel, quelle), rel)
+
+    def _direkt_hinzufuegen(self) -> None:
+        if not self._gewaehlt():
+            messagebox.showinfo(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.nichts_gewaehlt"), parent=self.win)
+            return
+        ziel = self._ziel_ordner()
+        quellen = filedialog.askopenfilenames(parent=self.win, title=self.t("bearbeiten.dateidialog_hinzufuegen", ordner=ziel or "/"))
+        for quelle in quellen or ():
+            pfad = (ziel + "/" if ziel else "") + os.path.basename(quelle)
+            if not self._direkt_aendern(lambda q=quelle, p=pfad: self.direkt.hinzufuegen(p, q), pfad):
+                break
+
+    def _direkt_neuer_ordner(self) -> None:
+        if not self._gewaehlt():
+            messagebox.showinfo(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.nichts_gewaehlt"), parent=self.win)
+            return
+        ziel = self._ziel_ordner()
+        name = simpledialog.askstring(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.frage_neu_name"), parent=self.win)
+        if name:
+            pfad = (ziel + "/" if ziel else "") + name
+            self._direkt_aendern(lambda: self.direkt.ordner_anlegen(pfad), pfad)
+
+    def _direkt_anwenden(self) -> None:
+        """Schreibt die vorgemerkten Aenderungen ins Abbild (im Hintergrund: Journal, Daten, Eintraege)."""
+        if self.direkt is None or not self.direkt_offen:
+            return
+        self.beschaeftigt = True
+        self._zustand_setzen()
+        self._status(self.t("bearbeiten.direkt_schreibt"))
+        abbild = self.direkt
+        ergebnis: "dict[str, BaseException | None]" = {"fehler": None}
+
+        def arbeit() -> None:
+            try:
+                abbild.speichern()
+            except BaseException as exc:  # noqa: BLE001 - jeder Fehler kommt als Meldung in die Oberflaeche
+                ergebnis["fehler"] = exc
+            self.g._hauptfaden_planen(self._direkt_angewendet_melden(ergebnis))
+
+        threading.Thread(target=arbeit, name="abbild-direkt", daemon=True).start()
+
+    def _direkt_angewendet_melden(self, ergebnis: "dict[str, BaseException | None]") -> Callable[[], None]:
+        def melden() -> None:
+            if not self.g._fenster_lebt(self.win):
+                return
+            self.beschaeftigt = False
+            fehler = ergebnis["fehler"]
+            if fehler is not None:
+                self._zustand_setzen()
+                messagebox.showerror(self.t("titlebar.abbild_bearbeiten"),
+                                     self.t("bearbeiten.direkt_fehler", fehler=fehler), parent=self.win)
+                return
+            self.direkt_offen = 0
+            self._baum_fuellen()
+            self._zustand_setzen()
+            text = self.t("bearbeiten.direkt_angewendet", pfad=self.bild)
+            self._status(text)
+            messagebox.showinfo(self.t("titlebar.abbild_bearbeiten"), text, parent=self.win)
+        return melden
+
     # ---- Schliessen ------------------------------------------------------------------------------------------
     def _schliessen(self) -> None:
         if self.beschaeftigt:
@@ -505,6 +715,7 @@ class BearbeitenFenster:
     def _beim_zerstoeren(self, ereignis: Any) -> None:
         if getattr(ereignis, "widget", None) is not self.win:
             return
+        self._direkt_schliessen()
         try:
             self._arbeitsordner_leeren()
         except Exception as exc:  # noqa: BLE001

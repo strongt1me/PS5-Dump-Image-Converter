@@ -30,6 +30,7 @@ Beispiel::
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 
@@ -84,6 +85,48 @@ def umlenken(name: str = "pruefstand", leeren: bool = False) -> str:
     # brauchen auf jedem Rechner dieselbe Sprache - die Vorgabe der Tests war immer Deutsch.
     os.environ.setdefault("PS5CONV_SYSTEMSPRACHE", "de")
     return ordner
+
+
+def gespeicherte_sprache_vergessen(ordner: "str | None" = None) -> bool:
+    """Entfernt die gespeicherte Anzeigesprache (``language``) aus der Einstellungsdatei des Pruefordners.
+
+    Im Gesamtlauf teilen sich die Pruefstaende einen Einstellungsordner (den zuletzt umgelenkten), der von Lauf zu Lauf stehen bleibt
+    (``umlenken(leeren=False)``). Speichert ein Test die Sprache - der Sprachknopf, ``_save_setting("language", ...)``, eine Datei mit
+    ``"language": "en"`` -, baut jede spaetere Klasse ihr Fenster in dieser Sprache, solange nichts sie zuruecksetzt. Am 14.11.2026 mass
+    ``test_kartenzeilen`` so die Karte auf Englisch statt Deutsch: Dort ist der Drehknopf 8 px breiter, einzeln lief der Test durch.
+    Die Pruefung ruft das vor jeder Testklasse (``conftest._gespeicherte_sprache_vergessen``): Jede Klasse beginnt mit der Sprache,
+    die ``PS5CONV_SYSTEMSPRACHE`` vorgibt.
+
+    Args:
+        ordner: Der Einstellungsordner; ohne Angabe der Ordner aus ``PS5CONV_KONFIGORDNER``.
+
+    Returns:
+        ``True``, wenn eine Sprache entfernt wurde. Eine fehlende oder unlesbare Datei bleibt unberuehrt (``False``).
+    """
+    ordner = ordner or os.environ.get(UMGEBUNGSNAME, "")
+    if not ordner:
+        return False
+    pfad = os.path.join(ordner, "paths.json")
+    try:
+        with open(pfad, "rb") as datei:
+            roh = datei.read()
+    except OSError:
+        return False
+    mit_bom = roh.startswith(b"\xef\xbb\xbf")
+    try:
+        daten = json.loads(roh.decode("utf-8-sig"))
+    except ValueError:
+        return False
+    if not isinstance(daten, dict) or "language" not in daten:
+        return False
+    del daten["language"]
+    neu = json.dumps(daten, ensure_ascii=False, indent=2).encode("utf-8")
+    try:
+        with open(pfad, "wb") as datei:
+            datei.write((b"\xef\xbb\xbf" if mit_bom else b"") + neu)
+    except OSError:
+        return False
+    return True
 
 
 def bestandsordner() -> str:

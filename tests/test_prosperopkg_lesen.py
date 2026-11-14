@@ -179,11 +179,16 @@ class EchterLaufTests(unittest.TestCase):
         except Exception:
             cls.werkzeug = ""
         cls.probe = ""
-        for kandidat in (
-            r"D:\PS5\PS5 Hack\PS5 SDK usw\Evox_PS5PKG_files\PS5PKG_FPKGi_v1.10.0.pkg",
-            r"D:\PS5\PS5 Hack\PS5 SDK usw\PS5 PKG\PS5  PKG\Disc Player.pkg",
-        ):
-            if os.path.isfile(kandidat):
+        # Der Referenzordner zog um (D: -> Dokumente -> F:, Stand 14.11.2026: F:); ``PS5CONV_TEST_PKG`` nennt eine PS5-PKG ausdruecklich
+        # (etwa eine Kopie im Scratchpad), sonst werden die bekannten Orte der Reihe nach versucht.
+        kandidaten = [os.environ.get("PS5CONV_TEST_PKG", "")]
+        for wurzel in (r"F:\PS5\PS5 Hack\PS5 SDK usw",
+                       os.path.join(os.path.expanduser("~"), "Documents", "PS5", "PS5 Hack", "PS5 SDK usw"),
+                       r"D:\PS5\PS5 Hack\PS5 SDK usw"):
+            kandidaten.append(os.path.join(wurzel, "Evox_PS5PKG_files", "PS5PKG_FPKGi_v1.10.0.pkg"))
+            kandidaten.append(os.path.join(wurzel, "PS5 PKG", "PS5  PKG", "Disc Player.pkg"))
+        for kandidat in kandidaten:
+            if kandidat and os.path.isfile(kandidat):
                 cls.probe = kandidat
                 break
 

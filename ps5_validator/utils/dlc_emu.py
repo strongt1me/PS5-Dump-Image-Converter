@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -239,6 +240,33 @@ def nachbarn_einbauen(ordner: str, nachbarn: list[tuple[str, str]],
         fertig.append((content_id, nummer))
         nummer += 1
     return fertig
+
+
+def groesse_der_nachbarn(nachbarn: list[tuple[str, str]], zeit: float = 3.0) -> int:
+    """Wie viele Bytes die DLC-Ordner zusammen haben, die ``nachbarn_einbauen`` kopieren wuerde (die ersten ``MAX_EINHAENGEPUNKTE``).
+
+    Die Platzpruefung vor dem Start braucht die Zahl, und sie darf die Oberflaeche nicht festhalten: Nach ``zeit`` Sekunden endet das
+    Zaehlen mit dem, was bis dahin gezaehlt war - lieber ein zu kleiner Wert als eine Anzeige, die haengt. Unlesbare Eintraege zaehlen nicht.
+    """
+    ende = time.monotonic() + max(0.0, zeit)
+    offen = [pfad for _inhalt, pfad in nachbarn[:MAX_EINHAENGEPUNKTE]]
+    gesamt = 0
+    while offen and time.monotonic() < ende:
+        ordner = offen.pop()
+        try:
+            with os.scandir(ordner) as eintraege:
+                for eintrag in eintraege:
+                    try:
+                        if eintrag.is_dir(follow_symlinks=False):
+                            offen.append(eintrag.path)
+                        elif eintrag.is_file(follow_symlinks=False):
+                            gesamt += eintrag.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return gesamt
+
 
 _CONTENT_ID_GANZ = re.compile(r"^[A-Z]{2}[0-9]{4}-[A-Z0-9]{9}_[0-9]{2}-[A-Z0-9]{16}$")
 

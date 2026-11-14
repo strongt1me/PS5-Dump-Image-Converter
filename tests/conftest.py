@@ -101,6 +101,20 @@ def _syntaxbaeume_freigeben(request: pytest.FixtureRequest):
             delattr(klasse, name)
 
 
+@pytest.fixture(autouse=True, scope="class")
+def _gespeicherte_sprache_vergessen():
+    """Vor jeder Testklasse: Eine Sprache, die ein frueherer Test gespeichert hat, gilt nicht mehr.
+
+    Siehe :func:`pruefumgebung.gespeicherte_sprache_vergessen` (Befund vom 14.11.2026). Laeuft vor ``setUpClass``, wo die Fenster
+    gebaut werden, und nach ``setUpModule``, das den Einstellungsordner einer Datei festlegt.
+    """
+    try:
+        pruefumgebung.gespeicherte_sprache_vergessen()
+    except Exception as exc:  # noqa: BLE001 - die Aufraeumhilfe darf keinen Test verhindern
+        logger.debug("Gespeicherte Sprache nicht entfernbar: %s", exc)
+    yield
+
+
 def _tk_stand(wurzel) -> dict:
     """Was an der Wurzel haengt - zum Zuruecksetzen nach der Klasse."""
     ziele = _TK_ZIELE + (str(wurzel),)

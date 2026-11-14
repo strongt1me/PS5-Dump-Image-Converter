@@ -153,6 +153,7 @@ from ps5_validator.ui import ampr_seite
 from ps5_validator.ui import pkg_fpkg_seite
 from ps5_validator.ui import pkg_extras_fenster
 from ps5_validator.ui import abbild_bearbeiten_fenster
+from ps5_validator.ui import geraete_fenster
 from ps5_validator.ui import updates_fenster
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
@@ -173,6 +174,8 @@ from ps5_validator.utils import pkg_reader
 from ps5_validator.utils import konsole_dienste
 from ps5_validator.utils import werkzeugstaende
 from ps5_validator.utils import archiv_quelle
+from ps5_validator.utils import quelle_loeschen
+from ps5_validator.utils import archiv_baum
 from ps5_validator.utils import fenster_titelfarbe
 from ps5_validator.utils import qr_klein
 from ps5_validator.utils import konsole_ftp
@@ -4367,6 +4370,20 @@ def _strom_rueckfall_nimmt_verzicht_zurueck(methode):
     return huelle
 
 
+def _strom_rueckfall_entpackt_archiv(methode):
+    """Gibt ein Weg ohne Zwischenordner ``None`` zurueck, soll der bisherige Weg das Spiel als Ordner lesen: Liest der Strom ein ZIP-Archiv
+    ueber einen Schattenordner (nur ``sce_sys`` und ``eboot.bin`` entpackt), wird der Rest vorher entpackt. Misslingt das, wirft es ``OSError``:
+    Mit einem halben Ordner wird nie weitergearbeitet."""
+    @functools.wraps(methode)
+    def huelle(self, *args, **kwargs):
+        ergebnis = methode(self, *args, **kwargs)
+        if ergebnis is None:
+            quelle = args[0] if args else kwargs.get("src", "")
+            self._archiv_schatten_vollstaendig(quelle)
+        return ergebnis
+    return huelle
+
+
 class PS5ConverterGUI:
     """Grafische Benutzeroberfläche für den PS5 DUMP & IMAGE Converter."""
 
@@ -4910,6 +4927,9 @@ class PS5ConverterGUI:
         # Seit dem 05.11.2026 (Nutzerwunsch): Dateien eines Abbilds umbenennen, loeschen, ersetzen und das Ergebnis wieder
         # als Abbild speichern - ueber Entpacken und Neupacken (ein fertiges Abbild laesst sich nicht beschreiben).
         ("titlebar.abbild_bearbeiten", "_show_abbild_bearbeiten"),
+        # Seit dem 14.11.2026 (Vorbild: "Nearby" bei Dump Forge): NAS und Rechner finden, die sich im Netz melden, und ihre
+        # Freigabe als Quelle oder Ziel waehlen (mDNS und WS-Discovery, ``utils/geraete_suche.py``).
+        ("titlebar.geraete", "_show_geraete"),
         # Fremdwerkzeug fuer den NOR-Flash der Konsole (seit v1.9.29), kein
         # Teil der Umwandlung - deshalb ganz am Ende.
         ("titlebar.wee_tools", "_show_wee_tools"),
@@ -5684,6 +5704,13 @@ class PS5ConverterGUI:
         # Die Quelldatei des laufenden Weges und was daneben gebaut wird
         # (Selbst-Ziel, siehe _bauziel_neben_quelle).
         self._lauf_quelle = ""
+        # Quelle nach Erfolg loeschen: gilt fuer EINEN Lauf (beim Start bestaetigt) und wie die Quelle beim Start aussah.
+        self._lauf_quelle_loeschen = False
+        self._lauf_quelle_stempel: "tuple | None" = None
+        # ZIP-Archive als Quelle ohne Entpackordner: Schattenordner -> Archiv (``_archiv_schatten_anlegen``) und Entpackordner/Schatten
+        # -> Archiv (``_quelle_zum_loeschen``).
+        self._archiv_schatten: dict[str, Any] = {}
+        self._archiv_herkunft: dict[str, str] = {}
         self._selbstziel_baustellen: set[str] = set()
         # "Content-ID eintragen?" - einmal je Lauf gefragt, dann gemerkt.
         self._content_id_antwort: bool | None = None
@@ -8136,6 +8163,9 @@ class PS5ConverterGUI:
         quelle = self._quellgroesse_ermitteln(src)
         if quelle <= 0:
             return 0, 0, 0
+        # DLC-Ordner neben dem Spiel kopiert DLC EMU in den Arbeitsstand (Arbeitskopie oder Ueberlagerungsordner des Stroms), und sie
+        # kommen ins Ergebnis: Das ist mehr als das Spiel allein (Befund 14.11.2026: Der Strom rechnete nur 5 % der Quelle).
+        dlc_extra = self._dlc_nachbarn_bytes(src)
 
         # .exFAT -> .exFAT mit zstd-Asset-Pack laeuft ohne entpacktes Spiel (Stufe 3): Im Arbeitsordner liegen nur die
         # Systemdateien fuer den Einbau, ans Ziel kommt das neue Abbild (hoechstens so gross wie die Quelle, mit zstd meist
@@ -8154,9 +8184,9 @@ class PS5ConverterGUI:
         strom_temp = None
         if (target_type in ("exfat", "ffpfsc", "ffpfs", "ffpkg") and callable(waehle_strom) and waehle_strom(**waehle_args)
                 and not self._lz4_strom_im_voraus_ausgeschlossen(src, ordner_quelle)):
-            strom_temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP)))
+            strom_temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP))) + dlc_extra
             if src.lower().endswith(".exfat") or os.path.isdir(src):
-                return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL[target_type]), 0
+                return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL[target_type]) + dlc_extra, 0
             if not src.lower().endswith((".ffpfsc", ".ffpfs", ".ffpkg")):
                 strom_temp = None
 
@@ -8195,9 +8225,27 @@ class PS5ConverterGUI:
         temp = max(im_arbeitsordner,
                    int(quelle * (self._PLATZFAKTOR_TEMP_MIT_KOPIE if mit_kopie
                                  else self._PLATZFAKTOR_TEMP_OHNE)))
+        if mit_kopie:
+            temp += dlc_extra                 # die DLC-Ordner kommen in die Arbeitskopie
         dump = (int(quelle * self._PLATZFAKTOR_ZIEL["folder"])
                 if getattr(self, "_umhuellt_neu_packen", False) else 0)
-        return temp, ziel, dump
+        return temp, ziel + dlc_extra, dump
+
+    def _dlc_nachbarn_bytes(self, src: str) -> int:
+        """Bytes der DLC-Ordner neben dem Spielordner ``src``, wenn DLC EMU angehakt ist (sonst 0).
+
+        ``_integration_dlc`` kopiert sie nach ``addcont<N>`` in den Arbeitsstand - im Strom in den Ueberlagerungsordner, sonst in die
+        Arbeitskopie -, und sie gehoeren zum Ergebnis. Die Platzpruefung rechnete bis zum 14.11.2026 nur das Spiel; ein DLC von einigen GB
+        liess den Arbeitsordner dann nach langer Zeit vollaufen. Nur bei einem Ordner als Quelle (bei einem Abbild liegen keine DLC-Ordner
+        daneben, die das Programm einbaut). Ohne Auskunft (etwa ein nicht lesbarer Ordner) bleibt es bei der bisherigen Rechnung.
+        """
+        try:
+            if not src or not os.path.isdir(src) or not bool(self._tk_wert("dlc_integrate_var", False)):
+                return 0
+            return int(dlc_emu.groesse_der_nachbarn(dlc_emu.nachbar_dlc(src)))
+        except Exception as exc:  # noqa: BLE001 - die Schaetzung darf den Start nie verhindern
+            logger.debug("DLC-Ordner fuer die Platzrechnung nicht ermittelbar: %s", exc)
+            return 0
 
     def _integration_gewuenscht(self) -> bool:
         """Ist AMPR EMU oder BACKPORT angehakt?
@@ -11276,6 +11324,27 @@ class PS5ConverterGUI:
         )
         self._register_translatable(self.arbeitskopie_check, "main.arbeitskopie_vorher")
         self.arbeitskopie_check.grid(row=15, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        # Quelle nach erfolgreichem, geprueftem Lauf loeschen (Nutzerwunsch 14.11.2026, wie ``--delete-source`` bei Dump Forge).
+        # Bewusst nicht gespeichert: Jeder Start des Programms beginnt ohne, und vor jedem Lauf kommt eine Rueckfrage.
+        self.quelle_loeschen_var = tk.BooleanVar(value=False)
+        self.quelle_loeschen_check = RunderHaken(
+            path_card,
+            text=self._t("main.quelle_loeschen"),
+            variable=self.quelle_loeschen_var,
+            font=(UI_SCHRIFT, pt(9)),
+            bg=self._COLORS["bg_card"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            selectcolor=self._COLORS["bg_main"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground=self._COLORS["fg_primary"],
+            anchor="w",
+            bd=0,
+            highlightthickness=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
+        )
+        self._register_translatable(self.quelle_loeschen_check, "main.quelle_loeschen")
+        self.quelle_loeschen_check.grid(row=16, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         self._hinweisfelder_anlegen()
         self._kartenzeilen_fixieren()
@@ -20618,8 +20687,12 @@ class PS5ConverterGUI:
 
         def arbeit() -> None:
             try:
-                wurzel = archiv_quelle.entpacken(archiv, ziel, wurzeln=wurzeln, melden=fortschritt,
-                                                 popen_extra=popen_extra, passwort=passwort)
+                # ZIP ohne Entpackordner: nur sce_sys und eboot.bin kommen in einen Schattenordner, das Spiel liest der Strom aus dem Archiv.
+                wurzel = (self._archiv_schatten_anlegen(archiv, ziel, passwort)
+                          if endung == ".zip" and self._archiv_strom_gewaehlt() else None)
+                if wurzel is None:
+                    wurzel = archiv_quelle.entpacken(archiv, ziel, wurzeln=wurzeln, melden=fortschritt,
+                                                     popen_extra=popen_extra, passwort=passwort)
                 fehler = ""
             except archiv_quelle.PasswortFehler as exc:
                 grund = str(exc)      # ``exc`` gibt es nach dem except-Block nicht mehr - die Lambda liefe in einen NameError
@@ -20633,6 +20706,160 @@ class PS5ConverterGUI:
             self._hauptfaden_planen(lambda: self._archiv_fertig(archiv, wurzel, fehler))
 
         threading.Thread(target=arbeit, daemon=True, name="archiv-entpacken").start()
+
+    @staticmethod
+    def _archiv_schluessel(pfad: str) -> str:
+        """Der Schluessel eines Pfades in den Tabellen ``_archiv_schatten`` und ``_archiv_herkunft``."""
+        return os.path.normcase(os.path.abspath(pfad)) if pfad else ""
+
+    def _archiv_schatten_info(self, src: str) -> "dict[str, Any] | None":
+        """Der Eintrag zu ``src``, wenn das ein Schattenordner eines ZIP-Archivs ist (Strom ohne Entpacken), sonst ``None``."""
+        return (getattr(self, "_archiv_schatten", None) or {}).get(self._archiv_schluessel(src))
+
+    def _archiv_strom_gewaehlt(self) -> bool:
+        """Soll ein ZIP-Archiv als Quelle ohne Entpackordner gelesen werden? Mit der Einstellung ``exfat_strom`` (Vorgabe an)."""
+        try:
+            return bool(self._load_setting(self._EXFAT_STROM_SETTING, True))
+        except Exception as exc:  # noqa: BLE001 - im Zweifel wie bisher entpacken
+            logger.debug("Einstellung exfat_strom nicht lesbar: %s", exc)
+            return False
+
+    def _archiv_weitere_passwoerter(self) -> "list[str]":
+        """Die Passwoerter des Anwenders fuer Archive (Einstellung ``archiv_passwoerter``: Liste oder Text mit Kommas)."""
+        try:
+            wert = self._load_setting("archiv_passwoerter", [])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Archivpasswoerter nicht lesbar: %s", exc)
+            return []
+        if isinstance(wert, str):
+            wert = [teil.strip() for teil in wert.split(",")]
+        if not isinstance(wert, (list, tuple)):
+            return []
+        return [str(p) for p in wert if isinstance(p, str) and p]
+
+    def _archiv_datei_schreiben(self, datei: Any, ziel: str, abbruch: "Callable[[], bool] | None" = None) -> None:
+        """Schreibt eine Datei des Lesebaums nach ``ziel`` (legt die Ordner an, ``OSError`` bei Abbruch)."""
+        os.makedirs(os.path.dirname(ziel), exist_ok=True)
+        with open(ziel, "wb") as fh:
+            for stueck in datei.lesen():
+                if abbruch is not None and abbruch():
+                    raise OSError(self._t("quelle.archiv_abgebrochen"))
+                fh.write(stueck)
+
+    def _archiv_schatten_anlegen(self, archiv: str, ziel: str, passwort: str) -> "str | None":
+        """ZIP-Archiv als Quelle ohne Entpackordner: legt den Schattenordner an und liefert den Spielordner (Strom, ``archiv_baum``).
+
+        Der Schattenordner traegt Namen und Aufbau des entpackten Spielordners, enthaelt aber nur ``sce_sys`` und ``eboot.bin``: Genug
+        fuer Cover, Titel, Pruefung und Namen, und nichts vom Spiel selbst. Das Spiel liest der Strom beim Umwandeln direkt aus dem
+        Archiv (:meth:`_archiv_schatten_baum`). Braucht ein Weg das Spiel doch als Ordner, wird er vorher vollstaendig entpackt
+        (:meth:`_archiv_schatten_vollstaendig`). ``None``: Der Lesebaum kann dieses Archiv nicht (AES, ein unbekanntes Packverfahren, kein
+        Spiel darin) - der Aufrufer entpackt wie bisher. Ein fehlendes oder falsches Passwort wirft ``PasswortFehler``.
+        """
+        baum = archiv_baum.ZipBaum(archiv, passwort=passwort, weitere_passwoerter=self._archiv_weitere_passwoerter())
+        try:
+            try:
+                dateien = baum.dateien()
+            except spielbaum.BaumFehler as exc:
+                self._append_to_log(self._t("quelle.archiv_strom_nicht", grund=str(exc)))
+                return None
+            stamm = os.path.splitext(os.path.basename(archiv))[0] or "Spiel"
+            spiel = os.path.join(ziel, stamm, *[t for t in baum.wurzel.split("/") if t])
+            os.makedirs(spiel, exist_ok=True)
+            for datei in dateien:
+                klein = datei.rel.lower()
+                if klein == "eboot.bin" or klein.startswith("sce_sys/"):
+                    self._archiv_datei_schreiben(datei, os.path.join(spiel, *datei.rel.split("/")))
+            gesamt = sum(d.groesse for d in dateien)
+            schluessel = self._archiv_schluessel(spiel)
+            self._archiv_schatten[schluessel] = {
+                "archiv": archiv, "passwort": baum.passwort, "groesse": gesamt, "stempel": baum.stempel(), "voll": False}
+            self._archiv_herkunft[schluessel] = archiv
+            self._append_to_log(self._t("quelle.archiv_strom_start", ordner=spiel, anzahl=len(dateien), groesse=self._fmt_bytes(gesamt)))
+            return spiel
+        finally:
+            baum.schliessen()
+
+    def _archiv_schatten_baum(self, src: str, ignoriert: "Callable[[str], bool] | None" = None) -> Any:
+        """Der Lesebaum fuer einen Schattenordner (``archiv_baum.ZipBaum``), sonst ``None`` (dann ein gewoehnlicher Ordner)."""
+        info = self._archiv_schatten_info(src)
+        if not info or info.get("voll"):
+            return None
+        return archiv_baum.ZipBaum(info["archiv"], passwort=info.get("passwort", ""), ignoriert=ignoriert)
+
+    def _archiv_schatten_vollstaendig(self, src: str) -> None:
+        """Entpackt den Rest des Archivs in den Schattenordner: danach ist er ein gewoehnlicher, vollstaendiger Spielordner.
+
+        Fuer jeden Weg, der das Spiel als Ordner braucht (Zielformat Ordner, die Wege ueber einen Zwischenordner, Aufgaben, die im
+        Ordner aendern). Ohne Schattenordner oder wenn er schon vollstaendig ist, geschieht nichts. Wirft ``OSError``, wenn der Platz
+        fehlt, das Archiv sich seit dem Anlegen geaendert hat oder abgebrochen wird - nie wird mit einem halben Ordner weitergearbeitet.
+        """
+        info = self._archiv_schatten_info(src)
+        if not info or info.get("voll"):
+            return
+        archiv = info["archiv"]
+        self._append_to_log(self._t("quelle.archiv_schatten_voll", name=os.path.basename(archiv)))
+        try:
+            frei = shutil.disk_usage(src).free
+        except OSError:
+            frei = 1 << 62
+        if frei < int(info.get("groesse", 0)):
+            raise OSError(self._t("quelle.archiv_platz", frei=self._fmt_bytes(int(frei)), groesse=self._fmt_bytes(int(info["groesse"]))))
+        baum = archiv_baum.ZipBaum(archiv, passwort=info.get("passwort", ""))
+        try:
+            dateien = baum.dateien()
+            if baum.stempel() != info.get("stempel"):
+                raise OSError(self._t("quelle.archiv_geaendert", archiv=archiv))
+            for datei in dateien:
+                voll = os.path.join(src, *datei.rel.split("/"))
+                if os.path.isfile(voll) and os.path.getsize(voll) == datei.groesse:
+                    continue
+                self._archiv_datei_schreiben(datei, voll, abbruch=lambda: not getattr(self, "is_running", True))
+            for ordner in baum.ordner():
+                os.makedirs(os.path.join(src, *ordner.split("/")), exist_ok=True)
+        except spielbaum.BaumFehler as exc:
+            raise OSError(str(exc)) from exc
+        finally:
+            baum.schliessen()
+        info["voll"] = True
+
+    def _archiv_schatten_im_strom(self, mode: str, target_type: str) -> bool:
+        """Liest der Lauf das Spiel eines Schattenordners im Strom (ohne es zu entpacken)? Nur Aufgabe 1 mit einem Abbild als Ziel."""
+        if mode != "pack_folder":
+            return False
+        try:
+            if target_type == "ffpfsc":
+                return bool(self._strom_nach_container_gewaehlt(ordner=True))
+            if target_type == "ffpfs":
+                return bool(self._strom_nach_ffpfs_gewaehlt(ordner=True))
+            if target_type == "ffpkg":
+                return bool(self._strom_nach_ffpkg_gewaehlt())
+            if target_type == "exfat":
+                return bool(self._strom_fuer_ordner_gewaehlt())
+        except Exception as exc:  # noqa: BLE001 - im Zweifel entpacken
+            logger.debug("Stromwahl fuer das Archiv nicht lesbar: %s", exc)
+        return False
+
+    def _archiv_schatten_vorbereiten(self, mode: str, src: str) -> bool:
+        """Vor dem Lauf: Bleibt ``src`` ein Schattenordner, nur wenn der Strom ihn liest - sonst wird er vollstaendig entpackt.
+
+        ``False``, wenn das Entpacken scheitert (Platz, Archiv geaendert, Abbruch): Der Lauf endet dann mit der Meldung im Protokoll.
+        """
+        info = self._archiv_schatten_info(src)
+        if not info or info.get("voll"):
+            return True
+        if self._archiv_schatten_im_strom(mode, str(getattr(self, "_lauf_zielformat", "") or "")):
+            return True
+        try:
+            self._archiv_schatten_vollstaendig(src)
+        except OSError as exc:
+            self._append_to_log(self._t("quelle.archiv_fehler", grund=str(exc)))
+            return False
+        return True
+
+    def _quelle_zum_loeschen(self, src: str) -> str:
+        """Was ``Quelle nach Erfolg loeschen`` loescht: das Archiv, wenn ``src`` aus einem entpackt oder als Schattenordner gelesen wird."""
+        herkunft = (getattr(self, "_archiv_herkunft", None) or {}).get(self._archiv_schluessel(src))
+        return herkunft if herkunft and os.path.isfile(herkunft) else src
 
     def _archiv_passwort_fragen(self, archiv: str, falsch: bool, grund: str = "") -> None:
         """Hauptfaden: Das Archiv ist verschluesselt - nach dem Passwort fragen und neu entpacken.
@@ -20715,6 +20942,7 @@ class PS5ConverterGUI:
         if not archiv_quelle.hat_spiel(wurzel):
             _rmtree_force(ziel, ignore_errors=True)
             return "", "", self._t("quelle.archiv_kein_spiel", grund="sce_sys/param.json")
+        self._archiv_herkunft[self._archiv_schluessel(wurzel)] = archiv
         self._append_to_log(self._t("quelle.archiv_fertig", ordner=wurzel))
         return wurzel, ziel, ""
 
@@ -20798,6 +21026,7 @@ class PS5ConverterGUI:
         self._batch_sources = []
         self._remember_source_dialog_path(archiv)
         self.source_path.set(wurzel)
+        self._archiv_herkunft[self._archiv_schluessel(wurzel)] = archiv
         self._append_to_log(self._t("quelle.archiv_fertig", ordner=wurzel))
 
     def _validate_source_path(self, path: str, mode: str) -> str:
@@ -27500,6 +27729,50 @@ class PS5ConverterGUI:
                 logger.debug("Senden-nach-Erfolg-Einstellung nicht lesbar: %s", exc)
         return False
 
+    #: Aufgaben, bei denen die Quelle nie als "umgewandelte Quelle" gilt: nur lesen oder pruefen, oder an Ort und Stelle aendern.
+    _QUELLE_LOESCHEN_AUSSER = ("inspect", "dump_validator", "ampr_manager")
+
+    def _quelle_loeschen_gewaehlt(self) -> bool:
+        """Ist der Haken "Quelle nach Erfolg loeschen" gesetzt? Nur im Hauptfaden zu lesen (Tk-Variable)."""
+        var = getattr(self, "quelle_loeschen_var", None)
+        if var is None:
+            return False
+        try:
+            return bool(var.get())
+        except Exception as exc:  # noqa: BLE001 - im Zweifel wird nichts geloescht
+            logger.debug("Haken Quelle loeschen nicht lesbar: %s", exc)
+            return False
+
+    def _quelle_loeschen_bestaetigen(self, mode: str, src: str) -> "bool | None":
+        """Fragt vor dem Start: ``True`` = die Quelle(n) nach Erfolg loeschen, ``False`` = ohne Loeschen weiter, ``None`` = nichts starten.
+
+        Das Loeschen ist endgueltig (kein Papierkorb), deshalb nie still: Die Frage nennt, was geloescht wuerde.
+        """
+        quellen = ([q for q in (getattr(self, "_batch_sources", []) or []) if q] if mode == "batch_convert" else [])
+        quellen = quellen or [self._quelle_zum_loeschen(src)]
+        zeilen = "\n".join(quellen[:8]) + ("\n..." if len(quellen) > 8 else "")
+        return messagebox.askyesnocancel(
+            self._t("dialog.title.quelle_loeschen"), self._t("dialog.msg.quelle_loeschen_frage", quellen=zeilen))
+
+    def _quelle_nach_erfolg_loeschen(self, quelle: str, ergebnis: str, stempel: "tuple | None") -> bool:
+        """Loescht die Quelle nach einem erfolgreich geprueften Lauf - wenn der Anwender es fuer diesen Lauf gewollt hat und alles stimmt.
+
+        Aufgerufen im Arbeitsfaden, erst wenn Ergebnis und Pruefung ``ok`` sind. Was gegen das Loeschen spricht
+        (:func:`quelle_loeschen.pruefen`), steht im Protokoll; der Lauf bleibt trotzdem erfolgreich.
+        """
+        if not getattr(self, "_lauf_quelle_loeschen", False):
+            return False
+        grund = quelle_loeschen.pruefen(quelle, ergebnis, stempel)
+        if grund:
+            self._append_to_log(self._t("log.quelle_bleibt", pfad=quelle, grund=self._t("quelle_loeschen.grund." + grund)))
+            return False
+        fehler = quelle_loeschen.loeschen(quelle, ordner_loeschen=lambda p: bool(_rmtree_force(p)), datei_loeschen=os.remove)
+        if fehler:
+            self._append_to_log(self._t("log.quelle_loeschen_fehler", pfad=quelle, fehler=fehler))
+            return False
+        self._append_to_log(self._t("log.quelle_geloescht", pfad=quelle))
+        return True
+
     def _nach_erfolg_senden_fragen(self) -> None:
         """Fragt nach Erfolg, ob das Ergebnis an die PS5 gesendet werden soll.
 
@@ -28232,6 +28505,14 @@ class PS5ConverterGUI:
                 # Eine angebotene Wiederaufnahme gehoert zum alten Ziel.
                 self._active_resume_checkpoint = None
 
+        # Quelle nach Erfolg loeschen (Haken in der Karte): vor dem Start bestaetigen, nie still. Abbrechen startet nichts.
+        self._lauf_quelle_loeschen = False
+        if self._quelle_loeschen_gewaehlt() and mode not in self._QUELLE_LOESCHEN_AUSSER:
+            antwort = self._quelle_loeschen_bestaetigen(mode, src)
+            if antwort is None:
+                return
+            self._lauf_quelle_loeschen = bool(antwort)
+
         # UI in "laufend"-Zustand versetzen
         self.run_btn.config(state=tk.DISABLED)
         self.abort_btn.config(state=tk.NORMAL)
@@ -28586,6 +28867,9 @@ class PS5ConverterGUI:
         """
         if not os.path.exists(path):
             return 0
+        schatten = self._archiv_schatten_info(path)
+        if schatten and not schatten.get("voll"):
+            return int(schatten.get("groesse", 0))             # das Spiel liegt im Archiv, nicht im Schattenordner
         try:
             if os.path.isfile(path):
                 return os.path.getsize(path)
@@ -32199,6 +32483,20 @@ class PS5ConverterGUI:
         # Quelle baut (_bauziel_neben_quelle). Die Sammelkonvertierung setzt
         # es je Datei neu.
         self._lauf_quelle = src
+        # Ein ZIP, das im Strom gelesen werden soll, bleibt ein Schattenordner; jeder andere Weg bekommt den vollstaendigen Spielordner.
+        if not self._archiv_schatten_vorbereiten(mode, src):
+            self._set_status(self._t("status.cancelled"))
+            self.is_running = False
+            self.monitor_active = False
+            self._reset_ui_after_task()
+            return
+        # Auf der Kommandozeile entscheidet allein der Schalter ``--quelle-loeschen`` (dort gibt es keine Rueckfrage).
+        if getattr(self, "_cli_mode", False):
+            self._lauf_quelle_loeschen = bool(getattr(self, "_cli_quelle_loeschen", False))
+        # Wie die Quelle beim Start aussah: Aendert sie sich waehrend des Laufs, bleibt sie liegen (``quelle_loeschen.pruefen``).
+        self._lauf_quelle_stempel = (
+            quelle_loeschen.stempel_nehmen(self._quelle_zum_loeschen(src))
+            if self._lauf_quelle_loeschen and mode not in self._QUELLE_LOESCHEN_AUSSER and mode != "batch_convert" else None)
         self._selbstziel_baustellen = set()
         # Die Antwort auf "Content-ID eintragen?" gilt fuer diesen Lauf.
         self._content_id_antwort = None
@@ -32491,6 +32789,10 @@ class PS5ConverterGUI:
                     )
                     self._clear_runtime_checkpoint(mode=mode, src=src, dst=cp_dst)
                     self._cleanup_task_temp_targets(task_temp_baseline)
+                    if mode != "batch_convert" and mode not in self._QUELLE_LOESCHEN_AUSSER:
+                        self._quelle_nach_erfolg_loeschen(
+                            self._quelle_zum_loeschen(src), str(getattr(self, "task_final_output_path", "") or ""),
+                            self._lauf_quelle_stempel)
                 else:
                     self._save_runtime_checkpoint(
                         mode=mode,
@@ -32868,6 +33170,8 @@ class PS5ConverterGUI:
                 self._ampr_index_entschieden = False
                 self._ampr_ordner_ist_kopie = False
                 self._append_to_log(self._t('log.auto.0087', v0=idx, v1=len(sources), v2=os.path.basename(candidate)))
+                # Wie diese Quelle (Datei, Ordner oder Archiv) jetzt aussieht - vor dem Entpacken eines Archivs.
+                quellstempel = quelle_loeschen.stempel_nehmen(anzeige) if self._lauf_quelle_loeschen else None
                 if archiv_quelle.ist_archiv(candidate):
                     # Ein Archiv steht fuer den Spielordner darin: entpacken, dann wie ein Dump-Ordner behandeln.
                     # Das Ergebnis heisst nach dem Archiv (der Entpackordner traegt dessen Namen).
@@ -32994,6 +33298,7 @@ class PS5ConverterGUI:
                 })
                 if item_ok:
                     self._append_to_log(self._t('log.auto.0089', v0=os.path.basename(output_path), v1=verification.get('detail', 'verifiziert')))
+                    self._quelle_nach_erfolg_loeschen(anzeige, output_path, quellstempel)
                 else:
                     self._append_to_log(self._t('log.auto.0090', v0=verification.get('detail', 'unbekannter Fehler')))
                     all_ok = False
@@ -34268,6 +34573,7 @@ class PS5ConverterGUI:
         """
         return bool(self._strom_erlaubt(einbau_noetig=False))
 
+    @_strom_rueckfall_entpackt_archiv
     @_strom_rueckfall_nimmt_verzicht_zurueck
     def _mode_exfat_umpacken_strom(self, src: str, dst: str, *, ordner: bool = False, pfs: bool = False,
                                    ziel: str = "exfat", ufs2: bool = False) -> "bool | None":
@@ -34331,7 +34637,7 @@ class PS5ConverterGUI:
         try:
             try:
                 if ordner:
-                    quelle = spielbaum.OrdnerBaum(src, ignoriert=is_ignored_name)
+                    quelle = self._archiv_schatten_baum(src, is_ignored_name) or spielbaum.OrdnerBaum(src, ignoriert=is_ignored_name)
                 elif pfs:
                     quelle = spielbaum.PfsBaum(src, mkpfs_ordner=mkpfs_parent, ignoriert=is_ignored_name)
                 elif ufs2:
@@ -57691,6 +57997,11 @@ class PS5ConverterGUI:
         (``ps5_validator/ui/pkg_extras_fenster.py``); es haengt nicht von einem geoeffneten PKG-Bereich ab."""
         pkg_extras_fenster.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
 
+    def _show_geraete(self) -> None:
+        """WEITERE TOOLS "Geraete im Netz": NAS und Rechner im Netz suchen und ihre Freigabe als Quelle oder Ziel waehlen
+        (``ps5_validator/ui/geraete_fenster.py``; die Suche steht in ``utils/geraete_suche.py``)."""
+        geraete_fenster.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
+
     def _show_abbild_bearbeiten(self) -> None:
         """WEITERE TOOLS "Abbild bearbeiten": entpacken, Dateien aendern, wieder als Abbild speichern
         (``ps5_validator/ui/abbild_bearbeiten_fenster.py``; die Dateiarbeit steht in ``utils/abbild_bearbeiten.py``)."""
@@ -71960,6 +72271,11 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         help=("Passwort fuer ein verschluesseltes Archiv (.zip, .7z, .rar) als --source von Aufgabe 1 und 5. "
               "Ohne Angabe probiert das Programm die ueblichen Passwoerter der Szene."))
     parser.add_argument(
+        "--quelle-loeschen", action="store_true",
+        help=("Die Quelle nach einem erfolgreich geprueften Lauf endgueltig loeschen (kein Papierkorb). Sie bleibt, wenn das Ergebnis "
+              "fehlt oder leer ist, die Quelle sich waehrend des Laufs geaendert hat oder das Ergebnis die Quelle ersetzt hat. "
+              "Auf der Kommandozeile gibt es keine Rueckfrage: Der Schalter ist die Bestaetigung."))
+    parser.add_argument(
         "--shutdown-on-success", action="store_true",
         help=(
             "Rechner nach erfolgreichem Abschluss herunterfahren (nach dem Lösen "
@@ -72370,6 +72686,7 @@ def _run_cli(args: argparse.Namespace) -> int:
     app._cli_mode = True
     app._cli_quiet = bool(args.quiet)
     app._cli_archiv_passwort = str(getattr(args, "archiv_passwort", "") or "")
+    app._cli_quelle_loeschen = bool(getattr(args, "quelle_loeschen", False))
     _cli_schalter_uebernehmen(app, args)
     # Im CLI-Modus entscheidet allein der Schalter, nicht die gespeicherte Wahl
     # aus der Oberflaeche. Das Ankreuzfeld wird mitgesetzt, damit

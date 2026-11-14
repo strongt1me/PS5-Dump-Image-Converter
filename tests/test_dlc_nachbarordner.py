@@ -134,6 +134,122 @@ class EinbauAblaufTests(unittest.TestCase):
             self.assertFalse((kopie / "addcont0").exists())
 
 
+class GroesseTests(unittest.TestCase):
+    """``groesse_der_nachbarn``: Was ``nachbarn_einbauen`` kopieren wuerde, in Bytes - ohne die Oberflaeche festzuhalten."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.wurzel = Path(tmp.name)
+
+    def _dlc(self, content_id: str, dateien: "dict[str, int]") -> "tuple[str, str]":
+        ordner = self.wurzel / (content_id + "-ac")
+        for rel, groesse in dateien.items():
+            ziel = ordner / rel
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            ziel.write_bytes(b"x" * groesse)
+        return content_id, str(ordner)
+
+    def test_summe_ueber_alle_ordner_und_unterordner(self) -> None:
+        a = self._dlc(ID_DLC, {"a.pak": 1000, "tief/er/b.pak": 2000})
+        b = self._dlc(ID_DLC2, {"c.pak": 4000})
+        self.assertEqual(7000, dlc_emu.groesse_der_nachbarn([a, b]))
+
+    def test_leere_liste_ist_null(self) -> None:
+        self.assertEqual(0, dlc_emu.groesse_der_nachbarn([]))
+
+    def test_nur_die_ersten_elf_zaehlen_wie_beim_einbauen(self) -> None:
+        nachbarn = [self._dlc("EP1001-PPSA14299_00-%016d" % i, {"a.pak": 10}) for i in range(13)]
+        self.assertEqual(10 * dlc_emu.MAX_EINHAENGEPUNKTE, dlc_emu.groesse_der_nachbarn(nachbarn))
+
+    def test_fehlender_ordner_zaehlt_nicht_und_wirft_nicht(self) -> None:
+        a = self._dlc(ID_DLC, {"a.pak": 500})
+        weg = (ID_DLC2, str(self.wurzel / "gibtsnicht"))
+        self.assertEqual(500, dlc_emu.groesse_der_nachbarn([weg, a]))
+
+    def test_zeitgrenze_beendet_das_zaehlen(self) -> None:
+        """Gegenprobe zur Summe: Ohne Zeit bleibt es bei dem, was gezaehlt war (hier nichts), statt zu haengen."""
+        a = self._dlc(ID_DLC, {"a.pak": 500})
+        self.assertEqual(0, dlc_emu.groesse_der_nachbarn([a], zeit=0.0))
+
+
+class PlatzbedarfMitDlcTests(unittest.TestCase):
+    """Die Platzpruefung kennt die DLC-Ordner neben dem Spiel (Befund 14.11.2026).
+
+    ``_integration_dlc`` kopiert sie in den Arbeitsstand - im Strom in den Ueberlagerungsordner (``_PLATZFAKTOR_STROM_TEMP`` 5 %
+    der Quelle), sonst in die Arbeitskopie - und sie kommen ins Ergebnis. Die Rechnung nahm sie bisher nirgends mit.
+    """
+
+    GIB = 1024 ** 3
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.wurzel = Path(tmp.name)
+        self.spiel = self.wurzel / "PPSA14299-app0"
+        (self.spiel / "sce_sys").mkdir(parents=True)
+        (self.spiel / "sce_sys" / "param.json").write_text(json.dumps({"titleId": "PPSA14299"}), encoding="utf-8")
+        self.dlc_bytes = 3 * 1024 * 1024
+        ordner = self.wurzel / (ID_DLC + "-ac")
+        ordner.mkdir()
+        (ordner / "a.pak").write_bytes(b"x" * self.dlc_bytes)
+
+    def _gui(self, *, dlc: bool, strom: bool, kopie: bool = True) -> "GUI":
+        g = GUI.__new__(GUI)
+        g._quellgroesse_ermitteln = lambda src: 150 * self.GIB
+        g._estimate_unpack_space_requirement = lambda src: None
+        g._integration_gewuenscht = lambda: kopie
+        g._umhuellt_neu_packen = False
+        g._strom_fuer_ordner_gewaehlt = lambda: strom
+        g._lz4_strom_im_voraus_ausgeschlossen = lambda src, ordner: False
+        if dlc:
+            g.dlc_integrate_var = type("V", (), {"get": staticmethod(lambda: True)})()
+        return g
+
+    def test_strom_zaehlt_die_dlc_ordner_in_temp_und_ziel(self) -> None:
+        ohne = self._gui(dlc=False, strom=True)._platzbedarf_je_quelle(str(self.spiel), "exfat")
+        mit = self._gui(dlc=True, strom=True)._platzbedarf_je_quelle(str(self.spiel), "exfat")
+        self.assertEqual(self.dlc_bytes, mit[0] - ohne[0], "Temp: der Ueberlagerungsordner nimmt die DLC-Ordner auf")
+        self.assertEqual(self.dlc_bytes, mit[1] - ohne[1], "Ziel: die DLC-Ordner gehoeren zum Ergebnis")
+        self.assertEqual(ohne[2], mit[2])
+
+    def test_arbeitskopie_zaehlt_die_dlc_ordner_in_temp_und_ziel(self) -> None:
+        ohne = self._gui(dlc=False, strom=False)._platzbedarf_je_quelle(str(self.spiel), "exfat")
+        mit = self._gui(dlc=True, strom=False)._platzbedarf_je_quelle(str(self.spiel), "exfat")
+        self.assertEqual(self.dlc_bytes, mit[0] - ohne[0])
+        self.assertEqual(self.dlc_bytes, mit[1] - ohne[1])
+
+    def test_ohne_arbeitskopie_kein_dlc_in_temp_aber_im_ziel(self) -> None:
+        """Ohne Einbau-Arbeitskopie (Quelle bleibt, nichts wird kopiert) waechst Temp nicht; das Ziel zaehlt sie."""
+        ohne = self._gui(dlc=False, strom=False, kopie=False)._platzbedarf_je_quelle(str(self.spiel), "exfat")
+        mit = self._gui(dlc=True, strom=False, kopie=False)._platzbedarf_je_quelle(str(self.spiel), "exfat")
+        self.assertEqual(0, mit[0] - ohne[0])
+        self.assertEqual(self.dlc_bytes, mit[1] - ohne[1])
+
+    def test_ohne_haken_aendert_sich_nichts(self) -> None:
+        """Gegenprobe: DLC EMU nicht angehakt, also kommt nichts in den Arbeitsstand."""
+        g = self._gui(dlc=False, strom=True)
+        self.assertEqual(0, g._dlc_nachbarn_bytes(str(self.spiel)))
+
+    def test_fremde_dlc_ordner_zaehlen_nicht(self) -> None:
+        (self.wurzel / (ID_DLC + "-ac")).rename(self.wurzel / "EP1001-PPSA99999_00-ABCDEFGHIJKLMNOP-ac")
+        self.assertEqual(0, self._gui(dlc=True, strom=True)._dlc_nachbarn_bytes(str(self.spiel)))
+
+    def test_ein_abbild_als_quelle_hat_keine_nachbarn(self) -> None:
+        abbild = self.wurzel / "spiel.exfat"
+        abbild.write_bytes(b"x")
+        self.assertEqual(0, self._gui(dlc=True, strom=True)._dlc_nachbarn_bytes(str(abbild)))
+
+    def test_ein_fehler_beim_zaehlen_haelt_den_start_nicht_auf(self) -> None:
+        g = self._gui(dlc=True, strom=True)
+        original = dlc_emu.nachbar_dlc
+        dlc_emu.nachbar_dlc = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("kaputt"))
+        try:
+            self.assertEqual(0, g._dlc_nachbarn_bytes(str(self.spiel)))
+        finally:
+            dlc_emu.nachbar_dlc = original
+
+
 class IniTests(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
