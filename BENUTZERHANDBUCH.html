@@ -422,10 +422,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>VOREINSTELLUNG</strong></td><td>Vier Knöpfe rechts neben den Ankreuzfeldern am Fuß der Pfad-Karte setzen <strong>Kompressionsstufe und Kernzahl</strong> mit einem Klick: <em>Schnell</em> (Stufe&nbsp;3, alle Kerne), <em>Ausgewogen</em> (Stufe&nbsp;6, halbe Kernzahl), <em>Maximal</em> (Stufe&nbsp;9, halbe Kernzahl) und <em>Wenig RAM</em> (Stufe&nbsp;3, ein Kern &ndash; nur ein Arbeiter belegt Arbeitsspeicher, dafür dauert es länger). Der Knopf, dessen Werte gerade eingestellt sind, ist hervorgehoben; ändern Sie Stufe oder Worker von Hand, erlischt die Hervorhebung. Die <strong>Blockgröße bleibt bei 65536</strong>: kleinere Blöcke brachten in der Messung 0,1&nbsp;% und 64&nbsp;KB ist die Einheit, mit der ShadowMount+ das Abbild einhängt. Bei sehr schmalem Fenster entfallen die Knöpfe, statt über ein Ankreuzfeld zu ragen. Die Idee stammt aus PS5-FFPFSC-PRO&nbsp;1.3.0.</td></tr>
       <tr><td><strong>PRÜFUNG</strong></td><td>Ob das fertige Abbild nach dem Packen geprüft wird. „Schnell“ prüft die Struktur und eine Stichprobe der Blöcke (etwa 1 %, höchstens 1 GiB), „Vollständig“ liest zusätzlich alles zurück und dauert deutlich länger, „Aus“ prüft nur die Struktur. <a href="#k12">Aufgabe 8</a> prüft auch nachträglich jederzeit.</td></tr>
       <tr><td><strong>ZIELORDNER</strong></td><td>Hierhin schreibt das Programm das fertige Ergebnis. Verwenden Sie am besten einen anderen Ordner als die Quelle. Das Feld startet leer; der Auswahldialog öffnet im zuletzt benutzten Zielordner.</td></tr>
-      <tr><td><strong>TEMP-ORDNER</strong></td><td>Das Feld startet leer; <strong>leer heißt: der Temp-Ordner von Windows</strong>, ohne dass er im Feld erscheint. Ablage für vorübergehende Arbeitsdateien. Am besten ein eigener Ordner auf einem großen Laufwerk (z.&nbsp;B. <code>D:\PS5-Temp</code>): Im Windows-Temp-Ordner darf die Windows-Speicheroptimierung bei knappem Platz Dateien löschen &ndash; auch eine Arbeitskopie mitten im Lauf. Liegt der Temp-Ordner dort und ist das Löschen eingeschaltet, warnt das Protokoll beim Start eines Laufs.</td></tr>
+      <tr><td><strong>TEMP-ORDNER</strong></td><td>Seit v1.9.98 erscheint das Feld nur noch, wo noch ein Zwischenordner angelegt wird (wenn die Umwandlung ohne Zwischenordner ausgeschaltet ist, oder bei AMPR EMU mit LZ4-Asset-Pack, wo der Lauf ausnahmsweise doch einen Zwischenordner braucht, <a href="#k3">Abschnitt 3.3</a>); sonst bleibt es verborgen, und ein früher gewählter Ordner gilt weiter. Das Feld startet leer; <strong>leer heißt: der Temp-Ordner von Windows</strong>, ohne dass er im Feld erscheint. Ablage für vorübergehende Arbeitsdateien. Am besten ein eigener Ordner auf einem großen Laufwerk (z.&nbsp;B. <code>D:\PS5-Temp</code>): Im Windows-Temp-Ordner darf die Windows-Speicheroptimierung bei knappem Platz Dateien löschen &ndash; auch eine Arbeitskopie mitten im Lauf. Liegt der Temp-Ordner dort und ist das Löschen eingeschaltet, warnt das Protokoll beim Start eines Laufs.</td></tr>
       <tr><td><strong>Dump-Ordner im Arbeitsordner</strong></td><td>Ankreuzfeld in der Pfad-Karte. Beim Umpacken (etwa <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>) entpackt das Programm die Quelle zuerst in einen vor&uuml;bergehenden Dump-Ordner. Ab Werk liegt der beim <em>Ziel</em>; ist das Feld gesetzt, wandert er in den Arbeitsordner &ndash; auf dem Ziel-Laufwerk entsteht dann nur das fertige Ergebnis. Der Arbeitsordner muss daf&uuml;r den vollst&auml;ndigen Dump fassen. Reine Entpack-Aufgaben sind nicht betroffen: Dort <em>ist</em> der Dump-Ordner das Ergebnis.</td></tr>
       <tr><td><strong>Dump-Ordner: Arbeitskopie vorher anlegen</strong></td><td>Ankreuzfeld darunter. Muss in einem vorhandenen Dump-Ordner etwas eingebaut werden (BACKPORT, AMPR EMU, Asset-Pack, PlayGo), legt das Programm ohne Rückfrage eine Arbeitskopie an (bei Aufgabe&nbsp;1 eine Sicherung im Zielordner) und arbeitet darin &ndash; das Original bleibt unverändert, und ein Lauf muss nicht auf Ihr „Ja“ warten. Ohne Haken wird wie bisher gefragt.</td></tr>
-      <tr><td><strong>Rechner herunterfahren</strong></td><td>Ankreuzfeld unter TEMP-ORDNER. Ist es gesetzt, fährt der Rechner nach einem <em>erfolgreichen</em> Lauf von allein herunter – siehe <a href="#k3">Abschnitt 3.2</a>.</td></tr>
+      <tr><td><strong>Rechner herunterfahren</strong></td><td>Ankreuzfeld in der Pfad-Karte. Ist es gesetzt, fährt der Rechner nach einem <em>erfolgreichen</em> Lauf von allein herunter – siehe <a href="#k3">Abschnitt 3.2</a>.</td></tr>
       <tr><td><strong>STARTEN</strong></td><td>Beginnt die gewählte Aufgabe, sobald alle erforderlichen Angaben vorliegen.</td></tr>
       <tr><td><strong>ABBRECHEN</strong></td><td>Fordert einen kontrollierten Abbruch an. Warten Sie danach, bis das Programm den Abbruch bestätigt.</td></tr>
       <tr><td><strong>Live-Anzeige</strong></td><td>Rechts unter dem Protokoll steht während eines Laufs einmal pro Sekunde die Auslastung: „CPU: 42% | RAM: 9.00 GB frei (15.00 GB / 24.00 GB) | Temp: …“. Vorn steht der <strong>freie Arbeitsspeicher</strong>, dahinter belegt und gesamt. Fällt er unter 1&nbsp;GB, heißt es „RAM: nur noch … frei“ &ndash; bei 0,8&nbsp;GB brach am 20.09.2026 ein Bau mit <code>MemoryError</code> ab. Dann hilft die Voreinstellung <em>Wenig RAM</em> oder das Schließen anderer Programme.</td></tr>
@@ -951,7 +951,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Klicken Sie links auf die gewünschte Aufgabe.</li>
     <li>Wählen Sie die Quelle über den Knopf rechts neben dem Feld QUELLE.</li>
     <li>Wählen Sie, falls angezeigt, das ZIELFORMAT sowie bei Bedarf Kompressionsstufe und Worker-Threads.</li>
-    <li>Wählen Sie einen separaten ZIELORDNER und einen beschreibbaren TEMP-ORDNER.</li>
+    <li>Wählen Sie einen separaten ZIELORDNER. Einen TEMP-ORDNER müssen Sie normalerweise nicht mehr wählen: Die Umwandlungen arbeiten ohne entpacktes Spiel, das Feld erscheint nur noch, wo ein Zwischenordner angelegt wird (Abschnitt 3.3).</li>
     <li>Prüfen Sie alle Pfade noch einmal und klicken Sie auf STARTEN.</li>
     <li>Lassen Sie das Programm geöffnet, bis im Protokoll ein erfolgreicher Abschluss gemeldet wird.</li>
   </ol>
@@ -963,6 +963,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h3>3.1 Fortschritt richtig lesen</h3>
   <p>Bei einer laufenden Aufgabe zeigt der Balken den Gesamtfortschritt, daneben steht derselbe Wert als Prozentzahl. Bei größeren Konvertierungen ergänzt die Statuszeile Phasenangaben (etwa „Phase 3/4 – …“) sowie – sofern verfügbar – eine Zeile mit aktueller CPU-, RAM- und Temp-Speicher-Auslastung. Diese Anzeigen werden gemeinsam aktualisiert.</p>
+  <p>Darunter zeigt die <strong>Stufenzeile</strong> jeden Abschnitt des Laufs mit Zustand und Dauer, zum Beispiel <em>✓ Systemdateien 0:03 · ▶ Einbau 1:30 (Messen 1:10) · ○ Schreiben · ○ Prüfen · gesamt 1:33</em>. Ein Haken heißt fertig, ein Dreieck läuft gerade, ein Kreis wartet noch; nach dem Lauf bleibt die Zeile mit den Endzeiten stehen. Dieselben Zeiten stehen als <code>[ZEIT]</code> im Protokoll.</p>
 
   <div class="kasten warnung">
     <span class="titel">Während der Verarbeitung</span>
@@ -970,7 +971,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>3.2 Rechner nach getaner Arbeit herunterfahren</h3>
-  <p>Große Konvertierungen laufen lange. Mit dem Ankreuzfeld <strong>Rechner nach erfolgreichem Abschluss herunterfahren</strong> (unter TEMP-ORDNER) können Sie den Rechner dabei allein lassen.</p>
+  <p>Große Konvertierungen laufen lange. Mit dem Ankreuzfeld <strong>Rechner nach erfolgreichem Abschluss herunterfahren</strong> (in der Pfad-Karte) können Sie den Rechner dabei allein lassen.</p>
   <p>So läuft es ab, wenn die Aufgabe <strong>erfolgreich</strong> war:</p>
   <ol class="schritte">
     <li>Ein Fenster erscheint und zählt 60 Sekunden herunter. Solange können Sie mit <strong>Abbrechen – Rechner anlassen</strong> oder der ESC-Taste widersprechen.</li>
@@ -1013,9 +1014,29 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <em>demselben</em> Laufwerk, wird die Summe gepr&uuml;ft &ndash; getrennt
   betrachtet s&auml;he jeder f&uuml;r sich gut aus, und zusammen reichte es
   trotzdem nicht.</p>
-  <p>Ist <strong>AMPR EMU</strong> oder <strong>BACKPORT</strong> angehakt,
-  entsteht im Arbeitsordner zus&auml;tzlich eine vollst&auml;ndige Arbeitskopie
-  des Spiels; der Bedarf dort ist dann so gro&szlig; wie das Spiel selbst.</p>
+  <p>Ein Spiel wird <strong>ohne Zwischenordner</strong> umgewandelt: Das
+  Programm liest es direkt aus der Quelle (<code>.exFAT</code>,
+  <code>.ffpfs</code>, <code>.ffpfsc</code>, <code>.ffpkg</code> oder
+  Dump-Ordner) und schreibt das Ergebnis in einem Zug. Auch mit
+  <strong>AMPR EMU</strong>, <strong>BACKPORT</strong>, Fake-Signatur, DLC EMU
+  und PlayGo liegen im Arbeitsordner nur die wenigen Dateien, die der Einbau
+  &auml;ndert (rund 5&nbsp;% der Quelle, mindestens 2&nbsp;GiB); Platz braucht dann
+  vor allem das Ziel. Das gilt f&uuml;r Asset-Packs mit zstd und mit LZ4
+  gleicherma&szlig;en. Ein <code>.ffpkg</code> entsteht ohne UFS2Tool und ohne
+  Administratorrechte.</p>
+  <p>Nur wo der Strom nicht geht, entsteht wie fr&uuml;her im Arbeitsordner
+  eine vollst&auml;ndige Arbeitskopie, und der Bedarf dort ist so gro&szlig; wie
+  das Spiel selbst: bei einem eigenen Packprofil
+  <code>&lt;Ordnername&gt;_ampr_pack.toml</code> neben dem Dump-Ordner, bei
+  einem Titelprofil mit mehreren Gruppen (etwa EA Sports UFC&nbsp;6), wenn
+  die Quelle schon eine gepackte Asset-Schicht tr&auml;gt oder
+  Verkn&uuml;pfungen enth&auml;lt, und bei einer <code>.ffpkg</code> mit Namen,
+  die das Abbild nicht fasst. Das Protokoll nennt den Grund
+  ("&hellip; wird wie bisher &uuml;ber einen Zwischenordner gepackt") und
+  warnt, wenn der Arbeitsordner dafür zu klein ist. Das Feld
+  <em>TEMP-ORDNER</em> in der Hauptansicht erscheint nur noch, wo die Umwandlung ohne Zwischenordner ausgeschaltet ist oder AMPR EMU mit einem LZ4-Asset-Pack eingebaut wird (dort braucht der Lauf ausnahmsweise doch einen Zwischenordner); ein dort einmal gew&auml;hlter Ordner
+  gilt weiter, und &uuml;ber das Fenster &bdquo;Wenn der Platz nicht
+  reicht&ldquo; l&auml;sst sich ein anderer Arbeitsordner w&auml;hlen.</p>
   <p>Auf der Kommandozeile gibt es kein Fenster: Dort wird der Befund
   gemeldet, und <code>--yes</code> entscheidet wie bei jeder anderen
   R&uuml;ckfrage.</p>
@@ -1054,6 +1075,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   betroffenen Spielen. Das PS4-PKG-Fenster fragt vor dem Bau eines
   <code>.ffpfsc</code> nach den Paketgr&ouml;&szlig;en. Auf der Kommandozeile
   gibt es diese Frage nicht.</p>
+
+  <h3>3.5 Vor dem Start, nach einem Fehler und beim Benennen</h3>
+  <p><strong>Vorabprüfung.</strong> Vor dem Start sieht das Programm den Spielordner einmal durch und nennt <em>alle</em> Befunde zugleich; die betroffenen Pfade stehen im Protokoll. Bei einem exFAT-Abbild sind Namen außerhalb von ASCII, Verknüpfungen, unzulässige Zeichen und Namen, die sich nur in der Groß- und Kleinschreibung unterscheiden, <em>Fehler</em> – der Schreiber würde sie erst nach dem Kopieren ablehnen. Bei <code>.ffpkg</code>, <code>.ffpfs</code> und <code>.ffpfsc</code> sind sie eine Warnung, dort ist es nicht belegt. Warnungen gibt es außerdem für Pfade tiefer als 32 Ordnerebenen und für einen Ausgabenamen über 63 Bytes (bei <code>.ffpfsc</code> 58), der nach dem Einhängepfad von ShadowMount+ nicht mehr passen könnte; das ist an der Konsole nicht gemessen. Ein Fehler ist auch ein FAT32-Ziel, wenn eine Datei über 4&nbsp;GiB hat. Die Sammelkonvertierung prüft nur die Ausgabenamen, die Namensprobe liest höchstens 20 Sekunden. Eine Probe, die selbst scheitert, verhindert den Start nie.</p>
+  <p><strong>Ausgabename per Vorlage.</strong> Standardmäßig heißt das Ergebnis wie die Quelle. Unter <strong>EINSTELLUNGEN</strong>, Abschnitt <em>AUSGABENAME</em>, bilden Sie den Namen aus den Angaben des Spiels, etwa <code>{title} [{title_id}] v{version}</code> (<em>Astro Bot [PPSA01234] v1.0.0</em>). Teile sind <code>{name}</code> (Name der Quelle), <code>{title}</code>, <code>{title_id}</code>, <code>{version}</code>, <code>{region}</code>, <code>{fw}</code> (Mindest-Firmware) und <code>{pack}</code> (zstd oder lz4, bei einem Spiel ohne Asset-Pack leer); jeder höchstens einmal, und mindestens <code>{name}</code>, <code>{title}</code> oder <code>{title_id}</code> muss vorkommen. Die Beispielliste und die Vorschau zeigen den Namen eines Beispielspiels je Format mit den Bytes gegen die Längengrenze; <em>Vorgabe</em> setzt <code>{name}</code> zurück. Eine taugliche Vorlage wird sofort gespeichert, bei einer untauglichen steht der Grund da und die zuletzt gespeicherte gilt weiter. Ein erzeugter Name wird auf die Höchstlänge des Formats gekürzt (zuerst der Titel) und für Windows tauglich gemacht (kein Punkt oder Leerzeichen am Ende; ein reservierter Gerätename wie <code>AUX</code> bekommt einen Unterstrich). Trifft der Name eine vorhandene Datei, fragt das Programm wie sonst, ob sie ersetzt werden soll; in der Sammelkonvertierung wird ein namensgleiches Ergebnis desselben Laufs übersprungen. Die Vorlage gilt für jedes Zielformat, auch für <code>.ffpkg</code>. Fehlen die Angaben zum Spiel, bleibt der Name der Quelle. Auf der Kommandozeile hat <code>--ausgabename VORLAGE</code> Vorrang vor der Einstellung.</p>
+  <p><strong>Reste nach einem Fehler.</strong> Ist ein Einzellauf gescheitert oder abgebrochen, zeigt eine Karte, was liegen geblieben ist: das unfertige Ergebnis und daneben <code>.teil</code>-, <code>.neu</code>-, <code>.part</code>- und <code>.partial</code>-Dateien, mit Größen. Entfernt wird nur auf Ihren Wunsch. Die Quelle selbst, ein Ordner um sie und ein Ordner in ihr sind doppelt geschützt (beim Anbieten und beim Entfernen). Bei der Sammelkonvertierung und auf der Kommandozeile bleibt es beim Protokoll. Beim Verschieben eines Spielordners (Aufgabe 4) kommen <code>sce_sys</code> und ganz am Ende <code>eboot.bin</code> an die Reihe, damit ein abgebrochener halber Ordner nicht wie ein Spiel aussieht.</p>
+  <p><strong>Sprache beim Start.</strong> Ohne gespeicherte Wahl folgt das Programm der Anzeigesprache des Systems; kennt es sie nicht, gilt Englisch. Eine mit dem Sprachknopf gewählte Sprache gilt immer.</p>
 </section>
 
 <section class="kapitel" id="k4">
@@ -1379,7 +1406,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   gepackten Originale im Ergebnis weggelassen werden sollen; die Vorgabe ist
   <em>Nein</em>. Entfernt wird ausschlie&szlig;lich in der Arbeitskopie,
   niemals in Ihrem eigenen Dump-Ordner. In der Kommandozeile hei&szlig;t der
-  Schalter <code>--ampr-originale-weglassen</code>. Bei AMPR EMU NG mit zstd entfällt die Rückfrage: Die gepackten Originale werden in der Arbeitskopie immer weggelassen.</p>
+  Schalter <code>--ampr-originale-weglassen</code>. Bei AMPR EMU NG mit zstd entfällt die Rückfrage: Die gepackten Originale werden in der Arbeitskopie immer weggelassen. Dasselbe gilt für NG mit LZ4, wenn ohne Zwischenordner gepackt wird (Abschnitt 3.3); mit der Laufzeit von drakmor bleiben die Originale im Abbild, auch wenn Sie „weglassen“ gewählt haben.</p>
 
   <div class="kasten warnung">
     <span class="titel">Erst der Konsolentest, dann weglassen</span>
@@ -1490,6 +1517,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     (siehe unten). In der Kommandozeile setzt sie
     <code>--ampr-lz4-stufe</code> (1 bis 12).</p>
     <p><strong>Packverfahren im Hauptfenster.</strong> In der Einbauzeile steht unter der Methode (zweite Zeile) dasselbe Auswahlfeld <em>LZ4</em> / <em>zstd</em>; es ist dieselbe Einstellung wie unter EINSTELLUNGEN. Es ist nur bei angehaktem AMPR EMU und Methode <em>Asset-Pack</em> wählbar; bei <em>Normal</em> bleibt es grau, und es wird nichts mit LZ4 oder zstd gepackt. Wählen Sie zstd, nimmt das Programm die neueste normale NG-Fassung, sofern nicht schon eine NG-Fassung gewählt ist; bei LZ4 bleibt die Fassung frei wählbar.</p>
+    <p><strong>Packstufe und „Vollständige Prüfung“.</strong> Rechts neben dem Packverfahren steht die <em>Packstufe</em>: Sie zeigt die Stufen des gewählten Verfahrens (LZ4 oder zstd) und ist dieselbe Einstellung wie unter EINSTELLUNGEN. Daneben schaltet <em>Vollständige Prüfung</em>, wie genau die Packs auf dem Weg ins Abbild geprüft werden. Aus (Vorgabe): Aufbau, Köpfe und Lage jedes Blocks werden immer ganz geprüft, vom Inhalt eine Stichprobe (das erste und letzte Stück großer Dateien plus zufällige Stücke, rund 1 %; der Startwert steht im Protokoll). An: jedes Byte. Das gilt für zstd und für LZ4 ohne Zwischenordner; packt das Programm LZ4 doch über einen Zwischenordner, prüft das Packwerkzeug immer alles.</p>
+    <p><strong>LZ4 ohne Zwischenordner.</strong> Auch LZ4-Packs entstehen, ohne dass das Spiel entpackt wird: Das Programm verdichtet jeden Block zweimal, einmal zum Messen und einmal beim Schreiben ins Abbild, und hält jeden Block gegen die Messung. Die Quelle wird dabei zweimal gelesen. Mit einer Spur je Gruppe sind die Bänder Byte für Byte dieselben wie die des Packwerkzeugs. Mit <strong>ampr-emu-ng (NG)</strong> packt das Standardprofil alles außer den Systemdateien (<code>eboot.bin</code>, Module, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, den PlayGo-Dateien und <code>global-metadata.dat</code>); Bilder, Ton, Video und Konfigurationen kommen also mit in die Bänder, weil NG sie wie jede andere Datei ausliefert. Die gepackten Originale fehlen im Ergebnis, leere Dateien bleiben als Datei im Abbild. Mit der Laufzeit von drakmor gilt das vorsichtigere Standardprofil mit den losen Endungen (siehe unten). Muss ein Lauf doch über einen Zwischenordner packen (Abschnitt 3.3), bleiben die Originale wie bei der Antwort „Nein“ auf die Rückfrage. <strong>An der Konsole geprüft</strong> ist NG mit LZ4 ohne Originale an zwei Unity-Spielen; dasselbe Abbild ohne den Emulator zeigt nur ein schwarzes Bild, die Bänder liefert also allein NG aus. Große Spiele und andere Engines sind nicht gemessen. Das Tempo hängt an der Quelle: Sie wird zweimal gelesen, bei einer langsamen Platte (rund 50&nbsp;MiB/s) sind das für 11&nbsp;GB gut sechs Minuten.</p>
     <p><strong>Packverfahren LZ4 oder zstd.</strong> Unter
     <strong>EINSTELLUNGEN</strong> w&auml;hlen Sie im selben Abschnitt das
     <em>Packverfahren</em>. <strong>LZ4</strong> (Vorgabe) baut die B&auml;nder

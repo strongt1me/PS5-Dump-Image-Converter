@@ -422,10 +422,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>PREIMPOSTAZIONE</strong></td><td>Quattro pulsanti a destra delle caselle di controllo, in fondo alla scheda del percorso, impostano con un clic <strong>livello di compressione e numero di core</strong>: <em>Veloce</em> (livello&nbsp;3, tutti i core), <em>Equilibrata</em> (livello&nbsp;6, metà dei core), <em>Massima</em> (livello&nbsp;9, metà dei core) e <em>Poca RAM</em> (livello&nbsp;3, un solo core &ndash; solo un worker occupa memoria, ma l'operazione dura più a lungo). Il pulsante i cui valori sono attualmente impostati è evidenziato; se si modificano a mano livello o worker, l'evidenziazione scompare. La <strong>dimensione dei blocchi resta a 65536</strong>: blocchi più piccoli hanno dato nella misurazione lo 0,1% e 64&nbsp;KB è l'unità con cui ShadowMount+ monta l'immagine. Con la finestra molto stretta i pulsanti vengono omessi, invece di sovrapporsi a una casella di controllo. L'idea proviene da PS5-FFPFSC-PRO&nbsp;1.3.0.</td></tr>
       <tr><td><strong>VERIFICA</strong></td><td>Se l'immagine finita viene verificata dopo l'impacchettamento. “Rapida” verifica la struttura e un campione dei blocchi (circa l'1 %, al massimo 1 GiB), “Completa” rilegge inoltre tutto e richiede molto più tempo, “Disattivato” verifica solo la struttura. L'<a href="#k12">attività 8</a> verifica anche in un secondo momento, in qualsiasi momento.</td></tr>
       <tr><td><strong>CARTELLA DI DESTINAZIONE</strong></td><td>Qui il programma scrive il risultato finito. Meglio usare una cartella diversa dall'origine. Il campo parte vuoto; la finestra di selezione si apre nell'ultima cartella di destinazione utilizzata.</td></tr>
-      <tr><td><strong>CARTELLA TEMPORANEA</strong></td><td>Il campo parte vuoto; <strong>vuoto significa: la cartella Temp di Windows</strong>, senza che compaia nel campo. Posto per i file di lavoro temporanei. Meglio una cartella dedicata su un'unità capiente (ad es. <code>D:\PS5-Temp</code>): nella cartella Temp di Windows l'ottimizzazione dello spazio di archiviazione di Windows può eliminare file quando lo spazio scarseggia &ndash; anche una copia di lavoro a metà esecuzione. Se la cartella temporanea si trova lì e l'eliminazione è attivata, il registro lo segnala all'avvio di un'esecuzione.</td></tr>
+      <tr><td><strong>CARTELLA TEMPORANEA</strong></td><td>Dalla v1.9.98 il campo compare solo dove viene ancora creata una cartella intermedia (quando la conversione senza cartella intermedia è disattivata, oppure con AMPR EMU e un pack di asset LZ4, dove un'esecuzione può eccezionalmente richiedere comunque una cartella intermedia, <a href="#k3">sezione 3.3</a>); altrimenti resta nascosto, e una cartella scelta in precedenza continua a valere. Il campo parte vuoto; <strong>vuoto significa: la cartella Temp di Windows</strong>, senza che compaia nel campo. Posto per i file di lavoro temporanei. Meglio una cartella dedicata su un'unità capiente (ad es. <code>D:\PS5-Temp</code>): nella cartella Temp di Windows l'ottimizzazione dello spazio di archiviazione di Windows può eliminare file quando lo spazio scarseggia &ndash; anche una copia di lavoro a metà esecuzione. Se la cartella temporanea si trova lì e l'eliminazione è attivata, il registro lo segnala all'avvio di un'esecuzione.</td></tr>
       <tr><td><strong>Cartella dump nella cartella di lavoro</strong></td><td>Casella di controllo nella scheda del percorso. Nel ripacchettamento (ad es. da <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>) il programma estrae prima l'origine in una cartella dump temporanea. Di fabbrica si trova presso la <em>destinazione</em>; se la casella è spuntata, passa nella cartella di lavoro &ndash; sull'unità di destinazione resta allora solo il risultato finito. A tal fine la cartella di lavoro deve poter contenere il dump completo. Le attività di sola estrazione non sono interessate: lì la cartella dump <em>è</em> il risultato.</td></tr>
       <tr><td><strong>Cartella dump: crea prima una copia di lavoro</strong></td><td>Casella di controllo sotto la precedente. Se in una cartella dump esistente deve essere integrato qualcosa (BACKPORT, AMPR EMU, Asset Pack, PlayGo), il programma crea senza chiedere conferma una copia di lavoro (nell'attività&nbsp;1 un backup nella cartella di destinazione) e lavora al suo interno &ndash; l'originale resta invariato e l'esecuzione non deve attendere un “Sì”. Senza la spunta viene chiesta conferma, come prima.</td></tr>
-      <tr><td><strong>Spegni il computer</strong></td><td>Casella di controllo sotto CARTELLA TEMPORANEA. Se è spuntata, il computer si spegne da solo dopo un'esecuzione <em>riuscita</em> – vedere la <a href="#k3">sezione 3.2</a>.</td></tr>
+      <tr><td><strong>Spegni il computer</strong></td><td>Casella di controllo nella scheda del percorso. Se è spuntata, il computer si spegne da solo dopo un'esecuzione <em>riuscita</em> – vedere la <a href="#k3">sezione 3.2</a>.</td></tr>
       <tr><td><strong>AVVIA</strong></td><td>Avvia l'attività selezionata non appena sono presenti tutti i dati richiesti.</td></tr>
       <tr><td><strong>ANNULLA</strong></td><td>Richiede un annullamento controllato. Poi attendere finché il programma conferma l'annullamento.</td></tr>
       <tr><td><strong>Indicatore live</strong></td><td>A destra, sotto il registro, durante un'esecuzione compare una volta al secondo il carico: “CPU: 42% | RAM: 9.00 GB libera (15.00 GB / 24.00 GB) | Temp: …”. All'inizio c'è la <strong>memoria libera</strong>, poi quella occupata e quella totale. Se scende sotto 1&nbsp;GB, compare “RAM: solo … libera” &ndash; con 0,8&nbsp;GB il 20/09/2026 una creazione si è interrotta con <code>MemoryError</code>. In tal caso aiuta la preimpostazione <em>Poca RAM</em> o la chiusura di altri programmi.</td></tr>
@@ -942,7 +942,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Fare clic a sinistra sul task desiderato.</li>
     <li>Scegliere l'origine con il pulsante a destra del campo ORIGINE.</li>
     <li>Scegliere, se visualizzato, il FORMATO DI DESTINAZIONE nonché, se necessario, il livello di compressione e i worker thread.</li>
-    <li>Scegliere una CARTELLA DI DESTINAZIONE separata e una CARTELLA TEMPORANEA scrivibile.</li>
+    <li>Scegliere una CARTELLA DI DESTINAZIONE separata. Di norma non è più necessario scegliere una CARTELLA TEMPORANEA: le conversioni lavorano senza il gioco estratto, e il campo compare solo dove viene creata una cartella intermedia (sezione 3.3).</li>
     <li>Ricontrollare tutti i percorsi e fare clic su AVVIA.</li>
     <li>Lasciare il programma aperto finché nel registro non viene segnalato il completamento con successo.</li>
   </ol>
@@ -954,6 +954,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h3>3.1 Interpretare correttamente l'avanzamento</h3>
   <p>Durante un task in corso la barra mostra l'avanzamento complessivo; accanto compare lo stesso valore in percentuale. Nelle conversioni più grandi la riga di stato aggiunge indicazioni di fase (ad esempio «Fase 3/4 – …») nonché – se disponibile – una riga con l'utilizzo attuale di CPU, RAM e spazio temporaneo. Questi indicatori vengono aggiornati insieme.</p>
+  <p>Sotto, la <strong>riga delle tappe</strong> mostra ogni sezione dell'esecuzione con stato e durata, ad esempio <em>✓ File di sistema 0:03 · ▶ Integrazione 1:30 (Misura 1:10) · ○ Scrittura · ○ Verifica · totale 1:33</em>. Un segno di spunta significa completato, un triangolo è in corso, un cerchio è ancora in attesa; dopo l'esecuzione la riga resta con i tempi finali. Gli stessi tempi compaiono nel registro come <code>[ZEIT]</code>.</p>
 
   <div class="kasten warnung">
     <span class="titel">Durante l'elaborazione</span>
@@ -961,7 +962,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>3.2 Spegnere il computer a lavoro terminato</h3>
-  <p>Le conversioni di grandi dimensioni durano a lungo. Con la casella <strong>Spegni il computer dopo il completamento con successo</strong> (sotto CARTELLA TEMPORANEA) è possibile lasciare il computer incustodito.</p>
+  <p>Le conversioni di grandi dimensioni durano a lungo. Con la casella <strong>Spegni il computer dopo il completamento con successo</strong> (nella scheda del percorso) è possibile lasciare il computer incustodito.</p>
   <p>Ecco come procede quando il task è stato eseguito <strong>con successo</strong>:</p>
   <ol class="schritte">
     <li>Compare una finestra che conta alla rovescia 60 secondi. In questo intervallo è possibile opporsi con <strong>Annulla – lascia il computer acceso</strong> o con il tasto ESC.</li>
@@ -1004,9 +1005,28 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <em>stessa</em> unità, viene controllata la somma – considerata
   separatamente ciascuna sembrerebbe a posto, e insieme non basterebbe
   comunque.</p>
-  <p>Se <strong>AMPR EMU</strong> o <strong>BACKPORT</strong> è spuntato,
-  nella cartella di lavoro viene creata in più una copia di lavoro completa
-  del gioco; il fabbisogno lì è pari alla dimensione del gioco stesso.</p>
+  <p>Un gioco viene convertito <strong>senza cartella intermedia</strong>: il
+  programma lo legge direttamente dall'origine (<code>.exFAT</code>,
+  <code>.ffpfs</code>, <code>.ffpfsc</code>, <code>.ffpkg</code> o
+  cartella dump) e scrive il risultato in un'unica passata. Anche con
+  <strong>AMPR EMU</strong>, <strong>BACKPORT</strong>, firma finta, DLC EMU
+  e PlayGo, nella cartella di lavoro si trovano solo i pochi file che
+  l'integrazione modifica (circa il 5&nbsp;% dell'origine, almeno 2&nbsp;GiB); lo spazio serve allora
+  soprattutto alla destinazione. Questo vale in egual misura per gli asset pack con zstd e con LZ4. Un <code>.ffpkg</code> viene creato senza UFS2Tool e senza
+  diritti di amministratore.</p>
+  <p>Solo dove il flusso non funziona, nella cartella di lavoro si crea come prima
+  una copia di lavoro completa, e il fabbisogno lì è pari alla dimensione del
+  gioco stesso: con un profilo di pacchettizzazione proprio
+  <code>&lt;Ordnername&gt;_ampr_pack.toml</code> accanto alla cartella dump, con
+  un profilo del titolo con più gruppi (ad es. EA Sports UFC&nbsp;6), quando
+  l'origine contiene già uno strato di asset pacchettizzato o
+  contiene collegamenti simbolici, e con un <code>.ffpkg</code> con nomi
+  che l'immagine non può contenere. Il registro indica il motivo
+  ("&hellip; il packing passa da una cartella intermedia come prima") e
+  avvisa quando la cartella di lavoro è troppo piccola per questo. Il campo
+  <em>CARTELLA TEMPORANEA</em> nella vista principale compare solo dove la conversione senza cartella intermedia è disattivata oppure viene integrato AMPR EMU con un pack di asset LZ4 (lì un'esecuzione può eccezionalmente richiedere comunque una cartella intermedia); una cartella scelta lì una volta
+  continua a valere, e tramite la finestra «Quando lo spazio non basta»
+  si può scegliere un'altra cartella di lavoro.</p>
   <p>Nella riga di comando non esiste alcuna finestra: lì viene segnalato l'esito del controllo,
   e <code>--yes</code> decide come per ogni altra
   richiesta di conferma.</p>
@@ -1045,6 +1065,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   interessati. La finestra PS4 PKG chiede le dimensioni dei pacchetti prima di costruire un
   <code>.ffpfsc</code>. Nella riga di comando
   questa domanda non esiste.</p>
+
+  <h3>3.5 Prima dell'avvio, dopo un errore e nella denominazione</h3>
+  <p><strong>Pre-verifica.</strong> Prima dell'avvio il programma passa in rassegna una volta la cartella del gioco e segnala <em>tutti</em> i riscontri insieme; i percorsi interessati compaiono nel registro. Con un'immagine exFAT, i nomi fuori da ASCII, i collegamenti simbolici, i caratteri non consentiti e i nomi che differiscono solo per maiuscole e minuscole sono <em>errori</em> – lo scrittore li rifiuterebbe solo dopo la copia. Per <code>.ffpkg</code>, <code>.ffpfs</code> e <code>.ffpfsc</code> sono un avviso; lì non è provato. Ci sono inoltre avvisi per i percorsi più profondi di 32 livelli di cartelle e per un nome di uscita oltre 63 byte (per <code>.ffpfsc</code> 58) che, dopo il percorso di montaggio di ShadowMount+, potrebbe non starci più; questo non è stato misurato sulla console. È un errore anche una destinazione FAT32 quando un file supera i 4&nbsp;GiB. La conversione collettiva verifica solo i nomi di uscita; la verifica a campione dei nomi legge al massimo 20 secondi. Una verifica a campione che fallisce essa stessa non impedisce mai l'avvio.</p>
+  <p><strong>Nome di uscita tramite modello.</strong> Per impostazione predefinita il risultato si chiama come l'origine. In <strong>IMPOSTAZIONI</strong>, sezione <em>NOME DI USCITA</em>, si compone il nome dai dati del gioco, ad esempio <code>{title} [{title_id}] v{version}</code> (<em>Astro Bot [PPSA01234] v1.0.0</em>). Le parti sono <code>{name}</code> (nome dell'origine), <code>{title}</code>, <code>{title_id}</code>, <code>{version}</code>, <code>{region}</code>, <code>{fw}</code> (firmware minimo) e <code>{pack}</code> (zstd o lz4, vuoto per un gioco senza asset pack); ciascuna al massimo una volta, e deve comparire almeno <code>{name}</code>, <code>{title}</code> o <code>{title_id}</code>. L'elenco di esempi e l'anteprima mostrano il nome di un gioco di esempio per formato, con i byte rispetto al limite di lunghezza; <em>Predefinito</em> reimposta <code>{name}</code>. Un modello utilizzabile viene salvato subito; per uno inutilizzabile compare il motivo e continua a valere l'ultimo salvato. Un nome generato viene accorciato alla lunghezza massima del formato (prima il titolo) e reso adatto a Windows (nessun punto o spazio alla fine; un nome di dispositivo riservato come <code>AUX</code> riceve un trattino basso). Se il nome coincide con un file esistente, il programma chiede come al solito se sostituirlo; nella conversione multipla un risultato della stessa esecuzione con lo stesso nome viene saltato. Il modello vale per ogni formato di destinazione, anche per <code>.ffpkg</code>. Se mancano i dati del gioco, resta il nome dell'origine. Da riga di comando <code>--ausgabename VORLAGE</code> ha la precedenza sull'impostazione.</p>
+  <p><strong>Resti dopo un errore.</strong> Se un'esecuzione singola è fallita o è stata annullata, una scheda mostra che cosa è rimasto: il risultato incompleto e, accanto, i file <code>.teil</code>, <code>.neu</code>, <code>.part</code> e <code>.partial</code>, con le dimensioni. Si rimuove solo su richiesta. L'origine stessa, una cartella che la contiene e una cartella al suo interno sono protette due volte (all'offerta e alla rimozione). Nella conversione collettiva e da riga di comando resta il registro. Quando si sposta una cartella di gioco (attività 4), <code>sce_sys</code> e, per ultimo, <code>eboot.bin</code> vengono trattati per ultimi, perché una cartella a metà rimasta dopo un'interruzione non sembri un gioco.</p>
+  <p><strong>Lingua all'avvio.</strong> Senza una scelta salvata il programma segue la lingua di visualizzazione del sistema; se non la conosce, vale l'inglese. Una lingua scelta con il pulsante della lingua vale sempre.</p>
 </section>
 
 <section class="kapitel" id="k4">
@@ -1370,7 +1396,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   originali pacchettizzati debbano essere omessi nel risultato; il valore
   predefinito è <em>No</em>. La rimozione avviene esclusivamente nella copia di
   lavoro, mai nella propria cartella dump. Da riga di comando l’opzione si
-  chiama <code>--ampr-originale-weglassen</code>. Con AMPR EMU NG e zstd questa domanda non viene posta: gli originali pacchettizzati vengono sempre omessi nella copia di lavoro.</p>
+  chiama <code>--ampr-originale-weglassen</code>. Con AMPR EMU NG e zstd questa domanda non viene posta: gli originali pacchettizzati vengono sempre omessi nella copia di lavoro. Lo stesso vale per NG con LZ4 quando si impacchetta senza cartella intermedia (sezione 3.3); con il runtime di drakmor gli originali restano nell’immagine, anche se si è scelto «omettere».</p>
 
   <div class="kasten warnung">
     <span class="titel">Prima il test sulla console, poi omettere</span>
@@ -1484,6 +1510,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     (vedi sotto). Da riga di comando lo imposta
     <code>--ampr-lz4-stufe</code> (da 1 a 12).</p>
     <p><strong>Metodo di packing nella finestra principale.</strong> Nella riga di integrazione, sotto il metodo (seconda riga), c'è la stessa selezione <em>LZ4</em> / <em>zstd</em>; è la stessa impostazione delle IMPOSTAZIONI. Si può scegliere solo con AMPR EMU attivo e metodo <em>Asset Pack</em>; con <em>Normale</em> resta grigia e non viene impacchettato nulla con LZ4 o zstd. Scegliendo zstd, il programma prende la versione NG normale più recente, a meno che sia già selezionata una versione NG; con LZ4 la versione resta liberamente selezionabile.</p>
+    <p><strong>Livello di packing e «Verifica completa».</strong> A destra del metodo di packing c’è il <em>livello di packing</em>: mostra i livelli del metodo scelto (LZ4 o zstd) ed è la stessa impostazione delle IMPOSTAZIONI. Accanto, <em>Verifica completa</em> determina con quanta precisione i pack vengono verificati nel percorso verso l’immagine. Disattivata (predefinito): struttura, intestazioni e posizione di ogni blocco vengono sempre verificate per intero, e del contenuto un campione (il primo e l’ultimo pezzo dei file grandi più pezzi casuali, circa 1 %; il seed compare nel registro). Attivata: ogni byte. Vale per zstd e per LZ4 senza cartella intermedia; se il programma impacchetta LZ4 comunque tramite una cartella intermedia, lo strumento di pacchettizzazione verifica sempre tutto.</p>
+    <p><strong>LZ4 senza cartella intermedia.</strong> Anche i pack LZ4 vengono creati senza estrarre il gioco: il programma comprime ogni blocco due volte, una per misurare e una durante la scrittura nell’immagine, e confronta ogni blocco con la misurazione. L’origine viene letta due volte. Con una traccia per gruppo, i volumi sono identici byte per byte a quelli dello strumento di pacchettizzazione. Con <strong>ampr-emu-ng (NG)</strong> il profilo predefinito pacchettizza tutto tranne i file di sistema (<code>eboot.bin</code>, moduli, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, i file PlayGo e <code>global-metadata.dat</code>); immagini, audio, video e configurazioni finiscono quindi anch’essi nei volumi, perché NG li fornisce come qualsiasi altro file. Gli originali pacchettizzati mancano nel risultato; i file vuoti restano come file nell’immagine. Con il runtime di drakmor vale il profilo predefinito più prudente con le estensioni sparse (vedi sotto). Se un'esecuzione deve comunque impacchettare tramite una cartella intermedia (sezione 3.3), gli originali restano, come con la risposta No alla domanda. <strong>Verificato sulla console</strong> è NG con LZ4 senza originali su due giochi Unity; la stessa immagine senza l’emulatore mostra solo uno schermo nero, quindi i volumi li fornisce solo NG. I giochi grandi e altri motori non sono stati misurati. La velocità dipende dall’origine: viene letta due volte, e con un disco lento (circa 50&nbsp;MiB/s) sono, per 11&nbsp;GB, ben sei minuti.</p>
     <p><strong>Metodo di packing LZ4 o zstd.</strong> In
     <strong>IMPOSTAZIONI</strong>, nella stessa sezione, si sceglie il
     <em>Metodo di packing</em>. <strong>LZ4</strong> (predefinito) crea i volumi

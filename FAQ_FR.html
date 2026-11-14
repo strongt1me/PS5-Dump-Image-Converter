@@ -305,7 +305,7 @@ footer{
       <li>Choisissez à gauche la tâche appropriée.</li>
       <li>Choisissez la source avec le bouton situé à côté de SOURCE.</li>
       <li>Si le champ est affiché, choisissez le FORMAT DE DESTINATION – et, si nécessaire, la compression et les workers.</li>
-      <li>Choisissez un DOSSIER DE DESTINATION <strong>distinct</strong> et un DOSSIER TEMPORAIRE accessible en écriture.</li>
+      <li>Choisissez un DOSSIER DE DESTINATION <strong>distinct</strong>. Un DOSSIER TEMPORAIRE n’est normalement plus nécessaire : les conversions travaillent sans jeu extrait, et le champ n’apparaît plus que là où un dossier intermédiaire est créé.</li>
       <li>Vérifiez tous les chemins et appuyez sur DÉMARRER.</li>
       <li>Laissez le programme ouvert jusqu’à ce que le journal signale la fin avec succès.</li>
     </ol>
@@ -325,7 +325,7 @@ footer{
       </tbody>
     </table>
     </div>
-    <p>Si <strong>AMPR EMU</strong> ou <strong>BACKPORT</strong> est coché, une copie de travail complète du jeu est en outre créée dans le dossier de travail. Si les dossiers de travail et de destination se trouvent sur le même lecteur, la somme est prise en compte.</p>
+    <p>Un jeu est converti <strong>sans dossier intermédiaire</strong> : le programme le lit directement dans la source et écrit le résultat d’un seul trait, y compris avec AMPR EMU, BACKPORT, fausse signature, DLC EMU et PlayGo. Le dossier de travail ne contient alors que les quelques fichiers que l’intégration modifie (environ 5 % de la source, au moins 2 GiB). Ce n’est que là où le flux ne fonctionne pas (un profil de pack personnel à côté du dossier dump, un profil de titre à plusieurs groupes, une couche d’assets déjà empaquetée dans la source) qu’une copie de travail complète est créée comme avant ; le journal indique la raison et avertit en cas de manque de place. Si les dossiers de travail et de destination se trouvent sur le même lecteur, la somme est prise en compte.</p>
   </div>
 
   <div class="frage">
@@ -365,7 +365,7 @@ footer{
 
   <div class="frage">
     <h3>L’ordinateur peut-il s’éteindre tout seul après une longue conversion ?</h3>
-    <p>Oui – avec la case <strong>Éteindre l’ordinateur après une réussite</strong> sous DOSSIER TEMPORAIRE. Ce n’est qu’après une exécution <em>réussie</em> qu’une fenêtre apparaît et décompte 60 secondes (annulation avec le bouton ou ÉCHAP). Ensuite, les images sont démontées, les fichiers de travail supprimés et le journal enregistré, puis l’ordinateur s’éteint sans autre question. Après une erreur ou une annulation, il reste allumé. Enregistrez au préalable votre travail dans les autres programmes.</p>
+    <p>Oui – avec la case <strong>Éteindre l’ordinateur après une réussite</strong> dans la carte de chemin. Ce n’est qu’après une exécution <em>réussie</em> qu’une fenêtre apparaît et décompte 60 secondes (annulation avec le bouton ou ÉCHAP). Ensuite, les images sont démontées, les fichiers de travail supprimés et le journal enregistré, puis l’ordinateur s’éteint sans autre question. Après une erreur ou une annulation, il reste allumé. Enregistrez au préalable votre travail dans les autres programmes.</p>
   </div>
 
   <div class="frage">
@@ -440,7 +440,7 @@ footer{
   <div class="frage">
     <h3>Que sont les asset packs ?</h3>
     <p>Avec la méthode <strong>Asset pack</strong>, les fichiers du jeu sont en plus regroupés dans des volumes empaquetés (<code>ampr_assets-*.pak</code>) qu’AMPR EMU lit bloc par bloc à partir de la version 0.4.2.1. Cela économise de l’espace et des descripteurs de fichiers sur la console. Pour cela, <strong>les deux</strong> listes déroulantes doivent être correctes : version AMPR <code>test-pack</code> (ou <code>test-debug-pack</code> pour le dépannage) et méthode <em>Asset pack</em> – la version <code>test-nopack</code> présélectionnée en haut n’en est pas capable.</p>
-    <p>Chaque bloc empaqueté est comparé octet par octet au fichier d’origine. Vos fichiers d’origine restent en place, sauf si vous en décidez autrement ; ne les omettez qu’après un test réussi sur la console. Le guide détaillé s’ouvre avec le bouton <strong>Guide LZ4 et Asset Packs</strong>.</p>
+    <p>Chaque bloc empaqueté est comparé octet par octet au fichier d’origine. Vos fichiers d’origine restent en place, sauf si vous en décidez autrement ; ne les omettez qu’après un test réussi sur la console. Avec ampr-emu-ng (NG), le programme omet les originaux empaquetés du résultat sans poser de question ; avec le runtime drakmor, ils restent toujours dans l’image. Le guide détaillé s’ouvre avec le bouton <strong>Guide LZ4 et Asset Packs</strong>.</p>
     <p>Pour <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> et les jeux construits sur le moteur <em>Unity</em> ou <em>Insomniac</em>, le programme configure automatiquement un profil de pack testé (depuis v1.9.78). Un profil personnel placé à côté du dossier dump (<code>&lt;folder name&gt;_ampr_pack.toml</code>) est toujours prioritaire.</p>
   </div>
 
@@ -448,6 +448,7 @@ footer{
     <h3>Quel est le taux de compression, et comment vérifier ou extraire un asset pack terminé ?</h3>
     <p><strong>L’intensité</strong> se règle sous <strong>PARAMÈTRES</strong> dans la section <em>ASSET PACK (LZ4)</em> (depuis v1.9.80). La valeur par défaut est le niveau <strong>9</strong> : mesuré sur des données de jeux réelles, le niveau 12 ne gagne que 0,0 à 0,6 point de pourcentage supplémentaire mais prend 1,2 à 3,6 fois plus de temps. Les images, textures, archives, fichiers audio, vidéo et de configuration restent en vrac dans le profil général, car ils sont déjà compressés.</p>
     <p><strong>LZ4 ou zstd :</strong> sous <strong>PARAMÈTRES</strong>, dans la même section, choisissez la <em>méthode de pack</em>. LZ4 (par défaut) crée <code>ampr_assets-*.pak</code>. zstd crée <code>ampr_zstd.index</code> et <code>ampr_zstd-NNN.pak</code>, empaquette tous les fichiers sauf les fichiers système et compresse généralement davantage, mais n’est lu <em>que</em> par ampr-emu-ng (NG), pas par le runtime drakmor. Avec zstd, la liste des versions ne propose que NG ; le niveau zstd va de 1 à 22 (par défaut 5). Les règles personnalisées (quels fichiers restent en vrac) sont lues dans un fichier <code>&lt;folder name&gt;_ampr_pack.toml</code> placé à côté du dossier dump ou, une fois pour tous les jeux, dans le fichier que vous choisissez dans les paramètres sous « Règles de packaging pour zstd » ; les fichiers système restent toujours en vrac. On n’a pas mesuré si un jeu avec des packs zstd démarre sur la console ; les originaux empaquetés manquent dans le résultat, conservez le dump source (il reste inchangé).</p>
+    <p><strong>LZ4 sans dossier intermédiaire, niveau d’empaquetage et vérification :</strong> Les packs LZ4 sont eux aussi créés sans que le jeu soit extrait ; la source est lue deux fois (une fois pour mesurer, une fois pour écrire dans l’image). Avec NG, le profil par défaut empaquette tout sauf les fichiers système (<code>eboot.bin</code>, modules, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, fichiers PlayGo, <code>global-metadata.dat</code>) ; les originaux empaquetés manquent dans le résultat. Cela a été vérifié sur la console avec deux jeux Unity ; sans l’émulateur, la même image n’affiche qu’un écran noir. À droite de la méthode de pack se trouvent le <em>niveau d’empaquetage</em> et l’interrupteur <em>Vérification complète</em> (pour zstd et LZ4) : désactivée (par défaut) signifie que la structure, les en-têtes et la position de chaque bloc sont vérifiés en entier, et du contenu un échantillon ; activée : chaque octet.</p>
     <p><strong>La vérification et l’extraction</strong> se trouvent sous <strong>AUTRES OUTILS</strong> → <strong>VÉRIFIER / EXTRAIRE L’ASSET PACK</strong> (depuis v1.9.80). Choisissez le dossier du jeu qui contient <code>ampr_assets.index</code> : <em>VÉRIFIER</em> relit chaque bloc par rapport aux sommes de contrôle et vous indique si la bibliothèque présente dans le dossier peut lire des volumes ; <em>EXTRAIRE</em> remet les fichiers empaquetés en vrac – dans un nouveau dossier (le dossier du jeu est conservé) ou dans le dossier du jeu lui-même (les volumes sont ensuite supprimés). Une image ne peut pas être ouverte de cette manière ; extrayez-la d’abord avec la tâche 2.</p>
   </div>
 

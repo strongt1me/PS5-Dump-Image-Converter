@@ -422,10 +422,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>PRÉRÉGLAGE</strong></td><td>Quatre boutons, à droite des cases à cocher en bas de la carte de chemin, règlent en un clic le <strong>niveau de compression et le nombre de cœurs</strong> : <em>Rapide</em> (niveau&nbsp;3, tous les cœurs), <em>Équilibré</em> (niveau&nbsp;6, la moitié des cœurs), <em>Maximal</em> (niveau&nbsp;9, la moitié des cœurs) et <em>Peu de RAM</em> (niveau&nbsp;3, un seul cœur &ndash; un seul processus occupe de la mémoire, mais c'est plus long). Le bouton dont les valeurs sont actuellement réglées est mis en évidence ; si le niveau ou les workers sont modifiés à la main, la mise en évidence disparaît. La <strong>taille de bloc reste à 65536</strong> : des blocs plus petits n'ont apporté que 0,1&nbsp;% à la mesure, et 64&nbsp;Ko est l'unité avec laquelle ShadowMount+ monte l'image. Lorsque la fenêtre est très étroite, les boutons disparaissent au lieu de déborder sur une case à cocher. L'idée vient de PS5-FFPFSC-PRO&nbsp;1.3.0.</td></tr>
       <tr><td><strong>VÉRIFICATION</strong></td><td>Indique si l'image terminée est vérifiée après l'empaquetage. « Rapide » vérifie la structure et un échantillon de blocs (environ 1 %, 1 Gio au maximum), « Complète » relit en plus l'ensemble et prend nettement plus de temps, « Désactivé » ne vérifie que la structure. La <a href="#k12">tâche 8</a> permet aussi de vérifier après coup, à tout moment.</td></tr>
       <tr><td><strong>DOSSIER DE DESTINATION</strong></td><td>Le programme y écrit le résultat final. Le mieux est d'utiliser un dossier différent de la source. Le champ démarre vide ; la boîte de dialogue de sélection s'ouvre dans le dernier dossier de destination utilisé.</td></tr>
-      <tr><td><strong>DOSSIER TEMPORAIRE</strong></td><td>Le champ démarre vide ; <strong>vide signifie : le dossier temporaire de Windows</strong>, sans qu'il apparaisse dans le champ. Emplacement des fichiers de travail provisoires. Le mieux est un dossier dédié sur un grand lecteur (p.&nbsp;ex. <code>D:\PS5-Temp</code>) : dans le dossier temporaire de Windows, l'optimisation du stockage de Windows peut supprimer des fichiers lorsque la place manque &ndash; y compris une copie de travail en plein traitement. Si le dossier temporaire s'y trouve et que la suppression est activée, le journal avertit au démarrage d'un traitement.</td></tr>
+      <tr><td><strong>DOSSIER TEMPORAIRE</strong></td><td>Depuis la v1.9.98, le champ n'apparaît plus que là où un dossier intermédiaire est encore créé (lorsque la conversion sans dossier intermédiaire est désactivée, ou avec AMPR EMU et un Asset Pack LZ4, où une exécution peut exceptionnellement avoir quand même besoin d'un dossier intermédiaire, <a href="#k3">section 3.3</a>) ; sinon il reste masqué, et un dossier choisi auparavant reste valable. Le champ démarre vide ; <strong>vide signifie : le dossier temporaire de Windows</strong>, sans qu'il apparaisse dans le champ. Emplacement des fichiers de travail provisoires. Le mieux est un dossier dédié sur un grand lecteur (p.&nbsp;ex. <code>D:\PS5-Temp</code>) : dans le dossier temporaire de Windows, l'optimisation du stockage de Windows peut supprimer des fichiers lorsque la place manque &ndash; y compris une copie de travail en plein traitement. Si le dossier temporaire s'y trouve et que la suppression est activée, le journal avertit au démarrage d'un traitement.</td></tr>
       <tr><td><strong>Dossier dump dans le dossier de travail</strong></td><td>Case à cocher de la carte de chemin. Lors d'un reconditionnement (par exemple <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>), le programme extrait d'abord la source dans un dossier dump provisoire. Par défaut, celui-ci se trouve à la <em>destination</em> ; si la case est cochée, il passe dans le dossier de travail &ndash; seul le résultat final est alors créé sur le lecteur de destination. Le dossier de travail doit pour cela pouvoir contenir le dump complet. Les tâches de simple extraction ne sont pas concernées : le dossier dump <em>est</em> alors le résultat.</td></tr>
       <tr><td><strong>Dossier dump : créer d'abord une copie de travail</strong></td><td>Case à cocher située dessous. Si quelque chose doit être intégré dans un dossier dump existant (BACKPORT, AMPR EMU, Asset Pack, PlayGo), le programme crée sans demander confirmation une copie de travail (pour la tâche&nbsp;1, une sauvegarde dans le dossier de destination) et travaille dedans &ndash; l'original reste inchangé, et un traitement n'a pas à attendre votre « oui ». Sans coche, la question est posée comme auparavant.</td></tr>
-      <tr><td><strong>Éteindre l'ordinateur</strong></td><td>Case à cocher sous DOSSIER TEMPORAIRE. Si elle est cochée, l'ordinateur s'éteint de lui-même après un traitement <em>réussi</em> – voir la <a href="#k3">section 3.2</a>.</td></tr>
+      <tr><td><strong>Éteindre l'ordinateur</strong></td><td>Case à cocher dans la carte de chemin. Si elle est cochée, l'ordinateur s'éteint de lui-même après un traitement <em>réussi</em> – voir la <a href="#k3">section 3.2</a>.</td></tr>
       <tr><td><strong>DÉMARRER</strong></td><td>Lance la tâche choisie dès que toutes les indications requises sont fournies.</td></tr>
       <tr><td><strong>ANNULER</strong></td><td>Demande un arrêt contrôlé. Attendre ensuite que le programme confirme l'annulation.</td></tr>
       <tr><td><strong>Affichage en direct</strong></td><td>En bas à droite, sous le journal, l'utilisation des ressources s'affiche une fois par seconde pendant un traitement : « CPU : 42 % | RAM : 9.00 GB libre (15.00 GB / 24.00 GB) | Temp : … ». En premier figure la <strong>mémoire vive libre</strong>, suivie de la mémoire utilisée et du total. Si elle tombe sous 1&nbsp;Go, le message devient « RAM : seulement … libre » &ndash; à 0,8&nbsp;Go, une construction s'est interrompue le 20.09.2026 avec <code>MemoryError</code>. Le préréglage <em>Peu de RAM</em> ou la fermeture d'autres programmes aide alors.</td></tr>
@@ -941,7 +941,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Cliquez à gauche sur la tâche souhaitée.</li>
     <li>Choisissez la source avec le bouton situé à droite du champ SOURCE.</li>
     <li>Choisissez, s'il est affiché, le FORMAT DE DESTINATION ainsi que, si nécessaire, le niveau de compression et les workers.</li>
-    <li>Choisissez un DOSSIER DE DESTINATION distinct et un DOSSIER TEMPORAIRE accessible en écriture.</li>
+    <li>Choisissez un DOSSIER DE DESTINATION distinct. Vous n'avez normalement plus à choisir de DOSSIER TEMPORAIRE : les conversions travaillent sans jeu extrait, et le champ n'apparaît plus que là où un dossier intermédiaire est créé (section 3.3).</li>
     <li>Vérifiez encore une fois tous les chemins, puis cliquez sur DÉMARRER.</li>
     <li>Laissez le programme ouvert jusqu'à ce que le journal signale une fin réussie.</li>
   </ol>
@@ -953,6 +953,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h3>3.1 Bien lire la progression</h3>
   <p>Lorsqu'une tâche est en cours, la barre indique la progression globale ; la même valeur apparaît à côté sous forme de pourcentage. Pour les conversions plus volumineuses, la ligne d'état ajoute des indications de phase (par exemple « Phase 3/4 – … ») ainsi que – si disponible – une ligne indiquant la charge actuelle du CPU, de la RAM et du stockage temporaire. Ces affichages sont mis à jour ensemble.</p>
+  <p>Au-dessous, la <strong>ligne d'étapes</strong> montre chaque section de l'exécution avec son état et sa durée, par exemple <em>✓ Fichiers système 0:03 · ▶ Intégration 1:30 (Mesure 1:10) · ○ Écriture · ○ Vérification · total 1:33</em>. Une coche signifie terminé, un triangle est en cours, un cercle attend encore ; après l'exécution, la ligne reste affichée avec les durées finales. Les mêmes durées figurent dans le journal sous la forme <code>[ZEIT]</code>.</p>
 
   <div class="kasten warnung">
     <span class="titel">Pendant le traitement</span>
@@ -960,7 +961,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>3.2 Éteindre l'ordinateur une fois le travail terminé</h3>
-  <p>Les grandes conversions durent longtemps. La case à cocher <strong>Éteindre l'ordinateur après une réussite</strong> (sous DOSSIER TEMPORAIRE) permet de laisser l'ordinateur seul pendant ce temps.</p>
+  <p>Les grandes conversions durent longtemps. La case à cocher <strong>Éteindre l'ordinateur après une réussite</strong> (dans la carte de chemin) permet de laisser l'ordinateur seul pendant ce temps.</p>
   <p>Voici comment cela se passe lorsque la tâche a <strong>réussi</strong> :</p>
   <ol class="schritte">
     <li>Une fenêtre apparaît et décompte 60 secondes. Pendant ce délai, vous pouvez vous y opposer avec <strong>Annuler – laisser l'ordinateur allumé</strong> ou avec la touche Échap.</li>
@@ -1003,9 +1004,28 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <em>le même</em> lecteur, c'est la somme qui est vérifiée – pris séparément,
   chacun semblerait convenir, et pourtant l'ensemble ne
   suffirait pas.</p>
-  <p>Si <strong>AMPR EMU</strong> ou <strong>BACKPORT</strong> est coché,
-  une copie de travail complète du jeu est en plus créée dans le dossier de travail ;
-  le besoin y est alors aussi grand que le jeu lui-même.</p>
+  <p>Un jeu est converti <strong>sans dossier intermédiaire</strong> : le
+  programme le lit directement dans la source (<code>.exFAT</code>,
+  <code>.ffpfs</code>, <code>.ffpfsc</code>, <code>.ffpkg</code> ou
+  dossier de dump) et écrit le résultat d'un seul trait. Même avec
+  <strong>AMPR EMU</strong>, <strong>BACKPORT</strong>, fausse signature, DLC EMU
+  et PlayGo, le dossier de travail ne contient que les quelques fichiers que
+  l'intégration modifie (environ 5&nbsp;% de la source, au moins 2&nbsp;GiB) ; la place est alors
+  surtout nécessaire à la destination. Cela vaut aussi bien pour les asset packs avec zstd que pour ceux avec LZ4. Un <code>.ffpkg</code> est créé sans UFS2Tool et sans
+  droits d'administrateur.</p>
+  <p>Ce n'est que là où le flux ne fonctionne pas qu'une copie de travail complète
+  est créée comme avant dans le dossier de travail, et le besoin y est aussi grand que
+  le jeu lui-même : avec un profil d'empaquetage personnel
+  <code>&lt;Ordnername&gt;_ampr_pack.toml</code> à côté du dossier de dump, avec
+  un profil de titre à plusieurs groupes (par exemple EA Sports UFC&nbsp;6), lorsque
+  la source porte déjà une couche d'assets empaquetée ou
+  contient des liens symboliques, et avec un <code>.ffpkg</code> dont les noms
+  ne tiennent pas dans l'image. Le journal indique la raison
+  ("&hellip; l'empaquetage passe par un dossier intermédiaire comme avant") et
+  avertit lorsque le dossier de travail est trop petit pour cela. Le champ
+  <em>DOSSIER TEMPORAIRE</em> de la vue principale n'apparaît plus que là où la conversion sans dossier intermédiaire est désactivée ou où AMPR EMU est intégré avec un Asset Pack LZ4 (une exécution peut y avoir exceptionnellement quand même besoin d'un dossier intermédiaire) ; un dossier choisi une fois à cet endroit
+  reste valable, et la fenêtre « Lorsque l'espace ne suffit pas » permet
+  de choisir un autre dossier de travail.</p>
   <p>En ligne de commande, il n'y a pas de fenêtre : le constat y est
   signalé, et <code>--yes</code> tranche comme pour toute autre
   question.</p>
@@ -1044,6 +1064,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   jeux concernés. La fenêtre PS4 PKG demande les tailles des paquets avant
   de construire un <code>.ffpfsc</code>. En ligne de commande,
   cette question n'existe pas.</p>
+
+  <h3>3.5 Avant le démarrage, après une erreur et lors du nommage</h3>
+  <p><strong>Pré-vérification.</strong> Avant le démarrage, le programme parcourt une fois le dossier du jeu et signale <em>tous</em> les constats à la fois ; les chemins concernés figurent dans le journal. Pour une image exFAT, les noms hors ASCII, les liens symboliques, les caractères non autorisés et les noms qui ne diffèrent que par la casse sont des <em>erreurs</em> – l'écrivain ne les refuserait qu'après la copie. Pour <code>.ffpkg</code>, <code>.ffpfs</code> et <code>.ffpfsc</code>, ils constituent un avertissement ; ce n'est pas établi pour ces formats. Des avertissements existent en outre pour les chemins plus profonds que 32 niveaux de dossiers et pour un nom de sortie de plus de 63 octets (58 pour <code>.ffpfsc</code>) qui pourrait ne plus tenir après le chemin de montage de ShadowMount+ ; cela n'a pas été mesuré sur la console. Une cible FAT32 est aussi une erreur lorsqu'un fichier dépasse 4&nbsp;GiB. La conversion par lots ne vérifie que les noms de sortie ; le sondage des noms lit 20 secondes au plus. Un sondage qui échoue lui-même n'empêche jamais le démarrage.</p>
+  <p><strong>Nom de sortie par modèle.</strong> Par défaut, le résultat porte le nom de la source. Sous <strong>PARAMÈTRES</strong>, section <em>NOM DE SORTIE</em>, vous formez le nom à partir des informations du jeu, par exemple <code>{title} [{title_id}] v{version}</code> (<em>Astro Bot [PPSA01234] v1.0.0</em>). Les éléments sont <code>{name}</code> (nom de la source), <code>{title}</code>, <code>{title_id}</code>, <code>{version}</code>, <code>{region}</code>, <code>{fw}</code> (firmware minimal) et <code>{pack}</code> (zstd ou lz4, vide pour un jeu sans asset pack) ; chacun au plus une fois, et il faut au moins <code>{name}</code>, <code>{title}</code> ou <code>{title_id}</code>. La liste d'exemples et l'aperçu montrent le nom d'un jeu d'exemple pour chaque format, avec les octets par rapport à la limite de longueur ; <em>Par défaut</em> rétablit <code>{name}</code>. Un modèle utilisable est enregistré immédiatement ; pour un modèle inutilisable, la raison est affichée et le dernier modèle enregistré reste valable. Un nom généré est raccourci à la longueur maximale du format (le titre en premier) et adapté à Windows (pas de point ni d'espace à la fin ; un nom de périphérique réservé comme <code>AUX</code> reçoit un tiret bas). Si le nom correspond à un fichier existant, le programme demande comme d'habitude s'il doit le remplacer ; dans la conversion par lots, un résultat du même lancement portant le même nom est ignoré. Le modèle s'applique à chaque format cible, y compris <code>.ffpkg</code>. Si les informations sur le jeu manquent, le nom de la source est conservé. En ligne de commande, <code>--ausgabename VORLAGE</code> a priorité sur le réglage.</p>
+  <p><strong>Restes après une erreur.</strong> Si une exécution individuelle a échoué ou a été annulée, une carte montre ce qui est resté : le résultat inachevé et, à côté, les fichiers <code>.teil</code>, <code>.neu</code>, <code>.part</code> et <code>.partial</code>, avec leurs tailles. La suppression n'a lieu qu'à votre demande. La source elle-même, un dossier qui l'entoure et un dossier qu'elle contient sont protégés deux fois (lors de la proposition et lors de la suppression). Pour la conversion par lots et en ligne de commande, tout reste dans le journal. Lors du déplacement d'un dossier de jeu (tâche 4), <code>sce_sys</code> et, tout à la fin, <code>eboot.bin</code> passent en dernier, afin qu'un dossier à moitié rempli après un abandon ne ressemble pas à un jeu.</p>
+  <p><strong>Langue au démarrage.</strong> Sans choix enregistré, le programme suit la langue d'affichage du système ; s'il ne la connaît pas, c'est l'anglais qui s'applique. Une langue choisie avec le bouton de langue s'applique toujours.</p>
 </section>
 
 <section class="kapitel" id="k4">
@@ -1367,7 +1393,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   originaux empaquetés doivent être omis du résultat ; la valeur par défaut est
   <em>Non</em>. La suppression n'a lieu que dans la copie de travail,
   jamais dans votre propre dossier de dump. En ligne de commande, l'option se nomme
-  <code>--ampr-originale-weglassen</code>. Avec AMPR EMU NG et zstd, cette question n'est pas posée : les originaux empaquetés sont toujours omis de la copie de travail.</p>
+  <code>--ampr-originale-weglassen</code>. Avec AMPR EMU NG et zstd, cette question n'est pas posée : les originaux empaquetés sont toujours omis de la copie de travail. Il en va de même pour NG avec LZ4 lorsque l'empaquetage se fait sans dossier intermédiaire (section 3.3) ; avec le runtime de drakmor, les originaux restent dans l'image, même si vous avez choisi « omettre ».</p>
 
   <div class="kasten warnung">
     <span class="titel">D'abord le test sur console, ensuite l'omission</span>
@@ -1475,6 +1501,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     (voir ci-dessous). En ligne de commande, il se règle avec
     <code>--ampr-lz4-stufe</code> (1 à 12).</p>
     <p><strong>Méthode de pack dans la fenêtre principale.</strong> Dans la ligne d'intégration, sous la méthode (deuxième ligne), se trouve la même sélection <em>LZ4</em> / <em>zstd</em> ; c'est le même réglage que dans PARAMÈTRES. Elle n'est sélectionnable qu'avec AMPR EMU coché et la méthode <em>Asset Pack</em> ; avec <em>Normal</em> elle reste grisée et rien n'est empaqueté avec LZ4 ou zstd. Si vous choisissez zstd, le programme prend la version NG normale la plus récente, sauf si une version NG est déjà sélectionnée ; avec LZ4 la version reste librement sélectionnable.</p>
+    <p><strong>Niveau d'empaquetage et « Vérification complète ».</strong> À droite de la méthode de pack se trouve le <em>niveau d'empaquetage</em> : il affiche les niveaux de la méthode choisie (LZ4 ou zstd) et c'est le même réglage que dans PARAMÈTRES. À côté, <em>Vérification complète</em> détermine avec quelle précision les packs sont vérifiés sur le chemin vers l'image. Désactivée (par défaut) : la structure, les en-têtes et la position de chaque bloc sont toujours vérifiés en entier, et du contenu un échantillon (le premier et le dernier morceau des gros fichiers plus des morceaux aléatoires, environ 1 % ; la graine figure dans le journal). Activée : chaque octet. Cela vaut pour zstd et pour LZ4 sans dossier intermédiaire ; si le programme empaquette tout de même LZ4 via un dossier intermédiaire, l'outil d'empaquetage vérifie toujours tout.</p>
+    <p><strong>LZ4 sans dossier intermédiaire.</strong> Les packs LZ4 sont eux aussi créés sans que le jeu soit extrait : le programme compresse chaque bloc deux fois, une fois pour mesurer et une fois à l'écriture dans l'image, et confronte chaque bloc à la mesure. La source est lue deux fois pour cela. Avec une piste par groupe, les volumes sont identiques octet pour octet à ceux de l'outil d'empaquetage. Avec <strong>ampr-emu-ng (NG)</strong>, le profil par défaut empaquette tout sauf les fichiers système (<code>eboot.bin</code>, modules, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, les fichiers PlayGo et <code>global-metadata.dat</code>) ; images, son, vidéo et configurations entrent donc aussi dans les volumes, car NG les fournit comme n'importe quel autre fichier. Les originaux empaquetés manquent dans le résultat ; les fichiers vides restent des fichiers dans l'image. Avec le runtime de drakmor, c'est le profil par défaut plus prudent qui s'applique, avec les extensions séparées (voir ci-dessous). Si une exécution doit finalement empaqueter via un dossier intermédiaire (section 3.3), les originaux restent, comme avec la réponse Non à la question. <strong>Vérifié sur la console</strong> : NG avec LZ4 sans originaux, sur deux jeux Unity ; la même image sans l'émulateur n'affiche qu'un écran noir, les volumes ne sont donc fournis que par NG. Les gros jeux et les autres moteurs n'ont pas été mesurés. La vitesse dépend de la source : elle est lue deux fois, et avec un disque lent (environ 50&nbsp;MiB/s) cela fait, pour 11&nbsp;GB, bien six minutes.</p>
     <p><strong>Méthode d'empaquetage LZ4 ou zstd.</strong> Sous
     <strong>PARAMÈTRES</strong>, dans la même section, choisir la
     <em>Méthode de pack</em>. <strong>LZ4</strong> (par défaut) crée les volumes

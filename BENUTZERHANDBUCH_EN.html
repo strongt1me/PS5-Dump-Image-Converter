@@ -422,10 +422,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>PRESET</strong></td><td>Four buttons to the right of the checkboxes at the bottom of the path card set the <strong>compression level and the core count</strong> with one click: <em>Fast</em> (level&nbsp;3, all cores), <em>Balanced</em> (level&nbsp;6, half the cores), <em>Maximum</em> (level&nbsp;9, half the cores), and <em>Low RAM</em> (level&nbsp;3, one core &ndash; only one worker uses memory, but it takes longer). The button whose values are currently set is highlighted; if you change the level or workers by hand, the highlight goes out. The <strong>block size stays at 65536</strong>: smaller blocks gained 0.1% in measurement, and 64&nbsp;KB is the unit with which ShadowMount+ mounts the image. In a very narrow window the buttons are dropped instead of overlapping a checkbox. The idea comes from PS5-FFPFSC-PRO&nbsp;1.3.0.</td></tr>
       <tr><td><strong>VERIFY</strong></td><td>Whether the finished image is checked after packing. “Quick” checks the structure and a sample of the blocks (about 1 %, at most 1 GiB), “Full” additionally reads everything back and takes considerably longer, “Off” checks only the structure. <a href="#k12">Task 8</a> can also check at any time afterward.</td></tr>
       <tr><td><strong>TARGET FOLDER</strong></td><td>The program writes the finished result here. It is best to use a different folder than the source. The field starts empty; the selection dialog opens in the most recently used target folder.</td></tr>
-      <tr><td><strong>TEMP FOLDER</strong></td><td>The field starts empty; <strong>empty means: the Windows temp folder</strong>, without it appearing in the field. Storage for temporary working files. Best is a dedicated folder on a large drive (e.g.&nbsp;<code>D:\PS5-Temp</code>): in the Windows temp folder, Windows storage optimization may delete files when space is low &ndash; even a working copy in the middle of a run. If the temp folder is located there and deletion is enabled, the log warns you when a run starts.</td></tr>
+      <tr><td><strong>TEMP FOLDER</strong></td><td>Since v1.9.98 the field appears only where an intermediate folder is still created (when the conversion without an intermediate folder is switched off, or with AMPR EMU and an LZ4 asset pack, where a run may exceptionally still need an intermediate folder, <a href="#k3">Section 3.3</a>); otherwise it stays hidden, and a folder chosen earlier remains in effect. The field starts empty; <strong>empty means: the Windows temp folder</strong>, without it appearing in the field. Storage for temporary working files. Best is a dedicated folder on a large drive (e.g.&nbsp;<code>D:\PS5-Temp</code>): in the Windows temp folder, Windows storage optimization may delete files when space is low &ndash; even a working copy in the middle of a run. If the temp folder is located there and deletion is enabled, the log warns you when a run starts.</td></tr>
       <tr><td><strong>Dump folder in the work folder</strong></td><td>Checkbox in the path card. When repacking (for example <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>), the program first unpacks the source into a temporary dump folder. By default this is placed at the <em>target</em>; if the box is checked, it moves to the work folder &ndash; then only the finished result is created on the target drive. The work folder must be able to hold the complete dump for this. Pure unpack tasks are not affected: there the dump folder <em>is</em> the result.</td></tr>
       <tr><td><strong>Dump folder: create a working copy first</strong></td><td>Checkbox below it. If something has to be integrated into an existing dump folder (BACKPORT, AMPR EMU, asset pack, PlayGo), the program creates a working copy without asking (for Task&nbsp;1, a backup in the target folder) and works in it &ndash; the original stays unchanged, and a run does not have to wait for your “Yes”. Without the check mark, you are asked as before.</td></tr>
-      <tr><td><strong>Shut down computer</strong></td><td>Checkbox below TEMP FOLDER. If it is checked, the computer shuts down by itself after a <em>successful</em> run – see <a href="#k3">Section 3.2</a>.</td></tr>
+      <tr><td><strong>Shut down computer</strong></td><td>Checkbox in the path card. If it is checked, the computer shuts down by itself after a <em>successful</em> run – see <a href="#k3">Section 3.2</a>.</td></tr>
       <tr><td><strong>START</strong></td><td>Begins the selected task as soon as all required information is present.</td></tr>
       <tr><td><strong>CANCEL</strong></td><td>Requests a controlled cancellation. Afterward, wait until the program confirms the cancellation.</td></tr>
       <tr><td><strong>Live display</strong></td><td>At the right below the log, the load is shown once per second during a run: “CPU: 42% | RAM: 9.00 GB free (15.00 GB / 24.00 GB) | Temp: …”. The <strong>free memory</strong> comes first, followed by used and total. If it drops below 1&nbsp;GB, it reads “RAM: only … free” &ndash; at 0.8&nbsp;GB, a build aborted with <code>MemoryError</code> on September 20, 2026. In that case the <em>Low RAM</em> preset or closing other programs helps.</td></tr>
@@ -940,7 +940,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Click the task you want on the left.</li>
     <li>Choose the source with the button to the right of the SOURCE field.</li>
     <li>If shown, choose the TARGET FORMAT and, if needed, the compression level and worker threads.</li>
-    <li>Choose a separate TARGET FOLDER and a writable TEMP FOLDER.</li>
+    <li>Choose a separate TARGET FOLDER. Normally you no longer need to choose a TEMP FOLDER: the conversions work without an unpacked game, and the field appears only where an intermediate folder is created (Section 3.3).</li>
     <li>Check all paths once more and click START.</li>
     <li>Leave the program open until the log reports a successful completion.</li>
   </ol>
@@ -952,6 +952,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h3>3.1 Reading the progress correctly</h3>
   <p>While a task is running, the bar shows the overall progress, and the same value appears next to it as a percentage. For larger conversions, the status line adds phase information (such as “Phase 3/4 – …”) and, where available, a line with the current CPU, RAM and temp storage usage. These displays are updated together.</p>
+  <p>Below it, the <strong>stage line</strong> shows each section of the run with its state and duration, for example <em>✓ System files 0:03 · ▶ Integration 1:30 (Measure 1:10) · ○ Write · ○ Check · total 1:33</em>. A check mark means done, a triangle is running right now, a circle is still waiting; after the run the line stays with the final times. The same times appear in the log as <code>[ZEIT]</code>.</p>
 
   <div class="kasten warnung">
     <span class="titel">While processing</span>
@@ -959,7 +960,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>3.2 Shutting down the computer after the work is done</h3>
-  <p>Large conversions take a long time. With the checkbox <strong>Shut down the computer after a successful run</strong> (under TEMP FOLDER) you can leave the computer alone while it works.</p>
+  <p>Large conversions take a long time. With the checkbox <strong>Shut down the computer after a successful run</strong> (in the path card) you can leave the computer alone while it works.</p>
   <p>This is what happens when the task was <strong>successful</strong>:</p>
   <ol class="schritte">
     <li>A window appears and counts down 60 seconds. During that time you can object with <strong>Cancel – keep the computer on</strong> or the ESC key.</li>
@@ -1002,9 +1003,28 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <em>same</em> drive, the sum is checked &ndash; viewed separately,
   each would look fine, and together there would still not be
   enough.</p>
-  <p>If <strong>AMPR EMU</strong> or <strong>BACKPORT</strong> is checked,
-  a complete working copy of the game is additionally created in the work folder;
-  the space needed there is then as large as the game itself.</p>
+  <p>A game is converted <strong>without an intermediate folder</strong>: the
+  program reads it directly from the source (<code>.exFAT</code>,
+  <code>.ffpfs</code>, <code>.ffpfsc</code>, <code>.ffpkg</code> or
+  dump folder) and writes the result in one pass. Even with
+  <strong>AMPR EMU</strong>, <strong>BACKPORT</strong>, fake signature, DLC EMU
+  and PlayGo, the work folder holds only the few files that the integration
+  changes (about 5&nbsp;% of the source, at least 2&nbsp;GiB); the space is then needed
+  mainly by the target. This applies equally to asset packs with zstd and with LZ4. A <code>.ffpkg</code> is created without UFS2Tool and without
+  administrator rights.</p>
+  <p>Only where the stream does not work, a complete working copy is created
+  in the work folder as before, and the space needed there is as large as
+  the game itself: with a pack profile of your own
+  <code>&lt;Ordnername&gt;_ampr_pack.toml</code> next to the dump folder, with
+  a title profile with several groups (such as EA Sports UFC&nbsp;6), if
+  the source already carries a packed asset layer or
+  contains symbolic links, and with a <code>.ffpkg</code> with names
+  that the image cannot hold. The log states the reason
+  ("&hellip; packing goes through an intermediate folder as before") and
+  warns if the work folder is too small for it. The field
+  <em>TEMP FOLDER</em> in the main view appears only where the conversion without an intermediate folder is switched off or AMPR EMU is built in with an LZ4 asset pack (there a run may exceptionally still need an intermediate folder); a folder once chosen there
+  remains in effect, and through the &ldquo;When there is not enough space&rdquo; window
+  another work folder can be chosen.</p>
   <p>There is no window on the command line: There, the finding is
   reported, and <code>--yes</code> decides as it does for any other
   prompt.</p>
@@ -1043,6 +1063,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   affected games. The PS4 PKG window asks about the package sizes before building a
   <code>.ffpfsc</code>. On the command line,
   this question does not exist.</p>
+
+  <h3>3.5 Before the start, after an error and when naming</h3>
+  <p><strong>Pre-check.</strong> Before the start, the program goes through the game folder once and reports <em>all</em> findings at the same time; the affected paths are in the log. For an exFAT image, names outside ASCII, symbolic links, invalid characters and names that differ only in upper and lower case are <em>errors</em> – the writer would reject them only after copying. For <code>.ffpkg</code>, <code>.ffpfs</code> and <code>.ffpfsc</code> they are a warning; there it is not proven. There are also warnings for paths deeper than 32 folder levels and for an output name over 63 bytes (for <code>.ffpfsc</code> 58) that might no longer fit after the ShadowMount+ mount path; this has not been measured on the console. A FAT32 target is also an error if a file is over 4&nbsp;GiB. Batch conversion checks only the output names; the name probe reads for 20 seconds at most. A probe that itself fails never prevents the start.</p>
+  <p><strong>Output name by template.</strong> By default the result is named like the source. Under <strong>SETTINGS</strong>, section <em>OUTPUT NAME</em>, you build the name from the details of the game, for example <code>{title} [{title_id}] v{version}</code> (<em>Astro Bot [PPSA01234] v1.0.0</em>). The parts are <code>{name}</code> (name of the source), <code>{title}</code>, <code>{title_id}</code>, <code>{version}</code>, <code>{region}</code>, <code>{fw}</code> (minimum firmware) and <code>{pack}</code> (zstd or lz4, empty for a game without an asset pack); each at most once, and at least <code>{name}</code>, <code>{title}</code> or <code>{title_id}</code> must appear. The example list and the preview show the name of a sample game for each format, with the bytes against the length limit; <em>Default</em> resets to <code>{name}</code>. A usable template is saved immediately; for an unusable one the reason is shown and the last saved one stays in effect. A generated name is cut to the maximum length of the format (the title first) and made suitable for Windows (no dot or space at the end; a reserved device name such as <code>AUX</code> gets an underscore). If the name matches an existing file, the program asks as usual whether to replace it; in batch conversion, a result of the same run with the same name is skipped. The template applies to every target format, <code>.ffpkg</code> included. If the details of the game are missing, the name of the source stays. On the command line, <code>--ausgabename VORLAGE</code> takes precedence over the setting.</p>
+  <p><strong>Leftovers after an error.</strong> If a single run has failed or was cancelled, a card shows what was left behind: the unfinished result and, next to it, <code>.teil</code>, <code>.neu</code>, <code>.part</code> and <code>.partial</code> files, with sizes. Nothing is removed unless you ask for it. The source itself, a folder around it and a folder inside it are protected twice (when offering and when removing). In batch conversion and on the command line it stays with the log. When a game folder is moved (Task 4), <code>sce_sys</code> and, at the very end, <code>eboot.bin</code> are handled, so that an aborted half folder does not look like a game.</p>
+  <p><strong>Language at startup.</strong> Without a saved choice the program follows the display language of the system; if it does not know that language, English applies. A language chosen with the language button always applies.</p>
 </section>
 
 <section class="kapitel" id="k4">
@@ -1368,7 +1394,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   packed originals should be left out of the result; the default is
   <em>No</em>. Removal happens only in the working copy,
   never in your own dump folder. On the command line the
-  switch is <code>--ampr-originale-weglassen</code>. With AMPR EMU NG and zstd this question is skipped: the packed originals are always left out of the working copy.</p>
+  switch is <code>--ampr-originale-weglassen</code>. With AMPR EMU NG and zstd this question is skipped: the packed originals are always left out of the working copy. The same applies to NG with LZ4 when packing without an intermediate folder (Section 3.3); with the drakmor runtime the originals stay in the image, even if you chose &ldquo;leave out&rdquo;.</p>
 
   <div class="kasten warnung">
     <span class="titel">Console test first, then leave out</span>
@@ -1474,6 +1500,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     (see below). On the command line it is set by
     <code>--ampr-lz4-stufe</code> (1 to 12).</p>
     <p><strong>Pack method in the main window.</strong> In the integration row, below the method (second row), there is the same <em>LZ4</em> / <em>zstd</em> selection; it is the same setting as in SETTINGS. It can only be selected with AMPR EMU ticked and the method <em>Asset pack</em>; with <em>Normal</em> it stays grey and nothing is packed with LZ4 or zstd. If you choose zstd, the program takes the newest regular NG version unless an NG version is already selected; with LZ4 the version stays freely selectable.</p>
+    <p><strong>Pack level and &ldquo;Full verification&rdquo;.</strong> To the right of the pack method is the <em>pack level</em>: it shows the levels of the chosen method (LZ4 or zstd) and is the same setting as under SETTINGS. Next to it, <em>Full verification</em> switches how thoroughly the packs are checked on their way into the image. Off (default): the structure, headers and position of every block are always checked in full, and of the content a sample (the first and last piece of large files plus random pieces, about 1 %; the seed is shown in the log). On: every byte. This applies to zstd and to LZ4 without an intermediate folder; if the program does pack LZ4 through an intermediate folder after all, the pack tool always checks everything.</p>
+    <p><strong>LZ4 without an intermediate folder.</strong> LZ4 packs, too, are created without unpacking the game: the program compresses each block twice, once to measure and once when writing into the image, and holds each block against the measurement. The source is read twice in the process. With one track per group, the volumes are byte for byte the same as those of the pack tool. With <strong>ampr-emu-ng (NG)</strong> the default profile packs everything except the system files (<code>eboot.bin</code>, modules, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, the PlayGo files and <code>global-metadata.dat</code>); images, sound, video and configuration files therefore go into the volumes as well, because NG serves them like any other file. The packed originals are missing from the result; empty files remain as files in the image. With the drakmor runtime the more cautious default profile with the loose extensions applies (see below). If a run has to pack through an intermediate folder after all (Section 3.3), the originals stay, as with the answer No to the question. <strong>Checked on the console</strong> is NG with LZ4 without originals on two Unity games; the same image without the emulator shows only a black screen, so the volumes are served by NG alone. Large games and other engines have not been measured. The speed depends on the source: it is read twice, and with a slow disk (about 50&nbsp;MiB/s) that takes a good six minutes for 11&nbsp;GB.</p>
     <p><strong>Pack method LZ4 or zstd.</strong> Under
     <strong>SETTINGS</strong>, in the same section, select the
     <em>Pack method</em>. <strong>LZ4</strong> (default) builds the volumes

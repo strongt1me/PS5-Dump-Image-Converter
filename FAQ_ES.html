@@ -305,7 +305,7 @@ footer{
       <li>Elegir a la izquierda la tarea adecuada.</li>
       <li>Elegir el origen con el botón situado junto a ORIGEN.</li>
       <li>Si aparece, elegir el FORMATO DE DESTINO y, si hace falta, la compresión y los workers.</li>
-      <li>Elegir una CARPETA DE DESTINO <strong>distinta</strong> y una CARPETA TEMPORAL con permiso de escritura.</li>
+      <li>Elegir una CARPETA DE DESTINO <strong>distinta</strong>. Normalmente ya no hace falta una CARPETA TEMPORAL: las conversiones trabajan sin el juego desempaquetado, y el campo solo aparece donde se crea una carpeta intermedia.</li>
       <li>Comprobar todas las rutas y pulsar INICIAR.</li>
       <li>Mantener el programa abierto hasta que el registro informe de que ha finalizado correctamente.</li>
     </ol>
@@ -325,7 +325,7 @@ footer{
       </tbody>
     </table>
     </div>
-    <p>Si está marcado <strong>AMPR EMU</strong> o <strong>BACKPORT</strong>, también se crea en la carpeta de trabajo una copia de trabajo completa del juego. Si las carpetas de trabajo y de destino están en la misma unidad, cuenta la suma.</p>
+    <p>Un juego se convierte <strong>sin carpeta intermedia</strong>: el programa lo lee directamente del origen y escribe el resultado de una sola vez, también con AMPR EMU, BACKPORT, firma falsa, DLC EMU y PlayGo. En la carpeta de trabajo solo hay entonces los pocos archivos que modifica la integración (aproximadamente el 5 % del origen, como mínimo 2 GiB). Solo donde el flujo no funciona (un perfil de empaquetado propio junto a la carpeta de dump, un perfil de título con varios grupos, una capa de assets ya empaquetada en el origen) se crea, como antes, una copia de trabajo completa; el registro indica el motivo y avisa si falta espacio. Si las carpetas de trabajo y de destino están en la misma unidad, cuenta la suma.</p>
   </div>
 
   <div class="frage">
@@ -365,7 +365,7 @@ footer{
 
   <div class="frage">
     <h3>¿Puede apagarse el equipo solo tras una conversión larga?</h3>
-    <p>Sí, con la casilla <strong>Apagar el equipo tras finalizar correctamente</strong> situada debajo de CARPETA TEMPORAL. Solo tras una ejecución <em>correcta</em> aparece una ventana con una cuenta atrás de 60 segundos (cancelar con el botón o con ESC). Después se desmontan las imágenes, se eliminan los archivos de trabajo, se guarda el registro y el equipo se apaga sin más preguntas. Tras un error o una cancelación permanece encendido. Conviene guardar antes el trabajo de otros programas.</p>
+    <p>Sí, con la casilla <strong>Apagar el equipo tras finalizar correctamente</strong> situada en la tarjeta de rutas. Solo tras una ejecución <em>correcta</em> aparece una ventana con una cuenta atrás de 60 segundos (cancelar con el botón o con ESC). Después se desmontan las imágenes, se eliminan los archivos de trabajo, se guarda el registro y el equipo se apaga sin más preguntas. Tras un error o una cancelación permanece encendido. Conviene guardar antes el trabajo de otros programas.</p>
   </div>
 
   <div class="frage">
@@ -440,7 +440,7 @@ footer{
   <div class="frage">
     <h3>¿Qué son los asset packs?</h3>
     <p>Con el método <strong>Asset Pack</strong>, los archivos del juego se colocan además en bandas empaquetadas (<code>ampr_assets-*.pak</code>) que AMPR EMU lee bloque a bloque a partir de la versión 0.4.2.1. Esto ahorra espacio y descriptores de archivo en la consola. Para ello deben estar correctas <strong>ambas</strong> listas desplegables: versión de AMPR <code>test-pack</code> (o <code>test-debug-pack</code> para la resolución de problemas) y método <em>Asset Pack</em>; la versión <code>test-nopack</code>, que viene preseleccionada arriba, no puede hacerlo.</p>
-    <p>Cada bloque empaquetado se comprueba byte a byte con el archivo original. Los archivos originales permanecen en su sitio salvo que se elija otra cosa; omitirlos solo tras una prueba correcta en la consola. La guía detallada se abre con el botón <strong>Guía de LZ4 y Asset Packs</strong>.</p>
+    <p>Cada bloque empaquetado se comprueba byte a byte con el archivo original. Los archivos originales permanecen en su sitio salvo que se elija otra cosa; omitirlos solo tras una prueba correcta en la consola. Con ampr-emu-ng (NG) el programa omite los originales empaquetados en el resultado sin preguntar; con el runtime de drakmor siempre permanecen en la imagen. La guía detallada se abre con el botón <strong>Guía de LZ4 y Asset Packs</strong>.</p>
     <p>Para <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> y los juegos basados en el motor <em>Unity</em> o <em>Insomniac</em>, el programa configura automáticamente un perfil de empaquetado probado (desde la v1.9.78). Un perfil propio junto a la carpeta de dump (<code>&lt;folder name&gt;_ampr_pack.toml</code>) tiene siempre prioridad.</p>
   </div>
 
@@ -448,6 +448,7 @@ footer{
     <h3>¿Con qué intensidad se empaqueta y cómo se comprueba o desempaqueta un asset pack terminado?</h3>
     <p><strong>La intensidad</strong> se ajusta en <strong>CONFIGURACIÓN</strong>, en la sección <em>ASSET PACK (LZ4)</em> (desde la v1.9.80). El valor predeterminado es el nivel <strong>9</strong>: medido con datos reales de juegos, el nivel 12 ahorra solo entre 0,0 y 0,6 puntos porcentuales más, pero tarda entre 1,2 y 3,6 veces más. Las imágenes, texturas, archivos comprimidos, audio, vídeo y archivos de configuración permanecen sueltos en el perfil general porque ya están comprimidos.</p>
     <p><strong>LZ4 o zstd:</strong> en <strong>CONFIGURACIÓN</strong>, en la misma sección, elegir el <em>método de empaquetado</em>. LZ4 (el predeterminado) crea <code>ampr_assets-*.pak</code>. zstd crea <code>ampr_zstd.index</code> y <code>ampr_zstd-NNN.pak</code>, empaqueta todos los archivos excepto los archivos del sistema y suele comprimir más, pero lo lee <em>solo</em> ampr-emu-ng (NG), no el runtime de drakmor. Con zstd la lista de versiones ofrece solo NG; el nivel de zstd va de 1 a 22 (predeterminado 5). Las reglas propias (qué archivos permanecen sueltos) se leen de un archivo <code>&lt;folder name&gt;_ampr_pack.toml</code> junto a la carpeta de dump o, una sola vez para todos los juegos, del archivo que se elija en la configuración en «Reglas de empaquetado para zstd»; los archivos del sistema permanecen siempre sueltos. No se ha medido si un juego con packs zstd se inicia en la consola; los originales empaquetados faltan en el resultado, conserve el dump de origen (no se modifica).</p>
+    <p><strong>LZ4 sin carpeta intermedia, nivel de empaquetado y comprobación:</strong> También los packs LZ4 se crean sin desempaquetar el juego; el origen se lee dos veces (una para medir y otra para escribir en la imagen). Con NG, el perfil predeterminado empaqueta todo salvo los archivos del sistema (<code>eboot.bin</code>, módulos, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, archivos de PlayGo, <code>global-metadata.dat</code>); los originales empaquetados faltan en el resultado. Esto está comprobado en la consola con dos juegos de Unity; sin el emulador, la misma imagen solo muestra una pantalla negra. A la derecha del método de empaquetado están el <em>nivel de empaquetado</em> y el interruptor <em>Comprobación completa</em> (para zstd y LZ4): desactivada (valor predeterminado) significa que la estructura, las cabeceras y la posición de cada bloque se comprueban por completo, y del contenido una muestra; activada: cada byte.</p>
     <p><strong>Comprobar y desempaquetar</strong> está en <strong>MÁS HERRAMIENTAS</strong> → <strong>COMPROBAR / DESCOMPRIMIR ASSET PACK</strong> (desde la v1.9.80). Elegir la carpeta del juego que contiene <code>ampr_assets.index</code>: <em>COMPROBAR</em> lee cada bloque contra las sumas de comprobación e indica si la biblioteca de la carpeta puede leer los volúmenes; <em>DESCOMPRIMIR</em> vuelve a dejar los archivos empaquetados como archivos sueltos, en una carpeta nueva (la carpeta del juego se conserva) o en la propia carpeta del juego (los volúmenes se eliminan después). De este modo no se puede abrir una imagen; primero hay que desempaquetarla con la tarea 2.</p>
   </div>
 

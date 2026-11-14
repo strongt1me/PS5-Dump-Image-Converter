@@ -305,7 +305,7 @@ footer{
       <li>Links die passende Aufgabe wählen.</li>
       <li>Die Quelle über den Knopf neben QUELLE wählen.</li>
       <li>Falls angezeigt, das ZIELFORMAT wählen – bei Bedarf auch Kompression und Worker.</li>
-      <li>Einen <strong>getrennten</strong> ZIELORDNER und einen beschreibbaren TEMP-ORDNER wählen.</li>
+      <li>Einen <strong>getrennten</strong> ZIELORDNER wählen. Einen TEMP-ORDNER brauchen Sie normalerweise nicht mehr: Die Umwandlungen arbeiten ohne entpacktes Spiel, das Feld erscheint nur noch, wo ein Zwischenordner angelegt wird.</li>
       <li>Alle Pfade prüfen und STARTEN drücken.</li>
       <li>Das Programm offen lassen, bis das Protokoll den erfolgreichen Abschluss meldet.</li>
     </ol>
@@ -325,7 +325,7 @@ footer{
       </tbody>
     </table>
     </div>
-    <p>Sind <strong>AMPR EMU</strong> oder <strong>BACKPORT</strong> angehakt, entsteht im Arbeitsordner zusätzlich eine vollständige Arbeitskopie des Spiels. Liegen Arbeits- und Zielordner auf demselben Laufwerk, zählt die Summe.</p>
+    <p>Ein Spiel wird <strong>ohne Zwischenordner</strong> umgewandelt: Das Programm liest es direkt aus der Quelle und schreibt das Ergebnis in einem Zug, auch mit AMPR EMU, BACKPORT, Fake-Signatur, DLC EMU und PlayGo. Im Arbeitsordner liegen dann nur die wenigen Dateien, die der Einbau ändert (rund 5 % der Quelle, mindestens 2 GiB). Nur wo der Strom nicht geht (ein eigenes Packprofil neben dem Dump-Ordner, ein Titelprofil mit mehreren Gruppen, eine schon gepackte Asset-Schicht in der Quelle), entsteht wie früher eine vollständige Arbeitskopie; das Protokoll nennt den Grund und warnt bei zu wenig Platz. Liegen Arbeits- und Zielordner auf demselben Laufwerk, zählt die Summe.</p>
   </div>
 
   <div class="frage">
@@ -365,7 +365,7 @@ footer{
 
   <div class="frage">
     <h3>Kann der Rechner nach einer langen Umwandlung von selbst herunterfahren?</h3>
-    <p>Ja – mit dem Ankreuzfeld <strong>Rechner nach erfolgreichem Abschluss herunterfahren</strong> unter TEMP-ORDNER. Nur nach einem <em>erfolgreichen</em> Lauf erscheint ein Fenster, das 60 Sekunden herunterzählt (Abbruch mit dem Knopf oder ESC). Danach werden Abbilder gelöst, Arbeitsdateien entfernt und das Protokoll gespeichert, dann fährt der Rechner ohne weitere Rückfrage herunter. Nach einem Fehler oder Abbruch bleibt er an. Speichern Sie vorher Ihre Arbeit in anderen Programmen.</p>
+    <p>Ja – mit dem Ankreuzfeld <strong>Rechner nach erfolgreichem Abschluss herunterfahren</strong> in der Pfad-Karte. Nur nach einem <em>erfolgreichen</em> Lauf erscheint ein Fenster, das 60 Sekunden herunterzählt (Abbruch mit dem Knopf oder ESC). Danach werden Abbilder gelöst, Arbeitsdateien entfernt und das Protokoll gespeichert, dann fährt der Rechner ohne weitere Rückfrage herunter. Nach einem Fehler oder Abbruch bleibt er an. Speichern Sie vorher Ihre Arbeit in anderen Programmen.</p>
   </div>
 
   <div class="frage">
@@ -440,7 +440,7 @@ footer{
   <div class="frage">
     <h3>Was sind Asset-Packs?</h3>
     <p>Bei der Methode <strong>Asset-Pack</strong> werden die Spieldateien zusätzlich in gepackte Bänder (<code>ampr_assets-*.pak</code>) gelegt, die der AMPR EMU ab Fassung 0.4.2.1 blockweise liest. Das spart Platz und Dateideskriptoren auf der Konsole. Dafür müssen <strong>beide</strong> Klapplisten stimmen: AMPR-Fassung <code>test-pack</code> (oder <code>test-debug-pack</code> zur Fehlersuche) und Methode <em>Asset-Pack</em> – die oben vorgewählte Fassung <code>test-nopack</code> kann es nicht.</p>
-    <p>Jeder gepackte Block wird Byte für Byte gegen die Originaldatei geprüft. Ihre Originaldateien bleiben liegen, wenn Sie nichts anderes wählen; lassen Sie sie erst nach einem erfolgreichen Konsolentest weg. Die ausführliche Anleitung öffnet der Knopf <strong>LZ4 &amp; Asset Pack Anleitung</strong>.</p>
+    <p>Jeder gepackte Block wird Byte für Byte gegen die Originaldatei geprüft. Ihre Originaldateien bleiben liegen, wenn Sie nichts anderes wählen; lassen Sie sie erst nach einem erfolgreichen Konsolentest weg. Mit ampr-emu-ng (NG) lässt das Programm die gepackten Originale im Ergebnis ohne Rückfrage weg, mit der Laufzeit von drakmor bleiben sie immer im Abbild. Die ausführliche Anleitung öffnet der Knopf <strong>LZ4 &amp; Asset Pack Anleitung</strong>.</p>
     <p>Für <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> sowie Spiele der <em>Unity</em>- und der <em>Insomniac</em>-Engine legt das Programm automatisch ein getestetes Packprofil an (seit v1.9.78). Ein eigenes Profil neben dem Dump-Ordner (<code>&lt;Ordnername&gt;_ampr_pack.toml</code>) hat immer Vorrang.</p>
   </div>
 
@@ -448,6 +448,7 @@ footer{
     <h3>Wie stark wird gepackt, und wie prüfe oder entpacke ich ein fertiges Asset-Pack?</h3>
     <p><strong>Die Stärke</strong> stellen Sie unter <strong>EINSTELLUNGEN</strong> im Abschnitt <em>Asset-Pack (LZ4)</em> ein (seit v1.9.80). Vorgabe ist Stufe <strong>9</strong>: Stufe 12 spart nach Messungen an echten Spieldaten nur 0,0 bis 0,6 Prozentpunkte mehr, braucht aber das 1,2- bis 3,6-Fache an Zeit. Bilder, Texturen, Archive, Ton, Video und Konfigurationsdateien bleiben im allgemeinen Profil lose, weil sie schon verdichtet sind.</p>
     <p><strong>LZ4 oder zstd:</strong> Unter <strong>EINSTELLUNGEN</strong> wählen Sie im selben Abschnitt das <em>Packverfahren</em>. LZ4 (Vorgabe) baut <code>ampr_assets-*.pak</code>. zstd baut <code>ampr_zstd.index</code> und <code>ampr_zstd-NNN.pak</code>, packt jede Datei außer den Systemdateien und verdichtet meist stärker, wird aber <em>nur</em> von ampr-emu-ng (NG) gelesen, nicht von der Laufzeit von drakmor. Bei zstd bietet die Versionsliste nur NG an; die zstd-Stufe reicht von 1 bis 22 (Vorgabe 5). Eigene Regeln (welche Dateien lose bleiben) lesen Sie aus einer Datei <code>&lt;Ordnername&gt;_ampr_pack.toml</code> neben dem Dump-Ordner oder, einmal für alle Spiele, aus der Datei, die Sie in den Einstellungen unter „Packregeln für zstd“ wählen; Systemdateien bleiben immer lose. Ob ein Spiel mit zstd-Packs an der Konsole startet, ist nicht gemessen; die gepackten Originale fehlen im Ergebnis, bewahren Sie den Quell-Dump auf (er bleibt unverändert).</p>
+    <p><strong>LZ4 ohne Zwischenordner, Packstufe und Prüfung:</strong> Auch LZ4-Packs entstehen, ohne dass das Spiel entpackt wird; die Quelle wird dabei zweimal gelesen (einmal messen, einmal ins Abbild schreiben). Mit NG packt das Standardprofil alles außer den Systemdateien (<code>eboot.bin</code>, Module, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, PlayGo-Dateien, <code>global-metadata.dat</code>); die gepackten Originale fehlen im Ergebnis. An der Konsole geprüft ist das an zwei Unity-Spielen, ohne den Emulator zeigt dasselbe Abbild nur ein schwarzes Bild. Rechts neben dem Packverfahren stehen die <em>Packstufe</em> und der Schalter <em>Vollständige Prüfung</em> (für zstd und LZ4): Aus (Vorgabe) heißt, dass Aufbau, Köpfe und Lage jedes Blocks ganz geprüft werden, vom Inhalt eine Stichprobe; an: jedes Byte.</p>
     <p><strong>Prüfen und Entpacken</strong> geht unter <strong>WEITERE TOOLS</strong> → <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong> (seit v1.9.80). Wählen Sie den Spielordner mit <code>ampr_assets.index</code>: <em>PRÜFEN</em> liest jeden Block gegen die Prüfsummen und sagt, ob die Bibliothek im Ordner Bänder lesen kann; <em>ENTPACKEN</em> legt die gepackten Dateien wieder lose hin – in einen neuen Ordner (der Spielordner bleibt) oder in den Spielordner selbst (danach werden die Bänder gelöscht). Ein Abbild lässt sich so nicht öffnen; packen Sie es vorher mit Aufgabe 2 aus.</p>
   </div>
 

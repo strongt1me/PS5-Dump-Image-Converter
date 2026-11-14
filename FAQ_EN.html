@@ -305,7 +305,7 @@ footer{
       <li>Choose the matching task on the left.</li>
       <li>Choose the source with the button next to SOURCE.</li>
       <li>If shown, choose the TARGET FORMAT – and, if needed, compression and workers.</li>
-      <li>Choose a <strong>separate</strong> TARGET FOLDER and a writable TEMP FOLDER.</li>
+      <li>Choose a <strong>separate</strong> TARGET FOLDER. You normally no longer need a TEMP FOLDER: the conversions work without an unpacked game, and the field appears only where an intermediate folder is created.</li>
       <li>Check all paths and press START.</li>
       <li>Keep the program open until the log reports successful completion.</li>
     </ol>
@@ -325,7 +325,7 @@ footer{
       </tbody>
     </table>
     </div>
-    <p>If <strong>AMPR EMU</strong> or <strong>BACKPORT</strong> is ticked, a complete working copy of the game is also created in the work folder. If the work and target folders are on the same drive, the sum counts.</p>
+    <p>A game is converted <strong>without an intermediate folder</strong>: the program reads it directly from the source and writes the result in one pass, even with AMPR EMU, BACKPORT, fake signature, DLC EMU and PlayGo. The work folder then holds only the few files that the integration changes (about 5 % of the source, at least 2 GiB). Only where the stream does not work (a pack profile of your own next to the dump folder, a title profile with several groups, an already packed asset layer in the source) is a complete working copy created as before; the log states the reason and warns if there is too little space. If the work and target folders are on the same drive, the sum counts.</p>
   </div>
 
   <div class="frage">
@@ -365,7 +365,7 @@ footer{
 
   <div class="frage">
     <h3>Can the computer shut down on its own after a long conversion?</h3>
-    <p>Yes – with the checkbox <strong>Shut down the computer after a successful run</strong> under TEMP FOLDER. Only after a <em>successful</em> run does a window appear that counts down 60 seconds (cancel with the button or ESC). Then images are unmounted, working files removed and the log saved, and the computer shuts down without further questions. After an error or a cancellation it stays on. Save your work in other programs beforehand.</p>
+    <p>Yes – with the checkbox <strong>Shut down the computer after a successful run</strong> in the path card. Only after a <em>successful</em> run does a window appear that counts down 60 seconds (cancel with the button or ESC). Then images are unmounted, working files removed and the log saved, and the computer shuts down without further questions. After an error or a cancellation it stays on. Save your work in other programs beforehand.</p>
   </div>
 
   <div class="frage">
@@ -440,7 +440,7 @@ footer{
   <div class="frage">
     <h3>What are asset packs?</h3>
     <p>With the method <strong>Asset pack</strong>, the game files are additionally put into packed bands (<code>ampr_assets-*.pak</code>) that AMPR EMU reads block by block from version 0.4.2.1 on. This saves space and file descriptors on the console. For this, <strong>both</strong> drop-down lists must be right: AMPR version <code>test-pack</code> (or <code>test-debug-pack</code> for troubleshooting) and method <em>Asset pack</em> – the version <code>test-nopack</code> that is preselected at the top cannot do it.</p>
-    <p>Every packed block is checked byte by byte against the original file. Your original files stay in place unless you choose otherwise; only leave them out after a successful test on the console. The detailed guide opens with the <strong>LZ4 &amp; Asset Pack Guide</strong> button.</p>
+    <p>Every packed block is checked byte by byte against the original file. Your original files stay in place unless you choose otherwise; only leave them out after a successful test on the console. With ampr-emu-ng (NG) the program leaves the packed originals out of the result without asking; with the drakmor runtime they always stay in the image. The detailed guide opens with the <strong>LZ4 &amp; Asset Pack Guide</strong> button.</p>
     <p>For <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> and games built on the <em>Unity</em> or <em>Insomniac</em> engine, the program automatically sets up a tested pack profile (since v1.9.78). A profile of your own next to the dump folder (<code>&lt;folder name&gt;_ampr_pack.toml</code>) always takes precedence.</p>
   </div>
 
@@ -448,6 +448,7 @@ footer{
     <h3>How strongly is it packed, and how do I check or unpack a finished asset pack?</h3>
     <p><strong>The strength</strong> is set under <strong>SETTINGS</strong> in the section <em>ASSET PACK (LZ4)</em> (since v1.9.80). The default is level <strong>9</strong>: measured on real game data, level 12 saves only 0.0 to 0.6 percentage points more but takes 1.2 to 3.6 times as long. Images, textures, archives, audio, video and configuration files stay loose in the general profile because they are already compressed.</p>
     <p><strong>LZ4 or zstd:</strong> Under <strong>SETTINGS</strong>, in the same section, choose the <em>pack method</em>. LZ4 (the default) builds <code>ampr_assets-*.pak</code>. zstd builds <code>ampr_zstd.index</code> and <code>ampr_zstd-NNN.pak</code>, packs every file except the system files and usually compresses more, but is read <em>only</em> by ampr-emu-ng (NG), not by the drakmor runtime. With zstd the version list offers NG only; the zstd level runs from 1 to 22 (default 5). Custom rules (which files stay loose) are read from a file <code>&lt;folder name&gt;_ampr_pack.toml</code> next to the dump folder or, once for all games, from the file you choose in the settings under “Pack rules for zstd”; system files always stay loose. Whether a game with zstd packs starts on the console has not been measured; the packed originals are missing from the result, so keep the source dump (it stays unchanged).</p>
+    <p><strong>LZ4 without an intermediate folder, pack level and verification:</strong> LZ4 packs, too, are created without unpacking the game; the source is read twice (once to measure, once to write into the image). With NG the default profile packs everything except the system files (<code>eboot.bin</code>, modules, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, PlayGo files, <code>global-metadata.dat</code>); the packed originals are missing from the result. This has been checked on the console with two Unity games; without the emulator the same image shows only a black screen. To the right of the pack method are the <em>pack level</em> and the <em>Full verification</em> switch (for zstd and LZ4): Off (default) means that the structure, headers and position of every block are checked in full, and of the content a sample; on: every byte.</p>
     <p><strong>Checking and unpacking</strong> is under <strong>MORE TOOLS</strong> → <strong>ASSET PACK CHECK / UNPACK</strong> (since v1.9.80). Choose the game folder that holds <code>ampr_assets.index</code>: <em>CHECK</em> reads every block against the checksums and tells you whether the library in the folder can read volumes; <em>UNPACK</em> puts the packed files back as loose files – into a new folder (the game folder stays) or into the game folder itself (the volumes are deleted afterwards). An image cannot be opened this way; unpack it with task 2 first.</p>
   </div>
 
