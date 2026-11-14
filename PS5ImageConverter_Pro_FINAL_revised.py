@@ -2014,11 +2014,15 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
             melde(DOKTOR_GUT, "Administratorrechte vorhanden")
         else:
             # Bis zum 24.09.2026 hiess es hier "Aufgabe 3 (Einhaengen)" - die
-            # entpackt .exfat laengst ohne Rechte (eingebetteter Leser). Rechte
-            # brauchen .ffpkg (UFS2Tool/Dokan) und der OSFMount-Rueckfall.
-            melde(DOKTOR_HINWEIS, "Ohne Administratorrechte - .ffpkg bauen "
-                                  "und entpacken sowie Einhängen mit OSFMount "
-                                  "brauchen sie")
+            # entpackt .exfat laengst ohne Rechte (eingebetteter Leser). Seit
+            # Stufe 3 (v1.9.98) liest und schreibt der Strom auch .ffpkg selbst
+            # (ufs2_dateisystem, ufs2_schreiber). Rechte brauchen nur noch die
+            # Wege ueber UFS2Tool/Dokan (Umwandlung ohne Zwischenordner aus,
+            # Rueckfaelle) und der OSFMount-Rueckfall.
+            melde(DOKTOR_HINWEIS, "Ohne Administratorrechte - .ffpkg über "
+                                  "UFS2Tool (Umwandlung ohne Zwischenordner "
+                                  "aus) und Einhängen mit OSFMount brauchen sie; "
+                                  ".ffpkg im Strom braucht keine")
 
     # -- Abschluss -----------------------------------------------------
     zeilen.append("")
@@ -20692,7 +20696,8 @@ class PS5ConverterGUI:
                           if endung == ".zip" and self._archiv_strom_gewaehlt() else None)
                 if wurzel is None:
                     wurzel = archiv_quelle.entpacken(archiv, ziel, wurzeln=wurzeln, melden=fortschritt,
-                                                     popen_extra=popen_extra, passwort=passwort)
+                                                     popen_extra=popen_extra, passwort=passwort,
+                                                     weitere_passwoerter=self._archiv_weitere_passwoerter())
                 fehler = ""
             except archiv_quelle.PasswortFehler as exc:
                 grund = str(exc)      # ``exc`` gibt es nach dem except-Block nicht mehr - die Lambda liefe in einen NameError
@@ -20839,15 +20844,17 @@ class PS5ConverterGUI:
             logger.debug("Stromwahl fuer das Archiv nicht lesbar: %s", exc)
         return False
 
-    def _archiv_schatten_vorbereiten(self, mode: str, src: str) -> bool:
+    def _archiv_schatten_vorbereiten(self, mode: str, src: str, zielformat: "str | None" = None) -> bool:
         """Vor dem Lauf: Bleibt ``src`` ein Schattenordner, nur wenn der Strom ihn liest - sonst wird er vollstaendig entpackt.
 
+        ``zielformat``: das Ziel dieser Quelle (Sammelkonvertierung); ohne Angabe das des Laufs (``_lauf_zielformat``).
         ``False``, wenn das Entpacken scheitert (Platz, Archiv geaendert, Abbruch): Der Lauf endet dann mit der Meldung im Protokoll.
         """
         info = self._archiv_schatten_info(src)
         if not info or info.get("voll"):
             return True
-        if self._archiv_schatten_im_strom(mode, str(getattr(self, "_lauf_zielformat", "") or "")):
+        ziel = zielformat if zielformat is not None else str(getattr(self, "_lauf_zielformat", "") or "")
+        if self._archiv_schatten_im_strom(mode, ziel):
             return True
         try:
             self._archiv_schatten_vollstaendig(src)
@@ -20886,12 +20893,18 @@ class PS5ConverterGUI:
         self._archiv_als_quelle(archiv, passwort=eingabe)
 
     def _archiv_blockierend_entpacken(self, archiv: str, passwort: str = "",
-                                      abbruch: Callable[[], bool] | None = None) -> tuple[str, str, str]:
+                                      abbruch: Callable[[], bool] | None = None,
+                                      schatten: bool = False) -> tuple[str, str, str]:
         """Entpackt ein Archiv in einen neuen Arbeitsordner und wartet darauf (Kommandozeile, Sammelkonvertierung).
 
         Ohne Fenster und ohne Rueckfrage: Das Passwort kommt als Argument (``--archiv-passwort``), die
-        ueblichen Szene-Passwoerter probiert :func:`archiv_quelle.entpacken` selbst. Der Aufrufer raeumt den
-        zurueckgegebenen Entpackordner wieder weg (:meth:`_archiv_ordner_wegraeumen`).
+        ueblichen Szene-Passwoerter und die Liste des Anwenders probiert :func:`archiv_quelle.entpacken` selbst. Der
+        Aufrufer raeumt den zurueckgegebenen Entpackordner wieder weg (:meth:`_archiv_ordner_wegraeumen`).
+
+        ``schatten=True`` (seit dem 14.11.2026): Ein ZIP wird wie bei Aufgabe 1 im Fenster nicht entpackt, sondern nur
+        als Schattenordner angelegt (:meth:`_archiv_schatten_anlegen`). Der Aufrufer sorgt dafuer, dass vor dem Lauf
+        :meth:`_archiv_schatten_vorbereiten` mit dem Zielformat laeuft - es entpackt den Rest, wenn der Weg das Spiel als
+        Ordner braucht.
 
         Returns:
             ``(spielordner, entpackordner, fehler)``. Bei einem Fehler sind die ersten beiden leer und
@@ -20926,8 +20939,13 @@ class PS5ConverterGUI:
         # Ergebnis der Umwandlung.
         inhalt = os.path.join(ziel, os.path.splitext(name)[0] or "Spiel")
         try:
+            if schatten and endung == ".zip" and self._archiv_strom_gewaehlt():
+                spiel = self._archiv_schatten_anlegen(archiv, ziel, passwort)
+                if spiel is not None:
+                    return spiel, ziel, ""
             wurzel = archiv_quelle.entpacken(
-                archiv, inhalt, wurzeln=wurzeln, popen_extra=popen_extra, passwort=passwort, abbruch=abbruch)
+                archiv, inhalt, wurzeln=wurzeln, popen_extra=popen_extra, passwort=passwort, abbruch=abbruch,
+                weitere_passwoerter=self._archiv_weitere_passwoerter())
         except archiv_quelle.PasswortFehler as exc:
             _rmtree_force(ziel, ignore_errors=True)
             return "", "", self._t("quelle.archiv_passwort_falsch" if passwort else "quelle.archiv_passwort_noetig",
@@ -20947,9 +20965,15 @@ class PS5ConverterGUI:
         return wurzel, ziel, ""
 
     def _archiv_ordner_wegraeumen(self, ordner: str) -> None:
-        """Entfernt einen Entpackordner von :meth:`_archiv_blockierend_entpacken` (nur ``ps5conv_archiv_*``)."""
+        """Entfernt einen Entpackordner von :meth:`_archiv_blockierend_entpacken` (nur ``ps5conv_archiv_*``) samt seiner Eintraege in
+        den Tabellen der Schattenordner und Archiv-Herkunft."""
         if ordner and os.path.isdir(ordner) and os.path.basename(ordner).startswith("ps5conv_archiv_"):
             _rmtree_force(ordner, ignore_errors=True)
+            praefix = self._archiv_schluessel(ordner) + os.sep
+            for tabelle in (getattr(self, "_archiv_schatten", None), getattr(self, "_archiv_herkunft", None)):
+                if isinstance(tabelle, dict):
+                    for schluessel in [k for k in tabelle if k.startswith(praefix)]:
+                        del tabelle[schluessel]
 
     def _archiv_quelle_zurueck(self) -> None:
         """Stellt das Feld QUELLE auf den Stand vor dem Entpacken zurueck (Abbruch oder Fehler)."""
@@ -33174,10 +33198,14 @@ class PS5ConverterGUI:
                 quellstempel = quelle_loeschen.stempel_nehmen(anzeige) if self._lauf_quelle_loeschen else None
                 if archiv_quelle.ist_archiv(candidate):
                     # Ein Archiv steht fuer den Spielordner darin: entpacken, dann wie ein Dump-Ordner behandeln.
-                    # Das Ergebnis heisst nach dem Archiv (der Entpackordner traegt dessen Namen).
+                    # Das Ergebnis heisst nach dem Archiv (der Entpackordner traegt dessen Namen). Ein ZIP wird seit dem
+                    # 14.11.2026 wie bei Aufgabe 1 nur als Schattenordner angelegt, wenn der Weg zu diesem Zielformat es im
+                    # Strom liest; sonst entpackt _archiv_schatten_vorbereiten den Rest gleich hier.
                     spielordner, archiv_entpackt, archiv_fehler = self._archiv_blockierend_entpacken(
                         candidate, passwort=str(getattr(self, "_cli_archiv_passwort", "") or ""),
-                        abbruch=lambda: not self.is_running)
+                        abbruch=lambda: not self.is_running, schatten=True)
+                    if not archiv_fehler and not self._archiv_schatten_vorbereiten("pack_folder", spielordner, target_type):
+                        archiv_fehler = self._t("quelle.archiv_fehler", grund=os.path.basename(candidate))
                     if archiv_fehler:
                         self._append_to_log(self._t('log.auto.0088', v0=archiv_fehler))
                         all_ok = False
@@ -70093,6 +70121,36 @@ class PS5ConverterGUI:
         ausgabe_beispiele.bind("<<ComboboxSelected>>", _ausgabe_beispiel_gewaehlt)
         _ausgabe_auffrischen()
 
+        # ── Passwoerter fuer Archive ────────────────────────────────────
+        # Seit dem 14.11.2026 (Vorbild: Passwortliste von Dump Forge). Probiert werden sie nach den bekannten Szene-
+        # Passwoertern, wenn ein verschluesseltes Archiv (.zip, .7z, .rar) als Quelle kommt - im Fenster, in der
+        # Sammelkonvertierung und auf der Kommandozeile. Gespeichert wird beim Tippen (Einstellung archiv_passwoerter).
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(8, 14))
+        tk.Label(body, text=self._t("settings_dialog.archiv_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.archiv_hint", bekannt=", ".join(archiv_quelle.BEKANNTE_PASSWOERTER)),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+        archiv_var = tk.StringVar(value=", ".join(self._archiv_weitere_passwoerter()))
+        archiv_eingabe = self._pw.Entry(body, textvariable=archiv_var, font=(UI_SCHRIFT, pt(10)))
+        archiv_eingabe.pack(anchor="w", fill="x", pady=(0, 4))
+        archiv_meldung = tk.StringVar(value="")
+        tk.Label(body, textvariable=archiv_meldung, font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+                 anchor="w", justify="left", wraplength=460).pack(anchor="w", fill="x", pady=(0, 10))
+
+        def _archiv_passwoerter_speichern(_ereignis=None) -> None:
+            liste = list(dict.fromkeys(teil.strip() for teil in archiv_var.get().split(",") if teil.strip()))
+            if liste != self._archiv_weitere_passwoerter():
+                self._save_setting("archiv_passwoerter", liste)
+                logger.info("Passwortliste fuer Archive: %d Eintraege", len(liste))     # die Passwoerter selbst nie ins Protokoll
+            archiv_meldung.set(self._t("settings_dialog.archiv_anzahl", n=len(liste)))
+
+        archiv_eingabe.bind("<KeyRelease>", _archiv_passwoerter_speichern)
+        _archiv_passwoerter_speichern()
+
         # ── Farbsehschwaeche ────────────────────────────────────────────
         #
         # Nur die Farben, die eine Bedeutung tragen, werden ersetzt - Erfolg,
@@ -72729,11 +72787,13 @@ def _run_cli(args: argparse.Namespace) -> int:
     messagebox.showinfo = lambda title, message, **k: print(f"[INFO] {title}: {message}")
 
     # Ein Archiv (.zip, .7z, .rar) als Quelle von Aufgabe 1 wird hier entpackt (wie der Knopf "Archiv..." im
-    # Fenster); der Spielordner darin ersetzt die Quelle, der Entpackordner wird am Ende wieder entfernt.
+    # Fenster); der Spielordner darin ersetzt die Quelle, der Entpackordner wird am Ende wieder entfernt. Ein ZIP
+    # wird wie im Fenster nur als Schattenordner angelegt: Der Lauf (_run_engine_thread) entpackt den Rest selbst,
+    # wenn der Weg zum gewaehlten Zielformat das Spiel als Ordner braucht (_archiv_schatten_vorbereiten).
     archiv_ordner: list[str] = []
     if mode == "pack_folder" and archiv_quelle.ist_archiv(sources[0]):
         archiv_wurzel, archiv_entpackt, archiv_fehler = app._archiv_blockierend_entpacken(
-            sources[0], passwort=str(getattr(args, "archiv_passwort", "") or ""))
+            sources[0], passwort=str(getattr(args, "archiv_passwort", "") or ""), schatten=True)
         if archiv_fehler:
             print(f"[FEHLER] {archiv_fehler}", file=sys.stderr)
             root.destroy()

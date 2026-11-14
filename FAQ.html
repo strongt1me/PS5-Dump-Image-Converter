@@ -219,7 +219,7 @@ footer{
 
   <div class="frage">
     <h3>Kann ich ein .zip, .7z oder .rar direkt als Quelle nehmen?</h3>
-    <p>Ja. In Aufgabe&nbsp;1 wählt der Knopf <strong>Archiv…</strong> ein Archiv (oder Sie ziehen es auf das Quellfeld), in Aufgabe&nbsp;5 (Sammelkonvertierung) lassen sich Archive wie andere Quellen hinzufügen, und auf der Kommandozeile gilt <code>--source Spiel.zip</code>. Das Programm entpackt das Archiv in den Arbeitsordner, nimmt den Spielordner darin (mit <code>sce_sys/param.json</code>) als Quelle und räumt den Entpackordner danach wieder weg. Dort muss mindestens so viel Platz frei sein, wie das Archiv groß ist. Bei einem Passwort fragt das Programm nach, wenn keines der gängigen passt.</p>
+    <p>Ja. In Aufgabe&nbsp;1 wählt der Knopf <strong>Archiv…</strong> ein Archiv (oder Sie ziehen es auf das Quellfeld), in Aufgabe&nbsp;5 (Sammelkonvertierung) lassen sich Archive wie andere Quellen hinzufügen, und auf der Kommandozeile gilt <code>--source Spiel.zip</code>. Das Programm nimmt den Spielordner im Archiv (mit <code>sce_sys/param.json</code>) als Quelle. Ein <code>.zip</code> wird dafür nicht einmal entpackt, wenn das Ergebnis ein Abbild ist: Nur <code>sce_sys</code> und <code>eboot.bin</code> kommen in einen kleinen Arbeitsordner, das Spiel selbst liest der Lauf direkt aus dem Archiv. <code>.7z</code> und <code>.rar</code> (und jeder Weg, der einen Ordner braucht) werden in den Arbeitsordner entpackt; dort muss mindestens so viel Platz frei sein, wie das Archiv groß ist. Danach räumt das Programm wieder auf. Bei einem Passwort probiert es die gängigen und Ihre eigene Liste (<strong>EINSTELLUNGEN</strong> › <em>ARCHIV-PASSWÖRTER</em>) und fragt nach, wenn keines passt.</p>
   </div>
 
   <div class="frage">
@@ -346,9 +346,10 @@ footer{
 
   <div class="frage">
     <h3>Kann ich ein fertiges Abbild nachträglich ändern?</h3>
-    <p>Nicht direkt – ein fertiges Abbild hat keinen freien Platz für zusätzliche Dateien. Es gibt aber drei Wege:</p>
+    <p>Ja, auf mehreren Wegen:</p>
     <ul>
-      <li><strong>ABBILD BEARBEITEN</strong> (unter <strong>WEITERE TOOLS</strong>): Das Programm packt das Abbild aus, Sie ersetzen, benennen um, löschen oder fügen Dateien hinzu, und es speichert das Ergebnis als neues Abbild <code>&lt;Name&gt;_bearbeitet</code> im gewünschten Format (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> oder <code>.exFAT</code>). Das Original bleibt unberührt; <code>eboot.bin</code> und <code>sce_sys/param.json</code> lassen sich nur ersetzen, nicht löschen oder umbenennen.</li>
+      <li><strong>ABBILD BEARBEITEN › Direkt ändern</strong> (unter <strong>WEITERE TOOLS</strong>): Ein <code>.exfat</code>, <code>.ffpkg</code> oder unkomprimiertes <code>.ffpfs</code> wird selbst geändert – umbenennen, löschen, ersetzen, hinzufügen –, ohne es zu entpacken und neu zu bauen. Geschrieben wird erst mit <strong>Änderungen anwenden</strong>, zuerst in ein Journal (<code>&lt;Abbild&gt;.undo</code>), mit dem das Programm einen Abbruch beim nächsten Öffnen rückgängig macht. Ein <code>.exfat</code> oder <code>.ffpkg</code> wächst dabei nie; reicht der Platz nicht, bleibt der nächste Weg. Ein <code>.ffpfs</code> hängt neue Inhalte hinten an und wächst.</li>
+      <li><strong>ABBILD BEARBEITEN › Entpacken</strong> (jedes Format, auch <code>.ffpfsc</code>): Das Programm packt das Abbild aus, Sie ersetzen, benennen um, löschen oder fügen Dateien hinzu, und es speichert das Ergebnis als neues Abbild <code>&lt;Name&gt;_bearbeitet</code> im gewünschten Format (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> oder <code>.exFAT</code>). Das Original bleibt unberührt. Auf beiden Wegen lassen sich <code>eboot.bin</code> und <code>sce_sys/param.json</code> nur ersetzen, nicht löschen oder umbenennen.</li>
       <li><strong>Dasselbe Format noch einmal bauen, mit Einbau</strong> (Aufgaben 2 bis 6): dieselbe Datei als Quelle, dasselbe Format als Ziel, ankreuzen, was hinein soll (Asset-Pack, PlayGo, BACKPORT) und starten. Das Programm packt aus, baut ein und baut neu; Sie brauchen dafür einmal die Spielgröße an freiem Platz im Arbeitsordner.</li>
       <li>In einen <strong>Dump-Ordner</strong> auspacken, den Ordner selbst bearbeiten und wieder packen.</li>
     </ul>
@@ -366,6 +367,16 @@ footer{
   <div class="frage">
     <h3>Kann der Rechner nach einer langen Umwandlung von selbst herunterfahren?</h3>
     <p>Ja – mit dem Ankreuzfeld <strong>Rechner nach erfolgreichem Abschluss herunterfahren</strong> in der Pfad-Karte. Nur nach einem <em>erfolgreichen</em> Lauf erscheint ein Fenster, das 60 Sekunden herunterzählt (Abbruch mit dem Knopf oder ESC). Danach werden Abbilder gelöst, Arbeitsdateien entfernt und das Protokoll gespeichert, dann fährt der Rechner ohne weitere Rückfrage herunter. Nach einem Fehler oder Abbruch bleibt er an. Speichern Sie vorher Ihre Arbeit in anderen Programmen.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Kann das Programm die Quelle nach dem Umwandeln löschen?</h3>
+    <p>Ja – mit dem Haken <strong>Quelle nach Erfolg löschen</strong> in der Karte (auf der Kommandozeile <code>--quelle-loeschen</code>). Nach einem erfolgreich geprüften Lauf löscht das Programm die Quelle <strong>endgültig, nicht in den Papierkorb</strong>; vor dem Start fragt es noch einmal. Die Quelle bleibt liegen, wenn das Ergebnis fehlt oder leer ist, wenn sie sich seit dem Start verändert hat, wenn Ergebnis und Quelle ineinander liegen oder wenn sie ein Laufwerk, ein Benutzer- oder Systemordner oder eine Verknüpfung ist. Bei einem Archiv als Quelle wird das Archiv gelöscht. Der Haken gilt nur bis zum nächsten Programmstart.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Wie arbeite ich mit einem NAS oder einer Freigabe im Netz?</h3>
+    <p>Unter <strong>WEITERE TOOLS</strong> › <strong>Geräte im Netz</strong> sucht das Programm NAS-Geräte und Rechner, die sich im Netz melden, und setzt ihre Windows-Freigabe mit <strong>Als Quelle wählen …</strong> oder <strong>Als Ziel wählen …</strong> ins Feld QUELLE oder ZIEL. Gelesen und geschrieben wird dort ohne Zwischenkopie. Meldet sich ein Gerät nicht, tragen Sie die Freigabe von Hand als <code>\\Adresse\Freigabe</code> ein. FTP- und NFS-Geräte werden nur angezeigt.</p>
   </div>
 
   <div class="frage">

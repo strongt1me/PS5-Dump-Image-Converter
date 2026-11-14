@@ -614,9 +614,18 @@ class BearbeitenFenster:
         self._zustand_setzen()
         return ok
 
+    def _direkt_geschuetzt(self, rel: str) -> bool:
+        """Wie im Weg ueber den Arbeitsordner: ``eboot.bin`` und ``sce_sys/param.json`` (und ein Ordner, der sie enthaelt) werden
+        weder geloescht noch umbenannt - ``True`` nach der Meldung."""
+        praefix = rel.strip("/").lower() + "/"
+        if ab.ist_geschuetzt(rel) or any(g.startswith(praefix) for g in ab.GESCHUETZT):
+            self._fehler(ab.BearbeitenFehler("bearbeiten.geschuetzt", rel))
+            return True
+        return False
+
     def _direkt_loeschen(self) -> None:
         rel = self._gewaehlt_pruefen()
-        if not rel:
+        if not rel or self._direkt_geschuetzt(rel):
             return
         if not messagebox.askyesno(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.frage_loeschen", name=rel),
                                    icon="warning", parent=self.win):
@@ -625,7 +634,7 @@ class BearbeitenFenster:
 
     def _direkt_umbenennen(self) -> None:
         rel = self._gewaehlt_pruefen()
-        if not rel:
+        if not rel or self._direkt_geschuetzt(rel):
             return
         alt = rel.rsplit("/", 1)[-1]
         neu = simpledialog.askstring(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.frage_umbenennen", name=alt),

@@ -1080,6 +1080,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p><strong>Vorabprüfung.</strong> Vor dem Start sieht das Programm den Spielordner einmal durch und nennt <em>alle</em> Befunde zugleich; die betroffenen Pfade stehen im Protokoll. Bei einem exFAT-Abbild sind Namen außerhalb von ASCII, Verknüpfungen, unzulässige Zeichen und Namen, die sich nur in der Groß- und Kleinschreibung unterscheiden, <em>Fehler</em> – der Schreiber würde sie erst nach dem Kopieren ablehnen. Bei <code>.ffpkg</code>, <code>.ffpfs</code> und <code>.ffpfsc</code> sind sie eine Warnung, dort ist es nicht belegt. Warnungen gibt es außerdem für Pfade tiefer als 32 Ordnerebenen und für einen Ausgabenamen über 63 Bytes (bei <code>.ffpfsc</code> 58), der nach dem Einhängepfad von ShadowMount+ nicht mehr passen könnte; das ist an der Konsole nicht gemessen. Ein Fehler ist auch ein FAT32-Ziel, wenn eine Datei über 4&nbsp;GiB hat. Die Sammelkonvertierung prüft nur die Ausgabenamen, die Namensprobe liest höchstens 20 Sekunden. Eine Probe, die selbst scheitert, verhindert den Start nie.</p>
   <p><strong>Ausgabename per Vorlage.</strong> Standardmäßig heißt das Ergebnis wie die Quelle. Unter <strong>EINSTELLUNGEN</strong>, Abschnitt <em>AUSGABENAME</em>, bilden Sie den Namen aus den Angaben des Spiels, etwa <code>{title} [{title_id}] v{version}</code> (<em>Astro Bot [PPSA01234] v1.0.0</em>). Teile sind <code>{name}</code> (Name der Quelle), <code>{title}</code>, <code>{title_id}</code>, <code>{version}</code>, <code>{region}</code>, <code>{fw}</code> (Mindest-Firmware) und <code>{pack}</code> (zstd oder lz4, bei einem Spiel ohne Asset-Pack leer); jeder höchstens einmal, und mindestens <code>{name}</code>, <code>{title}</code> oder <code>{title_id}</code> muss vorkommen. Die Beispielliste und die Vorschau zeigen den Namen eines Beispielspiels je Format mit den Bytes gegen die Längengrenze; <em>Vorgabe</em> setzt <code>{name}</code> zurück. Eine taugliche Vorlage wird sofort gespeichert, bei einer untauglichen steht der Grund da und die zuletzt gespeicherte gilt weiter. Ein erzeugter Name wird auf die Höchstlänge des Formats gekürzt (zuerst der Titel) und für Windows tauglich gemacht (kein Punkt oder Leerzeichen am Ende; ein reservierter Gerätename wie <code>AUX</code> bekommt einen Unterstrich). Trifft der Name eine vorhandene Datei, fragt das Programm wie sonst, ob sie ersetzt werden soll; in der Sammelkonvertierung wird ein namensgleiches Ergebnis desselben Laufs übersprungen. Die Vorlage gilt für jedes Zielformat, auch für <code>.ffpkg</code>. Fehlen die Angaben zum Spiel, bleibt der Name der Quelle. Auf der Kommandozeile hat <code>--ausgabename VORLAGE</code> Vorrang vor der Einstellung.</p>
   <p><strong>Reste nach einem Fehler.</strong> Ist ein Einzellauf gescheitert oder abgebrochen, zeigt eine Karte, was liegen geblieben ist: das unfertige Ergebnis und daneben <code>.teil</code>-, <code>.neu</code>-, <code>.part</code>- und <code>.partial</code>-Dateien, mit Größen. Entfernt wird nur auf Ihren Wunsch. Die Quelle selbst, ein Ordner um sie und ein Ordner in ihr sind doppelt geschützt (beim Anbieten und beim Entfernen). Bei der Sammelkonvertierung und auf der Kommandozeile bleibt es beim Protokoll. Beim Verschieben eines Spielordners (Aufgabe 4) kommen <code>sce_sys</code> und ganz am Ende <code>eboot.bin</code> an die Reihe, damit ein abgebrochener halber Ordner nicht wie ein Spiel aussieht.</p>
+  <p><strong>Quelle nach Erfolg löschen.</strong> Mit dem Haken <em>Quelle nach Erfolg löschen</em> in der Karte (auf der Kommandozeile <code>--quelle-loeschen</code>) löscht das Programm die Quelle, sobald das Ergebnis fertig und geprüft ist – <strong>endgültig, nicht in den Papierkorb</strong>. Vor dem Start fragt es noch einmal: <em>Ja</em> löscht nach dem Erfolg, <em>Nein</em> wandelt um und lässt die Quelle liegen, <em>Abbrechen</em> startet nicht. Der Haken gilt nur bis zum nächsten Programmstart. Die Quelle bleibt liegen, wenn das Ergebnis fehlt oder leer ist, wenn sich die Quelle seit dem Start verändert hat, wenn Ergebnis und Quelle derselbe Pfad sind oder das eine im anderen liegt, und wenn die Quelle ein Laufwerk, ein Benutzer- oder Systemordner oder eine Verknüpfung ist; der Lauf gilt dann trotzdem als erfolgreich, und der Grund steht im Protokoll. In der Sammelkonvertierung gilt das für jede Quelle einzeln. Kam die Quelle aus einem Archiv, wird das Archiv gelöscht.</p>
   <p><strong>Sprache beim Start.</strong> Ohne gespeicherte Wahl folgt das Programm der Anzeigesprache des Systems; kennt es sie nicht, gilt Englisch. Eine mit dem Sprachknopf gewählte Sprache gilt immer.</p>
 </section>
 
@@ -1134,7 +1135,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Programm vor dem Bau mit einer Meldung ab (bei <code>.ffpfsc</code>,
   <code>.ffpfs</code>, <code>.exFAT</code> und <code>.ffpkg</code> gleichermaßen),
   statt dass es erst an der Konsole auffällt.</p>
-  <p><strong>Archiv als Quelle.</strong> Bei Aufgabe 1 steht links neben <strong>Dump Ordner</strong> der Knopf <strong>Archiv&hellip;</strong>: Er w&auml;hlt ein Archiv (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>), <strong>Dump Ordner</strong> w&auml;hlt wie gewohnt den Ordner; ein Archiv l&auml;sst sich auch auf das Quellfeld ziehen. Das Programm entpackt es in den Arbeitsordner (<code>ps5conv_archiv_&hellip;</code>, dort muss mindestens so viel Platz frei sein, wie das Archiv gro&szlig; ist) und nimmt den Spielordner darin &ndash; mit <code>sce_sys/param.json</code> &ndash; als Quelle. Fortschritt und Ergebnis stehen im Protokoll. <code>.zip</code> entpackt das Programm selbst, <code>.7z</code> und <code>.rar</code> entpackt das beiliegende <strong>7-Zip</strong> (Ordner <code>7-Zip-26.06</code>; fehlt es, sucht das Programm ein installiertes). Der Entpackordner wird beim n&auml;chsten Archiv ersetzt, ein Rest nach zw&ouml;lf Stunden wie jeder andere Arbeitsordner abger&auml;umt. <strong>Ist das Archiv mit einem Passwort gesch&uuml;tzt,</strong> probiert das Programm zuerst ohne Passwort und dann die verbreiteten Passw&ouml;rter <code>pippo</code> und <code>DLPSGAME.COM</code>; passt keines, fragt es nach dem Passwort (das Eingabefeld zeigt Sternchen, das Passwort steht nicht im Protokoll) und fragt bei einem falschen noch einmal. <strong>Aufgabe 5 (Sammelkonvertierung)</strong> nimmt Archive ebenfalls an: Sie lassen sich im Dateidialog (Filter <em>Archive</em>) oder per Ziehen und Ablegen zu den Quellen legen und kommen der Reihe nach dran &ndash; jedes wird erst entpackt, wenn es gebraucht wird, und danach gleich wieder entfernt, es liegt also immer nur ein Entpackordner da. Ein Ordner voller Archive steht dort nicht f&uuml;r die Archive darin; sie werden einzeln gew&auml;hlt. Ist ein Archiv verschl&uuml;sselt und kein bekanntes Passwort passt, z&auml;hlt es als Fehlschlag dieser Quelle, die &uuml;brigen laufen weiter. Auf der Kommandozeile gilt dasselbe: <code>--source Spiel.zip</code> bei Aufgabe 1, mehrere Archive bei Aufgabe 5, und <code>--archiv-passwort</code> nennt ein Passwort.</p>
+  <p><strong>Archiv als Quelle.</strong> Bei Aufgabe 1 steht links neben <strong>Dump Ordner</strong> der Knopf <strong>Archiv&hellip;</strong>: Er w&auml;hlt ein Archiv (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>), <strong>Dump Ordner</strong> w&auml;hlt wie gewohnt den Ordner; ein Archiv l&auml;sst sich auch auf das Quellfeld ziehen. Das Programm entpackt es in den Arbeitsordner (<code>ps5conv_archiv_&hellip;</code>, dort muss mindestens so viel Platz frei sein, wie das Archiv gro&szlig; ist) und nimmt den Spielordner darin &ndash; mit <code>sce_sys/param.json</code> &ndash; als Quelle. Fortschritt und Ergebnis stehen im Protokoll. <code>.zip</code> entpackt das Programm selbst, <code>.7z</code> und <code>.rar</code> entpackt das beiliegende <strong>7-Zip</strong> (Ordner <code>7-Zip-26.06</code>; fehlt es, sucht das Programm ein installiertes). Der Entpackordner wird beim n&auml;chsten Archiv ersetzt, ein Rest nach zw&ouml;lf Stunden wie jeder andere Arbeitsordner abger&auml;umt.</p>
+  <p><strong>ZIP ohne Entpackordner.</strong> Ist das Ergebnis ein Abbild (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code>) und die Umwandlung ohne Zwischenordner eingeschaltet, entpackt das Programm ein <code>.zip</code> nicht mehr: Im Arbeitsordner entsteht nur ein kleiner <em>Schattenordner</em> mit <code>sce_sys</code> und <code>eboot.bin</code> &ndash; genug f&uuml;r Cover, Titel, Pr&uuml;fung und Namen &ndash;, und das Spiel selbst liest der Lauf direkt aus dem Archiv. Das spart den Platz und die Zeit des Entpackens; das Protokoll nennt den Schattenordner. Braucht der gew&auml;hlte Weg das Spiel doch als Ordner (Zielformat Dump-Ordner, ein Weg &uuml;ber einen Zwischenordner), entpackt das Programm den Rest vor dem Lauf &ndash; mit Platzpr&uuml;fung, und nur, wenn sich das Archiv seit dem Anlegen nicht ver&auml;ndert hat. <code>.7z</code> und <code>.rar</code> werden immer entpackt (sie sind meist solide gepackt und lassen sich nicht an beliebiger Stelle lesen), ebenso ein AES-verschl&uuml;sseltes ZIP.</p>
+  <p><strong>Ist das Archiv mit einem Passwort gesch&uuml;tzt,</strong> probiert das Programm zuerst ohne Passwort, dann die verbreiteten Passw&ouml;rter <code>pippo</code> und <code>DLPSGAME.COM</code> und danach Ihre eigene Liste: Unter <strong>EINSTELLUNGEN</strong>, Abschnitt <em>ARCHIV-PASSW&Ouml;RTER</em>, tragen Sie weitere Passw&ouml;rter durch Kommas getrennt ein; gespeichert wird beim Tippen. Passt keines, fragt das Fenster nach dem Passwort (das Eingabefeld zeigt Sternchen, das Passwort steht nicht im Protokoll) und fragt bei einem falschen noch einmal.</p>
+  <p><strong>Aufgabe 5 (Sammelkonvertierung)</strong> nimmt Archive ebenfalls an: Sie lassen sich im Dateidialog (Filter <em>Archive</em>) oder per Ziehen und Ablegen zu den Quellen legen und kommen der Reihe nach dran &ndash; jedes wird erst vorbereitet, wenn es gebraucht wird (ein ZIP als Schattenordner wie oben, sonst entpackt), und danach gleich wieder entfernt, es liegt also immer nur ein Arbeitsordner da. Ein Ordner voller Archive steht dort nicht f&uuml;r die Archive darin; sie werden einzeln gew&auml;hlt. Ist ein Archiv verschl&uuml;sselt und kein Passwort der Liste passt, z&auml;hlt es als Fehlschlag dieser Quelle, die &uuml;brigen laufen weiter. Auf der Kommandozeile gilt dasselbe: <code>--source Spiel.zip</code> bei Aufgabe 1, mehrere Archive bei Aufgabe 5, und <code>--archiv-passwort</code> nennt ein Passwort, das dann allein gilt.</p>
   <p><strong>Geht der Arbeitsspeicher aus,</strong> startet das Programm den Lauf selbst neu &ndash; mit halb so vielen Kernen, bis zu dreimal &ndash; und schreibt es ins Protokoll. Erkannt wird das nur, wenn die Engine selbst <code>MemoryError</code> meldet. Hilft auch ein Kern nicht, bleibt der Hinweis auf zu wenig Arbeitsspeicher.</p>
   <div class="kasten">
     <span class="titel">Wenn Sie unsicher sind</span>
@@ -2333,12 +2337,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong> (11.4), <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>ABBILD BEARBEITEN</strong> (14.14), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE.</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong> (11.4), <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>ABBILD BEARBEITEN</strong> (14.14), <strong>Geräte im Netz</strong> (14.15), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE.</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k14">Abschnitt 14.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
       <tr><td><strong>DESIGN</strong></td><td>Öffnet die Farbschema-Auswahl – siehe <a href="#k15">Kapitel 15</a>.</td></tr>
-      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Ganz oben die Anzeige: Skalierung (Schieberegler) und Bildschirmauflösung (Klappliste) lassen sich von Hand einstellen und mit einem Knopf auf automatisch zurücksetzen (Abschnitt 14.3). Darunter das Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads und – im Abschnitt <em>Asset-Pack (LZ4)</em> – die LZ4-Stufe für Asset-Packs (Abschnitt 11.1).</td></tr>
+      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Ganz oben die Anzeige: Skalierung (Schieberegler) und Bildschirmauflösung (Klappliste) lassen sich von Hand einstellen und mit einem Knopf auf automatisch zurücksetzen (Abschnitt 14.3). Darunter das Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads, – im Abschnitt <em>Asset-Pack (LZ4)</em> – die LZ4-Stufe für Asset-Packs (Abschnitt 11.1), die Vorlage für den Ausgabenamen (Abschnitt 3.5) und die eigene Passwortliste für Archive (<em>ARCHIV-PASSWÖRTER</em>, Kapitel 5).</td></tr>
       <tr><td><strong>DE / EN / ES / IT / FR</strong></td><td>Der Sprachknopf zeigt die aktive Sprache; jeder Klick schaltet die komplette Oberfläche zur nächsten um (Deutsch, Englisch, Spanisch, Italienisch, Französisch) – Hauptfenster, alle Dialoge und sämtliche Protokollmeldungen. Dieses Handbuch gibt es in allen fünf Sprachen; der Knopf <strong>BENUTZERHANDBUCH</strong> öffnet es in der Sprache der Oberfläche.</td></tr>
       <tr><td><strong>FAQ</strong></td><td>Links neben BENUTZERHANDBUCH: Öffnet die häufigen Fragen mit kurzen Antworten in Ihrem Browser – in der Sprache der Oberfläche (Deutsch, Englisch, Spanisch, Italienisch oder Französisch). Sie liegen dem Programm bei; eine Internetverbindung ist nicht nötig. Als PDF liegen sie neben der Programmdatei.</td></tr>
       <tr><td><strong>BENUTZERHANDBUCH</strong></td><td>Öffnet dieses Handbuch in Ihrem Browser. Es liegt dem Programm bei; eine Internetverbindung ist nicht nötig.</td></tr>
@@ -2959,11 +2963,45 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Den Aufbau des Ergebnisses zeigt der SELF-Inspektor (14.1).</p>
 
   <h3>14.14 ABBILD BEARBEITEN &ndash; Dateien in einem Abbild &auml;ndern</h3>
-  <p>In ein fertiges Abbild l&auml;sst sich nichts hineinschreiben (<code>.exfat</code> hat keinen freien
-  Platz, f&uuml;r <code>.ffpfsc</code> gibt es keinen Treiber, <code>.ffpkg</code> ist nur lesbar). Dieses
-  Fenster geht deshalb den Weg, den das Programm auch sonst geht: <strong>entpacken, &auml;ndern, neu
-  packen</strong>.</p>
+  <p>Dateien eines fertigen Abbilds umbenennen, l&ouml;schen, ersetzen oder hinzuf&uuml;gen &ndash; auf zwei Wegen:
+  <strong>Direkt &auml;ndern</strong> schreibt in das Abbild selbst (<code>.exfat</code>, <code>.ffpkg</code> und
+  unkomprimiertes <code>.ffpfs</code>), <strong>Entpacken</strong> geht den Weg, den das Programm auch sonst geht:
+  entpacken, &auml;ndern, neu packen &ndash; f&uuml;r jedes Format, auch <code>.ffpfsc</code>.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; ABBILD BEARBEITEN.</p>
+  <p><strong>Direkt &auml;ndern</strong> (ohne Entpacken und Neubau):</p>
+  <ol>
+    <li><strong>Abbild w&auml;hlen, <em>Direkt &auml;ndern</em>.</strong> Das Programm fragt, ob wirklich das Abbild selbst
+    ge&auml;ndert werden soll, und zeigt dann seinen Inhalt im Baum &ndash; gelesen aus dem Abbild, ohne Entpacken.</li>
+    <li><strong>&Auml;ndern</strong> wie unten (<em>Umbenennen</em>, <em>L&ouml;schen</em>, <em>Ersetzen&nbsp;&hellip;</em>,
+    <em>Hinzuf&uuml;gen&nbsp;&hellip;</em>, <em>Neuer Ordner</em>). Jede &Auml;nderung wird zuerst nur vorgemerkt: Der Baum zeigt
+    schon den neuen Stand, die Datei bleibt unber&uuml;hrt. Was nicht geht (Name vergeben, kein Platz), wird abgewiesen
+    &ndash; dann ist auch nichts vorgemerkt.</li>
+    <li><strong>&Auml;nderungen anwenden.</strong> Erst jetzt wird geschrieben, im Hintergrund: zuerst die alten Bytes jeder
+    Stelle in ein Journal neben dem Abbild (<code>&lt;Abbild&gt;.undo</code>), dann die neuen Inhalte, zuletzt die Verwaltung
+    des Dateisystems. Bricht das Schreiben ab (Absturz, Strom weg), macht das Programm es beim n&auml;chsten &Ouml;ffnen anhand
+    des Journals r&uuml;ckg&auml;ngig und sagt es. Eine fertig angewendete &Auml;nderung l&auml;sst sich so nicht zur&uuml;cknehmen.
+    Schlie&szlig;en Sie das Fenster mit vorgemerkten &Auml;nderungen, fragt das Programm und verwirft sie.</li>
+  </ol>
+  <ul>
+    <li><strong><code>.exfat</code></strong> w&auml;chst nie. Abbilder dieses Programms haben keinen freien Cluster; Platz
+    entsteht durch L&ouml;schen oder durch Ersetzen mit einer kleineren Datei.</li>
+    <li><strong><code>.ffpkg</code></strong> (UFS2) w&auml;chst ebenfalls nie, hat aber etwas Reserve, weil das Programm beim
+    Bauen Platz dazulegt. Bitmaps und Z&auml;hler des Dateisystems rechnet es nach jeder &Auml;nderung so neu, wie es sie beim
+    Bauen anlegt.</li>
+    <li><strong><code>.ffpfs</code></strong> (flaches PFS &ndash; so baut das Programm <code>.ffpfs</code>): Neue Inhalte kommen in
+    freie L&uuml;cken oder hinten an, das Abbild w&auml;chst also bei Bedarf; der Platz einer gel&ouml;schten oder ersetzten Datei
+    wird beim n&auml;chsten Mal wieder genutzt. Verzeichnisse und Pfadtabelle legt das Programm beim Anwenden neu an, genau so,
+    wie MkPFS sie f&uuml;r denselben Inhalt bauen w&uuml;rde. Ein PFS kennt keine leeren Ordner: Ein neuer Ordner braucht beim
+    Anwenden mindestens eine Datei. Ein <code>.ffpfs</code>, das nur ein inneres exFAT-Abbild umh&uuml;llt, wird wie ein
+    <code>.exfat</code> ge&auml;ndert.</li>
+    <li><strong>Nicht direkt</strong> geht <code>.ffpfsc</code> (komprimiert) &ndash; daf&uuml;r bleibt <em>Entpacken</em>.</li>
+    <li><strong>Gepr&uuml;ft</strong> ist der direkte Weg mit unabh&auml;ngigen Lesern: exFAT mit dem exFAT-Treiber des Linux-Kerns,
+    UFS2 mit UFS2Tool (<code>fsck_ufs</code>, <code>extract</code> und einer Probe, die den freien Platz f&uuml;llt und danach alle
+    Dateien vergleicht), PFS mit der Pr&uuml;fung von MkPFS gegen einen Ordner mit denselben &Auml;nderungen. An der Konsole ist ein
+    so ge&auml;ndertes <code>.ffpkg</code> oder <code>.ffpfs</code> noch nicht gemessen &ndash; probieren Sie zuerst mit einer
+    Kopie.</li>
+  </ul>
+  <p><strong>Entpacken</strong> (jedes Format):</p>
   <ol>
     <li><strong>Abbild w&auml;hlen und entpacken.</strong> Das Programm entpackt es mit Aufgabe 6 (Ziel
     Dump-Ordner) in einen Arbeitsordner &ndash; mit allen Pr&uuml;fungen und R&uuml;ckfragen dieser Aufgabe;
@@ -2978,9 +3016,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Man kann auch in ein anderes Format speichern oder mehrmals speichern.</li>
   </ol>
   <ul>
-    <li><strong>Gesch&uuml;tzt</strong> sind <code>eboot.bin</code> und <code>sce_sys/param.json</code>:
+    <li><strong>Gesch&uuml;tzt</strong> sind <code>eboot.bin</code> und <code>sce_sys/param.json</code> &ndash; auf beiden Wegen:
     Sie lassen sich ersetzen (etwa durch eine gepatchte <code>eboot.bin</code>), aber nicht l&ouml;schen oder
-    umbenennen. Fehlt eine davon beim Speichern, fragt das Programm vorher nach.</li>
+    umbenennen, ebenso wenig der Ordner, der sie enth&auml;lt. Fehlt eine davon beim Speichern, fragt das Programm vorher nach.</li>
     <li><strong>Namen</strong> m&uuml;ssen auf der Konsole und unter Windows g&uuml;ltig sein; zwei Namen, die sich
     nur in der Gro&szlig;-/Kleinschreibung unterscheiden, gelten als derselbe. Verkn&uuml;pfungen werden nicht
     angefasst, nichts kann aus dem Spielordner hinaus.</li>
@@ -2991,6 +3029,25 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     ersetzen, umbenennen, hinzuf&uuml;gen, speichern, das Ergebnis wieder entpacken und vergleichen). Ob ein
     so ge&auml;ndertes Spiel an der Konsole startet, h&auml;ngt davon ab, was Sie ge&auml;ndert haben &ndash;
     probieren Sie zuerst mit einer Kopie.</li>
+  </ul>
+
+  <h3>14.15 Ger&auml;te im Netz &ndash; NAS und Rechner als Quelle oder Ziel</h3>
+  <p>Findet NAS-Ger&auml;te und Rechner im eigenen Netz und setzt ihre Windows-Freigabe als Quelle oder Ziel.
+  <strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; Ger&auml;te im Netz.</p>
+  <ol>
+    <li><strong>Suchen.</strong> Die Suche dauert wenige Sekunden; gefunden wird, was sich selbst im Netz meldet (mDNS und
+    WS-Discovery). Das Netz wird nicht abgesucht, es werden keine Adressen durchprobiert. <em>Stopp</em> beendet die Suche.</li>
+    <li><strong>Als Quelle w&auml;hlen&nbsp;&hellip; / Als Ziel w&auml;hlen&nbsp;&hellip;</strong> &ouml;ffnet den Ordnerdialog auf der
+    Freigabe des Ger&auml;ts (<code>\\Adresse\</code>); der gew&auml;hlte Ordner kommt ins Feld QUELLE beziehungsweise ZIEL. Das
+    Programm liest und schreibt dort ohne Zwischenkopie.</li>
+    <li><strong>Adresse kopieren</strong> legt die Adresse in die Zwischenablage, etwa f&uuml;r ein anderes Programm.</li>
+  </ol>
+  <ul>
+    <li>W&auml;hlbar sind Ger&auml;te mit Windows-Freigabe (SMB) und Rechner. FTP- und NFS-Ger&auml;te werden nur angezeigt.</li>
+    <li>Findet die Suche nichts, ist die Netzwerkerkennung des Ger&auml;ts meist aus. Eine Freigabe l&auml;sst sich auch von Hand
+    als <code>\\Adresse\Freigabe</code> ins Feld eintragen.</li>
+    <li>Gepr&uuml;ft ist Lesen und Schreiben &uuml;ber eine Freigabe am eigenen Rechner (<code>\\localhost</code>); mit einem echten
+    NAS ist es noch nicht gemessen.</li>
   </ul>
 
 </section>

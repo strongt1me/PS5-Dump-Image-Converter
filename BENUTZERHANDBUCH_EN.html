@@ -1068,6 +1068,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p><strong>Pre-check.</strong> Before the start, the program goes through the game folder once and reports <em>all</em> findings at the same time; the affected paths are in the log. For an exFAT image, names outside ASCII, symbolic links, invalid characters and names that differ only in upper and lower case are <em>errors</em> – the writer would reject them only after copying. For <code>.ffpkg</code>, <code>.ffpfs</code> and <code>.ffpfsc</code> they are a warning; there it is not proven. There are also warnings for paths deeper than 32 folder levels and for an output name over 63 bytes (for <code>.ffpfsc</code> 58) that might no longer fit after the ShadowMount+ mount path; this has not been measured on the console. A FAT32 target is also an error if a file is over 4&nbsp;GiB. Batch conversion checks only the output names; the name probe reads for 20 seconds at most. A probe that itself fails never prevents the start.</p>
   <p><strong>Output name by template.</strong> By default the result is named like the source. Under <strong>SETTINGS</strong>, section <em>OUTPUT NAME</em>, you build the name from the details of the game, for example <code>{title} [{title_id}] v{version}</code> (<em>Astro Bot [PPSA01234] v1.0.0</em>). The parts are <code>{name}</code> (name of the source), <code>{title}</code>, <code>{title_id}</code>, <code>{version}</code>, <code>{region}</code>, <code>{fw}</code> (minimum firmware) and <code>{pack}</code> (zstd or lz4, empty for a game without an asset pack); each at most once, and at least <code>{name}</code>, <code>{title}</code> or <code>{title_id}</code> must appear. The example list and the preview show the name of a sample game for each format, with the bytes against the length limit; <em>Default</em> resets to <code>{name}</code>. A usable template is saved immediately; for an unusable one the reason is shown and the last saved one stays in effect. A generated name is cut to the maximum length of the format (the title first) and made suitable for Windows (no dot or space at the end; a reserved device name such as <code>AUX</code> gets an underscore). If the name matches an existing file, the program asks as usual whether to replace it; in batch conversion, a result of the same run with the same name is skipped. The template applies to every target format, <code>.ffpkg</code> included. If the details of the game are missing, the name of the source stays. On the command line, <code>--ausgabename VORLAGE</code> takes precedence over the setting.</p>
   <p><strong>Leftovers after an error.</strong> If a single run has failed or was cancelled, a card shows what was left behind: the unfinished result and, next to it, <code>.teil</code>, <code>.neu</code>, <code>.part</code> and <code>.partial</code> files, with sizes. Nothing is removed unless you ask for it. The source itself, a folder around it and a folder inside it are protected twice (when offering and when removing). In batch conversion and on the command line it stays with the log. When a game folder is moved (Task 4), <code>sce_sys</code> and, at the very end, <code>eboot.bin</code> are handled, so that an aborted half folder does not look like a game.</p>
+  <p><strong>Delete the source after success.</strong> With the checkbox <em>Delete the source after success</em> in the path card (on the command line <code>--quelle-loeschen</code>) the program deletes the source as soon as the result is finished and verified – <strong>permanently, not to the recycle bin</strong>. Before the start it asks once more: <em>Yes</em> deletes after success, <em>No</em> converts and leaves the source in place, <em>Cancel</em> does not start. The checkbox applies only until the next program start. The source stays in place if the result is missing or empty, if the source has changed since the start, if result and source are the same path or one lies inside the other, and if the source is a drive, a user or system folder or a link; the run still counts as successful, and the reason is in the log. In batch conversion this applies to each source individually. If the source came from an archive, the archive is deleted.</p>
   <p><strong>Language at startup.</strong> Without a saved choice the program follows the display language of the system; if it does not know that language, English applies. A language chosen with the language button always applies.</p>
 </section>
 
@@ -1122,7 +1123,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   program aborts with a message before the build (for <code>.ffpfsc</code>,
   <code>.ffpfs</code>, <code>.exFAT</code> and <code>.ffpkg</code> alike),
   instead of the problem only showing up on the console.</p>
-  <p><strong>Archive as source.</strong> In Task 1, the button <strong>Archive&hellip;</strong> is to the left of <strong>Dump folder</strong>: It chooses an archive (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>), while <strong>Dump folder</strong> chooses the folder as usual; an archive can also be dragged onto the source field. The program unpacks it into the work folder (<code>ps5conv_archiv_&hellip;</code>, which must have at least as much free space as the size of the archive) and takes the game folder inside it &ndash; the one with <code>sce_sys/param.json</code> &ndash; as the source. Progress and result appear in the log. The program unpacks <code>.zip</code> itself; <code>.7z</code> and <code>.rar</code> are unpacked by the bundled <strong>7-Zip</strong> (folder <code>7-Zip-26.06</code>; if it is missing, the program looks for an installed one). The unpack folder is replaced at the next archive, and a leftover is cleaned up after twelve hours like any other work folder. <strong>If the archive is password-protected,</strong> the program first tries without a password and then the common passwords <code>pippo</code> and <code>DLPSGAME.COM</code>; if none fits, it asks for the password (the input field shows asterisks, and the password does not appear in the log) and asks again if one is wrong. <strong>Task 5 (batch conversion)</strong> also accepts archives: They can be added to the sources in the file dialog (filter <em>Archives</em>) or by drag and drop and are processed in turn &ndash; each one is unpacked only when it is needed and removed again right afterwards, so there is only ever one unpack folder. A folder full of archives does not stand for the archives in it there; they are chosen individually. If an archive is encrypted and no known password fits, it counts as a failure of that source, and the others continue. The same applies on the command line: <code>--source Spiel.zip</code> for Task 1, several archives for Task 5, and <code>--archiv-passwort</code> specifies a password.</p>
+  <p><strong>Archive as source.</strong> In Task 1, the button <strong>Archive&hellip;</strong> is to the left of <strong>Dump folder</strong>: It chooses an archive (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>), while <strong>Dump folder</strong> chooses the folder as usual; an archive can also be dragged onto the source field. The program unpacks it into the work folder (<code>ps5conv_archiv_&hellip;</code>, which must have at least as much free space as the size of the archive) and takes the game folder inside it &ndash; the one with <code>sce_sys/param.json</code> &ndash; as the source. Progress and result appear in the log. The program unpacks <code>.zip</code> itself; <code>.7z</code> and <code>.rar</code> are unpacked by the bundled <strong>7-Zip</strong> (folder <code>7-Zip-26.06</code>; if it is missing, the program looks for an installed one). The unpack folder is replaced at the next archive, and a leftover is cleaned up after twelve hours like any other work folder.</p>
+  <p><strong>ZIP without an unpack folder.</strong> If the result is an image (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> or <code>.ffpkg</code>) and the conversion without an intermediate folder is switched on, the program no longer unpacks a <code>.zip</code>: only a small <em>shadow folder</em> with <code>sce_sys</code> and <code>eboot.bin</code> is created in the work folder &ndash; enough for cover, title, checks and naming &ndash; and the run reads the game itself directly from the archive. This saves the space and the time of unpacking; the log names the shadow folder. If the chosen route does need the game as a folder after all (target format dump folder, a route through an intermediate folder), the program unpacks the rest before the run &ndash; with a space check, and only if the archive has not changed since the shadow folder was created. <code>.7z</code> and <code>.rar</code> are always unpacked (they are usually packed solid and cannot be read at an arbitrary position), and so is an AES-encrypted ZIP.</p>
+  <p><strong>If the archive is password-protected,</strong> the program first tries without a password, then the common passwords <code>pippo</code> and <code>DLPSGAME.COM</code> and after that your own list: under <strong>SETTINGS</strong>, section <em>ARCHIVE PASSWORDS</em>, you enter further passwords separated by commas; they are saved as you type. If none fits, the window asks for the password (the input field shows asterisks, and the password does not appear in the log) and asks again if one is wrong.</p>
+  <p><strong>Task 5 (batch conversion)</strong> also accepts archives: They can be added to the sources in the file dialog (filter <em>Archives</em>) or by drag and drop and are processed in turn &ndash; each one is prepared only when it is needed (a ZIP as a shadow folder as above, otherwise unpacked) and removed again right afterwards, so there is only ever one work folder. A folder full of archives does not stand for the archives in it there; they are chosen individually. If an archive is encrypted and no password from the list fits, it counts as a failure of that source, and the others continue. The same applies on the command line: <code>--source Spiel.zip</code> for Task 1, several archives for Task 5, and <code>--archiv-passwort</code> specifies a password, which is then the only one tried.</p>
   <p><strong>If the memory runs out,</strong> the program restarts the run by itself &ndash; with half as many cores, up to three times &ndash; and writes this to the log. This is detected only if the engine itself reports <code>MemoryError</code>. If even one core does not help, the notice about too little memory remains.</p>
   <div class="kasten">
     <span class="titel">If you are unsure</span>
@@ -2314,12 +2318,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>KLOG</strong></td><td>Shows the kernel log of a network-connected PS5 live – read-only, default port 3232.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor for <code>sce_sys/param.json</code> and <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG MERGER</strong></td><td>Merges split <code>.pkg</code> files back into a single file. A running set can be cancelled; the partially written file is removed in that case.</td></tr>
-      <tr><td><strong>MORE TOOLS</strong></td><td>Drop-down menu with the additional tools (among others): <strong>SHADOWMOUNT+</strong> (configuration editor for the ShadowMount+ payload, load and write via FTP), <strong>AMPR Index Builder</strong>, <strong>ASSET PACK CHECK / UNPACK</strong> (11.4), <strong>SELF Inspector</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>EDIT IMAGE</strong> (14.14), <strong>Rename dump</strong> (14.2), <strong>Install app directly</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) and <strong>Send unjail</strong> (14.11). PS4 and PS5 packages (reading, unpacking, building, downloading updates, sending to the console) have no longer been here since October 12, 2026, but under <a href="#k7pkg">Task 7 &ndash; PKG / FPKG</a>; the AMPR trace assistant has been the button <em>10.&nbsp;AMPR trace</em> in the CONSOLE view since October 14, 2026.</td></tr>
+      <tr><td><strong>MORE TOOLS</strong></td><td>Drop-down menu with the additional tools (among others): <strong>SHADOWMOUNT+</strong> (configuration editor for the ShadowMount+ payload, load and write via FTP), <strong>AMPR Index Builder</strong>, <strong>ASSET PACK CHECK / UNPACK</strong> (11.4), <strong>SELF Inspector</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>EDIT IMAGE</strong> (14.14), <strong>Devices on the network</strong> (14.15), <strong>Rename dump</strong> (14.2), <strong>Install app directly</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) and <strong>Send unjail</strong> (14.11). PS4 and PS5 packages (reading, unpacking, building, downloading updates, sending to the console) have no longer been here since October 12, 2026, but under <a href="#k7pkg">Task 7 &ndash; PKG / FPKG</a>; the AMPR trace assistant has been the button <em>10.&nbsp;AMPR trace</em> in the CONSOLE view since October 14, 2026.</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Starts your FileZilla installation for exchanging files with the PS5. The program looks for where FileZilla is installed by itself – see <a href="#k14">Section 14.7</a>. Also reachable with <strong>Ctrl+Shift+T</strong>.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sends JS or ELF payloads to an already jailbroken PS5 (ports 50000/9021) together with a small log server. <code>ftpsrv-ps5</code> on <strong>port 2121</strong> is bundled and preset.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Shows project information and the sources and libraries used.</td></tr>
       <tr><td><strong>THEME</strong></td><td>Opens the color scheme selection – see <a href="#k15">Chapter 15</a>.</td></tr>
-      <tr><td><strong>SETTINGS</strong></td><td>At the very top is the display: scaling (slider) and screen resolution (drop-down list) can be set by hand and reset to automatic with a button (Section 14.3). Below that is the background image for the main area and – independently of it – one just for the sidebar. Both areas have their own drop-down list with the bundled images; your own image can be chosen at any time and takes effect immediately. Also the storage location for downloads and – in the <em>Asset pack (LZ4)</em> section – the LZ4 level for asset packs (Section 11.1).</td></tr>
+      <tr><td><strong>SETTINGS</strong></td><td>At the very top is the display: scaling (slider) and screen resolution (drop-down list) can be set by hand and reset to automatic with a button (Section 14.3). Below that is the background image for the main area and – independently of it – one just for the sidebar. Both areas have their own drop-down list with the bundled images; your own image can be chosen at any time and takes effect immediately. Also the storage location for downloads, the LZ4 level for asset packs in the <em>Asset pack (LZ4)</em> section (Section 11.1), the template for the output name (Section 3.5) and your own password list for archives (<em>ARCHIVE PASSWORDS</em>, Chapter 5).</td></tr>
       <tr><td><strong>DE / EN / ES / IT / FR</strong></td><td>The language button shows the active language; each click switches the entire interface to the next one (German, English, Spanish, Italian, French) – main window, all dialogs and all log messages. This manual is available in all five languages; the <strong>USER MANUAL</strong> button opens it in the language of the interface.</td></tr>
       <tr><td><strong>FAQ</strong></td><td>To the left of USER MANUAL: Opens the frequently asked questions with short answers in your browser – in the language of the interface (German, English, Spanish, Italian or French). They are included with the program; no internet connection is needed. As a PDF they are located next to the program file.</td></tr>
       <tr><td><strong>USER MANUAL</strong></td><td>Opens this manual in your browser. It is included with the program; no internet connection is needed.</td></tr>
@@ -2936,10 +2940,45 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>The structure of the result is shown by the SELF inspector (14.1).</p>
 
   <h3>14.14 EDIT IMAGE &ndash; Changing Files in an Image</h3>
-  <p>Nothing can be written into a finished image (<code>.exfat</code> has no free
-  space, there is no driver for <code>.ffpfsc</code>, <code>.ffpkg</code> is read-only). This
-  window therefore takes the route the program takes elsewhere too: <strong>unpack, change, repack</strong>.</p>
+  <p>Rename, delete, replace or add files of a finished image &ndash; in two ways:
+  <strong>Edit in place</strong> writes into the image itself (<code>.exfat</code>, <code>.ffpkg</code> and
+  uncompressed <code>.ffpfs</code>), <strong>Unpack</strong> takes the route the program takes elsewhere too:
+  unpack, change, repack &ndash; for every format, <code>.ffpfsc</code> included.</p>
   <p><strong>Found under:</strong> MORE TOOLS &rarr; EDIT IMAGE.</p>
+  <p><strong>Edit in place</strong> (without unpacking and rebuilding):</p>
+  <ol>
+    <li><strong>Choose the image, <em>Edit in place</em>.</strong> The program asks whether the image itself really
+    should be changed and then shows its content in the tree &ndash; read from the image, without unpacking.</li>
+    <li><strong>Change</strong> as below (<em>Rename</em>, <em>Delete</em>, <em>Replace&nbsp;&hellip;</em>,
+    <em>Add&nbsp;&hellip;</em>, <em>New folder</em>). Every change is only queued at first: the tree already shows
+    the new state, while the file stays untouched. Whatever is not possible (name already taken, no room) is rejected
+    &ndash; and then nothing is queued either.</li>
+    <li><strong>Apply changes.</strong> Only now is anything written, in the background: first the old bytes of every
+    affected spot into a journal next to the image (<code>&lt;Abbild&gt;.undo</code>), then the new content, and finally the
+    file system's management data. If writing is interrupted (crash, power loss), the program reverses it the next time
+    the image is opened, using the journal, and tells you so. A change that has been applied completely cannot be taken
+    back this way. If you close the window with queued changes, the program asks and discards them.</li>
+  </ol>
+  <ul>
+    <li><strong><code>.exfat</code></strong> never grows. Images made by this program have no free cluster; room is
+    made by deleting or by replacing with a smaller file.</li>
+    <li><strong><code>.ffpkg</code></strong> (UFS2) never grows either, but has some reserve because the program adds
+    room when building it. It recalculates the bitmaps and counters of the file system after every change the same way
+    it creates them when building.</li>
+    <li><strong><code>.ffpfs</code></strong> (flat PFS &ndash; this is how the program builds <code>.ffpfs</code>): new
+    content goes into free gaps or is appended at the end, so the image grows as needed; the space of a deleted or
+    replaced file is used again next time. The program rebuilds the directories and the path table when applying, exactly
+    as MkPFS would build them for the same content. A PFS knows no empty folders: a new folder needs at least one file by
+    the time you apply. An <code>.ffpfs</code> that merely wraps an inner exFAT image is changed like an
+    <code>.exfat</code>.</li>
+    <li><strong>Not in place:</strong> <code>.ffpfsc</code> (compressed) cannot be edited this way &ndash; use
+    <em>Unpack</em> for it.</li>
+    <li><strong>Tested</strong> is the in-place route with independent readers: exFAT with the exFAT driver of the Linux
+    kernel, UFS2 with UFS2Tool (<code>fsck_ufs</code>, <code>extract</code> and a probe that fills the free space and then
+    compares all files), PFS with the MkPFS check against a folder with the same changes. An <code>.ffpkg</code> or
+    <code>.ffpfs</code> changed this way has not yet been measured on the console &ndash; try with a copy first.</li>
+  </ul>
+  <p><strong>Unpack</strong> (every format):</p>
   <ol>
     <li><strong>Choose and unpack the image.</strong> The program unpacks it with Task 6 (target
     dump folder) into a work folder &ndash; with all the checks and prompts of that task;
@@ -2954,9 +2993,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     It is also possible to save to a different format or to save several times.</li>
   </ol>
   <ul>
-    <li><strong>Protected</strong> are <code>eboot.bin</code> and <code>sce_sys/param.json</code>:
+    <li><strong>Protected</strong> are <code>eboot.bin</code> and <code>sce_sys/param.json</code> &ndash; on both routes:
     they can be replaced (for example by a patched <code>eboot.bin</code>) but not deleted or
-    renamed. If one of them is missing when saving, the program asks first.</li>
+    renamed, and neither can the folder that contains them. If one of them is missing when saving, the program asks first.</li>
     <li><strong>Names</strong> must be valid on the console and under Windows; two names that differ
     only in upper/lower case count as the same. Links are not
     touched, and nothing can leave the game folder.</li>
@@ -2967,6 +3006,25 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     replace, rename, add, save, unpack the result again and compare). Whether a game
     changed this way starts on the console depends on what you changed &ndash;
     try with a copy first.</li>
+  </ul>
+
+  <h3>14.15 Devices on the network &ndash; NAS and Computers as Source or Target</h3>
+  <p>Finds NAS devices and computers on your own network and sets their Windows share as the source or target.
+  <strong>Found under:</strong> MORE TOOLS &rarr; Devices on the network.</p>
+  <ol>
+    <li><strong>Search.</strong> The search takes a few seconds; it finds whatever announces itself on the network (mDNS
+    and WS-Discovery). The network is not scanned, and no addresses are tried out. <em>Stop</em> ends the search.</li>
+    <li><strong>Choose as source&nbsp;&hellip; / Choose as target&nbsp;&hellip;</strong> opens the folder dialog on the
+    device's share (<code>\\Adresse\</code>); the chosen folder goes into the SOURCE or TARGET FOLDER field. The
+    program reads and writes there without an intermediate copy.</li>
+    <li><strong>Copy address</strong> puts the address on the clipboard, for example for another program.</li>
+  </ol>
+  <ul>
+    <li>Devices with a Windows share (SMB) and computers can be chosen. FTP and NFS devices are only displayed.</li>
+    <li>If the search finds nothing, the device's network discovery is usually switched off. A share can also be
+    entered into the field by hand as <code>\\Adresse\Freigabe</code>.</li>
+    <li>Tested is reading and writing through a share on your own computer (<code>\\localhost</code>); it has not yet
+    been measured with a real NAS.</li>
   </ul>
 
 </section>

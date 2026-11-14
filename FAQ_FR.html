@@ -219,7 +219,7 @@ footer{
 
   <div class="frage">
     <h3>Puis-je utiliser directement un .zip, .7z ou .rar comme source ?</h3>
-    <p>Oui. Dans la tâche&nbsp;1, le bouton <strong>Archive…</strong> sélectionne une archive (ou faites-la glisser sur le champ source) ; dans la tâche&nbsp;5 (conversion par lots), les archives peuvent être ajoutées comme n’importe quelle autre source ; en ligne de commande, <code>--source Game.zip</code> fonctionne. Le programme décompresse l’archive dans le dossier de travail, prend comme source le dossier du jeu qu’elle contient (celui qui comporte <code>sce_sys/param.json</code>) et supprime ensuite le dossier décompressé. Il faut disposer d’au moins autant d’espace libre que la taille de l’archive. Si l’archive est protégée par mot de passe et qu’aucun des mots de passe courants ne convient, le programme vous le demande.</p>
+    <p>Oui. Dans la tâche&nbsp;1, le bouton <strong>Archive…</strong> sélectionne une archive (ou faites-la glisser sur le champ source) ; dans la tâche&nbsp;5 (conversion par lots), les archives peuvent être ajoutées comme n’importe quelle autre source ; en ligne de commande, <code>--source Game.zip</code> fonctionne. Le programme prend comme source le dossier du jeu contenu dans l’archive (celui qui comporte <code>sce_sys/param.json</code>). Un <code>.zip</code> n’est même pas décompressé pour cela lorsque le résultat est une image : seuls <code>sce_sys</code> et <code>eboot.bin</code> vont dans un petit dossier de travail, et l’exécution lit le jeu lui-même directement dans l’archive. Les <code>.7z</code> et <code>.rar</code> (et toute voie qui a besoin d’un dossier) sont décompressés dans le dossier de travail ; il faut y disposer d’au moins autant d’espace libre que la taille de l’archive. Ensuite, le programme fait le ménage. En cas de mot de passe, il essaie les mots de passe courants et votre propre liste (<strong>PARAMÈTRES</strong> › <em>MOTS DE PASSE DES ARCHIVES</em>) et vous le demande si aucun ne convient.</p>
   </div>
 
   <div class="frage">
@@ -346,9 +346,10 @@ footer{
 
   <div class="frage">
     <h3>Puis-je modifier une image terminée après coup ?</h3>
-    <p>Pas directement – une image terminée n’a pas d’espace libre pour des fichiers supplémentaires. Il existe toutefois trois moyens :</p>
+    <p>Oui, de plusieurs façons :</p>
     <ul>
-      <li><strong>MODIFIER L’IMAGE</strong> (sous <strong>AUTRES OUTILS</strong>) : le programme décompresse l’image, vous remplacez, renommez, supprimez ou ajoutez des fichiers, puis il enregistre le résultat comme nouvelle image <code>&lt;name&gt;_bearbeitet</code> dans le format de votre choix (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> ou <code>.exFAT</code>). L’original reste intact ; <code>eboot.bin</code> et <code>sce_sys/param.json</code> peuvent seulement être remplacés, ni supprimés ni renommés.</li>
+      <li><strong>MODIFIER L’IMAGE › Modifier directement</strong> (sous <strong>AUTRES OUTILS</strong>) : un <code>.exfat</code>, un <code>.ffpkg</code> ou un <code>.ffpfs</code> non compressé est modifié lui-même – renommer, supprimer, remplacer, ajouter –, sans le décompresser ni le reconstruire. L’écriture n’a lieu qu’avec <strong>Appliquer les modifications</strong>, d’abord dans un journal d’annulation (<code>&lt;Abbild&gt;.undo</code>), grâce auquel le programme annule une interruption à la prochaine ouverture. Un <code>.exfat</code> ou un <code>.ffpkg</code> ne grandit jamais ; si la place ne suffit pas, il reste le moyen suivant. Un <code>.ffpfs</code> ajoute les nouveaux contenus à la fin et grandit.</li>
+      <li><strong>MODIFIER L’IMAGE › Décompresser</strong> (chaque format, y compris <code>.ffpfsc</code>) : le programme décompresse l’image, vous remplacez, renommez, supprimez ou ajoutez des fichiers, puis il enregistre le résultat comme nouvelle image <code>&lt;name&gt;_bearbeitet</code> dans le format de votre choix (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> ou <code>.exFAT</code>). L’original reste intact. Sur les deux voies, <code>eboot.bin</code> et <code>sce_sys/param.json</code> peuvent seulement être remplacés, ni supprimés ni renommés.</li>
       <li><strong>Reconstruire le même format, avec intégration</strong> (tâches 2 à 6) : le même fichier comme source, le même format comme destination, cochez ce qui doit être intégré (asset pack, PlayGo, BACKPORT) et démarrez. Le programme décompresse, intègre et reconstruit ; il faut disposer une fois de la taille du jeu en espace libre dans le dossier de travail.</li>
       <li>Extraire dans un <strong>dossier dump</strong>, modifier vous-même le dossier et le réempaqueter.</li>
     </ul>
@@ -366,6 +367,16 @@ footer{
   <div class="frage">
     <h3>L’ordinateur peut-il s’éteindre tout seul après une longue conversion ?</h3>
     <p>Oui – avec la case <strong>Éteindre l’ordinateur après une réussite</strong> dans la carte de chemin. Ce n’est qu’après une exécution <em>réussie</em> qu’une fenêtre apparaît et décompte 60 secondes (annulation avec le bouton ou ÉCHAP). Ensuite, les images sont démontées, les fichiers de travail supprimés et le journal enregistré, puis l’ordinateur s’éteint sans autre question. Après une erreur ou une annulation, il reste allumé. Enregistrez au préalable votre travail dans les autres programmes.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Le programme peut-il supprimer la source après la conversion ?</h3>
+    <p>Oui – avec la case <strong>Supprimer la source après réussite</strong> dans la carte (en ligne de commande <code>--quelle-loeschen</code>). Après une exécution réussie et vérifiée, le programme supprime la source <strong>définitivement, sans passer par la corbeille</strong> ; avant le démarrage, il demande encore une fois. La source reste en place si le résultat manque ou est vide, si elle a changé depuis le démarrage, si le résultat et la source se trouvent l’un dans l’autre ou si elle est un lecteur, un dossier utilisateur ou système, ou un lien. Si la source est une archive, c’est l’archive qui est supprimée. La case ne vaut que jusqu’au prochain démarrage du programme.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Comment travailler avec un NAS ou un partage réseau ?</h3>
+    <p>Sous <strong>AUTRES OUTILS</strong> › <strong>Appareils sur le réseau</strong>, le programme recherche les NAS et les ordinateurs qui s’annoncent sur le réseau, et place leur partage Windows dans le champ SOURCE ou DOSSIER DE DESTINATION avec <strong>Choisir comme source&nbsp;…</strong> ou <strong>Choisir comme cible&nbsp;…</strong>. La lecture et l’écriture s’y font sans copie intermédiaire. Si un appareil ne s’annonce pas, saisissez le partage à la main sous la forme <code>\\Adresse\Freigabe</code>. Les appareils FTP et NFS sont seulement affichés.</p>
   </div>
 
   <div class="frage">

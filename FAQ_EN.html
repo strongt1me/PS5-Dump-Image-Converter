@@ -219,7 +219,7 @@ footer{
 
   <div class="frage">
     <h3>Can I use a .zip, .7z or .rar directly as the source?</h3>
-    <p>Yes. In task&nbsp;1 the <strong>Archive…</strong> button picks an archive (or drag it onto the source field), in task&nbsp;5 (batch conversion) archives can be added like any other source, and on the command line <code>--source Game.zip</code> works. The program unpacks the archive into the work folder, takes the game folder inside it (the one with <code>sce_sys/param.json</code>) as the source and removes the unpacked folder afterwards. At least as much free space as the archive's size is needed there. If the archive is password-protected and none of the common passwords fits, the program asks you.</p>
+    <p>Yes. In task&nbsp;1 the <strong>Archive…</strong> button picks an archive (or drag it onto the source field), in task&nbsp;5 (batch conversion) archives can be added like any other source, and on the command line <code>--source Game.zip</code> works. The program takes the game folder inside the archive (the one with <code>sce_sys/param.json</code>) as the source. If the result is an image, a <code>.zip</code> is not even unpacked for this: only <code>sce_sys</code> and <code>eboot.bin</code> go into a small work folder, and the run reads the game itself directly from the archive. <code>.7z</code> and <code>.rar</code> (and every route that needs a folder) are unpacked into the work folder; at least as much free space as the archive's size is needed there. Afterwards the program cleans up again. For a password it tries the common ones and your own list (<strong>SETTINGS</strong> › <em>ARCHIVE PASSWORDS</em>) and asks you if none fits.</p>
   </div>
 
   <div class="frage">
@@ -346,9 +346,10 @@ footer{
 
   <div class="frage">
     <h3>Can I change a finished image afterwards?</h3>
-    <p>Not directly – a finished image has no free space for additional files. There are three ways, though:</p>
+    <p>Yes, in several ways:</p>
     <ul>
-      <li><strong>EDIT IMAGE</strong> (under <strong>MORE TOOLS</strong>): the program unpacks the image, you replace, rename, delete or add files, and it saves the result as a new image <code>&lt;name&gt;_bearbeitet</code> in the format you choose (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> or <code>.exFAT</code>). The original stays untouched; <code>eboot.bin</code> and <code>sce_sys/param.json</code> can only be replaced, not deleted or renamed.</li>
+      <li><strong>EDIT IMAGE › Edit in place</strong> (under <strong>MORE TOOLS</strong>): an <code>.exfat</code>, <code>.ffpkg</code> or uncompressed <code>.ffpfs</code> is changed itself – rename, delete, replace, add – without unpacking and rebuilding it. Nothing is written until <strong>Apply changes</strong>, and then first into a journal (<code>&lt;image&gt;.undo</code>) with which the program reverses an interruption the next time the image is opened. An <code>.exfat</code> or <code>.ffpkg</code> never grows in the process; if there is not enough room, the next way remains. An <code>.ffpfs</code> appends new content at the end and grows.</li>
+      <li><strong>EDIT IMAGE › Unpack</strong> (every format, <code>.ffpfsc</code> included): the program unpacks the image, you replace, rename, delete or add files, and it saves the result as a new image <code>&lt;name&gt;_bearbeitet</code> in the format you choose (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> or <code>.exFAT</code>). The original stays untouched. On both ways, <code>eboot.bin</code> and <code>sce_sys/param.json</code> can only be replaced, not deleted or renamed.</li>
       <li><strong>Build the same format again, with integration</strong> (tasks 2 to 6): the same file as source, the same format as target, tick what should go in (asset pack, PlayGo, BACKPORT) and start. The program unpacks, integrates and rebuilds; you need the game's size once as free space in the work folder.</li>
       <li>Unpack into a <strong>dump folder</strong>, edit the folder yourself and pack it again.</li>
     </ul>
@@ -366,6 +367,16 @@ footer{
   <div class="frage">
     <h3>Can the computer shut down on its own after a long conversion?</h3>
     <p>Yes – with the checkbox <strong>Shut down the computer after a successful run</strong> in the path card. Only after a <em>successful</em> run does a window appear that counts down 60 seconds (cancel with the button or ESC). Then images are unmounted, working files removed and the log saved, and the computer shuts down without further questions. After an error or a cancellation it stays on. Save your work in other programs beforehand.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Can the program delete the source after converting?</h3>
+    <p>Yes – with the checkbox <strong>Delete the source after success</strong> in the path card (on the command line <code>--quelle-loeschen</code>). After a successfully verified run the program deletes the source <strong>permanently, not to the recycle bin</strong>; before the start it asks once more. The source stays in place if the result is missing or empty, if the source has changed since the start, if result and source lie one inside the other or if the source is a drive, a user or system folder or a link. With an archive as the source, the archive is deleted. The checkbox applies only until the next program start.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I work with a NAS or a network share?</h3>
+    <p>Under <strong>MORE TOOLS</strong> › <strong>Devices on the network</strong> the program looks for NAS devices and computers that announce themselves on the network and, with <strong>Choose as source …</strong> or <strong>Choose as target …</strong>, puts their Windows share into the SOURCE or TARGET FOLDER field. Reading and writing there happens without an intermediate copy. If a device does not announce itself, enter the share by hand as <code>\\address\share</code>. FTP and NFS devices are only displayed.</p>
   </div>
 
   <div class="frage">

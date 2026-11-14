@@ -240,11 +240,14 @@ def _siebenzip_entpacken(archiv: str, ziel: str, programm: str, melden: _Melder 
 
 def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melden: _Melder | None = None,
               abbruch: Callable[[], bool] | None = None, popen_extra: dict | None = None,
-              passwort: str = "", platz_reserve: int = PLATZ_RESERVE) -> str:
+              passwort: str = "", platz_reserve: int = PLATZ_RESERVE,
+              weitere_passwoerter: "list[str] | tuple[str, ...]" = ()) -> str:
     """Entpackt ``archiv`` nach ``ziel`` und gibt den Spiel-Ordner darin zurueck.
 
     Args:
         platz_reserve: Soviel Platz bleibt auf dem Ziellaufwerk mindestens frei; wird es knapp, bricht das Entpacken ab.
+        weitere_passwoerter: Die Passwortliste des Anwenders (Einstellung ``archiv_passwoerter``); sie wird nach den bekannten
+            probiert, wenn kein ``passwort`` angegeben ist.
 
     Raises:
         PasswortFehler: Das Archiv ist verschluesselt, ``passwort`` fehlt oder stimmt nicht.
@@ -260,9 +263,10 @@ def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melde
         programm = siebenzip_suchen(wurzeln)
         if not programm:
             raise ArchivFehler("7-Zip nicht gefunden")
-    # Ohne Angabe: erst ohne Passwort, dann die bekannten. Mit Angabe nur dieses - ein falsches Passwort des Anwenders
-    # soll nicht still durch ein anderes ersetzt werden, sondern ihn noch einmal fragen lassen.
-    kandidaten = [passwort] if passwort else ["", *BEKANNTE_PASSWOERTER]
+    # Ohne Angabe: erst ohne Passwort, dann die bekannten, dann die Liste des Anwenders. Mit Angabe nur dieses - ein falsches
+    # Passwort des Anwenders soll nicht still durch ein anderes ersetzt werden, sondern ihn noch einmal fragen lassen.
+    kandidaten = [passwort] if passwort else list(dict.fromkeys(["", *BEKANNTE_PASSWOERTER,
+                                                                  *(p for p in weitere_passwoerter if p)]))
     letzter: PasswortFehler | None = None
     for kandidat in kandidaten:
         try:

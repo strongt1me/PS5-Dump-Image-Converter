@@ -219,7 +219,7 @@ footer{
 
   <div class="frage">
     <h3>Posso usare direttamente un .zip, .7z o .rar come origine?</h3>
-    <p>Sì. Nell'attività&nbsp;1 il pulsante <strong>Archivio…</strong> seleziona un archivio (oppure lo si trascina sul campo dell'origine), nell'attività&nbsp;5 (conversione collettiva) gli archivi si possono aggiungere come qualsiasi altra origine, e da riga di comando funziona <code>--source Game.zip</code>. Il programma estrae l'archivio nella cartella di lavoro, prende come origine la cartella del gioco al suo interno (quella con <code>sce_sys/param.json</code>) e in seguito rimuove la cartella estratta. Lì serve almeno tanto spazio libero quanto è grande l'archivio. Se l'archivio è protetto da password e nessuna delle password più comuni funziona, il programma la chiede.</p>
+    <p>Sì. Nell'attività&nbsp;1 il pulsante <strong>Archivio…</strong> seleziona un archivio (oppure lo si trascina sul campo dell'origine), nell'attività&nbsp;5 (conversione collettiva) gli archivi si possono aggiungere come qualsiasi altra origine, e da riga di comando funziona <code>--source Game.zip</code>. Il programma prende come origine la cartella del gioco nell'archivio (quella con <code>sce_sys/param.json</code>). Se il risultato è un'immagine, un <code>.zip</code> non viene nemmeno estratto: solo <code>sce_sys</code> e <code>eboot.bin</code> finiscono in una piccola cartella di lavoro, mentre il gioco vero e proprio viene letto direttamente dall'archivio. <code>.7z</code> e <code>.rar</code> (e ogni percorso che richiede una cartella) vengono estratti nella cartella di lavoro; lì serve almeno tanto spazio libero quanto è grande l'archivio. Al termine il programma fa pulizia. Se l'archivio è protetto da password, prova quelle più comuni e il proprio elenco (<strong>IMPOSTAZIONI</strong> › <em>PASSWORD DEGLI ARCHIVI</em>) e la chiede se nessuna funziona.</p>
   </div>
 
   <div class="frage">
@@ -346,9 +346,10 @@ footer{
 
   <div class="frage">
     <h3>Posso modificare un'immagine finita in un secondo momento?</h3>
-    <p>Non direttamente – un'immagine finita non ha spazio libero per file aggiuntivi. Esistono però tre strade:</p>
+    <p>Sì, in più modi:</p>
     <ul>
-      <li><strong>MODIFICA IMMAGINE</strong> (sotto <strong>ALTRI STRUMENTI</strong>): il programma estrae l'immagine, si sostituiscono, rinominano, eliminano o aggiungono file, e il risultato viene salvato come nuova immagine <code>&lt;name&gt;_bearbeitet</code> nel formato scelto (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> o <code>.exFAT</code>). L'originale resta intatto; <code>eboot.bin</code> e <code>sce_sys/param.json</code> possono solo essere sostituiti, non eliminati né rinominati.</li>
+      <li><strong>MODIFICA IMMAGINE › Modifica diretta</strong> (sotto <strong>ALTRI STRUMENTI</strong>): un <code>.exfat</code>, un <code>.ffpkg</code> o un <code>.ffpfs</code> non compresso viene modificato direttamente – rinominare, eliminare, sostituire, aggiungere –, senza estrarlo e ricostruirlo. La scrittura avviene solo con <strong>Applica le modifiche</strong>, prima in un journal (<code>&lt;Abbild&gt;.undo</code>) con cui il programma annulla un'interruzione alla successiva apertura. Un <code>.exfat</code> o un <code>.ffpkg</code> non cresce mai; se lo spazio non basta, resta il modo successivo. Un <code>.ffpfs</code> aggiunge i nuovi contenuti in fondo e cresce.</li>
+      <li><strong>MODIFICA IMMAGINE › Estrai</strong> (ogni formato, anche <code>.ffpfsc</code>): il programma estrae l'immagine, si sostituiscono, rinominano, eliminano o aggiungono file, e il risultato viene salvato come nuova immagine <code>&lt;name&gt;_bearbeitet</code> nel formato scelto (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> o <code>.exFAT</code>). L'originale resta intatto. In entrambi i modi <code>eboot.bin</code> e <code>sce_sys/param.json</code> possono solo essere sostituiti, non eliminati né rinominati.</li>
       <li><strong>Ricostruire lo stesso formato, con integrazione</strong> (attività da 2 a 6): lo stesso file come origine, lo stesso formato come destinazione, selezionare ciò che deve essere integrato (asset pack, PlayGo, BACKPORT) e avviare. Il programma estrae, integra e ricostruisce; serve una volta la dimensione del gioco come spazio libero nella cartella di lavoro.</li>
       <li>Estrarre in una <strong>cartella dump</strong>, modificare la cartella da sé e impacchettarla di nuovo.</li>
     </ul>
@@ -366,6 +367,16 @@ footer{
   <div class="frage">
     <h3>Il computer può spegnersi da solo dopo una lunga conversione?</h3>
     <p>Sì – con la casella <strong>Spegni il computer dopo il completamento con successo</strong> nella scheda del percorso. Solo dopo un'esecuzione <em>riuscita</em> compare una finestra che conta alla rovescia 60 secondi (annullare con il pulsante o con ESC). Poi le immagini vengono smontate, i file di lavoro rimossi e il registro salvato, e il computer si spegne senza ulteriori domande. Dopo un errore o un annullamento resta acceso. Salvare prima il lavoro negli altri programmi.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Il programma può eliminare l'origine dopo la conversione?</h3>
+    <p>Sì – con la casella <strong>Elimina l'origine dopo il successo</strong> nella scheda (da riga di comando <code>--quelle-loeschen</code>). Dopo un'esecuzione verificata con successo il programma elimina l'origine <strong>in modo definitivo, non nel cestino</strong>; prima dell'avvio chiede ancora una volta. L'origine resta dov'è se il risultato manca o è vuoto, se l'origine è cambiata dall'avvio, se risultato e origine si trovano l'uno nell'altro o se l'origine è un'unità, una cartella utente o di sistema o un collegamento. Con un archivio come origine viene eliminato l'archivio. La casella vale solo fino al successivo avvio del programma.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Come lavoro con un NAS o una condivisione di rete?</h3>
+    <p>In <strong>ALTRI STRUMENTI</strong> › <strong>Dispositivi in rete</strong> il programma cerca NAS e computer che si annunciano in rete e, con <strong>Scegli come origine …</strong> o <strong>Scegli come destinazione …</strong>, inserisce la loro condivisione Windows nel campo ORIGINE o CARTELLA DI DESTINAZIONE. Lì si legge e si scrive senza copia intermedia. Se un dispositivo non si annuncia, inserire la condivisione a mano come <code>\\Adresse\Freigabe</code>. I dispositivi FTP e NFS vengono solo mostrati.</p>
   </div>
 
   <div class="frage">

@@ -219,7 +219,7 @@ footer{
 
   <div class="frage">
     <h3>¿Se puede usar directamente un .zip, .7z o .rar como origen?</h3>
-    <p>Sí. En la tarea&nbsp;1 el botón <strong>Archivo…</strong> elige un archivo comprimido (o se arrastra al campo de origen), en la tarea&nbsp;5 (conversión por lotes) los archivos comprimidos pueden añadirse como cualquier otro origen, y en la línea de comandos funciona <code>--source Game.zip</code>. El programa desempaqueta el archivo comprimido en la carpeta de trabajo, toma como origen la carpeta del juego que contiene (la que tiene <code>sce_sys/param.json</code>) y elimina después la carpeta desempaquetada. Allí se necesita al menos tanto espacio libre como el tamaño del archivo comprimido. Si el archivo está protegido con contraseña y ninguna de las contraseñas habituales sirve, el programa la pide.</p>
+    <p>Sí. En la tarea&nbsp;1 el botón <strong>Archivo…</strong> elige un archivo comprimido (o se arrastra al campo de origen), en la tarea&nbsp;5 (conversión por lotes) los archivos comprimidos pueden añadirse como cualquier otro origen, y en la línea de comandos funciona <code>--source Game.zip</code>. El programa toma como origen la carpeta del juego que hay en el archivo comprimido (la que tiene <code>sce_sys/param.json</code>). Si el resultado es una imagen, un <code>.zip</code> ni siquiera se descomprime para ello: solo <code>sce_sys</code> y <code>eboot.bin</code> van a una pequeña carpeta de trabajo, y la ejecución lee el juego en sí directamente del archivo comprimido. <code>.7z</code> y <code>.rar</code> (y cualquier camino que necesite una carpeta) se descomprimen en la carpeta de trabajo; allí se necesita al menos tanto espacio libre como el tamaño del archivo comprimido. Después el programa vuelve a limpiar. Si hay contraseña, prueba las habituales y la lista propia (<strong>CONFIGURACIÓN</strong> › <em>CONTRASEÑAS DE ARCHIVOS</em>) y la pide si ninguna sirve.</p>
   </div>
 
   <div class="frage">
@@ -346,9 +346,10 @@ footer{
 
   <div class="frage">
     <h3>¿Se puede modificar una imagen terminada?</h3>
-    <p>No directamente: una imagen terminada no tiene espacio libre para archivos adicionales. Aun así, hay tres vías:</p>
+    <p>Sí, por varias vías:</p>
     <ul>
-      <li><strong>EDITAR IMAGEN</strong> (en <strong>MÁS HERRAMIENTAS</strong>): el programa desempaqueta la imagen, se sustituyen, renombran, eliminan o añaden archivos, y guarda el resultado como una imagen nueva <code>&lt;name&gt;_bearbeitet</code> en el formato elegido (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> o <code>.exFAT</code>). El original permanece intacto; <code>eboot.bin</code> y <code>sce_sys/param.json</code> solo se pueden sustituir, no eliminar ni renombrar.</li>
+      <li><strong>EDITAR IMAGEN › Editar directamente</strong> (en <strong>MÁS HERRAMIENTAS</strong>): un <code>.exfat</code>, <code>.ffpkg</code> o <code>.ffpfs</code> sin comprimir se modifica en sí mismo (renombrar, eliminar, reemplazar, añadir), sin desempaquetarlo ni volver a construirlo. Solo se escribe con <strong>Aplicar cambios</strong>, primero en un diario (<code>&lt;Abbild&gt;.undo</code>) con el que el programa deshace una interrupción la próxima vez que se abre la imagen. Un <code>.exfat</code> o <code>.ffpkg</code> nunca crece al hacerlo; si el espacio no basta, queda la vía siguiente. Un <code>.ffpfs</code> añade los contenidos nuevos al final y crece.</li>
+      <li><strong>EDITAR IMAGEN › Desempaquetar</strong> (cualquier formato, también <code>.ffpfsc</code>): el programa desempaqueta la imagen, se sustituyen, renombran, eliminan o añaden archivos, y guarda el resultado como una imagen nueva <code>&lt;name&gt;_bearbeitet</code> en el formato elegido (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> o <code>.exFAT</code>). El original permanece intacto. En ambas vías, <code>eboot.bin</code> y <code>sce_sys/param.json</code> solo se pueden sustituir, no eliminar ni renombrar.</li>
       <li><strong>Volver a construir el mismo formato, con integración</strong> (tareas 2 a 6): el mismo archivo como origen, el mismo formato como destino, marcar lo que debe incluirse (asset pack, PlayGo, BACKPORT) e iniciar. El programa desempaqueta, integra y vuelve a construir; se necesita una vez el tamaño del juego como espacio libre en la carpeta de trabajo.</li>
       <li>Desempaquetar en una <strong>carpeta de dump</strong>, editar la carpeta por cuenta propia y volver a empaquetarla.</li>
     </ul>
@@ -366,6 +367,16 @@ footer{
   <div class="frage">
     <h3>¿Puede apagarse el equipo solo tras una conversión larga?</h3>
     <p>Sí, con la casilla <strong>Apagar el equipo tras finalizar correctamente</strong> situada en la tarjeta de rutas. Solo tras una ejecución <em>correcta</em> aparece una ventana con una cuenta atrás de 60 segundos (cancelar con el botón o con ESC). Después se desmontan las imágenes, se eliminan los archivos de trabajo, se guarda el registro y el equipo se apaga sin más preguntas. Tras un error o una cancelación permanece encendido. Conviene guardar antes el trabajo de otros programas.</p>
+  </div>
+
+  <div class="frage">
+    <h3>¿Puede el programa eliminar el origen tras la conversión?</h3>
+    <p>Sí, con la casilla <strong>Eliminar el origen tras el éxito</strong> de la tarjeta (en la línea de comandos <code>--quelle-loeschen</code>). Tras una ejecución verificada con éxito, el programa elimina el origen <strong>de forma permanente, no a la papelera</strong>; antes del inicio vuelve a preguntar. El origen se conserva si el resultado falta o está vacío, si el origen ha cambiado desde el inicio, si el resultado y el origen están uno dentro del otro o si el origen es una unidad, una carpeta de usuario o del sistema, o un enlace. Si el origen es un archivo comprimido, se elimina el archivo comprimido. La casilla solo vale hasta el siguiente inicio del programa.</p>
+  </div>
+
+  <div class="frage">
+    <h3>¿Cómo se trabaja con un NAS o un recurso compartido en la red?</h3>
+    <p>En <strong>MÁS HERRAMIENTAS</strong> › <strong>Dispositivos en la red</strong>, el programa busca dispositivos NAS y equipos que se anuncian en la red y, con <strong>Elegir como origen …</strong> o <strong>Elegir como destino …</strong>, pone su recurso compartido de Windows en el campo ORIGEN o CARPETA DE DESTINO. Allí se lee y se escribe sin copia intermedia. Si un dispositivo no se anuncia, el recurso compartido se puede escribir a mano como <code>\\Adresse\Freigabe</code>. Los dispositivos FTP y NFS solo se muestran.</p>
   </div>
 
   <div class="frage">

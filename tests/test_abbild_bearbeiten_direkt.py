@@ -262,6 +262,28 @@ class DirektTests(unittest.TestCase):
             baum.dateien()
             self.assertIn("Media/Saves", baum.ordner())
 
+    def test_eboot_und_param_sind_auch_direkt_geschuetzt(self) -> None:
+        """Wie im Weg ueber den Arbeitsordner: nicht loeschen, nicht umbenennen - auch nicht den Ordner, der sie enthaelt."""
+        self.oeffnen()
+        for rel, art in (("eboot.bin", "_loeschen"), ("sce_sys/param.json", "_loeschen"), ("sce_sys", "_loeschen"),
+                         ("eboot.bin", "_umbenennen"), ("sce_sys", "_umbenennen")):
+            with self.subTest(rel=rel, art=art):
+                self.f.baum.selection_set(rel)
+                with mock.patch.object(fz.messagebox, "showerror") as fehler, \
+                        mock.patch.object(fz.messagebox, "askyesno", return_value=True) as frage, \
+                        mock.patch.object(fz.simpledialog, "askstring", return_value="anders") as name:
+                    getattr(self.f, art)()
+                fehler.assert_called_once()
+                frage.assert_not_called()
+                name.assert_not_called()
+                self.assertEqual(0, self.f.direkt_offen)
+        self.f.baum.selection_set("eboot.bin")
+        ersatz = os.path.join(self.tmp, "gepatcht.bin")
+        Path(ersatz).write_bytes(b"\x7fELF gepatcht")
+        with mock.patch.object(fz.filedialog, "askopenfilename", return_value=ersatz):
+            self.f._ersetzen()
+        self.assertEqual(1, self.f.direkt_offen, "Ersetzen bleibt erlaubt (gepatchte eboot.bin)")
+
     def test_ein_ordner_kann_nicht_ersetzt_werden(self) -> None:
         self.oeffnen()
         self.f.baum.selection_set("data")
