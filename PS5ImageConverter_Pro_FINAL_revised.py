@@ -38987,6 +38987,7 @@ class PS5ConverterGUI:
             if not gewaehlt.gepackt:
                 self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
                 return False
+            self._ampr_zstd_index_abgleichen(index_pfad, gewaehlt)
 
             arbeiter_zahl = self._ampr_zstd_arbeiter()
             self._append_to_log(self._t(
@@ -39019,6 +39020,29 @@ class PS5ConverterGUI:
             return False
         finally:
             self._pack_infotext = ""
+
+    def _ampr_zstd_index_abgleichen(self, index_pfad: str, gewaehlt: Any) -> None:
+        """Vor dem Packen: Jede Datei, die ins zstd-Pack soll, steht mit derselben Groesse im ``ampr_emu.index``.
+
+        Sonst verwirft ampr-emu-ng das ganze Pack an der Konsole, ohne Meldung (``ampr_zstdpack.ampr_index_abgleichen``).
+        Hier bricht der Lauf mit den ersten zehn Befunden im Protokoll ab, bevor gepackt wird.
+
+        Raises:
+            ampr_zstdpack.ZstdPackFehler: ``ampr_zstd.index_passt_nicht`` oder ein unlesbarer Index.
+        """
+        try:
+            with open(index_pfad, "rb") as fh:
+                daten = fh.read()
+        except OSError as exc:
+            raise ampr_zstdpack.ZstdPackFehler("ampr_zstd.ampr_index_ungueltig: %s" % exc) from exc
+        befunde = ampr_zstdpack.ampr_index_abgleichen(gewaehlt.gepackt, ampr_zstdpack.ampr_index_lesen(daten))
+        if befunde:
+            for pfad, groesse, soll in befunde[:10]:
+                if soll is None:
+                    self._append_to_log(self._t("ampr_zstd.index_fehlt", path=pfad))
+                else:
+                    self._append_to_log(self._t("ampr_zstd.index_groesse", path=pfad, size=groesse, expected=soll))
+            raise ampr_zstdpack.ZstdPackFehler("ampr_zstd.index_passt_nicht")
 
     def _ampr_zstdpakete_bauen(self, ordner: str, index_pfad: str, auswahl: dict[str, Any]) -> bool:
         """Asset-Pack mit zstd (``ampr_zstd.index`` + ``ampr_zstd-NNN.pak``) statt LZ4.
@@ -39080,6 +39104,7 @@ class PS5ConverterGUI:
             if not gewaehlt.gepackt:
                 self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
                 return False
+            self._ampr_zstd_index_abgleichen(index_pfad, gewaehlt)
 
             def _fort(phase: str):
                 return lambda anteil: self._ampr_pack_fortschritt(anteil * 100.0, phase)
@@ -39743,6 +39768,8 @@ class PS5ConverterGUI:
     _AMPR_NG_VARIANTEN: frozenset[str] = frozenset({"ng", "ng-debug"})
 
     _AMPR_VERSION_RE = re.compile(r"(\d+(?:\.\d+)+)")
+    #: Marke einer Vorabfassung direkt hinter der Nummer im Ordnernamen (``0.4.0-beta ng``), Teil der Fassung.
+    _AMPR_BETA = "-beta"
 
     # Woher eine Fassung stammt. Die Reihenfolge ist der Rang: Steht
     # dieselbe Fassung in mehreren Ordnern, gewinnt die weiter oben.
@@ -39943,7 +39970,12 @@ class PS5ConverterGUI:
         own_match = cls._AMPR_VERSION_RE.search(own)
         if own_match:
             version = own_match.group(1)
-            variant = own.replace(own_match.group(0), " ").strip(" _-")
+            if own.lower().startswith(cls._AMPR_BETA, own_match.end()):
+                # Eine Vorabfassung ("0.4.0-beta ng"): die Marke gehoert zur Fassung, die Variante bleibt "ng".
+                version += cls._AMPR_BETA
+                variant = (own[:own_match.start()] + " " + own[own_match.end() + len(cls._AMPR_BETA):]).strip(" _-")
+            else:
+                variant = own.replace(own_match.group(0), " ").strip(" _-")
         else:
             variant = own.strip(" _-")
             parent_match = cls._AMPR_VERSION_RE.search(parent)
@@ -39965,7 +39997,14 @@ class PS5ConverterGUI:
         kürzere Tupel als kleiner ansieht. In der Liste stand deshalb
         „0.3.5" vor „0.3.5.1" – und als „neueste Version" wurde die ältere
         vorausgewählt.
+
+        Eine Vorabfassung ``0.4.0-beta`` (:data:`_AMPR_BETA`) steht **über** ihrer Grundfassung und unter jeder
+        höheren Nummer: Die beta von ampr-emu-ng entsteht bei jedem Push auf main *nach* der letzten Freigabe
+        und trägt deren Nummer (14.11.2026: Freigabe v0.4.0, beta mit dem Spielstand-Fix aus PR #66).
         """
+        beta = version.lower().endswith(PS5ConverterGUI._AMPR_BETA)
+        if beta:
+            version = version[:-len(PS5ConverterGUI._AMPR_BETA)]
         parts: list[int] = []
         for chunk in version.split("."):
             try:
@@ -39974,7 +40013,7 @@ class PS5ConverterGUI:
                 parts.append(-1)
         while len(parts) < 4:
             parts.append(0)
-        return tuple(parts[:4])
+        return tuple(parts[:4]) + (1 if beta else 0,)
 
     #: So lange darf eine einzelne Abfrage dauern.
     _AMPR_UPDATE_FRIST = 30
@@ -67044,6 +67083,17 @@ class PS5ConverterGUI:
         """
         return path.replace("\\", "/").encode("utf-8").translate(cls._AMPR_ASCII_FALTUNG)
 
+    @staticmethod
+    def _ampr_pfad_zu_lang(schluessel: bytes) -> bool:
+        """Ob ein /app0-Pfad (Schluessel aus :meth:`_ampr_pfadschluessel`, UTF-8) die Grenzen der Konsole sprengt.
+
+        ``SCE_KERNEL_PATH_MAX`` (1024, mit der Null) und ``SCE_KERNEL_NAME_MAX`` (255) - ampr-emu-ng prueft jeden Pfad seines
+        Index daran (``kernel_path_limits``). Eine solche Datei kann das Spiel ohnehin nicht oeffnen; im Index waere sie nur ein
+        Grund, ihn zu verwerfen.
+        """
+        return (len(schluessel) >= ampr_zstdpack.KONSOLE_PATH_MAX
+                or any(len(teil) > ampr_zstdpack.KONSOLE_NAME_MAX for teil in schluessel.split(b"/")))
+
     @classmethod
     def _ampr_fnv1a64_path_hash(cls, path: str) -> int:
         """FNV-1a-64-Hash ueber den Pfadschluessel (siehe ``_ampr_pfadschluessel``).
@@ -67308,6 +67358,9 @@ class PS5ConverterGUI:
                 if any(zeichen in indexed_path for zeichen in "\t\n\r"):
                     _hinweis("ampr.index_leerraum", path=indexed_path)
                     continue
+                if self._ampr_pfad_zu_lang(key):
+                    _hinweis("ampr.index_zu_lang", path=indexed_path)
+                    continue
                 if key in seen:
                     _hinweis("ampr.index_schreibung_doppelt",
                              first=seen[key], second=indexed_path)
@@ -67345,6 +67398,9 @@ class PS5ConverterGUI:
                 continue
             if any(zeichen in indexed_path for zeichen in "\t\n\r"):
                 _hinweis("ampr.index_leerraum", path=indexed_path)
+                continue
+            if self._ampr_pfad_zu_lang(key):
+                _hinweis("ampr.index_zu_lang", path=indexed_path)
                 continue
             if key in seen:
                 _hinweis("ampr.index_schreibung_doppelt", first=seen[key], second=indexed_path)

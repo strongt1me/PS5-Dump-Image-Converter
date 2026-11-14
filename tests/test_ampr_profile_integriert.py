@@ -223,5 +223,90 @@ class EchterPacklauf(unittest.TestCase):
         self._packen("PPSA00003", marke)
 
 
+class ImmerLose(unittest.TestCase):
+    """Jedes Profil dieses Programms endet mit dem Block "immer lose" (Vorbild Dump Forge): ``.ini``, Systemschicht, Bibliotheken.
+
+    Geprueft mit der Regelwahl des echten Werkzeugs (``select_rule``: die letzte passende Regel gewinnt). Gegenprobe: die
+    eigentlichen Daten des Profils werden weiter gepackt, und eine grosse geschriebene ``.INI`` braucht den Eintrag aus dem Baum.
+    """
+
+    LOSE = ("eboot.bin", "sce_sys/param.json", "sce_module/libc.prx", "fakelib/libSceAmpr.sprx", "cache_ps5/playgo.pgm")
+
+    def setUp(self) -> None:
+        try:
+            import ampr_pack
+        except ImportError as exc:                                     # pragma: no cover - Werkzeug fehlt
+            self.skipTest("Packwerkzeug nicht ladbar: %s" % exc)
+        self.werkzeug = ampr_pack
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _regeln(self, app0: Path, ng: bool = False):
+        ziel = Path(self.tmp.name, "profil_%d.toml" % len(os.listdir(self.tmp.name)))
+        if ng:
+            from ps5_validator.utils import spielbaum as sb
+            ap.profil_schreiben_aus_baum(str(ziel), sb.OrdnerBaum(str(app0)), 2, ng=True)
+        else:
+            ap.profil_schreiben(str(ziel), 2, str(app0))
+        text = ziel.read_text("utf-8")
+        tomllib.loads(text)
+        self.assertIn(ap.SICHERHEIT_KENNZEILE, text)
+        config = self.werkzeug.load_config(ziel)
+        return lambda rel: self.werkzeug.select_rule(config, rel).action
+
+    def _mitgeliefert(self, title_id: str, zusatz: "dict[str, bytes]") -> Path:
+        app0 = _spiel(Path(self.tmp.name, "spiel%d" % len(os.listdir(self.tmp.name))), title_id)
+        for rel, daten in zusatz.items():
+            (app0 / rel).parent.mkdir(parents=True, exist_ok=True)
+            (app0 / rel).write_bytes(daten)
+        return app0
+
+    def test_mitgelieferte_profile_lassen_ini_und_systemdateien_lose(self):
+        faelle = {
+            "ASTRO BOT": ("PPSA21567", {}, "data/prein/a.bin", ("data/prein/einstellungen.ini", "data/prein/sound/x.ini")),
+            "Insomniac": ("", {"toc": b"t", "dag": b"d", "d/a.bin": b"a"}, "d/a.bin", ("d/dlc_emu.ini",)),
+            "Unity": ("", {"Media/Metadata/global-metadata.dat": b"g"}, "StreamingAssets/a.bundle",
+                      ("StreamingAssets/config.ini",)),
+        }
+        for name, (title_id, zusatz, gepackt, ini) in faelle.items():
+            with self.subTest(name):
+                app0 = self._mitgeliefert(title_id, zusatz)
+                self.assertTrue(ap.profil_integriert_fuer(str(app0))[1], name)
+                aktion = self._regeln(app0)
+                self.assertEqual("compress", aktion(gepackt), "Gegenprobe: das Profil packt seine Daten weiter")
+                for rel in (*ini, *self.LOSE):
+                    self.assertEqual("loose", aktion(rel), rel)
+
+    def test_die_quelldatei_des_profils_selbst_kennt_die_ini_nicht(self):
+        """Ohne den Block packte das Insomniac-Profil eine ``.ini`` unter ``d/`` - der Grund fuer diese Regel."""
+        config = self.werkzeug.load_config(Path(ap.profil_ordner(), "insomniac.toml"))
+        self.assertEqual("compress", self.werkzeug.select_rule(config, "d/dlc_emu.ini").action)
+
+    def test_schreibweisen_aus_dem_baum(self):
+        app0 = self._mitgeliefert("", {"toc": b"t", "dag": b"d", "d/Config.INI": b"c", "d/[x]y.Ini": b"k", "d/a.bin": b"a"})
+        aktion = self._regeln(app0)
+        self.assertEqual("loose", aktion("d/Config.INI"))
+        self.assertEqual("loose", aktion("d/[x]y.Ini"))
+        self.assertEqual("compress", aktion("d/Andere.INI"), "Gegenprobe: nur die Schreibweisen, die im Spiel liegen")
+        self.assertEqual("compress", aktion("d/xy.Ini"), "Klammern sind geschuetzt, kein Muster")
+
+    def test_standardprofil_und_ng(self):
+        for ng in (False, True):
+            with self.subTest(ng=ng):
+                app0 = self._mitgeliefert("PPSA00001", {"data/a.bin": b"a", "data/Spiel.INI": b"i"})
+                aktion = self._regeln(app0, ng=ng)
+                self.assertEqual("compress", aktion("data/a.bin"))
+                for rel in ("data/spiel.ini", "data/Spiel.INI", *self.LOSE):
+                    self.assertEqual("loose", aktion(rel), rel)
+
+    def test_profil_des_anwenders_bleibt_ohne_block(self):
+        app0 = _spiel(Path(self.tmp.name, "eigen"), "PPSA21567")
+        ziel = Path(self.tmp.name, "eigen.toml")
+        eigenes = "# mein Profil\n[pack]\ndefault_action = \"compress\"\n"
+        ziel.write_text(eigenes, "utf-8")
+        ap.profil_schreiben(str(ziel), 2, str(app0))
+        self.assertEqual(eigenes, ziel.read_text("utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

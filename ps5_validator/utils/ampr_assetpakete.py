@@ -463,8 +463,12 @@ def variante_nur_packbau(variante: str) -> bool:
 def standardprofil_text(arbeiter: int = 0,
                         zusatz_ausschluss: "tuple[str, ...]" = (),
                         stufe: Any = LZ4_STUFE_VORGABE,
-                        ng: bool = False) -> str:
+                        ng: bool = False,
+                        schreibweisen: "tuple[str, ...]" = ()) -> str:
     """Ein Packprofil ohne Mitschnitte - vorsichtig, aber vollstaendig.
+
+    Es endet wie jedes Profil dieses Programms mit dem Block "immer lose" (:func:`sicherheitsregel_text`, ``schreibweisen`` aus
+    :func:`sicherheit_schreibweisen`).
 
     Die Werte stammen aus der mitgelieferten ``ampr_pack.example.toml``
     des Herstellers. Abweichend davon:
@@ -560,7 +564,7 @@ def standardprofil_text(arbeiter: int = 0,
         "latency_reserve_workers = 1",
         "",
     ]
-    return "\n".join(zeilen)
+    return "\n".join(zeilen) + sicherheitsregel_text(schreibweisen)
 
 
 def profil_ist_eigenes(pfad: str) -> bool:
@@ -1000,10 +1004,23 @@ def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "",
     """
     if os.path.isfile(ziel) and not profil_ist_eigenes(ziel):
         return ziel
+
+    def dateien() -> "list[str]":
+        rels: list[str] = []
+        if not app0:
+            return rels
+        try:
+            for wurzel, _ordner, namen in os.walk(str(app0)):
+                rels.extend(os.path.relpath(os.path.join(wurzel, n), str(app0)).replace("\\", "/") for n in namen)
+        except OSError as exc:
+            logger.debug("Dateien nicht suchbar (%s): %s", app0, exc)
+        return rels
+
     return _profil_ablegen(
         ziel, arbeiter, stufe, lambda: profil_integriert_fuer(app0),
         lambda: ((*filmordner_muster(app0), *systemdateien_muster(app0), *lose_endungen_muster(app0))
-                 if app0 else ()))
+                 if app0 else ()),
+        dateien)
 
 
 def profil_schreiben_aus_baum(ziel: str, baum: Any, arbeiter: int = 0, stufe: Any = LZ4_STUFE_VORGABE,
@@ -1024,17 +1041,23 @@ def profil_schreiben_aus_baum(ziel: str, baum: Any, arbeiter: int = 0, stufe: An
         return (*filmordner_aus_ordnern(ordner), *systemdateien_aus_dateien(dateien),
                 *lose_endungen_aus_dateien(dateien))
 
-    return _profil_ablegen(ziel, arbeiter, stufe, lambda: profil_integriert_aus_baum(baum), zusatz, ng=ng)
+    return _profil_ablegen(ziel, arbeiter, stufe, lambda: profil_integriert_aus_baum(baum), zusatz,
+                           lambda: list(_baum_merkmale(baum)[0]), ng=ng)
 
 
 def _profil_ablegen(ziel: str, arbeiter: int, stufe: Any, integriert: "Callable[[], tuple[str, str]]",
-                    zusatz_ausschluss: "Callable[[], tuple[str, ...]]", ng: bool = False) -> str:
-    """Schreibt das Profil: das mitgelieferte, wenn ``integriert()`` eines nennt, sonst das Standardprofil."""
+                    zusatz_ausschluss: "Callable[[], tuple[str, ...]]", dateien: "Callable[[], Iterable[str]]",
+                    ng: bool = False) -> str:
+    """Schreibt das Profil: das mitgelieferte, wenn ``integriert()`` eines nennt, sonst das Standardprofil.
+
+    Beide enden mit :func:`sicherheitsregel_text` (``dateien()`` liefert die relativen Pfade des Spiels fuer die Schreibweisen).
+    """
     ordner = os.path.dirname(os.path.abspath(ziel))
     if ordner:
         os.makedirs(ordner, exist_ok=True)
     # Mitgeliefertes Profil (Title-ID oder Engine-Erkennung)?
     bezeichnung, quell_pfad = integriert()
+    schreibweisen = sicherheit_schreibweisen(dateien())
     if quell_pfad:
         try:
             with open(quell_pfad, "r", encoding="utf-8") as quelle:
@@ -1043,7 +1066,8 @@ def _profil_ablegen(ziel: str, arbeiter: int, stufe: Any, integriert: "Callable[
                 datei.write(
                     PROFIL_KENNZEILE + " - integriertes Profil fuer "
                     + bezeichnung + ".\n")
-                datei.write(profil_stufe_einsetzen(inhalt, stufe))
+                datei.write(profil_stufe_einsetzen(inhalt, stufe).rstrip("\n") + "\n")
+                datei.write(sicherheitsregel_text(schreibweisen))
             logger.debug("integriertes Profil fuer %s: %s", bezeichnung, ziel)
             return ziel
         except OSError as exc:
@@ -1052,7 +1076,7 @@ def _profil_ablegen(ziel: str, arbeiter: int, stufe: Any, integriert: "Callable[
     # Fallback: Standardprofil (vorsichtig, unbekannte Daten)
     zusatz = zusatz_ausschluss()
     with open(ziel, "w", encoding="utf-8", newline="\n") as datei:
-        datei.write(standardprofil_text(arbeiter, zusatz, stufe, ng=ng))
+        datei.write(standardprofil_text(arbeiter, zusatz, stufe, ng=ng, schreibweisen=schreibweisen))
     return ziel
 
 
@@ -1463,6 +1487,55 @@ SYSTEMDATEIEN: tuple[str, ...] = (
     # Unity/IL2CPP: an der Konsole gemessen, siehe NIE_PACKEN.
     "global-metadata.dat",
 )
+
+
+#: Was in **jedem** Profil dieses Programms lose bleibt - im Standardprofil wie in den mitgelieferten Spielprofilen: die Systemschicht,
+#: ausfuehrbare Dateien, **jede ``.ini``** (von Hand geaenderte Einstellungen wie ``dlc_emu.ini``), die Dateien der Laufzeit und
+#: :data:`SYSTEMDATEIEN`. Vorbild Dump Forge (``rules.rs``: Systemdateien sind lose, bevor ein Profil gefragt wird; ``.ini`` seit v0.5.5).
+#: Die mitgelieferten Spielprofile hatten nur Teile davon (``insomniac.toml`` und ``astrobot.toml`` keine ``.ini``, ``astrobot.toml`` kein
+#: ``sce_sys``) - eine ``.ini`` unter ``d/`` oder ``data/prein/`` waere ins Band gegangen und mit "Originale weglassen" verschwunden.
+#: Das Werkzeug nimmt die **letzte** passende Regel; deshalb steht der Block ganz hinten (:func:`sicherheitsregel_text`). ``*`` trifft
+#: auch ``/``. Ein Profil des Anwenders bleibt unberuehrt.
+SICHERHEIT_LOSE: tuple[str, ...] = (
+    "eboot.bin", "*/eboot.bin", "*.elf", "*.self", "*.prx", "*.sprx", "*.ini", "*.bin.sig",
+    "sce_sys/*", "sce_module/*", "fakelib*/*",
+    "param.sfo", "*/param.sfo", "nptitle.dat", "*/nptitle.dat",
+    "ampr_emu.index", "ampr_assets.index", "ampr_assets.index.crc", "ampr_assets.index.runtime", "ampr_assets-*.pak",
+    "ampr_emu.log", "*/ampr_emu.log", "apr_emu.log", "*/apr_emu.log", "ampr_commands.bin", "*/ampr_commands.bin",
+    "playgo_stub.dat", "*/playgo_stub.dat",
+    *(muster for name in SYSTEMDATEIEN for muster in (name, "*/" + name)),
+)
+
+#: Kennzeile des Sicherheitsblocks im Profil.
+SICHERHEIT_KENNZEILE = "# PS5 Dump & Image Converter: immer lose (letzte Regel gewinnt)"
+
+
+def sicherheit_schreibweisen(dateien_rels: "Iterable[str]") -> tuple[str, ...]:
+    """Die Pfade dieses Spiels, die :data:`SICHERHEIT_LOSE` nur ohne Beachtung der Schreibung trifft (``Config.INI``, ``EBOOT.BIN``).
+
+    Das Werkzeug vergleicht mit ``fnmatch.fnmatchcase``; die Muster sind klein geschrieben. Die gefundenen Pfade kommen genau so,
+    wie sie im Baum stehen, und mit ``[``/``*``/``?`` geschuetzt in den Block.
+    """
+    import fnmatch
+    import glob
+
+    gefunden: set[str] = set()
+    for rel in dateien_rels:
+        rel = rel.replace("\\", "/").lstrip("/")
+        klein = rel.lower()
+        if rel == klein or not any(fnmatch.fnmatchcase(klein, m) for m in SICHERHEIT_LOSE):
+            continue
+        if not any(fnmatch.fnmatchcase(rel, m) for m in SICHERHEIT_LOSE):
+            gefunden.add(glob.escape(rel))
+    return tuple(sorted(gefunden))
+
+
+def sicherheitsregel_text(zusatz: "Iterable[str]" = ()) -> str:
+    """Der Schlussblock jedes Profils dieses Programms: eine ``loose``-Regel mit :data:`SICHERHEIT_LOSE` und ``zusatz``."""
+    zeilen = ["", SICHERHEIT_KENNZEILE, "[[rule]]", 'action = "loose"', "include = ["]
+    zeilen += ["  %s," % json.dumps(m) for m in (*SICHERHEIT_LOSE, *zusatz)]
+    zeilen += ["]", ""]
+    return "\n".join(zeilen)
 
 
 def systemdateien_im_pack(zeilen: list[dict[str, Any]]) -> list[str]:

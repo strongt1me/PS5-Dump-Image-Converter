@@ -208,6 +208,26 @@ def _inhalt(fh: BinaryIO, kopf: _Kopf, inode: _Inode, basis: int = 0) -> bytes:
     return daten
 
 
+def _lage_pruefen(inode: _Inode, kopf: _Kopf) -> str:
+    """Liegt der Inhalt dieses Inodes so, wie ein unsigniertes MkPFS-Abbild ihn ablegt - am Stueck ab ``db[0]``? ``""`` = ja, sonst der
+    Grund. Nur dann stimmen die belegten Bereiche, die der Editor daraus ableitet: Ein fremdes Layout (Bloecke verstreut ueber
+    ``db[1..11]``/``ib``, etwa von Game Compressor) hielte er sonst fuer frei und schriebe hinein (Vorbild: Dump Forge,
+    ``pfs/src/read.rs``, Issue #26)."""
+    direkt = struct.unpack_from("<12i", inode.roh, 0x64)
+    indirekt = struct.unpack_from("<5i", inode.roh, 0x94)
+    if inode.bloecke == 0:
+        return "" if inode.groesse == 0 else "hat Inhalt, aber keine Bloecke"
+    if direkt[0] < 0 or direkt[0] + inode.bloecke > kopf.ndblock:
+        return "liegt ausserhalb des Abbilds (Block %d, %d Bloecke, ndblock %d)" % (direkt[0], inode.bloecke, kopf.ndblock)
+    if inode.bloecke > 1 and any(z != -1 for z in direkt[1:]):
+        return "ist nicht am Stueck gespeichert (weitere direkte Blockzeiger)"
+    if any(z not in (0, -1) for z in indirekt):
+        return "ist nicht am Stueck gespeichert (indirekte Blockzeiger)"
+    if inode.bloecke * kopf.bs < inode.groesse:
+        return "hat weniger Bloecke als Inhalt (%d Bloecke, %d Bytes)" % (inode.bloecke, inode.groesse)
+    return ""
+
+
 def _superroot(fh: BinaryIO, kopf: _Kopf, basis: int = 0) -> "dict[str, int]":
     fh.seek(basis + (1 + kopf.inode_bloecke) * kopf.bs)
     return {name: ino for ino, _typ, name in dirents_lesen(fh.read(kopf.bs))}
@@ -252,6 +272,11 @@ class PfsAbbild:
         self.bs = kopf.bs
         self.gross_klein_egal = bool(kopf.modus & MODE_GROSS_KLEIN_EGAL)
         inodes = _inodes_lesen(fh, kopf)
+        for nummer, inode in enumerate(inodes):
+            grund = _lage_pruefen(inode, kopf)
+            if grund:
+                raise PfsBearbeitenFehler("nicht unterstuetzt: Inode %d %s - ein fremdes Layout; bitte entpacken und neu bauen"
+                                          % (nummer, grund))
         sr = _superroot(fh, kopf)
         if "flat_path_table" not in sr or "uroot" not in sr:
             raise PfsBearbeitenFehler("Superroot ohne flat_path_table oder uroot")
@@ -705,6 +730,8 @@ def huelle_um_exfat(pfad: str) -> "tuple[int, int] | None":
                 if "uroot" not in sr:
                     return None
                 uroot = inodes[sr["uroot"]]
+                if _lage_pruefen(uroot, kopf):
+                    return None
                 fh.seek(basis + uroot.erster * kopf.bs)
                 eintraege = [e for e in dirents_lesen(fh.read(uroot.groesse)) if e[2] not in (".", "..")]
                 if len(eintraege) != 1 or eintraege[0][1] != DIRENT_DATEI:
@@ -712,6 +739,8 @@ def huelle_um_exfat(pfad: str) -> "tuple[int, int] | None":
                 inner = inodes[eintraege[0][0]]
                 if inner.flags & FLAG_KOMPRIMIERT or inner.bloecke <= 0 or inner.groesse < 16:
                     return None
+                if _lage_pruefen(inner, kopf):
+                    return None                                        # verstreut: das innere Abbild liegt nicht am Stueck
                 innen_basis = basis + inner.erster * kopf.bs
                 fh.seek(innen_basis)
                 kennung = fh.read(16)

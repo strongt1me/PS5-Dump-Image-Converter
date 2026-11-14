@@ -32,7 +32,7 @@ import zlib
 from array import array
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any, Callable, Iterable, Iterator, Sequence
 
 from ps5_validator.utils.spielbaum import BaumFehler
 
@@ -126,6 +126,103 @@ def pfad_gueltig(pfad: str) -> bool:
         return len(pfad.encode("utf-8")) <= 65535
     except UnicodeEncodeError:
         return False
+
+
+#: Grenzen der Konsole (``SCE_KERNEL_PATH_MAX``, ``SCE_KERNEL_NAME_MAX``), die ampr-emu-ng an jedem Pfad seines Index prueft
+#: (``ampr-format/src/index.rs``, ``kernel_path_limits``): der volle Pfad ``/app0/<rel>`` in UTF-8 unter 1024 Bytes, jeder Teil
+#: hoechstens 255 Bytes.
+KONSOLE_PATH_MAX = 1024
+KONSOLE_NAME_MAX = 255
+
+
+def ng_erreichbar(rel: str) -> bool:
+    """Ob ampr-emu-ng eine gepackte Datei unter ``rel`` im Spiel findet.
+
+    NG sucht eine Datei des zstd-Packs ueber den ``ampr_emu.index`` (``rt/pack/zstd.rs``: jede Nummer dieses Index wird auf
+    das Pack abgebildet). Diesen Index baut das Programm ohne Pfade mit Tabulator oder Zeilenumbruch und ohne Pfade ueber den
+    Grenzen der Konsole (:data:`KONSOLE_PATH_MAX`, :data:`KONSOLE_NAME_MAX`). Eine solche Datei waere im Pack, mit "Originale
+    weglassen" aber fuer das Spiel verschwunden - sie bleibt lose (Pruefung des Dump-Forge-Abgleichs, 14.11.2026).
+    """
+    if any(zeichen in rel for zeichen in "\t\n\r"):
+        return False
+    try:
+        voll = ("/app0/" + rel).encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return len(voll) < KONSOLE_PATH_MAX and all(len(teil) <= KONSOLE_NAME_MAX for teil in voll.split(b"/"))
+
+
+_ASCII_FALTUNG = bytes.maketrans(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ", b"abcdefghijklmnopqrstuvwxyz")
+
+
+def schreibung_doppelt(rels: "Iterable[str]") -> "set[str]":
+    """Die Pfade, die sich mit einem anderen nur in der Schreibung von A-Z unterscheiden - alle, nicht nur die zweiten.
+
+    Der ``ampr_emu.index`` faltet genau diese Buchstaben (wie die Laufzeit) und behaelt von zwei solchen Pfaden nur den ersten;
+    der zweite waere gepackt nicht erreichbar (:func:`ng_erreichbar`). Welcher "der erste" ist, haengt von der Reihenfolge des
+    Durchgangs ab - deshalb bleiben beide lose, dann liest das Spiel jede Datei vom Datentraeger.
+    """
+    gesehen: dict[bytes, str] = {}
+    doppelt: set[str] = set()
+    for rel in rels:
+        try:
+            schluessel = rel.encode("utf-8").translate(_ASCII_FALTUNG)
+        except UnicodeEncodeError:
+            continue
+        erster = gesehen.setdefault(schluessel, rel)
+        if erster != rel:
+            doppelt.update((erster, rel))
+    return doppelt
+
+
+_AMPRIDX3_KOPF = struct.Struct("<8sIIQQQII")
+_AMPRIDX3_SATZ = struct.Struct("<IIQq")
+
+
+def ampr_index_lesen(daten: bytes) -> dict[str, int]:
+    """``Pfad (ohne /app0/) -> Groesse`` aus einem ``ampr_emu.index`` (AMPRIDX3; Aufbau wie ``_ampr_write_index``).
+
+    Raises:
+        ZstdPackFehler: ``ampr_zstd.ampr_index_ungueltig``, wenn Kopf oder Saetze nicht zusammenpassen.
+    """
+    def kaputt(text: str) -> ZstdPackFehler:
+        return ZstdPackFehler("ampr_zstd.ampr_index_ungueltig: %s" % text)
+
+    if len(daten) < _AMPRIDX3_KOPF.size:
+        raise kaputt("zu kurz")
+    magie, fassung, satz, anzahl, pfadbytes, _slots_at, _slot, _slots = _AMPRIDX3_KOPF.unpack_from(daten, 0)
+    if magie != b"AMPRIDX3" or fassung != 3 or satz != _AMPRIDX3_SATZ.size:
+        raise kaputt("Kopf")
+    pfade_ab = _AMPRIDX3_KOPF.size + anzahl * _AMPRIDX3_SATZ.size
+    if pfade_ab + pfadbytes > len(daten):
+        raise kaputt("abgeschnitten")
+    ergebnis: dict[str, int] = {}
+    for i in range(anzahl):
+        off, laenge, groesse, _mtime = _AMPRIDX3_SATZ.unpack_from(daten, _AMPRIDX3_KOPF.size + i * _AMPRIDX3_SATZ.size)
+        if off + laenge > pfadbytes:
+            raise kaputt("Pfad %d" % i)
+        pfad = daten[pfade_ab + off:pfade_ab + off + laenge].decode("utf-8", "surrogateescape")
+        if len(pfad) > 6 and pfad[0] == "/" and pfad[5] == "/" and pfad[1:5].lower() == "app0":     # wie ampr_relative_path
+            ergebnis[pfad[6:]] = groesse
+    return ergebnis
+
+
+def ampr_index_abgleichen(gepackt: "Iterable[tuple[str, int]]",
+                          ampr_index: "dict[str, int]") -> "list[tuple[str, int, int | None]]":
+    """Was NG am fertigen Pack verwerfen wuerde: gepackte Dateien, die im ``ampr_emu.index`` fehlen oder dort eine andere
+    Groesse haben.
+
+    NG bildet jede Nummer des ``ampr_emu.index`` ueber ihren Pfad auf das zstd-Pack ab (``rt/pack/zstd.rs``,
+    ``project_entry``): Eine gepackte Datei ohne Eintrag dort ist fuer das Spiel nicht erreichbar, und eine abweichende
+    Groesse macht den **ganzen** Pack-Mount ungueltig (vom Fenster "AMPR EMU NG" am 14.11.2026 am Quelltext bestaetigt).
+    Rueckgabe: ``(Pfad, Groesse im Pack, Groesse im Index oder None)`` je Befund, leer, wenn alles passt.
+    """
+    befunde: "list[tuple[str, int, int | None]]" = []
+    for rel, groesse in gepackt:
+        soll = ampr_index.get(rel)
+        if soll != groesse:
+            befunde.append((rel, groesse, soll))
+    return befunde
 
 
 def ziel_pfad(wurzel: str, rel: str) -> str:
@@ -382,6 +479,7 @@ def dateien_auswaehlen(app0: str, abbruch: Callable[[], bool] = lambda: False,
     ergebnis = Auswahl()
     if melden is not None:
         melden(wurzel)
+    gefunden: list[tuple[str, int, bool]] = []                  # (Pfad, Groesse, gewoehnliche Datei)
     for ordner, unter, dateien in os.walk(wurzel):
         if abbruch():
             raise ZstdPackFehler("ampr_pack.abgebrochen")
@@ -390,21 +488,31 @@ def dateien_auswaehlen(app0: str, abbruch: Callable[[], bool] = lambda: False,
             voll = os.path.join(ordner, name)
             rel = os.path.relpath(voll, wurzel).replace(os.sep, "/")
             if os.path.islink(voll) or not os.path.isfile(voll):
-                ergebnis.lose.append((rel, 0))
-                continue
-            _einordnen(ergebnis, rel, os.path.getsize(voll), regeln)
+                gefunden.append((rel, 0, False))
+            else:
+                gefunden.append((rel, os.path.getsize(voll), True))
+    doppelt = schreibung_doppelt(rel for rel, _g, normal in gefunden if normal)
+    for rel, groesse, normal in gefunden:
+        if normal:
+            _einordnen(ergebnis, rel, groesse, regeln, doppelt)
+        else:
+            ergebnis.lose.append((rel, 0))
     # Ein Dateipfad darf nicht der Ordner einer anderen sein - im Dateisystem ausgeschlossen, hier nur zur Sicherheit.
     return ergebnis
 
 
-def _einordnen(ergebnis: Auswahl, rel: str, groesse: int, regeln: "Regeln | None") -> None:
-    """Sortiert eine Datei in ``gepackt`` oder ``lose`` (und ``leer``/``ungueltig``); die Regeln der Auswahl in einer Stelle."""
+def _einordnen(ergebnis: Auswahl, rel: str, groesse: int, regeln: "Regeln | None", doppelt: "set[str]") -> None:
+    """Sortiert eine Datei in ``gepackt`` oder ``lose`` (und ``leer``/``ungueltig``); die Regeln der Auswahl in einer Stelle.
+
+    ``ungueltig``: Pfade, die das Format nicht erlaubt (:func:`pfad_gueltig`) oder die NG gepackt nicht faende
+    (:func:`ng_erreichbar`, ``doppelt`` aus :func:`schreibung_doppelt`).
+    """
     if bleibt_lose(rel):
         ergebnis.lose.append((rel, groesse))
     elif groesse == 0:
         ergebnis.leer.append(rel)
         ergebnis.lose.append((rel, 0))
-    elif not pfad_gueltig(rel):
+    elif not pfad_gueltig(rel) or not ng_erreichbar(rel) or rel in doppelt:
         ergebnis.ungueltig.append(rel)
         ergebnis.lose.append((rel, groesse))
     elif regeln is not None and regeln.aktion(rel) == "loose":
@@ -426,10 +534,11 @@ def auswahl_aus_liste(dateien: "Sequence[tuple[str, int]]", abbruch: Callable[[]
         return tuple(teile[:-1]), teile[-1]
 
     ergebnis = Auswahl()
+    doppelt = schreibung_doppelt(rel for rel, _g in dateien)
     for rel, groesse in _ordner_reihenfolge(dateien, schluessel):
         if abbruch():
             raise ZstdPackFehler("ampr_pack.abgebrochen")
-        _einordnen(ergebnis, rel, groesse, regeln)
+        _einordnen(ergebnis, rel, groesse, regeln, doppelt)
     return ergebnis
 
 

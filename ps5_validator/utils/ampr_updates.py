@@ -86,6 +86,10 @@ BAUARTEN = ("test-debug-pack", "test-nopack", "test-pack")
 #:         SHA256SUMS
 #:
 #: Anders als bei drakmor steht die Fassung **nur in der Marke**, nicht im Anhangsnamen.
+#:
+#: Seit 14.11.2026 gibt es dazu die Vorabfassung mit der Marke ``beta`` (bei jedem Push auf main neu gebaut, gleiche
+#: Anhaenge). Sie wird hier uebergangen (``prerelease``); von Hand liegt sie als ``0.4.0-beta ng`` im Bestand. Deren
+#: Fassung liest :func:`fassung_teile` als ``0.4.0`` - neben ihr gilt die Freigabe v0.4.0 also nicht als neuer.
 NG_PROJEKT = "quer3q/ampr-emu-ng"
 NG = "ng"
 NG_DEBUG = "ng-debug"

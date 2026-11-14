@@ -16,7 +16,8 @@ ebenfalls, eine Folge gleicher Trenner (``-``, ``_``, Leerzeichen) wird einer, u
 
 Die Vorgabe ``{name}`` aendert nichts: Der Name der Quelle bleibt, wie er ist; ist er zu lang, warnt die Vorabpruefung
 (``vorabpruefung.ausgabename_befund``). Ein **erzeugter** Name dagegen wird auf die Hoechstlaenge des Zielformats
-gekuerzt (63 Bytes, bei ``.ffpfsc`` 58, nach dem Einhaengepfad von ShadowMount+) - zuerst der Titel. Ist der Name schon vergeben,
+gekuerzt (63 Bytes, bei ``.ffpfsc`` 58, nach dem Einhaengepfad von ShadowMount+) - wie bei Dump Forge: ``{version}`` faellt weg, wenn
+schon der Rest ohne Titel nicht passt, dann wird der Titel gekuerzt, zuletzt das Ganze. Ist der Name schon vergeben,
 fragt der Lauf wie immer "ueberschreiben?" (in der Sammelkonvertierung: "namensgleich" uebersprungen).
 
 Das Modul rechnet nur: keine Einstellungen, keine Dateien, kein Tk. Die Angaben kommen als Woerterbuch wie aus
@@ -219,8 +220,9 @@ def grenze_fuer(zielformat: str) -> int | None:
     return vorabpruefung.name_max(zielformat) if zielformat in vorabpruefung.ABBILD_FORMATE else None
 
 
-#: Namen, die Windows als Geraet liest (auch mit Endung): ``CON``, ``PRN``, ``AUX``, ``NUL``, ``COM1`` ... ``LPT9``.
-_GERAETE = frozenset({"CON", "PRN", "AUX", "NUL"} | {"COM%d" % n for n in range(1, 10)} | {"LPT%d" % n for n in range(1, 10)})
+#: Namen, die Windows als Geraet liest (auch mit Endung): ``CON``, ``PRN``, ``AUX``, ``NUL``, ``COM0`` ... ``COM9``, ``LPT0`` ... ``LPT9`` und
+#: die hochgestellten Formen ``COM¹``/``LPT²``/... (Microsoft, "Naming Files"; Vorbild Dump Forge ``is_reserved_on_windows``).
+_GERAETE = frozenset({"CON", "PRN", "AUX", "NUL"} | {"%s%s" % (art, z) for art in ("COM", "LPT") for z in "0123456789¹²³"})
 
 
 def _windows_tauglich(text: str, grenze: "int | None" = None) -> "tuple[str, bool]":
@@ -246,8 +248,8 @@ def ausgabename(vorlage: str, angaben: Mapping[str, Any], *, name: str, pack: st
 
     Die Vorgabe ``{name}`` gibt den Namen der Quelle unveraendert zurueck. Fuer jede andere Vorlage gilt: Taugt sie
     nicht, ist ``problem`` gesetzt und ``name`` der der Quelle; ergibt sie nichts (alle benoetigten Angaben fehlen),
-    bleibt ebenfalls der Name der Quelle; ist das Ergebnis laenger als das Zielformat zulaesst, wird zuerst der Titel
-    gekuerzt, dann der ganze Name.
+    bleibt ebenfalls der Name der Quelle; ist das Ergebnis laenger als das Zielformat zulaesst, wird es eingepasst
+    (:func:`_einpassen`). Bliebe danach weder Kennung noch Titel- oder Namensanfang uebrig, gilt der (gekuerzte) Name der Quelle.
     """
     vorlage = vorlage or STANDARD
     if vorlage == STANDARD:
@@ -272,10 +274,33 @@ def ausgabename(vorlage: str, angaben: Mapping[str, Any], *, name: str, pack: st
     if grenze is None or len(text.encode("utf-8")) <= grenze:
         name_ok, gekuerzt = _windows_tauglich(text, grenze)
         return Ergebnis(name=name_ok, gekuerzt=gekuerzt)
-    ueber = len(text.encode("utf-8")) - grenze
-    if werte["title"]:
+    text = _einpassen(vorlage, werte, grenze)
+    if not text or not _erkennbar(text, werte, benutzt):
+        # Der Text der Vorlage fuellt den Platz schon vor Titel und Kennung: Ein solcher Name hiesse bei jedem Spiel gleich.
+        text = kuerzen(werte["name"], grenze) or kuerzen(werte["title_id"], grenze)
+    return Ergebnis(name=_windows_tauglich(text, grenze)[0] or name, gekuerzt=True)
+
+
+def _einpassen(vorlage: str, werte: Mapping[str, str], grenze: int) -> str:
+    """Der Name in hoechstens ``grenze`` Bytes, in der Reihenfolge von Dump Forge (``inspect.rs``, ``NameParts::stem``).
+
+    Zuerst faellt ``{version}`` weg - aber nur, wenn der Name schon **ohne** Titel nicht passt; dann wird nur der Titel
+    gekuerzt (an einer Zeichengrenze, ohne ``.``/Leerzeichen am Ende, notfalls ganz weg), zuletzt das Ganze.
+    """
+    if werte["version"] and len(rendern(vorlage, {**werte, "title": ""}).encode("utf-8")) > grenze:
+        werte = {**werte, "version": ""}
+    text = rendern(vorlage, werte)
+    if len(text.encode("utf-8")) > grenze and werte["title"]:
+        ueber = len(text.encode("utf-8")) - grenze
         titel = kuerzen(werte["title"], max(0, len(werte["title"].encode("utf-8")) - ueber))
         text = rendern(vorlage, {**werte, "title": titel})
     if len(text.encode("utf-8")) > grenze:
         text = kuerzen(text, grenze)
-    return Ergebnis(name=_windows_tauglich(text, grenze)[0] or name, gekuerzt=True)
+    return text
+
+
+def _erkennbar(text: str, werte: Mapping[str, str], benutzt: "set[str]") -> bool:
+    """Ob ``text`` das Spiel noch erkennen laesst: die ganze Kennung oder der Anfang von Titel bzw. Quellname (wie ``kept_in`` bei Forge)."""
+    if "title_id" in benutzt and werte["title_id"] and werte["title_id"] in text:
+        return True
+    return any(teil in benutzt and werte[teil] and werte[teil][0] in text for teil in ("title", "name"))

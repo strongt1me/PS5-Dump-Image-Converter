@@ -36,6 +36,7 @@ SCHLUESSEL = [
     "phase.zstd_pruefen", "phase.zstd_uebernehmen", "phase.zstd_originale", "phase.abbild_bauen",
     "ampr_pack.voll_pruefen", "ampr_pack.voll_pruefen_hint", "ampr_pack.voll_pruefen_gesperrt",
     "ampr_zstd.pruefung_voll", "ampr_zstd.pruefung_stichprobe",
+    "ampr_zstd.index_fehlt", "ampr_zstd.index_groesse", "ampr_zstd.index_passt_nicht", "ampr.index_zu_lang",
 ]
 
 
@@ -59,6 +60,7 @@ class _Stub:
     _AMPR_NG_KENNZEICHEN = b"ampr-emu-ng"
     _ampr_ist_ng_datei = classmethod(APP.PS5ConverterGUI._ampr_ist_ng_datei.__func__)
     _ampr_zstdpakete_bauen = APP.PS5ConverterGUI._ampr_zstdpakete_bauen
+    _ampr_zstd_index_abgleichen = APP.PS5ConverterGUI._ampr_zstd_index_abgleichen
     _phase_dauer_melden = APP.PS5ConverterGUI._phase_dauer_melden
     _stufe_start = APP.PS5ConverterGUI._stufe_start             # die Stufenzeile (207375e) ruft sie je Abschnitt
     _stufe_ende = APP.PS5ConverterGUI._stufe_ende
@@ -133,7 +135,6 @@ class BauenTests(unittest.TestCase):
             "eboot.bin": b"ELF" + bytes(500),
             "sce_sys/param.json": b"{}",
             "fakelib/libSceAmpr.sprx": b"..ampr-emu-ng 0.3.0..",
-            "ampr_emu.index": b"AMPRIDX3",
             "Daten/a.txt": b"abc " * 100_000,
             "Daten/b.bin": os.urandom(40_000),
         }.items():
@@ -141,7 +142,33 @@ class BauenTests(unittest.TestCase):
             os.makedirs(os.path.dirname(voll), exist_ok=True)
             Path(voll).write_bytes(daten)
         self.index = os.path.join(self.spiel, "ampr_emu.index")
+        # Ein echter Index wie im Programm: der Abgleich vor dem Packen (``_ampr_zstd_index_abgleichen``) liest ihn.
+        APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)._build_ampr_index_local(Path(self.spiel), Path(self.index))
         self.ausgabe = self.spiel + "_ampr_zstd"
+
+    def test_abweichung_zum_ampr_index_bricht_vor_dem_packen_ab(self) -> None:
+        """NG verwirft das ganze Pack, wenn eine gepackte Datei im ampr_emu.index fehlt oder anders gross ist."""
+        Path(self.spiel, "Daten", "a.txt").write_bytes(b"anders")                          # Groesse weicht ab
+        Path(self.spiel, "Daten", "neu.bin").write_bytes(b"x" * 100)                      # fehlt im Index
+        s = _Stub()
+        self.assertFalse(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}))
+        self.assertIn("ampr_zstd.index_passt_nicht", s.text())
+        self.assertIn("ampr_zstd.index_groesse [('expected', 400000), ('path', 'Daten/a.txt'), ('size', 6)]", s.text())
+        self.assertIn("ampr_zstd.index_fehlt [('path', 'Daten/neu.bin')]", s.text())
+        self.assertFalse(z.ist_gepackt(self.spiel), "nichts gepackt")
+        self.assertFalse(os.path.exists(os.path.join(self.ausgabe, z.bandname(0))))
+
+    def test_index_lesen_passt_zum_schreiber_des_programms(self) -> None:
+        daten = Path(self.index).read_bytes()
+        gelesen = z.ampr_index_lesen(daten)
+        self.assertEqual(len(Path(self.spiel, "Daten", "a.txt").read_bytes()), gelesen["Daten/a.txt"])
+        self.assertEqual({"eboot.bin", "sce_sys/param.json", "fakelib/libSceAmpr.sprx", "Daten/a.txt", "Daten/b.bin"},
+                         set(gelesen))
+        self.assertEqual([], z.ampr_index_abgleichen([("Daten/a.txt", 400_000)], gelesen))
+        with self.assertRaises(z.ZstdPackFehler):
+            z.ampr_index_lesen(daten[:60])
+        with self.assertRaises(z.ZstdPackFehler):
+            z.ampr_index_lesen(b"AMPRIDX2" + daten[8:])
 
     def test_ng_wird_gepackt_und_uebernommen(self) -> None:
         s = _Stub()

@@ -107,6 +107,43 @@ class FormatTests(unittest.TestCase):
         for rel in gepackt:
             self.assertFalse(z.bleibt_lose(rel), rel)
 
+    def test_ng_erreichbar_grenzen_der_konsole(self) -> None:
+        """NG prueft jeden Indexpfad an SCE_KERNEL_PATH_MAX/NAME_MAX; gezaehlt werden UTF-8-Bytes von ``/app0/<rel>``."""
+        rest = 1023 - len("/app0/")
+        tief = "/".join(["d" * 200] * (rest // 201)) + "/"
+        tief += "x" * (rest - len(tief))
+        self.assertEqual(1023, len(("/app0/" + tief).encode()))
+        self.assertTrue(z.ng_erreichbar(tief))
+        self.assertFalse(z.ng_erreichbar(tief + "y"), "1024 Bytes mit /app0/ sind eins zu viel")
+        self.assertTrue(z.ng_erreichbar("a/" + "n" * 255))
+        self.assertFalse(z.ng_erreichbar("a/" + "n" * 256))
+        self.assertTrue(z.ng_erreichbar("ä" * 127))                                        # 254 Bytes
+        self.assertFalse(z.ng_erreichbar("ä" * 128), "Bytes zaehlen, nicht Zeichen")
+        for zeichen in "\t\n\r":
+            self.assertFalse(z.ng_erreichbar("a%sb.bin" % zeichen), repr(zeichen))
+        self.assertTrue(z.pfad_gueltig("a\tb.bin"), "das Format selbst erlaubt den Tabulator - NG faende ihn nicht")
+
+    def test_schreibung_doppelt(self) -> None:
+        doppelt = z.schreibung_doppelt(["a/B.bin", "c.bin", "a/b.bin", "A/b.bin", "ä.bin", "Ä.bin", "Data/x"])
+        self.assertEqual({"a/B.bin", "a/b.bin", "A/b.bin"}, doppelt)
+        self.assertEqual(set(), z.schreibung_doppelt(["a", "b", "a"]), "derselbe Pfad zweimal ist kein Fall")
+
+    def test_auswahl_laesst_unerreichbare_pfade_lose(self) -> None:
+        dateien = [("data/a.bin", 10), ("data/B.bin", 10), ("data/b.bin", 10), ("data/tab\t.bin", 10),
+                   ("lang/" + "n" * 256, 10), ("eboot.bin", 10)]
+        auswahl = z.auswahl_aus_liste(dateien)
+        self.assertEqual([("data/a.bin", 10)], auswahl.gepackt, "Gegenprobe: die gewoehnliche Datei wird gepackt")
+        self.assertEqual({"data/B.bin", "data/b.bin", "data/tab\t.bin", "lang/" + "n" * 256}, set(auswahl.ungueltig))
+        self.assertEqual({rel for rel, _g in dateien} - {"data/a.bin"}, {rel for rel, _g in auswahl.lose})
+
+    def test_ordnerauswahl_laesst_zu_lange_namen_lose(self) -> None:
+        with tempfile.TemporaryDirectory() as wurzel:
+            for rel in ("a.bin", "ä" * 128):                                               # 128 Zeichen, 256 Bytes
+                Path(wurzel, rel).write_bytes(b"x" * 10)
+            auswahl = z.dateien_auswaehlen(wurzel)
+            self.assertEqual([("a.bin", 10)], auswahl.gepackt)
+            self.assertEqual(["ä" * 128], auswahl.ungueltig)
+
     def test_stufe(self) -> None:
         self.assertEqual(7, z.stufe_lesen("7"))
         self.assertEqual(z.STUFE_VORGABE, z.stufe_lesen(0))

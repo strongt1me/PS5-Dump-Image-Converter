@@ -52,6 +52,11 @@ NG_DATEIEN = {
     "0.3.4 ng-debug": "717299ddd8122716ba11c89e03cc56d05207d0cae2ef898da8a9a65536640997",
     "0.3.5 ng": "998f2029b250d954725f864b57f2eee72aefbfb88054a3f1c3df550d4d6c8261",          # v0.3.5, 11.11.2026
     "0.3.5 ng-debug": "a76c0336d667b486ba1a30b43a23281563dc323a20589cb28bc2454a70af581b",
+    # Vorabfassung "beta" (Nutzerwahl 14.11.2026): gebaut aus 37d7f47 = 340b6c5 (Spielstand-Fix PR #66, Issue #60) plus nur
+    # .github/workflows/build.yml; die Datei nennt sich innen "ampr-emu-ng 0.4.0". Die beta wird bei jedem Push neu gebaut -
+    # die Digests gelten fuer die Anhaenge vom 14.11.2026 15:46 UTC.
+    "0.4.0-beta ng": "56f606df8081adde8ecc79f583a1bc9dff7996312a8480afb6af147344beb95a",
+    "0.4.0-beta ng-debug": "58b08fadd4befb6b5480a0b2a08b5aa94d6e0c061967889f2c8e84d9382e55a6",
 }
 
 
@@ -74,8 +79,8 @@ class BestandTests(unittest.TestCase):
             with self.subTest(ordner=ordner):
                 daten = datei.read_bytes()
                 self.assertNotIn(b"[AMPR_EMU]", daten, "Messgrundlage: NG traegt das alte Kennzeichen nicht")
-                self.assertIn(("ampr-emu-ng " + ordner.split()[0]).encode(), daten,
-                              "die Fassung im Ordnernamen ist die, die die Datei innen nennt")
+                self.assertIn(("ampr-emu-ng " + ordner.split()[0].removesuffix(G._AMPR_BETA)).encode(), daten,
+                              "die Fassung im Ordnernamen ist die, die die Datei innen nennt (ohne die beta-Marke)")
                 self.assertTrue(G._ist_ersatzbibliothek(datei))
                 self.assertTrue(bp._ist_emu_datei(str(datei)))
 
@@ -88,20 +93,57 @@ class BestandTests(unittest.TestCase):
         gui = G.__new__(G)
         eintraege = [e for e in gui._ampr_scan_einen_speicher(str(BESTAND)) if e["lib"] == "libSceAmpr.sprx"]
         paare = [(e["version"], e["variant"]) for e in eintraege]
-        for fassung in ("0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.3.4", "0.3.5"):
+        for fassung in ("0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.4.0-beta"):
             self.assertIn((fassung, "ng"), paare)
             self.assertIn((fassung, "ng-debug"), paare)
         self.assertEqual(("0.4.2.1", "test-nopack"), paare[0], "die oberste (= Vorgabe) bleibt drakmor")
         # Nutzerwunsch 05.11.2026: die NG-Fassungen stehen unterhalb von 0.4.2.1 (mit seinen drei Bauarten),
         # neueste zuerst, und vor den aelteren Fassungen von drakmor.
         self.assertEqual({"0.4.2.1"}, {v for v, _ in paare[:3]})
-        self.assertEqual([("0.3.5", "ng"), ("0.3.5", "ng-debug"), ("0.3.4", "ng"), ("0.3.4", "ng-debug"),
+        self.assertEqual([("0.4.0-beta", "ng"), ("0.4.0-beta", "ng-debug"),
+                          ("0.3.5", "ng"), ("0.3.5", "ng-debug"), ("0.3.4", "ng"), ("0.3.4", "ng-debug"),
                           ("0.3.3", "ng"), ("0.3.3", "ng-debug"),
                           ("0.3.2", "ng"), ("0.3.2", "ng-debug"),
                           ("0.3.1", "ng"), ("0.3.1", "ng-debug"), ("0.3.0", "ng"), ("0.3.0", "ng-debug"),
-                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:17])
-        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[17:]), "danach nur noch Fassungen von drakmor")
-        self.assertEqual("0.3.6.6", paare[17][0])
+                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:19])
+        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[19:]), "danach nur noch Fassungen von drakmor")
+        self.assertEqual("0.3.6.6", paare[19][0])
+
+
+class BetaTests(unittest.TestCase):
+    """Die Vorabfassung "beta" von ampr-emu-ng (Nutzerwahl 14.11.2026: Vorgabe fuer zstd, wegen des Spielstand-Fixes aus PR #66)."""
+
+    def test_ordnername_mit_beta_marke(self) -> None:
+        self.assertEqual(("0.4.0-beta", "ng"), G._ampr_parse_version_folder(Path("x/0.4.0-beta ng"), "libSceAmpr.sprx"))
+        self.assertEqual(("0.4.0-beta", "ng-debug"),
+                         G._ampr_parse_version_folder(Path("x/0.4.0-Beta ng-debug"), "libSceAmpr.sprx"))
+        self.assertEqual(("0.3.5", "ng"), G._ampr_parse_version_folder(Path("x/0.3.5 ng"), "libSceAmpr.sprx"),
+                         "Gegenprobe: ohne Marke wie bisher")
+        self.assertEqual(("0.3.6.4", "debug"), G._ampr_parse_version_folder(Path("x/0.3.6.4 debug"), "libSceAmpr.sprx"))
+
+    def test_die_beta_steht_ueber_ihrer_grundfassung_und_unter_jeder_hoeheren(self) -> None:
+        schluessel = G._ampr_version_sort_key
+        self.assertGreater(schluessel("0.4.0-beta"), schluessel("0.4.0"))
+        self.assertGreater(schluessel("0.4.0-beta"), schluessel("0.3.5"))
+        self.assertLess(schluessel("0.4.0-beta"), schluessel("0.4.1"))
+        self.assertLess(schluessel("0.4.0-beta"), schluessel("0.4.0.1"))
+        self.assertEqual(schluessel("0.3.5"), schluessel("0.3.5.0"), "Gegenprobe: Auffuellen wie bisher")
+
+    def test_beschriftung(self) -> None:
+        self.assertEqual("NG 0.4.0-beta", G._ampr_beschriftung(_eintrag("0.4.0-beta", "ng")))
+        self.assertEqual("NG 0.4.0-beta debug", G._ampr_beschriftung(_eintrag("0.4.0-beta", "ng-debug")))
+
+    def test_updates_bieten_0_4_0_nicht_an_wohl_aber_0_4_1(self) -> None:
+        """v0.4.0 hat den BUSY-Retry noch (Issue #60) - neben der beta waere sie kein Fortschritt."""
+        angebote = [au.Angebot(f, au.NG, "libSceAmpr.sprx", "https://x/%s" % f) for f in ("0.4.0", "0.4.1")]
+        neu = au.neuere(angebote, [("0.4.0-beta", au.NG), ("0.3.5", au.NG)])
+        self.assertEqual(["0.4.1"], [a.fassung for a in neu])
+
+    def test_zstd_waehlt_die_beta(self) -> None:
+        gui = G.__new__(G)
+        eintraege = [e for e in gui._ampr_scan_einen_speicher(str(BESTAND))
+                     if e["lib"] == "libSceAmpr.sprx" and e["variant"] == "ng"]
+        self.assertEqual("0.4.0-beta", eintraege[0]["version"], "die neueste normale NG-Fassung = die zstd-Vorgabe")
 
 
 class BeschriftungTests(unittest.TestCase):

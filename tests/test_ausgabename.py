@@ -180,11 +180,38 @@ class AusgabenameTests(unittest.TestCase):
         self.assertFalse(e.name.endswith((".", " ")))
 
 
+class EinpassenWieForgeTests(unittest.TestCase):
+    """Reihenfolge beim Kuerzen wie Dump Forge (``NameParts::stem``): Version, Titel, Ganzes; die Kennung bleibt erkennbar."""
+
+    def test_die_version_bleibt_wenn_der_rest_ohne_titel_passt(self):
+        e = an.ausgabename("{title} [{title_id}] v{version}", dict(SPIEL, title="Langer Titel " * 8), name="Q", zielformat="exfat")
+        self.assertTrue(e.gekuerzt)
+        self.assertTrue(e.name.endswith(" [PPSA01234] v1.0.0"), e.name)
+        self.assertTrue(e.name.startswith("Langer Titel"), e.name)
+        self.assertLessEqual(len(e.name.encode("utf-8")), 63)
+
+    def test_die_version_faellt_zuerst_weg_wenn_schon_der_rest_zu_lang_ist(self):
+        vorlage = "{title} " + "x" * 50 + " [{title_id}] v{version}"            # ohne Titel: 50 + 12 + 5 Bytes > 63
+        e = an.ausgabename(vorlage, dict(SPIEL, title="Titel"), name="Q", zielformat="exfat")
+        self.assertEqual("x" * 50 + " [PPSA01234]", e.name, "Gegenprobe zum Fall oben: hier kein Titel, keine Version")
+        self.assertTrue(e.gekuerzt)
+
+    def test_geht_die_kennung_verloren_bleibt_der_name_der_quelle(self):
+        e = an.ausgabename("y" * 70 + " {title} {title_id}", SPIEL, name="Meine Quelle", zielformat="exfat")
+        self.assertEqual("Meine Quelle", e.name)
+        self.assertTrue(e.gekuerzt)
+
+    def test_ein_gekuerzter_titel_der_erkennbar_bleibt_ist_kein_rueckfall(self):
+        e = an.ausgabename("{title} " + "z" * 55, dict(SPIEL, title="Astro Bot"), name="Q", zielformat="exfat")
+        self.assertTrue(e.name.startswith("Astro"), e.name)
+        self.assertNotEqual("Q", e.name)
+
+
 class WindowsNamenTests(unittest.TestCase):
     """Ein erzeugter Name taugt unter Windows als Datei- und Ordnername (Pruefbericht 14.11.2026)."""
 
     def test_geraetename_bekommt_einen_unterstrich(self):
-        for titel in ("Aux", "CON", "nul", "COM1", "lpt9", "Aux.txt", "NUL.v2"):
+        for titel in ("Aux", "CON", "nul", "COM1", "lpt9", "Aux.txt", "NUL.v2", "COM0", "lpt0", "COM¹", "LPT³.x"):
             with self.subTest(titel):
                 e = an.ausgabename("{title}", dict(SPIEL, title=titel), name="Q")
                 self.assertTrue(e.name.split(".", 1)[0].endswith("_"), e.name)

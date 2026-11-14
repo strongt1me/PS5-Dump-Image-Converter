@@ -50,8 +50,11 @@ class ProfilAufbau(unittest.TestCase):
         daten = tomllib.loads(ap.standardprofil_text())
         self.assertEqual(daten["pack"]["default_action"], "loose",
                          "Was keine Regel trifft, muss lose bleiben")
-        self.assertEqual(len(daten["rule"]), 1)
+        # Packregel und - als letzte Regel, sie gewinnt - der Block "immer lose" (ap.SICHERHEIT_LOSE).
+        self.assertEqual(len(daten["rule"]), 2)
         self.assertEqual(daten["rule"][0]["include"], ["**"])
+        self.assertEqual(daten["rule"][-1]["action"], "loose")
+        self.assertEqual(daten["rule"][-1]["include"], list(ap.SICHERHEIT_LOSE))
 
     def test_arbeiterzahl_nur_wenn_gesetzt(self):
         ohne = tomllib.loads(ap.standardprofil_text(0))

@@ -1754,6 +1754,22 @@ class AmprAutomatikAbschlussTests(_TempTest):
 class ZielformatListeTests(_TempTest):
     """Bei einer .ffpfs-Quelle stand das gesperrte .ffpfs in der Liste."""
 
+    #: Haken, die ein Selbst-Ziel freigeben (``_selbstziel_erlaubt``).
+    _HAKEN = ("ampr_integrate_var", "ampr_playgo_var", "backport_integrate_var", "dlc_integrate_var", "fake_signieren_var")
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Die Pruefstaende speichern unter %TEMP%\ps5conv_pruefung\<Name> und raeumen dort nie auf; im selben Lauf gilt die
+        # Umlenkung des zuletzt geladenen Testmoduls. Ein dort gemerkter Haken gab das Selbst-Ziel frei und kippte diese
+        # Tests (14.11.2026: zusammen mit test_sprachlecks, dessen Ordner integrate_ampr/_playgo/_backport = an trug).
+        # Hier gelten ausdruecklich keine Haken - gemessen wird nur die Liste ohne Einbau.
+        app = _app()
+        for name in self._HAKEN:
+            var = getattr(app, name, None)
+            if var is not None:
+                self.addCleanup(var.set, var.get())
+                var.set(False)
+
     def test_ffpfs_quelle(self) -> None:
         app = _app()
         quelle = _schreiben(os.path.join(self.basis, "Spiel.ffpfs"), b"x" * 64)

@@ -117,6 +117,21 @@ class IndexTempoTests(unittest.TestCase):
         # 601 Dateien des Spiels + "woandershin.bin" (Verweis auf etwas anderes, bleibt) - ohne "auf_den_index.bin".
         self.assertEqual(602, anzahl)
 
+    def test_zu_lange_pfade_kommen_nicht_in_den_index(self):
+        """ampr-emu-ng verwirft einen Index mit einem Pfad ueber SCE_KERNEL_PATH_MAX/NAME_MAX (``kernel_path_limits``)."""
+        app = GUI.__new__(GUI)
+        meldungen: list[str] = []
+        app._append_to_log = meldungen.append
+        app._t = lambda schluessel, **w: "%s %s" % (schluessel, w.get("path"))
+        (self.spiel / ("ä" * 128)).write_bytes(b"lang")                    # 128 Zeichen, 256 Bytes UTF-8
+        (self.spiel / ("ä" * 127)).write_bytes(b"passt")                   # 254 Bytes - Gegenprobe
+        anzahl, _d = self._bauen(app)
+        self.assertEqual(602, anzahl)
+        self.assertEqual(["ampr.index_zu_lang /app0/" + "ä" * 128], meldungen)
+        rest = "/app0/" + "x" * (1023 - len("/app0/"))
+        self.assertTrue(GUI._ampr_pfad_zu_lang(GUI._ampr_pfadschluessel(rest + "y")))
+        self.assertFalse(GUI._ampr_pfad_zu_lang(GUI._ampr_pfadschluessel("/app0/" + "/".join(["x" * 255] * 3))))
+
     def test_ein_kaputter_verweis_bricht_den_bau_nicht(self):
         app = GUI.__new__(GUI)
         try:

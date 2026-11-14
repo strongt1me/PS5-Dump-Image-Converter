@@ -296,6 +296,64 @@ class AenderungenTests(_Grundlage):
             self.assertNotIn("z.bin", {n for n, _o, _g in a.auflisten("data")})
 
 
+class FremdesLayoutTests(_Grundlage):
+    """Nur ein Abbild, in dem jede Datei am Stueck liegt, wird geaendert (Vorbild Dump Forge, Issue #26: Game Compressor)."""
+
+    def _inode_aendern(self, bild: str, nummer: int, offset: int, fmt: str, *werte) -> None:
+        with open(bild, "r+b") as fh:
+            kopf = pb._kopf_lesen(fh)
+            je_block = kopf.bs // pb.INODE_GROESSE
+            stelle = kopf.bs + (nummer // je_block) * kopf.bs + (nummer % je_block) * pb.INODE_GROESSE + offset
+            fh.seek(stelle)
+            fh.write(struct.pack(fmt, *werte))
+
+    def _datei_inode(self, bild: str, rel: str) -> int:
+        bericht = mp.inspect_pfs_image(Path(bild), verify_payloads=False)
+        return bericht.file_inodes[rel]
+
+    def test_ein_mkpfs_abbild_ist_am_stueck(self) -> None:
+        with pb.PfsAbbild(self.bild) as a:
+            self.assertEqual([], a.pruefen())
+
+    def test_verstreute_bloecke_werden_abgelehnt_und_nichts_geschrieben(self) -> None:
+        nr = self._datei_inode(self.bild, "data/gross.bin")
+        for name, offset, fmt, werte in (("direkter Zeiger", 0x64 + 4, "<i", (12345,)),
+                                         ("indirekter Zeiger", 0x94, "<i", (777,)),
+                                         ("zu wenige Bloecke", 0x60, "<I", (1,)),
+                                         ("ausserhalb", 0x64, "<i", (10 ** 7,))):
+            with self.subTest(name):
+                bild = self.bauen(SPIEL)
+                self._inode_aendern(bild, nr, offset, fmt, *werte)
+                vorher = Path(bild).read_bytes()
+                with self.assertRaises(pb.PfsBearbeitenFehler) as fehler:
+                    pb.PfsAbbild(bild)
+                self.assertIn("fremdes Layout", str(fehler.exception))
+                with self.assertRaises(pb.PfsBearbeitenFehler):
+                    pb.oeffnen(bild)
+                self.assertEqual(vorher, Path(bild).read_bytes())
+
+    def test_eine_huelle_um_ein_verstreutes_exfat_wird_nicht_als_huelle_geoeffnet(self) -> None:
+        quelle = os.path.join(self.tmp, "q")
+        for rel, daten in {"eboot.bin": b"\x7fELF" + bytes(3000), "sce_sys/param.json": b"{}", "a.bin": _zufall(400_000, 3)}.items():
+            p = os.path.join(quelle, *rel.split("/"))
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            Path(p).write_bytes(daten)
+        exfat = os.path.join(self.tmp, "innen.exfat")
+        with open(exfat, "wb") as fh:
+            for stueck in iter_exfat_image(Path(quelle)):
+                fh.write(stueck)
+        huelle = os.path.join(self.tmp, "huelle.ffpfs")
+        mp.build_pfs_stream_single_file(source_file=Path(exfat), output_path=Path(huelle), block_size=65536,
+                                        pfs_version=consts.PFS_VERSION_PS5, case_insensitive=True, zlib_level=6, threshold_gain=0,
+                                        min_file_gain=0, min_compress_size=0, cpu_count=1, compress=False)
+        self.assertIsNotNone(pb.huelle_um_exfat(huelle))
+        nr = self._datei_inode(huelle, os.path.basename(exfat))
+        self._inode_aendern(huelle, nr, 0x64 + 4, "<i", 4242)
+        self.assertIsNone(pb.huelle_um_exfat(huelle))
+        with self.assertRaises(pb.PfsBearbeitenFehler):
+            pb.oeffnen(huelle)
+
+
 class JournalTests(_Grundlage):
     def test_ein_fehler_mitten_im_schreiben_laesst_das_abbild_wie_vorher(self) -> None:
         vorher = _struktur(self.bild)
