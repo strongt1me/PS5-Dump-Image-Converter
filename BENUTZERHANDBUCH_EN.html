@@ -1541,9 +1541,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     no file sits next to the dump folder, and only with zstd. System files always stay loose; block size,
     <code>hot</code> and <code>layout</code> apply only to LZ4. A faulty
     file aborts the run before anything is written. The tool <em>Asset pack check / unpack</em> (MORE
-    TOOLS) also opens zstd folders. <strong>Whether ampr-emu-ng really starts a game with
-    zstd packs on the console has not been measured</strong>
-    &ndash; the packed originals are missing from the result; keep the source dump (it stays unchanged).</p>
+    TOOLS) also opens zstd folders. <strong>Measured on the console (FW 12.00, ShadowMount+):</strong>
+    two games with zstd packs from this program ran without errors, one with NG 0.3.5, one with NG 0.4.0-beta.
+    Whether a particular game runs is only shown by a test there &ndash; the packed originals are missing from the result; keep the source dump (it stays unchanged).</p>
+    <p><strong>Kraken Mount instead of ShadowMount+.</strong> According to its documentation, the payload Kraken Mount (not to be confused with the compression method of the same name) only reads game folders &ndash; plain or with zstd or LZ4 packs &ndash; and plaintext debug FPKG <code>.pkg</code> files from ps5-dump-forge. It does not read this program's images (<code>.exfat</code>, <code>.ffpkg</code>, <code>.ffpfs</code>, <code>.ffpfsc</code>); for Kraken Mount, choose the dump folder as the target. Kraken Mount also ships its own ampr-emu-ng (<code>/data/krakenmount/ampr/</code>) and places it over the game's fakelib: the NG version selected here only applies there if its <code>libSceAmpr.sprx</code> is in that folder.</p>
     <p><strong>Unsigned programs are fake-signed (since v1.9.92).</strong> If a game's <code>eboot.bin</code> and modules are plain ELF files, it never starts on the PS5 – the loader rejects them. When a task starts and the program finds such programs in a folder, it asks whether to write them as fake-signed SELF files when creating (as ps5-dump-forge does). Under <strong>SETTINGS</strong> in the section <em>Unsigned programs</em> this can be switched on permanently without asking; the program then also checks images, which it unpacks for that. It writes in the working copy or the unpacked folder; in the original folder a <code>.orig</code> of every file stays next to it. Already signed programs stay untouched, and the log names every changed file.</p>
     <p><strong>Already compressed files stay loose (since v1.9.80).</strong>
     The general profile does not pack images and textures (<code>png</code>,
