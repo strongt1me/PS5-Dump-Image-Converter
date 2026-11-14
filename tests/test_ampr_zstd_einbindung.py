@@ -37,6 +37,7 @@ SCHLUESSEL = [
     "ampr_pack.voll_pruefen", "ampr_pack.voll_pruefen_hint", "ampr_pack.voll_pruefen_gesperrt",
     "ampr_zstd.pruefung_voll", "ampr_zstd.pruefung_stichprobe",
     "ampr_zstd.index_fehlt", "ampr_zstd.index_groesse", "ampr_zstd.index_passt_nicht", "ampr.index_zu_lang",
+    "ampr_ng.indexspeicher_zu_klein", "ampr_ng.indexspeicher_neuere_fassung", "ampr_ng.indexspeicher_ohne_pack",
 ]
 
 
@@ -61,6 +62,8 @@ class _Stub:
     _ampr_ist_ng_datei = classmethod(APP.PS5ConverterGUI._ampr_ist_ng_datei.__func__)
     _ampr_zstdpakete_bauen = APP.PS5ConverterGUI._ampr_zstdpakete_bauen
     _ampr_zstd_index_abgleichen = APP.PS5ConverterGUI._ampr_zstd_index_abgleichen
+    _ng_indexspeicher_warnen = APP.PS5ConverterGUI._ng_indexspeicher_warnen
+    _AMPR_NG_VARIANTEN = APP.PS5ConverterGUI._AMPR_NG_VARIANTEN
     _phase_dauer_melden = APP.PS5ConverterGUI._phase_dauer_melden
     _stufe_start = APP.PS5ConverterGUI._stufe_start             # die Stufenzeile (207375e) ruft sie je Abschnitt
     _stufe_ende = APP.PS5ConverterGUI._stufe_ende
@@ -169,6 +172,35 @@ class BauenTests(unittest.TestCase):
             z.ampr_index_lesen(daten[:60])
         with self.assertRaises(z.ZstdPackFehler):
             z.ampr_index_lesen(b"AMPRIDX2" + daten[8:])
+
+    def test_indexspeicher_zu_klein_warnt_und_packt_trotzdem(self) -> None:
+        """Die Rechnung ist nicht an der Konsole gemessen: nur eine Warnung (mit Vorschlag), kein Abbruch."""
+        from ps5_validator.utils import ng_indexspeicher
+        gerechnet: list = []
+        echt = ng_indexspeicher.pruefen
+
+        def pruefen(fassung, idx, art="", pack=None):
+            gerechnet.append((fassung, idx.dateien, art, pack.dateien if pack else None))
+            if art:
+                return ng_indexspeicher.Befund(ng_indexspeicher.MODELL_035, False, "x", 62 * ng_indexspeicher.MIB,
+                                               55 * ng_indexspeicher.MIB)
+            return echt(fassung, idx, art, pack)
+
+        s = _Stub()
+        with mock.patch.object(ng_indexspeicher, "pruefen", pruefen):
+            self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng", "version": "0.3.5"}), s.text())
+        self.assertEqual(("0.3.5", 5, "zstd", 2), gerechnet[0], "Index-Eintraege und die zwei gepackten Dateien")
+        self.assertIn("ampr_ng.indexspeicher_zu_klein [('cap', '55'), ('need', '62'), ('version', '0.3.5')]", s.text())
+        self.assertIn("ampr_ng.indexspeicher_ohne_pack", s.text())
+        self.assertTrue(z.ist_gepackt(self.spiel), "gepackt wird trotzdem")
+
+    def test_indexspeicher_wird_nur_fuer_ng_gerechnet(self) -> None:
+        s = _Stub()
+        self.assertIsNone(s._ng_indexspeicher_warnen(self.index, {"variant": "test-pack", "version": "0.4.2.1"}))
+        self.assertIsNone(s._ng_indexspeicher_warnen(self.index, {"variant": "ng", "version": "0.3.4"}), "vor 0.3.5 kein Modell")
+        befund = s._ng_indexspeicher_warnen(self.index, {"variant": "ng", "version": "0.4.0-beta"})
+        self.assertTrue(befund.passt)
+        self.assertNotIn("ampr_ng.indexspeicher", s.text())
 
     def test_ng_wird_gepackt_und_uebernommen(self) -> None:
         s = _Stub()

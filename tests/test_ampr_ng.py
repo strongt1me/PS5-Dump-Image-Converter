@@ -52,11 +52,12 @@ NG_DATEIEN = {
     "0.3.4 ng-debug": "717299ddd8122716ba11c89e03cc56d05207d0cae2ef898da8a9a65536640997",
     "0.3.5 ng": "998f2029b250d954725f864b57f2eee72aefbfb88054a3f1c3df550d4d6c8261",          # v0.3.5, 11.11.2026
     "0.3.5 ng-debug": "a76c0336d667b486ba1a30b43a23281563dc323a20589cb28bc2454a70af581b",
-    # Vorabfassung "beta" (Nutzerwahl 14.11.2026): gebaut aus 37d7f47 = 340b6c5 (Spielstand-Fix PR #66, Issue #60) plus nur
-    # .github/workflows/build.yml; die Datei nennt sich innen "ampr-emu-ng 0.4.0". Die beta wird bei jedem Push neu gebaut -
-    # die Digests gelten fuer die Anhaenge vom 14.11.2026 15:46 UTC.
-    "0.4.0-beta ng": "56f606df8081adde8ecc79f583a1bc9dff7996312a8480afb6af147344beb95a",
-    "0.4.0-beta ng-debug": "58b08fadd4befb6b5480a0b2a08b5aa94d6e0c061967889f2c8e84d9382e55a6",
+    # Vorabfassung "beta" (Nutzerwahl 14.11.2026): gebaut aus 54d6ac2 (seitenweiser ampr_emu.index neben dem Pack-Manifest, dazu
+    # der Spielstand-Fix 340b6c5 aus PR #66); die Datei nennt sich innen "ampr-emu-ng 0.4.0". Die beta wird bei jedem Push neu
+    # gebaut - die Digests gelten fuer die Anhaenge vom 14.11.2026 17:36 UTC. Die vorige (37d7f47, 15:46 UTC) liegt in
+    # ..\Backups\abgelegt\ampr-emu-ng_beta_37d7f47.
+    "0.4.0-beta ng": "64bbbfdc6359d53948c6e76643e89b422c1865038a17dad41d9625fe60071cb0",
+    "0.4.0-beta ng-debug": "9764c01cd2348274e23ae22089e5d681a886bd8fd987a34f60e30e4771532dda",
 }
 
 

@@ -225,6 +225,24 @@ def ampr_index_abgleichen(gepackt: "Iterable[tuple[str, int]]",
     return befunde
 
 
+def index_kopf_schaetzen(gepackt: "Iterable[tuple[str, int]]") -> "tuple[int, int, int, int]":
+    """``(Laenge, Dateien, Chunks, Baender)`` des ``ampr_zstd.index``, den ein Lauf mit diesen Dateien schreiben wird - vor dem Packen.
+
+    Laenge, Dateien und Chunks sind genau (Kopf + 32 B je Datei + 8 B je Chunk + 8 B je Band + Pfadbytes, wie ``_Schreiber.index``);
+    die Zahl der Baender haengt von der Verdichtung ab und ist hier die obere Grenze (jede Datei unverdichtet).
+    """
+    dateien = chunks = pfadbytes = logisch = 0
+    for rel, groesse in gepackt:
+        dateien += 1
+        chunks += -(-groesse // CHUNK_SIZE)
+        pfadbytes += len(rel.encode("utf-8"))
+        logisch += groesse
+    baender = max(1, -(-logisch // (VOLUME_LIMIT - VOLUME_HEADER_SIZE)))
+    laenge = (INDEX_HEADER_SIZE + dateien * FILE_RECORD_SIZE + chunks * CHUNK_RECORD_SIZE + baender * VOLUME_RECORD_SIZE
+              + pfadbytes)
+    return laenge, dateien, chunks, baender
+
+
 def ziel_pfad(wurzel: str, rel: str) -> str:
     """Der Pfad einer Datei des Packs unterhalb von ``wurzel`` - oder :class:`ZstdPackFehler`, wenn er herausfuehrt.
 

@@ -200,6 +200,7 @@ from ps5_validator.utils import shadowmount_config as sm_cfg
 from ps5_validator.utils import ampr_assetpakete
 from ps5_validator.utils import ampr_zstdpack
 from ps5_validator.utils import ampr_lz4pack
+from ps5_validator.utils import ng_indexspeicher
 from ps5_validator.utils import abbild_strom
 from ps5_validator.utils import spielbaum
 from ps5_validator.utils.sicherung import sicherung_anlegen
@@ -38390,6 +38391,7 @@ class PS5ConverterGUI:
 
         if self._ampr_methode() == AMPR_METHODE_ASSETPACK:
             return self._ampr_assetpakete_bauen(ordner, str(index_pfad), auswahl)
+        self._ng_indexspeicher_warnen(str(index_pfad), auswahl)
         return True
 
     #: Wie oft die Groessenangabe beim Packen nachgezogen wird. Derselbe
@@ -38674,6 +38676,7 @@ class PS5ConverterGUI:
             # ueberhaupt hineinpassen.
             if not self._ampr_pack_speicher_einpassen(manifest, index_pfad, uebersicht):
                 return False
+            self._ng_indexspeicher_warnen(index_pfad, auswahl, "lz4", self._ng_lz4_kopf(manifest))
 
             # Nur die Baender, die das Manifest nennt - und danach nachsehen,
             # ob jedes angekommen ist (Abschnitt 7).
@@ -38905,6 +38908,10 @@ class PS5ConverterGUI:
                 raw=ergebnis.rohe_chunks, shared=ergebnis.geteilte_chunks, volumes=len(messung.baender),
                 percent="%.1f" % (100.0 * ergebnis.gespeichert_bytes / max(1, ergebnis.roh_bytes))))
             # Harte Grenzen der Laufzeit (Anleitung des Autors): ein Bestand darueber wird gar nicht erst geladen.
+            try:
+                self._ng_indexspeicher_warnen(index_pfad, auswahl, "lz4", ng_indexspeicher.lz4_kopf(messung.manifest))
+            except ValueError as exc:
+                logger.debug("NG-Indexspeicher: Manifest nicht lesbar: %s", exc)
             risse = ampr_assetpakete.grenzen_ueberschritten({
                 "files": len(gewaehlt.punkte), "chunks": ergebnis.chunks, "packs": list(messung.baender)})
             if risse:
@@ -38988,6 +38995,8 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
                 return False
             self._ampr_zstd_index_abgleichen(index_pfad, gewaehlt)
+            self._ng_indexspeicher_warnen(index_pfad, auswahl, "zstd",
+                                          ng_indexspeicher.Kopf(*ampr_zstdpack.index_kopf_schaetzen(gewaehlt.gepackt)))
 
             arbeiter_zahl = self._ampr_zstd_arbeiter()
             self._append_to_log(self._t(
@@ -39020,6 +39029,62 @@ class PS5ConverterGUI:
             return False
         finally:
             self._pack_infotext = ""
+
+    def _ng_indexspeicher_warnen(self, index_pfad: str, auswahl: "dict[str, Any] | None", art: str = "",
+                                 pack: "ng_indexspeicher.Kopf | None" = None) -> "ng_indexspeicher.Befund | None":
+        """Warnt im Protokoll, wenn der Indexspeicher der gewaehlten NG-Fassung fuer dieses Spiel voraussichtlich nicht reicht.
+
+        Dann nutzt NG die Packs nicht (gepackte Dateien fehlen dem Spiel) bzw. ohne Pack den Index nicht. Die Rechnung
+        (:mod:`ng_indexspeicher`) ist aus dem Quelltext von NG nachgebaut und trifft die gemeldeten Faelle (Demon's Souls,
+        Final Fantasy XVI); an der Konsole gemessen ist sie nicht - deshalb nur eine Warnung, kein Abbruch. Nur fuer NG-Fassungen
+        mit bekanntem Modell (0.3.5, ab 0.4.0); nie werfend.
+
+        Args:
+            index_pfad: Der ``ampr_emu.index`` des Spiels.
+            auswahl: Die gewaehlte Fassung (``version``, ``variant``).
+            art: ``"zstd"``, ``"lz4"`` oder ``""`` (kein Asset-Pack).
+            pack: Kopf des Pack-Manifests (bei zstd vor dem Packen geschaetzt).
+        """
+        variante = str((auswahl or {}).get("variant") or "").strip().lower()
+        fassung = str((auswahl or {}).get("version") or "").strip()
+        if variante not in self._AMPR_NG_VARIANTEN:
+            return None
+        try:
+            with open(index_pfad, "rb") as fh:
+                kopf = fh.read(64)
+            idx = ng_indexspeicher.ampridx3_kopf(kopf, os.path.getsize(index_pfad))
+            befund = ng_indexspeicher.pruefen(fassung, idx, art, pack)
+        except (OSError, ValueError) as exc:
+            logger.debug("NG-Indexspeicher nicht gerechnet: %s", exc)
+            return None
+        if befund is None:
+            return None
+        logger.info("NG-Indexspeicher %s (%s): passt=%s engpass=%s belegt=%s", fassung, art or "ohne Pack", befund.passt,
+                    befund.engpass, befund.belegt)
+        if befund.passt:
+            return befund
+        mib = lambda n: str(-(-int(n) // (1 << 20)))  # noqa: E731 - wie die Meldung der Konsole, aufgerundet
+        self._append_to_log(self._t("ampr_ng.indexspeicher_zu_klein", version=fassung, need=mib(befund.benoetigt),
+                                    cap=mib(befund.grenze)))
+        try:
+            neuer = ng_indexspeicher.pruefen("0.4.0-beta", idx, art, pack)
+            if befund.modell != ng_indexspeicher.MODELL_BETA and neuer is not None and neuer.passt:
+                self._append_to_log(self._t("ampr_ng.indexspeicher_neuere_fassung"))
+            elif art and ng_indexspeicher.pruefen(fassung, idx).passt:
+                self._append_to_log(self._t("ampr_ng.indexspeicher_ohne_pack"))
+        except ValueError as exc:
+            logger.debug("NG-Indexspeicher: kein Vorschlag: %s", exc)
+        return befund
+
+    @staticmethod
+    def _ng_lz4_kopf(manifest: str) -> "ng_indexspeicher.Kopf | None":
+        """Der Kopf eines fertigen ``ampr_assets.index`` fuer :meth:`_ng_indexspeicher_warnen`, oder ``None`` (nie werfend)."""
+        try:
+            with open(manifest, "rb") as fh:
+                return ng_indexspeicher.lz4_kopf(fh.read(64), os.path.getsize(manifest))
+        except (OSError, ValueError) as exc:
+            logger.debug("LZ4-Manifest nicht lesbar (%s): %s", manifest, exc)
+            return None
 
     def _ampr_zstd_index_abgleichen(self, index_pfad: str, gewaehlt: Any) -> None:
         """Vor dem Packen: Jede Datei, die ins zstd-Pack soll, steht mit derselben Groesse im ``ampr_emu.index``.
@@ -39105,6 +39170,8 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
                 return False
             self._ampr_zstd_index_abgleichen(index_pfad, gewaehlt)
+            self._ng_indexspeicher_warnen(index_pfad, auswahl, "zstd",
+                                          ng_indexspeicher.Kopf(*ampr_zstdpack.index_kopf_schaetzen(gewaehlt.gepackt)))
 
             def _fort(phase: str):
                 return lambda anteil: self._ampr_pack_fortschritt(anteil * 100.0, phase)
