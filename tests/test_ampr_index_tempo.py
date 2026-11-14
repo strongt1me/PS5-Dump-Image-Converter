@@ -132,6 +132,28 @@ class IndexTempoTests(unittest.TestCase):
         self.assertTrue(GUI._ampr_pfad_zu_lang(GUI._ampr_pfadschluessel(rest + "y")))
         self.assertFalse(GUI._ampr_pfad_zu_lang(GUI._ampr_pfadschluessel("/app0/" + "/".join(["x" * 255] * 3))))
 
+    def test_regelwidrige_pfade_kommen_nicht_in_den_index(self):
+        """docs/zstd-format.md von ampr-emu-ng: kein Backslash, kein NUL, kein leerer/./..-Teil - sonst ist die ganze Datei
+        ungueltig. Unter Windows nicht als Datei anlegbar, deshalb ueber den Bau aus einem Lesebaum (Strom)."""
+        from types import SimpleNamespace
+        from ps5_validator.utils import ampr_zstdpack as z
+
+        app = GUI.__new__(GUI)
+        meldungen: list[str] = []
+        app._append_to_log = meldungen.append
+        app._t = lambda schluessel, **w: "%s %s" % (schluessel, w.get("path"))
+        namen = ["ok.bin", "sub/gut.dat", "a\\b.bin", "x/./y.bin", "z//w.bin", "../hoch.bin", "n\0ul.bin", "ende/."]
+        baum = SimpleNamespace(dateien=lambda: [SimpleNamespace(rel=r, groesse=7) for r in namen])
+        ansicht = SimpleNamespace(baum=lambda: baum)
+        ziel = self.basis / "strom" / "ampr_emu.index"
+        ziel.parent.mkdir()
+        anzahl, _d = app._ampr_index_aus_ansicht(ansicht, ziel.parent, ziel)
+        self.assertEqual(2, anzahl)
+        self.assertEqual({"ok.bin", "sub/gut.dat"}, set(z.ampr_index_lesen(ziel.read_bytes())))
+        self.assertEqual(6, sum(m.startswith("ampr.index_pfad_regelwidrig ") for m in meldungen), meldungen)
+        self.assertFalse(GUI._ampr_pfad_regelwidrig("/app0/eboot.bin"))
+        self.assertFalse(GUI._ampr_pfad_regelwidrig("/app0/a.b/..x"), "'..x' ist ein gewoehnlicher Name")
+
     def test_ein_kaputter_verweis_bricht_den_bau_nicht(self):
         app = GUI.__new__(GUI)
         try:

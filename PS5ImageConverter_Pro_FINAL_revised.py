@@ -67161,6 +67161,18 @@ class PS5ConverterGUI:
         return (len(schluessel) >= ampr_zstdpack.KONSOLE_PATH_MAX
                 or any(len(teil) > ampr_zstdpack.KONSOLE_NAME_MAX for teil in schluessel.split(b"/")))
 
+    @staticmethod
+    def _ampr_pfad_regelwidrig(pfad: str) -> bool:
+        """Ob ein /app0-Pfad gegen die Pfadregeln des ``ampr_emu.index`` verstoesst, die ampr-emu-ng an jedem Satz prueft.
+
+        ``docs/zstd-format.md`` ("What the runtime needs from ampr_emu.index", ampr-format ``logical_path``/``safe_components``):
+        kein Backslash, kein NUL, kein leerer, ``.``- oder ``..``-Teil. Ein einziger solcher Satz macht NG die ganze Datei
+        ungueltig. Unter Windows kann kein Dateiname einen Backslash tragen, unter Linux und in einem Abbild schon.
+        """
+        if "\\" in pfad or "\0" in pfad:
+            return True
+        return any(teil in ("", ".", "..") for teil in pfad[len("/app0/"):].split("/"))
+
     @classmethod
     def _ampr_fnv1a64_path_hash(cls, path: str) -> int:
         """FNV-1a-64-Hash ueber den Pfadschluessel (siehe ``_ampr_pfadschluessel``).
@@ -67428,6 +67440,9 @@ class PS5ConverterGUI:
                 if self._ampr_pfad_zu_lang(key):
                     _hinweis("ampr.index_zu_lang", path=indexed_path)
                     continue
+                if self._ampr_pfad_regelwidrig(indexed_path):
+                    _hinweis("ampr.index_pfad_regelwidrig", path=indexed_path)
+                    continue
                 if key in seen:
                     _hinweis("ampr.index_schreibung_doppelt",
                              first=seen[key], second=indexed_path)
@@ -67468,6 +67483,9 @@ class PS5ConverterGUI:
                 continue
             if self._ampr_pfad_zu_lang(key):
                 _hinweis("ampr.index_zu_lang", path=indexed_path)
+                continue
+            if self._ampr_pfad_regelwidrig(indexed_path):
+                _hinweis("ampr.index_pfad_regelwidrig", path=indexed_path)
                 continue
             if key in seen:
                 _hinweis("ampr.index_schreibung_doppelt", first=seen[key], second=indexed_path)
