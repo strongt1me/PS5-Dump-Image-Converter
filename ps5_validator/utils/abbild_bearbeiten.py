@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Abbild bearbeiten: Dateien eines entpackten Spiels umbenennen, loeschen, ersetzen und hinzufuegen.
 
-Ein fertiges Abbild laesst sich nicht an Ort und Stelle aendern (``.exfat`` ohne freie Cluster, ``.ffpfsc`` ohne
-Treiber, ``.ffpkg`` nur lesbar). Der Weg des Programms: Abbild **entpacken**, im Ordner aendern, **neu packen**.
-Dieses Modul ist der mittlere Schritt - reine Dateiarbeit in einem Spielordner, ohne Oberflaeche, mit Pfadpruefung:
+Seit dem 14.11.2026 lassen sich ``.exfat``, ``.ffpkg`` und unkomprimierte ``.ffpfs`` auch an Ort und Stelle aendern
+(:mod:`abbild_direkt`, mit Undo-Journal). Fuer ``.ffpfsc`` - und wenn der Platz nicht reicht - bleibt der Weg des Programms:
+Abbild **entpacken**, im Ordner aendern, **neu packen**. Dieses Modul ist dessen mittlerer Schritt - reine Dateiarbeit in einem
+Spielordner, ohne Oberflaeche, mit Pfadpruefung (die direkten Editoren nehmen dieselbe Namenspruefung, :func:`name_pruefen`):
 
 * Jeder Pfad ist relativ zur Wurzel des Spielordners und darf sie nie verlassen (``..``, absolute Pfade, Laufwerke,
   Verknuepfungen und Junctions werden abgewiesen).

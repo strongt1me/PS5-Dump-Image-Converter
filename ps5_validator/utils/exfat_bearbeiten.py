@@ -27,13 +27,21 @@ import contextlib
 import os
 import struct
 import time
-import zlib
 from dataclasses import dataclass, field
 from typing import BinaryIO, Callable, Iterator
 
-JOURNAL_ENDUNG = ".undo"
-_MAGIC = b"PS5CONV-EXFAT-UNDO1\n"
-_ENDE = b"ENDE-DES-JOURNALS!"
+from ps5_validator.utils.abbild_journal import (  # noqa: F401  (die alten Namen dieses Moduls bleiben gueltig)
+    _ENDE,
+    _MAGIC,
+    JOURNAL_ENDUNG,
+    DirektFehler,
+    DirektPlatzFehlt,
+    journal_lesen,
+    journal_pfad,
+    journal_schreiben,
+    journal_zurueckspielen,
+)
+
 _FAT_MAX = 256 * 1024 * 1024            # eine groessere FAT wird nicht ganz in den Speicher geladen
 _JOURNAL_DATEN_MAX = 2 * 1024 ** 3      # so viel alter Dateiinhalt darf ins Journal (sonst: neu bauen)
 _FAT_FREI, _FAT_ENDE = 0, 0xFFFFFFFF
@@ -45,86 +53,70 @@ _VERBOTEN = '\\/:*?"<>|'
 _BLOCK = 4096
 
 
-class ExfatBearbeitenFehler(RuntimeError):
+class ExfatBearbeitenFehler(DirektFehler):
     """Das Abbild laesst sich so nicht aendern (kein exFAT, Name unzulaessig, Pfad fehlt, beschaedigt)."""
 
 
-class PlatzFehlt(ExfatBearbeitenFehler):
+class PlatzFehlt(ExfatBearbeitenFehler, DirektPlatzFehlt):
     """Im Abbild ist nicht genug Platz: Es waechst nie - dann bleibt nur, es neu zu bauen."""
 
 
 # ---------------------------------------------------------------------------------------------------------------------------
-# Journal
+# Journal: seit dem 14.11.2026 in ``abbild_journal`` (gemeinsam mit UFS2 und PFS); die alten Namen bleiben.
 # ---------------------------------------------------------------------------------------------------------------------------
-def journal_pfad(abbild: str) -> str:
-    """Wo das Undo-Journal zu ``abbild`` liegt."""
-    return abbild + JOURNAL_ENDUNG
+_journal_schreiben = journal_schreiben
+_journal_lesen = journal_lesen
 
 
-def _journal_schreiben(pfad: str, stellen: "list[tuple[int, bytes]]") -> None:
-    """Schreibt ``(Offset, alte Bytes)`` ins Journal und zwingt es auf die Platte; ``ENDE`` kommt zuletzt und macht es gueltig."""
-    teil = pfad + ".neu"
-    with open(teil, "wb") as fh:
-        fh.write(_MAGIC)
-        fh.write(struct.pack("<Q", len(stellen)))
-        for offset, alt in stellen:
-            fh.write(struct.pack("<QII", offset, len(alt), zlib.crc32(alt) & 0xFFFFFFFF))
-            fh.write(alt)
-        fh.write(_ENDE)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(teil, pfad)
+class _Fenster:
+    """Ein Fenster in eine groessere Datei: das innere exFAT-Abbild einer unkomprimierten PFS-Huelle, ``laenge`` Bytes ab ``basis``.
 
-
-def _journal_lesen(pfad: str) -> "list[tuple[int, bytes]] | None":
-    """Die Stellen eines vollstaendigen Journals, sonst ``None`` (fehlt, abgeschnitten, Pruefsumme falsch)."""
-    try:
-        with open(pfad, "rb") as fh:
-            if fh.read(len(_MAGIC)) != _MAGIC:
-                return None
-            kopf = fh.read(8)
-            if len(kopf) < 8:
-                return None
-            anzahl = struct.unpack("<Q", kopf)[0]
-            stellen: "list[tuple[int, bytes]]" = []
-            for _ in range(anzahl):
-                satz = fh.read(16)
-                if len(satz) < 16:
-                    return None
-                offset, laenge, crc = struct.unpack("<QII", satz)
-                alt = fh.read(laenge)
-                if len(alt) < laenge or (zlib.crc32(alt) & 0xFFFFFFFF) != crc:
-                    return None
-                stellen.append((offset, alt))
-            if fh.read(len(_ENDE)) != _ENDE:
-                return None
-            return stellen
-    except OSError:
-        return None
-
-
-def journal_zurueckspielen(abbild: str) -> bool:
-    """Spielt ein vollstaendiges Journal zurueck (die alten Bytes) und entfernt es. ``True``, wenn etwas zurueckgespielt wurde.
-
-    Ein unvollstaendiges Journal heisst, dass der Lauf vor dem ersten Schreiben ins Abbild abbrach: Es wird nur entfernt.
+    Der Editor liest und schreibt darin wie in einer eigenen Datei; nichts ausserhalb des Fensters wird beruehrt.
     """
-    pfad = journal_pfad(abbild)
-    if not os.path.exists(pfad):
-        return False
-    stellen = _journal_lesen(pfad)
-    if stellen is not None:
-        with open(abbild, "r+b") as fh:
-            for offset, alt in reversed(stellen):
-                fh.seek(offset)
-                fh.write(alt)
-            fh.flush()
-            os.fsync(fh.fileno())
-    for datei in (pfad, pfad + ".neu"):
-        try:
-            os.remove(datei)
-        except OSError:
-            pass
-    return stellen is not None
+
+    def __init__(self, fh: BinaryIO, basis: int, laenge: int) -> None:
+        self._fh = fh
+        self._basis = basis
+        self._laenge = laenge
+        self._pos = 0
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        if whence == 1:
+            offset += self._pos
+        elif whence == 2:
+            offset += self._laenge
+        self._pos = max(0, offset)
+        return self._pos
+
+    def tell(self) -> int:
+        return self._pos
+
+    def read(self, anzahl: int = -1) -> bytes:
+        ende = self._laenge if anzahl is None or anzahl < 0 else min(self._laenge, self._pos + anzahl)
+        if ende <= self._pos:
+            return b""
+        self._fh.seek(self._basis + self._pos)
+        daten = self._fh.read(ende - self._pos)
+        self._pos += len(daten)
+        return daten
+
+    def write(self, daten: "bytes | bytearray | memoryview") -> int:
+        if self._pos + len(daten) > self._laenge:
+            raise ExfatBearbeitenFehler("Schreiben hinter dem Ende des inneren Abbilds (%d + %d > %d)" % (
+                self._pos, len(daten), self._laenge))
+        self._fh.seek(self._basis + self._pos)
+        n = self._fh.write(daten)
+        self._pos += len(daten)
+        return n
+
+    def flush(self) -> None:
+        self._fh.flush()
+
+    def fileno(self) -> int:
+        return self._fh.fileno()
+
+    def close(self) -> None:
+        self._fh.close()
 
 
 # ---------------------------------------------------------------------------------------------------------------------------
@@ -186,10 +178,18 @@ class _Plan:
 class ExfatAbbild:
     """Ein exFAT-Abbild zum Aendern in place. ``with ExfatAbbild(pfad) as a: a.umbenennen(...); a.speichern()``."""
 
-    def __init__(self, pfad: str) -> None:
+    #: Fuer die Oberflaeche: welches Format dieser Editor aendert.
+    art = "exfat"
+
+    def __init__(self, pfad: str, *, basis: int = 0, laenge: "int | None" = None) -> None:
+        """``basis``/``laenge``: Das exFAT liegt als innere Datei in einer unkomprimierten PFS-Huelle (``pfs_bearbeiten.oeffnen``); der
+        Editor aendert nur diese ``laenge`` Bytes ab ``basis``, das Journal nennt die Stellen in der aeusseren Datei."""
         self.pfad = pfad
+        self._basis = int(basis)
         journal_zurueckspielen(pfad)                                  # ein Abbruch des letzten Laufs wird hier rueckgaengig gemacht
-        self._fh: BinaryIO = open(pfad, "r+b")
+        datei = open(pfad, "r+b")
+        self._fh: BinaryIO = datei if not self._basis and laenge is None else _Fenster(  # type: ignore[assignment]
+            datei, self._basis, int(laenge if laenge is not None else os.fstat(datei.fileno()).st_size - self._basis))
         self._plan = _Plan()
         self._cache: "dict[str, _Verzeichnis]" = {}
         self._daten_cluster: "set[int]" = set()                          # Cluster, in die Dateidaten geschrieben werden
@@ -403,6 +403,10 @@ class ExfatAbbild:
                     return
                 if not wert & (1 << bit):
                     yield c
+
+    def freie_bytes(self) -> int:
+        """Freier Platz fuer neue Dateidaten (gemeinsame Schnittstelle der Editoren fuer die Oberflaeche)."""
+        return self.freie_cluster() * self.cluster_groesse
 
     def freie_cluster(self) -> int:
         """Wie viele Cluster frei sind."""
@@ -749,7 +753,8 @@ class ExfatAbbild:
         for offset, neu in self._plan.stellen:
             self._fh.seek(offset)
             alte.append((offset, self._fh.read(len(neu))))
-        _journal_schreiben(journal_pfad(self.pfad), alte)
+        # Das Journal nennt Stellen in der Datei selbst: In einer PFS-Huelle liegt das exFAT ab ``basis``.
+        _journal_schreiben(journal_pfad(self.pfad), [(self._basis + o, alt) for o, alt in alte])
         try:
             for schreiben in self._plan.daten:
                 schreiben(self._fh)

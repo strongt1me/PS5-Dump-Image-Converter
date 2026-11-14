@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Das Fenster "Abbild bearbeiten", Weg "Direkt aendern": ein ``.exfat`` wird ohne Entpacken in place geaendert (14.11.2026).
+"""Das Fenster "Abbild bearbeiten", Weg "Direkt aendern": ein ``.exfat``, ``.ffpkg`` oder ``.ffpfs`` wird ohne Entpacken in place
+geaendert (14.11.2026).
 
 Die Dateiarbeit hat ihre eigene Testdatei (``test_exfat_bearbeiten``). Hier wird geprueft, was das Fenster daraus macht: Oeffnen mit
 Rueckfrage, Baum aus dem Abbild, Aenderungen im Speicher, "Aenderungen anwenden" im Hintergrund, Abweisung ohne Platz, Rueckspielen
@@ -298,6 +299,67 @@ class DirektTests(unittest.TestCase):
         self.win.destroy()
         os.rename(self.bild, self.bild + ".x")                              # unter Windows nur moeglich, wenn niemand die Datei offen hat
         os.rename(self.bild + ".x", self.bild)
+
+    # ---- .ffpkg und .ffpfs (seit dem 14.11.2026) ---------------------------------------------------------------
+    def _anderes_abbild(self, art: str) -> None:
+        from ps5_validator.utils import abbild_strom, ufs2_schreiber
+        liste = [(rel, len(d), (lambda d=d: iter([d]))) for rel, d in self.inhalt.items()]
+        self.bild = os.path.join(self.tmp, "Spiel_%s.%s" % (len(os.listdir(self.tmp)), art))
+        if art == "ffpkg":
+            ufs2_schreiber.planen(liste, (), profil=ufs2_schreiber.Ufs2Profil(65536, 65536, 4096, 0, 262144)).schreiben(self.bild)
+        else:
+            abbild_strom.ffpfs_schreiben(liste, self.bild, block_size=CL)
+
+    def _gelesen(self, art: str) -> "dict[str, bytes]":
+        baum = sb.Ufs2Baum(self.bild) if art == "ffpkg" else sb.PfsBaum(self.bild)
+        with baum:
+            return {d.rel: b"".join(d.lesen(1 << 20)) for d in baum.dateien()}
+
+    def test_ffpkg_und_ffpfs_lassen_sich_direkt_aendern(self) -> None:
+        from ps5_validator.utils import abbild_direkt
+        neu = os.path.join(self.tmp, "neu.bin")
+        Path(neu).write_bytes(_inh("neu", 2 * CL + 3))
+        for art, status in (("ffpkg", "Frei im Abbild"), ("ffpfs", "wächst bei Bedarf")):
+            with self.subTest(art):
+                self._anderes_abbild(art)
+                self.oeffnen()
+                self.assertEqual("." + art, self.f.format_var.get())
+                self.assertIn(status, self.f.status_var.get())
+                with mock.patch.object(fz.messagebox, "askyesno", return_value=True):
+                    self.f.baum.selection_set("data/gross.bin")
+                    self.f._loeschen()
+                self.f.baum.selection_set("data")
+                with mock.patch.object(fz.filedialog, "askopenfilenames", return_value=(neu,)):
+                    self.f._hinzufuegen()
+                self.f.baum.selection_set("data/mittel.pak")
+                with mock.patch.object(fz.simpledialog, "askstring", return_value="umbenannt.pak"):
+                    self.f._umbenennen()
+                self.assertEqual(3, self.f.direkt_offen)
+                with mock.patch.object(fz.messagebox, "showinfo"):
+                    self.f._speichern()
+                    self.warten()
+                self.assertEqual(0, self.f.direkt_offen)
+                self.f._direkt_schliessen()
+                erwartet = dict(self.inhalt)
+                del erwartet["data/gross.bin"]
+                erwartet["data/umbenannt.pak"] = erwartet.pop("data/mittel.pak")
+                erwartet["data/neu.bin"] = _inh("neu", 2 * CL + 3)
+                self.assertEqual(erwartet, self._gelesen(art))
+                editor = abbild_direkt.oeffnen(self.bild)
+                try:
+                    self.assertEqual([], editor.pruefen())
+                finally:
+                    editor.schliessen()
+
+    def test_ein_abbild_mit_falschem_inhalt_wird_gemeldet(self) -> None:
+        self.bild = os.path.join(self.tmp, "Kaputt.ffpkg")
+        Path(self.bild).write_bytes(b"x" * 200_000)
+        self.f.bild_var.set(self.bild)
+        with mock.patch.object(fz.messagebox, "askyesno", return_value=True), \
+                mock.patch.object(fz.messagebox, "showerror") as fehler:
+            self.f._direkt_oeffnen()
+        fehler.assert_called_once()
+        self.assertIsNone(self.f.direkt)
 
 
 class QuelltextTests(unittest.TestCase):

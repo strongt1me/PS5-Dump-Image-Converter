@@ -2,8 +2,9 @@
 """Das Fenster "Abbild bearbeiten" unter WEITERE TOOLS (Nutzerwunsch 05.11.2026).
 
 Dateien eines fertigen Abbilds umbenennen, loeschen, ersetzen oder hinzufuegen - und das Ergebnis wieder als Abbild
-speichern. In ein fertiges Abbild laesst sich nichts hineinschreiben (siehe :mod:`ps5_validator.utils.abbild_bearbeiten`);
-der Weg ist deshalb immer derselbe, den das Programm auch sonst geht:
+speichern. Zwei Wege: **Direkt aendern** schreibt in das Abbild selbst (``.exfat``, ``.ffpkg``, unkomprimiertes ``.ffpfs``; siehe
+:mod:`ps5_validator.utils.abbild_direkt`, mit Undo-Journal). Sonst - und immer bei ``.ffpfsc`` - der Weg, den das Programm auch sonst
+geht:
 
 1. **Entpacken** - das Abbild wird mit der vorhandenen Umwandlung (Aufgabe 6, Ziel Dump-Ordner) in einen Arbeitsordner
    entpackt, mit allen Rueckfragen und Pruefungen dieser Aufgabe.
@@ -28,7 +29,7 @@ from tkinter import filedialog, messagebox, simpledialog
 from typing import Any, Callable
 
 from ps5_validator.utils import abbild_bearbeiten as ab
-from ps5_validator.utils import exfat_bearbeiten as exfat_direkt
+from ps5_validator.utils import abbild_direkt
 
 logger = logging.getLogger("PS5Converter.abbild_bearbeiten_fenster")
 
@@ -152,7 +153,7 @@ class BearbeitenFenster:
         self.protokoll = ab.Protokoll()
         self.gespeichert_bei = 0    # Anzahl der Aenderungen, die schon in einem gespeicherten Abbild stecken
         self.beschaeftigt = False
-        self.direkt: "exfat_direkt.ExfatAbbild | None" = None   # ein .exfat, das direkt geaendert wird (ohne Entpacken)
+        self.direkt: "Any | None" = None   # der Editor eines Abbilds, das direkt geaendert wird (``abbild_direkt.oeffnen``)
         self.direkt_offen = 0                                   # Aenderungen daran, die noch nicht geschrieben sind
         self.direkt_ordner: "set[str]" = set()
         self.baum_status = ""
@@ -237,7 +238,7 @@ class BearbeitenFenster:
         frei = not self.beschaeftigt
         for knopf in self.aenderungs_knoepfe:
             knopf.config(state="normal" if (da and frei) else "disabled")
-        # Direkt im Abbild gibt es nichts zu speichern, solange nichts vorgemerkt ist; das Format bleibt .exfat.
+        # Direkt im Abbild gibt es nichts zu speichern, solange nichts vorgemerkt ist; das Format bleibt das des Abbilds.
         anwenden = direkt and self.direkt_offen > 0
         self.speichern_knopf.config(text=self.t("bearbeiten.anwenden" if direkt else "bearbeiten.speichern"),
                                     state="normal" if (frei and (anwenden if direkt else da)) else "disabled")
@@ -530,7 +531,7 @@ class BearbeitenFenster:
             self._zustand_setzen()
             self._status(self.t("bearbeiten.nicht_gestartet"))
 
-    # ---- Direkt im Abbild (.exfat) ---------------------------------------------------------------------------
+    # ---- Direkt im Abbild (.exfat, .ffpkg, .ffpfs) -----------------------------------------------------------
     def _direkt_schliessen(self) -> None:
         """Gibt die Abbilddatei frei (nicht geschriebene Aenderungen verfallen)."""
         if self.direkt is not None:
@@ -544,7 +545,7 @@ class BearbeitenFenster:
 
     def _direkt_oeffnen(self) -> None:
         bild = self.bild_var.get().strip()
-        if not bild or not os.path.isfile(bild) or not bild.lower().endswith(".exfat"):
+        if not bild or not os.path.isfile(bild) or not bild.lower().endswith(abbild_direkt.ENDUNGEN):
             messagebox.showwarning(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_nur_exfat"), parent=self.win)
             return
         if self._hat_ungespeichertes() and not messagebox.askyesno(
@@ -555,17 +556,17 @@ class BearbeitenFenster:
             return
         self._direkt_schliessen()
         self._arbeitsordner_leeren()
-        rueckgaengig = os.path.exists(exfat_direkt.journal_pfad(bild))
+        rueckgaengig = os.path.exists(abbild_direkt.journal_pfad(bild))
         try:
-            self.direkt = exfat_direkt.ExfatAbbild(bild)
-        except (exfat_direkt.ExfatBearbeitenFehler, OSError) as exc:
+            self.direkt = abbild_direkt.oeffnen(bild)
+        except (abbild_direkt.DirektFehler, OSError) as exc:
             messagebox.showerror(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_fehler", fehler=exc), parent=self.win)
             return
         self.bild = os.path.normpath(bild)
         self.protokoll = ab.Protokoll()
         self.gespeichert_bei = 0
         self.direkt_offen = 0
-        self.format_var.set(".exfat")
+        self.format_var.set(os.path.splitext(bild)[1].lower())
         self._baum_fuellen()
         if rueckgaengig:
             self._status(self.t("bearbeiten.direkt_rueckgaengig") + " " + self.baum_status)
@@ -590,8 +591,10 @@ class BearbeitenFenster:
         if auswahl and self.baum.exists(auswahl):
             self.baum.selection_set(auswahl)
             self.baum.see(auswahl)
-        frei = self.direkt.freie_cluster() * self.direkt.cluster_groesse
-        self.baum_status = self.t("bearbeiten.direkt_status", n=len(eintraege), frei=self.g._fmt_bytes(frei))
+        if getattr(self.direkt, "waechst", False):                      # PFS: neue Inhalte kommen hinten an
+            self.baum_status = self.t("bearbeiten.direkt_status_waechst", n=len(eintraege))
+        else:
+            self.baum_status = self.t("bearbeiten.direkt_status", n=len(eintraege), frei=self.g._fmt_bytes(self.direkt.freie_bytes()))
         self._status(self.baum_status)
 
     def _direkt_aendern(self, aktion: Callable[[], object], auswahl_danach: str = "") -> bool:
@@ -599,10 +602,10 @@ class BearbeitenFenster:
         try:
             aktion()
             ok = True
-        except exfat_direkt.PlatzFehlt as exc:
+        except abbild_direkt.DirektPlatzFehlt as exc:
             ok = False
             messagebox.showerror(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_platz", detail=exc), parent=self.win)
-        except (exfat_direkt.ExfatBearbeitenFehler, OSError) as exc:
+        except (abbild_direkt.DirektFehler, OSError) as exc:
             ok = False
             messagebox.showerror(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_fehler", fehler=exc), parent=self.win)
         if ok:
