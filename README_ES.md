@@ -49,7 +49,9 @@ de la PS5. Todo funciona mediante una interfaz gráfica con dos áreas, **CONVER
 
 🔄 **Convertir**<br>
 Carpetas de dump, `.ffpfsc`, `.exfat` y `.ffpkg` UFS2 genuinos en cualquier dirección, también directamente desde
-`.zip`, `.7z` y `.rar`. Solo se ofrecen los formatos de destino compatibles con el origen detectado.
+`.zip`, `.7z` y `.rar`. La conversión se realiza normalmente de una sola pasada, sin carpeta intermedia
+(también con AMPR EMU y BACKPORT), y un `.ffpkg` se crea sin UFS2Tool. Solo se ofrecen los formatos de
+destino compatibles con el origen detectado; si se desea, el origen se elimina tras una ejecución verificada.
 
 </td>
 <td width="33%" valign="top">
@@ -115,7 +117,9 @@ Biblioteca de juegos del equipo y de la PS5 con carátula; info del juego con ac
 ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset Pack (comprobar y extraer)
 y el Y2JB Updater son accesibles desde la
 barra lateral. En MÁS HERRAMIENTAS, EDITAR IMAGEN modifica archivos individuales de una imagen
-(extraer, sustituir, renombrar, eliminar, volver a empaquetar).
+(extraer, sustituir, renombrar, eliminar, volver a empaquetar); «Editar directamente» escribe en `.exfat`,
+`.ffpkg` y `.ffpfs` sin extraer, y un diario deshace una interrupción. «Dispositivos en la red» encuentra NAS
+y equipos de la red y fija un recurso compartido de Windows como origen o destino.
 
 </td>
 <td valign="top">
@@ -172,7 +176,9 @@ En macOS, `Erste Installation.command` coloca la app en su sitio y elimina la ma
 
 - **Windows 10/11**, una distribución de Linux actual o **macOS** (probado en macOS 15; las versiones anteriores no se han probado)
 - Espacio libre suficiente para el origen, el estado intermedio y la salida
-- **Windows:** derechos de administrador para los procesos con UFS2 (`.ffpkg`)
+- **Windows:** el EXE terminado pide derechos de administrador al iniciarse (UAC). Al ejecutar desde el código
+  fuente, solo se necesitan para la vía con UFS2Tool y para el montaje con OSFMount; un `.ffpkg` sin carpeta
+  intermedia se crea sin ellos
 - **No hace falta OSFMount:** las imágenes `.exFAT` las lee el programa con su lector exFAT integrado, sin
   montar nada, en cualquier sistema. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   es solo la alternativa para imágenes poco habituales en Windows; si hace falta, el programa lo indica
@@ -272,16 +278,18 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--ampr-lz4-stufe N` | nivel LZ4 del Asset Pack, 1–12 (predeterminado 9) |
 | `--ampr-zstd-stufe N` | nivel zstd del Asset Pack, 1–22 (predeterminado 5) |
 | `--dump-im-arbeitsordner` | crear la carpeta de dump temporal de las rutas de reempaquetado en la carpeta de trabajo en lugar de en el destino |
+| `--ausgabename VORLAGE` | plantilla para el nombre del resultado, p. ej. `"{title} [{title_id}]"`; partes: `{name}` `{title}` `{title_id}` `{version}` `{region}` `{fw}` `{pack}`, predeterminada `{name}` |
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` con AMPR EMU/BACKPORT: extraer, integrar y volver a empaquetar como `.ffpfsc` |
 | `--umhuellt-als-ordner` | por el mismo camino, construir en su lugar solo la carpeta de dump |
 | `--ampr-index-trotz-assets` | reconstruir `ampr_emu.index` incluso si ya existe un Asset Pack |
-| `--ampr-originale-weglassen` | con el Asset Pack, quitar de la copia de trabajo los originales empaquetados (solo tiene sentido tras superar la prueba en la consola; con AMPR EMU NG y zstd siempre, sin preguntar) |
+| `--ampr-originale-weglassen` | con el Asset Pack, quitar de la copia de trabajo los originales empaquetados (solo tiene sentido tras superar la prueba en la consola; con AMPR EMU NG y zstd siempre, sin preguntar; igual con LZ4 mientras se empaquete sin carpeta intermedia) |
 | `--param-json-reparieren` | reparar sin consulta un `param.json` defectuoso |
 | `--param-json-online` | buscar en la red el título y el Content-ID para ello |
+| `--quelle-loeschen` | eliminar el origen de forma definitiva tras una ejecución verificada con éxito (sin papelera, sin consulta); se conserva si falta el resultado, si el origen cambió durante la ejecución o si el resultado lo sustituyó |
 
-Los últimos seis deciden consultas que `--yes` deliberadamente **no** responde: un interruptor para las
+Los últimos siete deciden consultas que `--yes` deliberadamente **no** responde: un interruptor para las
 consultas de sobrescritura no debe, de paso, cambiar el camino, inutilizar un Asset Pack,
-eliminar archivos del juego ni enviar datos a la red.
+eliminar archivos del juego, borrar el origen ni enviar datos a la red.
 
 Códigos de salida: `0` éxito · `1` error o cancelación · `2` argumentos no válidos · `3` faltan
 derechos de administrador · `4` no comprobado (tarea 8 sin los derechos necesarios; no es un veredicto sobre el archivo).
@@ -379,7 +387,7 @@ Las diferencias son estas:
 
 | Ámbito | Linux y macOS |
 | --- | --- |
-| Leer y construir `.ffpkg` | Disponible: UFS2Tool se incluye para Windows, Linux y macOS (Intel y Apple Silicon); la lectura se hace con `UFS2Tool extract` y la construcción con `newfs`/`makefs`. Solo el montaje mediante el controlador Dokan existe exclusivamente en Windows. |
+| Leer y construir `.ffpkg` | Disponible: el programa lee y escribe `.ffpkg` con su propio lector y escritor UFS2, sin UFS2Tool. Donde la conversión sin carpeta intermedia no se aplica, se usa UFS2Tool: se incluye para Windows, Linux y macOS (Intel y Apple Silicon); la lectura se hace con `UFS2Tool extract` y la construcción con `newfs`/`makefs`. Solo el montaje mediante el controlador Dokan existe exclusivamente en Windows. |
 | PS4 PKG Dump & Image Converter | OrbisPkgTool solo existe como programa de Windows. Allí extrae paquetes de PS4 a la carpeta de dump y fusiona base, actualización y DLC; sin la herramienta quedan ffpfsc y exFAT, que se construyen directamente desde los paquetes mediante PS4 FFPFSC. Colección, detalles, consulta de actualizaciones y envío funcionan en todas partes. |
 | Alternativas a OSFMount | No disponibles; las vías nativas de MkPFS/exFAT están completas. |
 | Derechos elevados | No necesarios. |

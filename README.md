@@ -47,7 +47,9 @@ der PS5 verwalten. Alles läuft über eine grafische Oberfläche mit zwei Bereic
 
 🔄 **Umwandeln**<br>
 Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-`.ffpkg` in jede Richtung, auch direkt aus
-`.zip`, `.7z` und `.rar`. Angeboten werden nur Zielformate, die zur erkannten Quelle passen.
+`.zip`, `.7z` und `.rar`. Die Umwandlung läuft in der Regel in einem Zug ohne Zwischenordner – auch mit
+AMPR EMU und BACKPORT –, ein `.ffpkg` entsteht ohne UFS2Tool. Angeboten werden nur Zielformate, die zur
+erkannten Quelle passen; auf Wunsch wird die Quelle nach einem geprüften Lauf gelöscht.
 
 </td>
 <td width="33%" valign="top">
@@ -113,7 +115,9 @@ Spielbibliothek von Rechner und PS5 mit Cover; Spiel-Info mit Updates & Patches 
 ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset-Pack (prüfen und entpacken)
 und der Y2JB Updater erreichen Sie aus der
 Seitenleiste. Unter WEITERE TOOLS ändert ABBILD BEARBEITEN einzelne Dateien eines Abbilds
-(entpacken, ersetzen, umbenennen, löschen, neu packen).
+(entpacken, ersetzen, umbenennen, löschen, neu packen); „Direkt ändern“ schreibt in `.exfat`, `.ffpkg` und
+`.ffpfs` ohne Entpacken, und ein Journal macht einen Abbruch rückgängig. „Geräte im Netz“ findet NAS und
+Rechner im Netz und setzt eine Windows-Freigabe als Quelle oder Ziel.
 
 </td>
 <td valign="top">
@@ -170,7 +174,9 @@ Unter macOS legt `Erste Installation.command` die App ab und entfernt die Quaran
 
 - **Windows 10/11**, eine aktuelle Linux-Distribution oder **macOS** (getestet unter macOS 15; ältere Versionen sind ungetestet)
 - Genug freier Speicherplatz für Quelle, Zwischenstand und Ausgabe
-- **Windows:** Administratorrechte für UFS2-Abläufe (`.ffpkg`)
+- **Windows:** Die fertige EXE fragt beim Start nach Administratorrechten (UAC). Wer aus dem Quelltext arbeitet,
+  braucht sie nur für den Weg über UFS2Tool und für das Einhängen mit OSFMount; ein `.ffpkg` ohne
+  Zwischenordner entsteht auch ohne sie
 - **Kein OSFMount nötig:** `.exFAT`-Abbilder liest das Programm mit seinem eingebetteten exFAT-Leser, ohne
   etwas einzuhängen – auf jedem System. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   ist nur der Rückfall für ungewöhnliche Abbilder unter Windows; wird er gebraucht, sagt das Programm es
@@ -271,16 +277,18 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--ampr-lz4-stufe N` | LZ4-Stufe des Asset-Packs, 1–12 (Vorgabe 9) |
 | `--ampr-zstd-stufe N` | zstd-Stufe des Asset-Packs, 1–22 (Vorgabe 5) |
 | `--dump-im-arbeitsordner` | den vorübergehenden Dump-Ordner der Umpack-Wege im Arbeitsordner statt beim Ziel anlegen |
+| `--ausgabename VORLAGE` | Vorlage für den Namen des Ergebnisses, z. B. `"{title} [{title_id}]"`; Teile: `{name}` `{title}` `{title_id}` `{version}` `{region}` `{fw}` `{pack}`, Vorgabe `{name}` |
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` mit AMPR EMU/BACKPORT: entpacken, einbauen, wieder zu `.ffpfsc` packen |
 | `--umhuellt-als-ordner` | auf demselben Weg stattdessen nur den Dump-Ordner bauen |
 | `--ampr-index-trotz-assets` | `ampr_emu.index` auch bei vorhandenem Asset-Pack neu bauen |
-| `--ampr-originale-weglassen` | beim Asset-Pack die gepackten Originale aus der Arbeitskopie entfernen (nur nach bestandenem Konsolentest sinnvoll; bei AMPR EMU NG mit zstd immer, ohne Rückfrage) |
+| `--ampr-originale-weglassen` | beim Asset-Pack die gepackten Originale aus der Arbeitskopie entfernen (nur nach bestandenem Konsolentest sinnvoll; bei AMPR EMU NG mit zstd immer, ohne Rückfrage; ebenso mit LZ4, solange ohne Zwischenordner gepackt wird) |
 | `--param-json-reparieren` | fehlerhafte `param.json` ohne Rückfrage reparieren |
 | `--param-json-online` | Titel und Content-ID dafür im Netz nachschlagen |
+| `--quelle-loeschen` | die Quelle nach einem erfolgreich geprüften Lauf endgültig löschen (kein Papierkorb, keine Rückfrage); sie bleibt, wenn das Ergebnis fehlt, die Quelle sich während des Laufs geändert hat oder das Ergebnis sie ersetzt hat |
 
-Die letzten sechs entscheiden Rückfragen, die `--yes` bewusst **nicht** beantwortet: Ein Schalter für
+Die letzten sieben entscheiden Rückfragen, die `--yes` bewusst **nicht** beantwortet: Ein Schalter für
 Überschreib-Rückfragen soll nicht nebenbei den Weg wechseln, ein Asset-Pack unbrauchbar machen,
-Spieldateien entfernen oder Daten ins Netz schicken.
+Spieldateien entfernen, die Quelle löschen oder Daten ins Netz schicken.
 
 Rückgabewerte: `0` Erfolg · `1` Fehler oder Abbruch · `2` ungültige Argumente · `3` fehlende
 Administratorrechte · `4` nicht geprüft (Aufgabe 8 ohne die nötigen Rechte – kein Urteil über die Datei).
@@ -378,7 +386,7 @@ Unterschiede gibt es hier:
 
 | Bereich | Linux und macOS |
 | --- | --- |
-| `.ffpkg` lesen und bauen | Verfügbar – UFS2Tool liegt für Windows, Linux und macOS (Intel und Apple Silicon) bei; gelesen wird über `UFS2Tool extract`, gebaut über `newfs`/`makefs`. Nur das Einhängen über den Dokan-Treiber gibt es ausschließlich unter Windows. |
+| `.ffpkg` lesen und bauen | Verfügbar – das Programm liest und schreibt `.ffpkg` mit eigenem UFS2-Leser und -Schreiber, ohne UFS2Tool. Wo die Umwandlung ohne Zwischenordner nicht greift, geht es über UFS2Tool: Es liegt für Windows, Linux und macOS (Intel und Apple Silicon) bei; gelesen wird über `UFS2Tool extract`, gebaut über `newfs`/`makefs`. Nur das Einhängen über den Dokan-Treiber gibt es ausschließlich unter Windows. |
 | PS4 PKG Dump & Image Converter | OrbisPkgTool gibt es nur als Windows-Programm. Dort entpackt es PS4-Pakete zum Dump-Ordner und führt Basis, Update und DLC zusammen; ohne das Werkzeug bleiben ffpfsc und exFAT, die über PS4 FFPFSC direkt aus den Paketen gebaut werden. Sammlung, Einzelheiten, Update-Abfrage und Senden gehen überall. |
 | OSFMount-Ersatzwege | Nicht verfügbar; die nativen MkPFS-/exFAT-Wege sind vollständig vorhanden. |
 | Erhöhte Rechte | Nicht nötig. |

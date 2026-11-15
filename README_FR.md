@@ -50,7 +50,10 @@ et **CONSOLE** ; chaque tâche est aussi disponible sans fenêtre, en ligne de c
 
 🔄 **Convertir**<br>
 Dossiers de dump, `.ffpfsc`, `.exfat` et véritables `.ffpkg` UFS2 dans toutes les directions, y compris
-directement depuis `.zip`, `.7z` et `.rar`. Seuls les formats cibles compatibles avec la source détectée sont proposés.
+directement depuis `.zip`, `.7z` et `.rar`. La conversion se fait en principe en une seule passe, sans dossier
+intermédiaire (aussi avec AMPR EMU et BACKPORT), et un `.ffpkg` est créé sans UFS2Tool. Seuls les formats
+cibles compatibles avec la source détectée sont proposés ; sur demande, la source est supprimée après une
+exécution vérifiée.
 
 </td>
 <td width="33%" valign="top">
@@ -116,7 +119,9 @@ Bibliothèque de jeux de l'ordinateur et de la PS5 avec jaquette ; infos de jeu 
 ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset Pack (vérifier et extraire)
 et le Y2JB Updater sont accessibles depuis la
 barre latérale. Sous AUTRES OUTILS, MODIFIER L'IMAGE modifie des fichiers individuels d'une image
-(extraire, remplacer, renommer, supprimer, reconditionner).
+(extraire, remplacer, renommer, supprimer, reconditionner) ; « Modifier directement » écrit dans `.exfat`,
+`.ffpkg` et `.ffpfs` sans extraction, et un journal permet d'annuler une interruption. « Appareils sur le
+réseau » trouve les NAS et ordinateurs du réseau et définit un partage Windows comme source ou destination.
 
 </td>
 <td valign="top">
@@ -173,7 +178,9 @@ Sous macOS, `Erste Installation.command` place l'application au bon endroit et r
 
 - **Windows 10/11**, une distribution Linux récente ou **macOS** (testé sous macOS 15 ; les versions antérieures n'ont pas été testées)
 - Suffisamment d'espace disque libre pour la source, l'état intermédiaire et la sortie
-- **Windows :** droits d'administrateur pour les opérations UFS2 (`.ffpkg`)
+- **Windows :** l'EXE fourni demande les droits d'administrateur au démarrage (UAC). Depuis le code source, ils
+  ne sont nécessaires que pour la voie via UFS2Tool et pour le montage avec OSFMount ; un `.ffpkg` sans dossier
+  intermédiaire est créé sans eux
 - **OSFMount non requis :** le programme lit les images `.exFAT` avec son lecteur exFAT intégré, sans
   rien monter – sur tous les systèmes. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   n'est qu'un recours pour les images inhabituelles sous Windows ; s'il est nécessaire, le programme le signale
@@ -272,16 +279,18 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--ampr-lz4-stufe N` | niveau LZ4 de l'Asset Pack, 1–12 (par défaut 9) |
 | `--ampr-zstd-stufe N` | niveau zstd de l'Asset Pack, 1–22 (par défaut 5) |
 | `--dump-im-arbeitsordner` | créer le dossier de dump temporaire des voies de reconditionnement dans le dossier de travail plutôt qu'à la destination |
+| `--ausgabename VORLAGE` | modèle pour le nom du résultat, p. ex. `"{title} [{title_id}]"` ; parties : `{name}` `{title}` `{title_id}` `{version}` `{region}` `{fw}` `{pack}`, par défaut `{name}` |
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` avec AMPR EMU/BACKPORT : extraire, intégrer, reconditionner en `.ffpfsc` |
 | `--umhuellt-als-ordner` | par la même voie, ne construire que le dossier de dump à la place |
 | `--ampr-index-trotz-assets` | reconstruire `ampr_emu.index` même si un Asset Pack est présent |
-| `--ampr-originale-weglassen` | avec l'Asset Pack, retirer de la copie de travail les originaux empaquetés (judicieux uniquement après un test réussi sur la console ; avec AMPR EMU NG et zstd toujours, sans demander) |
+| `--ampr-originale-weglassen` | avec l'Asset Pack, retirer de la copie de travail les originaux empaquetés (judicieux uniquement après un test réussi sur la console ; avec AMPR EMU NG et zstd toujours, sans demander ; de même avec LZ4 tant que l'empaquetage se fait sans dossier intermédiaire) |
 | `--param-json-reparieren` | réparer sans confirmation un `param.json` défectueux |
 | `--param-json-online` | rechercher en ligne le titre et le Content-ID correspondants |
+| `--quelle-loeschen` | supprimer définitivement la source après une exécution vérifiée avec succès (pas de corbeille, pas de question) ; elle est conservée si le résultat manque, si la source a changé pendant l'exécution ou si le résultat l'a remplacée |
 
-Les six dernières décident de questions auxquelles `--yes` ne répond volontairement **pas** : un commutateur
+Les sept dernières décident de questions auxquelles `--yes` ne répond volontairement **pas** : un commutateur
 destiné aux questions d'écrasement ne doit pas, au passage, changer de voie, rendre un Asset Pack inutilisable,
-supprimer des fichiers de jeu ou envoyer des données sur le réseau.
+supprimer des fichiers de jeu, supprimer la source ou envoyer des données sur le réseau.
 
 Codes de retour : `0` succès · `1` erreur ou annulation · `2` arguments invalides · `3` droits
 d'administrateur manquants · `4` non vérifié (tâche 8 sans les droits nécessaires – aucun jugement sur le fichier).
@@ -379,7 +388,7 @@ Les différences se trouvent ici :
 
 | Domaine | Linux et macOS |
 | --- | --- |
-| Lire et créer des `.ffpkg` | Disponible – UFS2Tool est fourni pour Windows, Linux et macOS (Intel et Apple Silicon) ; la lecture se fait via `UFS2Tool extract`, la création via `newfs`/`makefs`. Seul le montage via le pilote Dokan n'existe que sous Windows. |
+| Lire et créer des `.ffpkg` | Disponible – le programme lit et écrit les `.ffpkg` avec son propre lecteur et écrivain UFS2, sans UFS2Tool. Là où la conversion sans dossier intermédiaire ne s'applique pas, UFS2Tool est utilisé : il est fourni pour Windows, Linux et macOS (Intel et Apple Silicon) ; la lecture se fait via `UFS2Tool extract`, la création via `newfs`/`makefs`. Seul le montage via le pilote Dokan n'existe que sous Windows. |
 | PS4 PKG Dump & Image Converter | OrbisPkgTool n'existe que comme programme Windows. Il y extrait les paquets PS4 vers le dossier de dump et fusionne base, mise à jour et DLC ; sans cet outil, il reste ffpfsc et exFAT, qui sont construits directement à partir des paquets via PS4 FFPFSC. La collection, les détails, la recherche de mises à jour et l'envoi fonctionnent partout. |
 | Solutions de remplacement d'OSFMount | Non disponible ; les voies natives MkPFS/exFAT sont entièrement présentes. |
 | Droits élevés | Non nécessaires. |

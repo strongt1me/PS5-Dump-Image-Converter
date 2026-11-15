@@ -49,7 +49,9 @@ library. Everything runs through a graphical interface with two areas – **CONV
 
 🔄 **Convert**<br>
 Dump folders, `.ffpfsc`, `.exfat` and genuine UFS2 `.ffpkg` in any direction, including directly from
-`.zip`, `.7z` and `.rar`. Only target formats that match the detected source are offered.
+`.zip`, `.7z` and `.rar`. Conversion normally runs in a single pass without an intermediate folder –
+also with AMPR EMU and BACKPORT – and a `.ffpkg` is created without UFS2Tool. Only target formats that
+match the detected source are offered; on request, the source is deleted after a verified run.
 
 </td>
 <td width="33%" valign="top">
@@ -115,7 +117,9 @@ Game library of the computer and the PS5 with covers; Game Info with updates & p
 ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset Pack (check and unpack)
 and the Y2JB Updater are reachable from the
 sidebar. Under MORE TOOLS, EDIT IMAGE changes individual files of an image
-(unpack, replace, rename, delete, repack).
+(unpack, replace, rename, delete, repack); “Edit in place” writes into `.exfat`, `.ffpkg` and `.ffpfs`
+without unpacking, and a journal undoes an aborted run. “Devices on the network” finds NAS and computers
+on the network and sets a Windows share as source or destination.
 
 </td>
 <td valign="top">
@@ -172,7 +176,9 @@ On macOS, `Erste Installation.command` places the app and removes the quarantine
 
 - **Windows 10/11**, a current Linux distribution, or **macOS** (tested on macOS 15; older versions are untested)
 - Enough free disk space for source, intermediate state and output
-- **Windows:** administrator rights for UFS2 workflows (`.ffpkg`)
+- **Windows:** the finished EXE asks for administrator rights at start (UAC). When running from source, they are
+  only needed for the path via UFS2Tool and for mounting with OSFMount; a `.ffpkg` without an intermediate
+  folder is created without them
 - **OSFMount not required:** the program reads `.exFAT` images with its embedded exFAT reader, without
   mounting anything – on every system. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   is only the fallback for unusual images on Windows; if it is needed, the program says so
@@ -271,16 +277,18 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--ampr-lz4-stufe N` | LZ4 level of the asset pack, 1–12 (default 9) |
 | `--ampr-zstd-stufe N` | zstd level of the asset pack, 1–22 (default 5) |
 | `--dump-im-arbeitsordner` | create the temporary dump folder of the repack paths in the working folder instead of at the destination |
+| `--ausgabename VORLAGE` | template for the name of the result, e.g. `"{title} [{title_id}]"`; parts: `{name}` `{title}` `{title_id}` `{version}` `{region}` `{fw}` `{pack}`, default `{name}` |
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` with AMPR EMU/BACKPORT: unpack, integrate, repack to `.ffpfsc` |
 | `--umhuellt-als-ordner` | build only the dump folder along the same path instead |
 | `--ampr-index-trotz-assets` | rebuild `ampr_emu.index` even if an asset pack is present |
-| `--ampr-originale-weglassen` | for the asset pack, remove the packed originals from the working copy (only sensible after a passed console test; with AMPR EMU NG and zstd always, without asking) |
+| `--ampr-originale-weglassen` | for the asset pack, remove the packed originals from the working copy (only sensible after a passed console test; with AMPR EMU NG and zstd always, without asking; likewise with LZ4 as long as packing runs without an intermediate folder) |
 | `--param-json-reparieren` | repair a faulty `param.json` without prompting |
 | `--param-json-online` | look up title and content ID online for that purpose |
+| `--quelle-loeschen` | delete the source permanently after a successfully verified run (no recycle bin, no prompt); it stays if the result is missing, the source changed during the run, or the result replaced it |
 
-The last six decide prompts that `--yes` deliberately does **not** answer: a switch for
+The last seven decide prompts that `--yes` deliberately does **not** answer: a switch for
 overwrite prompts should not incidentally change the path, render an asset pack unusable,
-remove game files or send data over the network.
+remove game files, delete the source or send data over the network.
 
 Exit codes: `0` success · `1` error or abort · `2` invalid arguments · `3` missing
 administrator rights · `4` not checked (task 8 without the required rights – no verdict on the file).
@@ -378,7 +386,7 @@ Differences are here:
 
 | Area | Linux and macOS |
 | --- | --- |
-| Reading and building `.ffpkg` | Available – UFS2Tool is bundled for Windows, Linux and macOS (Intel and Apple Silicon); reading is done via `UFS2Tool extract`, building via `newfs`/`makefs`. Only mounting via the Dokan driver exists exclusively on Windows. |
+| Reading and building `.ffpkg` | Available – the program reads and writes `.ffpkg` with its own UFS2 reader and writer, without UFS2Tool. Where conversion without an intermediate folder does not apply, UFS2Tool is used: it is bundled for Windows, Linux and macOS (Intel and Apple Silicon); reading is done via `UFS2Tool extract`, building via `newfs`/`makefs`. Only mounting via the Dokan driver exists exclusively on Windows. |
 | PS4 PKG Dump & Image Converter | OrbisPkgTool exists only as a Windows program. There it unpacks PS4 packages into the dump folder and merges base, update and DLC; without that tool, ffpfsc and exFAT remain available, built directly from the packages via PS4 FFPFSC. Collection, details, update lookup and sending work everywhere. |
 | OSFMount substitute paths | Not available; the native MkPFS/exFAT paths are fully present. |
 | Elevated rights | Not required. |

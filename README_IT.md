@@ -49,7 +49,9 @@ della PS5. Tutto avviene tramite un'interfaccia grafica con due aree – **CONVE
 
 🔄 **Conversione**<br>
 Cartelle dump, `.ffpfsc`, `.exfat` e veri `.ffpkg` UFS2 in ogni direzione, anche direttamente da
-`.zip`, `.7z` e `.rar`. Vengono proposti solo i formati di destinazione compatibili con l'origine rilevata.
+`.zip`, `.7z` e `.rar`. La conversione avviene di norma in un solo passaggio, senza cartella intermedia
+(anche con AMPR EMU e BACKPORT), e un `.ffpkg` viene creato senza UFS2Tool. Vengono proposti solo i formati
+di destinazione compatibili con l'origine rilevata; su richiesta l'origine viene eliminata dopo un'esecuzione verificata.
 
 </td>
 <td width="33%" valign="top">
@@ -115,7 +117,9 @@ Libreria giochi del computer e della PS5 con copertina; Info gioco con aggiornam
 ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset Pack (verificare ed estrarre)
 e lo Y2JB Updater sono raggiungibili dalla
 barra laterale. Sotto ALTRI STRUMENTI, MODIFICA IMMAGINE modifica singoli file di un'immagine
-(estrarre, sostituire, rinominare, eliminare, ricreare il pacchetto).
+(estrarre, sostituire, rinominare, eliminare, ricreare il pacchetto); “Modifica diretta” scrive in `.exfat`,
+`.ffpkg` e `.ffpfs` senza estrarre, e un journal annulla un'interruzione. “Dispositivi in rete” trova NAS e
+computer in rete e imposta una condivisione Windows come origine o destinazione.
 
 </td>
 <td valign="top">
@@ -172,7 +176,9 @@ Su macOS, `Erste Installation.command` copia l'app nella posizione prevista e ri
 
 - **Windows 10/11**, una distribuzione Linux recente oppure **macOS** (testato su macOS 15; le versioni precedenti non sono state testate)
 - Spazio libero sufficiente per origine, stato intermedio e output
-- **Windows:** privilegi di amministratore per le procedure UFS2 (`.ffpkg`)
+- **Windows:** l'EXE pronto chiede privilegi di amministratore all'avvio (UAC). Eseguendo dal codice sorgente
+  servono solo per il percorso tramite UFS2Tool e per il montaggio con OSFMount; un `.ffpkg` senza cartella
+  intermedia viene creato senza di essi
 - **OSFMount non necessario:** le immagini `.exFAT` vengono lette dal programma con il proprio lettore exFAT
   integrato, senza montare nulla – su qualsiasi sistema. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   è solo la soluzione di ripiego per immagini insolite su Windows; se serve, il programma lo segnala
@@ -271,16 +277,18 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--ampr-lz4-stufe N` | livello LZ4 dell'Asset Pack, 1–12 (predefinito 9) |
 | `--ampr-zstd-stufe N` | livello zstd dell'Asset Pack, 1–22 (predefinito 5) |
 | `--dump-im-arbeitsordner` | creare la cartella dump temporanea dei percorsi di ripacchettamento nella cartella di lavoro anziché nella destinazione |
+| `--ausgabename VORLAGE` | modello per il nome del risultato, ad es. `"{title} [{title_id}]"`; parti: `{name}` `{title}` `{title_id}` `{version}` `{region}` `{fw}` `{pack}`, predefinito `{name}` |
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` con AMPR EMU/BACKPORT: estrarre, integrare, ricreare il pacchetto `.ffpfsc` |
 | `--umhuellt-als-ordner` | seguendo lo stesso percorso, creare invece solo la cartella dump |
 | `--ampr-index-trotz-assets` | ricreare `ampr_emu.index` anche se è già presente un Asset Pack |
-| `--ampr-originale-weglassen` | con l'Asset Pack, rimuovere dalla copia di lavoro gli originali impacchettati (ha senso solo dopo un test sulla console superato; con AMPR EMU NG e zstd sempre, senza chiedere) |
+| `--ampr-originale-weglassen` | con l'Asset Pack, rimuovere dalla copia di lavoro gli originali impacchettati (ha senso solo dopo un test sulla console superato; con AMPR EMU NG e zstd sempre, senza chiedere; lo stesso con LZ4 finché si impacchetta senza cartella intermedia) |
 | `--param-json-reparieren` | riparare senza richiesta un `param.json` difettoso |
 | `--param-json-online` | cercare in rete titolo e Content ID a tale scopo |
+| `--quelle-loeschen` | eliminare definitivamente l'origine dopo un'esecuzione verificata con successo (niente cestino, nessuna richiesta); resta se il risultato manca, se l'origine è cambiata durante l'esecuzione o se il risultato l'ha sostituita |
 
-Le ultime sei decidono richieste a cui `--yes` volutamente **non** risponde: un'opzione per le richieste di
+Le ultime sette decidono richieste a cui `--yes` volutamente **non** risponde: un'opzione per le richieste di
 sovrascrittura non deve cambiare percorso di nascosto, rendere inutilizzabile un Asset Pack,
-rimuovere file di gioco o inviare dati in rete.
+rimuovere file di gioco, eliminare l'origine o inviare dati in rete.
 
 Codici di uscita: `0` successo · `1` errore o interruzione · `2` argomenti non validi · `3` privilegi di
 amministratore mancanti · `4` non verificato (attività 8 senza i privilegi necessari – nessun giudizio sul file).
@@ -378,7 +386,7 @@ Le differenze sono queste:
 
 | Ambito | Linux e macOS |
 | --- | --- |
-| Lettura e creazione di `.ffpkg` | Disponibile – UFS2Tool è incluso per Windows, Linux e macOS (Intel e Apple Silicon); la lettura avviene tramite `UFS2Tool extract`, la creazione tramite `newfs`/`makefs`. Solo il montaggio tramite il driver Dokan esiste esclusivamente su Windows. |
+| Lettura e creazione di `.ffpkg` | Disponibile – il programma legge e scrive `.ffpkg` con un proprio lettore e scrittore UFS2, senza UFS2Tool. Dove la conversione senza cartella intermedia non si applica, si usa UFS2Tool: è incluso per Windows, Linux e macOS (Intel e Apple Silicon); la lettura avviene tramite `UFS2Tool extract`, la creazione tramite `newfs`/`makefs`. Solo il montaggio tramite il driver Dokan esiste esclusivamente su Windows. |
 | PS4 PKG Dump & Image Converter | OrbisPkgTool esiste solo come programma Windows. Lì estrae i pacchetti PS4 nella cartella dump e unisce base, aggiornamento e DLC; senza lo strumento restano ffpfsc ed exFAT, creati direttamente dai pacchetti tramite PS4 FFPFSC. Raccolta, dettagli, richiesta degli aggiornamenti e invio funzionano ovunque. |
 | Alternative a OSFMount | Non disponibili; i percorsi nativi MkPFS/exFAT sono presenti per intero. |
 | Privilegi elevati | Non necessari. |
