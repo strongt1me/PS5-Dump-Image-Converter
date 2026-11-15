@@ -19,6 +19,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from ps5_validator.ui.zeilenhoehe import treeview_zeilenhoehe
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
 
 logger = logging.getLogger("PS5Converter.ui.pkg_datei_browser")
@@ -126,7 +127,8 @@ class PkgDateiBrowser:
         mitte.columnconfigure(0, weight=1)
 
         stil = ttk.Style(win)
-        stil.configure("PkgBrowser.Treeview", font=(F, pt(9)), rowheight=22,
+        stil.configure("PkgBrowser.Treeview", font=(F, pt(9)),
+                        rowheight=treeview_zeilenhoehe(22, (F, pt(9)), win),
                         background=c["bg_card"], foreground=c["fg_primary"],
                         fieldbackground=c["bg_card"], borderwidth=0)
         stil.configure("PkgBrowser.Treeview.Heading", font=(F, pt(8), "bold"),

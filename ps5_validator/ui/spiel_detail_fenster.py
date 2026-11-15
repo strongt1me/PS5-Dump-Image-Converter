@@ -18,6 +18,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
+from ps5_validator.ui.zeilenhoehe import treeview_zeilenhoehe
 from ps5_validator.utils import self_reader as sr
 
 logger = logging.getLogger("PS5Converter.ui.spiel_detail_fenster")
@@ -160,7 +161,8 @@ class SpielDetailFenster:
         seite.rowconfigure(0, weight=1)
         seite.columnconfigure(0, weight=1)
         stil = ttk.Style(seite)
-        stil.configure("SelfTree.Treeview", font=(F, pt(9)), rowheight=20,
+        stil.configure("SelfTree.Treeview", font=(F, pt(9)),
+                        rowheight=treeview_zeilenhoehe(20, (F, pt(9)), seite),
                         background=c["bg_card"], foreground=c["fg_primary"],
                         fieldbackground=c["bg_card"], borderwidth=0)
         stil.configure("SelfTree.Treeview.Heading", font=(F, pt(8), "bold"),
@@ -189,7 +191,8 @@ class SpielDetailFenster:
         seite.rowconfigure(0, weight=1)
         seite.columnconfigure(0, weight=1)
         stil = ttk.Style(seite)
-        stil.configure("AktTree.Treeview", font=(F, pt(9)), rowheight=20,
+        stil.configure("AktTree.Treeview", font=(F, pt(9)),
+                        rowheight=treeview_zeilenhoehe(20, (F, pt(9)), seite),
                         background=c["bg_card"], foreground=c["fg_primary"],
                         fieldbackground=c["bg_card"], borderwidth=0)
         stil.configure("AktTree.Treeview.Heading", font=(F, pt(8), "bold"),
@@ -216,7 +219,8 @@ class SpielDetailFenster:
         seite.rowconfigure(0, weight=1)
         seite.columnconfigure(0, weight=1)
         stil = ttk.Style(seite)
-        stil.configure("TrpTree.Treeview", font=(F, pt(9)), rowheight=20,
+        stil.configure("TrpTree.Treeview", font=(F, pt(9)),
+                        rowheight=treeview_zeilenhoehe(20, (F, pt(9)), seite),
                         background=c["bg_card"], foreground=c["fg_primary"],
                         fieldbackground=c["bg_card"], borderwidth=0)
         stil.configure("TrpTree.Treeview.Heading", font=(F, pt(8), "bold"),

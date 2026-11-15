@@ -240,10 +240,81 @@ class AblaufTests(unittest.TestCase):
         gui = self._gui(self._antworten(OSError("kein Netz")) | {"api.github.com/repos/quer3q/ampr-emu-ng": OSError("kein Netz")},
                         {au.AUTO_EINSTELLUNG: True})
         gui._ng_automatisch_pruefen()
-        self.assertTrue(any(z.startswith("ampr.update_fehler") for z in self.protokoll), "der Fehler steht im Protokoll")
         self.assertNotIn(au.AUTO_ZULETZT, self.einstellungen, "keine Antwort - nicht als erledigt vermerkt")
         self.assertFalse(any("auto_neue_vorgabe" in z for z in self.protokoll))
         self.assertEqual([], self.nachgeladen)
+
+    # --- Ohne Netz: still, und es wird nichts geholt (Wunsch des Nutzers, 15.11.2026) ---
+
+    def _offline(self, fehler: Exception | None = None):
+        fehler = fehler or OSError("kein Netz")
+        return self._gui(self._antworten(fehler) | {"api.github.com/repos/quer3q/ampr-emu-ng": fehler},
+                         {au.AUTO_EINSTELLUNG: True})
+
+    def test_offline_erscheint_keine_meldung(self) -> None:
+        """Weder die Zeile "Suche laeuft" noch eine Fehlermeldung: Das Protokoll bleibt leer."""
+        gui = self._offline()
+        gui._ng_automatisch_pruefen()
+        self.assertEqual([], self.protokoll, "Protokoll: %s" % self.protokoll)
+
+    def test_offline_wird_nichts_geholt(self) -> None:
+        """Eine Anfrage (die Liste, die ins Leere geht), kein Versuch, eine Datei zu laden."""
+        gui = self._offline()
+        gui._ng_automatisch_pruefen()
+        self.assertEqual(1, len(self.anfragen), self.anfragen)
+        self.assertIn("api.github.com/repos/quer3q/ampr-emu-ng", self.anfragen[0])
+        self.assertEqual([], os.listdir(self.ordner), "nichts abgelegt")
+        self.assertNotIn(au.AUTO_ZULETZT, self.einstellungen)
+        self.assertEqual([], self.nachgeladen)
+
+    def test_offline_jeder_art_bleibt_still(self) -> None:
+        """Namensaufloesung, Zeitueberschreitung, HTTP-Fehler: Fuer die Automatik ist es dasselbe."""
+        import socket
+        import urllib.error
+        fehler = (socket.gaierror(11001, "getaddrinfo failed"), TimeoutError("timed out"),
+                  urllib.error.URLError("[Errno 11001] getaddrinfo failed"),
+                  urllib.error.HTTPError("https://api.github.com/x", 403, "rate limit exceeded", {}, None))
+        for f in fehler:
+            with self.subTest(fehler=type(f).__name__):
+                gui = self._offline(f)
+                gui._ng_automatisch_pruefen()
+                self.assertEqual([], self.protokoll, self.protokoll)
+                self.assertEqual(1, len(self.anfragen))
+                self.assertNotIn(au.AUTO_ZULETZT, self.einstellungen)
+
+    def test_offline_steht_der_grund_in_der_protokolldatei(self) -> None:
+        """Verschwiegen wird nur die Meldung im Fenster: Wer nachsieht, findet die Ursache in der Protokolldatei."""
+        gui = self._offline(OSError("kein Netz fuer den Test"))
+        with self.assertLogs("PS5Converter", level="INFO") as aufnahme:
+            gui._ng_automatisch_pruefen()
+        self.assertTrue(any("kein Netz fuer den Test" in z for z in aufnahme.output), aufnahme.output)
+        self.assertFalse(any(z.startswith(("WARNING", "ERROR", "CRITICAL")) for z in aufnahme.output),
+                         "eine Betriebsdiagnose ueber das Protokoll sieht darin keinen Fehler")
+
+    def test_reisst_die_verbindung_beim_holen_ab_wird_nichts_weiter_versucht(self) -> None:
+        antworten = self._antworten(_ng_antwort("0.5.0"))
+        antworten["beispiel.invalid/ng/"] = lambda adresse: (_ for _ in ()).throw(OSError("abgebrochen"))
+        gui = self._gui(antworten, {au.AUTO_EINSTELLUNG: True})
+        gui._ng_automatisch_pruefen()
+        dateien = [a for a in self.anfragen if "beispiel.invalid/ng/" in a]
+        self.assertEqual(1, len(dateien), "nach dem ersten Abbruch keine weitere Datei: %s" % dateien)
+        self.assertFalse(any(z.startswith("ampr.update_fehler") for z in self.protokoll), self.protokoll)
+        self.assertNotIn(au.AUTO_ZULETZT, self.einstellungen, "beim naechsten Start noch einmal")
+        self.assertFalse(any("auto_neue_vorgabe" in z for z in self.protokoll))
+
+    def test_der_knopf_meldet_den_fehler_weiter(self) -> None:
+        """Wer den Knopf drueckt, bekommt die Fehlermeldung - sie hat er ja bestellt."""
+        gui = self._offline()
+        gui._ampr_updates_arbeiten(None, nur_ng=True)
+        self.assertTrue(any(z.startswith("ampr.update_suche") for z in self.protokoll), self.protokoll)
+        self.assertTrue(any(z.startswith("ampr.update_fehler") for z in self.protokoll), self.protokoll)
+
+    def test_die_zeile_suche_laeuft_kommt_erst_nach_der_antwort(self) -> None:
+        gui = self._gui(self._antworten(_ng_antwort("0.4.1")), {au.AUTO_EINSTELLUNG: True})
+        gui._ng_automatisch_pruefen()
+        self.assertEqual("ampr.auto_start", self.protokoll[0])
+        self.assertFalse(any(z.startswith("ampr.update_suche") for z in self.protokoll),
+                         "die Automatik kuendigt die Anfrage nicht vorher an")
 
     def test_nichts_neues_zaehlt_als_erledigt_und_sagt_keine_neue_vorgabe(self) -> None:
         gui = self._gui(self._antworten(_ng_antwort("0.4.1")), {au.AUTO_EINSTELLUNG: True})
@@ -260,7 +331,8 @@ class AblaufTests(unittest.TestCase):
         gui._ng_automatisch_pruefen()
         self.assertNotIn(au.AUTO_ZULETZT, self.einstellungen, "morgen nicht, sondern beim naechsten Start noch einmal")
         self.assertFalse(any("auto_neue_vorgabe" in z for z in self.protokoll), "nichts abgelegt, keine neue Vorgabe")
-        self.assertTrue(any(z.startswith("ampr.update_fehler") for z in self.protokoll))
+        self.assertFalse(any(z.startswith("ampr.update_fehler") for z in self.protokoll),
+                         "ein Verbindungsabbruch ist keine Meldung wert")
 
     def test_vorabfassungen_werden_nie_geholt(self) -> None:
         gui = self._gui(self._antworten(_ng_antwort("0.4.1", vorab="0.6.0")), {au.AUTO_EINSTELLUNG: True})

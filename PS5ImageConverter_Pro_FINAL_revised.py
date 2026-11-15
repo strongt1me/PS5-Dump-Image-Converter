@@ -157,6 +157,7 @@ from ps5_validator.ui import geraete_fenster
 from ps5_validator.ui import updates_fenster
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
+from ps5_validator.ui.zeilenhoehe import treeview_zeilenhoehe
 from ps5_validator.utils import einstellungen
 from ps5_validator.utils import anzeige_skalierung
 from ps5_validator.utils import bibliothek_raster
@@ -10169,13 +10170,17 @@ class PS5ConverterGUI:
         # Treeview (Profil-/Patch-/Spiele-/Warteschlangenlisten) – ohne dies
         # rendert ttk mit dem "clam"-Standardlook (helles Grau/Schwarz), egal
         # welches Theme aktiv ist.
+        # Die Zeilenhoehe ist eine Pixelzahl, die Schrift aber in Punkt: Bei 200 %
+        # Windows-Skalierung ist die Textzeile 37 px hoch, die feste Zeile 24 px
+        # (Meldung eines Anwenders, ABBILD BEARBEITEN). Darum an der Schrift
+        # gemessen - bei 125 % und darunter bleibt es bei 24.
         style.configure("Treeview",
                          background=c["bg_card"],
                          fieldbackground=c["bg_card"],
                          foreground=c["fg_primary"],
                          bordercolor=c["border"],
                          borderwidth=0,
-                         rowheight=24,
+                         rowheight=treeview_zeilenhoehe(24, (UI_SCHRIFT, pt(10)), self.root),
                          font=(UI_SCHRIFT, pt(10)))
         style.map("Treeview",
                   background=[("selected", c["fg_accent"])],
@@ -24473,7 +24478,7 @@ class PS5ConverterGUI:
                          background=self._COLORS["bg_card"],
                          foreground=self._COLORS["fg_primary"],
                          fieldbackground=self._COLORS["bg_card"],
-                         rowheight=24,
+                         rowheight=treeview_zeilenhoehe(24, (UI_SCHRIFT, pt(9)), self.root),
                          font=(UI_SCHRIFT, pt(9)))
         _style.configure("Patch.Treeview.Heading",
                          background=self._COLORS["bg_main"],
@@ -40538,18 +40543,29 @@ class PS5ConverterGUI:
                    if e.get("lib") == self._AMPR_SPRX_NAME]
         neu: list = []
         geantwortet = False
+        angekuendigt = False
         for projekt, lesen, ist_ng in self._AMPR_UPDATE_QUELLEN:
             if nur_ng and not ist_ng:
                 continue
             vorsatz = "NG " if ist_ng else ""
             try:
-                self._melde_im_hauptstrang(self._t("ampr.update_suche", quelle=projekt))
+                # Die automatische Suche meldet sich erst, wenn GitHub geantwortet hat: Wer ohne Netz startet, sieht weder
+                # eine "Suche laeuft"-Zeile noch eine Fehlermeldung (Wunsch des Nutzers, 15.11.2026).
+                if not auto:
+                    self._melde_im_hauptstrang(self._t("ampr.update_suche", quelle=projekt))
                 rohtext = self._ampr_lade_adresse(
                     ampr_updates.ADRESSE % projekt).decode("utf-8", "replace")
             except Exception as exc:  # noqa: BLE001
-                self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=exc))
+                if auto:
+                    logger.info("Automatische NG-Suche: keine Antwort von %s (%s) - nichts wird geholt, naechster Start versucht es erneut",
+                                projekt, exc)
+                else:
+                    self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=exc))
                 continue
             geantwortet = True
+            if auto and not angekuendigt:
+                angekuendigt = True
+                self._melde_im_hauptstrang(self._t("ampr.auto_start"))
             angebote = lesen(rohtext)
             if not angebote:
                 self._melde_im_hauptstrang(self._t("ampr.update_nichts_gefunden"))
@@ -40573,9 +40589,28 @@ class PS5ConverterGUI:
         self._melde_im_hauptstrang(
             self._t("ampr.update_gefunden", fassungen=namen, anzahl=len(neu)))
 
-        abgelegt, fehler = ampr_updates.holen(
-            self._ampr_updates_ordner(), neu, self._ampr_lade_adresse)
-        for zeile in fehler:
+        lade = self._ampr_lade_adresse
+        netzfehler: list[str] = []
+        if auto:
+            def lade(adresse: str) -> bytes:
+                if netzfehler:
+                    # Die Verbindung ist weg: Die uebrigen Dateien werden gar nicht erst versucht.
+                    raise OSError(netzfehler[0])
+                try:
+                    return self._ampr_lade_adresse(adresse)
+                except OSError as exc:
+                    netzfehler.append(str(exc))
+                    raise
+
+        abgelegt, fehler = ampr_updates.holen(self._ampr_updates_ordner(), neu, lade)
+        sichtbar = fehler
+        if auto and netzfehler:
+            # Wer mitten im Holen das Netz verliert, bekommt keine Fehlermeldung (nur einen Eintrag in der Protokolldatei);
+            # ein Pruefsummenfehler und jeder andere Grund bleibt sichtbar.
+            logger.info("Automatische NG-Suche: Verbindung abgebrochen (%s) - %d Datei(en) nicht geholt, naechster Start versucht es erneut",
+                        netzfehler[0], len(fehler))
+            sichtbar = [z for z in fehler if not z.endswith(": " + netzfehler[0])]
+        for zeile in sichtbar:
             self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=zeile))
         if auto:
             if geantwortet and not fehler:
@@ -40608,8 +40643,10 @@ class PS5ConverterGUI:
         **Ab Werk an** (Einstellung ``ng_auto_pruefen``, Vorgabe :data:`ampr_updates.AUTO_VORGABE`; erst als "aus" gebaut, dann auf
         Wunsch des Nutzers gedreht): Das ist die einzige Abfrage, die das Programm ungefragt macht - sonst gilt seit v1.8.74 "Netz
         nur auf Knopfdruck". Sie fragt hoechstens einmal am Tag (:func:`ampr_updates.auto_faellig`), nur bei
-        ``quer3q/ampr-emu-ng``, und schreibt jeden Schritt ins Protokoll. Gerufen wird die Methode aus ``main()`` nach dem Start,
-        nie aus dem Konstruktor: Tests, Diagnose und Kommandozeile bauen das Programm ebenfalls, ohne dass etwas ins Netz darf.
+        ``quer3q/ampr-emu-ng``, und schreibt ins Protokoll, sobald GitHub geantwortet hat. **Ohne Netz bleibt sie still**: keine
+        Zeile im Protokoll, keine Fehlermeldung, nichts wird geholt (nur ein Eintrag in der Protokolldatei); der naechste Start
+        versucht es erneut. Gerufen wird die Methode aus ``main()`` nach dem Start, nie aus dem Konstruktor: Tests, Diagnose und
+        Kommandozeile bauen das Programm ebenfalls, ohne dass etwas ins Netz darf.
 
         Eine neu geholte Fassung wird - wie bisher - gleich die zstd-Vorgabe (die neueste normale NG-Fassung); an der Konsole ist
         sie dann nicht geprueft, und das Protokoll sagt es (:meth:`_ng_auto_vorgabe_melden`).
@@ -40625,7 +40662,6 @@ class PS5ConverterGUI:
         except Exception as exc:  # noqa: BLE001 - eine kaputte Einstellung darf den Start nie stoeren
             logger.debug("Automatische NG-Suche nicht entscheidbar: %s", exc)
             return
-        self._append_to_log(self._t("ampr.auto_start"))
         self._ampr_nach_updates_sehen(self._ampr_versionsliste_nachladen, nur_ng=True, auto=True)
 
     def _ng_auto_vermerken(self) -> None:
