@@ -121,6 +121,12 @@ class SpielDetailFenster:
         tk.Label(kopf, text=fenstertitel, font=(F, pt(10), "bold"),
                  bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left")
 
+        # --- Knopfleiste: zuerst und unten gepackt ---
+        # Pack kuerzt, was zuletzt kommt. Das Notebook dehnt sich aus; stand die Leiste nach ihm, wurde bei 200 % (Fenster
+        # fest 860x580) der Knopf "Schliessen" auf 41 statt 62 px gedrueckt (gemessen 15.11.2026).
+        leiste = tk.Frame(win, bg=c["bg_main"], padx=14, pady=6)
+        leiste.pack(side="bottom", fill="x")
+
         # --- Notebook ---
         stil = ttk.Style(win)
         stil.configure("Detail.TNotebook", background=c["bg_main"], borderwidth=0)
@@ -139,9 +145,7 @@ class SpielDetailFenster:
         self._baue_akt_seite(c, F, pt)
         self._baue_trophy_seite(c, F, pt)
 
-        # --- Knopfleiste ---
-        leiste = tk.Frame(win, bg=c["bg_main"], padx=14, pady=6)
-        leiste.pack(fill="x")
+        # --- Knopfleiste (oben angelegt und gepackt) ---
         tk.Button(leiste, text=t("action.close"), font=(F, pt(9)),
                   command=self._schliessen,
                   bg=c["bg_card"], fg=c["fg_primary"],

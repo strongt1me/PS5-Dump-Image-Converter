@@ -3785,7 +3785,25 @@ class RunderHaken(tk.Canvas):
                 breite = max(1, breite - _TK9_CHECKBUTTON_ZUGABE)
         except tk.TclError:
             breite, hoehe = 120, 24
+        # Nie schmaler als Kaestchen + Abstand + Beschriftung: Der Systemhaken des Zwillings waechst nicht so stark wie
+        # das gezeichnete Kaestchen. Bei 200 % standen "AMPR EMU", "BACKPORT", "Quelle nach Erfolg loeschen" um ein bis
+        # zwei Zeichen zu breit im Feld (Bildschirmfoto 15.11.2026). Bei 125 % ist der Zwilling breiter - dort bleibt
+        # alles, wie es war.
+        breite = max(breite, self._breite_fuer_text(hoehe))
         super().configure(width=breite, height=hoehe)
+
+    def _breite_fuer_text(self, hoehe: int) -> int:
+        """Die Breite, die Kaestchen, Abstand und Beschriftung (so wie ``_redraw`` sie zeichnet) mindestens brauchen."""
+        try:
+            import tkinter.font as _tkfont  # noqa: PLC0415
+            schrift = _tkfont.Font(root=self, font=self._font)
+            zeile = int(schrift.metrics("linespace"))
+            groesse = max(10, min(hoehe - 2, int(round(zeile * 0.72))))
+            # Genau bis zum Ende der gezeichneten Schrift, ohne Rand: Ein Rand haette bei 125 % schon 45 Haken um 1-2 px
+            # verbreitert (gemessen) - dort passt der Zwilling, und es soll alles bleiben, wie es war.
+            return 1 + groesse + max(4, int(round(zeile * 0.3))) + int(schrift.measure(self._text or ""))
+        except tk.TclError:
+            return 0
 
     def _variable_beobachten(self) -> None:
         if self._variable is None:
@@ -5149,6 +5167,7 @@ class PS5ConverterGUI:
         # ``tk scaling`` vor dem ersten Bedienelement (Einstellungen,
         # Abschnitt Anzeige). Ohne Wahl bleibt es bei der automatischen Anpassung.
         self._anzeige_einstellungen_anwenden()
+        self._mindestgroesse_setzen()
         self._macos_translokation_melden()
 
         # Ohne diesen Haken landet jeder Fehler aus einem Knopf oder einer
@@ -6300,6 +6319,30 @@ class PS5ConverterGUI:
     _skalierung_manuell: "int | None" = None
     _aufloesung_manuell: "tuple[int, int] | None" = None
 
+    def _mindestgroesse_setzen(self) -> None:
+        """Laesst die Mindestgroesse des Hauptfensters mit der Anzeigeskalierung wachsen (nur Windows).
+
+        ``WINDOW_MIN_WIDTH`` x ``WINDOW_MIN_HEIGHT`` ist bei 125 % geeicht. Die Schrift waechst mit der Skalierung, die
+        Mindestgroesse blieb gleich: Wer das Fenster bei 150 % auf das Minimum zog, sah Beschriftungen, die ueber den Rand
+        ragten, und eine eingeklappte Fusszeile der Seitenleiste (gemessen 15.11.2026: 99 Befunde im kleinsten Fenster bei
+        150 %, 0 bei 100 und 125 %). Der Faktor ist derselbe wie bei den Knoepfen (``knopfmass``): bis 125 % bleibt das Mass,
+        darueber waechst es, nie ueber den Bildschirm (und unten ein Streifen fuer die Taskleiste).
+
+        Unter macOS und Linux unveraendert: Dort ist ``tk scaling`` nicht an Windows geeicht.
+        """
+        if not IST_WINDOWS:
+            return
+        try:
+            faktor = knopfmass(1000, self.root) / 1000.0
+            if faktor <= 1.0:
+                return
+            breite_schirm, hoehe_schirm = self._bildschirm_fuer_fenster()
+            breite = max(WINDOW_MIN_WIDTH, min(int(round(WINDOW_MIN_WIDTH * faktor)), breite_schirm))
+            hoehe = max(WINDOW_MIN_HEIGHT, min(int(round(WINDOW_MIN_HEIGHT * faktor)), hoehe_schirm - 72))
+            self.root.minsize(breite, hoehe)
+        except tk.TclError as exc:
+            logger.debug("Mindestgroesse nicht anpassbar: %s", exc)
+
     def _anzeige_einstellungen_anwenden(self) -> None:
         """Liest Skalierung und Aufloesung aus den Einstellungen und setzt ``tk scaling``.
 
@@ -6573,6 +6616,34 @@ class PS5ConverterGUI:
         if not hasattr(self, "_i18n_widgets"):
             self._i18n_widgets: list[tuple[object, str, str, dict[str, object]]] = []
         self._i18n_widgets.append((widget, key, config_attr, kwargs))
+        if config_attr == "text":
+            self._label_breite_sichern(widget)
+
+    @staticmethod
+    def _label_breite_sichern(widget: object) -> None:
+        """Haelt ein Label mit fester Zeichenbreite (``width=16``) breit genug fuer seinen Text.
+
+        Die feste Zeichenzahl ist an deutschen Texten gemessen. Spanisch "Destino (ID de título):" (143 px) und franzoesisch
+        "Destination (ID de titre) :" (164 px) standen in einem 134 px breiten Feld und wurden abgeschnitten (gemessen
+        15.11.2026, 125 %). Das Label waechst nur; sein eingetragenes Mass bleibt die Untergrenze und gilt nach einem
+        Sprachwechsel wieder. Aufgerufen bei der Registrierung und nach jeder Neubeschriftung (``_apply_language``).
+        """
+        try:
+            if not isinstance(widget, tk.Label) or str(widget.cget("image")):
+                return
+            basis = getattr(widget, "_zeichen_basis", None)
+            if basis is None:
+                basis = int(float(str(widget.cget("width")) or 0))
+                widget._zeichen_basis = basis
+            if basis <= 0:
+                return
+            import tkinter.font as _tkfont  # noqa: PLC0415
+            schrift = _tkfont.Font(root=widget, font=widget.cget("font"))
+            ziffer = max(1, int(schrift.measure("0")))
+            noetig = -(-int(schrift.measure(str(widget.cget("text")))) // ziffer)          # aufgerundet
+            widget.configure(width=max(basis, noetig))
+        except (tk.TclError, ValueError) as exc:
+            logger.debug("Labelbreite nicht sicherbar: %s", exc)
 
     def _tooltip(self, widget: "tk.Misc", schluessel: str,
                  **optionen: object) -> "DelayedTooltip":
@@ -6838,6 +6909,8 @@ class PS5ConverterGUI:
         for widget, key, config_attr, kwargs in getattr(self, "_i18n_widgets", []):
             try:
                 widget.config(**{config_attr: self._t(key, **kwargs)})
+                if config_attr == "text":
+                    self._label_breite_sichern(widget)
             except Exception:
                 pass
         # Mit den Texten aendert sich die gemeinsame Breite der Seitenleistenknoepfe
@@ -11568,6 +11641,36 @@ class PS5ConverterGUI:
         )
         self.status_label.grid(row=5, column=0, sticky="e", pady=(10, 0))
         self._content_caption_labels.append(self.status_label)
+
+        # Die Statuszeile bricht um, wenn der Text breiter ist als der Inhaltsbereich: Die Aufgabenbeschreibungen sind
+        # lange Einzeiler (gemessen: 1773 px bei 200 %, Platz 1049 px; schon bei 150 % fehlten ihnen 71 px). Entscheidend
+        # ist die Breite des Behaelters, nicht die des Labels - das Label steht rechtsbuendig und ist so breit wie sein Text,
+        # ein <Configure> am Label brachte also keine stabile Breite.
+        def _statuszeile_anwenden() -> None:
+            try:
+                # Die Zelle der Statuszeile, nicht der ganze Behaelter: Die Zelle ist schmaler (gemessen 37 px bei 150 %).
+                zelle = content_area.grid_bbox(0, 5)
+                breite = int(zelle[2]) if zelle and int(zelle[2]) > 50 else int(content_area.winfo_width())
+                neu = max(200, breite - 12)
+                if abs(int(float(str(self.status_label.cget("wraplength")) or 0)) - neu) <= 1:
+                    return
+                self.status_label.configure(wraplength=neu)
+                # Der gemerkte Einzeiler-Zuschnitt des Hintergrundbilds gilt fuer den umbrochenen Text nicht mehr.
+                self.status_label._caption_natural_size = None
+                self._schedule_caption_redraw(self._redraw_content_captions)
+            except (tk.TclError, ValueError) as exc:
+                logger.debug("Statuszeile nicht umbrechbar: %s", exc)
+
+        def _statuszeile_umbrechen(ereignis: tk.Event) -> None:
+            if ereignis.widget in (content_area, self.status_label):
+                content_area.after_idle(_statuszeile_anwenden)          # erst, wenn das Raster steht
+
+        # Am Behaelter (Fenster wird groesser/kleiner) UND am Label selbst: Aendert sich nur der Text, bleibt der Behaelter
+        # gleich gross und meldet nichts - das Label aber wird breiter oder schmaler und meldet es. Ohne Aenderung des
+        # Umbruchs tut die Anwendung nichts, es gibt also keine Schleife.
+        content_area.bind("<Configure>", _statuszeile_umbrechen, add="+")
+        self.status_label.bind("<Configure>", _statuszeile_umbrechen, add="+")
+        content_area.after(300, _statuszeile_anwenden)
 
         # Live-Systemtelemetrie (CPU/RAM/Temp-Speicher) – nur sichtbar während einer laufenden Aufgabe
         self.telemetry_label = ttk.Label(
@@ -16329,6 +16432,18 @@ class PS5ConverterGUI:
         try:
             if not win.winfo_exists():
                 return
+
+            # Labels mit fester Zeichenbreite (``width=14``) sind an deutschen Texten gemessen und werden hier fuer alle
+            # Werkzeugfenster auf einmal breit genug gehalten, bevor der Platzbedarf des Fensters gemessen wird
+            # (franzoesisch "Adresse de la PS5 :" 124 px in 118 px, gemessen 15.11.2026). Die im Hauptfenster
+            # registrierten Labels sichert ``_register_translatable``.
+            def _labels_sichern(widget: "tk.Misc") -> None:
+                for kind in widget.winfo_children():
+                    if isinstance(kind, tk.Label):
+                        self._label_breite_sichern(kind)
+                    _labels_sichern(kind)
+
+            _labels_sichern(win)
             win.update_idletasks()
             noetig_b, noetig_h = win.winfo_reqwidth(), win.winfo_reqheight()
             # Die Obergrenze ist der angenommene Bildschirm: bei einer von Hand
@@ -16698,10 +16813,15 @@ class PS5ConverterGUI:
         c = self._COLORS
         header = tk.Frame(parent, bg=c["bg_main"])
         header.pack(fill="x", padx=20, pady=(16, 8))
-        tk.Label(
+        titel_label = tk.Label(
             header, text=title_text, font=(UI_SCHRIFT, pt(15), "bold"),
-            bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
-        ).pack(fill="x")
+            bg=c["bg_main"], fg=c["fg_accent"], anchor="w", justify="left",
+        )
+        titel_label.pack(fill="x")
+        # Ein langer Titel bricht um, statt am Fensterrand abgeschnitten zu werden: Der PKG-Merger traegt den ganzen
+        # Ordnerpfad im Titel (2014 px bei 150 %, Platz 1840 px). Das Label fuellt die Breite - der Umbruch haengt
+        # also nicht an der Textbreite und schwingt nicht.
+        titel_label.bind("<Configure>", lambda e: titel_label.configure(wraplength=max(120, e.width - 8)))
         if subtitle_text:
             tk.Label(
                 header, text=subtitle_text, font=(UI_SCHRIFT, pt(9)),
@@ -65016,12 +65136,14 @@ class PS5ConverterGUI:
                  insertbackground=c["fg_primary"]).pack(
             side="left", fill="x", expand=True, ipady=3)
 
+        # Die Statuszeile zuerst und unten gepackt: Pack kuerzt, was zuletzt kommt - bei zu wenig Hoehe (200 % auf einem
+        # 1920x1200-Schirm) war es sonst "Bereit." und nicht das Protokoll, das wich.
+        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(side="bottom", fill="x")
         protokoll = self._pw.Text(koerper, height=12, font=("Consolas", pt(9)),
                             bg=c["bg_card"], fg=c["fg_primary"],
                             relief="flat", wrap="word")
         protokoll.pack(fill="both", expand=True, pady=(8, 4))
-        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
 
         def _protokoll(text):
             def _setzen():
@@ -69609,6 +69731,11 @@ class PS5ConverterGUI:
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", _close)
+        # Das Fenster waechst mit seinem Inhalt wie die uebrigen Werkzeugfenster (``_popup_fenster``): Mit der festen Groesse
+        # 880x640 wurden die Knoepfe der oberen Reihe schon bei 150 % auf 91 statt 157 px gedrueckt (gemessen 15.11.2026).
+        win.minsize(w, h)
+        for verzoegerung in (80, 400):
+            win.after(verzoegerung, lambda: self._fenster_auf_inhalt_wachsen(win, w, h, True))
 
     # ------------------------------------------------------------------
     # Dump-Rename: Titel-ID/Name aus param.json erkennen, mit
