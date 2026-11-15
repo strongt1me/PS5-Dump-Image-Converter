@@ -40479,9 +40479,9 @@ class PS5ConverterGUI:
         seit v1.8.74 gilt das im ganzen Bestand, nachdem an sechs Stellen
         ungefragt Anfragen hinausgingen. Die einzige Ausnahme ist die
         automatische Suche nach neuen NG-Fassungen beim Programmstart
-        (:meth:`_ng_automatisch_pruefen`): ab Werk aus, nur auf ausdruecklichen
-        Wunsch in den Einstellungen, hoechstens einmal am Tag, mit Zeilen im
-        Protokoll.
+        (:meth:`_ng_automatisch_pruefen`): ab Werk an (der Nutzer wollte es so),
+        in den Einstellungen abschaltbar, hoechstens einmal am Tag, mit Zeilen
+        im Protokoll.
 
         Der Ablauf steckt in einem eigenen Strang: Die Abfrage kann bis zu
         einer halben Minute dauern, und im Hauptstrang stuende das Fenster
@@ -40603,18 +40603,19 @@ class PS5ConverterGUI:
     _NG_AUTO_VERZOEGERUNG_MS = 8000
 
     def _ng_automatisch_pruefen(self) -> None:
-        """Sucht beim Programmstart nach neuen NG-Fassungen und holt sie - nur wenn der Anwender das eingeschaltet hat.
+        """Sucht beim Programmstart nach neuen NG-Fassungen und holt sie - solange der Anwender das nicht abgeschaltet hat.
 
-        **Ab Werk aus** (Einstellung ``ng_auto_pruefen``): Das Programm fragt seit v1.8.74 nirgends ungefragt nach. Eingeschaltet
-        fragt es hoechstens einmal am Tag (:func:`ampr_updates.auto_faellig`), nur bei ``quer3q/ampr-emu-ng``, und schreibt jeden
-        Schritt ins Protokoll. Gerufen wird die Methode aus ``main()`` nach dem Start, nie aus dem Konstruktor: Tests, Diagnose
-        und Kommandozeile bauen das Programm ebenfalls, ohne dass etwas ins Netz darf.
+        **Ab Werk an** (Einstellung ``ng_auto_pruefen``, Vorgabe :data:`ampr_updates.AUTO_VORGABE`; erst als "aus" gebaut, dann auf
+        Wunsch des Nutzers gedreht): Das ist die einzige Abfrage, die das Programm ungefragt macht - sonst gilt seit v1.8.74 "Netz
+        nur auf Knopfdruck". Sie fragt hoechstens einmal am Tag (:func:`ampr_updates.auto_faellig`), nur bei
+        ``quer3q/ampr-emu-ng``, und schreibt jeden Schritt ins Protokoll. Gerufen wird die Methode aus ``main()`` nach dem Start,
+        nie aus dem Konstruktor: Tests, Diagnose und Kommandozeile bauen das Programm ebenfalls, ohne dass etwas ins Netz darf.
 
         Eine neu geholte Fassung wird - wie bisher - gleich die zstd-Vorgabe (die neueste normale NG-Fassung); an der Konsole ist
         sie dann nicht geprueft, und das Protokoll sagt es (:meth:`_ng_auto_vorgabe_melden`).
         """
         try:
-            if not bool(self._load_setting(ampr_updates.AUTO_EINSTELLUNG, False)):
+            if not bool(self._load_setting(ampr_updates.AUTO_EINSTELLUNG, ampr_updates.AUTO_VORGABE)):
                 return
             if not ampr_updates.auto_faellig(str(self._load_setting(ampr_updates.AUTO_ZULETZT, "") or ""),
                                              datetime.datetime.now()):
@@ -70796,9 +70797,9 @@ class PS5ConverterGUI:
         _archiv_passwoerter_speichern()
 
         # ── AMPR EMU NG: neue Fassungen automatisch holen ───────────────
-        # Nutzerwunsch 15.11.2026. Ab Werk aus: Das Programm fragt seit v1.8.74 nirgends ungefragt nach. Eingeschaltet sucht es
-        # beim Programmstart hoechstens einmal am Tag nach einer neuen NG-Freigabe (``_ng_automatisch_pruefen``). Gespeichert
-        # wird sofort.
+        # Nutzerwunsch 15.11.2026. Ab Werk an (``ampr_updates.AUTO_VORGABE``): Beim Programmstart sucht das Programm hoechstens
+        # einmal am Tag nach einer neuen NG-Freigabe (``_ng_automatisch_pruefen``) - die einzige Abfrage, die es ungefragt macht;
+        # sonst gilt seit v1.8.74 "Netz nur auf Knopfdruck". Hier laesst es sich abschalten. Gespeichert wird sofort.
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(8, 14))
         tk.Label(body, text=self._t("settings_dialog.ng_auto_section"),
                  font=(UI_SCHRIFT, pt(11), "bold"),
@@ -70808,7 +70809,7 @@ class PS5ConverterGUI:
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=460, justify="left", anchor="w").pack(
                      anchor="w", fill="x", pady=(2, 6))
-        ng_auto_var = tk.BooleanVar(value=bool(self._load_setting(ampr_updates.AUTO_EINSTELLUNG, False)))
+        ng_auto_var = tk.BooleanVar(value=bool(self._load_setting(ampr_updates.AUTO_EINSTELLUNG, ampr_updates.AUTO_VORGABE)))
 
         def _ng_auto_umschalten() -> None:
             an = bool(ng_auto_var.get())
@@ -73975,7 +73976,7 @@ if __name__ == "__main__":
     # Zwei Sekunden Luft, damit die Startphase (700 ms) und das Herstellen
     # der zuletzt offenen Ansicht vorher fertig sind.
     root.after(2000, app._konsole_beim_start_verbinden)
-    # Neue NG-Fassungen: nur wenn der Anwender es in den Einstellungen eingeschaltet hat (ab Werk aus), hoechstens einmal am Tag.
+    # Neue NG-Fassungen: ab Werk an, in den Einstellungen abschaltbar, hoechstens einmal am Tag (die einzige ungefragte Abfrage).
     root.after(app._NG_AUTO_VERZOEGERUNG_MS, app._ng_automatisch_pruefen)
 
     root.mainloop()

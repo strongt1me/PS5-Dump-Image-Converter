@@ -3,8 +3,9 @@
 
 Bewacht wird hier:
 
-* Ab Werk **aus**: Das Programm fragt seit v1.8.74 nirgends ungefragt nach. Ohne die Einstellung ``ng_auto_pruefen`` geht nichts ins
-  Netz, und der Aufruf steht in ``main()``, nie im Konstruktor (Tests, Diagnose und Kommandozeile bauen das Programm ebenfalls).
+* Ab Werk **an** (Nutzerwunsch 15.11.2026; zuerst als "aus" gebaut): die einzige Abfrage, die das Programm ungefragt macht. Mit
+  abgeschaltetem Haken geht nichts ins Netz, und der Aufruf steht in ``main()``, nie im Konstruktor (Tests, Diagnose und
+  Kommandozeile bauen das Programm ebenfalls).
 * Eingeschaltet: hoechstens einmal am Tag (``auto_faellig``), nur ``quer3q/ampr-emu-ng`` (nicht drakmor), Pruefsumme gegen GitHub,
   Vorabfassungen nie, jeder Schritt im Protokoll; eine neu geholte NG-Fassung wird - wie bisher - die zstd-Vorgabe, und das
   Protokoll sagt, dass sie an der Konsole nicht geprueft ist.
@@ -132,10 +133,12 @@ class QuelltextTests(unittest.TestCase):
         self.assertNotIn("_ng_automatisch_pruefen", QUELLE[anfang:ende], "der Konstruktor darf nie ins Netz")
         self.assertEqual(1, QUELLE.count("app._ng_automatisch_pruefen"))
 
-    def test_ab_werk_aus(self) -> None:
+    def test_ab_werk_an(self) -> None:
         self.assertEqual("ng_auto_pruefen", au.AUTO_EINSTELLUNG)
-        self.assertGreaterEqual(QUELLE.count("self._load_setting(ampr_updates.AUTO_EINSTELLUNG, False)"), 2,
-                                "Dialog und Start lesen die Einstellung mit der Vorgabe aus")
+        self.assertIs(au.AUTO_VORGABE, True, "Nutzerwunsch 15.11.2026: standardmaessig eingeschaltet")
+        self.assertGreaterEqual(QUELLE.count("self._load_setting(ampr_updates.AUTO_EINSTELLUNG, ampr_updates.AUTO_VORGABE)"), 2,
+                                "Dialog und Start lesen die Einstellung mit derselben Vorgabe - sie laufen nie auseinander")
+        self.assertNotIn("AUTO_EINSTELLUNG, False)", QUELLE, "keine zweite, abweichende Vorgabe im Programm")
 
     def test_die_texte_gibt_es_in_allen_sprachen(self) -> None:
         for schluessel in SCHLUESSEL:
@@ -194,8 +197,17 @@ class AblaufTests(unittest.TestCase):
         return {"api.github.com/repos/quer3q/ampr-emu-ng": ng, "beispiel.invalid/ng/": self._anhang,
                 "api.github.com/repos/drakmor/ampr_emu": _drakmor_antwort("0.4.2.1")}
 
-    def test_ab_werk_geht_nichts_ins_netz(self) -> None:
-        gui = self._gui(self._antworten(_ng_antwort("0.5.0")))
+    def test_ab_werk_ist_die_suche_an(self) -> None:
+        """Ohne gespeicherte Einstellung (frische Installation) sucht und holt das Programm beim Start."""
+        gui = self._gui(self._antworten(_ng_antwort("0.5.0", "0.4.1")))
+        gui._ng_automatisch_pruefen()
+        self.assertTrue(self.anfragen, "es wurde gefragt")
+        self.assertTrue(os.path.isfile(au.zielpfad(self.ordner, "0.5.0", "ng")))
+        self.assertEqual("ampr.auto_start", self.protokoll[0], "und es steht im Protokoll")
+        self.assertNotIn(au.AUTO_EINSTELLUNG, self.einstellungen, "die Vorgabe wird nicht erst gespeichert")
+
+    def test_abgeschaltet_geht_nichts_ins_netz(self) -> None:
+        gui = self._gui(self._antworten(_ng_antwort("0.5.0")), {au.AUTO_EINSTELLUNG: False})
         gui._ng_automatisch_pruefen()
         self.assertEqual([], self.anfragen)
         self.assertEqual([], self.protokoll, "auch keine Zeile im Protokoll: es geschieht ja nichts")
@@ -345,17 +357,18 @@ class DialogTests(unittest.TestCase):
         dlg.update_idletasks()
         return dlg
 
-    def test_haken_ab_werk_aus_speichert_beim_umschalten(self) -> None:
+    def test_haken_ab_werk_an_speichert_beim_umschalten(self) -> None:
         dlg = self._dialog()
         alle = self._alle(dlg)
         self.assertTrue(self._mit_text(alle, "AMPR EMU NG: NEUE FASSUNGEN"), "der Abschnitt ist da")
         haken = self._mit_text(alle, STRINGS["settings_dialog.ng_auto_checkbox"]["de"])
         self.assertEqual(1, len(haken))
-        self.assertEqual(0, int(dlg.getvar(str(haken[0].cget("variable")))), "ab Werk aus")
+        self.assertEqual(1, int(dlg.getvar(str(haken[0].cget("variable")))), "ab Werk an")
         haken[0].invoke()
-        self.assertTrue(json.loads(Path(self.konfig).read_text(encoding="utf-8")).get(au.AUTO_EINSTELLUNG))
+        self.assertIs(json.loads(Path(self.konfig).read_text(encoding="utf-8")).get(au.AUTO_EINSTELLUNG), False,
+                      "abgeschaltet und gespeichert")
         haken[0].invoke()
-        self.assertFalse(json.loads(Path(self.konfig).read_text(encoding="utf-8")).get(au.AUTO_EINSTELLUNG))
+        self.assertIs(json.loads(Path(self.konfig).read_text(encoding="utf-8")).get(au.AUTO_EINSTELLUNG), True)
 
     def test_knopf_jetzt_suchen_fragt_nur_ng_und_ohne_automatik(self) -> None:
         dlg = self._dialog()

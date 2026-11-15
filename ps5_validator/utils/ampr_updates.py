@@ -20,6 +20,9 @@ und 0.3.6.6.
 an zu laden; jede Funktion, die ins Netz geht, braucht einen Rueckruf, den
 der Aufrufer mitbringt. Das Programm hat sich das seit v1.8.74 zur Regel
 gemacht, nachdem es an sechs Stellen ungefragt Anfragen verschickt hatte.
+Die eine Ausnahme ist die automatische Suche nach neuen NG-Fassungen beim
+Start (:data:`AUTO_EINSTELLUNG`, ab Werk an, abschaltbar); auch sie loest das
+Hauptprogramm aus, nicht dieses Modul.
 
 Aufbau der Veroeffentlichungen (04.09.2026 nachgesehen)::
 
@@ -97,10 +100,13 @@ NG_DEBUG = "ng-debug"
 #: Anhangsname (klein geschrieben) -> Variante im Bestand (``0.3.5 ng``, ``0.3.5 ng-debug``).
 NG_ANHAENGE = {"libsceampr.sprx": NG, "libsceampr-debug.sprx": NG_DEBUG}
 
-#: Automatische Suche nach neuen NG-Fassungen beim Programmstart (Nutzerwunsch 15.11.2026). Ab Werk **aus**: Das Programm fragt
-#: seit v1.8.74 nirgends ungefragt nach, und das bleibt so, bis jemand es in den Einstellungen einschaltet. Eingeschaltet fragt es
-#: hoechstens einmal am Tag (:data:`AUTO_ABSTAND_STUNDEN`) und nur bei :data:`NG_PROJEKT`; jeder Schritt steht im Protokoll.
+#: Automatische Suche nach neuen NG-Fassungen beim Programmstart (Nutzerwunsch 15.11.2026). Ab Werk **an** (der Nutzer hat die
+#: Vorgabe "aus" am selben Tag auf "an" gedreht): Das ist die **einzige** Abfrage, die das Programm ungefragt macht - sonst gilt seit
+#: v1.8.74 "Netz nur auf Knopfdruck". Sie fragt hoechstens einmal am Tag (:data:`AUTO_ABSTAND_STUNDEN`) und nur bei
+#: :data:`NG_PROJEKT`, jeder Schritt steht im Protokoll, und in den Einstellungen laesst sie sich abschalten.
 AUTO_EINSTELLUNG = "ng_auto_pruefen"
+#: Vorgabe der Einstellung (ohne gespeicherten Wert) - an einer Stelle, damit Dialog und Start nie auseinanderlaufen.
+AUTO_VORGABE = True
 #: Wann die letzte Abfrage geantwortet hat (ISO-Zeit, Ortszeit); eine Abfrage ohne Antwort zaehlt nicht und wird beim naechsten
 #: Start wiederholt.
 AUTO_ZULETZT = "ng_auto_zuletzt"
