@@ -11357,6 +11357,9 @@ class PS5ConverterGUI:
         )
         self._register_translatable(self.arbeitskopie_check, "main.arbeitskopie_vorher")
         self.arbeitskopie_check.grid(row=15, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        # Der Haken "Dump-Ordner im Arbeitsordner" zeigt sich nur, wo ein Arbeitsordner zum Einsatz kommt - wie TEMP-ORDNER darueber
+        # (Nutzerwunsch 15.11.2026). Der erste Aufruf bei TEMP-ORDNER lief, bevor der Haken gebaut war, darum noch einmal hier.
+        self._arbeitsordner_sichtbarkeit_setzen()
 
         # Quelle nach erfolgreichem, geprueftem Lauf loeschen (Nutzerwunsch 14.11.2026, wie ``--delete-source`` bei Dump Forge).
         # Bewusst nicht gespeichert: Jeder Start des Programms beginnt ohne, und vor jedem Lauf kommt eine Rueckfrage.
@@ -15068,7 +15071,11 @@ class PS5ConverterGUI:
             return False
 
     def _arbeitsordner_sichtbarkeit_setzen(self) -> bool:
-        """Zeigt TEMP-ORDNER (Titel, Feld, Knopf) nur, wo er gebraucht wird - ueber ``grid()``/``grid_remove()`` wie die BAUFORM."""
+        """Zeigt TEMP-ORDNER (Titel, Feld, Knopf) und den Haken "Dump-Ordner im Arbeitsordner" nur, wo ein Arbeitsordner gebraucht wird.
+
+        Ueber ``grid()``/``grid_remove()`` wie die BAUFORM. Der Haken folgt derselben Regel (Nutzerwunsch 15.11.2026): Wo kein
+        Zwischenordner entsteht, gibt es auch keinen Dump-Ordner, den man umlenken koennte.
+        """
         if not hasattr(self, "temp_entry"):
             return False
         sichtbar = self._arbeitsordner_noetig()
@@ -15083,11 +15090,33 @@ class PS5ConverterGUI:
                     widget.grid_remove()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Arbeitsordner-Zeile nicht umschaltbar: %s", exc)
+        self._dump_haken_zeigen(sichtbar)
         try:
             self._schedule_caption_redraw(self._redraw_card_captions)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Beschriftung nach dem Umschalten des Arbeitsordners nicht neu gezeichnet: %s", exc)
         return sichtbar
+
+    def _dump_haken_zeigen(self, sichtbar: bool) -> None:
+        """Blendet den Haken "Dump-Ordner im Arbeitsordner statt beim Ziel anlegen" ein oder aus.
+
+        Steht der Haken neben "herunterfahren" (``place``, siehe :meth:`_optionskaesten_ordnen`), ordnet diese Methode die rechte
+        Spalte neu - der Haken darunter rueckt nach oben und laesst keine Luecke -, sonst genuegt ``grid()``/``grid_remove()``.
+        Die Wahl selbst (``dump_in_arbeitsordner``) bleibt gespeichert und gilt wieder, sobald der Haken auftaucht.
+        """
+        self._dump_haken_an = bool(sichtbar)
+        haken = getattr(self, "dump_ordner_check", None)
+        if haken is None:
+            return
+        try:
+            if getattr(self, "_optionen_daneben", False):
+                self._optionskaesten_ordnen()
+            elif sichtbar:
+                haken.grid()
+            else:
+                haken.grid_remove()
+        except tk.TclError as exc:
+            logger.debug("Dump-Ordner-Haken nicht umschaltbar: %s", exc)
 
     def _zielformat_hinweis(self, selected_mode: str) -> str:
         """Baut den Hinweistext unter der Zielformat-Liste.
@@ -17965,14 +17994,20 @@ class PS5ConverterGUI:
             rechts_breite = max(int(w.winfo_reqwidth()) for w in rechts)
             frei = int(karte.winfo_width()) - 2 * self._KARTEN_INNENRAND
             daneben = int(karte.winfo_width()) > 1 and links_breite + self._OPTIONEN_LUECKE + rechts_breite <= frei
+            # Ein ausgeblendeter Dump-Ordner-Haken (``_dump_haken_zeigen``) bleibt weg; der andere rueckt in der rechten Spalte nach oben.
+            sichtbar = [h for h in rechts if h is not rechts[0] or getattr(self, "_dump_haken_an", True)]
             if daneben:
-                for haken, bezug in zip(rechts, links):
+                for haken in rechts:
                     haken.grid_remove()
+                    if haken not in sichtbar:
+                        haken.place_forget()
+                for haken, bezug in zip(sichtbar, links):
                     haken.place(in_=bezug, relx=0.0, x=links_breite + self._OPTIONEN_LUECKE, rely=0.5, anchor="w")
             elif getattr(self, "_optionen_daneben", None):
                 for haken in rechts:
                     haken.place_forget()
-                    haken.grid()
+                    if haken in sichtbar:
+                        haken.grid()
             self._optionen_daneben = daneben
         except tk.TclError as exc:
             logger.debug("Optionskaesten nicht ordenbar: %s", exc)
@@ -39388,8 +39423,8 @@ class PS5ConverterGUI:
         self._append_to_log(self._t("ampr_ng.indexspeicher_zu_klein", version=fassung, need=mib(befund.benoetigt),
                                     cap=mib(befund.grenze)))
         try:
-            neuer = ng_indexspeicher.pruefen("0.4.0-beta", idx, art, pack)
-            if befund.modell != ng_indexspeicher.MODELL_BETA and neuer is not None and neuer.passt:
+            neuer = ng_indexspeicher.pruefen("0.4.1", idx, art, pack)
+            if befund.modell != ng_indexspeicher.MODELL_041 and neuer is not None and neuer.passt:
                 self._append_to_log(self._t("ampr_ng.indexspeicher_neuere_fassung"))
             elif art and ng_indexspeicher.pruefen(fassung, idx).passt:
                 self._append_to_log(self._t("ampr_ng.indexspeicher_ohne_pack"))
@@ -40425,19 +40460,28 @@ class PS5ConverterGUI:
         ``ampr_updates``). Wer wissen will, was das Programm sendet, muss nur
         hierher sehen.
         """
+        # Die Liste der Freigaben kommt von der Schnittstelle (JSON): Auf "application/octet-stream" antwortet GitHub dort mit
+        # 415 (gemessen 15.11.2026) - der Knopf "Nach Aktualisierungen suchen" meldete deshalb nur einen Fehler. Nur der Anhang
+        # selbst wird als Datei geholt.
+        akzeptiert = ("application/vnd.github+json" if adresse.lower().startswith("https://api.github.com/")
+                      else "application/octet-stream")
         anfrage = urllib.request.Request(
             adresse,
             headers={"User-Agent": "PS5DumpImageConverter",
-                     "Accept": "application/octet-stream"})
+                     "Accept": akzeptiert})
         with urllib.request.urlopen(anfrage, timeout=self._AMPR_UPDATE_FRIST) as antwort:
             return antwort.read()
 
-    def _ampr_nach_updates_sehen(self, danach=None) -> None:
-        """Sieht auf Knopfdruck nach neueren AMPR-EMU-Fassungen.
+    def _ampr_nach_updates_sehen(self, danach=None, nur_ng: bool = False, auto: bool = False) -> None:
+        """Sieht nach neueren AMPR-EMU-Fassungen - auf Knopfdruck, oder automatisch, wenn der Anwender das eingeschaltet hat.
 
         **Nur auf Knopfdruck.** Das Programm fragt nirgends von selbst nach;
         seit v1.8.74 gilt das im ganzen Bestand, nachdem an sechs Stellen
-        ungefragt Anfragen hinausgingen.
+        ungefragt Anfragen hinausgingen. Die einzige Ausnahme ist die
+        automatische Suche nach neuen NG-Fassungen beim Programmstart
+        (:meth:`_ng_automatisch_pruefen`): ab Werk aus, nur auf ausdruecklichen
+        Wunsch in den Einstellungen, hoechstens einmal am Tag, mit Zeilen im
+        Protokoll.
 
         Der Ablauf steckt in einem eigenen Strang: Die Abfrage kann bis zu
         einer halben Minute dauern, und im Hauptstrang stuende das Fenster
@@ -40446,6 +40490,8 @@ class PS5ConverterGUI:
         Args:
             danach: Wird im Hauptstrang gerufen, wenn etwas geholt wurde -
                 damit die Auswahllisten die neuen Fassungen zeigen.
+            nur_ng: Nur ``quer3q/ampr-emu-ng`` fragen (die automatische Suche), nicht auch drakmor.
+            auto: Der Aufruf kommt von der automatischen Suche (vermerkt die Zeit, nennt die neue Vorgabe).
         """
         if getattr(self, "_ampr_update_laeuft", False):
             return
@@ -40453,7 +40499,7 @@ class PS5ConverterGUI:
 
         def _arbeiten() -> None:
             try:
-                self._ampr_updates_arbeiten(danach)
+                self._ampr_updates_arbeiten(danach, nur_ng=nur_ng, auto=auto)
             finally:
                 self._ampr_update_laeuft = False
 
@@ -40468,10 +40514,14 @@ class PS5ConverterGUI:
         (ampr_updates.NG_PROJEKT, ampr_updates.ng_angebote_lesen, True),
     )
 
-    def _ampr_updates_arbeiten(self, danach=None) -> None:
+    def _ampr_updates_arbeiten(self, danach=None, nur_ng: bool = False, auto: bool = False) -> bool:
         """Der eigentliche Ablauf - laeuft im Nebenstrang.
 
-        Erst beide Quellen fragen, dann gemeinsam holen. Faellt eine Quelle aus, laeuft die andere weiter.
+        Erst die Quellen fragen (mit ``nur_ng`` nur NG), dann gemeinsam holen. Faellt eine Quelle aus, laeuft die andere weiter.
+
+        Returns:
+            Ob mindestens eine Quelle geantwortet hat - auch mit "nichts Neues". Nur dann gilt die automatische Suche als
+            erledigt (``auto``: die Zeit wird vermerkt); ohne Antwort wird sie beim naechsten Start wiederholt.
         """
         # NUR die AMPR-Fassungen. ampr_updates ist ausschliesslich fuer
         # libSceAmpr.sprx gebaut - DATEINAME, PROJEKT und der Filter in
@@ -40487,7 +40537,10 @@ class PS5ConverterGUI:
         bestand = [e for e in self._ampr_alle_fassungen()
                    if e.get("lib") == self._AMPR_SPRX_NAME]
         neu: list = []
+        geantwortet = False
         for projekt, lesen, ist_ng in self._AMPR_UPDATE_QUELLEN:
+            if nur_ng and not ist_ng:
+                continue
             vorsatz = "NG " if ist_ng else ""
             try:
                 self._melde_im_hauptstrang(self._t("ampr.update_suche", quelle=projekt))
@@ -40496,6 +40549,7 @@ class PS5ConverterGUI:
             except Exception as exc:  # noqa: BLE001
                 self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=exc))
                 continue
+            geantwortet = True
             angebote = lesen(rohtext)
             if not angebote:
                 self._melde_im_hauptstrang(self._t("ampr.update_nichts_gefunden"))
@@ -40510,7 +40564,9 @@ class PS5ConverterGUI:
                 continue
             neu.extend(frisch)
         if not neu:
-            return
+            if auto and geantwortet:
+                self._ng_auto_vermerken()
+            return geantwortet
 
         namen = ", ".join(sorted({("NG " if a.variante in (ampr_updates.NG, ampr_updates.NG_DEBUG) else "")
                                   + a.fassung for a in neu}))
@@ -40521,6 +40577,10 @@ class PS5ConverterGUI:
             self._ampr_updates_ordner(), neu, self._ampr_lade_adresse)
         for zeile in fehler:
             self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=zeile))
+        if auto:
+            if geantwortet and not fehler:
+                self._ng_auto_vermerken()          # ein Fehlschlag beim Holen wird beim naechsten Start wiederholt
+            self._ng_auto_vorgabe_melden(neu, abgelegt)
         if abgelegt:
             self._melde_im_hauptstrang(
                 self._t("ampr.update_geholt", anzahl=len(abgelegt),
@@ -40537,6 +40597,52 @@ class PS5ConverterGUI:
                         logger.debug("Auffrischen nach Aktualisierung nicht moeglich: %s", exc)
 
                 self._hauptfaden_planen(_danach_sicher)
+        return geantwortet
+
+    #: Wartezeit nach dem Programmstart, bis die automatische NG-Suche loslaeuft - nach der PS5-Suche (2 s) und dem Aufbau.
+    _NG_AUTO_VERZOEGERUNG_MS = 8000
+
+    def _ng_automatisch_pruefen(self) -> None:
+        """Sucht beim Programmstart nach neuen NG-Fassungen und holt sie - nur wenn der Anwender das eingeschaltet hat.
+
+        **Ab Werk aus** (Einstellung ``ng_auto_pruefen``): Das Programm fragt seit v1.8.74 nirgends ungefragt nach. Eingeschaltet
+        fragt es hoechstens einmal am Tag (:func:`ampr_updates.auto_faellig`), nur bei ``quer3q/ampr-emu-ng``, und schreibt jeden
+        Schritt ins Protokoll. Gerufen wird die Methode aus ``main()`` nach dem Start, nie aus dem Konstruktor: Tests, Diagnose
+        und Kommandozeile bauen das Programm ebenfalls, ohne dass etwas ins Netz darf.
+
+        Eine neu geholte Fassung wird - wie bisher - gleich die zstd-Vorgabe (die neueste normale NG-Fassung); an der Konsole ist
+        sie dann nicht geprueft, und das Protokoll sagt es (:meth:`_ng_auto_vorgabe_melden`).
+        """
+        try:
+            if not bool(self._load_setting(ampr_updates.AUTO_EINSTELLUNG, False)):
+                return
+            if not ampr_updates.auto_faellig(str(self._load_setting(ampr_updates.AUTO_ZULETZT, "") or ""),
+                                             datetime.datetime.now()):
+                logger.info("NG-Fassungen: die letzte automatische Suche liegt keine %d Stunden zurueck",
+                            ampr_updates.AUTO_ABSTAND_STUNDEN)
+                return
+        except Exception as exc:  # noqa: BLE001 - eine kaputte Einstellung darf den Start nie stoeren
+            logger.debug("Automatische NG-Suche nicht entscheidbar: %s", exc)
+            return
+        self._append_to_log(self._t("ampr.auto_start"))
+        self._ampr_nach_updates_sehen(self._ampr_versionsliste_nachladen, nur_ng=True, auto=True)
+
+    def _ng_auto_vermerken(self) -> None:
+        """Merkt die Zeit der letzten Abfrage, die geantwortet hat (aus dem Nebenstrang; geschrieben wird im Hauptfaden)."""
+        jetzt = datetime.datetime.now().isoformat(timespec="seconds")
+        self._hauptfaden_planen(lambda: self._save_setting(ampr_updates.AUTO_ZULETZT, jetzt))
+
+    def _ng_auto_vorgabe_melden(self, neu: list, abgelegt: list) -> None:
+        """Nennt im Protokoll die neu geholte NG-Fassung, die jetzt die zstd-Vorgabe ist - ungeprueft an der Konsole."""
+        try:
+            ordner = self._ampr_updates_ordner()
+            ng_neu = [a for a in neu if a.variante == ampr_updates.NG
+                      and ampr_updates.zielpfad(ordner, a.fassung, a.variante) in abgelegt]
+            if ng_neu:
+                neueste = max(ng_neu, key=lambda a: ampr_updates.fassung_teile(a.fassung))
+                self._melde_im_hauptstrang(self._t("ampr.auto_neue_vorgabe", fassung=neueste.fassung))
+        except Exception as exc:  # noqa: BLE001 - nur ein Hinweis
+            logger.debug("Hinweis auf die neue NG-Vorgabe nicht gebaut: %s", exc)
 
     def _melde_im_hauptstrang(self, text: str) -> None:
         """Schreibt eine Zeile ins Protokoll, egal aus welchem Strang gerufen."""
@@ -70689,6 +70795,39 @@ class PS5ConverterGUI:
         archiv_eingabe.bind("<KeyRelease>", _archiv_passwoerter_speichern)
         _archiv_passwoerter_speichern()
 
+        # ── AMPR EMU NG: neue Fassungen automatisch holen ───────────────
+        # Nutzerwunsch 15.11.2026. Ab Werk aus: Das Programm fragt seit v1.8.74 nirgends ungefragt nach. Eingeschaltet sucht es
+        # beim Programmstart hoechstens einmal am Tag nach einer neuen NG-Freigabe (``_ng_automatisch_pruefen``). Gespeichert
+        # wird sofort.
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(8, 14))
+        tk.Label(body, text=self._t("settings_dialog.ng_auto_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.ng_auto_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+        ng_auto_var = tk.BooleanVar(value=bool(self._load_setting(ampr_updates.AUTO_EINSTELLUNG, False)))
+
+        def _ng_auto_umschalten() -> None:
+            an = bool(ng_auto_var.get())
+            self._save_setting(ampr_updates.AUTO_EINSTELLUNG, an)
+            logger.info("Automatische Suche nach neuen NG-Fassungen: %s", "an" if an else "aus")
+
+        self._pw.Checkbutton(
+            body, text=self._t("settings_dialog.ng_auto_checkbox"),
+            variable=ng_auto_var, command=_ng_auto_umschalten,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+            activebackground=c["bg_card"], activeforeground=c["fg_primary"],
+            selectcolor=c["bg_main"], anchor="w", justify="left",
+            highlightthickness=0, bd=0, wraplength=440).pack(anchor="w", fill="x", pady=(0, 6))
+        # Von Hand, ohne die Automatik: nur NG, Ergebnis im Protokoll des Hauptfensters (wie der Knopf im AMPR EMU Manager).
+        self._pw.Button(
+            body, text=self._t("settings_dialog.ng_auto_jetzt"),
+            command=lambda: self._ampr_nach_updates_sehen(self._ampr_versionsliste_nachladen, nur_ng=True),
+        ).pack(anchor="w", pady=(0, 10))
+
         # ── Farbsehschwaeche ────────────────────────────────────────────
         #
         # Nur die Farben, die eine Bedeutung tragen, werden ersetzt - Erfolg,
@@ -73836,5 +73975,7 @@ if __name__ == "__main__":
     # Zwei Sekunden Luft, damit die Startphase (700 ms) und das Herstellen
     # der zuletzt offenen Ansicht vorher fertig sind.
     root.after(2000, app._konsole_beim_start_verbinden)
+    # Neue NG-Fassungen: nur wenn der Anwender es in den Einstellungen eingeschaltet hat (ab Werk aus), hoechstens einmal am Tag.
+    root.after(app._NG_AUTO_VERZOEGERUNG_MS, app._ng_automatisch_pruefen)
 
     root.mainloop()

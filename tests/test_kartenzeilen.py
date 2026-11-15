@@ -82,6 +82,16 @@ class QuelltextTests(unittest.TestCase):
                      "_ZEILE_ABSTAND_BESCHRIFTUNG"):
             self.assertIn(name + " = ", self.quelltext)
 
+    def test_die_arbeitsordner_regel_steuert_auch_den_dump_haken(self):
+        """TEMP-ORDNER und der Haken "Dump-Ordner im Arbeitsordner" haengen an derselben Regel (``_arbeitsordner_noetig``)."""
+        rumpf = self.quelltext[self.quelltext.index("def _arbeitsordner_sichtbarkeit_setzen"):]
+        rumpf = rumpf[:rumpf.index("\n    def ", 10)]
+        self.assertIn("self._dump_haken_zeigen(sichtbar)", rumpf)
+        self.assertIn("sichtbar = self._arbeitsordner_noetig()", rumpf)
+        aufbau = self.quelltext[self.quelltext.index("self.arbeitskopie_check.grid(row=15"):]
+        self.assertIn("self._arbeitsordner_sichtbarkeit_setzen()", aufbau[:900],
+                      "nach dem Bau des Hakens muss die Sichtbarkeit noch einmal gesetzt werden")
+
     def test_nach_dem_aufbau_wird_ausgerichtet(self):
         self.assertIn("self.root.after_idle(self._kartenzeilen_ordnen)",
                       self.quelltext)
@@ -350,8 +360,24 @@ class KartenzeilenTests(unittest.TestCase):
         finally:
             self.wurzel.withdraw()
 
+    def _arbeitsordner(self, noetig):
+        """Erzwingt die Regel, die TEMP-ORDNER und den Dump-Ordner-Haken steuert, und setzt die Sichtbarkeit neu."""
+        self.app._arbeitsordner_noetig = lambda: noetig
+        self.app._arbeitsordner_sichtbarkeit_setzen()
+        self.wurzel.update()
+
+    def _arbeitsordner_zuruecksetzen(self):
+        self.app.__dict__.pop("_arbeitsordner_noetig", None)
+        self.app._arbeitsordner_sichtbarkeit_setzen()
+        self.wurzel.update()
+
     def test_dump_haken_stehen_bei_platz_rechts_neben_den_ersten_beiden(self):
-        """Wunsch 23.10.2026: zwei Spalten - herunterfahren/senden links, Arbeitsordner/Arbeitskopie rechts."""
+        """Wunsch 23.10.2026: zwei Spalten - herunterfahren/senden links, Arbeitsordner/Arbeitskopie rechts.
+
+        Seit 15.11.2026 zeigt sich der Arbeitsordner-Haken nur, wo ein Arbeitsordner gebraucht wird - hier erzwungen.
+        """
+        self.addCleanup(self._arbeitsordner_zuruecksetzen)
+        self._arbeitsordner(True)
         self._fenster_auf(BREIT_GENUG)
         try:
             a = self.app
@@ -370,6 +396,8 @@ class KartenzeilenTests(unittest.TestCase):
 
     def test_dump_haken_fallen_bei_schmaler_karte_unter_die_ersten_zwei(self):
         from unittest import mock
+        self.addCleanup(self._arbeitsordner_zuruecksetzen)
+        self._arbeitsordner(True)
         self._fenster_auf(BREIT_GENUG)
         try:
             a = self.app
@@ -386,6 +414,78 @@ class KartenzeilenTests(unittest.TestCase):
             self.assertTrue(a._optionen_daneben)
         finally:
             self.wurzel.withdraw()
+
+    def test_dump_haken_zeigt_sich_nur_wo_ein_arbeitsordner_gebraucht_wird(self):
+        """Nutzerwunsch 15.11.2026: "Dump-Ordner im Arbeitsordner statt beim Ziel anlegen" nur, wo auch TEMP-ORDNER erscheint.
+
+        Mit der Vorgabe (Strom an, kein LZ4-Asset-Pack) entsteht kein Zwischenordner und damit kein Dump-Ordner zum Umlenken.
+        """
+        a = self.app
+        self.addCleanup(self._arbeitsordner_zuruecksetzen)
+        self._fenster_auf(BREIT_GENUG)
+        self._arbeitsordner(False)
+        self.assertEqual("", a.dump_ordner_check.winfo_manager(), "ohne Arbeitsordner ist der Haken weg")
+        self.assertEqual("", a.temp_entry.winfo_manager(), "wie das Feld TEMP-ORDNER")
+        self.assertNotEqual("", a.arbeitskopie_check.winfo_manager(), "der Nachbar bleibt")
+        self._arbeitsordner(True)
+        self.assertNotEqual("", a.dump_ordner_check.winfo_manager())
+        self.assertNotEqual("", a.temp_entry.winfo_manager())
+        self._arbeitsordner(False)
+        self.assertEqual("", a.dump_ordner_check.winfo_manager(), "und wieder weg")
+
+    def test_dump_haken_folgt_der_regel_aus_den_einstellungen(self):
+        """Ohne Erzwingen: Strom an und kein LZ4-Asset-Pack -> weg; AMPR EMU mit LZ4-Asset-Pack (Rueckfall auf den Ordner) -> da."""
+        from unittest import mock
+        a = self.app
+        self.addCleanup(self._arbeitsordner_zuruecksetzen)
+        self._fenster_auf(BREIT_GENUG)
+        a._arbeitsordner_sichtbarkeit_setzen()
+        self.assertEqual("", a.dump_ordner_check.winfo_manager(), "Vorgabe: Strom an, nichts eingebaut")
+        with mock.patch.object(a, "_ampr_wird_eingebaut", return_value=True), \
+                mock.patch.object(a, "_ampr_methode", return_value=self.haupt.AMPR_METHODE_ASSETPACK), \
+                mock.patch.object(a, "_ampr_pack_verfahren", return_value="lz4"):
+            a._arbeitsordner_sichtbarkeit_setzen()
+            self.wurzel.update()
+            self.assertNotEqual("", a.dump_ordner_check.winfo_manager(), "LZ4-Asset-Pack: Zwischenordner moeglich")
+        with mock.patch.object(a, "_ampr_wird_eingebaut", return_value=True), \
+                mock.patch.object(a, "_ampr_methode", return_value=self.haupt.AMPR_METHODE_ASSETPACK), \
+                mock.patch.object(a, "_ampr_pack_verfahren", return_value="zstd"):
+            a._arbeitsordner_sichtbarkeit_setzen()
+            self.wurzel.update()
+            self.assertEqual("", a.dump_ordner_check.winfo_manager(), "zstd laeuft im Strom")
+
+    def test_ausgeblendeter_dump_haken_laesst_keine_luecke_und_behaelt_die_wahl(self):
+        """Bei Platz rueckt "Arbeitskopie" in die erste Zeile der rechten Spalte; schmal fallen die Haken ohne Leerzeile untereinander."""
+        from unittest import mock
+        a = self.app
+        self.addCleanup(self._arbeitsordner_zuruecksetzen)
+        self._fenster_auf(BREIT_GENUG)
+        gewaehlt = a.dump_in_arbeitsordner.get()
+        # Mit dem Haken erscheint auch TEMP-ORDNER darueber: Der ganze Block verschiebt sich, gemessen wird daher je Zustand.
+        self._arbeitsordner(True)
+        self.assertLessEqual(abs(a.arbeitskopie_check.winfo_rooty() - a.senden_check.winfo_rooty()), 2,
+                             "sichtbar: Arbeitskopie in der zweiten Zeile")
+        self._arbeitsordner(False)
+        self.assertTrue(a._optionen_daneben)
+        self.assertLessEqual(abs(a.arbeitskopie_check.winfo_rooty() - a.shutdown_check.winfo_rooty()), 2,
+                             "versteckt: Arbeitskopie rueckt nach oben")
+        self.assertEqual(a.dump_ordner_check.winfo_manager(), "")
+        self.assertEqual(gewaehlt, a.dump_in_arbeitsordner.get(), "die gespeicherte Wahl bleibt")
+        with mock.patch.object(a.path_card, "winfo_width", return_value=700):
+            a._optionskaesten_ordnen()
+            self.wurzel.update()
+            self.assertFalse(a._optionen_daneben)
+            self.assertEqual("", a.dump_ordner_check.winfo_manager(), "auch gestapelt bleibt er weg")
+            zeilen = [w.winfo_rooty() for w in (a.shutdown_check, a.senden_check, a.arbeitskopie_check)]
+            self.assertEqual(sorted(zeilen), zeilen)
+            self.assertEqual(3, len(set(zeilen)))
+            luecke = zeilen[2] - zeilen[1]
+            self._arbeitsordner(True)
+            normal = a.arbeitskopie_check.winfo_rooty() - a.senden_check.winfo_rooty()
+            self.assertLess(luecke, normal, "gestapelt entfaellt die Zeile des Hakens ganz")
+        a._optionskaesten_ordnen()
+        self.wurzel.update()
+        self.assertTrue(a._optionen_daneben)
 
     def _fenster_auf(self, breite):
         """Stellt das Fenster auf eine Breite und laesst es zur Ruhe kommen."""

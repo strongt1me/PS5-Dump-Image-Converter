@@ -47,6 +47,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 #: Ordner neben dem Programm, in dem geholte Fassungen landen.
 ORDNERNAME = "AMPR EMU updates"
@@ -96,8 +97,34 @@ NG_DEBUG = "ng-debug"
 #: Anhangsname (klein geschrieben) -> Variante im Bestand (``0.3.5 ng``, ``0.3.5 ng-debug``).
 NG_ANHAENGE = {"libsceampr.sprx": NG, "libsceampr-debug.sprx": NG_DEBUG}
 
+#: Automatische Suche nach neuen NG-Fassungen beim Programmstart (Nutzerwunsch 15.11.2026). Ab Werk **aus**: Das Programm fragt
+#: seit v1.8.74 nirgends ungefragt nach, und das bleibt so, bis jemand es in den Einstellungen einschaltet. Eingeschaltet fragt es
+#: hoechstens einmal am Tag (:data:`AUTO_ABSTAND_STUNDEN`) und nur bei :data:`NG_PROJEKT`; jeder Schritt steht im Protokoll.
+AUTO_EINSTELLUNG = "ng_auto_pruefen"
+#: Wann die letzte Abfrage geantwortet hat (ISO-Zeit, Ortszeit); eine Abfrage ohne Antwort zaehlt nicht und wird beim naechsten
+#: Start wiederholt.
+AUTO_ZULETZT = "ng_auto_zuletzt"
+AUTO_ABSTAND_STUNDEN = 24
+
 _FASSUNG = re.compile(r"(\d+(?:\.\d+)+)")
 _DIGEST = re.compile(r"^sha256:([0-9a-f]{64})$")
+
+
+def auto_faellig(zuletzt: str, jetzt: "datetime", abstand_stunden: int = AUTO_ABSTAND_STUNDEN) -> bool:
+    """Ist die automatische Suche wieder dran?
+
+    Ja, wenn noch nie gefragt wurde, die gespeicherte Zeit unbrauchbar ist, **in der Zukunft** liegt (verstellte Uhr: sonst
+    bliebe die Suche auf Tage stehen) oder der Abstand erreicht ist.
+    """
+    try:
+        damals = datetime.fromisoformat(str(zuletzt or "").strip())
+    except (ValueError, TypeError):
+        return True
+    if damals.tzinfo is not None and jetzt.tzinfo is None:
+        damals = damals.replace(tzinfo=None)
+    if damals > jetzt:
+        return True
+    return (jetzt - damals) >= timedelta(hours=abstand_stunden)
 
 
 @dataclass(frozen=True)

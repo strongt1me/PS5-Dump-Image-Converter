@@ -2,7 +2,8 @@
 """Tests fuer ``ps5_validator.utils.ng_indexspeicher``: die Rechnung, ob der Indexspeicher von ampr-emu-ng fuer ein Spiel reicht.
 
 Die Grenzen stammen aus dem Quelltext von ampr-emu-ng (0.3.5: 52 + 3 MiB ohne seitenweises Lesen; 0.4.0/beta: 64 MiB, davon
-48 MiB Tabellen, Seitenspeicher 16 MiB). Gemessen an der Konsole ist keiner der Grenzfaelle - die Tests halten die Rechnung fest.
+48 MiB Tabellen, Seitenspeicher 16 MiB; ab 0.4.1: 80 MiB fuer alles, kompilierte Ansicht ohne Tabellengrenze). Gemessen an der Konsole
+ist keiner der Grenzfaelle - die Tests halten die Rechnung fest.
 """
 from __future__ import annotations
 
@@ -43,8 +44,9 @@ def _lz4(dateien: int, gb: float) -> n.Kopf:
 
 class ModellTests(unittest.TestCase):
     def test_modell_je_fassung(self) -> None:
-        for fassung, soll in (("0.4.0-beta", "0.4.0-beta"), ("0.4.0", "0.4.0"), ("NG 0.4.1", "0.4.0-beta"), ("0.3.5", "0.3.5"),
-                              ("0.3.4", ""), ("0.2.0", ""), ("", ""), ("0.4.0-Beta", "0.4.0-beta")):
+        for fassung, soll in (("0.4.0-beta", "0.4.0-beta"), ("0.4.0", "0.4.0"), ("NG 0.4.1", "0.4.1"), ("0.4.2", "0.4.1"),
+                              ("0.5.0", "0.4.1"), ("0.3.5", "0.3.5"), ("0.3.4", ""), ("0.2.0", ""), ("", ""),
+                              ("0.4.0-Beta", "0.4.0-beta")):
             with self.subTest(fassung):
                 self.assertEqual(soll, n.modell_fuer(fassung))
 
@@ -166,6 +168,89 @@ class Modell040Tests(unittest.TestCase):
     def test_packindex_ueber_512_mib(self) -> None:
         riesig = n.Kopf(600 * n.MIB, 10, 10, 1)
         self.assertEqual("Pack-Index ueber 512 MiB", n.pruefen("0.4.0-beta", _ampridx(10), "zstd", riesig).engpass)
+        self.assertEqual("Pack-Index ueber 512 MiB", n.pruefen("0.4.1", _ampridx(10), "zstd", riesig).engpass)
+
+
+class Modell041Tests(unittest.TestCase):
+    """Ab 0.4.1 (15.11.2026): kompilierte Ansicht, ein Block von 80 MiB fuer alles, keine Tabellengrenze und kein Seitenspeicher.
+    Zahlen aus ``rt/index_memory.rs`` (Kommentare) und ``docs/zstd-format.md`` von ampr-emu-ng v0.4.1."""
+
+    def test_ansicht_von_hand_gerechnet(self) -> None:
+        """1000 Dateien, Ordnerzahl vorab 1000 // 8 + 1024 = 1149; Hash-Plaetze: Zweierpotenz ab 1,5 x (1500 -> 2048, 1723 -> 2048)."""
+        gemeinsam = 24_000 + 32 * 1149 + 4_000 + 4 * 2048 + 4 * 2048 + 4 * 256      # Spalten, Ordner, path_at, beide Platztabellen
+        self.assertEqual((gemeinsam, 4_000), n.ansicht_041(1000))
+        self.assertEqual(gemeinsam + 4_000, n.ansicht_041(1000, "lz4")[0], "LZ4: dazu die Spalte next")
+        self.assertEqual(gemeinsam + 4_000 + 4_000, n.ansicht_041(1000, "zstd")[0])             # next + chunk
+        self.assertEqual(4_000 + 8_000, n.ansicht_041(1000, "lz4")[1], "LZ4: dir_of + lz4_hash im Zwischenblock")
+        self.assertEqual(90_176, n.ansicht_041(1000, "zstd")[0])
+
+    def test_die_zahlen_der_entwickler(self) -> None:
+        """Kommentar in index_memory.rs: bei 300.000 Dateien und der ersten Ordnerzahl 12,6 MiB ohne Pack, 14,9 mit zstd, 16,0 mit
+        LZ4 (Haupt- plus Zwischenblock); docs/zstd-format.md: 242.409 Dateien -> 21,74 MiB Ansicht plus Tabellen."""
+        for art, soll in (("", 12.6), ("zstd", 14.9), ("lz4", 16.0)):
+            with self.subTest(art=art):
+                haupt, zwischen = n.ansicht_041(300_000, art)
+                self.assertAlmostEqual(soll, (haupt + zwischen) / n.MIB, delta=0.05)
+        haupt, _ = n.ansicht_041(242_409, "zstd")
+        self.assertAlmostEqual(21.74, (haupt + (1_339_356 + 72) * 8) / n.MIB, delta=0.02)
+        # LZ4-Manifest: "223,180 files, 1,513,210 chunks and 18 packs ... 27.5 MiB"
+        manifest = n.Kopf(0, 223_180, 1_513_210, 18)
+        befund = n.pruefen("0.4.1", n.Kopf(34_358_192, 223_180), "lz4", manifest)
+        self.assertAlmostEqual(27.5, befund.belegt["tabellen"] / n.MIB, delta=0.1)
+
+    def test_die_gemeldeten_faelle_passen(self) -> None:
+        """Demon's Souls (LZ4, 223.180 Dateien) und Final Fantasy XVI (zstd, 242.436 Dateien) scheiterten mit 0.4.0 an den 48 MiB."""
+        ds = n.pruefen("0.4.1", n.Kopf(34_358_192, 223_180), "lz4", n.Kopf(0, 223_180, 1_513_210, 18))
+        self.assertTrue(ds.passt, ds)
+        ff = n.pruefen("0.4.1", n.Kopf(int(29.54 * n.MIB), 242_436), "zstd", n.Kopf(32 * n.MIB, 242_436, 1_339_356, 72))
+        self.assertTrue(ff.passt, ff)
+        self.assertEqual(n.MODELL_041, ff.modell)
+        self.assertLess(ff.belegt["dauerhaft"], 25 * n.MIB, "21,7 MiB Ansicht und Tabellen, abgerundet auf Seiten")
+        self.assertLess(ff.belegt["dauerhaft"], ff.belegt["gesamt"], "der Zwischenblock kostet nur in der Spitze")
+
+    def test_ohne_pack_nur_die_ansicht(self) -> None:
+        self.assertTrue(n.pruefen("0.4.1", n.Kopf(0, 1_000_000)).passt)
+        zuviel = n.pruefen("0.4.1", n.Kopf(0, 3_000_000))
+        self.assertFalse(zuviel.passt)
+        self.assertEqual("ampr_emu.index: Ansicht", zuviel.engpass)
+        self.assertEqual(80 * n.MIB, zuviel.grenze)
+
+    def test_zstd_tabellen_gegen_den_freien_platz(self) -> None:
+        """zstd_mount_join: Tabellen (8 B je Chunk und Band) plus zwei Fenster gegen den Platz, der nach der Ansicht bleibt."""
+        gross = n.pruefen("0.4.1", n.Kopf(0, 600_000), "zstd", n.Kopf(0, 600_000, 8_000_000, 100))
+        self.assertFalse(gross.passt)
+        self.assertEqual("ampr_zstd.index: Tabellen", gross.engpass)
+        self.assertEqual(80 * n.MIB, gross.grenze)
+        self.assertGreater(gross.benoetigt, gross.grenze, "wie die Meldung der Konsole: belegt plus Anforderung ueber der Kappe")
+        self.assertTrue(n.pruefen("0.4.1", n.Kopf(0, 600_000), "zstd", n.Kopf(0, 600_000, 3_000_000, 100)).passt)
+
+    def test_ordnerzahl_wirkt_nur_auf_die_ansicht(self) -> None:
+        normal = n.ansicht_041(1000, "zstd")
+        viele = n.ansicht_041(1000, "zstd", ordner=5000)
+        self.assertGreater(viele[0], normal[0])
+        self.assertEqual(normal[1], viele[1])
+        self.assertEqual(n.pruefen("0.4.1", n.Kopf(0, 1000), "zstd", n.Kopf(0, 1000, 10, 1)).belegt["ansicht"], normal[0])
+        self.assertEqual(viele[0], n.pruefen("0.4.1", n.Kopf(0, 1000), "zstd", n.Kopf(0, 1000, 10, 1), ordner=5000).belegt["ansicht"])
+
+    def test_dauerhaft_ist_ansicht_plus_tabellen_in_seiten(self) -> None:
+        haupt, _ = n.ansicht_041(50_000, "zstd")
+        befund = n.pruefen("0.4.1", n.Kopf(0, 50_000), "zstd", n.Kopf(0, 50_000, 275_000, 20))
+        self.assertTrue(befund.passt)
+        self.assertEqual(n._rund(haupt) + n._rund((275_000 + 20) * 8), befund.belegt["dauerhaft"])
+
+    def test_lz4_bitmap_und_manifest_zaehlen(self) -> None:
+        befund = n.pruefen("0.4.1", n.Kopf(0, 100_000), "lz4", n.Kopf(0, 100_000, 600_000, 8))
+        self.assertTrue(befund.passt)
+        soll = n.LZ4_KOPF + 100_000 * 48 + 600_000 * 12 + 8 * n.LZ4_JE_PACK + (100_000 + 1 + 7) // 8
+        self.assertEqual(soll, befund.belegt["tabellen"])
+
+    def test_die_beta_bleibt_beim_alten_modell(self) -> None:
+        """Die beta (54d6ac2) hat noch die 48-MiB-Grenze: Final Fantasy XVI ging dort nur wegen des seitenweisen Lesens."""
+        idx = n.Kopf(int(29.54 * n.MIB), 242_436)
+        zst = n.Kopf(32 * n.MIB, 242_436, 1_339_356, 72)
+        self.assertEqual(n.MODELL_BETA, n.pruefen("0.4.0-beta", idx, "zstd", zst).modell)
+        self.assertEqual(n.MODELL_041, n.pruefen("0.4.1", idx, "zstd", zst).modell)
+        self.assertEqual(n.MODELL_041, n.pruefen("0.5.0", idx, "zstd", zst).modell, "neuere Fassungen: so angenommen")
 
 
 if __name__ == "__main__":
