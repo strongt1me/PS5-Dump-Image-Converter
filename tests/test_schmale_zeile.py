@@ -312,6 +312,14 @@ class QuelltextTests(unittest.TestCase):
             quelle = datei.read()
         self.assertEqual(1, quelle.count("knoepfe_unter_liste(folders_row, folders_btns, ordner_karte, ordner_titel,"))
 
+    def test_beschriftung_mit_fester_breite_bricht_um_statt_zu_wachsen(self) -> None:
+        """Franzoesisch "Destination (ID de titre) :" nahm der Klappliste daneben 7 px weg (Linux, 150 %)."""
+        seite = self._seite()
+        anfang = seite.index("def _beschriftung(")
+        block = seite[anfang:seite.index("def _statuszeile(", anfang)]
+        self.assertIn("etikett._zeichen_basis = 0", block, "aus der Breitensicherung herausnehmen")
+        self.assertIn("wraplength=max(60, ziffer * int(breite))", block)
+
     def test_die_hinweise_gehen_bei_platzmangel_zuerst(self) -> None:
         seite = self._seite()
         self.assertEqual(1, seite.count("hinweise_bei_platzmangel_ausblenden("))

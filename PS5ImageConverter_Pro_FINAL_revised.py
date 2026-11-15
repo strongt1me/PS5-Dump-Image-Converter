@@ -6320,7 +6320,7 @@ class PS5ConverterGUI:
     _aufloesung_manuell: "tuple[int, int] | None" = None
 
     def _mindestgroesse_setzen(self) -> None:
-        """Laesst die Mindestgroesse des Hauptfensters mit der Anzeigeskalierung wachsen (nur Windows).
+        """Laesst die Mindestgroesse des Hauptfensters mit der Anzeigeskalierung wachsen (Windows und Linux, nicht macOS).
 
         ``WINDOW_MIN_WIDTH`` x ``WINDOW_MIN_HEIGHT`` ist bei 125 % geeicht. Die Schrift waechst mit der Skalierung, die
         Mindestgroesse blieb gleich: Wer das Fenster bei 150 % auf das Minimum zog, sah Beschriftungen, die ueber den Rand
@@ -6328,9 +6328,11 @@ class PS5ConverterGUI:
         150 %, 0 bei 100 und 125 %). Der Faktor ist derselbe wie bei den Knoepfen (``knopfmass``): bis 125 % bleibt das Mass,
         darueber waechst es, nie ueber den Bildschirm (und unten ein Streifen fuer die Taskleiste).
 
-        Unter macOS und Linux unveraendert: Dort ist ``tk scaling`` nicht an Windows geeicht.
+        Unter Linux gemessen (WSL, WSLg, 15.11.2026): im kleinsten Fenster 0 Befunde bei 125 %, 10 und mehr bei 150 % - derselbe
+        Fehler wie unter Windows; die Knoepfe skalieren dort schon ueber ``knopfmass``. Unter macOS unveraendert: Dort wirkt die
+        Skalierung ueber die Schriftanhebung (``pt()``), ``tk scaling`` ist nicht derselbe Massstab.
         """
-        if not IST_WINDOWS:
+        if IST_MACOS:
             return
         try:
             faktor = knopfmass(1000, self.root) / 1000.0
@@ -14120,6 +14122,17 @@ class PS5ConverterGUI:
                 # 200 %: Text 641 px, Karte 486 px).
                 etikett.configure(justify="left")
                 etikett.bind("<Configure>", lambda e: etikett.configure(wraplength=max(100, e.width - 8)))
+            else:
+                # Feste Zeichenbreite neben einer Klappliste: Der lange Text bricht in seinem Feld um, statt es zu verbreitern
+                # (franzoesisch "Destination (ID de titre) :" nahm der Liste daneben 7 px weg, gemessen unter Linux bei 150 %).
+                # ``_label_breite_sichern`` laesst dieses Label deshalb aus.
+                etikett._zeichen_basis = 0
+                try:
+                    import tkinter.font as _tkfont  # noqa: PLC0415
+                    ziffer = int(_tkfont.Font(root=etikett, font=(UI_SCHRIFT, pt(9))).measure("0"))
+                    etikett.configure(wraplength=max(60, ziffer * int(breite)), justify="left")
+                except tk.TclError:
+                    pass
             self._register_translatable(etikett, schluessel)
             return etikett
 

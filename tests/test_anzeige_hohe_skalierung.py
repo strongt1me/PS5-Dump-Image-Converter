@@ -172,14 +172,14 @@ class MindestgroesseTests(unittest.TestCase):
 
     def test_bis_125_prozent_bleibt_das_eichmass(self) -> None:
         gui = self._gui()
-        with _Skalierung(SK_125), mock.patch.object(APP, "IST_WINDOWS", True):
+        with _Skalierung(SK_125), mock.patch.object(APP, "IST_MACOS", False):
             self.top.minsize(APP.WINDOW_MIN_WIDTH, APP.WINDOW_MIN_HEIGHT)
             gui._mindestgroesse_setzen()
             self.assertEqual((APP.WINDOW_MIN_WIDTH, APP.WINDOW_MIN_HEIGHT), self.top.minsize())
 
     def test_bei_150_prozent_waechst_das_minimum(self) -> None:
         gui = self._gui()
-        with _Skalierung(SK_150), mock.patch.object(APP, "IST_WINDOWS", True):
+        with _Skalierung(SK_150), mock.patch.object(APP, "IST_MACOS", False):
             self.top.minsize(APP.WINDOW_MIN_WIDTH, APP.WINDOW_MIN_HEIGHT)
             gui._mindestgroesse_setzen()
             breite, hoehe = self.top.minsize()
@@ -191,15 +191,27 @@ class MindestgroesseTests(unittest.TestCase):
 
     def test_das_minimum_ist_nie_kleiner_als_das_eichmass(self) -> None:
         gui = self._gui()
-        with _Skalierung(SK_200), mock.patch.object(APP, "IST_WINDOWS", True):
+        with _Skalierung(SK_200), mock.patch.object(APP, "IST_MACOS", False):
             gui._mindestgroesse_setzen()
             breite, hoehe = self.top.minsize()
             self.assertGreaterEqual(breite, APP.WINDOW_MIN_WIDTH)
             self.assertGreaterEqual(hoehe, APP.WINDOW_MIN_HEIGHT)
 
-    def test_ausserhalb_von_windows_unveraendert(self) -> None:
+    def test_unter_linux_waechst_das_minimum_ebenfalls(self) -> None:
+        """Unter Linux gemessen (WSL, 15.11.2026): im kleinsten Fenster bei 150 % derselbe Fehler wie unter Windows."""
         gui = self._gui()
-        with _Skalierung(SK_200), mock.patch.object(APP, "IST_WINDOWS", False):
+        with _Skalierung(SK_150), mock.patch.object(APP, "IST_MACOS", False), \
+                mock.patch.object(APP, "IST_WINDOWS", False), mock.patch.object(APP, "IST_LINUX", True):
+            self.top.minsize(APP.WINDOW_MIN_WIDTH, APP.WINDOW_MIN_HEIGHT)
+            gui._mindestgroesse_setzen()
+            breite, hoehe = self.top.minsize()
+            self.assertGreaterEqual(breite, APP.WINDOW_MIN_WIDTH)
+            if self.top.winfo_screenwidth() > APP.WINDOW_MIN_WIDTH * 1.2:
+                self.assertGreater(breite, APP.WINDOW_MIN_WIDTH)
+
+    def test_unter_macos_unveraendert(self) -> None:
+        gui = self._gui()
+        with _Skalierung(SK_200), mock.patch.object(APP, "IST_MACOS", True):
             self.top.minsize(APP.WINDOW_MIN_WIDTH, APP.WINDOW_MIN_HEIGHT)
             gui._mindestgroesse_setzen()
             self.assertEqual((APP.WINDOW_MIN_WIDTH, APP.WINDOW_MIN_HEIGHT), self.top.minsize())
