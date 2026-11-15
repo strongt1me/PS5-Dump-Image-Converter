@@ -3308,17 +3308,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Después, “PS5 Dump &amp; Image Converter” aparece en el menú con su propio icono y puede invocarse en el terminal con <code>ps5-dump-image-converter</code>. Todo se instala bajo <code>~/.local</code>, sin <code>sudo</code> y sin intervenir en el sistema. Para deshacerlo, use <code>./Install_Linux.sh --entfernen</code>.</p>
 
   <h3>19.3 Qué no está disponible en Linux</h3>
-  <p>Dos vías dependen de programas que solo existen para Windows. Si se elige una tarea de este tipo, el programa lo indica expresamente en el registro.</p>
+  <p>Dos cosas dependen de programas que solo existen para Windows.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Afectado</th><th>Motivo</th></tr></thead>
     <tbody>
-      <tr><td>Leer y crear <code>.ffpkg</code>, es decir, la <strong>Tarea 4</strong> y todo <code>.ffpkg</code> como formato de destino</td><td>Estas vías funcionan mediante UFS2Tool y el controlador Dokan. Ambos existen únicamente para Windows.</td></tr>
+      <tr><td>Montar un <code>.ffpkg</code> como unidad</td><td>Para ello UFS2Tool necesita el controlador Dokan, que solo existe para Windows. Leer y crear <code>.ffpkg</code>, es decir, la <strong>tarea 4</strong> y todo <code>.ffpkg</code> como formato de destino, también funciona aquí: sin carpeta intermedia, el programa lo lee y lo escribe por sí mismo; si no, usa el UFS2Tool incluido.</td></tr>
       <tr><td>Las vías alternativas mediante OSFMount</td><td>OSFMount existe solo para Windows. Estas vías solo se aplican de todos modos cuando la vía normal falla con una imagen poco habitual.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Todas las demás tareas —carpeta de dump, <code>.ffpfsc</code>, <code>.ffpfs</code> y <code>.exFAT</code> en cualquier dirección, la conversión por lotes, el AMPR EMU Manager y el validador— están disponibles por completo.</p>
+  <p>Todas las demás tareas —carpeta de dump, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> y <code>.ffpkg</code> en cualquier dirección, la conversión por lotes, el AMPR EMU Manager y el validador— están disponibles por completo.</p>
 
   <h3>19.4 Otras diferencias en el uso diario</h3>
   <div class="tabelle">
@@ -3373,17 +3373,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>20.4 Qué no está disponible en el Mac</h3>
-  <p>Son las mismas dos vías que en Linux, y por el mismo motivo. Si se elige una tarea de este tipo, el programa lo indica expresamente en el registro.</p>
+  <p>Son las mismas dos cosas que en Linux, y por el mismo motivo.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Afectado</th><th>Motivo</th></tr></thead>
     <tbody>
-      <tr><td>Leer y crear <code>.ffpkg</code>, es decir, la <strong>Tarea 4</strong> y todo <code>.ffpkg</code> como formato de destino</td><td>Estas vías funcionan mediante UFS2Tool y el controlador Dokan. Ambos existen únicamente para Windows.</td></tr>
+      <tr><td>Montar un <code>.ffpkg</code> como unidad</td><td>Para ello UFS2Tool necesita el controlador Dokan, que solo existe para Windows. Leer y crear <code>.ffpkg</code>, es decir, la <strong>tarea 4</strong> y todo <code>.ffpkg</code> como formato de destino, también funciona aquí: sin carpeta intermedia, el programa lo lee y lo escribe por sí mismo; si no, usa el UFS2Tool incluido.</td></tr>
       <tr><td>Las vías alternativas mediante OSFMount</td><td>OSFMount existe solo para Windows. Estas vías solo se aplican de todos modos cuando la vía normal falla con una imagen poco habitual.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Todas las demás tareas —carpeta de dump, <code>.ffpfsc</code>, <code>.ffpfs</code> y <code>.exFAT</code> en cualquier dirección, la conversión por lotes, el AMPR EMU Manager y el validador— están disponibles por completo.</p>
+  <p>Todas las demás tareas —carpeta de dump, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> y <code>.ffpkg</code> en cualquier dirección, la conversión por lotes, el AMPR EMU Manager y el validador— están disponibles por completo.</p>
 
   <h3>20.5 Otras diferencias en el uso diario</h3>
   <div class="tabelle">

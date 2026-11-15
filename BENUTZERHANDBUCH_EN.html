@@ -3311,17 +3311,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Afterward, “PS5 Dump &amp; Image Converter” appears in the menu with its own icon and can be launched in the terminal with <code>ps5-dump-image-converter</code>. Everything is placed under <code>~/.local</code> – without <code>sudo</code> and without touching the system. You can undo this with <code>./Install_Linux.sh --entfernen</code>.</p>
 
   <h3>19.3 What is not available on Linux</h3>
-  <p>Two paths depend on programs that exist only for Windows. If you choose such a task, the program says so explicitly in the log.</p>
+  <p>Two things depend on programs that exist only for Windows.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Affected</th><th>Reason</th></tr></thead>
     <tbody>
-      <tr><td>Reading and creating <code>.ffpkg</code> – that is, <strong>Task 4</strong> and every <code>.ffpkg</code> as a target format</td><td>These paths run through UFS2Tool and the Dokan driver. Both exist only for Windows.</td></tr>
+      <tr><td>Mounting a <code>.ffpkg</code> as a drive</td><td>UFS2Tool needs the Dokan driver for this, which exists only for Windows. Reading and creating <code>.ffpkg</code> – that is, <strong>Task 4</strong> and every <code>.ffpkg</code> as a target format – also works here: without an intermediate folder the program reads and writes it itself, otherwise it uses the bundled UFS2Tool.</td></tr>
       <tr><td>The fallback paths via OSFMount</td><td>OSFMount exists only for Windows. These paths only come into play when the normal path fails on an unusual image.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>All other tasks – dump folder, <code>.ffpfsc</code>, <code>.ffpfs</code>, and <code>.exFAT</code> in every direction, batch conversion, the AMPR EMU Manager, and the Validator – are fully available.</p>
+  <p>All other tasks – dump folder, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code>, and <code>.ffpkg</code> in every direction, batch conversion, the AMPR EMU Manager, and the Validator – are fully available.</p>
 
   <h3>19.4 Other everyday differences</h3>
   <div class="tabelle">
@@ -3376,17 +3376,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>20.4 What is not available on the Mac</h3>
-  <p>These are the same two paths as on Linux, and for the same reason. If you choose such a task, the program says so explicitly in the log.</p>
+  <p>These are the same two things as on Linux, and for the same reason.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Affected</th><th>Reason</th></tr></thead>
     <tbody>
-      <tr><td>Reading and creating <code>.ffpkg</code> – that is, <strong>Task 4</strong> and every <code>.ffpkg</code> as a target format</td><td>These paths run through UFS2Tool and the Dokan driver. Both exist only for Windows.</td></tr>
+      <tr><td>Mounting a <code>.ffpkg</code> as a drive</td><td>UFS2Tool needs the Dokan driver for this, which exists only for Windows. Reading and creating <code>.ffpkg</code> – that is, <strong>Task 4</strong> and every <code>.ffpkg</code> as a target format – also works here: without an intermediate folder the program reads and writes it itself, otherwise it uses the bundled UFS2Tool.</td></tr>
       <tr><td>The fallback paths via OSFMount</td><td>OSFMount exists only for Windows. These paths only come into play when the normal path fails on an unusual image.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>All other tasks – dump folder, <code>.ffpfsc</code>, <code>.ffpfs</code>, and <code>.exFAT</code> in every direction, batch conversion, the AMPR EMU Manager, and the Validator – are fully available.</p>
+  <p>All other tasks – dump folder, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code>, and <code>.ffpkg</code> in every direction, batch conversion, the AMPR EMU Manager, and the Validator – are fully available.</p>
 
   <h3>20.5 Other everyday differences</h3>
   <div class="tabelle">

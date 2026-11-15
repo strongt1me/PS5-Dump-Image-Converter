@@ -3321,17 +3321,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Dopo, «PS5 Dump &amp; Image Converter» compare nel menu con una propria icona e può essere richiamato nel terminale con <code>ps5-dump-image-converter</code>. Tutto viene collocato sotto <code>~/.local</code> – senza <code>sudo</code> e senza interventi sul sistema. Per annullare l’operazione si usa <code>./Install_Linux.sh --entfernen</code>.</p>
 
   <h3>19.3 Cosa non è disponibile su Linux</h3>
-  <p>Due percorsi dipendono da programmi che esistono solo per Windows. Se si sceglie una tale attività, il programma lo dichiara espressamente nel registro.</p>
+  <p>Due cose dipendono da programmi che esistono solo per Windows.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Interessato</th><th>Motivo</th></tr></thead>
     <tbody>
-      <tr><td>Leggere e creare <code>.ffpkg</code> – quindi l’<strong>attività 4</strong> e qualsiasi <code>.ffpkg</code> come formato di destinazione</td><td>Questi percorsi passano per UFS2Tool e il driver Dokan. Entrambi esistono esclusivamente per Windows.</td></tr>
+      <tr><td>Montare un <code>.ffpkg</code> come unità</td><td>Per questo UFS2Tool richiede il driver Dokan, che esiste solo per Windows. Leggere e creare <code>.ffpkg</code> – quindi l’<strong>attività 4</strong> e qualsiasi <code>.ffpkg</code> come formato di destinazione – funziona anche qui: senza cartella intermedia il programma lo legge e lo scrive da solo, altrimenti usa l’UFS2Tool incluso.</td></tr>
       <tr><td>I percorsi alternativi tramite OSFMount</td><td>OSFMount esiste solo per Windows. Questi percorsi vengono comunque utilizzati solo quando il percorso normale fallisce con un’immagine insolita.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Tutte le altre attività – cartella dump, <code>.ffpfsc</code>, <code>.ffpfs</code> e <code>.exFAT</code> in ogni direzione, la conversione collettiva, l’AMPR EMU Manager e il Validatore – sono disponibili per intero.</p>
+  <p>Tutte le altre attività – cartella dump, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> e <code>.ffpkg</code> in ogni direzione, la conversione collettiva, l’AMPR EMU Manager e il Validatore – sono disponibili per intero.</p>
 
   <h3>19.4 Altre differenze nell’uso quotidiano</h3>
   <div class="tabelle">
@@ -3386,17 +3386,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>20.4 Cosa non è disponibile su Mac</h3>
-  <p>Sono gli stessi due percorsi di Linux, e per lo stesso motivo. Se si sceglie una tale attività, il programma lo dichiara espressamente nel registro.</p>
+  <p>Sono le stesse due cose di Linux, e per lo stesso motivo.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Interessato</th><th>Motivo</th></tr></thead>
     <tbody>
-      <tr><td>Leggere e creare <code>.ffpkg</code> – quindi l’<strong>attività 4</strong> e qualsiasi <code>.ffpkg</code> come formato di destinazione</td><td>Questi percorsi passano per UFS2Tool e il driver Dokan. Entrambi esistono esclusivamente per Windows.</td></tr>
+      <tr><td>Montare un <code>.ffpkg</code> come unità</td><td>Per questo UFS2Tool richiede il driver Dokan, che esiste solo per Windows. Leggere e creare <code>.ffpkg</code> – quindi l’<strong>attività 4</strong> e qualsiasi <code>.ffpkg</code> come formato di destinazione – funziona anche qui: senza cartella intermedia il programma lo legge e lo scrive da solo, altrimenti usa l’UFS2Tool incluso.</td></tr>
       <tr><td>I percorsi alternativi tramite OSFMount</td><td>OSFMount esiste solo per Windows. Questi percorsi vengono comunque utilizzati solo quando il percorso normale fallisce con un’immagine insolita.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Tutte le altre attività – cartella dump, <code>.ffpfsc</code>, <code>.ffpfs</code> e <code>.exFAT</code> in ogni direzione, la conversione collettiva, l’AMPR EMU Manager e il Validatore – sono disponibili per intero.</p>
+  <p>Tutte le altre attività – cartella dump, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> e <code>.ffpkg</code> in ogni direzione, la conversione collettiva, l’AMPR EMU Manager e il Validatore – sono disponibili per intero.</p>
 
   <h3>20.5 Altre differenze nell’uso quotidiano</h3>
   <div class="tabelle">

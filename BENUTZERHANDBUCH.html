@@ -3334,17 +3334,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Danach steht „PS5 Dump &amp; Image Converter“ mit eigenem Symbol im Menü und lässt sich im Terminal mit <code>ps5-dump-image-converter</code> aufrufen. Alles wird unterhalb von <code>~/.local</code> abgelegt – ohne <code>sudo</code> und ohne Eingriff ins System. Rückgängig machen Sie das mit <code>./Install_Linux.sh --entfernen</code>.</p>
 
   <h3>19.3 Was unter Linux nicht zur Verfügung steht</h3>
-  <p>Zwei Wege hängen an Programmen, die es nur für Windows gibt. Wählen Sie eine solche Aufgabe, sagt das Programm das ausdrücklich im Protokoll.</p>
+  <p>Zwei Dinge hängen an Programmen, die es nur für Windows gibt.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Betroffen</th><th>Grund</th></tr></thead>
     <tbody>
-      <tr><td><code>.ffpkg</code> lesen und erstellen – also <strong>Aufgabe 4</strong> und jedes <code>.ffpkg</code> als Zielformat</td><td>Diese Wege laufen über UFS2Tool und den Dokan-Treiber. Beide gibt es ausschließlich für Windows.</td></tr>
+      <tr><td>Das Einhängen einer <code>.ffpkg</code> als Laufwerk</td><td>Dafür braucht UFS2Tool den Dokan-Treiber, den es ausschließlich für Windows gibt. <code>.ffpkg</code> lesen und erstellen – also <strong>Aufgabe 4</strong> und jedes <code>.ffpkg</code> als Zielformat – geht auch hier: Ohne Zwischenordner liest und schreibt das Programm sie selbst, sonst nimmt es das mitgelieferte UFS2Tool.</td></tr>
       <tr><td>Die Ersatzwege über OSFMount</td><td>OSFMount gibt es nur für Windows. Diese Wege greifen ohnehin nur dann, wenn der normale Weg an einem ungewöhnlichen Abbild scheitert.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Alle übrigen Aufgaben – Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.exFAT</code> in jeder Richtung, die Sammelkonvertierung, der AMPR EMU Manager und der Validator – stehen vollständig zur Verfügung.</p>
+  <p>Alle übrigen Aufgaben – Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> und <code>.ffpkg</code> in jeder Richtung, die Sammelkonvertierung, der AMPR EMU Manager und der Validator – stehen vollständig zur Verfügung.</p>
 
   <h3>19.4 Weitere Unterschiede im Alltag</h3>
   <div class="tabelle">
@@ -3399,17 +3399,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>20.4 Was auf dem Mac nicht zur Verfügung steht</h3>
-  <p>Es sind dieselben beiden Wege wie unter Linux, und aus demselben Grund. Wählen Sie eine solche Aufgabe, sagt das Programm das ausdrücklich im Protokoll.</p>
+  <p>Es sind dieselben beiden Dinge wie unter Linux, und aus demselben Grund.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Betroffen</th><th>Grund</th></tr></thead>
     <tbody>
-      <tr><td><code>.ffpkg</code> lesen und erstellen – also <strong>Aufgabe 4</strong> und jedes <code>.ffpkg</code> als Zielformat</td><td>Diese Wege laufen über UFS2Tool und den Dokan-Treiber. Beide gibt es ausschließlich für Windows.</td></tr>
+      <tr><td>Das Einhängen einer <code>.ffpkg</code> als Laufwerk</td><td>Dafür braucht UFS2Tool den Dokan-Treiber, den es ausschließlich für Windows gibt. <code>.ffpkg</code> lesen und erstellen – also <strong>Aufgabe 4</strong> und jedes <code>.ffpkg</code> als Zielformat – geht auch hier: Ohne Zwischenordner liest und schreibt das Programm sie selbst, sonst nimmt es das mitgelieferte UFS2Tool.</td></tr>
       <tr><td>Die Ersatzwege über OSFMount</td><td>OSFMount gibt es nur für Windows. Diese Wege greifen ohnehin nur dann, wenn der normale Weg an einem ungewöhnlichen Abbild scheitert.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Alle übrigen Aufgaben – Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.exFAT</code> in jeder Richtung, die Sammelkonvertierung, der AMPR EMU Manager und der Validator – stehen vollständig zur Verfügung.</p>
+  <p>Alle übrigen Aufgaben – Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> und <code>.ffpkg</code> in jeder Richtung, die Sammelkonvertierung, der AMPR EMU Manager und der Validator – stehen vollständig zur Verfügung.</p>
 
   <h3>20.5 Weitere Unterschiede im Alltag</h3>
   <div class="tabelle">
