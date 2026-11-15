@@ -239,10 +239,13 @@ class RegelTests(unittest.TestCase):
         temp, ziel, _dump = g._platzbedarf_je_quelle(str(self.dump), "folder")
         self.assertEqual(int(1000 * PS5ConverterGUI._PLATZFAKTOR_TEMP_OHNE), temp)
         self.assertEqual(int(1000 * PS5ConverterGUI._PLATZFAKTOR_ZIEL["folder"]), ziel)
-        # Ein Abbild als Ziel: Mit dem Strom (Stufe 3, Vorgabe) liegt im Arbeitsordner nur der kleine Ueberlagerungsordner - der
-        # Ordner des Anwenders wird nur gelesen, eine Arbeitskopie gibt es nicht. Hoechstens so viel wie die Quelle.
-        temp, _ziel, _dump = g._platzbedarf_je_quelle(str(self.dump), "ffpfsc")
-        self.assertEqual(min(1000, max(PS5ConverterGUI._STROM_TEMP_MIN, int(1000 * PS5ConverterGUI._PLATZFAKTOR_STROM_TEMP))), temp)
+        # Ein Abbild als Ziel: Mit dem Strom (Stufe 3, Vorgabe) gibt es nur den kleinen Ueberlagerungsordner - der Ordner des
+        # Anwenders wird nur gelesen, eine Arbeitskopie gibt es nicht. Hoechstens so viel wie die Quelle; er ist der dritte Wert
+        # (er liegt, wo der Dump-Ordner liegt - Gesamtpruefung 14.11.2026, S-C), der Arbeitsordner braucht nichts.
+        temp, _ziel, ueberlagerung = g._platzbedarf_je_quelle(str(self.dump), "ffpfsc")
+        self.assertEqual(0, temp)
+        self.assertEqual(min(1000, max(PS5ConverterGUI._STROM_TEMP_MIN, int(1000 * PS5ConverterGUI._PLATZFAKTOR_STROM_TEMP))),
+                         ueberlagerung)
         # Gegenprobe: Mit der Einstellung "exfat_strom" aus braucht ein Abbild als Ziel die Arbeitskopie weiterhin.
         g._load_setting = lambda k, vorgabe=None: False if k == "exfat_strom" else vorgabe
         temp, _ziel, _dump = g._platzbedarf_je_quelle(str(self.dump), "ffpfsc")

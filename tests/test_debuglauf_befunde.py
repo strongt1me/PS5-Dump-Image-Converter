@@ -2736,12 +2736,14 @@ class SammelPlatzTests(_TempTest):
                 for q in self.quellen]
 
     def test_ziel_ist_die_summe_temp_das_groesste(self) -> None:
-        einzeln = self._einzeln()
+        # Je Quelle (Temp, Ziel, voruebergehender Ordner): der Ueberlagerungsordner des Stroms ist seit dem 14.11.2026 (S-C) der
+        # dritte Wert - wie der Dump-Ordner zaehlt er nur einmal (das groesste), dort, wo er entsteht (hier: im Ziel).
+        teile = [self.app._platzbedarf_je_quelle(q, "ffpkg") for q in self.quellen]
         temp, ziel = self.app._platzbedarf_schaetzen(
             "batch_convert", self.quellen[0], "ffpkg")
-        self.assertEqual(ziel, sum(z for _t, z in einzeln),
+        self.assertEqual(ziel, sum(z for _t, z, _d in teile) + max(d for _t, _z, d in teile),
                          "Das Ziel nimmt alle Ergebnisse nacheinander auf.")
-        self.assertEqual(temp, max(t for t, _z in einzeln))
+        self.assertEqual(temp, max(t for t, _z, _d in teile))
 
     def test_der_dump_ordner_zaehlt_nur_einmal(self) -> None:
         """Beim Neu-Packen wird er je Datei wieder geloescht."""
@@ -2756,7 +2758,8 @@ class SammelPlatzTests(_TempTest):
         """Aus einem Ordner aufgeloest: Gerechnet wird mit den Dateien darin."""
         _temp, ziel = self.app._platzbedarf_schaetzen(
             "batch_convert", self.basis, "ffpkg")
-        self.assertEqual(ziel, sum(z for _t, z in self._einzeln()))
+        teile = [self.app._platzbedarf_je_quelle(q, "ffpkg") for q in self.quellen]
+        self.assertEqual(ziel, sum(z for _t, z, _d in teile) + max(d for _t, _z, d in teile))
 
 
 class AbschlussMessungTests(unittest.TestCase):
@@ -3772,6 +3775,124 @@ class AufgabeSiebenFasstPackNichtAnTests(_TempTest):
         for name in self.PACKDATEIEN:
             self.assertTrue(os.path.isfile(os.path.join(spiel, name)),
                             "%s wurde entfernt" % name)
+
+
+def _zstd_bereit() -> bool:
+    from ps5_validator.utils import ampr_zstdpack as z
+    return bool(z.verfuegbar())
+
+
+@unittest.skipUnless(_zstd_bereit(), "zstandard fehlt")
+class AufgabeSiebenZstdPackNurNgTests(_TempTest):
+    """Gesamtpruefung 14.11.2026, R6-2: Aufgabe 7 (auch ``--mode ampr_manager``) tauschte, stellte wieder her oder entfernte NG in
+    einem zstd-Pack ohne Originale - ohne Wunsch ist die gewaehlte Fassung die neueste von drakmor, und die liest kein zstd-Pack."""
+
+    def _lauf(self, spiel: str, aktion: dict) -> tuple:
+        # Im echten Lauf steht is_running (``_launch_task``, CLI); die Suche im Pack bricht sonst sofort ab.
+        with mock.patch.object(_app(), "is_running", True):
+            return AufgabeSiebenFasstPackNichtAnTests._lauf(self, spiel, aktion)
+
+    def _spiel(self, originale_weg: bool = True, sicherung: bool = False) -> tuple:
+        from ps5_validator.utils import ampr_zstdpack as z
+        spiel = _ampr_spiel(self.basis)
+        lib = _schreiben(os.path.join(spiel, "fakelib", "libSceAmpr.sprx"), b"NG " + GUI._AMPR_NG_KENNZEICHEN + b"\0" * 1000)
+        if sicherung:
+            _schreiben(lib + GUI._AMPR_BACKUP_SUFFIX, b"SONY" * 256)
+        packs = os.path.join(self.basis, "packs")
+        z.packen(spiel, packs, z.dateien_auswaehlen(spiel))
+        index = z.pruefen(packs, spiel)
+        z.uebernehmen(packs, spiel, index)
+        if originale_weg:
+            z.originale_entfernen(spiel, index)
+            self.assertFalse(os.path.exists(os.path.join(spiel, "daten", "level1.dat")), "Aufbau: Original noch da")
+        return spiel, lib
+
+    def _fremd(self) -> str:
+        return _schreiben(os.path.join(self.basis, "quelle", "libSceAmpr.sprx"), b"DRAKMOR " * 300)
+
+    def test_fremde_fassung_wird_nicht_eingetauscht(self) -> None:
+        spiel, lib = self._spiel()
+        vorher = Path(lib).read_bytes()
+        ok, protokoll, _g, _h = self._lauf(spiel, {"action": "ampr_apply", "ampr_source": self._fremd(),
+                                                    "ampr_lib": "libSceAmpr.sprx"})
+        self.assertFalse(ok)
+        self.assertEqual(vorher, Path(lib).read_bytes(), "NG wurde ersetzt")
+        self.assertIn(_app()._t("ampr_zstd.pack_nur_ng"), protokoll)
+
+    def test_gegenprobe_mit_originalen_wird_getauscht(self) -> None:
+        spiel, lib = self._spiel(originale_weg=False)
+        ok, protokoll, _g, _h = self._lauf(spiel, {"action": "ampr_apply", "ampr_source": self._fremd(),
+                                                    "ampr_lib": "libSceAmpr.sprx"})
+        self.assertEqual(b"DRAKMOR " * 300, Path(lib).read_bytes(), "".join(map(str, protokoll)))
+        self.assertNotIn(_app()._t("ampr_zstd.pack_nur_ng"), protokoll)
+
+    def test_entfernen_und_wiederherstellen_lassen_ng_liegen(self) -> None:
+        for aktion in ("ampr_remove", "ampr_restore"):
+            with self.subTest(aktion=aktion):
+                spiel, lib = self._spiel(sicherung=True)
+                vorher = Path(lib).read_bytes()
+                ok, protokoll, _g, _h = self._lauf(spiel, {"action": aktion, "ampr_libs": ["libSceAmpr.sprx"]})
+                self.assertFalse(ok)
+                self.assertEqual(vorher, Path(lib).read_bytes(), "NG ist weg")
+                # R7-4: Der Text sagt hier nicht "bitte NG waehlen", sondern dass nichts geaendert wurde.
+                self.assertIn(_app()._t("ampr_zstd.pack_nur_ng_raus"), protokoll)
+                self.assertNotIn(_app()._t("ampr_zstd.pack_nur_ng"), protokoll)
+                shutil.rmtree(self.basis)
+                os.makedirs(self.basis)
+
+    def test_der_name_der_bibliothek_zaehlt_ohne_schreibung(self) -> None:
+        """R8-3 (Absicherung): Unter Windows ist ``libsceampr.sprx`` dieselbe Datei wie ``libSceAmpr.sprx``. Die Kommandozeile weist andere
+        Schreibungen schon in ``_validate_ampr_args`` ab - die Sperre soll trotzdem nicht an einer Spec scheitern, die sie durchlaesst."""
+        self.assertTrue(_app()._ampr_lib_gemeint(["libsceampr.sprx"]))
+        self.assertTrue(_app()._ampr_lib_gemeint(("LIBSCEAMPR.SPRX", "libScePlayGo.sprx")))
+        self.assertFalse(_app()._ampr_lib_gemeint(["libScePlayGo.sprx"]))
+        self.assertFalse(_app()._ampr_lib_gemeint([]))
+        for aktion in ("ampr_remove", "ampr_restore"):
+            with self.subTest(aktion=aktion):
+                spiel, lib = self._spiel(sicherung=True)
+                vorher = Path(lib).read_bytes()
+                ok, protokoll, _g, _h = self._lauf(spiel, {"action": aktion, "ampr_libs": ["libsceampr.sprx"]})
+                self.assertFalse(ok)
+                self.assertEqual(vorher, Path(lib).read_bytes(), "NG ist weg")
+                self.assertIn(_app()._t("ampr_zstd.pack_nur_ng_raus"), protokoll)
+                shutil.rmtree(self.basis)
+                os.makedirs(self.basis)
+
+    def test_ng_nur_im_alten_ordner_sperrt_das_entfernen_nicht(self) -> None:
+        """R7-4: Entfernen loescht nur im Schreibordner (fakelib) - NG in fakelib2 bleibt davon unberuehrt, also gibt es nichts zu sperren."""
+        spiel, lib = self._spiel()
+        os.remove(lib)
+        zwei = _schreiben(os.path.join(spiel, "fakelib2", "libSceAmpr.sprx"), b"NG " + GUI._AMPR_NG_KENNZEICHEN + b"\0" * 1000)
+        ok, protokoll, _g, _h = self._lauf(spiel, {"action": "ampr_remove", "ampr_libs": ["libSceAmpr.sprx"]})
+        self.assertTrue(os.path.isfile(zwei), "fakelib2 wurde angefasst")
+        self.assertNotIn(_app()._t("ampr_zstd.pack_nur_ng_raus"), protokoll)
+        self.assertIn(_app()._t("ampr.nothing_removed"), protokoll, "".join(map(str, protokoll)))
+        self.assertFalse(ok)
+
+    def test_wiederherstellen_sperrt_nur_wo_die_sicherung_liegt(self) -> None:
+        """R7-4: NG im Schreibordner, die Sicherung (.orig) nur in fakelib2 - Wiederherstellen spielt sie in fakelib2 zurueck und laesst
+        das NG in fakelib unberuehrt."""
+        spiel, lib = self._spiel()
+        _schreiben(os.path.join(spiel, "fakelib2", "libSceAmpr.sprx.orig"), b"SONY" * 256)
+        vorher = Path(lib).read_bytes()
+        ok, protokoll, _g, _h = self._lauf(spiel, {"action": "ampr_restore", "ampr_libs": ["libSceAmpr.sprx"]})
+        self.assertNotIn(_app()._t("ampr_zstd.pack_nur_ng_raus"), protokoll, "".join(map(str, protokoll)))
+        self.assertEqual(vorher, Path(lib).read_bytes())
+        self.assertEqual(b"SONY" * 256, Path(spiel, "fakelib2", "libSceAmpr.sprx").read_bytes())
+        self.assertTrue(ok)
+
+    def test_wiederherstellen_im_schreibordner_wird_gesperrt(self) -> None:
+        """Gegenprobe zum Test davor: liegt die Sicherung im selben Ordner wie NG, bleibt die Sperre (siehe oben mit sicherung=True)."""
+        spiel, lib = self._spiel(sicherung=True)
+        ok, protokoll, _g, _h = self._lauf(spiel, {"action": "ampr_restore", "ampr_libs": ["libSceAmpr.sprx"]})
+        self.assertFalse(ok)
+        self.assertIn(_app()._t("ampr_zstd.pack_nur_ng_raus"), protokoll)
+
+    def test_gegenprobe_entfernen_mit_originalen(self) -> None:
+        spiel, lib = self._spiel(originale_weg=False)
+        ok, protokoll, _g, _h = self._lauf(spiel, {"action": "ampr_remove", "ampr_libs": ["libSceAmpr.sprx"]})
+        self.assertFalse(os.path.exists(lib), "".join(map(str, protokoll)))
+        self.assertNotIn(_app()._t("ampr_zstd.pack_nur_ng"), protokoll)
 
 
 def _packbereit() -> bool:

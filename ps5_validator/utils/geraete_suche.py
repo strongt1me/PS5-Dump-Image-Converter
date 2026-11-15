@@ -17,7 +17,6 @@ die duenne Huelle mit den Anschluessen.
 """
 from __future__ import annotations
 
-import re
 import socket
 import struct
 import time
@@ -25,9 +24,13 @@ import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Callable, Iterable
+from urllib.parse import urlsplit
 
 MDNS_GRUPPE = ("224.0.0.251", 5353)
 WSD_GRUPPE = ("239.255.255.250", 3702)
+#: Obergrenzen (A7): Ein Geraet, das mit Hunderten erfundener Eintraege antwortet, fuellt weder die Liste noch den Speicher.
+MAX_JE_PAKET = 32
+MAX_GERAETE = 256
 
 #: Dienstname (mDNS) -> Art. ``smb`` heisst: Als UNC-Pfad benutzbar (Windows-Freigabe, Samba).
 DIENSTE: "dict[str, str]" = {
@@ -181,16 +184,22 @@ def wsd_antwort_lesen(daten: bytes, absender: str = "") -> "list[Geraet]":
             for kind in element.iter():
                 if kind.tag.endswith("}XAddrs") and kind.text:
                     xaddrs = kind.text
-            adresse = ""
-            port = 0
+            # IPv6 steht in Klammern ("http://[fe80::1]:5357/") - der fruehere Ausdruck las daraus nur "fe80" (Gesamtpruefung
+            # 14.11.2026, A7). Eine IPv4-Adresse geht vor: Nur sie taugt fuer einen UNC-Pfad ohne Umwege.
+            kandidaten: "list[tuple[bool, str, int]]" = []
             for url in xaddrs.split():
-                treffer = re.match(r"^[a-z]+://\[?([^\]/:]+)\]?(?::(\d+))?", url, re.I)
-                if treffer:
-                    adresse, port = treffer.group(1), int(treffer.group(2) or 0)
-                    break
-            adresse = adresse or absender
+                try:
+                    teile = urlsplit(url)
+                    host, port = teile.hostname or "", teile.port or 0
+                except ValueError:
+                    continue
+                if host:
+                    kandidaten.append((":" in host, host, port))
+            adresse, port = (sorted(kandidaten, key=lambda k: k[0])[0][1:] if kandidaten else (absender, 0))
             if adresse:
                 ergebnis.append(Geraet(adresse, adresse, "wsd", port))
+            if len(ergebnis) >= MAX_JE_PAKET:
+                break
     return ergebnis
 
 
@@ -252,9 +261,9 @@ def suchen(zeit: float = 3.0, *, schnittstellen: "list[str] | None" = None,
                 except (socket.timeout, OSError):
                     continue
                 neue = mdns_antwort_lesen(daten, absender) or wsd_antwort_lesen(daten, absender)
-                for geraet in neue:
+                for geraet in neue[:MAX_JE_PAKET]:
                     schluessel = (geraet.adresse, geraet.art)
-                    if schluessel not in gefunden:
+                    if schluessel not in gefunden and len(gefunden) < MAX_GERAETE:
                         gefunden[schluessel] = geraet
                         if melden is not None:
                             melden(geraet)

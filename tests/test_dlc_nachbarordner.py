@@ -209,9 +209,10 @@ class PlatzbedarfMitDlcTests(unittest.TestCase):
     def test_strom_zaehlt_die_dlc_ordner_in_temp_und_ziel(self) -> None:
         ohne = self._gui(dlc=False, strom=True)._platzbedarf_je_quelle(str(self.spiel), "exfat")
         mit = self._gui(dlc=True, strom=True)._platzbedarf_je_quelle(str(self.spiel), "exfat")
-        self.assertEqual(self.dlc_bytes, mit[0] - ohne[0], "Temp: der Ueberlagerungsordner nimmt die DLC-Ordner auf")
+        # Der Ueberlagerungsordner ist der dritte Wert (er liegt, wo der Dump-Ordner liegt; Gesamtpruefung 14.11.2026, S-C).
+        self.assertEqual(self.dlc_bytes, mit[2] - ohne[2], "Ueberlagerungsordner: er nimmt die DLC-Ordner auf")
         self.assertEqual(self.dlc_bytes, mit[1] - ohne[1], "Ziel: die DLC-Ordner gehoeren zum Ergebnis")
-        self.assertEqual(ohne[2], mit[2])
+        self.assertEqual(ohne[0], mit[0])
 
     def test_arbeitskopie_zaehlt_die_dlc_ordner_in_temp_und_ziel(self) -> None:
         ohne = self._gui(dlc=False, strom=False)._platzbedarf_je_quelle(str(self.spiel), "exfat")

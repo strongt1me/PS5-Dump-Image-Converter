@@ -142,6 +142,13 @@ BEKANNT_STUMM: set[tuple[str, str, str]] = {
     ("abbild_pruefen.py", "exfat_ruecklesen", "os.walk"),
     # spielbaum.OrdnerBaum.dateien ist die Dateiliste des Lesebaums (Stufe 3); der Aufrufer meldet seine Abschnitte.
     ("spielbaum.py", "dateien", "os.walk"),
+    # profil_schreiben.dateien (14.11.2026) listet den Spielordner fuer die Schreibweisen des Blocks "immer lose" - derselbe Durchgang
+    # wie filmordner_muster/systemdateien_muster oben, einmal beim Ablegen des Profils; der Aufrufer (_ampr_assetpakete_bauen) hat
+    # davor "ampr_pack.start" ins Protokoll und die Statuszeile geschrieben.
+    ("ampr_assetpakete.py", "dateien", "os.walk"),
+    # quelle_loeschen.loeschen: shutil.rmtree ist nur der Rueckfall ohne Rueckruf - das Programm reicht immer _rmtree_force herein
+    # und schreibt vorher "Quelle wird geloescht" ins Protokoll und die Statuszeile (_quelle_nach_erfolg_loeschen).
+    ("quelle_loeschen.py", "loeschen", "shutil.rmtree"),
 }
 
 

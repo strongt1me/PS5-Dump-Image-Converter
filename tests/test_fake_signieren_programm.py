@@ -212,6 +212,7 @@ class AnbindungTests(unittest.TestCase):
         app = _App({"fake_signieren_var": True, "backport_integrate_var": True})
         app._integration_gewaehlt = G._integration_gewaehlt.__get__(app)
         app._integration_anwenden = G._integration_anwenden.__get__(app)
+        app._ampr_einbau_passt_zum_pack = G._ampr_einbau_passt_zum_pack.__get__(app)   # ohne zstd-Pack nur ein listdir (R6-3)
         app._integration_backport = lambda ordner: reihenfolge.append("backport") or True
         app._integration_fake_signieren = lambda ordner: reihenfolge.append("fake") or True
         app._integration_dlc = lambda ordner: reihenfolge.append("dlc") or True
@@ -227,6 +228,7 @@ class AnbindungTests(unittest.TestCase):
         app = _App({"fake_signieren_var": True})
         app._integration_gewaehlt = G._integration_gewaehlt.__get__(app)
         app._integration_anwenden = G._integration_anwenden.__get__(app)
+        app._ampr_einbau_passt_zum_pack = G._ampr_einbau_passt_zum_pack.__get__(app)
         app._integration_fake_signieren = lambda ordner: False
         app._ampr_wird_eingebaut = lambda: False
         app._playgo_wird_eingebaut = lambda: False

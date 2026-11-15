@@ -38,6 +38,7 @@ from ps5_validator.utils.abbild_journal import (
     journal_pfad,
     journal_schreiben,
     journal_zurueckspielen,
+    stellen_zusammenfassen,
 )
 
 PFS_MAGIC = 20130315
@@ -651,11 +652,13 @@ class PfsAbbild:
             stellen.append(bereich_bytes(*ordner_lage[id(k)], blobs[id(k)]))
 
         neu_laenge = ndblock * self.bs
-        alte: "list[tuple[int, bytes]]" = []
+        stellen = stellen_zusammenfassen(stellen)                     # keine zwei Saetze ueber denselben Bytes im Journal (E3)
+        alte: "list[tuple]" = []
         for offset, neu in stellen:
             if offset < self._laenge_platte:
                 self._fh.seek(offset)
-                alte.append((offset, self._fh.read(min(len(neu), self._laenge_platte - offset))))
+                # Mit den neuen Bytes: daran erkennt das Zurueckspielen, ob das Journal zu diesem Abbild gehoert (E3).
+                alte.append((offset, self._fh.read(min(len(neu), self._laenge_platte - offset)), neu))
         journal_schreiben(journal_pfad(self.pfad), alte,
                           laenge_vorher=self._laenge_platte if neu_laenge > self._laenge_platte else None)
         try:
@@ -674,7 +677,7 @@ class PfsAbbild:
                 self._fh.flush()
             except OSError:
                 pass
-            journal_zurueckspielen(self.pfad)
+            journal_zurueckspielen(self.pfad, eigen=True)
             raise
         os.remove(journal_pfad(self.pfad))
 
@@ -682,6 +685,8 @@ class PfsAbbild:
         erster, bloecke = k.neu_lage                                  # type: ignore[misc]
         groesse = k.inode.groesse
         rest = groesse
+        if os.path.getsize(k.quelle) != groesse:                      # gewachsen oder geschrumpft seit dem Vormerken (E5)
+            raise PfsBearbeitenFehler("Die Quelldatei hat sich seit dem Vormerken geaendert: %s" % k.quelle)
         self._fh.seek(erster * self.bs)
         with open(k.quelle, "rb") as q:
             while rest > 0:

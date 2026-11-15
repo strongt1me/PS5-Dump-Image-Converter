@@ -11,11 +11,13 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -182,6 +184,54 @@ class UmbenennenTests(_Abbild):
                 a.umbenennen("data/mittel.pak", "X.BIN")
 
 
+class NamenUndLaengenTests(_Abbild):
+    """Gesamtpruefung 14.11.2026, E6/E7."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.bauen({"eboot.bin": b"e", "sce_sys/param.json": b"{}", "a.bin": _inh("a", 10)})
+
+    def _strom(self, a: "eb.ExfatAbbild", anfang: str) -> "tuple[eb._Satz, bytes]":
+        s = [x for x in a._wurzel.saetze if x.name.startswith(anfang)][0]
+        return s, bytes(a._wurzel.roh[s.anfang + 32: s.anfang + 64])
+
+    def test_namen_ausserhalb_der_bmp_zaehlen_utf16_einheiten(self) -> None:
+        name = "Spielstand_\U0001F600"                                        # 12 Zeichen, 13 UTF-16-Einheiten
+        with eb.ExfatAbbild(self.pfad) as a:
+            a.umbenennen("a.bin", name)
+            a.speichern()
+        with eb.ExfatAbbild(self.pfad) as a:
+            s, strom = self._strom(a, "Spielstand")
+            self.assertEqual(13, strom[3])
+            self.assertEqual(name, s.name)
+            self.assertEqual([], a.pruefen())
+        # Gelesen mit dem eigenen gezielten Leser (der Leser von MkPFS kuerzt nach Zeichen - Fremdcode, nicht geaendert).
+        from ps5_validator.utils import exfat_gezielt
+        with eb.ExfatAbbild(self.pfad) as a:
+            roh = bytes(a._wurzel.roh)
+        self.assertIn(name, [e.name for e in exfat_gezielt._eintraege([roh[i:i + 32] for i in range(0, len(roh), 32)])])
+
+    def test_zu_lang_in_utf16_wird_abgelehnt(self) -> None:
+        with eb.ExfatAbbild(self.pfad) as a:
+            with self.assertRaises(eb.ExfatBearbeitenFehler):
+                a.umbenennen("a.bin", "\U0001F600" * 128)                       # 128 Zeichen, aber 256 Einheiten
+            a.umbenennen("a.bin", "\U0001F600" * 127)                           # 254 Einheiten: geht
+            a.speichern()
+        with eb.ExfatAbbild(self.pfad) as a:
+            self.assertIn("\U0001F600" * 127, [s.name for s in a._wurzel.saetze])
+            self.assertEqual([], a.pruefen())
+
+    def test_umbenennen_behaelt_die_gueltige_datenlaenge(self) -> None:
+        """E7: In einem fremden Abbild kann ValidDataLength kleiner sein als DataLength - umbenennen setzte sie gleich."""
+        with eb.ExfatAbbild(self.pfad) as a:
+            s, _strom = self._strom(a, "a.bin")
+            struct.pack_into("<Q", a._wurzel.roh, s.anfang + 32 + 8, 4)          # VDL 4 statt 10, wie ein fremdes Abbild es haette
+            a.umbenennen("a.bin", "b.bin")
+            _s, strom = self._strom(a, "b.bin")
+            self.assertEqual(4, struct.unpack_from("<Q", strom, 8)[0])
+            self.assertEqual(10, struct.unpack_from("<Q", strom, 0x18)[0])
+
+
 class LoeschenTests(_Abbild):
     def setUp(self) -> None:
         super().setUp()
@@ -288,6 +338,54 @@ class HinzufuegenTests(_Abbild):
             a.speichern()
         self.assertIn("saves", self.ordner())
         self.assertEqual(_inh("slot", 300), self.lesen()["saves/slot1.sav"])
+        self.pruefen()
+
+    def test_neuer_ordner_ist_leer_auch_wenn_im_cluster_alter_inhalt_steht(self) -> None:
+        """Gesamtpruefung 14.11.2026, E1: Der Cluster eines neuen Ordners wurde bis zum Speichern von der Platte gelesen."""
+        faelle = {"0xFF": b"\xff" * (2 * CL), "Satzbeginn 0x85": b"\x85\x05" + bytes(2 * CL - 2),
+                  "File+Name": b"\x41" * 32 + b"\xc1" * 32 + bytes(3 * CL - 64)}
+        for titel, alt in faelle.items():
+            with self.subTest(titel):
+                self.bauen({"eboot.bin": b"e" * 100, "sce_sys/param.json": b"{}", "alt.bin": alt})
+                with eb.ExfatAbbild(self.pfad) as a:
+                    a.loeschen("alt.bin")
+                    a.ordner_anlegen("saves")
+                    self.assertEqual([], a.auflisten("saves"))
+                    a.hinzufuegen("saves/slot1.sav", self.quelle("slot", 300))
+                    a.speichern()
+                self.assertEqual(_inh("slot", 300), self.lesen()["saves/slot1.sav"])
+                with eb.ExfatAbbild(self.pfad) as a:
+                    self.assertEqual([("slot1.sav", False, 300)], a.auflisten("saves"))
+                self.pruefen()
+
+    def test_neuer_ordner_zeigt_keine_dateien_eines_geloeschten(self) -> None:
+        self.bauen({"eboot.bin": b"e" * 100, "sce_sys/param.json": b"{}", "A/eins.bin": _inh("1", 10), "A/zwei.bin": _inh("2", CL)})
+        with eb.ExfatAbbild(self.pfad) as a:
+            a.loeschen("A")
+            a.ordner_anlegen("B")
+            self.assertEqual([], a.auflisten("B"), "keine Phantome aus Ordner A")
+            a.hinzufuegen("B/meins.bin", self.quelle("meins", 2 * CL))
+            a.speichern()
+        self.assertEqual({"eboot.bin", "sce_sys/param.json", "B/meins.bin"}, set(self.lesen()))
+        self.pruefen()
+
+    def test_geplante_ordnerstelle_ueberschreibt_keine_neuen_daten(self) -> None:
+        """Gesamtpruefung 14.11.2026, E2: Stelle in einem Ordner-Cluster, der frei wird und neue Dateidaten bekommt."""
+        with eb.ExfatAbbild(self.pfad) as a:                                    # Fall A: Ordner anlegen, wieder loeschen
+            a.loeschen("data/mittel.pak")
+            a.ordner_anlegen("Neu")
+            a.loeschen("Neu")
+            a.hinzufuegen("x.bin", self.quelle("x", 2 * CL))
+            a.speichern()
+        self.assertEqual(_inh("x", 2 * CL), self.lesen()["x.bin"])
+        self.pruefen()
+        self.bauen(self.dateien())
+        with eb.ExfatAbbild(self.pfad) as a:                                    # Fall B: Eintrag im Ordner aendern, Ordner loeschen
+            a.loeschen("data/tief/klein.cfg")
+            a.loeschen("data/tief")
+            a.hinzufuegen("y.bin", self.quelle("y", 2 * CL))
+            a.speichern()
+        self.assertEqual(_inh("y", 2 * CL), self.lesen()["y.bin"])
         self.pruefen()
 
     def test_voller_ordner_waechst_um_einen_cluster(self) -> None:
@@ -418,7 +516,7 @@ class JournalTests(_Abbild):
     def _hart_abbrechen(self, a: "eb.ExfatAbbild", nach_daten: bool = False) -> None:
         """Nachbildung eines hart beendeten Programms: Das Journal liegt, das Abbild ist teilweise veraendert, nichts raeumt auf."""
         echt = eb.journal_zurueckspielen
-        eb.journal_zurueckspielen = lambda _p: False
+        eb.journal_zurueckspielen = lambda _p, **_k: False
         try:
             if nach_daten:
                 original_fsync = os.fsync
@@ -451,6 +549,38 @@ class JournalTests(_Abbild):
             self.assertEqual([], b.pruefen())
         self.assertEqual(self.original, Path(self.pfad).read_bytes(), "Byte fuer Byte wie vorher")
         self.assertFalse(os.path.exists(eb.journal_pfad(self.pfad)))
+
+    def test_geaenderte_quelldatei_wird_nicht_still_angepasst(self) -> None:
+        """Gesamtpruefung 14.11.2026, E5: Zwischen Vormerken und Anwenden gewachsen oder geschrumpft - Fehler, Abbild wie vorher."""
+        for titel, neue_laenge in (("gewachsen", 2 * CL + 50), ("geschrumpft", 10)):
+            with self.subTest(titel):
+                quelle = self.quelle("aendert_sich", 2 * CL)
+                with eb.ExfatAbbild(self.pfad) as a:
+                    a.loeschen("data/mittel.pak")
+                    a.hinzufuegen("data/neu.bin", quelle)
+                    Path(quelle).write_bytes(_inh("anders", neue_laenge))
+                    with self.assertRaises(eb.ExfatBearbeitenFehler):
+                        a.speichern()
+                self.assertEqual(self.original, Path(self.pfad).read_bytes())
+                self.assertFalse(os.path.exists(eb.journal_pfad(self.pfad)))
+
+    def test_journalgrenze_greift_vor_dem_einlesen(self) -> None:
+        """Gesamtpruefung 14.11.2026, E4: Bis dahin las ``speichern`` jeden zu sichernden Cluster ein und pruefte erst dann die Grenze."""
+        gelesen = {"n": 0}
+        with mock.patch.object(eb, "_JOURNAL_DATEN_MAX", CL), eb.ExfatAbbild(self.pfad) as a:
+            a.loeschen("data/gross.bin")                                       # 6 Cluster frei
+            a.hinzufuegen("data/neu.bin", self.quelle("neu", 5 * CL))           # 5 davon werden ueberschrieben - zu viel fuers Journal
+            echt = a._fh.read
+
+            def zaehlen(n: int = -1) -> bytes:
+                daten = echt(n)
+                gelesen["n"] += len(daten)
+                return daten
+            a._fh.read = zaehlen                                               # type: ignore[method-assign]
+            with self.assertRaises(eb.PlatzFehlt):
+                a.speichern()
+        self.assertLessEqual(gelesen["n"], 2 * CL, "nur FAT und Bitmap, nicht die alten Dateicluster")
+        self.assertEqual(self.original, Path(self.pfad).read_bytes())
 
     def test_fehler_mitten_im_schreiben_stellt_sofort_wieder_her(self) -> None:
         a = eb.ExfatAbbild(self.pfad)

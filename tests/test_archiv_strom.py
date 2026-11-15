@@ -12,9 +12,11 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -98,6 +100,24 @@ class SchattenTests(_Grundlage):
         self.assertTrue(any("nicht direkt gelesen" in z_ or "not read directly" in z_ for z_ in g._log_lines), g._log_lines)
         self.assertEqual({}, g._archiv_schatten)
 
+    def test_dlc_ordner_neben_dem_spiel_heisst_ganz_entpacken(self) -> None:
+        """Gesamtpruefung 14.11.2026, S-D: Der Schattenordner traegt nur das Spiel - DLC EMU faende die "-ac"-Ordner daneben nicht."""
+        dlc = "UP0001-PPSA01234_00-ABCDEFGHIJKLMNOP-ac"
+        pfad = self._zip("mit_dlc.zip", wurzel="Spiel")
+        with zipfile.ZipFile(pfad, "a") as zf:
+            zf.writestr(dlc + "/data/dlc.bin", b"d" * 100)
+        g = _gui(self.tmp)
+        self.assertIsNone(g._archiv_schatten_anlegen(pfad, self.entpackt, ""))
+        self.assertTrue(any(dlc in z_ for z_ in g._log_lines), g._log_lines)
+        self.assertEqual({}, g._archiv_schatten)
+
+    def test_gegenprobe_ohne_dlc_bleibt_es_beim_schatten(self) -> None:
+        pfad = self._zip("ohne_dlc.zip", wurzel="Spiel")
+        with zipfile.ZipFile(pfad, "a") as zf:
+            zf.writestr("Liesmich/info.txt", b"kein DLC")
+        g = _gui(self.tmp)
+        self.assertIsNotNone(g._archiv_schatten_anlegen(pfad, self.entpackt, ""))
+
     def test_weitere_passwoerter_aus_den_einstellungen(self) -> None:
         g = _gui(self.tmp)
         self.assertEqual([], g._archiv_weitere_passwoerter())
@@ -107,6 +127,25 @@ class SchattenTests(_Grundlage):
         self.assertEqual(["x", "y", "z"], g._archiv_weitere_passwoerter())
         g.einstellungen["archiv_passwoerter"] = 5
         self.assertEqual([], g._archiv_weitere_passwoerter())
+
+    def test_das_zwoelf_stunden_aufraeumen_laesst_das_gewaehlte_archiv_stehen(self) -> None:
+        """Gesamtpruefung 14.11.2026, S-I: Ein Archiv von gestern als Quelle - sein Entpackordner ist alt, aber nicht verwaist."""
+        basis = os.path.join(self.tmp, "arbeit")
+        os.makedirs(basis)
+        g = _gui(self.tmp)
+        gewaehlt = os.path.join(basis, "ps5conv_archiv_gestern")
+        verwaist = os.path.join(basis, "ps5conv_archiv_vorgestern")
+        spiel = g._archiv_schatten_anlegen(self.zip, gewaehlt, "")
+        self.assertIsNotNone(spiel)
+        os.makedirs(os.path.join(verwaist, "Spiel"))
+        alt = time.time() - 30 * 3600
+        for ordner in (gewaehlt, verwaist):
+            os.utime(ordner, (alt, alt))
+        g._get_runtime_temp_dir = lambda *a, **k: basis
+        g._stale_temp_swept = False
+        g._sweep_stale_temp_dirs()
+        self.assertTrue(os.path.isdir(spiel), "die gewaehlte Quelle bleibt")
+        self.assertFalse(os.path.exists(verwaist), "Gegenprobe: ein echter alter Rest wird weiter weggeraeumt")
 
     def test_ein_gewoehnlicher_ordner_ist_kein_schatten(self) -> None:
         g = _gui(self.tmp)
@@ -151,6 +190,17 @@ class VollstaendigTests(_Grundlage):
         self.assertIn("geändert", str(ctx.exception))
         self.assertFalse(g._archiv_schatten_info(spiel)["voll"])
         self.assertFalse(os.path.exists(os.path.join(spiel, "Media", "text.txt")), "Es darf nichts Halbes entstehen")
+
+    def test_ein_passwortfehler_wird_zum_oserror(self) -> None:
+        """R2-A6: Wird das Archiv waehrend des Laufs gegen ein verschluesseltes getauscht, entkam der PasswortFehler jedem Aufrufer."""
+        from ps5_validator.utils import archiv_quelle
+        g = _gui(self.tmp)
+        spiel = self.schatten(g)
+        with mock.patch.object(APP.archiv_baum.ZipBaum, "dateien",
+                               side_effect=archiv_quelle.PasswortFehler("Das Archiv ist verschluesselt")):
+            with self.assertRaises(OSError):
+                g._archiv_schatten_vollstaendig(spiel)
+        self.assertFalse(g._archiv_schatten_info(spiel)["voll"])
 
     def test_abbruch_waehrend_des_entpackens_ist_ein_fehler_und_kein_halber_ordner(self) -> None:
         g = _gui(self.tmp)
@@ -205,6 +255,15 @@ class VorbereitenTests(_Grundlage):
         g._strom_fuer_ordner_gewaehlt = lambda: False
         self.assertFalse(g._archiv_schatten_vorbereiten("pack_folder", spiel))
 
+    def test_ein_geloeschtes_archiv_beendet_den_lauf_mit_meldung(self) -> None:
+        """Gesamtpruefung 14.11.2026, S-E/A3: ZipBaum warf ausserhalb des try - der Faden starb, is_running blieb stehen."""
+        g, spiel, _ok = self._vorbereiten("exfat", strom=True)
+        os.remove(self.zip)
+        g._strom_fuer_ordner_gewaehlt = lambda: False
+        self.assertFalse(g._archiv_schatten_vorbereiten("pack_folder", spiel))
+        self.assertTrue(any("kein Archiv" in z_ for z_ in g._log_lines), g._log_lines)
+        self.assertFalse(g._archiv_schatten_info(spiel)["voll"])
+
 
 @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
 class StromTests(_Grundlage):
@@ -249,6 +308,16 @@ class StromTests(_Grundlage):
         for rel, daten in self.inhalt.items():
             self.assertEqual(daten, Path(spiel, *rel.split("/")).read_bytes(), rel)
         self.assertEqual(b"x" * 100, Path(spiel, "ampr_zstd-000.pak").read_bytes())
+
+    def test_scheitert_das_entpacken_im_rueckfall_endet_der_weg_mit_false(self) -> None:
+        """Gesamtpruefung 14.11.2026, S-F: Der OSError lief bis aus der Sammelschleife - die uebrigen Dateien kamen nicht dran."""
+        archiv = self._zip("mit_packs2.zip", extra={"ampr_zstd-000.pak": b"x" * 100})
+        g = _gui(self.tmp)
+        spiel = self.schatten(g, archiv)
+        g._archiv_schatten[g._archiv_schluessel(spiel)]["groesse"] = 1 << 60       # kein Platz fuer den Rest
+        self.assertIs(False, g._mode_exfat_umpacken_strom(spiel, self.ziel, ordner=True))
+        self.assertFalse(g._archiv_schatten_info(spiel)["voll"])
+        self.assertTrue(any("Archiv" in z_ for z_ in g._log_lines), g._log_lines)
 
     def test_ein_gewoehnlicher_ordner_wird_vom_rueckfall_nicht_beruehrt(self) -> None:
         g = _gui(self.tmp)

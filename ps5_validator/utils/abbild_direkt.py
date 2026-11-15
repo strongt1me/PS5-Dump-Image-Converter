@@ -13,10 +13,14 @@ from __future__ import annotations
 import os
 
 from ps5_validator.utils.abbild_journal import (  # noqa: F401  (fuer die Oberflaeche an einer Stelle)
+    FREMD,
+    FREMD_ENDUNG,
+    ZURUECKGESPIELT,
     DirektFehler,
     DirektPlatzFehlt,
     journal_pfad,
     journal_zurueckspielen,
+    zurueckspielen,
 )
 
 #: Die Endungen, bei denen "Direkt aendern" angeboten wird (``.ffpfsc`` ist komprimiert und geht nie).

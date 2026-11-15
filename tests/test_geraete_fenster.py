@@ -2,6 +2,7 @@
 """Das Fenster "Geraete im Netz" (``ui/geraete_fenster.py``): Suche im Faden, Liste, Quelle/Ziel waehlen, Adresse kopieren (14.11.2026)."""
 from __future__ import annotations
 
+import queue
 import sys
 import threading
 import unittest
@@ -50,6 +51,17 @@ class FensterTests(unittest.TestCase):
             del _WURZEL._ablegen_admin_zustand
 
     def setUp(self) -> None:
+        # Rueckrufe aus dem Suchfaden kommen in eine Warteschlange, die ``warten`` im Hauptfaden abarbeitet. ``root.after`` aus einem
+        # Faden haengt in Tkinter daran, dass die Hauptschleife gerade laeuft - zwischen zwei Tests verlor sich so gelegentlich die
+        # Meldung "Suche beendet" (Gesamtpruefung 14.11.2026: der Volllauf scheiterte einmal an test_ziel_waehlen).
+        self.eingang: "queue.Queue" = queue.Queue()
+
+        def planen(rueckruf, *args, ms: int = 0) -> bool:
+            self.eingang.put((rueckruf, args))
+            return True
+        patcher = mock.patch.object(self.app, "_hauptfaden_planen", planen)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.win = gf.oeffnen(self.app, self.haupt.UI_SCHRIFT, self.haupt.MONO_SCHRIFT, self.haupt.pt)
         self.addCleanup(self._schliessen)
         self.f = self.win._geraete
@@ -60,14 +72,29 @@ class FensterTests(unittest.TestCase):
         except tk.TclError:
             pass
 
-    def warten(self) -> None:
-        """Die echte Hauptschleife, bis die Suche gemeldet hat, dass sie fertig ist."""
+    def warten(self, starten=None) -> None:
+        """Die echte Hauptschleife, bis die Suche gemeldet hat, dass sie fertig ist.
+
+        ``starten`` (etwa ``self.f._suchen``) laeuft erst IN der Hauptschleife. Die Rueckrufe des Suchfadens (``self.eingang``) werden
+        hier im Hauptfaden ausgefuehrt; jeder eigene Zeitgeber wird am Ende abgebrochen - ein liegengebliebener ``pruefen`` beendete
+        sonst die Schleife des naechsten Tests zu frueh ("Item ... not found").
+        """
+        ids: "list[str]" = []
+
         def pruefen() -> None:
+            while True:
+                try:
+                    rueckruf, args = self.eingang.get_nowait()
+                except queue.Empty:
+                    break
+                rueckruf(*args)
             if not self.f.suche_laeuft:
                 _WURZEL.quit()
             else:
-                _WURZEL.after(30, pruefen)
-        ids = [_WURZEL.after(30, pruefen), _WURZEL.after(20000, _WURZEL.quit)]
+                ids.append(_WURZEL.after(30, pruefen))
+        ids += [_WURZEL.after(30, pruefen), _WURZEL.after(20000, _WURZEL.quit)]
+        if starten is not None:
+            ids.insert(0, _WURZEL.after(0, starten))
         try:
             _WURZEL.mainloop()
         finally:
@@ -83,8 +110,7 @@ class FensterTests(unittest.TestCase):
                 melden(g)
             return list(geraete)
         with mock.patch.object(gf.geraete_suche, "suchen", side_effect=falsche_suche):
-            self.f._suchen()
-            self.warten()
+            self.warten(starten=self.f._suchen)
 
     def test_am_anfang_ist_alles_gesperrt_ausser_suchen(self) -> None:
         self.assertNotEqual("disabled", str(self.f.suchen_knopf["state"]))
@@ -111,8 +137,7 @@ class FensterTests(unittest.TestCase):
 
     def test_eine_ausnahme_in_der_suche_haengt_das_fenster_nicht_auf(self) -> None:
         with mock.patch.object(gf.geraete_suche, "suchen", side_effect=OSError("kein Netz")):
-            self.f._suchen()
-            self.warten()
+            self.warten(starten=self.f._suchen)
         self.assertFalse(self.f.suche_laeuft)
         self.assertNotEqual("disabled", str(self.f.suchen_knopf["state"]))
 

@@ -299,6 +299,26 @@ class FensterTests(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(quelle, "sce_sys", "param.json")))
             self.assertEqual("", self.app._validate_source_path(quelle, "pack_folder"))
 
+    def test_waehrend_eines_laufs_kein_neues_archiv(self) -> None:
+        """Gesamtpruefung 14.11.2026, A5: Ein neues Archiv raeumte den Entpackordner des alten weg - vielleicht die laufende Quelle."""
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as t:
+            archiv = self._zip(t)
+            alt = Path(t) / "ps5conv_archiv_alt"
+            alt.mkdir()
+            vorher = getattr(self.app, "_archiv_ordner", "")
+            self.app._archiv_ordner = str(alt)
+            self.addCleanup(setattr, self.app, "_archiv_ordner", vorher)
+            self.app.source_path.set("VORHER")
+            self.app.is_running = True
+            self.addCleanup(setattr, self.app, "is_running", False)
+            with mock.patch.object(self.haupt.messagebox, "showwarning") as warnung:
+                self.app._archiv_als_quelle(str(archiv))
+            warnung.assert_called_once()
+            self.assertTrue(alt.is_dir(), "der Entpackordner des laufenden Archivs bleibt")
+            self.assertEqual("VORHER", self.app.source_path.get())
+            self.assertFalse(getattr(self.app, "_archiv_laeuft", False))
+
     def test_ein_archiv_ohne_spiel_wird_gemeldet_und_aendert_die_quelle_nicht(self) -> None:
         from unittest import mock
         with tempfile.TemporaryDirectory() as t:

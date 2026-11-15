@@ -1257,8 +1257,10 @@ def fremde_ampr_playgo(spielordner: str) -> list[str]:
     """Nennt die AMPR- und PlayGo-Bibliotheken im Dump, die weder AMPR EMU noch der PlayGo-Stub sind.
 
     Gedacht fuer den Hinweis beim Backport: Hat der Dump ``libSceAmpr.sprx`` oder ``libScePlayGo.sprx`` schon im
-    ``fakelib``-Ordner (von einem anderen Werkzeug, oder die Originale eines frueheren Backports), bleiben sie bei
-    ``Ersatzbibliotheken kopieren`` unberuehrt - der mitgelieferte Satz hat keine von beiden. Gemessen an Hollow Knight
+    ``fakelib``-Ordner (von einem anderen Werkzeug, oder die Originale eines frueheren Backports), blieben sie bei
+    ``Ersatzbibliotheken kopieren`` frueher unberuehrt - der Satz hatte keine von beiden. Seit 28.10.2026 bringt jeder Satz beide
+    mit (markiert, :data:`EMU_KENNZEICHEN`) und ersetzt eine fremde Datei beim Kopieren; hier landet noch, was den Kopierschritt
+    ueberlebt. Ein vorhandenes AMPR EMU / ampr-emu-ng bleibt (:func:`emulator_bleibt`). Gemessen an Hollow Knight
     (PPSA34971, Firmware 4.03, 25.10.2026): Mit und ohne die Ersatzbibliotheken derselbe Absturz ``0xa0020104`` direkt nach
     ``libSceSysmodule``; behoben hat ihn erst das Ersetzen dieser zwei Dateien durch die aus AMPR EMU.
 
@@ -2265,6 +2267,18 @@ def _ist_emu_datei(pfad: str) -> bool:
     return any(k in daten for k in EMU_KENNZEICHEN)
 
 
+def emulator_bleibt(ablage: str) -> bool:
+    """Liegt unter ``ablage`` schon AMPR EMU (auch ampr-emu-ng) oder der PlayGo-Stub des Spiels? Dann bleibt die Datei, wie sie ist.
+
+    Jeder Bibliothekssatz bringt ``libSceAmpr.sprx`` von AMPR EMU (drakmor) mit (:func:`fakelib_dateien_fuer_ziel` behaelt sie immer).
+    Kopierte der Backport sie ueber eine vorhandene ``libSceAmpr.sprx`` von ampr-emu-ng, waere ein mit zstd gepacktes Spiel danach
+    unlesbar - nur NG liest zstd-Packs (Gesamtpruefung 14.11.2026, R7-1). Alle drei Wege (Backport beim Erstellen, BACKPORT-Fenster,
+    Backport-Ordner) halten es gleich.
+    """
+    return (os.path.basename(ablage).lower() in AMPR_PLAYGO_BIBLIOTHEKEN and os.path.isfile(ablage)
+            and _ist_emu_datei(ablage))
+
+
 def einfuegen_ordner_pfad(ausgabe: str, titel_id: str, firmware: int) -> str:
     """``<ausgabe>/<TITLE_ID> Backport FW<n>`` - ein Ordner, dessen Inhalt in den Spielordner kopiert wird.
 
@@ -2414,8 +2428,7 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
             name = os.path.basename(quelle)
             ablage = os.path.join(bib, name)
             # Ein bereits mitgebrachtes AMPR EMU / PlayGo-Stub des Spiels bleibt; alles andere wird ersetzt.
-            if (name.lower() in AMPR_PLAYGO_BIBLIOTHEKEN and os.path.isfile(ablage)
-                    and _ist_emu_datei(ablage)):
+            if emulator_bleibt(ablage):
                 continue
             os.makedirs(bib, exist_ok=True)
             shutil.copy2(quelle, ablage)

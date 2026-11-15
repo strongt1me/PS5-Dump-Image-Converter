@@ -23,6 +23,7 @@ Journal, Pruefsummen der Metadaten, dreifach indirekte Bloecke, Verweise/Geraete
 from __future__ import annotations
 
 import contextlib
+import functools
 import os
 import struct
 import time
@@ -358,16 +359,10 @@ class Ufs2Abbild:
     def _groesse(roh: "bytes | bytearray") -> int:
         return struct.unpack_from("<Q", roh, 0x10)[0]
 
-    def _inode_belegt(self, ino: int) -> bool:
-        cg, index = divmod(ino, self.ipg)
-        kopf = self._cg_kopf(cg)
-        off = self._cg_feld(kopf, 0x5C)
-        return bool(kopf[off + (index >> 3)] & (1 << (index & 7)))
-
     def _inode_zuteilen(self, bevorzugt: int, ordner: bool) -> int:
         for k in range(self.ncg):
             cg = (bevorzugt + k) % self.ncg
-            if struct.unpack_from("<i", self.cs, cg * 16 + 8)[0] <= 0:
+            if cg not in self._beruehrt and struct.unpack_from("<i", self.cs, cg * 16 + 8)[0] <= 0:   # wie bei den Bloecken (U2)
                 continue
             kopf = self._cg_kopf(cg)
             off = self._cg_feld(kopf, 0x5C)
@@ -503,7 +498,9 @@ class Ufs2Abbild:
         for durchgang in (0, 1):
             for k in range(self.ncg):
                 cg = (bevorzugt + k) % self.ncg
-                if struct.unpack_from("<i", self.cs, cg * 16 + 4)[0] <= 0:
+                # Der Zaehler einer in dieser Aenderung beruehrten Gruppe ist veraltet (neu gezaehlt wird erst am Ende): ``ersetzen`` gibt
+                # die alten Bloecke frei und teilt sofort zu - eine volle Gruppe meldete dann "kein Platz" (Gesamtpruefung 14.11.2026, U2).
+                if cg not in self._beruehrt and struct.unpack_from("<i", self.cs, cg * 16 + 4)[0] <= 0:
                     continue
                 kopf = self._cg_kopf(cg)
                 nutzbar = self._cg_feld(kopf, 0x14)
@@ -630,11 +627,29 @@ class Ufs2Abbild:
         return v
 
     def _finde(self, v: _Verzeichnis, name: str) -> "_Eintrag | None":
+        """Der Eintrag ``name``: genau so geschrieben - sonst der eine, der sich nur in Gross/Klein unterscheidet.
+
+        Gesamtpruefung 14.11.2026 (U1): Bis dahin gewann der erste Eintrag, dessen Name in Grossbuchstaben passte. UFS2 und der
+        Schreiber erlauben ``Foo.bin`` neben ``foo.bin``; Loeschen oder Ersetzen von ``foo.bin`` traf dann ``Foo.bin``. Passen
+        mehrere nur ohne Ruecksicht auf die Schreibung, ist der Name mehrdeutig - dann wird nichts geraten.
+        """
         schluessel = name.upper()
+        aehnlich: "list[_Eintrag]" = []
         for e in self._eintraege(v):
-            if e.name not in (".", "..") and e.name.upper() == schluessel:
+            if e.name in (".", ".."):
+                continue
+            if e.name == name:
                 return e
-        return None
+            if e.name.upper() == schluessel:
+                aehnlich.append(e)
+        if len(aehnlich) > 1:
+            raise Ufs2BearbeitenFehler("Mehrdeutiger Name (mehrere Eintraege unterscheiden sich nur in Gross/Klein): %s" % name)
+        return aehnlich[0] if aehnlich else None
+
+    def _vergeben(self, v: _Verzeichnis, name: str) -> "list[_Eintrag]":
+        """Alle Eintraege, die ``name`` ohne Ruecksicht auf Gross/Klein tragen - fuer "der Name ist schon vergeben"."""
+        schluessel = name.upper()
+        return [e for e in self._eintraege(v) if e.name not in (".", "..") and e.name.upper() == schluessel]
 
     def _block_markieren(self, v: _Verzeichnis, pos: int, laenge: int) -> None:
         for lbn in range(pos // self.bs, (pos + max(1, laenge) - 1) // self.bs + 1):
@@ -686,6 +701,10 @@ class Ufs2Abbild:
         # Kein Platz: ein ganzer Block mehr fuer den Ordner.
         roh = self._inode(v.ino)
         alt_groesse = self._groesse(roh)
+        if alt_groesse % self.bs:
+            # Ein Ordner, der (wie bei FreeBSD makefs) nur Fragmente eines Blocks belegt: Ein ganzer Block dahinter haette sein erstes
+            # Fragment wie einen ganzen Block beschrieben und das Fragment des Nachbarn ueberschrieben (Gesamtpruefung 14.11.2026, U4).
+            raise Ufs2PlatzFehlt("Der Ordner %s liegt in Fragmenten und kann hier nicht wachsen; bitte neu bauen" % (v.rel or "/"))
         bloecke = list(v.bloecke)
         if len(bloecke) + 1 > N_DIREKT + self.nindir:
             raise Ufs2PlatzFehlt("Der Ordner %s ist zu gross" % (v.rel or "/"))
@@ -788,8 +807,7 @@ class Ufs2Abbild:
         with self._transaktion():
             self._name_pruefen(neuer_name)
             v, e = self._holen(rel)
-            vorhanden = self._finde(v, neuer_name)
-            if vorhanden is not None and vorhanden.pos != e.pos:
+            if any(vorhanden.pos != e.pos for vorhanden in self._vergeben(v, neuer_name)):
                 raise Ufs2BearbeitenFehler("Der Name ist schon vergeben: %s" % neuer_name)
             if _dirsiz(len(neuer_name)) <= e.reclen:
                 self._eintrag_schreiben(v, e.pos, e.ino, e.reclen, e.typ, neuer_name)
@@ -838,7 +856,7 @@ class Ufs2Abbild:
         with self._transaktion():
             v, name = self._ziel(rel)
             self._name_pruefen(name)
-            if self._finde(v, name) is not None:
+            if self._vergeben(v, name):
                 raise Ufs2BearbeitenFehler("Der Name ist schon vergeben: %s" % name)
             eltern = self._inode(v.ino)
             tiefe = struct.unpack_from("<I", eltern, 0xF0)[0] + 1
@@ -864,7 +882,7 @@ class Ufs2Abbild:
         with self._transaktion():
             v, name = self._ziel(rel)
             self._name_pruefen(name)
-            if self._finde(v, name) is not None:
+            if self._vergeben(v, name):
                 raise Ufs2BearbeitenFehler("Der Name ist schon vergeben: %s" % name)
             groesse = os.path.getsize(quelle)
             ino = self._inode_zuteilen(v.ino // self.ipg, False)
@@ -917,16 +935,26 @@ class Ufs2Abbild:
         if not stellen and not self._plan.bloecke and not self._plan.daten:
             return
         alte: "list[tuple[int, bytes]]" = []
-        gesichert = 0
-        zu_schreiben = set(self._plan.bloecke) | self._daten_bloecke
-        for frag in sorted(zu_schreiben):
-            if self._block_belegt_auf_platte(frag):                   # auf der Platte belegt: alter Inhalt ins Journal
-                alte.append((frag * self.fs, self._lesen(frag * self.fs, self.bs)))
-                gesichert += self.bs
+        # Auf der Platte belegte Bloecke, die neu beschrieben werden: ihr alter Inhalt geht ins Journal. Gezaehlt wird vor dem Lesen
+        # (Gesamtpruefung 14.11.2026, U3) - sonst lagen erst Gigabytes im Speicher, ehe die Grenze griff.
+        zu_sichern = [frag for frag in sorted(set(self._plan.bloecke) | self._daten_bloecke) if self._block_belegt_auf_platte(frag)]
+        gesichert = len(zu_sichern) * self.bs
         if gesichert > JOURNAL_DATEN_MAX:
             raise Ufs2PlatzFehlt("Der ueberschriebene Inhalt ist fuer das Journal zu gross (%d MiB); bitte neu bauen" % (gesichert >> 20))
+        # Mit den neuen Bytes jeder Stelle - Verwaltung (Bloecke von Ordnern und Zeigern, Inodes, Gruppenkoepfe, Superblock) und
+        # Dateidaten: Daran erkennt das Zurueckspielen, ob das Journal zu diesem Abbild gehoert (Gesamtpruefung 14.11.2026, E3, R2-J2).
+        # Gesichert wird genau so viel, wie geschrieben wird: Ein Ordner in Fragmenten ist kuerzer als ein Block - mit einem ganzen Block
+        # im Journal galten die Nachbarfragmente, die derselbe Lauf beschrieb, als "weder alt noch neu" (R2-J1).
+        daten_von = self._daten_herkunft()
+        for frag in zu_sichern:
+            neu = self._plan.bloecke.get(frag)
+            if neu is None and frag in daten_von:
+                # erst beim Schreiben des Journals gelesen - nicht alte und neue Datenbytes zugleich im Speicher (R3-J2)
+                neu = functools.partial(self._daten_bytes, *daten_von[frag])
+            laenge = len(self._plan.bloecke[frag]) if frag in self._plan.bloecke else self.bs
+            alte.append((frag * self.fs, self._lesen(frag * self.fs, laenge), neu))
         for offset, neu in stellen:
-            alte.append((offset, self._lesen(offset, len(neu))))
+            alte.append((offset, self._lesen(offset, len(neu)), neu))
         journal_schreiben(journal_pfad(self.pfad), alte)
         try:
             for daten, quelle, groesse in self._plan.daten:
@@ -944,13 +972,36 @@ class Ufs2Abbild:
                 self._fh.flush()
             except OSError:
                 pass
-            journal_zurueckspielen(self.pfad)                            # ein Fehler mitten im Schreiben: sofort zurueck
+            journal_zurueckspielen(self.pfad, eigen=True)              # ein Fehler mitten im Schreiben: sofort zurueck
             raise
         os.remove(journal_pfad(self.pfad))
         self._laden()
 
+    def _daten_herkunft(self) -> "dict[int, tuple[str, int, int]]":
+        """Je geplantem Datenblock: ``(Quelldatei, Offset darin, Groesse der Datei)``."""
+        herkunft: "dict[int, tuple[str, int, int]]" = {}
+        for daten, quelle, groesse in self._plan.daten:
+            for i, frag in enumerate(daten):
+                herkunft[frag] = (quelle, i * self.bs, groesse)
+        return herkunft
+
+    def _daten_bytes(self, quelle: str, offset: int, groesse: int) -> "bytes | None":
+        """Was :meth:`_daten_schreiben` an diesen Block schreibt: das Stueck der Datei, das letzte bis zum Fragment mit Nullen.
+        ``None``, wenn die Datei nicht lesbar ist (dann scheitert auch das Schreiben, und der Lauf spielt sein Journal selbst zurueck)."""
+        try:
+            with open(quelle, "rb") as q:
+                q.seek(offset)
+                stueck = q.read(max(0, min(self.bs, groesse - offset)))
+        except OSError:
+            return None
+        if len(stueck) % self.fs:
+            stueck += bytes(self.fs - len(stueck) % self.fs)
+        return stueck
+
     def _daten_schreiben(self, daten: "list[int]", quelle: str, groesse: int) -> None:
         rest = groesse
+        if os.path.getsize(quelle) != groesse:                        # gewachsen oder geschrumpft seit dem Vormerken (E5)
+            raise Ufs2BearbeitenFehler("Die Quelldatei hat sich seit dem Vormerken geaendert: %s" % quelle)
         with open(quelle, "rb") as q:
             i = 0
             while i < len(daten):

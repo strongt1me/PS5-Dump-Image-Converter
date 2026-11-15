@@ -307,6 +307,29 @@ class VerdrahtungTests(unittest.TestCase):
         app._reste_nach_lauf("pack_file", str(self.src), str(self.src.parent))
         self.assertEqual(([], []), (app.protokoll, app.geplant))
 
+    def test_ein_bewusst_behaltenes_fertiges_neu_ist_kein_rest(self):
+        """Gesamtpruefung 14.11.2026, S-G: Die Quelle aenderte sich waehrend des Laufs - das fertige Ergebnis bleibt als ``.neu``."""
+        neu = Path(str(self.src) + ".neu")
+        neu.write_bytes(b"fertiges Ergebnis")
+        app = self._app(str(self.src))
+        app._selbstziel_behalten_merken(str(neu))
+        app._reste_nach_lauf("pack_file", str(self.src), str(self.src.parent))
+        self.assertEqual(([], []), (app.protokoll, app.geplant))
+        self.assertTrue(neu.exists())
+        # Gegenprobe: ohne den Vermerk ist dasselbe ``.neu`` ein Rest (ein abgebrochener Bau).
+        app = self._app(str(self.src))
+        app._reste_nach_lauf("pack_file", str(self.src), str(self.src.parent))
+        self.assertTrue(any("Quelle.exfat.neu" in z for z in app.protokoll), app.protokoll)
+
+    def test_der_vermerk_gilt_nur_fuer_einen_lauf(self):
+        neu = Path(str(self.src) + ".neu")
+        neu.write_bytes(b"x")
+        app = self._app(str(self.src))
+        app._selbstziel_behalten_merken(str(neu))
+        app._reste_nach_lauf("pack_file", str(self.src), str(self.src.parent))
+        app._reste_nach_lauf("pack_file", str(self.src), str(self.src.parent))
+        self.assertTrue(any("Quelle.exfat.neu" in z for z in app.protokoll), "der zweite Lauf meldet es wieder")
+
     def test_ein_fehler_in_der_karte_stoert_den_lauf_nicht(self):
         halb = self.ziel / "Spiel.ffpfsc"
         halb.write_bytes(b"x")

@@ -923,6 +923,24 @@ class OriginaleKlaerenTests(unittest.TestCase):
         self.assertTrue(g._ampr_originale_weglassen)
         self.assertEqual([], g.fragen)
 
+    def test_ffpfsc_in_der_bauform_pfs_fragt(self) -> None:
+        """Gesamtpruefung 14.11.2026, S-H: Die Bauform PFS baut immer der bisherige Weg - der Rueckfall nimmt den Verzicht dort nie
+        zurueck. Also gar nicht erst selbsttaetig verzichten, sondern fragen."""
+        modus = next(iter(GUI._MODE_TARGET_OPTIONS))
+        g = self.gui(variante="ng")
+        g.bauform = APP.BAUFORM_PFS
+        with mock.patch.object(APP.messagebox, "askyesno", lambda *a, **k: g.fragen.append(a) or False):
+            g._ampr_originale_klaeren(modus, "ffpfsc")
+        self.assertFalse(g._ampr_originale_weglassen)
+        self.assertFalse(g._ampr_weglassen_auto_lz4)
+        self.assertEqual(1, len(g.fragen))
+        g = self.gui(variante="ng")                                         # Gegenprobe: Bauform exFAT schreibt der Strom
+        g.bauform = APP.BAUFORM_EXFAT
+        with mock.patch.object(APP.messagebox, "askyesno", lambda *a, **k: g.fragen.append(a) or False):
+            g._ampr_originale_klaeren(modus, "ffpfsc")
+        self.assertTrue(g._ampr_originale_weglassen)
+        self.assertEqual([], g.fragen)
+
     def test_jedes_spiel_der_sammelkonvertierung_beginnt_mit_der_entscheidung_des_laufs(self) -> None:
         g = self.gui(variante="ng")
         g._ampr_weglassen_lauf = (True, True)

@@ -166,6 +166,100 @@ class FrischTests(_Grundlage):
         self.assertTrue(ub.ist_ufs2(self.bild))
 
 
+class SchreibungTests(_Grundlage):
+    """Gesamtpruefung 14.11.2026, U1: ``Foo.bin`` neben ``foo.bin`` - der genaue Name gewinnt, Mehrdeutiges wird nicht geraten."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.erwartet = {"eboot.bin": b"e", "data/Foo.bin": b"GROSS", "data/foo.bin": b"klein", "data/einzeln.cfg": b"a=1"}
+        self.bild = self.bauen(self.erwartet)
+
+    def test_loeschen_trifft_den_genauen_namen(self) -> None:
+        with ub.Ufs2Abbild(self.bild) as a:
+            a.loeschen("data/foo.bin")
+            a.speichern()
+        del self.erwartet["data/foo.bin"]
+        self.pruefen()
+
+    def test_ersetzen_trifft_den_genauen_namen(self) -> None:
+        with ub.Ufs2Abbild(self.bild) as a:
+            a.ersetzen("data/Foo.bin", self.datei("neu.bin", b"NEU"))
+            a.speichern()
+        self.erwartet["data/Foo.bin"] = b"NEU"
+        self.pruefen()
+
+    def test_mehrdeutig_wird_abgelehnt(self) -> None:
+        with ub.Ufs2Abbild(self.bild) as a:
+            with self.assertRaisesRegex(ub.Ufs2BearbeitenFehler, "Mehrdeutig"):
+                a.loeschen("data/FOO.BIN")
+            with self.assertRaisesRegex(ub.Ufs2BearbeitenFehler, "vergeben"):
+                a.hinzufuegen("data/FOO.bin", self.datei("x.bin", b"x"))
+            with self.assertRaisesRegex(ub.Ufs2BearbeitenFehler, "vergeben"):
+                a.umbenennen("data/foo.bin", "FOO.BIN")
+        self.pruefen()
+
+    def test_gegenprobe_eindeutig_ohne_schreibung(self) -> None:
+        """Ein Name, den es nur einmal gibt, findet sich weiter in jeder Schreibung; die Schreibung allein darf sich aendern."""
+        with ub.Ufs2Abbild(self.bild) as a:
+            a.umbenennen("DATA/EINZELN.CFG", "Einzeln.cfg")
+            a.speichern()
+        self.erwartet["data/Einzeln.cfg"] = self.erwartet.pop("data/einzeln.cfg")
+        self.pruefen()
+
+
+class VolleGruppeTests(_Grundlage):
+    def test_ersetzen_nutzt_die_bloecke_der_alten_datei_auch_in_einer_vollen_gruppe(self) -> None:
+        """Gesamtpruefung 14.11.2026, U2: Der Zaehler der vollen Gruppe wurde erst am Ende neu gezaehlt - "kein Platz", obwohl
+        die frei gewordenen Bloecke der alten Datei gereicht haetten (loeschen + hinzufuegen ging)."""
+        mib = 1 << 20
+        self.erwartet = {"eboot.bin": b"x", "data/gross.bin": _zufall(16 * mib, 9)}
+        self.bild = self.bauen(self.erwartet)
+        neu = _zufall(16 * mib, 10)
+        with ub.Ufs2Abbild(self.bild) as a:
+            self.assertTrue([cg for cg in range(a.ncg) if struct.unpack_from("<i", a.cs, cg * 16 + 4)[0] <= 0],
+                            "Vorbedingung: eine volle Gruppe")
+            self.assertLess(a.freie_bytes(), len(neu), "Vorbedingung: nur mit den Bloecken der alten Datei passt es")
+            a.ersetzen("data/gross.bin", self.datei("neu.bin", neu))
+            a.speichern()
+        self.erwartet["data/gross.bin"] = neu
+        self.pruefen()
+
+
+class FragmentOrdnerTests(_Grundlage):
+    def test_ein_ordner_in_fragmenten_waechst_nicht_ueber_den_nachbarn(self) -> None:
+        """Gesamtpruefung 14.11.2026, U4: "data" belegt (wie bei FreeBSD makefs) nur ein Fragment, dahinter liegt eine fremde Datei."""
+        self.erwartet = {"eboot.bin": b"e", "data/a.bin": b"A" * 10, "nachbar.bin": b"N" * 300}
+        self.bild = self.bauen(self.erwartet, profil=w.Ufs2Profil(4096, 512, 512, 8, 4096))
+        with ub.Ufs2Abbild(self.bild) as a:                         # "data" auf 512 Bytes in einem Fragment kuerzen, nachbar.bin dahinter
+            v = a._verzeichnis("data")
+            roh = a._inode(v.ino)
+            blk = v.bloecke[0]
+            struct.pack_into("<Q", roh, 0x10, 512)
+            struct.pack_into("<q", roh, 0x18, 1)
+            a._frags_setzen(blk + 1, a.fpb - 1, True)
+            e = a._finde(a._verzeichnis(""), "nachbar.bin")
+            nroh = a._inode(e.ino)
+            a._frags_setzen(struct.unpack_from("<q", nroh, 0x70)[0], 1, True)
+            a._frags_setzen(blk + 1, 1, False)
+            struct.pack_into("<q", nroh, 0x70, blk + 1)
+            a._zaehler_auffrischen()
+            a._fh.seek((blk + 1) * a.fs)
+            a._fh.write(b"N" * 300 + bytes(212))
+            for off, neu in a._stellen():
+                a._fh.seek(off)
+                a._fh.write(neu)
+            a._fh.flush()
+        self.pruefen()                                              # Vorbedingung: das umgebaute Abbild ist in Ordnung
+        k = self.datei("k.bin", b"k")
+        with ub.Ufs2Abbild(self.bild) as a:
+            with self.assertRaises(ub.Ufs2PlatzFehlt):
+                for i in range(12):                                 # der 512er-Abschnitt laeuft voll - der Ordner muesste wachsen
+                    a.hinzufuegen("data/eintrag_mit_langem_namen_%02d.bin" % i, k)
+                    self.erwartet["data/eintrag_mit_langem_namen_%02d.bin" % i] = b"k"     # erst nach Erfolg erwartet
+            a.speichern()
+        self.pruefen()                                              # nachbar.bin ist heil, die Eintraege bis dahin sind da
+
+
 class AenderungenTests(_Grundlage):
     def test_gemischte_aenderung_in_allen_profilen(self) -> None:
         for name, profil in PROFILE.items():
@@ -250,7 +344,7 @@ class AenderungenTests(_Grundlage):
         del self.erwartet["data/gross.bin"]
         self.erwartet["data/neu_gross.bin"] = neu
         self.pruefen()
-        gesichert = sum(len(alt) for _o, alt in gesehen[0])
+        gesichert = sum(len(satz[1]) for satz in gesehen[0])          # (Offset, alt) oder (Offset, alt, neu) seit Format 2
         self.assertGreater(gesichert, 65536, "Der wiederbenutzte Platz der geloeschten Datei muss im Journal stehen")
 
     def test_ordner_waechst_ueber_zwoelf_bloecke_in_den_indirekten_block(self) -> None:
@@ -327,6 +421,29 @@ class JournalTests(_Grundlage):
         self.assertFalse(os.path.exists(aj.journal_pfad(self.bild)))
         self.erwartet = dict(SPIEL)
         self.pruefen()
+
+    def test_journalgrenze_greift_vor_dem_einlesen(self) -> None:
+        """Gesamtpruefung 14.11.2026, U3: Bis dahin las ``speichern`` jeden zu sichernden Block ein und pruefte erst dann die Grenze."""
+        mib = 1 << 20
+        self.bild = self.bauen({"eboot.bin": b"x", "data/gross.bin": _zufall(3 * mib, 5)})
+        vorher = _fingerabdruck(self.bild)
+        with ub.Ufs2Abbild(self.bild) as a:
+            frei = a.freie_bytes()
+        neu = self.datei("neu.bin", _zufall(frei + 2 * mib, 6))             # passt nur mit 2 MiB aus der geloeschten Datei
+        gelesen = {"n": 0}
+        with mock.patch.object(ub, "JOURNAL_DATEN_MAX", 256 * 1024), ub.Ufs2Abbild(self.bild) as a:
+            a.loeschen("data/gross.bin")
+            a.hinzufuegen("data/neu.bin", neu)                              # geht nur mit den Bloecken der geloeschten Datei
+            echt = a._lesen
+
+            def zaehlen(offset: int, laenge: int) -> bytes:
+                gelesen["n"] += laenge
+                return echt(offset, laenge)
+            a._lesen = zaehlen                                              # type: ignore[method-assign]
+            with self.assertRaises(ub.Ufs2PlatzFehlt):
+                a.speichern()
+        self.assertLess(gelesen["n"], 256 * 1024, "nichts von den alten Bloecken, ehe die Grenze greift")
+        self.assertEqual(vorher, _fingerabdruck(self.bild))
 
     def test_ein_liegengebliebenes_journal_wird_beim_oeffnen_zurueckgespielt(self) -> None:
         vorher = _fingerabdruck(self.bild)

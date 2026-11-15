@@ -122,6 +122,20 @@ class WsdTests(unittest.TestCase):
         ohne = WSD_ANTWORT.replace("<d:XAddrs>http://192.168.1.50:5357/1234</d:XAddrs>", "")
         self.assertEqual([gs.Geraet("10.9.9.9", "10.9.9.9", "wsd", 0)], gs.wsd_antwort_lesen(ohne.encode(), "10.9.9.9"))
 
+    def test_ipv6_in_klammern_und_ipv4_geht_vor(self) -> None:
+        """Gesamtpruefung 14.11.2026, A7: "http://[fe80::1]:5357/" ergab bisher die Adresse "fe80"."""
+        nur6 = WSD_ANTWORT.replace("http://192.168.1.50:5357/1234", "http://[fe80::1c2:3%5]:5357/1234")
+        self.assertEqual([gs.Geraet("fe80::1c2:3%5", "fe80::1c2:3%5", "wsd", 5357)], gs.wsd_antwort_lesen(nur6.encode(), "1.2.3.4"))
+        beide = WSD_ANTWORT.replace("http://192.168.1.50:5357/1234", "http://[fe80::1]:5357/x http://192.168.1.51:5358/x")
+        self.assertEqual([gs.Geraet("192.168.1.51", "192.168.1.51", "wsd", 5358)], gs.wsd_antwort_lesen(beide.encode(), "1.2.3.4"))
+        kaputt = WSD_ANTWORT.replace("http://192.168.1.50:5357/1234", "http://[::1]:99999/x")       # Port ausserhalb: Absender
+        self.assertEqual([gs.Geraet("1.2.3.4", "1.2.3.4", "wsd", 0)], gs.wsd_antwort_lesen(kaputt.encode(), "1.2.3.4"))
+
+    def test_eine_flut_von_eintraegen_wird_begrenzt(self) -> None:
+        treffer = "".join("<d:ProbeMatch><d:XAddrs>http://10.0.%d.%d:1/</d:XAddrs></d:ProbeMatch>" % (i // 250, i % 250) for i in range(500))
+        flut = WSD_ANTWORT.replace(WSD_ANTWORT[WSD_ANTWORT.index("<d:ProbeMatch>"):WSD_ANTWORT.index("</d:ProbeMatches>")], treffer)
+        self.assertEqual(gs.MAX_JE_PAKET, len(gs.wsd_antwort_lesen(flut.encode(), "1.2.3.4")))
+
     def test_kaputtes_und_fremdes(self) -> None:
         self.assertEqual([], gs.wsd_antwort_lesen(b"<kaputt", "1.2.3.4"))
         self.assertEqual([], gs.wsd_antwort_lesen(b"", ""))

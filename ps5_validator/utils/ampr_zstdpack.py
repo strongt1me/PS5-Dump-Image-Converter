@@ -34,6 +34,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator, Sequence
 
+from ps5_validator.utils import pfadvergleich
 from ps5_validator.utils.spielbaum import BaumFehler
 
 try:  # pragma: no cover - die Bibliothek liegt dem Programm bei (requirements.txt)
@@ -1571,6 +1572,49 @@ def ist_gepackt(ordner: str) -> bool:
         return False
 
 
+#: Spuren eines LZ4-Packs (drakmor-Format) in der Wurzel des Spiels, klein geschrieben.
+_LZ4_MANIFEST = "ampr_assets.index"
+
+
+def _ist_lz4_band(rel: str) -> bool:
+    klein = rel.lower()
+    return "/" not in klein and klein.startswith("ampr_assets-") and klein.endswith(".pak")
+
+
+def pack_bestand_pruefen(auswahl: Auswahl, index_daten: Callable[[], bytes], *, lz4_zaehlt: bool = True) -> str:
+    """Darf dieser Spielordner (neu) gepackt werden? ``""`` = ja, sonst der Schluessel des Grundes (``ampr_zstd.*``).
+
+    Gesamtpruefung 14.11.2026 (P1): Ein schon mit zstd gepackter Ordner ohne Originale - sie fallen mit "Originale weglassen"
+    weg - gab beim erneuten Packen nur noch seine losen Dateien ins neue Pack; das neue ersetzte das alte, und die gepackten
+    Dateien waren endgueltig fort. Neu gepackt wird deshalb nur, wenn **jede** Datei des alten ``ampr_zstd.index`` lose daliegt (dann
+    ist das alte Pack eine Doppelung). Auf die Groesse kommt es nicht an: Eine lose Datei mit anderer Groesse ist eine neuere Fassung
+    (ein eingespieltes Update) - sie gehoert ins neue Pack, und der Rat "erst entpacken" haette sie mit der alten ueberschrieben
+    (R2-P2). Ein ``ampr_zstd.index``, der sich nicht lesen laesst (fremde Kennung, leer, beschaedigt), schuetzt sein Pack trotzdem
+    (R2-P3). Ein LZ4-Pack (``ampr_assets.index``, ``ampr_assets-*.pak``) muss vorher entpackt werden: seine Baender waeren sonst
+    gewoehnliche Dateien des neuen Packs.
+
+    Args:
+        auswahl: Die Auswahl des Laufs (:func:`dateien_auswaehlen`/:func:`auswahl_aus_liste`) - sie nennt jede Datei mit Groesse.
+        index_daten: Liefert die Bytes des vorhandenen ``ampr_zstd.index`` (nur gerufen, wenn es einen gibt).
+        lz4_zaehlt: ``False``, wenn gar nicht mit zstd gepackt wird (LZ4 gewaehlt): Dann sind LZ4-Reste kein Hindernis, nur
+            das zstd-Pack selbst zaehlt (Gesamtpruefung 14.11.2026, R5-2).
+    """
+    groessen = dict(auswahl.lose)
+    groessen.update(auswahl.gepackt)
+    if lz4_zaehlt and any(rel.lower() == _LZ4_MANIFEST or _ist_lz4_band(rel) for rel in groessen):
+        return "ampr_zstd.lz4_pack_vorhanden"
+    if INDEX_NAME not in groessen:
+        return ""
+    try:
+        alt = index_lesen(index_daten())
+    except (OSError, ZstdPackFehler):
+        return "ampr_zstd.schon_gepackt"                   # unlesbar oder fremd: im Zweifel nichts ersetzen
+    for datei in alt.dateien:
+        if datei.pfad not in groessen:
+            return "ampr_zstd.schon_gepackt"
+    return ""
+
+
 def uebernehmen(ausgabe: str, app0: str, index: Index, *, melden: Melder = _stumm,
                 abbruch: Callable[[], bool] = lambda: False) -> None:
     """Legt Baender und Index in den Spielordner (zuerst die Baender, der Index zuletzt, jedes per Verschieben/Kopie)."""
@@ -1595,7 +1639,17 @@ def uebernehmen(ausgabe: str, app0: str, index: Index, *, melden: Melder = _stum
             os.remove(quelle)
         if os.path.getsize(ziel) != erwartet:
             raise ZstdPackFehler("ampr_zstd.uebernahme: %s" % name)
-    melden("ampr_zstd: %d Datei(en) im Spielordner" % len(namen))
+    # Baender eines frueheren, groesseren Satzes nennt der neue Index nicht mehr - sie lagen sonst als toter Ballast im Spiel und
+    # gingen mit ins Abbild (Gesamtpruefung 14.11.2026, P2).
+    entfernt = 0
+    for name in os.listdir(app0):
+        if ist_packname(name) and name not in namen:
+            try:
+                os.remove(os.path.join(app0, name))
+                entfernt += 1
+            except OSError:
+                pass
+    melden("ampr_zstd: %d Datei(en) im Spielordner%s" % (len(namen), ", %d alte Baender entfernt" % entfernt if entfernt else ""))
 
 
 def originale_entfernen(app0: str, index: Index, *, melden: Melder = _stumm,
@@ -1745,7 +1799,8 @@ def entpacken_in_neuen_ordner(ordner: str, ziel: str, *, melden: Melder = _stumm
     ziel = os.path.abspath(ziel)
     if os.path.exists(ziel) and (not os.path.isdir(ziel) or os.listdir(ziel)):
         raise ZstdPackFehler("ampr_zstd.ziel_belegt")
-    if ziel == os.path.abspath(ordner) or ziel.startswith(os.path.abspath(ordner) + os.sep):
+    # Auch in anderer Schreibung oder ueber einen anderen Weg zum selben Ordner (Gesamtpruefung 14.11.2026, P3).
+    if pfadvergleich.liegt_in(ziel, ordner):             # geht auch die vorhandenen Elternordner des (noch neuen) Ziels durch
         raise ZstdPackFehler("ampr_zstd.ziel_im_quellordner")
     index = index_laden(ordner)
     os.makedirs(ziel, exist_ok=True)

@@ -18,7 +18,10 @@ import os
 import shutil
 from typing import Callable
 
-#: Ordner, die nie als Quelle geloescht werden (zusaetzlich zu Laufwerkswurzeln und dem Benutzerordner selbst).
+from ps5_validator.utils import pfadvergleich
+
+#: Ordner, die nie als Quelle geloescht werden (zusaetzlich zu Laufwerkswurzeln und dem Benutzerordner selbst). Verglichen wird
+#: klein geschrieben - ``normcase`` faltet nur unter Windows, ``~/Documents`` auf Linux/macOS waere sonst ungeschuetzt.
 _GESCHUETZTE_NAMEN = ("documents", "dokumente", "desktop", "downloads", "pictures", "bilder", "music", "videos", "appdata",
                       "windows", "program files", "program files (x86)", "users", "benutzer")
 
@@ -70,26 +73,47 @@ def stempel_nehmen(pfad: str) -> "tuple | None":
         return None
 
 
+#: Ordner, deren unmittelbare Unterordner Benutzer- oder Datentraegerwurzeln sind (Linux/macOS): ``/home/bob``, ``/Users/Shared``,
+#: ``/Volumes/STICK``, ``/media/anna`` ... (Gesamtpruefung 14.11.2026, R2-A3).
+_SAMMELORDNER_POSIX = ("/home", "/Users", "/Volumes", "/media", "/mnt", "/run/media")
+
+
+def unter_sammelordner(voll: str) -> bool:
+    """Ist ``voll`` (POSIX-Pfad) ein unmittelbarer Unterordner von ``/home``, ``/Users``, ``/Volumes``, ``/media``, ``/mnt``?"""
+    return voll.rstrip("/").rpartition("/")[0] in _SAMMELORDNER_POSIX
+
+
 def _gefaehrlich(pfad: str) -> bool:
-    """Wurzel eines Laufwerks, ein Benutzer- oder Systemordner: solche Pfade gelten nie als Quelle."""
+    """Wurzel eines Laufwerks oder Einhaengepunkt, ein Benutzer- oder Systemordner: solche Pfade gelten nie als Quelle.
+
+    Unter Linux und macOS ist ein USB-Stick kein Laufwerksbuchstabe, sondern ein Ordner (``/Volumes/STICK``, ``/media/anna/STICK``).
+    Lag ein Dump direkt in dessen Wurzel, haette "Quelle nach Erfolg loeschen" den ganzen Stick geleert (R2-A3).
+    """
     voll = _norm(pfad)
     if os.path.dirname(voll) == voll:                       # Laufwerks- oder Dateisystemwurzel
         return True
-    heim = _norm(os.path.expanduser("~"))
-    if voll == heim:
+    try:
+        if os.path.isdir(voll) and os.path.ismount(voll):   # Einhaengepunkt (auch ein in einen Ordner eingehaengtes Laufwerk)
+            return True
+    except OSError:
+        return True
+    if os.name != "nt" and os.path.isdir(voll) and unter_sammelordner(voll):
+        return True
+    heim = os.path.expanduser("~")
+    if pfadvergleich.gleicher_ort(voll, heim):
         return True
     teile = [t for t in voll.replace("\\", "/").split("/") if t and not t.endswith(":")]
-    if len(teile) < 2:
+    # Ein Ordner direkt unter der Wurzel (/home, D:\Spiele) ist nie die Quelle eines Laufs; eine Datei dort (D:\Spiel.ffpkg) schon.
+    if len(teile) < 2 and not os.path.isfile(voll):
         return True
-    return os.path.basename(voll) in _GESCHUETZTE_NAMEN and os.path.dirname(voll) in (heim, os.path.dirname(heim))
+    eltern = os.path.dirname(voll)
+    return (os.path.basename(voll).lower() in _GESCHUETZTE_NAMEN
+            and (pfadvergleich.gleicher_ort(eltern, heim) or pfadvergleich.gleicher_ort(eltern, os.path.dirname(heim))))
 
 
 def _ineinander(aussen: str, innen: str) -> bool:
-    """Liegt ``innen`` im Ordner ``aussen`` (oder ist es derselbe Pfad)?"""
-    a, i = _norm(aussen), _norm(innen)
-    if a == i:
-        return True
-    return i.startswith(a.rstrip("\\/") + os.sep)
+    """Liegt ``innen`` im Ordner ``aussen`` (oder ist es derselbe Pfad)? Auch in anderer Schreibung (:mod:`pfadvergleich`)."""
+    return pfadvergleich.gleicher_ort(aussen, innen) or pfadvergleich.liegt_in(innen, aussen)
 
 
 def _nicht_leer(pfad: str) -> bool:
@@ -114,7 +138,7 @@ def pruefen(quelle: str, ergebnis: str, stempel: "tuple | None") -> str:
         return "geschuetzt"
     if not ergebnis or not os.path.exists(ergebnis) or not _nicht_leer(ergebnis):
         return "ergebnis_fehlt"
-    if _norm(quelle) == _norm(ergebnis):
+    if pfadvergleich.gleicher_ort(quelle, ergebnis):
         return "gleicher_pfad"
     if _ineinander(quelle, ergebnis):
         return "ergebnis_in_quelle"

@@ -9,6 +9,7 @@ import tempfile
 import threading
 import unittest
 import zipfile
+import zlib
 from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent.parent
@@ -68,6 +69,64 @@ class WurzelTests(unittest.TestCase):
 
     def test_gross_klein_wie_beim_entpackten_ordner(self) -> None:
         self.assertEqual("S", ab.spielwurzel_aus_namen(["S/SCE_SYS/PARAM.JSON"]))
+
+    def test_nur_ganze_pfadteile(self) -> None:
+        """R5-4: ``alt_sce_sys/param.json`` endet zwar auf ``sce_sys/param.json``, ist aber kein Spiel."""
+        self.assertIsNone(ab.spielwurzel_aus_namen(["alt_sce_sys/param.json"]))
+        self.assertIsNone(ab.spielwurzel_aus_namen(["Spiel/Kopie_sce_sys/param.json"]))
+        self.assertEqual("B", ab.spielwurzel_aus_namen(["A/alt_sce_sys/param.json", "B/sce_sys/param.json"]))
+        self.assertEqual("", ab.spielwurzel_aus_namen(["/sce_sys/param.json"]), "Gegenprobe: am Stamm mit fuehrendem Strich")
+
+    def test_ein_dlc_ordner_ist_nicht_das_spiel(self) -> None:
+        """R2-P5: ``EP9000-...-ac`` sortiert vor ``PPSA01234-app`` - mit eigener param.json wurde er "das Spiel"."""
+        dlc = "EP9000-PPSA01234_00-ABCDEFGHIJKLMNOP-ac"
+        namen = [dlc + "/sce_sys/param.json", "PPSA01234-app/sce_sys/param.json", "PPSA01234-app/eboot.bin"]
+        self.assertEqual("PPSA01234-app", ab.spielwurzel_aus_namen(namen))
+        self.assertEqual(dlc, ab.spielwurzel_aus_namen([dlc + "/sce_sys/param.json"]), "Gegenprobe: allein ist er der Treffer")
+
+    def test_ein_dlc_ordner_ist_nicht_das_spiel_auch_entpackt(self) -> None:
+        import tempfile as tf
+        with tf.TemporaryDirectory() as t:
+            for name in ("EP9000-PPSA01234_00-ABCDEFGHIJKLMNOP-ac", "PPSA01234-app"):
+                Path(t, name, "sce_sys").mkdir(parents=True)
+                Path(t, name, "sce_sys", "param.json").write_bytes(PARAM)
+            Path(t, "liesmich.txt").write_bytes(b"x")
+            self.assertEqual(os.path.join(t, "PPSA01234-app"), aq.spielwurzel(t))
+
+    def test_ein_dlc_ordner_in_einem_geschwisterordner_ist_nicht_das_spiel(self) -> None:
+        """R3-A2: Die Tiefensuche nahm den ersten Treffer - ``A_DLC/EP...-ac`` vor ``Z_Spiel/PPSA...-app``. Wie beim ZIP: das Spiel."""
+        import tempfile as tf
+        dlc = "EP9000-PPSA01234_00-ABCDEFGHIJKLMNOP-ac"
+        with tf.TemporaryDirectory() as t:
+            for rel in ("A_DLC/" + dlc, "Z_Spiel/PPSA01234-app"):
+                Path(t, *rel.split("/"), "sce_sys").mkdir(parents=True)
+                Path(t, *rel.split("/"), "sce_sys", "param.json").write_bytes(PARAM)
+            Path(t, "liesmich.txt").write_bytes(b"x")
+            self.assertEqual(os.path.join(t, "Z_Spiel", "PPSA01234-app"), aq.spielwurzel(t))
+            self.assertEqual("Z_Spiel/PPSA01234-app", ab.spielwurzel_aus_namen(
+                ["A_DLC/%s/sce_sys/param.json" % dlc, "Z_Spiel/PPSA01234-app/sce_sys/param.json"]), "beide Wege gleich")
+
+    def test_entpackt_und_zip_waehlen_gleich_bei_aehnlichen_namen(self) -> None:
+        """R4-1: Mit "\\" sortiert "Games\\..." nach "Games2\\..." - mit "/" davor. Beide Wege muessen dasselbe Spiel nehmen."""
+        import tempfile as tf
+        with tf.TemporaryDirectory() as t:
+            for rel in ("Games/PPSA01234", "Games2/PPSA05678"):
+                Path(t, *rel.split("/"), "sce_sys").mkdir(parents=True)
+                Path(t, *rel.split("/"), "sce_sys", "param.json").write_bytes(PARAM)
+            Path(t, "liesmich.txt").write_bytes(b"x")
+            zip_wahl = ab.spielwurzel_aus_namen(["Games/PPSA01234/sce_sys/param.json", "Games2/PPSA05678/sce_sys/param.json"])
+            self.assertEqual("Games/PPSA01234", zip_wahl)
+            self.assertEqual(os.path.join(t, "Games", "PPSA01234"), aq.spielwurzel(t))
+
+    def test_der_flachste_gewinnt_auch_entpackt(self) -> None:
+        """Gegenprobe: Ein Spiel eine Ebene tiefer schlaegt eines zwei Ebenen tiefer; ein Spiel in einem Spiel zaehlt nicht."""
+        import tempfile as tf
+        with tf.TemporaryDirectory() as t:
+            for rel in ("A/B/Tief", "Z_Flach", "Z_Flach/Sicherung/Kopie"):
+                Path(t, *rel.split("/"), "sce_sys").mkdir(parents=True)
+                Path(t, *rel.split("/"), "sce_sys", "param.json").write_bytes(PARAM)
+            Path(t, "liesmich.txt").write_bytes(b"x")
+            self.assertEqual(os.path.join(t, "Z_Flach"), aq.spielwurzel(t))
 
 
 class ListeUndLesenTests(_Ablage):
@@ -262,6 +321,110 @@ class PasswortTests(_Ablage):
         with ab.ZipBaum(pfad, passwort="geheim") as baum:
             with self.assertRaises(BaumFehler):
                 baum.dateien()
+
+    def test_aes_zip_entpackt_7zip(self) -> None:
+        """Gesamtpruefung 14.11.2026, A6: ``zipfile`` kann AES nicht - bis dahin war ein solches ZIP nie entpackbar."""
+        pfad = self._verschluesselt("geheim", methode="AES256")
+        self.assertTrue(aq.zip_ist_aes(pfad))
+        ziel = self.dir / "aus_aes"
+        wurzel = aq.entpacken(pfad, str(ziel), passwort="geheim")
+        self.assertEqual(_inhalt("a", 40000), Path(wurzel, "data", "a.pak").read_bytes())
+
+    def test_zipcrypto_mit_deflate64_und_ppmd_entpackt_7zip(self) -> None:
+        """Gesamtpruefung 14.11.2026, R2-P1: ``zipfile`` kann diese Verfahren nicht - das richtige Passwort galt als falsch."""
+        for verfahren in ("Deflate64", "PPMd"):
+            with self.subTest(verfahren=verfahren):
+                quelle = self.dir / ("q_" + verfahren) / "Spiel"
+                (quelle / "sce_sys").mkdir(parents=True)
+                (quelle / "sce_sys" / "param.json").write_bytes(PARAM)
+                (quelle / "eboot.bin").write_bytes(_inhalt("eboot.bin", 20000))
+                archiv = self.dir / ("spiel_%s.zip" % verfahren)
+                erg = subprocess.run([_siebenzip(), "a", "-tzip", "-pgeheim123", "-mem=ZipCrypto", "-mm=" + verfahren, str(archiv), "Spiel"],
+                                     cwd=str(quelle.parent), capture_output=True, text=True)
+                if erg.returncode != 0:
+                    self.skipTest("7-Zip legt %s nicht an" % verfahren)
+                self.assertTrue(aq.zip_braucht_7zip(str(archiv)))
+                wurzel = aq.entpacken(str(archiv), str(self.dir / ("aus_" + verfahren)), passwort="geheim123")
+                self.assertEqual(_inhalt("eboot.bin", 20000), Path(wurzel, "eboot.bin").read_bytes())
+
+    def test_gegenprobe_deflate_bleibt_bei_zipfile(self) -> None:
+        self.assertFalse(aq.zip_braucht_7zip(self._verschluesselt("x")))
+
+    def _eine_datei_verschluesselt(self, passwort: str) -> str:
+        """Spiel unverschluesselt, nur ``data/a.pak`` mit ZipCrypto (7-Zip fuegt sie mit -p hinzu): Jede Passwortprobe trifft diese Datei."""
+        klar, geheim = self.dir / "klar", self.dir / "geheim"
+        (klar / "sce_sys").mkdir(parents=True)
+        (klar / "eboot.bin").write_bytes(_inhalt("eboot.bin", 5000))
+        (klar / "sce_sys" / "param.json").write_bytes(PARAM)
+        (geheim / "data").mkdir(parents=True)
+        (geheim / "data" / "a.pak").write_bytes(_inhalt("a", 40000))
+        ziel = self.dir / "teilweise.zip"
+        for ordner, extra in ((klar, []), (geheim, ["-p" + passwort, "-mem=ZipCrypto"])):
+            erg = subprocess.run([_siebenzip(), "a", "-tzip", *extra, "-y", str(ziel), "."], cwd=str(ordner),
+                                 capture_output=True, text=True)
+            if erg.returncode != 0:
+                self.skipTest("7-Zip legt das Archiv nicht an: %s" % (erg.stdout or erg.stderr)[-200:])
+        return str(ziel)
+
+    def _falsch_mit_pruefbyte(self, pfad: str) -> str:
+        """Ein falsches Passwort, das das Pruefbyte von ZipCrypto trifft (1 von 256) und beim Lesen ``zlib.error`` ausloest."""
+        with zipfile.ZipFile(pfad) as z:
+            info = next(i for i in z.infolist() if i.flag_bits & 0x1 and i.file_size)
+            for n in range(20000):
+                kandidat = "falsch%05d" % n
+                try:
+                    with z.open(info, pwd=kandidat.encode()) as q:
+                        q.read()
+                except RuntimeError:                                    # "Bad password": am Pruefbyte erkannt
+                    continue
+                except zlib.error:                                      # genau der gesuchte Fall
+                    return kandidat
+                except Exception:  # noqa: BLE001 - etwa eine falsche Pruefsumme: weiter suchen
+                    continue
+        self.skipTest("kein falsches Passwort mit passendem Pruefbyte gefunden")
+        return ""
+
+    def test_falsches_passwort_mit_passendem_pruefbyte_bricht_die_liste_nicht_ab(self) -> None:
+        """Gesamtpruefung 14.11.2026, A2: Bis dahin entkam zlib.error, und das richtige Passwort dahinter kam nie dran."""
+        pfad = self._eine_datei_verschluesselt("mein-geheimnis")
+        falsch = self._falsch_mit_pruefbyte(pfad)
+        with ab.ZipBaum(pfad, weitere_passwoerter=[falsch, "mein-geheimnis"]) as baum:
+            baum.dateien()
+            self.assertEqual("mein-geheimnis", baum.passwort)
+        wurzel = aq.entpacken(pfad, str(self.dir / "aus"), weitere_passwoerter=[falsch, "mein-geheimnis"])
+        self.assertEqual(_inhalt("a", 40000), Path(wurzel, "data", "a.pak").read_bytes())
+        with self.assertRaises(aq.PasswortFehler):                     # allein ist es einfach falsch, kein anderer Fehler
+            aq.entpacken(pfad, str(self.dir / "aus2"), passwort=falsch)
+
+
+class UnzulaessigeNamenTests(_Ablage):
+    """Gesamtpruefung 14.11.2026, A1: Ein Laufwerk mitten im Pfad ("Game/sce_sys/D:/PS5/x") fuehrte unter Windows heraus."""
+
+    @unittest.skipUnless(os.name == "nt", "nur unter Windows macht os.path.join aus 'D:' ein Laufwerk")
+    def test_doppelpunkt_in_jedem_teil(self) -> None:
+        for name in ("Game/sce_sys/D:/PS5/x", "Game/D:", "data/datei.bin:strom", "C:x"):
+            with self.subTest(name=name):
+                self.assertTrue(ab._ist_unzulaessig(name))
+        pfad = self.zip(extra={"sce_sys/D:/PS5/x": b"x"})
+        with ab.ZipBaum(pfad) as baum:
+            with self.assertRaises(BaumFehler):
+                baum.dateien()
+
+    def test_gewoehnliche_namen_bleiben_erlaubt(self) -> None:
+        for name in ("Game/sce_sys/param.json", "a/b c/d.e", "eboot.bin"):
+            with self.subTest(name=name):
+                self.assertFalse(ab._ist_unzulaessig(name))
+        for name in ("../x", "a/../../x", "/abs/x", "\\abs\\x"):
+            with self.subTest(name=name):
+                self.assertTrue(ab._ist_unzulaessig(name))
+
+    def test_pfad_im_ordner(self) -> None:
+        wurzel = str(self.dir / "schatten")
+        self.assertEqual(os.path.join(wurzel, "sce_sys", "param.json"), ab.pfad_im_ordner(wurzel, "sce_sys/param.json"))
+        for name in ("../aussen.bin", "a/../../aussen.bin") + (("sce_sys/D:/PS5/x",) if os.name == "nt" else ()):
+            with self.subTest(name=name):
+                with self.assertRaises(BaumFehler):
+                    ab.pfad_im_ordner(wurzel, name)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,8 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+from ps5_validator.utils import pfadvergleich
+
 #: Was ein Lauf neben seinem Ergebnis hinterlassen kann (Teilbau, Bau neben der Quelle, Vorgaenger-Endungen).
 # ``.neu.teil``: das Selbst-Ziel (``X.exfat`` baut als ``X.exfat.neu``) mit seinem Teilbau; ``.teil.tmp``: die Zwischendatei von MkPFS neben dem
 # Teilbau eines ``.ffpfsc``; ``.neu.teil.tmp``: dieselbe Zwischendatei beim Bau eines Selbst-Ziels.
@@ -55,14 +57,13 @@ def _norm(pfad: str) -> str:
 
 
 def liegt_in(pfad: str, ordner: str) -> bool:
-    """Ist ``pfad`` der ``ordner`` selbst oder liegt er darin?"""
-    a, b = _norm(pfad), _norm(ordner)
-    if a == b:
-        return True
-    try:
-        return os.path.commonpath([a, b]) == b
-    except ValueError:                       # verschiedene Laufwerke
-        return False
+    """Ist ``pfad`` der ``ordner`` selbst oder liegt er darin - auch in anderer Schreibung, ueber eine Junction oder ein anderes
+    Laufwerk zum selben Ort (:mod:`pfadvergleich`)?
+
+    Gesamtpruefung 14.11.2026 (R2-A1): Mit dem reinen Textvergleich nannte die Karte nach einem Selbst-Ziel in anderer Schreibung die
+    Quelle als unfertiges "Ergebnis" - und "Entfernen" haette sie geloescht.
+    """
+    return pfadvergleich.gleicher_ort(pfad, ordner) or pfadvergleich.liegt_in(pfad, ordner)
 
 
 def schuetzen(pfad: str, quelle: str) -> bool:

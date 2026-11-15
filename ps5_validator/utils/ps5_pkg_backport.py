@@ -28,7 +28,8 @@ ERGEBNIS_ABGEBROCHEN = "abgebrochen"
 def backport_einbauen(ordner: str, firmware: int, fakelib_basis: str, *,
                       zeile: Callable[[str], None] | None = None,
                       abbruch: Callable[[], bool] | None = None,
-                      fakelib_ordnername: str = ps5_backport.FAKELIB_ORDNER
+                      fakelib_ordnername: str = ps5_backport.FAKELIB_ORDNER,
+                      text_emu_bleibt: Callable[[str], str] | None = None
                       ) -> tuple[str, str]:
     """Fuehrt den Backport-Schritt auf ``ordner`` aus.
 
@@ -40,6 +41,8 @@ def backport_einbauen(ordner: str, firmware: int, fakelib_basis: str, *,
         zeile:             Callback fuer Protokollzeilen.
         abbruch:           Callback; liefert True wenn abgebrochen werden soll.
         fakelib_ordnername: ``"fakelib"`` oder ``"fakelib2"``.
+        text_emu_bleibt:   Liefert zu den Dateinamen (durch Komma getrennt) die Protokollzeile "vorhandenes AMPR EMU bleibt", in der
+                           Sprache der Oberflaeche; das Modul selbst kennt keine Uebersetzung. Ohne sie steht eine deutsche Zeile da.
 
     Returns:
         ``(ERGEBNIS_OK|ERGEBNIS_FEHLER|ERGEBNIS_ABGEBROCHEN, meldung)``
@@ -112,9 +115,20 @@ def backport_einbauen(ordner: str, firmware: int, fakelib_basis: str, *,
         else:
             try:
                 os.makedirs(ziel_lib, exist_ok=True)
+                geblieben: list[str] = []
                 for quelle in quellen:
-                    shutil.copy2(quelle, os.path.join(ziel_lib, os.path.basename(quelle)))
+                    ablage = os.path.join(ziel_lib, os.path.basename(quelle))
+                    if ps5_backport.emulator_bleibt(ablage):
+                        # Ein vorhandenes AMPR EMU / ampr-emu-ng bzw. der PlayGo-Stub bleibt - wie im Backport beim Erstellen
+                        # (Gesamtpruefung 14.11.2026, R8-1; R7-1).
+                        geblieben.append(os.path.basename(quelle))
+                        continue
+                    shutil.copy2(quelle, ablage)
                     kopiert += 1
+                if geblieben:
+                    namen = ", ".join(geblieben)
+                    melden(text_emu_bleibt(namen) if text_emu_bleibt else
+                           "[BACKPORT] Vorhandene AMPR-EMU-/PlayGo-Stub-Datei bleibt unveraendert (nicht ueberschrieben): " + namen)
             except OSError as exc:
                 return ERGEBNIS_FEHLER, "Ersatzbibliotheken: %s" % exc
 

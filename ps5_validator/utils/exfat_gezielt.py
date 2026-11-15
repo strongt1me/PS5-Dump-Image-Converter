@@ -142,7 +142,9 @@ def _eintraege(rohe: list[bytes]) -> list[Eintrag]:
             if rest[0] == _EINTRAG_NAME:
                 einheiten += rest[2:32]
         ergebnis.append(Eintrag(
-            name=einheiten.decode("utf-16-le", errors="replace")[:namenslaenge],
+            # NameLength zaehlt UTF-16-Einheiten: erst die Bytes kuerzen, dann lesen (Gesamtpruefung 14.11.2026, E6; ein Zeichen
+            # ausserhalb der BMP sind zwei Einheiten - nach Zeichen gekuerzt hing sonst ein Rest des Fuellbereichs am Namen).
+            name=bytes(einheiten[:2 * namenslaenge]).decode("utf-16-le", errors="replace"),
             ist_ordner=bool(attribute & _ATTR_ORDNER),
             erster_cluster=struct.unpack_from("<I", strom, 0x14)[0],
             laenge=struct.unpack_from("<Q", strom, 0x18)[0],

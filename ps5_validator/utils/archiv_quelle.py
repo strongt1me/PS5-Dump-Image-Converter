@@ -12,6 +12,7 @@ entpackten Dump-Ordner wie mit jedem anderen. Die Idee stammt aus PS5 FFPFSC PRO
 """
 from __future__ import annotations
 
+import lzma
 import os
 import platform
 import re
@@ -21,8 +22,11 @@ import subprocess
 import sys
 import time
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Callable
+
+from ps5_validator.utils.dlc_emu import ist_dlc_ordnername
 
 ENDUNGEN = (".zip", ".7z", ".rar")
 #: Name des mitgelieferten 7-Zip-Ordners.
@@ -133,14 +137,71 @@ def spielwurzel(ordner: str) -> str:
                 return aktuell
             continue
         break
+    # Alle Treffer bis drei Ebenen tief, dann wie beim ZIP (archiv_baum.spielwurzel_aus_namen): der flachste, ein DLC-Ordner des
+    # PS5-App-Dumpers ("EP9000-PPSA01234_00-...-ac") nach einem Spiel, dann nach dem Namen. Die Tiefensuche nahm den ersten Treffer -
+    # ein DLC-Ordner mit eigener param.json in "A_DLC/" kam vor dem Spiel in "Z_Spiel/" (Gesamtpruefung 14.11.2026, R2-P5, R3-A2).
+    treffer: "list[tuple[int, bool, str]]" = []
     for tiefe_wurzel, _dirs, _files in os.walk(ordner):
         rel = os.path.relpath(tiefe_wurzel, ordner)
-        if rel != "." and rel.count(os.sep) >= 3:
+        tiefe = 0 if rel == "." else rel.count(os.sep) + 1
+        if tiefe > 3:
             _dirs[:] = []
             continue
-        if hat_spiel(tiefe_wurzel):
-            return tiefe_wurzel
+        if tiefe and hat_spiel(tiefe_wurzel):
+            # Mit "/" verglichen wie beim ZIP: "\" sortiert anders ("Games\..." nach "Games2\..."; R4-1).
+            treffer.append((tiefe, ist_dlc_ordnername(os.path.basename(tiefe_wurzel)), rel.replace(os.sep, "/")))
+            _dirs[:] = []                                   # in einem Spiel liegt kein zweites
+    if treffer:
+        return os.path.join(ordner, *sorted(treffer)[0][2].split("/"))
     return ordner
+
+
+def zip_ist_aes(archiv: str) -> bool:
+    """Ob ein ZIP-Archiv AES-verschluesselte Eintraege hat (Packverfahren 99); ein unlesbares Archiv gilt als nicht AES."""
+    try:
+        with zipfile.ZipFile(archiv) as z:
+            return any(i.compress_type == 99 for i in z.infolist())
+    except (zipfile.BadZipFile, OSError):
+        return False
+
+
+#: Die Packverfahren, die ``zipfile`` entpacken kann: Stored, Deflate, BZip2, LZMA.
+_ZIPFILE_VERFAHREN = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED, zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA)
+
+
+def zip_braucht_7zip(archiv: str) -> bool:
+    """Ob ein ZIP ein Packverfahren nutzt, das ``zipfile`` nicht kann (AES 99, Deflate64 9, PPMd 98, ...) - dann entpackt 7-Zip.
+
+    Gesamtpruefung 14.11.2026 (R2-P1): Nur AES ging an 7-Zip. Ein ZipCrypto-Archiv mit Deflate64 oder PPMd scheiterte in ``zipfile`` mit
+    "nicht unterstuetzt" - und die Passwortprobe hielt das fuer ein falsches Passwort: Der Anwender wurde immer wieder gefragt.
+    """
+    try:
+        with zipfile.ZipFile(archiv) as z:
+            return any(i.compress_type not in _ZIPFILE_VERFAHREN for i in z.infolist() if not i.is_dir())
+    except (zipfile.BadZipFile, OSError):
+        return False
+
+
+def _zip_passwort_passt(z: zipfile.ZipFile, eintraege: "list[zipfile.ZipInfo]", kennwort: "bytes | None") -> bool:
+    """Liest die kleinste verschluesselte Datei ganz: passt das Passwort? Ohne verschluesselte Datei immer ``True``.
+
+    Gesamtpruefung 14.11.2026 (A2): Ein falsches Passwort trifft das Pruefbyte von ZipCrypto in 1 von 256 Faellen. Dann entschluesselt
+    ``zipfile`` Unsinn, und das Entpacken scheitert mit zlib.error, LZMAError oder einer falschen Pruefsumme statt mit "Bad password" -
+    die Liste der Passwoerter brach dort ab, statt das naechste zu probieren. Erst die ganze Datei samt Pruefsumme entscheidet.
+    """
+    verschluesselt = [i for i in eintraege if i.flag_bits & 0x1 and i.file_size > 0 and not i.is_dir()]
+    if not verschluesselt:
+        return True
+    if kennwort is None:
+        return False
+    probe = min(verschluesselt, key=lambda i: i.file_size)
+    try:
+        with z.open(probe, pwd=kennwort) as quelle:
+            while quelle.read(1 << 20):
+                pass
+    except Exception:  # noqa: BLE001 - jeder Fehler hier heisst: dieses Passwort passt nicht
+        return False
+    return True
 
 
 def _zip_entpacken(archiv: str, ziel: str, melden: _Melder | None, abbruch: Callable[[], bool] | None,
@@ -150,6 +211,8 @@ def _zip_entpacken(archiv: str, ziel: str, melden: _Melder | None, abbruch: Call
     try:
         with zipfile.ZipFile(archiv) as z:
             eintraege = z.infolist()
+            if not _zip_passwort_passt(z, eintraege, kennwort):
+                raise PasswortFehler("Bad password for file %s" % os.path.basename(archiv))
             # Die entpackte Groesse steht im Verzeichnis des Archivs (``file_size``); ``zipfile`` liest nie mehr, als dort steht.
             _platz_pruefen(ziel_abs, sum(max(0, i.file_size) for i in eintraege), reserve)
             gesamt = max(1, len(eintraege))
@@ -172,7 +235,7 @@ def _zip_entpacken(archiv: str, ziel: str, melden: _Melder | None, abbruch: Call
         if "password" in str(exc).lower():
             raise PasswortFehler(str(exc)) from exc
         raise ArchivFehler("ZIP nicht entpackbar: %s" % exc) from exc
-    except OSError as exc:
+    except (OSError, zlib.error, lzma.LZMAError, EOFError, NotImplementedError) as exc:
         raise ArchivFehler("ZIP nicht entpackbar: %s" % exc) from exc
 
 
@@ -259,7 +322,10 @@ def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melde
         raise ArchivFehler("Kein Archiv: %s" % archiv)
     Path(ziel).mkdir(parents=True, exist_ok=True)
     programm = ""
-    if endung != ".zip":
+    # Ein Packverfahren, das ``zipfile`` nicht kann - AES (WinZip, 99), Deflate64, PPMd ... -, entpackt 7-Zip (Gesamtpruefung
+    # 14.11.2026, A6 und R2-P1).
+    mit_zipfile = endung == ".zip" and not zip_braucht_7zip(archiv)
+    if not mit_zipfile:
         programm = siebenzip_suchen(wurzeln)
         if not programm:
             raise ArchivFehler("7-Zip nicht gefunden")
@@ -270,7 +336,7 @@ def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melde
     letzter: PasswortFehler | None = None
     for kandidat in kandidaten:
         try:
-            if endung == ".zip":
+            if mit_zipfile:
                 _zip_entpacken(archiv, ziel, melden, abbruch, kandidat, platz_reserve)
             else:
                 _siebenzip_entpacken(archiv, ziel, programm, melden, abbruch, popen_extra, kandidat, platz_reserve)

@@ -174,6 +174,11 @@ DLCMAP_NAME = "dlcmap.json"
 #: Spiel legt: ``<Region>-<TITEL-ID>_00-<LABEL>-ac``. Ohne das ``-ac`` ist es die Content-ID (36 Zeichen).
 _DLC_ORDNER = re.compile(r"^([A-Z]{2}[0-9]{4}-(?:PPSA|CUSA)[0-9]{5}_00-[A-Za-z0-9]{16})-ac$")
 
+
+def ist_dlc_ordnername(name: str) -> bool:
+    """Ob ``name`` wie ein DLC-Ordner des PS5-App-Dumpers heisst (``<Content-ID>-ac``) - auch fuer Namen in einem Archiv."""
+    return bool(_DLC_ORDNER.match(name))
+
 #: ``/app0/addcont<N>`` darf hoechstens 15 Zeichen lang sein (README von dlc_emu) - also N von 0 bis 10.
 MAX_EINHAENGEPUNKTE = 11
 

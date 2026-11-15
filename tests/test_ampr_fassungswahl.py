@@ -545,6 +545,56 @@ class LaufTests(unittest.TestCase):
         self.assertEqual({}, self._abgelegt())
         self.assertIn(self.app._t("amprgen.no_libs"), meldungen)
 
+    # --- Gesamtpruefung 14.11.2026, R8-2/R9-5: zstd-Pack im Spielordner, Fassung ohne NG ---------------------------------------
+
+    def _lauf_mit_pack(self, wahl, antwort: str) -> tuple[list[str], list[str]]:
+        """Wie ``_lauf``, aber mit ``ampr_zstd.index`` im Spielordner; ``antwort`` gilt fuer die Rueckfrage zum zstd-Pack."""
+        app = self.app
+        (self.spiel / "ampr_zstd.index").write_bytes(b"x")
+        meldungen: list[str] = []
+        fragen: list[str] = []
+
+        def _frage(fenster, frage, erklaerung, optionen):
+            fragen.append(frage)
+            return antwort if frage == app._t("amprgen.q_zstd") else "lokal"
+
+        with mock.patch.object(app, "_ampr_gen_adresse_finden", return_value=""), \
+                mock.patch.object(app, "_ampr_gen_frage", side_effect=_frage), \
+                mock.patch.object(app, "_ampr_gen_ordner_fragen", return_value=str(self.spiel)), \
+                mock.patch.object(app, "_ampr_ablage_wahl", return_value=app.ABLAGE_AUTO), \
+                mock.patch.object(app, "_ampr_alle_fassungen", return_value=list(self.vorrat)), \
+                mock.patch.object(app, "_ampr_ng_hinweis", mock.Mock()), \
+                mock.patch.object(app, "_ampr_gen_fassungen_waehlen", side_effect=wahl):
+            app._ampr_gen_automatik(sg.ALT, None, meldungen.append)
+        return meldungen, fragen
+
+    def test_abbrechen_bei_zstd_pack_legt_nichts_ab(self) -> None:
+        for antwort in ("stop", ""):
+            with self.subTest(antwort=antwort):
+                meldungen, fragen = self._lauf_mit_pack(lambda fenster, vorrat: [self.vorrat[0]], antwort)
+                self.assertIn(self.app._t("amprgen.q_zstd"), fragen)
+                self.assertEqual({}, self._abgelegt())
+                self.assertFalse((self.spiel / sg.ablageordner(sg.ALT, sg.ORT_SPIEL)).exists(), "Nicht einmal der Ordner entsteht.")
+                self.assertIn(self.app._t("amprgen.cancelled"), meldungen)
+                self.assertNotIn(self.app._t("amprgen.finished"), meldungen)
+
+    def test_weiter_bei_zstd_pack_legt_ab(self) -> None:
+        meldungen, fragen = self._lauf_mit_pack(lambda fenster, vorrat: [self.vorrat[0]], "weiter")
+        self.assertIn(self.app._t("amprgen.q_zstd"), fragen)
+        self.assertEqual({AMPR: b"libSceAmpr.sprx-0.4.2.1-test-nopack"}, self._abgelegt())
+        self.assertIn(self.app._t("amprgen.finished"), meldungen)
+
+    def test_ng_und_playgo_fragen_bei_zstd_pack_nicht(self) -> None:
+        ng = Path(self._tmp.name) / "vorrat" / "0.4.0 ng" / AMPR
+        ng.parent.mkdir(parents=True)
+        ng.write_bytes(b"..ampr-emu-ng 0.4.0..")
+        ng_eintrag = _eintrag(AMPR, "0.4.0", "ng", ng.stat().st_size, pfad=str(ng))
+        for name, libs in (("NG", [ng_eintrag]), ("nur PlayGo", [self.vorrat[2]])):
+            with self.subTest(fall=name):
+                meldungen, fragen = self._lauf_mit_pack(lambda fenster, vorrat, libs=libs: libs, "stop")
+                self.assertNotIn(self.app._t("amprgen.q_zstd"), fragen)
+                self.assertIn(self.app._t("amprgen.finished"), meldungen)
+
     def test_ein_fenster_das_nicht_aufgeht_wird_als_fehler_gemeldet(self) -> None:
         def _kaputt(fenster, vorrat):
             raise RuntimeError("Fenster kaputt")

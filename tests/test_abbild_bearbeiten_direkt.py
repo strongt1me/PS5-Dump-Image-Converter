@@ -182,6 +182,27 @@ class DirektTests(unittest.TestCase):
         self.assertFalse(os.path.exists(eb.journal_pfad(self.bild)))
         self.assertIn("rückgängig gemacht", self.f.status_var.get())
 
+    def test_ein_fremdes_journal_wird_nicht_zurueckgespielt_und_gemeldet(self) -> None:
+        """Gesamtpruefung 14.11.2026, E3: Das Journal stammt von einem anderen Abbild gleichen Namens (mit neuen Bytes, Format 2)."""
+        a = eb.ExfatAbbild(self.bild)
+        a.loeschen("data/gross.bin")
+        a._metadaten_planen()
+        stellen = []
+        for offset, neu in a._plan.stellen:
+            a._fh.seek(offset)
+            stellen.append((offset, b"\xa5" * len(neu), neu))               # weder alt noch neu: ein anderes Abbild
+        eb._journal_schreiben(eb.journal_pfad(self.bild), stellen)
+        a.schliessen()
+        vorher = Path(self.bild).read_bytes()
+        with mock.patch.object(fz.messagebox, "showwarning") as warnung:
+            self.oeffnen()
+        self.assertEqual(vorher, Path(self.bild).read_bytes(), "das Abbild bleibt unberuehrt")
+        self.assertFalse(os.path.exists(eb.journal_pfad(self.bild)))
+        self.assertTrue(os.path.exists(eb.journal_pfad(self.bild) + ".fremd"), "beiseitegelegt, nicht still geloescht")
+        warnung.assert_called_once()
+        self.assertIn(".undo.fremd", warnung.call_args[0][1])
+        self.assertNotIn("rückgängig gemacht", self.f.status_var.get())
+
     # ---- Aendern und Anwenden --------------------------------------------------------------------------------
     def test_aendern_im_speicher_und_anwenden_im_hintergrund(self) -> None:
         self.oeffnen()

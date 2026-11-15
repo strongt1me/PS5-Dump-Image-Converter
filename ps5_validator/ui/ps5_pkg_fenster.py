@@ -2306,7 +2306,8 @@ class Ps5PkgFenster:
                     fakelib_basis = (fakelib_konfiguriert if fakelib_konfiguriert and os.path.isdir(fakelib_konfiguriert)
                                      else getattr(self.g, "_backport_fakelib_basis", lambda: "")())
                     erg, meldung = bp_util.backport_einbauen(
-                        info.pfad, fw, fakelib_basis, zeile=self._melden, abbruch=lambda: self._abbruch)
+                        info.pfad, fw, fakelib_basis, zeile=self._melden, abbruch=lambda: self._abbruch,
+                        text_emu_bleibt=lambda namen: self.t("backport.log_emu_bleibt", names=namen).strip())
                     if erg == bp_util.ERGEBNIS_ABGEBROCHEN:
                         raise wz.Fehler("abgebrochen")
                     if erg == bp_util.ERGEBNIS_FEHLER:

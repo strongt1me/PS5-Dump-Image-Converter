@@ -38,6 +38,11 @@ SCHLUESSEL = [
     "ampr_zstd.pruefung_voll", "ampr_zstd.pruefung_stichprobe",
     "ampr_zstd.index_fehlt", "ampr_zstd.index_groesse", "ampr_zstd.index_passt_nicht", "ampr.index_zu_lang",
     "ampr_ng.indexspeicher_zu_klein", "ampr_ng.indexspeicher_neuere_fassung", "ampr_ng.indexspeicher_ohne_pack",
+    "ampr_zstd.schon_gepackt", "ampr_zstd.lz4_pack_vorhanden", "ampr.assets_index_kept", "ampr_zstd.pack_nur_ng",
+    "ampr_zstd.pack_pruefung_fehlgeschlagen", "ampr_zstd.ftp_pack_nur_ng",
+    "ampr_zstd.pack_nur_ng_raus", "ampr_zstd.ftp_pack_frage", "ampr_zstd.ftp_pack_status", "backport.log_emu_bleibt",
+    "amprgen.q_zstd", "amprgen.q_zstd_why", "amprgen.q_zstd_stop", "amprgen.q_zstd_stop_why", "amprgen.q_zstd_go", "amprgen.q_zstd_go_why",
+    "amprgen.zstd_appmeta_hinweis",
 ]
 
 
@@ -201,6 +206,533 @@ class BauenTests(unittest.TestCase):
         befund = s._ng_indexspeicher_warnen(self.index, {"variant": "ng", "version": "0.4.0-beta"})
         self.assertTrue(befund.passt)
         self.assertNotIn("ampr_ng.indexspeicher", s.text())
+
+    def test_schon_gepackt_ohne_originale_wird_nicht_neu_gepackt(self) -> None:
+        """Gesamtpruefung 14.11.2026, P1: Das neue Pack haette das alte ersetzt und nur noch die losen Dateien genannt."""
+        s = _Stub()
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        z.originale_entfernen(self.spiel, z.index_laden(self.spiel))
+        self.assertFalse(os.path.exists(os.path.join(self.spiel, "Daten", "a.txt")))
+        vorher = Path(self.spiel, z.INDEX_NAME).read_bytes()
+        s2 = _Stub()
+        self.assertFalse(s2._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}))
+        self.assertIn("ampr_zstd.schon_gepackt", s2.text())
+        self.assertEqual(vorher, Path(self.spiel, z.INDEX_NAME).read_bytes(), "das alte Pack bleibt")
+        ziel = os.path.join(self._tmp, "entpackt")
+        z.entpacken_in_neuen_ordner(self.spiel, ziel)
+        self.assertEqual(b"abc " * 100_000, Path(ziel, "Daten", "a.txt").read_bytes())
+
+    def test_gegenprobe_mit_originalen_wird_neu_gepackt(self) -> None:
+        """Liegt jede gepackte Datei noch lose daneben, ist das alte Pack eine Doppelung - neu packen ist erlaubt."""
+        s = _Stub()
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        s2 = _Stub(stufe=5)
+        self.assertTrue(s2._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s2.text())
+        self.assertNotIn("ampr_zstd.schon_gepackt", s2.text())
+        z.pruefen(self.spiel, self.spiel)
+
+    def _einbau_gui(self, verfahren: str = "zstd"):
+        g = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        g._log = []
+        g._append_to_log = g._log.append
+        g._t = lambda k, **kw: k
+        g._set_status = lambda *a, **k: None
+        g.is_running = True
+        g._ampr_methode = lambda: APP.AMPR_METHODE_ASSETPACK
+        g._ampr_pack_verfahren = lambda: verfahren
+        g._tk_wert = lambda name, vorgabe="": "NG"
+        g._ampr_auswahl_beim_start = lambda: {"NG": {"path": "x", "variant": "ng"}}
+        g._ampr_apply_library = lambda *a, **k: True
+        g._playgo_wird_eingebaut = lambda: False
+        g._titel_nutzt_playgo = lambda ordner: ""
+        return g
+
+    def test_ein_pack_ohne_originale_bleibt_mit_seinem_index(self) -> None:
+        """R2-P4/R4-2: Kein neuer ampr_emu.index und kein neues Pack - und auch kein Abbruch: Pack und Index bleiben, wie sie sind
+        (wie das "Nein" auf die Index-Frage). Gegenprobe im naechsten Test: mit allen Originalen wird gefragt."""
+        s = _Stub()
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        index_vorher = Path(self.index).read_bytes()
+        pack_vorher = Path(self.spiel, z.INDEX_NAME).read_bytes()
+        z.originale_entfernen(self.spiel, z.index_laden(self.spiel))
+        for verfahren in ("zstd", "lz4"):
+            with self.subTest(verfahren=verfahren):
+                g = self._einbau_gui(verfahren)
+                self.assertEqual("ampr_zstd.schon_gepackt", g._ampr_pack_hindernis(self.spiel))
+                with mock.patch.object(g, "_ampr_index_neubau_erlaubt", side_effect=AssertionError("gefragt")) as frage, \
+                        mock.patch.object(g, "_build_ampr_index_local", side_effect=AssertionError("Index neu")) as bau, \
+                        mock.patch.object(g, "_ampr_assetpakete_bauen", side_effect=AssertionError("gepackt")) as packen:
+                    self.assertTrue(g._integration_ampr(self.spiel))
+                frage.assert_not_called()
+                bau.assert_not_called()
+                packen.assert_not_called()
+                self.assertIn("ampr_zstd.schon_gepackt", g._log)
+                self.assertIn("ampr.assets_index_kept", g._log)
+                self.assertEqual(index_vorher, Path(self.index).read_bytes())
+                self.assertEqual(pack_vorher, Path(self.spiel, z.INDEX_NAME).read_bytes())
+
+    def test_gegenprobe_mit_originalen_entscheidet_die_index_frage(self) -> None:
+        s = _Stub()
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        g = self._einbau_gui("zstd")
+        self.assertEqual("", g._ampr_pack_hindernis(self.spiel))
+        with mock.patch.object(g, "_ampr_index_neubau_erlaubt", return_value=False) as frage:
+            self.assertTrue(g._integration_ampr(self.spiel))
+        frage.assert_called_once()
+
+    def test_lz4_pack_bei_gewaehltem_zstd(self) -> None:
+        Path(self.spiel, "ampr_assets-main-lane00-vol00-000.pak").write_bytes(b"AMPRPAK4" + bytes(64))
+        self.assertEqual("ampr_zstd.lz4_pack_vorhanden", self._einbau_gui("zstd")._ampr_pack_hindernis(self.spiel))
+        self.assertEqual("", self._einbau_gui("lz4")._ampr_pack_hindernis(self.spiel), "mit LZ4 entscheidet der LZ4-Weg")
+
+    def test_lz4_pack_im_ordner_bricht_ab(self) -> None:
+        Path(self.spiel, "ampr_assets-main-lane00-vol00-000.pak").write_bytes(b"AMPRPAK4" + bytes(64))
+        s = _Stub()
+        self.assertFalse(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}))
+        self.assertIn("ampr_zstd.lz4_pack_vorhanden", s.text())
+        self.assertFalse(z.ist_gepackt(self.spiel))
+
+    def _ohne_originale(self) -> None:
+        s = _Stub()
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        z.originale_entfernen(self.spiel, z.index_laden(self.spiel))
+
+    def test_abbruch_bei_der_packpruefung_ist_kein_pack_befund(self) -> None:
+        """R5-1: Brach der Anwender die Suche ab, stand "schon gepackt" im Protokoll, und der Einbau lief mit True weiter."""
+        self._ohne_originale()
+        g = self._einbau_gui("zstd")
+        g.is_running = False
+        self.assertEqual("ampr_pack.abgebrochen", g._ampr_pack_hindernis(self.spiel))
+        with mock.patch.object(g, "_ampr_apply_library", side_effect=AssertionError("getauscht")) as tausch:
+            self.assertFalse(g._integration_ampr(self.spiel))
+        tausch.assert_not_called()
+        self.assertNotIn("ampr_zstd.schon_gepackt", g._log)
+        self.assertNotIn("ampr.assets_index_kept", g._log)
+
+    def test_lz4_reste_neben_dem_zstd_pack_nur_bei_gewaehltem_zstd(self) -> None:
+        """R5-2: zstd-Pack mit allen Originalen plus LZ4-Rest - mit LZ4 gewaehlt kein Hindernis. Ohne Originale geht das zstd-Pack
+        den LZ4-Resten vor (sonst griffe die NG-Sperre aus R5-3 nicht)."""
+        s = _Stub()
+        self.assertTrue(s._ampr_zstdpakete_bauen(self.spiel, self.index, {"variant": "ng"}), s.text())
+        Path(self.spiel, "ampr_assets-main-lane00-vol00-000.pak").write_bytes(b"AMPRPAK4" + bytes(64))
+        self.assertEqual("", self._einbau_gui("lz4")._ampr_pack_hindernis(self.spiel))
+        self.assertEqual("ampr_zstd.lz4_pack_vorhanden", self._einbau_gui("zstd")._ampr_pack_hindernis(self.spiel))
+        z.originale_entfernen(self.spiel, z.index_laden(self.spiel))
+        for verfahren in ("zstd", "lz4"):
+            with self.subTest(verfahren=verfahren):
+                self.assertEqual("ampr_zstd.schon_gepackt", self._einbau_gui(verfahren)._ampr_pack_hindernis(self.spiel))
+
+    def test_andere_fassung_als_ng_tauscht_die_bibliothek_nicht(self) -> None:
+        """R5-3: Ein zstd-Pack ohne alle Originale liest nur NG - eine andere Fassung haette libSceAmpr.sprx getauscht und das Spiel
+        unlesbar gemacht. Gegenproben: nur PlayGo tauscht nichts und laeuft durch; mit NG laeuft es durch (Test weiter oben)."""
+        self._ohne_originale()
+        for verfahren in ("zstd", "lz4"):
+            with self.subTest(verfahren=verfahren):
+                g = self._einbau_gui(verfahren)
+                g._ampr_auswahl_beim_start = lambda: {"NG": {"path": "x", "variant": "test-pack"}}
+                with mock.patch.object(g, "_ampr_apply_library", side_effect=AssertionError("getauscht")) as tausch:
+                    self.assertFalse(g._integration_ampr(self.spiel))
+                tausch.assert_not_called()
+                self.assertIn("ampr_zstd.pack_nur_ng", g._log)
+        g = self._einbau_gui("lz4")
+        g._ampr_auswahl_beim_start = lambda: {"NG": {"path": "x", "variant": "test-pack"}}
+        with mock.patch.object(g, "_ampr_apply_library", side_effect=AssertionError("getauscht")) as tausch:
+            self.assertTrue(g._integration_ampr(self.spiel, nur_playgo=True))
+        tausch.assert_not_called()
+        self.assertNotIn("ampr_zstd.pack_nur_ng", g._log)
+
+    def test_lesefehler_bei_der_packpruefung_endet_mit_grund(self) -> None:
+        """R6-1: Seit die Pruefung vor dem Bibliothekstausch steht, fiel ein OSError (Datei verschwindet beim Durchsuchen) als Ausnahme
+        aus dem Einbau, statt mit Grund im Protokoll False zu liefern."""
+        self._ohne_originale()
+        g = self._einbau_gui("zstd")
+        with mock.patch.object(z, "dateien_auswaehlen", side_effect=FileNotFoundError("weg")), \
+                mock.patch.object(g, "_ampr_apply_library", side_effect=AssertionError("getauscht")) as tausch:
+            self.assertFalse(g._integration_ampr(self.spiel))
+        tausch.assert_not_called()
+        self.assertIn("ampr_zstd.pack_pruefung_fehlgeschlagen", g._log)
+
+    def _vorab_gui(self, variante: str):
+        g = self._einbau_gui("zstd")
+        g._integration_gewaehlt = lambda: True
+        g._ampr_wird_eingebaut = lambda: True
+        g._ampr_auswahl_beim_start = lambda: {"NG": {"path": "x", "variant": variante}}
+        return g
+
+    def test_die_ng_sperre_greift_vor_der_arbeitskopie(self) -> None:
+        """R6-3: Die Sperre fiel erst in _integration_ampr - nach Arbeitskopie, Backport und DLC EMU."""
+        self._ohne_originale()
+        g = self._vorab_gui("test-pack")
+        with mock.patch.object(g, "_integration_arbeitskopie", side_effect=AssertionError("kopiert")) as kopie:
+            self.assertEqual("", g._integration_anwenden(self.spiel, ist_quellordner=True))
+        kopie.assert_not_called()
+        self.assertIn("ampr_zstd.pack_nur_ng", g._log)
+        # Gegenprobe: mit NG geht es zur Arbeitskopie weiter.
+        g = self._vorab_gui("ng")
+        with mock.patch.object(g, "_integration_arbeitskopie", return_value="") as kopie:
+            self.assertEqual("", g._integration_anwenden(self.spiel, ist_quellordner=True))
+        kopie.assert_called_once()
+        self.assertNotIn("ampr_zstd.pack_nur_ng", g._log)
+
+    def test_vorabpruefung_ohne_pack_fragt_nichts_ab(self) -> None:
+        """Ohne zstd-Pack in der Wurzel nur ein listdir - die Auswahl des Starts wird gar nicht gelesen (Tests mit schmalen Stubs)."""
+        g = self._vorab_gui("test-pack")
+        g._ampr_auswahl_beim_start = mock.Mock(side_effect=AssertionError("gelesen"))
+        g._ampr_wird_eingebaut = mock.Mock(side_effect=AssertionError("gefragt"))
+        self.assertTrue(g._ampr_einbau_passt_zum_pack(self.spiel))
+        self.assertTrue(g._ampr_einbau_passt_zum_pack(os.path.join(self._tmp, "gibt_es_nicht")))
+        g._ampr_auswahl_beim_start.assert_not_called()          # ein except Exception im Programm schluckte den Fehler sonst still
+        g._ampr_wird_eingebaut.assert_not_called()
+
+    def _ftp_gui(self, variante: str, wurzel: list):
+        g = self._einbau_gui()
+        eintraege = [{"lib": "libSceAmpr.sprx", "version": "0.9", "variant": variante, "path": "x"},
+                     {"lib": "libScePlayGo.sprx", "version": "0.9", "variant": variante, "path": "y"}]
+        g._ampr_scan_version_store = lambda store: eintraege
+        g._fakelib_ordnername = lambda: "fakelib"
+        g._ampr_ng_hinweis = lambda *a, **k: None
+        g._ampr_ftp_list_entries = lambda ftp, pfad: [(n, {"type": "file"}) for n in wurzel]
+        g._ampr_ftp_upload_file = mock.Mock(return_value=True)
+        return g
+
+    def test_ftp_set_kommt_nicht_in_einen_zstd_ordner(self) -> None:
+        """R6-2: "APR-EMU uebertragen" legte ohne Wunsch die neueste Fassung von drakmor neben ein zstd-Pack. Seit R7-3 meldet sich die
+        Sperre als eigene Ausnahme, damit der Picker nachfragen kann - hinuebergegangen ist dann noch nichts."""
+        set_libs = ("libSceAmpr.sprx", "libScePlayGo.sprx")
+        for libs in ((), set_libs):
+            with self.subTest(libs=libs):
+                g = self._ftp_gui("test-pack", ["eboot.bin", "AMPR_ZSTD.INDEX", "ampr_zstd-000.pak"])
+                with self.assertRaises(APP._AmprFtpPackSperre) as ctx:
+                    g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=libs)
+                self.assertEqual("/data/ps5/PPSA00000", ctx.exception.args[0])
+                g._ampr_ftp_upload_file.assert_not_called()
+                self.assertIn("ampr_zstd.ftp_pack_nur_ng", g._log)
+        # Nach ausdruecklicher Zusage des Anwenders (R7-3) geht das Set doch hinueber.
+        g = self._ftp_gui("test-pack", ["eboot.bin", "ampr_zstd.index"])
+        self.assertEqual((2, 0), g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=set_libs, pack_sperre=False))
+        self.assertEqual(2, g._ampr_ftp_upload_file.call_count)
+        # Gegenproben: NG kommt hinueber, und ohne zstd-Pack auch die andere Fassung.
+        for variante, wurzel in (("ng", ["ampr_zstd.index"]), ("test-pack", ["eboot.bin", "ampr_emu.index"])):
+            with self.subTest(variante=variante, wurzel=wurzel):
+                g = self._ftp_gui(variante, wurzel)
+                self.assertEqual((2, 0), g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=set_libs))
+                self.assertNotIn("ampr_zstd.ftp_pack_nur_ng", g._log)
+
+    def test_der_zweite_aufruf_nach_der_zusage_protokolliert_die_fassungen_nicht_noch_einmal(self) -> None:
+        """R9: Nach "Ja" ruft der Picker ``_ampr_ftp_apply_set`` erneut - ``ampr.selected_version`` stand dann doppelt im Protokoll."""
+        set_libs = ("libSceAmpr.sprx", "libScePlayGo.sprx")
+        g = self._ftp_gui("test-pack", ["eboot.bin", "ampr_zstd.index"])
+        with self.assertRaises(APP._AmprFtpPackSperre):
+            g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=set_libs)
+        self.assertEqual(2, g._log.count("ampr.selected_version"), "der erste Aufruf nennt beide Fassungen")
+        self.assertEqual((2, 0), g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=set_libs,
+                                                       pack_sperre=False, wiederholung=True))
+        self.assertEqual(2, g._log.count("ampr.selected_version"), "der zweite nennt sie nicht noch einmal")
+        # Gegenprobe: ohne wiederholung steht es auch beim zweiten Mal da.
+        g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=set_libs, pack_sperre=False)
+        self.assertEqual(4, g._log.count("ampr.selected_version"))
+        # Dasselbe fuer "nichts gefunden": Der erste Aufruf nennt es, die Wiederholung nicht.
+        g = self._ftp_gui("test-pack", ["eboot.bin"])
+        self.assertEqual((0, 0), g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", version="9.9", libs=set_libs))
+        self.assertEqual(2, g._log.count("ampr.no_match_in_store"))
+        g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", version="9.9", libs=set_libs, wiederholung=True)
+        self.assertEqual(2, g._log.count("ampr.no_match_in_store"), "die Wiederholung nennt es nicht noch einmal")
+        g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", version="9.9", libs=set_libs)
+        self.assertEqual(4, g._log.count("ampr.no_match_in_store"), "Gegenprobe: ohne wiederholung steht es wieder da")
+
+    def test_ng_wird_an_der_datei_erkannt(self) -> None:
+        """R7-2: Ein von Hand benannter Ordner im Versionsordner ("0.4.1") ergibt die Variante "standard", auch wenn NG darin liegt -
+        dann sperrte der Einbau zu Unrecht. Es entscheidet die Datei; nur eine nicht lesbare Datei faellt auf die Variante zurueck."""
+        g = self._einbau_gui()
+        ng = Path(self._tmp, "ng.sprx")
+        ng.write_bytes(b"x" + APP.PS5ConverterGUI._AMPR_NG_KENNZEICHEN + b"y")
+        alt = Path(self._tmp, "alt.sprx")
+        alt.write_bytes(b"drakmor")
+        self.assertTrue(g._ampr_bibliothek_ist_ng({"path": str(ng)}))
+        self.assertTrue(g._ampr_bibliothek_ist_ng({"path": str(ng), "variant": "standard"}), "handbenannter Ordner")
+        self.assertFalse(g._ampr_bibliothek_ist_ng({"path": str(alt)}))
+        self.assertFalse(g._ampr_bibliothek_ist_ng({"path": str(alt), "variant": "ng"}), "die Datei sagt es, nicht das Etikett")
+        self.assertFalse(g._ampr_bibliothek_ist_ng({"path": None}))
+        self.assertFalse(g._ampr_bibliothek_ist_ng({}))
+        # Nicht lesbar: die Variante entscheidet (Tests und Auswahlen ohne Datei).
+        weg = str(Path(self._tmp, "gibt_es_nicht.sprx"))
+        self.assertTrue(g._ampr_bibliothek_ist_ng({"path": weg, "variant": "NG"}))
+        self.assertTrue(g._ampr_bibliothek_ist_ng({"path": weg, "variant": "ng-debug"}))
+        self.assertFalse(g._ampr_bibliothek_ist_ng({"path": weg, "variant": "test-pack"}))
+
+    def test_handbenanntes_ng_wird_im_einbau_nicht_gesperrt(self) -> None:
+        self._ohne_originale()
+        ng = Path(self._tmp, "ng.sprx")
+        ng.write_bytes(b"x" + APP.PS5ConverterGUI._AMPR_NG_KENNZEICHEN + b"y")
+        g = self._einbau_gui("zstd")
+        g._ampr_auswahl_beim_start = lambda: {"NG": {"path": str(ng), "variant": "standard"}}
+        with mock.patch.object(g, "_ampr_apply_library", return_value=True) as tausch:
+            self.assertTrue(g._integration_ampr(self.spiel))
+        tausch.assert_called_once()
+        self.assertNotIn("ampr_zstd.pack_nur_ng", g._log)
+
+    def test_ftp_picker_fragt_vor_der_ablehnung_nach(self) -> None:
+        """R7-3: Der Grund steht im Picker (Statuszeile), und das Set geht nach ausdruecklichem Ja doch hinueber; Vorgabe ist Nein."""
+        g = self._einbau_gui()
+        with mock.patch.object(APP.messagebox, "askyesno", return_value=True) as frage:
+            self.assertTrue(g._ampr_ftp_pack_nachfragen("fenster", "/data/ps5/PPSA00000"))
+        titel, text = frage.call_args.args
+        self.assertEqual("ampr.picker_title", titel)
+        self.assertEqual("ampr_zstd.ftp_pack_frage", text)
+        self.assertEqual("no", frage.call_args.kwargs["default"])
+        self.assertEqual("fenster", frage.call_args.kwargs["parent"])
+        with mock.patch.object(APP.messagebox, "askyesno", return_value=False):
+            self.assertFalse(g._ampr_ftp_pack_nachfragen("fenster", "/x"))
+
+    def test_der_picker_behandelt_die_sperre(self) -> None:
+        import ast
+        import inspect
+        quelle = inspect.getsource(APP.PS5ConverterGUI._show_ampr_ftp_picker)
+        baum = ast.parse("class _K:\n" + quelle)
+        getauscht = next(k for k in ast.walk(baum) if isinstance(k, ast.FunctionDef) and k.name == "_getauscht"
+                         and "_AmprFtpPackSperre" in ast.unparse(k))
+        # Struktur: die Sperre steht ganz vorn, dort fragt der Picker; Ja ruft im Faden erneut ohne Sperre, Nein setzt die Statuszeile.
+        erste = getauscht.body[0]
+        self.assertIsInstance(erste, ast.If)
+        self.assertEqual("isinstance(fehler, _AmprFtpPackSperre)", ast.unparse(erste.test))
+        frage = next(k for k in erste.body if isinstance(k, ast.If))
+        self.assertEqual("self._ampr_ftp_pack_nachfragen(win, pfad)", ast.unparse(frage.test))
+        ja = ast.unparse(ast.Module(body=frage.body, type_ignores=[]))
+        nein = ast.unparse(ast.Module(body=frage.orelse, type_ignores=[]))
+        self.assertIn("_im_faden(", ja)
+        # Die beiden Aufrufe von _ampr_ftp_apply_set im Picker: der erste mit den Vorgaben (Sperre an), der zweite nach "Ja" - und die
+        # Schluesselwoerter gehoeren zu demselben Aufruf.
+        aufrufe = [k for k in ast.walk(ast.parse("class _K:\n" + quelle))
+                   if isinstance(k, ast.Call) and ast.unparse(k.func) == "self._ampr_ftp_apply_set"]
+        woerter = sorted(sorted(kw.arg for kw in k.keywords) for k in aufrufe)
+        self.assertEqual([[], ["pack_sperre", "wiederholung"]], woerter)
+        zweiter = next(k for k in aufrufe if k.keywords)
+        self.assertEqual({"pack_sperre": False, "wiederholung": True}, {kw.arg: kw.value.value for kw in zweiter.keywords})
+        self.assertNotIn("pack_sperre=False", nein)
+        self.assertIn("status_var.set(self._t('ampr_zstd.ftp_pack_status'))", nein)
+        self.assertIsInstance(erste.body[-1], ast.Return, "danach nicht noch 'fehlgeschlagen' melden")
+
+    # --- R7-1: der Backport laesst ein vorhandenes AMPR EMU / NG liegen --------------------------------------------------
+
+    def _backport_gui(self, satz_lib: str):
+        g = self._einbau_gui()
+        werte = {"backport_fw_var": 4, "ampr_integrate_var": False, "ampr_playgo_var": False}
+        g._tk_wert = lambda n, d=None: werte.get(n, d)
+        g._load_setting = lambda k, d=None: d
+        g._backport_ziel_deckung_melden = lambda *a, **k: None
+        g._backport_luecken_melden = lambda *a, **k: None
+        g._backport_korrekturen_anwenden = lambda *a, **k: []
+        g._backport_fremdlibs_klaeren = lambda *a, **k: []
+        g._backport_param_json = lambda *a, **k: 0
+        g._backport_fakelib_basis = lambda: self._tmp
+        g._backport_fakelib_minimal = lambda: False
+        g._backport_fakelib_auswahl = lambda basis, firmware, ordner: [satz_lib, os.path.join(os.path.dirname(satz_lib), "libSceFoo.sprx")]
+        g._fakelib_ordnername = lambda: "fakelib"
+        return g
+
+    def _satz(self) -> str:
+        satz = os.path.join(self._tmp, "satz")
+        os.makedirs(satz)
+        Path(satz, "libSceAmpr.sprx").write_bytes(b"[AMPR_EMU] drakmor " * 50)
+        Path(satz, "libSceFoo.sprx").write_bytes(b"foo")
+        return os.path.join(satz, "libSceAmpr.sprx")
+
+    def test_backport_beim_erstellen_ueberschreibt_ng_nicht(self) -> None:
+        """Jeder Bibliothekssatz bringt libSceAmpr.sprx von drakmor mit; sie ersetzte NG in einem zstd-Ordner ohne Originale."""
+        self._ohne_originale()
+        lib = Path(self.spiel, "fakelib", "libSceAmpr.sprx")
+        lib.parent.mkdir(exist_ok=True)
+        ng = b"..ampr-emu-ng 0.4.0.." + bytes(300)
+        lib.write_bytes(ng)
+        g = self._backport_gui(self._satz())
+        self.assertTrue(g._integration_backport(self.spiel), g._log)
+        self.assertEqual(ng, lib.read_bytes(), "NG wurde ueberschrieben")
+        self.assertEqual(b"foo", Path(self.spiel, "fakelib", "libSceFoo.sprx").read_bytes(), "die uebrigen Bibliotheken kommen weiter")
+        self.assertTrue(z.ist_gepackt(self.spiel))
+        self.assertIn("backport.log_emu_bleibt", g._log)
+
+    def test_gegenprobe_backport_ohne_vorhandenes_emu_kopiert_den_satz(self) -> None:
+        satz_lib = self._satz()
+        for nummer, vorhanden in enumerate((None, b"Sony-Original " * 40)):
+            with self.subTest(vorhanden=vorhanden):
+                spiel = os.path.join(self._tmp, "ohne_%d" % nummer)
+                os.makedirs(os.path.join(spiel, "fakelib"))
+                ziel = Path(spiel, "fakelib", "libSceAmpr.sprx")
+                if vorhanden is not None:
+                    ziel.write_bytes(vorhanden)
+                g = self._backport_gui(satz_lib)
+                self.assertTrue(g._integration_backport(spiel), g._log)
+                self.assertIn(b"[AMPR_EMU]", ziel.read_bytes(), "ohne Emulator im Spiel gilt der Satz wie bisher")
+                self.assertNotIn("backport.log_emu_bleibt", g._log)
+
+    # --- R8-2: der Generationen-Assistent ("pro Spiel") fragt bei zstd-Pack und Nicht-NG-Fassung ------------------------------
+
+    def _gen_gui(self, antwort: str = "stop", pack_auf_konsole: bool = False):
+        g = self._einbau_gui()
+        g._ampr_gen_frage = mock.Mock(return_value=antwort)
+        g._ampr_ftp_zstd_pack_da = mock.Mock(return_value=pack_auf_konsole)
+        return g
+
+    def _lib(self, variante: str = "test-pack", lib: str = "libSceAmpr.sprx") -> dict:
+        return {"lib": lib, "path": os.path.join(self._tmp, "gibt_es_nicht.sprx"), "variant": variante}
+
+    def test_der_assistent_fragt_bei_zstd_pack_und_nicht_ng(self) -> None:
+        Path(self.spiel, z.INDEX_NAME).write_bytes(b"x")
+        for antwort, soll in (("weiter", True), ("stop", False), ("", False)):
+            with self.subTest(antwort=antwort):
+                g = self._gen_gui(antwort)
+                self.assertIs(soll, g._ampr_gen_zstd_vertraeglich("fenster", None, True, self.spiel, [self._lib()]))
+                g._ampr_gen_frage.assert_called_once()
+                args = g._ampr_gen_frage.call_args.args
+                self.assertEqual(("fenster", "amprgen.q_zstd", "amprgen.q_zstd_why"), args[:3])
+                self.assertEqual(["stop", "weiter"], [o[0] for o in args[3]], "Vorgabe ist das Erste: Abbrechen")
+
+    def test_der_assistent_fragt_sonst_nicht(self) -> None:
+        Path(self.spiel, z.INDEX_NAME.upper()).write_bytes(b"x")          # Schreibung egal
+        faelle = {
+            "NG": ([self._lib("ng")], self.spiel),
+            "NG-Debug": ([self._lib("ng-debug")], self.spiel),
+            "nur PlayGo": ([self._lib("test-pack", "libScePlayGo.sprx")], self.spiel),
+            "fester Weg ohne Spielordner": ([self._lib()], ""),
+            "keine Bibliothek": ([], self.spiel),
+        }
+        for name, (libs, ordner) in faelle.items():
+            with self.subTest(fall=name):
+                g = self._gen_gui()
+                self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", None, True, ordner, libs))
+                g._ampr_gen_frage.assert_not_called()
+        # ohne zstd-Pack: nichts zu fragen, auch bei einer anderen Fassung als NG
+        ohne = os.path.join(self._tmp, "ohne_pack")
+        os.makedirs(ohne)
+        Path(ohne, "ampr_emu.index").write_bytes(b"x")
+        g = self._gen_gui()
+        self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", None, True, ohne, [self._lib()]))
+        self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", None, True, os.path.join(self._tmp, "weg"), [self._lib()]))
+        g._ampr_gen_frage.assert_not_called()
+
+    def test_der_assistent_fragt_auf_der_konsole_nach_dem_index_im_spielordner(self) -> None:
+        g = self._gen_gui("weiter", pack_auf_konsole=True)
+        self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", "ftp", False, "/data/ps5/PPSA00000", [self._lib()]))
+        g._ampr_ftp_zstd_pack_da.assert_called_once_with("ftp", "/data/ps5/PPSA00000")
+        g._ampr_gen_frage.assert_called_once()
+        g = self._gen_gui("stop", pack_auf_konsole=False)
+        self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", "ftp", False, "/data/ps5/PPSA00000", [self._lib()]))
+        g._ampr_gen_frage.assert_not_called()
+
+    def test_ein_abbild_nur_aus_appmeta_bekommt_einen_hinweis_statt_der_frage(self) -> None:
+        """R9-1: Ein eingehaengtes Abbild hat keinen Ordner, in den sich sehen liesse (``/system_data/priv/appmeta/<ID>``) - dort lag nie
+        ein ampr_zstd.index, also wurde nie gefragt. Eine Frage bei jedem Abbild waere zu viel; es bleibt der Hinweis im Protokoll."""
+        zeilen: list[str] = []
+        g = self._gen_gui("stop", pack_auf_konsole=True)
+        self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", "ftp", False, "/system_data/priv/appmeta/PPSA00000", [self._lib()],
+                                                      "appmeta", zeilen.append))
+        self.assertEqual(["!! amprgen.zstd_appmeta_hinweis"], zeilen)
+        g._ampr_gen_frage.assert_not_called()
+        g._ampr_ftp_zstd_pack_da.assert_not_called()
+        # ohne Protokollzeile (Aufrufer ohne melde) kein Fehler; mit NG gar kein Hinweis
+        self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", "ftp", False, "/x", [self._lib()], "appmeta"))
+        zeilen.clear()
+        self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", "ftp", False, "/x", [self._lib("ng")], "appmeta", zeilen.append))
+        self.assertEqual([], zeilen)
+        # Gegenprobe: ein Spiel mit Ordner auf der Konsole (herkunft leer) wird weiter gefragt.
+        g = self._gen_gui("weiter", pack_auf_konsole=True)
+        self.assertTrue(g._ampr_gen_zstd_vertraeglich("fenster", "ftp", False, "/data/ps5/PPSA00000", [self._lib()], "", zeilen.append))
+        g._ampr_gen_frage.assert_called_once()
+        self.assertEqual([], zeilen)
+
+    def test_der_assistent_ruft_die_frage_nach_der_fassungswahl(self) -> None:
+        import ast
+        import inspect
+        quelle = inspect.getsource(APP.PS5ConverterGUI._ampr_gen_automatik)
+        baum = ast.parse("class _K:\n" + quelle)
+        zeilen = {k.value: k.lineno for k in ast.walk(baum)
+                  if isinstance(k, ast.Constant) and k.value in ("amprgen.lib_chosen", "amprgen.step_config")}
+        frage = next(k for k in ast.walk(baum) if isinstance(k, ast.If) and "_ampr_gen_zstd_vertraeglich" in ast.unparse(k.test))
+        self.assertEqual("not self._ampr_gen_zstd_vertraeglich(fenster, ftp, lokal, spielpfad, gewaehlt_libs, herkunft, melde)",
+                         ast.unparse(frage.test))
+        self.assertLess(zeilen["amprgen.lib_chosen"], frage.lineno, "erst die Fassungen, dann die Frage")
+        self.assertLess(frage.lineno, zeilen["amprgen.step_config"], "vor dem Ablegen und vor der config.ini")
+        self.assertTrue(any(isinstance(k, ast.Return) for k in frage.body), "Nein bricht ab")
+        self.assertIn("amprgen.cancelled", ast.unparse(ast.Module(body=frage.body, type_ignores=[])))
+
+    def test_der_pkg_backport_meldet_in_der_sprache_der_oberflaeche(self) -> None:
+        """R9-4: ps5_pkg_backport kennt keine Uebersetzung; das PKG-Fenster reicht sie als Funktion hinein."""
+        import inspect
+        from ps5_validator.ui import ps5_pkg_fenster
+        from ps5_validator.utils import ps5_pkg_backport as pkg
+        self._ohne_originale()
+        satz_lib = self._satz()
+        lib = Path(self.spiel, "fakelib", "libSceAmpr.sprx")
+        lib.parent.mkdir(exist_ok=True)
+        lib.write_bytes(b"..ampr-emu-ng 0.4.0.." + bytes(300))
+        for text, erwartet in ((lambda namen: "UEBERSETZT:" + namen, "UEBERSETZT:libSceAmpr.sprx"), (None, "Vorhandene AMPR-EMU")):
+            with self.subTest(text=text is not None):
+                zeilen: list[str] = []
+                with mock.patch.object(pkg.ps5_backport, "fakelib_dateien", return_value=[satz_lib]):
+                    pkg.backport_einbauen(self.spiel, 4, self._tmp, zeile=zeilen.append, text_emu_bleibt=text)
+                self.assertTrue(any(erwartet in z for z in zeilen), zeilen)
+        # Struktur statt Quelltext-Text: Der Aufruf von backport_einbauen im Fenster uebergibt text_emu_bleibt als Lambda auf backport.log_emu_bleibt.
+        import ast
+        baum = ast.parse(inspect.getsource(ps5_pkg_fenster))
+        aufruf = next(k for k in ast.walk(baum) if isinstance(k, ast.Call) and ast.unparse(k.func) == "bp_util.backport_einbauen")
+        wert = next(kw.value for kw in aufruf.keywords if kw.arg == "text_emu_bleibt")
+        self.assertIsInstance(wert, ast.Lambda)
+        self.assertIn("self.t('backport.log_emu_bleibt', names=", ast.unparse(wert.body))
+        self.assertIn(".strip()", ast.unparse(wert.body))
+
+    def test_der_backport_im_pkg_fenster_ueberschreibt_ng_nicht(self) -> None:
+        """R8-1: ps5_pkg_backport.backport_einbauen (PS5-PKG-Fenster) kopierte den Satz ohne Pruefung ueber NG - direkt im Spielordner."""
+        from ps5_validator.utils import ps5_pkg_backport as pkg
+        self._ohne_originale()
+        satz_lib = self._satz()
+        foo = os.path.join(os.path.dirname(satz_lib), "libSceFoo.sprx")
+        lib = Path(self.spiel, "fakelib", "libSceAmpr.sprx")
+        lib.parent.mkdir(exist_ok=True)
+        ng = b"..ampr-emu-ng 0.4.0.." + bytes(300)
+        lib.write_bytes(ng)
+        zeilen: list[str] = []
+        with mock.patch.object(pkg.ps5_backport, "fakelib_dateien", return_value=[satz_lib, foo]):
+            erg, meldung = pkg.backport_einbauen(self.spiel, 4, self._tmp, zeile=zeilen.append)
+        self.assertEqual(pkg.ERGEBNIS_OK, erg, meldung)
+        self.assertEqual(ng, lib.read_bytes(), "NG wurde ueberschrieben")
+        self.assertEqual(b"foo", Path(self.spiel, "fakelib", "libSceFoo.sprx").read_bytes())
+        self.assertIn("libs=1", meldung, "gezaehlt wird nur, was wirklich kopiert wurde")
+        self.assertTrue(any("libSceAmpr.sprx" in z and "bleibt" in z for z in zeilen), zeilen)
+        # Gegenprobe: ohne Emulator im Spiel kommt der Satz wie bisher hinueber.
+        lib.unlink()
+        with mock.patch.object(pkg.ps5_backport, "fakelib_dateien", return_value=[satz_lib, foo]):
+            erg, meldung = pkg.backport_einbauen(self.spiel, 4, self._tmp, zeile=zeilen.append)
+        self.assertIn(b"[AMPR_EMU]", lib.read_bytes())
+        self.assertIn("libs=2", meldung)
+
+    def test_emulator_bleibt_nur_fuer_ampr_und_playgo_mit_kennzeichen(self) -> None:
+        from ps5_validator.utils import ps5_backport as bp
+        ordner = Path(self._tmp, "emu")
+        ordner.mkdir()
+        (ordner / "libSceAmpr.sprx").write_bytes(b"..ampr-emu-ng 0.4.0..")        # NG
+        (ordner / "libScePlayGo.sprx").write_bytes(b"playgo_stub.dat")
+        (ordner / "libSceFoo.sprx").write_bytes(b"[AMPR_EMU]")                    # Kennzeichen, aber keine AMPR-/PlayGo-Datei
+        self.assertTrue(bp.emulator_bleibt(str(ordner / "libSceAmpr.sprx")))
+        self.assertTrue(bp.emulator_bleibt(str(ordner / "libScePlayGo.sprx")))
+        self.assertFalse(bp.emulator_bleibt(str(ordner / "libSceFoo.sprx")))
+        (ordner / "libSceAmpr.sprx").write_bytes(b"Sony-Original")
+        self.assertFalse(bp.emulator_bleibt(str(ordner / "libSceAmpr.sprx")), "ein Sony-Original bleibt nicht")
+        self.assertFalse(bp.emulator_bleibt(str(ordner / "gibt_es_nicht" / "libSceAmpr.sprx")))
+
+    def test_das_backport_fenster_haelt_es_wie_der_einbau(self) -> None:
+        import ast
+        import inspect
+        quelle = inspect.getsource(APP.PS5ConverterGUI._backport_worker)
+        baum = ast.parse("class _K:\n" + quelle)
+        self.assertIn("backport.log_emu_bleibt", quelle)
+        # Struktur, nicht nur Text: In der Schleife ueber die Bibliotheken steht das Kopieren im else-Zweig der Emulator-Pruefung.
+        schleife = next(k for k in ast.walk(baum) if isinstance(k, ast.For) and ast.unparse(k.iter) == "quellen"
+                        and "emulator_bleibt" in ast.unparse(k))
+        pruefung = next(k for k in schleife.body if isinstance(k, ast.If))
+        self.assertEqual("ps5_backport.emulator_bleibt(ziel_datei)", ast.unparse(pruefung.test))
+        self.assertNotIn("copy2", ast.unparse(ast.Module(body=pruefung.body, type_ignores=[])))
+        self.assertIn("shutil.copy2(quelle, ziel_datei)", ast.unparse(ast.Module(body=pruefung.orelse, type_ignores=[])))
+        self.assertNotIn("count=len(quellen)", ast.unparse(baum), "die Statuszeile zaehlt nur, was wirklich kopiert wird")
 
     def test_ng_wird_gepackt_und_uebernommen(self) -> None:
         s = _Stub()

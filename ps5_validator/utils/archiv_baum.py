@@ -21,13 +21,16 @@ Der Spielordner im Archiv wird wie beim Entpacken gesucht: ``sce_sys/param.json`
 """
 from __future__ import annotations
 
+import lzma
 import os
 import stat
 import threading
 import zipfile
+import zlib
 from typing import Any, Callable, Iterable, Iterator
 
 from ps5_validator.utils import archiv_quelle as aq
+from ps5_validator.utils.dlc_emu import ist_dlc_ordnername
 from ps5_validator.utils.spielbaum import BaumDatei, BaumFehler, _Baum, _ordner_ohne_ignorierte
 
 #: Packverfahren, die ``zipfile`` lesen kann.
@@ -37,11 +40,37 @@ _PROBE_BYTES = 8 * 1024 * 1024
 
 
 def _ist_unzulaessig(name: str) -> bool:
-    """Ein Pfad im Archiv, der aus dem Zielordner herausfuehren oder ein Laufwerk meinen wuerde."""
-    teile = name.replace("\\", "/").split("/")
-    if name.startswith(("/", "\\")) or (len(name) > 1 and name[1] == ":"):
+    """Ein Pfad im Archiv, der aus dem Zielordner herausfuehren oder ein Laufwerk meinen wuerde.
+
+    Gesamtpruefung 14.11.2026 (A1): Geprueft wurde ein Doppelpunkt nur am Anfang. ``os.path.join(schatten, "Game", "D:", "PS5", "x")``
+    ergibt unter Windows aber ``D:PS5\\x`` - der Schattenordner schrieb dorthin. Unter Windows ist deshalb jeder Teil mit ``:``
+    unzulaessig (auch ein NTFS-Datenstrom ``datei:strom``), auf jedem System ``..`` und ein absoluter Pfad.
+    """
+    norm = name.replace("\\", "/")
+    if norm.startswith("/") or (len(norm) > 1 and norm[1] == ":"):
         return True
-    return any(t == ".." for t in teile)
+    teile = norm.split("/")
+    if any(t == ".." for t in teile):
+        return True
+    return os.name == "nt" and any(":" in t for t in teile)
+
+
+def pfad_im_ordner(wurzel: str, rel: str) -> str:
+    """Der Pfad von ``rel`` (Archivpfad mit ``/``) unter ``wurzel`` - oder :class:`BaumFehler`, wenn er herausfuehrt.
+
+    Die zweite Sicherung neben :func:`_ist_unzulaessig` fuer jeden, der Dateien des Baums in einen Ordner schreibt.
+    """
+    if _ist_unzulaessig(rel):
+        raise BaumFehler("Unzulaessiger Pfad im Archiv: %s" % rel)
+    basis = os.path.normpath(os.path.abspath(wurzel))
+    voll = os.path.normpath(os.path.join(basis, *[t for t in rel.split("/") if t]))
+    try:
+        innen = os.path.commonpath([os.path.normcase(voll), os.path.normcase(basis)]) == os.path.normcase(basis)
+    except ValueError:                                      # anderes Laufwerk
+        innen = False
+    if not innen:
+        raise BaumFehler("Unzulaessiger Pfad im Archiv: %s" % rel)
+    return voll
 
 
 def spielwurzel_aus_namen(pfade: Iterable[str]) -> "str | None":
@@ -53,14 +82,18 @@ def spielwurzel_aus_namen(pfade: Iterable[str]) -> "str | None":
     treffer = []
     for pfad in pfade:
         norm = pfad.replace("\\", "/").strip("/")
-        if not norm.lower().endswith("sce_sys/param.json"):
+        klein = norm.lower()
+        # Nur ganze Pfadteile: "alt_sce_sys/param.json" ist kein Spiel (Gesamtpruefung 14.11.2026, R5-4).
+        if klein != "sce_sys/param.json" and not klein.endswith("/sce_sys/param.json"):
             continue
         wurzel = norm[: -len("sce_sys/param.json")].rstrip("/")
         if wurzel.count("/") + (1 if wurzel else 0) <= 3:
             treffer.append(wurzel)
     if not treffer:
         return None
-    return sorted(treffer, key=lambda w: (w.count("/") if w else -1, w))[0]
+    # Ein DLC-Ordner des PS5-App-Dumpers ("EP9000-PPSA01234_00-...-ac") mit eigener param.json zuletzt - sonst gewann er bei
+    # europaeischen Dumps (EP... vor PPSA...) als "das Spiel" (Gesamtpruefung 14.11.2026, R2-P5).
+    return sorted(treffer, key=lambda w: (w.count("/") if w else -1, ist_dlc_ordnername(w.rsplit("/", 1)[-1]), w))[0]
 
 
 class ZipBaum(_Baum):
@@ -131,7 +164,10 @@ class ZipBaum(_Baum):
                 with zf.open(probe, pwd=pwd) as quelle:
                     while quelle.read(1 << 20):
                         pass
-            except (RuntimeError, zipfile.BadZipFile, OSError, EOFError):
+            except Exception:  # noqa: BLE001
+                # Jeder Fehler beim Probelesen heisst "dieses Passwort passt nicht" (Gesamtpruefung 14.11.2026, A2): Ein falsches
+                # Passwort trifft das Pruefbyte von ZipCrypto in 1 von 256 Faellen - dann entschluesselt ``zipfile`` Unsinn, und der
+                # Entpacker wirft zlib.error/LZMAError statt RuntimeError. Bis dahin brach das die Liste der Passwoerter ab.
                 continue
             self._pwd = pwd
             self.passwort = kandidat
@@ -198,13 +234,18 @@ class ZipBaum(_Baum):
                         yield daten
             except zipfile.BadZipFile as exc:
                 raise BaumFehler("%s ist im Archiv beschaedigt: %s" % (info.filename, exc)) from exc
-            except (RuntimeError, NotImplementedError, EOFError) as exc:
+            except (RuntimeError, NotImplementedError, EOFError, zlib.error, lzma.LZMAError, ValueError) as exc:
+                # zlib.error/LZMAError: beschaedigte oder falsch entschluesselte Daten - als BaumFehler, den jeder Aufrufer kennt.
                 raise BaumFehler("%s laesst sich im Archiv nicht lesen: %s" % (info.filename, exc)) from exc
         return lesen
 
     def ordner(self) -> "list[str]":
         self.dateien()
         return list(self._ordner)
+
+    def alle_namen(self) -> "list[str]":
+        """Jeder Eintrag des Archivs mit ``/`` (auch ausserhalb des Spielordners), etwa fuer DLC-Ordner neben dem Spiel."""
+        return [i.filename.replace("\\", "/") for i in self._zip().infolist()]
 
     def stempel(self) -> tuple:
         return self._datei_stempel() + (len(self.dateien()),)

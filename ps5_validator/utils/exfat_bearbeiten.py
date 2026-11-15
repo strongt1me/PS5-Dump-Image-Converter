@@ -24,6 +24,7 @@ Aenderungszeit neu.
 from __future__ import annotations
 
 import contextlib
+import functools
 import os
 import struct
 import time
@@ -40,6 +41,7 @@ from ps5_validator.utils.abbild_journal import (  # noqa: F401  (die alten Namen
     journal_pfad,
     journal_schreiben,
     journal_zurueckspielen,
+    stellen_zusammenfassen,
 )
 
 _FAT_MAX = 256 * 1024 * 1024            # eine groessere FAT wird nicht ganz in den Speicher geladen
@@ -311,8 +313,14 @@ class ExfatAbbild:
         return h
 
     @staticmethod
+    def _einheiten(name: str) -> int:
+        """Die Laenge in UTF-16-Einheiten - so zaehlt exFAT (ein Zeichen ausserhalb der BMP, etwa ein Emoji, sind zwei; E6)."""
+        return len(name.encode("utf-16-le", "surrogatepass")) // 2
+
+    @staticmethod
     def _name_pruefen(name: str) -> None:
-        if not name or name in (".", "..") or len(name) > 255 or name != name.strip(" ") or name.endswith("."):
+        if (not name or name in (".", "..") or ExfatAbbild._einheiten(name) > 255 or name != name.strip(" ")
+                or name.endswith(".")):
             raise ExfatBearbeitenFehler("Unzulaessiger Name: %r" % name)
         if any(z in _VERBOTEN or ord(z) < 32 for z in name):
             raise ExfatBearbeitenFehler("Der Name enthaelt ein verbotenes Zeichen: %r" % name)
@@ -338,7 +346,8 @@ class ExfatAbbild:
                 if eintrag[0] != _ENTRY_NAME:
                     raise ExfatBearbeitenFehler("Beschaedigter Namenseintrag bei Offset %d" % (i + 32 * k))
                 namen += eintrag[2:32]
-            name = bytes(namen).decode("utf-16-le", errors="replace")[: strom[3]]
+            # Die Namenslaenge zaehlt UTF-16-Einheiten, nicht Zeichen (E6): erst die Bytes kuerzen, dann lesen.
+            name = bytes(namen)[: 2 * strom[3]].decode("utf-16-le", errors="replace")
             saetze.append(_Satz(i, 1 + folge, name, struct.unpack_from("<H", roh, i + 4)[0],
                                 struct.unpack_from("<I", strom, 0x14)[0], struct.unpack_from("<Q", strom, 0x18)[0], strom[1]))
             i += 32 * (1 + folge)
@@ -440,14 +449,34 @@ class ExfatAbbild:
             self._belegung(c, True)
 
     def _kette_freigeben(self, kette: "list[int]") -> None:
+        """Gibt die Cluster frei - und verwirft, was fuer sie schon zum Schreiben geplant war.
+
+        Gesamtpruefung 14.11.2026 (E2): ``speichern`` schreibt erst die Dateidaten, dann die Schreibstellen. Eine Stelle in einem
+        Ordner-Cluster, der danach frei wurde und neue Dateidaten bekam (Ordner anlegen, wieder loeschen, Datei hinzufuegen),
+        ueberschrieb sonst die neuen Daten - und ``pruefen`` sah nichts, weil Bitmap und Eintraege stimmten.
+        """
         for c in kette:
             struct.pack_into("<I", self.fat, c * 4, _FAT_FREI)
             self._belegung(c, False)
+        frei = set(kette)
+        if not frei:
+            return
+        self._plan.stellen = [(o, d) for o, d in self._plan.stellen if self._cluster_von_offset(o) not in frei]
+        self._plan.daten = [s for s in self._plan.daten if not frei.intersection(getattr(s, "cluster", ()))]
+        self._daten_cluster -= frei
+
+    def _cluster_von_offset(self, offset: int) -> int:
+        """Der Cluster, in dem ``offset`` liegt (``-1`` vor dem Datenbereich: Bootsektor, FAT)."""
+        heap = self.heap_sektor * self.sektor
+        return -1 if offset < heap else (offset - heap) // self.cluster_groesse + 2
 
     # -- Eintraege bauen ------------------------------------------------------------------------------------------------
-    def _satz_bytes(self, name: str, attribute: int, erster: int, laenge: int, zeiten: bytes, flags: "int | None" = None) -> bytes:
-        """Die Eintraege eines Satzes. ``zeiten``: die 24 Bytes ab Offset 8 des File-Eintrags (Zeiten samt Feinheiten und Zeitzone)."""
-        anzahl_namen = (len(name) + _NAME_PRO_EINTRAG - 1) // _NAME_PRO_EINTRAG
+    def _satz_bytes(self, name: str, attribute: int, erster: int, laenge: int, zeiten: bytes, flags: "int | None" = None,
+                    gueltig: "int | None" = None) -> bytes:
+        """Die Eintraege eines Satzes. ``zeiten``: die 24 Bytes ab Offset 8 des File-Eintrags (Zeiten samt Feinheiten und Zeitzone).
+        ``gueltig``: ValidDataLength, wenn sie von ``laenge`` abweicht (ein umbenannter Eintrag eines fremden Abbilds behaelt sie; E7)."""
+        einheiten = self._einheiten(name)
+        anzahl_namen = (einheiten + _NAME_PRO_EINTRAG - 1) // _NAME_PRO_EINTRAG
         datei = bytearray(32)
         datei[0] = _ENTRY_FILE
         datei[1] = 1 + anzahl_namen
@@ -456,13 +485,13 @@ class ExfatAbbild:
         strom = bytearray(32)
         strom[0] = _ENTRY_STREAM
         strom[1] = (_FLAG_ALLOC if erster >= 2 else 0) if flags is None else flags
-        strom[3] = len(name)
+        strom[3] = einheiten
         struct.pack_into("<H", strom, 4, self._name_hash(name))
-        struct.pack_into("<Q", strom, 8, laenge)
+        struct.pack_into("<Q", strom, 8, laenge if gueltig is None else gueltig)
         struct.pack_into("<I", strom, 0x14, erster if erster >= 2 else 0)
         struct.pack_into("<Q", strom, 0x18, laenge)
         namen = bytearray()
-        raw = name.encode("utf-16-le")
+        raw = name.encode("utf-16-le", "surrogatepass")
         for k in range(anzahl_namen):
             e = bytearray(32)
             e[0] = _ENTRY_NAME
@@ -543,8 +572,8 @@ class ExfatAbbild:
         v.saetze.remove(satz)
 
     def _satz_einfuegen(self, v: _Verzeichnis, name: str, attribute: int, erster: int, laenge: int, zeiten: bytes,
-                        flags: "int | None" = None) -> _Satz:
-        blob = self._satz_bytes(name, attribute, erster, laenge, zeiten, flags)
+                        flags: "int | None" = None, gueltig: "int | None" = None) -> _Satz:
+        blob = self._satz_bytes(name, attribute, erster, laenge, zeiten, flags, gueltig)
         ort = self._platz_im_verzeichnis(v, len(blob) // 32)
         v.roh[ort: ort + len(blob)] = blob
         self._verzeichnis_schreiben(v, ort, ort + len(blob))
@@ -580,7 +609,8 @@ class ExfatAbbild:
         im letzten liesse sonst die ersten stehen - belegte Cluster ohne Eintrag.
         """
         verzeichnisse = [("", self._wurzel)] + list(self._cache.items())
-        stand = (bytearray(self.fat), bytearray(self.bitmap), len(self._plan.stellen), len(self._plan.daten),
+        # Die ganzen Listen, nicht nur ihre Laengen: Freigeben verwirft auch fruehere Eintraege (_kette_freigeben).
+        stand = (bytearray(self.fat), bytearray(self.bitmap), list(self._plan.stellen), list(self._plan.daten),
                  set(self._daten_cluster), dict(self._cache),
                  [(v, bytearray(v.roh), list(v.cluster), list(v.saetze), [(s, dict(s.__dict__)) for s in v.saetze])
                   for _k, v in verzeichnisse])
@@ -588,8 +618,8 @@ class ExfatAbbild:
             yield
         except BaseException:
             self.fat, self.bitmap = stand[0], stand[1]
-            del self._plan.stellen[stand[2]:]
-            del self._plan.daten[stand[3]:]
+            self._plan.stellen = stand[2]
+            self._plan.daten = stand[3]
             self._daten_cluster = stand[4]
             self._cache = stand[5]
             for v, roh, cluster, saetze, felder in stand[6]:
@@ -613,8 +643,10 @@ class ExfatAbbild:
             raise ExfatBearbeitenFehler("Der Name ist schon vergeben: %s" % neuer_name)
         zeiten = bytes(v.roh[satz.anfang + 8: satz.anfang + 32])
         flags = v.roh[satz.anfang + 33]
+        # ValidDataLength bleibt, wie sie war (E7): Dahinter steht in einem fremden Abbild nicht Geschriebenes, das danach als Inhalt galt.
+        gueltig = struct.unpack_from("<Q", v.roh, satz.anfang + 32 + 8)[0]
         self._satz_loeschen(v, satz)
-        self._satz_einfuegen(v, neuer_name, satz.attribute, satz.erster, satz.laenge, zeiten, flags)
+        self._satz_einfuegen(v, neuer_name, satz.attribute, satz.erster, satz.laenge, zeiten, flags, gueltig)
         if satz.ist_ordner:
             eltern, _, _ = rel.rpartition("/")
             neu = (eltern + "/" if eltern else "") + neuer_name
@@ -663,7 +695,12 @@ class ExfatAbbild:
         kette = self._zuteilen(1)
         self._kette_eintragen(kette)
         self._plan.schreiben(self._cluster_offset(kette[0]), bytes(self.cluster_groesse))
-        self._satz_einfuegen(v, name, _ATTR_DIRECTORY, kette[0], self.cluster_groesse, self._zeiten_neu())
+        satz = self._satz_einfuegen(v, name, _ATTR_DIRECTORY, kette[0], self.cluster_groesse, self._zeiten_neu())
+        # Der neue Ordner gilt ab jetzt als leer (Gesamtpruefung 14.11.2026, E1). Ohne diesen Eintrag las ``_verzeichnis`` ihn von der
+        # Platte, wo im Cluster noch der alte Inhalt steht (die Nullen sind erst geplant): Dateien darin blieben unsichtbar,
+        # Eintraege einer frueheren Datei erschienen als Phantome.
+        pfad = rel.strip("/")
+        self._cache[pfad] = _Verzeichnis(list(kette), bytearray(self.cluster_groesse), [], (v, satz), pfad, False)
 
     def hinzufuegen(self, rel: str, quelle: str) -> None:
         """Legt eine Datei aus ``quelle`` (Pfad) neu an. Der Name darf noch nicht vergeben sein."""
@@ -707,15 +744,43 @@ class ExfatAbbild:
 
         def schreiben(fh: BinaryIO) -> None:
             rest = groesse
+            # Hat sich die Datei seit dem Vormerken geaendert, waere sie still aufgefuellt oder abgeschnitten worden (Gesamtpruefung
+            # 14.11.2026, E5) - stattdessen ein Fehler: speichern spielt das Journal zurueck, das Abbild bleibt wie vorher.
+            if os.path.getsize(quelle) != groesse:
+                raise ExfatBearbeitenFehler("Die Quelldatei hat sich seit dem Vormerken geaendert: %s" % quelle)
             with open(quelle, "rb") as q:
                 for c in kette:
                     block = q.read(min(self.cluster_groesse, rest))
                     rest -= len(block)
                     fh.seek(self._cluster_offset(c))
-                    fh.write(block)
-                    if len(block) < self.cluster_groesse:
-                        fh.write(bytes(self.cluster_groesse - len(block)))
+                    # Ein Aufruf je Cluster, die Nullen am Dateiende eingeschlossen: Mit zwei Aufrufen (Stueck, dann Nullen) lag nach einem
+                    # Abbruch dazwischen ein Sektor halb alt, halb neu - das Journal hielt sich dann fuer fremd (Gesamtpruefung, R3-J1).
+                    fh.write(block if len(block) == self.cluster_groesse else block + bytes(self.cluster_groesse - len(block)))
+        schreiben.cluster = frozenset(kette)                       # type: ignore[attr-defined]  # fuer _kette_freigeben
+        schreiben.herkunft = (list(kette), quelle, groesse)        # type: ignore[attr-defined]  # fuer das Journal (R2-J2)
         self._plan.daten.append(schreiben)
+
+    def _neue_clusterbytes(self) -> "dict[int, tuple[str, int, int]]":
+        """Je geplantem Datencluster: ``(Quelldatei, Offset darin, Groesse der Datei)``."""
+        herkunft: "dict[int, tuple[str, int, int]]" = {}
+        for schreiben in self._plan.daten:
+            angabe = getattr(schreiben, "herkunft", None)
+            if angabe is None:
+                continue
+            kette, quelle, groesse = angabe
+            for i, c in enumerate(kette):
+                herkunft[c] = (quelle, i * self.cluster_groesse, groesse)
+        return herkunft
+
+    def _cluster_inhalt(self, quelle: str, offset: int, groesse: int) -> "bytes | None":
+        """Was ``schreiben`` in diesen Cluster schreibt: das Stueck der Datei, mit Nullen bis zum Clusterende; ``None``, wenn unlesbar."""
+        try:
+            with open(quelle, "rb") as q:
+                q.seek(offset)
+                stueck = q.read(max(0, min(self.cluster_groesse, groesse - offset)))
+        except OSError:
+            return None
+        return stueck + bytes(self.cluster_groesse - len(stueck))
 
     # -- Schreiben ------------------------------------------------------------------------------------------------------
     def _metadaten_planen(self) -> None:
@@ -739,26 +804,35 @@ class ExfatAbbild:
         if not self._plan.stellen and not self._plan.daten:
             return
         self._metadaten_planen()
-        alte: "list[tuple[int, bytes]]" = []
-        gesichert = 0
-        for c in sorted(self._daten_cluster):
-            i = c - 2
-            if not self._bitmap_platte[i >> 3] & (1 << (i & 7)):
-                continue                                                # auf der Platte frei: nichts zu sichern
-            self._fh.seek(self._cluster_offset(c))                      # auf der Platte belegt (geloeschte oder ersetzte Datei): sichern
-            alte.append((self._cluster_offset(c), self._fh.read(self.cluster_groesse)))
-            gesichert += self.cluster_groesse
+        # Mehrfach geplante Stellen (ein Ordnereintrag, der zweimal geaendert wurde) zu einem Bereich: das Journal prueft beim
+        # Zurueckspielen jede Stelle auf "alt oder neu" (E3), und geschrieben wird jede Stelle nur noch einmal.
+        stellen = stellen_zusammenfassen(self._plan.stellen)
+        alte: "list[tuple]" = []
+        # Auf der Platte belegte Cluster (geloeschte oder ersetzte Datei), in die jetzt Daten kommen: ihr alter Inhalt geht ins Journal.
+        # Gezaehlt wird vor dem Lesen (Gesamtpruefung 14.11.2026, E4) - sonst lagen erst Gigabytes im Speicher, ehe die Grenze griff.
+        zu_sichern = [c for c in sorted(self._daten_cluster)
+                      if self._bitmap_platte[(c - 2) >> 3] & (1 << ((c - 2) & 7))]
+        gesichert = len(zu_sichern) * self.cluster_groesse
         if gesichert > _JOURNAL_DATEN_MAX:
             raise PlatzFehlt("Der ersetzte Inhalt ist fuer das Journal zu gross (%d MiB); bitte neu bauen" % (gesichert >> 20))
-        for offset, neu in self._plan.stellen:
+        # Auch die Datencluster mit ihren neuen Bytes: MkPFS baut exFAT deterministisch, ein Neubau gleicher Lage traegt an allen
+        # Verwaltungsstellen die alten Bytes - nur der Inhalt verraet ihn (Gesamtpruefung, R2-J2).
+        herkunft = self._neue_clusterbytes()
+        for c in zu_sichern:
+            self._fh.seek(self._cluster_offset(c))
+            # Die neuen Bytes erst beim Schreiben des Journals (ein Rueckruf je Cluster): sonst laegen bis zu 2 GiB alte UND neue Bytes
+            # zugleich im Speicher (R3-J2).
+            neu = functools.partial(self._cluster_inhalt, *herkunft[c]) if c in herkunft else None
+            alte.append((self._cluster_offset(c), self._fh.read(self.cluster_groesse), neu))
+        for offset, neu in stellen:
             self._fh.seek(offset)
-            alte.append((offset, self._fh.read(len(neu))))
+            alte.append((offset, self._fh.read(len(neu)), neu))      # mit den neuen Bytes: das Journal gehoert zu diesem Abbild
         # Das Journal nennt Stellen in der Datei selbst: In einer PFS-Huelle liegt das exFAT ab ``basis``.
-        _journal_schreiben(journal_pfad(self.pfad), [(self._basis + o, alt) for o, alt in alte])
+        _journal_schreiben(journal_pfad(self.pfad), [(self._basis + s[0],) + tuple(s[1:]) for s in alte])
         try:
             for schreiben in self._plan.daten:
                 schreiben(self._fh)
-            for offset, neu in self._plan.stellen:
+            for offset, neu in stellen:
                 self._fh.seek(offset)
                 self._fh.write(neu)
             self._fh.flush()
@@ -768,7 +842,7 @@ class ExfatAbbild:
                 self._fh.flush()
             except OSError:
                 pass
-            journal_zurueckspielen(self.pfad)                            # ein Fehler mitten im Schreiben: sofort zurueck
+            journal_zurueckspielen(self.pfad, eigen=True)                            # ein Fehler mitten im Schreiben: sofort zurueck
             raise
         os.remove(journal_pfad(self.pfad))
         self._plan = _Plan()

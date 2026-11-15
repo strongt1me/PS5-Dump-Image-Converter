@@ -792,6 +792,89 @@ class SpielordnerTests(_Ordner):
 
 
 @unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
+class PackBestandTests(_Ordner):
+    """``pack_bestand_pruefen`` (Gesamtpruefung 14.11.2026, P1): kein neues Pack, das ein altes ohne Originale ersetzt."""
+
+    def _index(self) -> bytes:
+        return Path(self.spiel, z.INDEX_NAME).read_bytes()
+
+    def _gepackt(self, originale_weg: bool) -> None:
+        self.packen()
+        index = z.pruefen(self.packs, self.spiel)
+        z.uebernehmen(self.packs, self.spiel, index)
+        if originale_weg:
+            z.originale_entfernen(self.spiel, index)
+
+    def test_ungepackter_ordner(self) -> None:
+        self.assertEqual("", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+
+    def test_ohne_originale_wird_abgelehnt(self) -> None:
+        self._gepackt(originale_weg=True)
+        self.assertEqual("ampr_zstd.schon_gepackt", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+
+    def test_gegenprobe_mit_originalen(self) -> None:
+        self._gepackt(originale_weg=False)
+        self.assertEqual("", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+
+    def test_ein_geaendertes_original_ist_ein_update(self) -> None:
+        """R2-P2: Eine lose Datei mit anderer Groesse ist eine neuere Fassung - sie kommt ins neue Pack. "Erst entpacken" haette sie
+        mit der alten gepackten ueberschrieben."""
+        self._gepackt(originale_weg=False)
+        Path(self.spiel, "data", "klein.cfg").write_bytes(b"a=12\n")
+        self.assertEqual("", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+        os.remove(os.path.join(self.spiel, "data", "klein.cfg"))                # Gegenprobe: fehlt sie, bleibt es gesperrt
+        self.assertEqual("ampr_zstd.schon_gepackt", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+
+    def test_unlesbarer_index_schuetzt_trotzdem(self) -> None:
+        self._gepackt(originale_weg=True)
+        daten = bytearray(self._index())
+        daten[200] ^= 0xFF
+        Path(self.spiel, z.INDEX_NAME).write_bytes(bytes(daten))
+        self.assertEqual("ampr_zstd.schon_gepackt", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+
+    def test_ein_unlesbarer_index_schuetzt_im_zweifel(self) -> None:
+        """R2-P3: fremde Kennung (etwa ein kuenftiges Format), leer oder beschaedigt - nichts ersetzen, was sich nicht lesen laesst."""
+        for inhalt in (b"kein Index", b"", b"AMPRZPK2" + bytes(200)):
+            with self.subTest(inhalt=inhalt[:10]):
+                Path(self.spiel, z.INDEX_NAME).write_bytes(inhalt)
+                self.assertEqual("ampr_zstd.schon_gepackt", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+
+    def test_ueberzaehlige_alte_baender_verschwinden(self) -> None:
+        """Gesamtpruefung 14.11.2026, P2: Ein frueherer Satz mit mehr Baendern liess die hinteren liegen."""
+        self._gepackt(originale_weg=False)
+        for nummer in (1, 2, 7):
+            Path(self.spiel, z.bandname(nummer)).write_bytes(b"alter Satz")
+        auswahl = z.dateien_auswaehlen(self.spiel)
+        z.packen(self.spiel, self.packs, auswahl)
+        z.uebernehmen(self.packs, self.spiel, z.pruefen(self.packs, self.spiel))
+        index = z.index_laden(self.spiel)
+        erwartet = {z.bandname(i) for i in range(len(index.baender))} | {z.INDEX_NAME}
+        self.assertEqual(erwartet, {n for n in os.listdir(self.spiel) if z.ist_packname(n)})
+        z.pruefen(self.spiel, self.spiel)
+
+    def test_entpacken_nicht_in_den_quellordner_auch_in_anderer_schreibung(self) -> None:
+        """P3: Ziel im Quellordner, die Quelle anders geschrieben (von Hand getippt) - bisher wurde hineinentpackt."""
+        self._gepackt(originale_weg=False)
+        ziel = os.path.join(self.spiel, "Entpackt")
+        with self.assertRaises(z.ZstdPackFehler):
+            z.entpacken_in_neuen_ordner(self.spiel.upper() if os.name == "nt" else self.spiel, ziel)
+        self.assertFalse(os.path.exists(ziel))
+
+    def test_lz4_pack_muss_erst_entpackt_werden(self) -> None:
+        for name in ("ampr_assets.index", "AMPR_ASSETS-main-lane00-vol00-000.pak"):
+            with self.subTest(name=name):
+                Path(self.spiel, name).write_bytes(b"x")
+                self.assertEqual("ampr_zstd.lz4_pack_vorhanden",
+                                 z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+                # R5-2: Wird gar nicht mit zstd gepackt, sind LZ4-Reste kein Hindernis.
+                self.assertEqual("", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index, lz4_zaehlt=False))
+                os.remove(os.path.join(self.spiel, name))
+        os.makedirs(os.path.join(self.spiel, "Media", "sub"), exist_ok=True)
+        Path(self.spiel, "Media", "sub", "ampr_assets-x.pak").write_bytes(b"x")     # nur in der Wurzel ist es ein Band
+        self.assertEqual("", z.pack_bestand_pruefen(z.dateien_auswaehlen(self.spiel), self._index))
+
+
+@unittest.skipUnless(z.verfuegbar(), "zstandard fehlt")
 class AbsicherungTests(_Ordner):
     """Gesamtpruefung 11.11.2026: Index-Pfade duerfen nie aus dem Zielordner ausbrechen; Abbrueche hinterlassen nichts Halbes."""
 

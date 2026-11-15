@@ -227,7 +227,13 @@ class AusgabestellenTests(unittest.TestCase):
     def test_die_sammelkonvertierung_und_die_vorabpruefung_fragen_sie_auch(self):
         m = re.search(r"    def _ffpkg_output_path\(.*?(?=\n    def )", QUELLE, re.S)
         self.assertIn('self._ausgabe_stamm(src, source_name, "ffpkg")', m.group(0))
+        # Seit 14.11.2026 rechnen Vorpruefung, Ueberschreib-Frage und Ordnerziel der Sammelkonvertierung den Namen in
+        # _batch_zielname (Ordner behalten ihren ganzen Namen, Gesamtpruefung S-B).
         m = re.search(r"    def _batch_ueberschreiben_klaeren\(.*?(?=\n    def )", QUELLE, re.S)
+        self.assertIn("self._batch_zielname(quelle, zielformat)", m.group(0))
+        m = re.search(r"    def _batch_vorpruefung\(.*?(?=\n    def )", QUELLE, re.S)
+        self.assertIn("self._batch_zielname(src, target_type)", m.group(0))
+        m = re.search(r"    def _batch_zielname\(.*?(?=\n    def )", QUELLE, re.S)
         self.assertIn("self._ausgabe_stamm(quelle, name, zielformat)", m.group(0))
         m = re.search(r"    def _vorab_befunde_rechnen\(.*?(?=\n    def )", QUELLE, re.S)
         self.assertIn("self._ausgabe_stamm(quelle, stamm, target_type)", m.group(0))

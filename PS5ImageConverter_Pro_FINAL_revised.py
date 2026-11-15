@@ -175,6 +175,7 @@ from ps5_validator.utils import konsole_dienste
 from ps5_validator.utils import werkzeugstaende
 from ps5_validator.utils import archiv_quelle
 from ps5_validator.utils import quelle_loeschen
+from ps5_validator.utils import pfadvergleich
 from ps5_validator.utils import archiv_baum
 from ps5_validator.utils import fenster_titelfarbe
 from ps5_validator.utils import qr_klein
@@ -528,6 +529,14 @@ class _KopieAbgebrochen(Exception):
     abgeleitet und nicht von ``OSError``, damit der Aufrufer ihn von einem
     echten Schreibfehler unterscheiden kann - der eine ist eine Entscheidung,
     der andere ein Problem.
+    """
+
+
+class _AmprFtpPackSperre(Exception):
+    """Im Spielordner auf der Konsole liegt ein zstd-Pack, und das AMPR-Set, das hinuebergehen soll, ist keine NG-Fassung.
+
+    Keine Fehlerzahl im Ergebnis, sondern eine eigene Klasse: Der FTP-Picker fragt dann nach (``_show_ampr_ftp_picker``), statt
+    "1 fehlgeschlagen" zu zeigen (Gesamtpruefung 14.11.2026, R7-3). ``args[0]`` ist der Spielordner auf der Konsole.
     """
 
 
@@ -4377,14 +4386,21 @@ def _strom_rueckfall_nimmt_verzicht_zurueck(methode):
 
 def _strom_rueckfall_entpackt_archiv(methode):
     """Gibt ein Weg ohne Zwischenordner ``None`` zurueck, soll der bisherige Weg das Spiel als Ordner lesen: Liest der Strom ein ZIP-Archiv
-    ueber einen Schattenordner (nur ``sce_sys`` und ``eboot.bin`` entpackt), wird der Rest vorher entpackt. Misslingt das, wirft es ``OSError``:
-    Mit einem halben Ordner wird nie weitergearbeitet."""
+    ueber einen Schattenordner (nur ``sce_sys`` und ``eboot.bin`` entpackt), wird der Rest vorher entpackt. Misslingt das, endet der Weg mit
+    ``False`` und dem Grund im Protokoll: Mit einem halben Ordner wird nie weitergearbeitet.
+
+    Bis zum 14.11.2026 lief der ``OSError`` hinaus - in der Sammelkonvertierung bis aus der Schleife, und die uebrigen Dateien kamen nicht
+    mehr dran (Gesamtpruefung, S-F)."""
     @functools.wraps(methode)
     def huelle(self, *args, **kwargs):
         ergebnis = methode(self, *args, **kwargs)
         if ergebnis is None:
             quelle = args[0] if args else kwargs.get("src", "")
-            self._archiv_schatten_vollstaendig(quelle)
+            try:
+                self._archiv_schatten_vollstaendig(quelle)
+            except OSError as exc:
+                self._append_to_log(self._t("quelle.archiv_fehler", grund=str(exc)))
+                return False
         return ergebnis
     return huelle
 
@@ -8190,8 +8206,11 @@ class PS5ConverterGUI:
         if (target_type in ("exfat", "ffpfsc", "ffpfs", "ffpkg") and callable(waehle_strom) and waehle_strom(**waehle_args)
                 and not self._lz4_strom_im_voraus_ausgeschlossen(src, ordner_quelle)):
             strom_temp = min(quelle, max(self._STROM_TEMP_MIN, int(quelle * self._PLATZFAKTOR_STROM_TEMP))) + dlc_extra
+            # Der Ueberlagerungsordner entsteht wie der Dump-Ordner (``_dump_ordner_basis``): im Ziel, oder mit der Einstellung
+            # "Dump-Ordner im Arbeitsordner" dort - deshalb als dritter Wert, ``_platzbedarf_schaetzen`` legt ihn richtig hin.
+            # Bis zum 14.11.2026 zaehlte er immer zum Arbeitsordner (Gesamtpruefung, S-C).
             if src.lower().endswith(".exfat") or os.path.isdir(src):
-                return strom_temp, int(quelle * self._PLATZFAKTOR_ZIEL[target_type]) + dlc_extra, 0
+                return 0, int(quelle * self._PLATZFAKTOR_ZIEL[target_type]) + dlc_extra, strom_temp
             if not src.lower().endswith((".ffpfsc", ".ffpfs", ".ffpkg")):
                 strom_temp = None
 
@@ -8218,8 +8237,8 @@ class PS5ConverterGUI:
 
         if strom_temp is not None:
             # .ffpfsc/.ffpfs -> .exFAT im Strom: Das Ziel braucht, was das neue Abbild braucht (wie oben gerechnet), im
-            # Arbeitsordner liegen nur die Systemdateien fuer den Einbau - aber nicht das entpackte Spiel.
-            return strom_temp, ziel, 0
+            # Ueberlagerungsordner liegen nur die Systemdateien fuer den Einbau - aber nicht das entpackte Spiel (Ort: siehe oben).
+            return 0, ziel, strom_temp
 
         mit_kopie = bool(self._integration_gewuenscht())
         if target_type == "folder" and os.path.isdir(src):
@@ -8559,7 +8578,11 @@ class PS5ConverterGUI:
             if mode not in self._RESTE_AUFGABEN:
                 return
             ausgabe = str(getattr(self, "task_final_output_path", "") or "")
-            reste = reste_karte.finden(ausgabe, src, zielordner=dst)
+            behalten = getattr(self, "_selbstziel_behalten", None) or set()
+            self._selbstziel_behalten = set()                       # gilt nur fuer diesen Lauf
+            # Ein fertiges Ergebnis, das als ``.neu`` liegen bleiben sollte, ist kein Rest (S-G).
+            reste = [r for r in reste_karte.finden(ausgabe, src, zielordner=dst)
+                     if os.path.normcase(os.path.abspath(r.pfad)) not in behalten]
             if not reste:
                 return
             gesamt = sum(r.bytes for r in reste)
@@ -8837,7 +8860,12 @@ class PS5ConverterGUI:
             self._ampr_originale_weglassen = True
             self._append_to_log(self._t("ampr_pack.originale_zstd_weg"))
             return
-        if target_type != "folder" and self._ampr_ng_lz4_im_strom_gewaehlt():       # nur wo der Strom wirklich ein Abbild schreibt
+        # Nur wo der Strom wirklich ein Abbild schreibt: kein Ordner als Ziel, und eine .ffpfsc nur in der Bauform exFAT - die Bauform
+        # PFS baut immer der bisherige Weg, und dort kam der Rueckfall (``_ampr_weglassen_nach_rueckfall``) nie an: Die Originale fielen
+        # ohne Rueckfrage weg (Gesamtpruefung 14.11.2026, S-H).
+        strom_schreibt = target_type != "folder" and (
+            target_type != "ffpfsc" or getattr(self, "bauform", BAUFORM_VORGABE) == BAUFORM_EXFAT)
+        if strom_schreibt and self._ampr_ng_lz4_im_strom_gewaehlt():
             self._ampr_originale_weglassen = True
             self._ampr_weglassen_auto_lz4 = True
             self._append_to_log(self._t("ampr_pack.originale_ng_lz4_weg"))
@@ -20642,6 +20670,11 @@ class PS5ConverterGUI:
         """
         if getattr(self, "_archiv_laeuft", False):
             return
+        if getattr(self, "is_running", False):
+            # Waehrend eines Laufs kein neues Archiv: Es raeumte den Entpackordner des alten weg - vielleicht die Quelle, aus der der Lauf
+            # gerade liest (Gesamtpruefung 14.11.2026, A5).
+            messagebox.showwarning(self._t("dialog.title.aufgabe_laeuft"), self._t("dialog.msg.aufgabe_laeuft"), parent=self.root)
+            return
         name = os.path.basename(archiv)
         endung = os.path.splitext(archiv)[1].lower()
         wurzeln = [os.path.dirname(os.path.abspath(__file__))]
@@ -20768,13 +20801,25 @@ class PS5ConverterGUI:
             except spielbaum.BaumFehler as exc:
                 self._append_to_log(self._t("quelle.archiv_strom_nicht", grund=str(exc)))
                 return None
+            # DLC-Ordner des PS5-App-Dumpers liegen NEBEN dem Spielordner ("<Content-ID>-ac"). Der Schattenordner traegt nur das Spiel -
+            # DLC EMU (dlc_emu.nachbar_dlc) faende sie nicht (Gesamtpruefung 14.11.2026, S-D). Dann wie bisher ganz entpacken.
+            if baum.wurzel:
+                eltern = baum.wurzel.rpartition("/")[0]
+                vorne = eltern + "/" if eltern else ""
+                nachbarn = {name[len(vorne):].split("/", 1)[0] for name in baum.alle_namen() if name.startswith(vorne)}
+                dlc = sorted(n for n in nachbarn if dlc_emu.ist_dlc_ordnername(n))
+                if dlc:
+                    self._append_to_log(self._t("quelle.archiv_strom_nicht",
+                                                grund=self._t("quelle.archiv_strom_dlc", ordner=", ".join(dlc[:3]))))
+                    return None
             stamm = os.path.splitext(os.path.basename(archiv))[0] or "Spiel"
             spiel = os.path.join(ziel, stamm, *[t for t in baum.wurzel.split("/") if t])
             os.makedirs(spiel, exist_ok=True)
             for datei in dateien:
                 klein = datei.rel.lower()
                 if klein == "eboot.bin" or klein.startswith("sce_sys/"):
-                    self._archiv_datei_schreiben(datei, os.path.join(spiel, *datei.rel.split("/")))
+                    # Nie per os.path.join mit Teilen aus dem Archiv: "D:" darin fuehrte unter Windows aus dem Ordner heraus (A1).
+                    self._archiv_datei_schreiben(datei, archiv_baum.pfad_im_ordner(spiel, datei.rel))
             gesamt = sum(d.groesse for d in dateien)
             schluessel = self._archiv_schluessel(spiel)
             self._archiv_schatten[schluessel] = {
@@ -20810,22 +20855,28 @@ class PS5ConverterGUI:
             frei = 1 << 62
         if frei < int(info.get("groesse", 0)):
             raise OSError(self._t("quelle.archiv_platz", frei=self._fmt_bytes(int(frei)), groesse=self._fmt_bytes(int(info["groesse"]))))
-        baum = archiv_baum.ZipBaum(archiv, passwort=info.get("passwort", ""))
+        baum = None
         try:
+            # Im try: Ist das Archiv inzwischen weg, wirft schon der Aufbau BaumFehler - bis zum 14.11.2026 entkam er hier als
+            # RuntimeError, der Arbeitsfaden starb und is_running blieb stehen (Gesamtpruefung, S-E/A3).
+            baum = archiv_baum.ZipBaum(archiv, passwort=info.get("passwort", ""))
             dateien = baum.dateien()
             if baum.stempel() != info.get("stempel"):
                 raise OSError(self._t("quelle.archiv_geaendert", archiv=archiv))
             for datei in dateien:
-                voll = os.path.join(src, *datei.rel.split("/"))
+                voll = archiv_baum.pfad_im_ordner(src, datei.rel)
                 if os.path.isfile(voll) and os.path.getsize(voll) == datei.groesse:
                     continue
                 self._archiv_datei_schreiben(datei, voll, abbruch=lambda: not getattr(self, "is_running", True))
             for ordner in baum.ordner():
-                os.makedirs(os.path.join(src, *ordner.split("/")), exist_ok=True)
-        except spielbaum.BaumFehler as exc:
+                os.makedirs(archiv_baum.pfad_im_ordner(src, ordner), exist_ok=True)
+        except (spielbaum.BaumFehler, archiv_quelle.ArchivFehler) as exc:
+            # Auch ein PasswortFehler (das Archiv wurde waehrend des Laufs gegen ein verschluesseltes getauscht) wird zum OSError, den
+            # jeder Aufrufer kennt - sonst lief er wie S-F aus der Sammelschleife heraus (Gesamtpruefung 14.11.2026, R2-A6).
             raise OSError(str(exc)) from exc
         finally:
-            baum.schliessen()
+            if baum is not None:
+                baum.schliessen()
         info["voll"] = True
 
     def _archiv_schatten_im_strom(self, mode: str, target_type: str) -> bool:
@@ -20861,6 +20912,10 @@ class PS5ConverterGUI:
             self._archiv_schatten_vollstaendig(src)
         except OSError as exc:
             self._append_to_log(self._t("quelle.archiv_fehler", grund=str(exc)))
+            return False
+        except Exception as exc:  # noqa: BLE001 - der Aufrufer liegt vor dem try des Laufs: nie den Faden sterben lassen
+            logger.exception("Archiv: Schattenordner nicht vervollstaendigt")
+            self._append_to_log(self._t("quelle.archiv_fehler", grund="%s: %s" % (type(exc).__name__, exc)))
             return False
         return True
 
@@ -21334,6 +21389,7 @@ class PS5ConverterGUI:
             return
 
         grenze = time.time() - self._STALE_TEMP_MAX_AGE_H * 3600
+        in_gebrauch = self._temp_in_gebrauch()
         entfernt = 0
         for eintrag in eintraege:
             try:
@@ -21341,6 +21397,10 @@ class PS5ConverterGUI:
                     continue
                 if eintrag.stat().st_mtime >= grenze:
                     continue          # zu jung - koennte zu einem laufenden Vorgang gehoeren
+                # Nur der Text: Die Pfade stammen vom Programm selbst, und eine Quelle auf einem getrennten Netzlaufwerk liesse das
+                # Dateisystem je Frage ~21 s warten (Gesamtpruefung 14.11.2026, R3-A4).
+                if any(pfadvergleich.liegt_in_text(pfad, eintrag.path) for pfad in in_gebrauch):
+                    continue          # alt, aber noch die gewaehlte Quelle (ein Archiv von gestern) - S-I
                 _rmtree_force(eintrag.path, ignore_errors=True)
                 if not os.path.exists(eintrag.path):
                     entfernt += 1
@@ -21348,6 +21408,18 @@ class PS5ConverterGUI:
                 logger.debug("Temp-Rest %s nicht entfernbar: %s", eintrag.name, exc)
         if entfernt:
             self._append_to_log(self._t('temp.stale_swept', count=entfernt))
+
+    def _temp_in_gebrauch(self) -> "list[str]":
+        """Arbeitsordner-Pfade, die noch gebraucht werden, egal wie alt: der Entpack- oder Schattenordner des gewaehlten Archivs und die
+        Quelle des laufenden Weges.
+
+        Gesamtpruefung 14.11.2026 (S-I): Ein Archiv, das gestern als Quelle gewaehlt und entpackt wurde, lag nach zwoelf Stunden als
+        "Rest" im Arbeitsordner - das Aufraeumen am Ende der naechsten Aufgabe haette die noch gewaehlte Quelle geloescht.
+        """
+        pfade = [str(getattr(self, "_archiv_ordner", "") or ""), str(getattr(self, "_lauf_quelle", "") or "")]
+        pfade += list((getattr(self, "_archiv_schatten", None) or {}).keys())
+        pfade += list((getattr(self, "_archiv_herkunft", None) or {}).keys())
+        return [p for p in pfade if p]
 
     def _temp_reste_nach_aufgabe_abraeumen(self) -> None:
         """Raeumt alte ``ps5conv_*``-Reste am Ende **jeder** Aufgabe ab.
@@ -21595,17 +21667,12 @@ class PS5ConverterGUI:
         """Liegt ``pfad`` in ``ordner`` oder ist er es selbst?
 
         Vergleicht die normalisierten Pfade Bestandteil fuer Bestandteil -
-        "D:\\Spiele2" liegt nicht in "D:\\Spiele". Verschiedene Laufwerke
-        ergeben False.
+        "D:\\Spiele2" liegt nicht in "D:\\Spiele". Seit der Gesamtpruefung
+        vom 14.11.2026 auch auf macOS und exFAT unter Linux, wo normcase
+        nicht faltet ("Spiele" und "spiele" sind dort derselbe Ordner):
+        :func:`pfadvergleich.liegt_in` fragt dann die Dateinummer.
         """
-        if not pfad or not ordner:
-            return False
-        try:
-            p = os.path.normcase(os.path.abspath(pfad))
-            o = os.path.normcase(os.path.abspath(ordner))
-            return os.path.commonpath([p, o]) == o
-        except (ValueError, TypeError):
-            return False
+        return pfadvergleich.liegt_in(pfad, ordner)
 
     @staticmethod
     def _ergebnis_im_ziel(tatsaechlich: str, gewuenscht: str) -> bool:
@@ -27791,6 +27858,9 @@ class PS5ConverterGUI:
         if grund:
             self._append_to_log(self._t("log.quelle_bleibt", pfad=quelle, grund=self._t("quelle_loeschen.grund." + grund)))
             return False
+        # Ein Spielordner mit Zehntausenden Dateien braucht zum Loeschen Sekunden bis Minuten - vorher sagen, was geschieht.
+        self._append_to_log(self._t("log.quelle_wird_geloescht", pfad=quelle))
+        self._set_status(self._t("status.quelle_wird_geloescht"))
         fehler = quelle_loeschen.loeschen(quelle, ordner_loeschen=lambda p: bool(_rmtree_force(p)), datei_loeschen=os.remove)
         if fehler:
             self._append_to_log(self._t("log.quelle_loeschen_fehler", pfad=quelle, fehler=fehler))
@@ -28377,8 +28447,10 @@ class PS5ConverterGUI:
             # dahinter - dann aus dem Feld neu aufloesen.
             _liste = list(getattr(self, "_batch_sources", []) or [])
             # Passt, wenn das Feld einen Eintrag der Liste nennt oder den
-            # Ordner, aus dem sie aufgeloest wurde.
-            _passt = any(self._pfad_liegt_in(eintrag, src) for eintrag in _liste)
+            # Ordner, aus dem sie aufgeloest wurde. Nur der Text: Das laeuft im
+            # Hauptfaden, und eine Liste auf einem getrennten Netzlaufwerk liesse
+            # die Oberflaeche je Eintrag ~21 s stehen (Gesamtpruefung, R3-A4).
+            _passt = any(pfadvergleich.liegt_in_text(eintrag, src) for eintrag in _liste)
             self._batch_sources = self._sammelquellen_aufloesen(
                 _liste if _passt else [src])
 
@@ -31724,15 +31796,7 @@ class PS5ConverterGUI:
         Sammelkonvertierung fuer jede ihrer Dateien neu.
         """
         quelle = str(getattr(self, "_lauf_quelle", "") or "")
-        if not pfad or not quelle:
-            return False
-        try:
-            if (os.path.normcase(os.path.abspath(pfad))
-                    == os.path.normcase(os.path.abspath(quelle))):
-                return True
-            return os.path.samefile(pfad, quelle)
-        except (OSError, TypeError, ValueError):
-            return False
+        return pfadvergleich.gleicher_ort(pfad, quelle)
 
     @staticmethod
     def _quellstempel(pfad: str) -> "tuple[int, int, int, int] | None":
@@ -31822,6 +31886,7 @@ class PS5ConverterGUI:
             # Wer die Quelle waehrend des Laufs veraendert hat (Groesse, Datum oder die Datei selbst), bekommt sie nicht
             # durch ein Ergebnis ersetzt, das aus dem alten Stand gebaut ist. Das Ergebnis bleibt als ``.neu`` liegen.
             self._append_to_log(self._t("log.selbstziel_quelle_geaendert", quelle=final_output, neu=bau_ziel))
+            self._selbstziel_behalten_merken(bau_ziel)
             return ist
         try:
             # Ein Schreibschutz auf der Quelle laesst os.replace unter
@@ -31834,9 +31899,18 @@ class PS5ConverterGUI:
         except OSError as exc:
             self._append_to_log(self._t("log.selbstziel_uebernahme_fehlgeschlagen",
                                         neu=bau_ziel, fehler=exc))
+            self._selbstziel_behalten_merken(bau_ziel)
             return ist
         self._append_to_log(self._t("log.selbstziel_uebernommen", ziel=final_output))
         return final_output
+
+    def _selbstziel_behalten_merken(self, bau_ziel: str) -> None:
+        """Ein fertiges ``.neu``, das bewusst liegen bleibt: Die Reste-Karte bietet es nicht zum Entfernen an (Gesamtpruefung
+        14.11.2026, S-G - sie nannte es "Teilbau", und ein Klick auf "Entfernen" haette das fertige Ergebnis geloescht)."""
+        behalten = getattr(self, "_selbstziel_behalten", None)
+        if behalten is None:
+            behalten = self._selbstziel_behalten = set()
+        behalten.add(os.path.normcase(os.path.abspath(bau_ziel)))
 
     def _selbstziel_reste_entfernen(self) -> None:
         """Entfernt, was von einem gescheiterten Bau neben der Quelle liegt."""
@@ -32594,8 +32668,9 @@ class PS5ConverterGUI:
             # (Bis zum 24.09.2026 galt das nur für .ffpkg und den
             # AMPR-Manager - die Packwege und der exFAT-Neubau räumten die
             # Quelle vorher selbst ab. Siehe _bauziel_neben_quelle.)
-            if os.path.normcase(os.path.abspath(output_exists_path)) == \
-                    os.path.normcase(os.path.abspath(src)):
+            # Auch dieselbe Datei in anderer Schreibung (Spiel.FFPKG/Spiel.ffpkg auf macOS oder exFAT unter Linux) ist die Quelle -
+            # der reine Textvergleich hielt sie dort fuer ein altes Ergebnis und loeschte sie (Gesamtpruefung 14.11.2026, S-A).
+            if pfadvergleich.gleicher_ort(output_exists_path, src):
                 self._append_to_log(self._t("log.ziel_ist_quelle") + "\n")
             else:
                 try:
@@ -33065,13 +33140,15 @@ class PS5ConverterGUI:
             # Hat der Lauf nicht geklappt, liegt im Zielordner vielleicht Unfertiges: nennen und auf Wunsch entfernen.
             if not success:
                 self._reste_nach_lauf(mode, src, dst)
-            self._lauf_quelle = ""
-            self._content_id_antwort = None
             # Alte Reste frueherer Laeufe abraeumen - hier, weil jeder Weg hier
             # vorbeikommt. Im Arbeitsfaden und VOR der Herunterfahr-Pruefung:
             # Loeschen kann dauern, und der Rechner soll nicht mittendrin
-            # ausgehen.
+            # ausgehen. Und VOR dem Leeren von _lauf_quelle: Die Quelle dieses
+            # Laufs bleibt gewaehlt und darf nicht als alter Rest gelten
+            # (_temp_in_gebrauch; Gesamtpruefung 14.11.2026, R2-A2).
             self._temp_reste_nach_aufgabe_abraeumen()
+            self._lauf_quelle = ""
+            self._content_id_antwort = None
             # Einziger gemeinsamer Ausgang aller Wege (Erfolg, Fehler, Abbruch,
             # Ausnahme): hier faellt die Entscheidung ueber das Herunterfahren.
             # Etwas spaeter als _finish_success, damit die Oberflaeche vorher
@@ -33196,7 +33273,8 @@ class PS5ConverterGUI:
                 self._ampr_ordner_ist_kopie = False
                 self._append_to_log(self._t('log.auto.0087', v0=idx, v1=len(sources), v2=os.path.basename(candidate)))
                 # Wie diese Quelle (Datei, Ordner oder Archiv) jetzt aussieht - vor dem Entpacken eines Archivs.
-                quellstempel = quelle_loeschen.stempel_nehmen(anzeige) if self._lauf_quelle_loeschen else None
+                quellstempel = (quelle_loeschen.stempel_nehmen(anzeige)
+                                if getattr(self, "_lauf_quelle_loeschen", False) else None)
                 if archiv_quelle.ist_archiv(candidate):
                     # Ein Archiv steht fuer den Spielordner darin: entpacken, dann wie ein Dump-Ordner behandeln.
                     # Das Ergebnis heisst nach dem Archiv (der Entpackordner traegt dessen Namen). Ein ZIP wird seit dem
@@ -33261,8 +33339,7 @@ class PS5ConverterGUI:
                 # prueft das in _run_engine_thread; hier fehlte es, und die
                 # exFAT-Extraktion leerte den Ordner samt Quelle (H8-1).
                 if target_type == "folder":
-                    ordner_ziel = os.path.join(
-                        dst, os.path.splitext(os.path.basename(candidate))[0])
+                    ordner_ziel = os.path.join(dst, self._batch_zielname(candidate, "folder"))
                     if self._pfad_liegt_in(candidate, ordner_ziel):
                         meldung = self._t("batch.ziel_enthaelt_quelle",
                                           name=os.path.basename(candidate),
@@ -35152,12 +35229,10 @@ class PS5ConverterGUI:
             endung = endungen.get(target_type)
             if endung is not None:
                 for src in sources:
-                    name = os.path.splitext(os.path.basename(src))[0]
-                    ziel = os.path.join(dst, name + endung)
+                    ziel = os.path.join(dst, self._batch_zielname(src, target_type) + endung)
                     if not os.path.exists(ziel):
                         continue
-                    if os.path.normcase(os.path.abspath(ziel)) == \
-                            os.path.normcase(os.path.abspath(src)):
+                    if pfadvergleich.gleicher_ort(ziel, src):
                         continue
                     antwort = self._ask_yesno_threadsafe(
                         self._t("dialog.title.file_already_exists"),
@@ -35204,13 +35279,11 @@ class PS5ConverterGUI:
             True, wenn gebaut werden darf; False, wenn diese Datei
             übersprungen werden soll.
         """
-        name = os.path.splitext(os.path.basename(quelle))[0]
         endung = {"folder": "", "ffpfsc": ".ffpfsc", "ffpfs": ".ffpfs",
                   "exfat": ".exfat", "ffpkg": ".ffpkg"}.get(zielformat)
         if endung is None:
             return True
-        name = self._ausgabe_stamm(quelle, name, zielformat)
-        ziel = os.path.join(ziel_ordner, name + endung)
+        ziel = os.path.join(ziel_ordner, self._batch_zielname(quelle, zielformat) + endung)
         # Ein Ergebnis DIESES Laufs ist kein frueherer Lauf. Liegen etwa
         # Spiel.exfat und Spiel.ffpkg zusammen in der Auswahl, zeigen beide
         # auf dieselbe Spiel.ffpfsc - und bis v1.9.19 entfernte die zweite das
@@ -35229,8 +35302,7 @@ class PS5ConverterGUI:
             return True
         # Ziel und Quelle sind dieselbe Datei - kein Grund zu fragen, die
         # Wege bauen daneben und ersetzen erst am Schluss.
-        if os.path.normcase(os.path.abspath(ziel)) == \
-                os.path.normcase(os.path.abspath(quelle)):
+        if pfadvergleich.gleicher_ort(ziel, quelle):
             return True
 
         gemerkt = getattr(self, "_batch_ueberschreiben", None)
@@ -35255,6 +35327,19 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("batch.uebersprungen_vorhanden") + "\n")
             return False
         return self._batch_alten_ordner_raeumen(quelle, ziel, zielformat)
+
+    def _batch_zielname(self, quelle: str, zielformat: str) -> str:
+        """Name des Ergebnisses einer Quelle der Sammelkonvertierung, ohne Endung - wie :meth:`_get_expected_output_path`.
+
+        Ein Dump-Ordner behaelt seinen ganzen Namen ("Astro.Bot.PS5" -> "Astro.Bot.PS5.ffpfsc"), nur einer Datei faellt die Endung
+        weg. Bis zum 14.11.2026 rechneten die Pruefungen der Sammelkonvertierung auch fuer Ordner mit ``splitext`` ("Astro.Bot"): Die
+        Ueberschreib-Frage sah das vorhandene Ergebnis nicht, und der Bau ersetzte es ungefragt (Gesamtpruefung, S-B).
+        """
+        if os.path.isdir(quelle):
+            name = os.path.basename(os.path.normpath(quelle))
+        else:
+            name = os.path.splitext(os.path.basename(quelle))[0]
+        return self._ausgabe_stamm(quelle, name, zielformat)
 
     def _batch_alten_ordner_raeumen(self, quelle: str, ziel: str,
                                     zielformat: str) -> bool:
@@ -38023,6 +38108,10 @@ class PS5ConverterGUI:
         # (_ampr_eigenes_profil_uebernehmen).
         self._ampr_quelle_original = ordner if ist_quellordner else herkunft
 
+        # Ein zstd-Pack ohne alle Originale liest nur NG - vor Arbeitskopie, Backport und DLC pruefen (R6-3).
+        if not self._ampr_einbau_passt_zum_pack(ordner):
+            return ""
+
         arbeitsordner = ordner
         if ist_quellordner:
             arbeitsordner = self._integration_arbeitskopie(ordner)
@@ -38187,11 +38276,18 @@ class PS5ConverterGUI:
             if quellen:
                 try:
                     os.makedirs(ziel, exist_ok=True)
+                    geblieben: list[str] = []
                     for quelle in quellen:
                         ziel_datei = os.path.join(ziel, os.path.basename(quelle))
-                        shutil.copy2(quelle, ziel_datei)
+                        if ps5_backport.emulator_bleibt(ziel_datei):
+                            # Ein vorhandenes AMPR EMU / ampr-emu-ng bzw. der PlayGo-Stub bleibt (R7-1).
+                            geblieben.append(os.path.basename(quelle))
+                        else:
+                            shutil.copy2(quelle, ziel_datei)
+                            kopiert += 1
                         installiert.append(ziel_datei)
-                        kopiert += 1
+                    if geblieben:
+                        self._append_to_log(self._t("backport.log_emu_bleibt", names=", ".join(geblieben)))
                 except OSError as exc:
                     self._append_to_log(self._t("main.integrate_backport_libs_failed", error=exc))
                     return False
@@ -38345,7 +38441,15 @@ class PS5ConverterGUI:
             self._t("main.integrate_ampr_start", version=gewaehlte_fassung))
         self._set_status(self._t("main.integrate_ampr_status"))
 
+        # Vor jeder Aenderung am Ordner: Liegt ein Pack darin, das dieser Lauf nicht neu packen darf (Auswertung unten beim Index)?
+        hindernis = self._ampr_pack_pruefen(ordner)
+        if hindernis is None:
+            return False                                    # Abbruch durch den Anwender (R5-1) oder Lesefehler (R6-1)
         if not nur_playgo:
+            # Ein zstd-Pack ohne alle Originale liest nur ampr-emu-ng: Eine andere Fassung machte das Spiel unlesbar (R5-3).
+            if hindernis == "ampr_zstd.schon_gepackt" and not self._ampr_bibliothek_ist_ng(auswahl):
+                self._append_to_log(self._t("ampr_zstd.pack_nur_ng"))
+                return False
             if not self._ampr_apply_library(ordner, auswahl["path"], "libSceAmpr.sprx"):
                 return False
 
@@ -38377,6 +38481,14 @@ class PS5ConverterGUI:
         # Austausch neu entstehen.
         try:
             index_pfad = Path(ordner) / self._AMPR_INDEX_NAME
+            # Ein Pack, das sich nicht neu packen laesst (zstd ohne alle Originale, LZ4 bei gewaehltem zstd): Pack und Index bleiben,
+            # wie sie sind - wie das "Nein" auf die Frage nach dem Index-Neubau. Ein neuer Index naennte die gepackten Dateien nicht
+            # mehr (R2-P4), und ein Abbruch an dieser Stelle (R3-A3) liess Laeufe scheitern, die vorher ohne Verlust durchliefen (R4-2).
+            if hindernis:
+                self._append_to_log(self._t(hindernis))
+                self._append_to_log(self._t("ampr.assets_index_kept"))
+                self._ampr_index_entschieden = True
+                return True
             if not self._ampr_index_neubau_erlaubt(ordner):
                 self._append_to_log(self._t("ampr.assets_index_kept"))
                 self._ampr_index_entschieden = True
@@ -38479,6 +38591,205 @@ class PS5ConverterGUI:
             self.root.after_cancel(kennung)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Uhr nicht anhaltbar: %s", exc)
+
+    def _ampr_pack_hindernis(self, ordner: str) -> str:
+        """Liegt in ``ordner`` ein Pack, das dieser Lauf nicht neu packen darf? ``""`` = nein, sonst der Schluessel des Grundes.
+
+        * Ein zstd-Pack, dessen gepackte Dateien nicht alle lose daneben liegen (:func:`ampr_zstdpack.pack_bestand_pruefen`) - egal,
+          welches Verfahren gewaehlt ist: Ein neuer ``ampr_emu.index`` naennte die gepackten Dateien nicht mehr, ein neues Pack
+          ersetzte das alte ohne sie.
+        * Ein LZ4-Pack, wenn zstd gewaehlt ist: seine Baender waeren gewoehnliche Dateien des neuen Packs.
+
+        Gerufen in :meth:`_integration_ampr` vor jeder Aenderung am Ordner; dann bleiben Pack und Index, wie sie sind
+        (Gesamtpruefung 14.11.2026, R2-P4, R4-2). Den Ordner durchsucht es nur, wenn in der Wurzel Packdateien liegen. Das
+        zstd-Pack geht den LZ4-Resten vor: ``ampr_zstd.schon_gepackt`` entscheidet auch, ob eine andere Fassung als NG das Spiel
+        unlesbar machte (R5-3). Bricht der Anwender die Suche ab, kommt :attr:`_AMPR_PACKPRUEFUNG_ABGEBROCHEN` zurueck (R5-1).
+        """
+        try:
+            namen = os.listdir(ordner)
+        except OSError as exc:
+            logger.debug("Pack-Bestand nicht pruefbar: %s", exc)
+            return ""
+        zstd_da = any(ampr_zstdpack.ist_packname(n) for n in namen)
+        lz4_da = any(n.lower() == ampr_assetpakete.MANIFEST_NAME
+                     or (n.lower().startswith("ampr_assets-") and n.lower().endswith(".pak")) for n in namen)
+        if not zstd_da and not lz4_da:
+            return ""
+        try:
+            zstd_gewaehlt = (self._ampr_methode() == AMPR_METHODE_ASSETPACK and self._ampr_pack_verfahren() == "zstd")
+        except Exception as exc:  # noqa: BLE001 - im Zweifel prueft die Sperre beim Packen
+            logger.debug("Packverfahren nicht lesbar: %s", exc)
+            zstd_gewaehlt = False
+        if zstd_da:
+            def _alter_index() -> bytes:
+                with open(os.path.join(ordner, ampr_zstdpack.INDEX_NAME), "rb") as fh:
+                    return fh.read()
+
+            try:
+                gewaehlt = ampr_zstdpack.dateien_auswaehlen(
+                    ordner, abbruch=lambda: not self.is_running,
+                    melden=lambda pfad: self._append_to_log(self._t("ampr_zstd.suche", path=pfad)))
+                # LZ4-Reste erst danach und nur bei gewaehltem zstd (R5-2).
+                grund = ampr_zstdpack.pack_bestand_pruefen(gewaehlt, _alter_index, lz4_zaehlt=False)
+            except ampr_zstdpack.ZstdPackFehler as exc:
+                if str(exc) == self._AMPR_PACKPRUEFUNG_ABGEBROCHEN:
+                    return self._AMPR_PACKPRUEFUNG_ABGEBROCHEN
+                logger.debug("Pack-Bestand nicht pruefbar: %s", exc)
+                return "ampr_zstd.schon_gepackt"
+            if grund:
+                return grund
+        return "ampr_zstd.lz4_pack_vorhanden" if lz4_da and zstd_gewaehlt else ""
+
+    #: Rueckgabe von :meth:`_ampr_pack_hindernis`, wenn der Anwender die Suche abbricht (derselbe Schluessel wie beim Packen).
+    _AMPR_PACKPRUEFUNG_ABGEBROCHEN = "ampr_pack.abgebrochen"
+
+    def _ampr_pack_pruefen(self, ordner: str) -> "str | None":
+        """:meth:`_ampr_pack_hindernis` fuer die Aufrufer: ``None`` = nicht weitermachen (Abbruch des Anwenders oder Lesefehler).
+
+        Ein Lesefehler beim Durchsuchen (eine Datei verschwindet zwischen Auflisten und Groesse) steht im Protokoll und beendet
+        den Schritt, statt als Ausnahme aus dem Einbau zu fallen (Gesamtpruefung 14.11.2026, R6-1).
+        """
+        try:
+            hindernis = self._ampr_pack_hindernis(ordner)
+        except Exception as exc:  # noqa: BLE001 - jeder Lesefehler beendet den Schritt mit Grund im Protokoll
+            self._append_to_log(self._t("ampr_zstd.pack_pruefung_fehlgeschlagen", error=exc))
+            return None
+        if hindernis == self._AMPR_PACKPRUEFUNG_ABGEBROCHEN:
+            return None
+        return hindernis
+
+    def _ampr_nicht_ng_erlaubt(self, ordner: str, raus: bool = False) -> bool:
+        """Darf in ``ordner`` eine AMPR-Bibliothek liegen, die nicht von ampr-emu-ng ist (Tauschen, Wiederherstellen, Entfernen)?
+
+        Nein, wenn dort ein zstd-Pack liegt, dessen gepackte Dateien nicht alle lose daneben liegen: Das liest nur NG, mit jeder
+        anderen Bibliothek waere das Spiel unlesbar (R5-3, R6-2). ``False`` steht mit Grund im Protokoll; geaendert ist dann nichts.
+
+        Args:
+            raus: ``True`` bei Entfernen und Wiederherstellen - der Text sagt dann nicht "bitte NG waehlen" (R7-4).
+        """
+        hindernis = self._ampr_pack_pruefen(ordner)
+        if hindernis is None:
+            return False
+        if hindernis == "ampr_zstd.schon_gepackt":
+            self._append_to_log(self._t("ampr_zstd.pack_nur_ng_raus" if raus else "ampr_zstd.pack_nur_ng"))
+            return False
+        return True
+
+    def _ampr_einbau_passt_zum_pack(self, ordner: str) -> bool:
+        """Vorabpruefung fuer :meth:`_integration_anwenden`: die NG-Sperre aus :meth:`_integration_ampr`, aber vor Arbeitskopie, Backport
+        und DLC EMU (R6-3) - sonst stuende eine grosse Kopie umsonst da, und beim Einbau im Original waeren Backport und DLC schon drin.
+
+        Kostet ohne zstd-Pack in der Wurzel nur ein ``listdir``. ``False`` steht mit Grund im Protokoll.
+        """
+        try:
+            if not any(ampr_zstdpack.ist_packname(n) for n in os.listdir(ordner)):
+                return True
+        except OSError as exc:
+            logger.debug("Pack-Bestand nicht pruefbar: %s", exc)
+            return True                                     # entscheidet spaeter _integration_ampr
+        if not self._ampr_wird_eingebaut():
+            return True                                     # nur PlayGo: die Bibliothek bleibt, wie sie ist
+        auswahl = self._ampr_auswahl_beim_start().get(self._tk_wert("ampr_version_var", ""))
+        if not auswahl or self._ampr_bibliothek_ist_ng(auswahl):
+            return True                                     # ohne Fassung meldet es _integration_ampr
+        return self._ampr_nicht_ng_erlaubt(ordner)
+
+    def _ampr_ftp_pack_nachfragen(self, parent: Any, spielpfad: str) -> bool:
+        """Fragt im FTP-Picker, ob ein Set ohne NG trotz zstd-Pack im Spielordner auf der Konsole hinueber soll. Vorgabe: Nein (R7-3)."""
+        return bool(messagebox.askyesno(
+            self._t("ampr.picker_title"), self._t("ampr_zstd.ftp_pack_frage", path=spielpfad),
+            parent=parent, icon="warning", default="no"))
+
+    def _ampr_gen_zstd_vertraeglich(self, fenster: Any, ftp: Any, lokal: bool, spielpfad: str,
+                                    gewaehlte_libs: "list[dict[str, Any]]", herkunft: str = "",
+                                    melde: "Callable[[str], None] | None" = None) -> bool:
+        """Frage des Generationen-Assistenten (Aufgabe 7, Weg "pro Spiel"): Liegt im Spielordner ein zstd-Pack und ist die gewaehlte
+        AMPR-Fassung keine NG-Fassung? Dann fragt es nach - ``True`` = weiter ablegen (Gesamtpruefung 14.11.2026, R8-2).
+
+        Ob dort noch alle Originale liegen, prueft es nicht (die Suche braucht einen Lauf, das Fenster hat keinen: ``is_running`` ist hier
+        falsch) - wer fragt, behandelt das Pack als eines, das nur NG liest. Gefragt wird nur, wenn ``ampr_zstd.index`` in der Wurzel liegt;
+        nicht lesbar = kein Pack. Die festen Wege (globale fakelib, Emulator-Ordner) haben keinen Spielordner und fragen nie.
+
+        Ein Spiel, das die Konsole nur aus appmeta kennt (eingehaengtes Abbild, ``herkunft == "appmeta"``), hat keinen Ordner, in den man
+        sehen koennte: Dort steht nur ein Hinweis im Protokoll (``melde``), keine Frage - sonst fragte jedes Abbild mit LZ4-Pack oder ganz
+        ohne Pack bei jeder Nicht-NG-Fassung (R9-1).
+
+        Args:
+            herkunft: ``gewaehlt["quelle"]`` des Spiels (``"appmeta"`` = nur aus appmeta bekannt).
+            melde: Protokollzeile des Assistenten; ohne sie entfaellt der Hinweis.
+        """
+        ampr = next((e for e in gewaehlte_libs if e.get("lib") == self._AMPR_SPRX_NAME), None)
+        if ampr is None or not spielpfad or self._ampr_bibliothek_ist_ng(ampr):
+            return True
+        if herkunft == "appmeta":
+            if melde is not None:
+                melde("!! " + self._t("amprgen.zstd_appmeta_hinweis"))
+            return True
+        if lokal:
+            try:
+                pack_da = any(n.lower() == ampr_zstdpack.INDEX_NAME for n in os.listdir(spielpfad))
+            except OSError as exc:
+                logger.debug("Spielordner nicht lesbar (%s): %s", spielpfad, exc)
+                pack_da = False
+        else:
+            pack_da = self._ampr_ftp_zstd_pack_da(ftp, spielpfad)
+        if not pack_da:
+            return True
+        wahl = self._ampr_gen_frage(
+            fenster, self._t("amprgen.q_zstd"), self._t("amprgen.q_zstd_why", path=spielpfad),
+            [("stop", self._t("amprgen.q_zstd_stop"), self._t("amprgen.q_zstd_stop_why")),
+             ("weiter", self._t("amprgen.q_zstd_go"), self._t("amprgen.q_zstd_go_why"))])
+        return wahl == "weiter"
+
+    def _ampr_ftp_zstd_pack_da(self, ftp: Any, spielpfad: str) -> bool:
+        """Liegt in der Wurzel des Spielordners auf der Konsole ein ``ampr_zstd.index``? Nicht lesbar = nein (dann scheitert ohnehin
+        das Hochladen). Ob dort alle Originale liegen, laesst sich ueber FTP nicht billig klaeren - wer fragt, behandelt das Pack
+        als eines, das nur NG liest (R6-2)."""
+        try:
+            namen = [name for name, _fakten in self._ampr_ftp_list_entries(ftp, spielpfad)]
+        except Exception as exc:  # noqa: BLE001 - ftplib-Fehler, Abbruch der Leitung
+            logger.debug("Spielordner auf der Konsole nicht lesbar (%s): %s", spielpfad, exc)
+            return False
+        return any(str(n).lower() == ampr_zstdpack.INDEX_NAME for n in namen)
+
+    def _ampr_bibliothek_ist_ng(self, auswahl: dict[str, Any]) -> bool:
+        """Ist die AMPR-Fassung, die gleich in fakelib kommt, eine von ampr-emu-ng? Nach der Datei selbst, nur bei nicht lesbarer Datei
+        nach der Variante.
+
+        Der Variantenname kommt aus dem Ordnernamen im Versionsordner; ein von Hand benannter Ordner ("0.4.1") ergibt "standard", auch
+        wenn NG darin liegt (Gesamtpruefung 14.11.2026, R7-2). Aufgabe 7 prueft ebenfalls die Datei.
+
+        Bewusst nicht ueberall: Die Pack-Wege (``_ampr_zstdpakete_bauen``, ``_ampr_zstd_messen``) entscheiden nach der Variante und nur bei
+        leerer Variante nach der Datei, ``_ampr_ng_gewaehlt`` und die Fassungsliste im Pack-Modus rein nach der Variante - die Liste bietet dort
+        nur bekannte Varianten an (``variante_kann_packen``), ein handbenannter Ordner kommt also gar nicht bis zum Packen. Hier geht es um
+        die Sperre: Sie soll ein NG nicht blockieren, das lesen kann.
+        """
+        pfad = (auswahl or {}).get("path") or ""
+        try:
+            return self._AMPR_NG_KENNZEICHEN in Path(pfad).read_bytes()
+        except OSError as exc:
+            logger.debug("Bibliothek nicht lesbar (%s): %s", pfad, exc)
+        return str((auswahl or {}).get("variant", "")).strip().lower() in ampr_assetpakete.ALLROUND_VARIANTEN
+
+    def _ampr_lib_gemeint(self, namen: "list[str] | tuple[str, ...]") -> bool:
+        """Steht ``libSceAmpr.sprx`` unter ``namen``? Ohne Ruecksicht auf die Schreibung - unter Windows (NTFS) ist ``libsceampr.sprx``
+        dieselbe Datei. Reine Absicherung (R8-3): Die Kommandozeile weist andere Schreibungen schon in ``_validate_ampr_args`` ab und
+        der Dialog liefert die Namen aus ``_AMPR_LIB_NAMES``; die Sperre soll aber nicht an einer Spezifikation scheitern, die die
+        Schreibung nicht normalisiert."""
+        ziel = self._AMPR_SPRX_NAME.lower()
+        return any(str(n).lower() == ziel for n in namen)
+
+    def _ampr_ng_wuerde_weichen(self, wurzel: str, aktion: str) -> bool:
+        """Nimmt ``aktion`` ("ampr_remove" oder "ampr_restore") eine ``libSceAmpr.sprx`` von ampr-emu-ng aus ``wurzel`` heraus?
+
+        Genau die Ordner, die die Aktion auch anfasst (R7-4): Entfernen loescht nur im Schreibordner (``_ampr_remove_library``), Wiederherstellen
+        spielt die Sicherung ``.orig`` in jedem Lesepfad zurueck, in dem eine liegt (``_ampr_restore_library``).
+        """
+        lib = self._AMPR_SPRX_NAME
+        if aktion == "ampr_remove":
+            return self._ampr_ist_ng_datei(self._fakelib_pfad(wurzel) / lib)
+        return any((p / (lib + self._AMPR_BACKUP_SUFFIX)).is_file() and self._ampr_ist_ng_datei(p / lib)
+                   for p in self._fakelib_lesepfade(wurzel))
 
     def _ampr_assetpakete_bauen(self, ordner: str, index_pfad: str,
                                 auswahl: dict[str, Any]) -> bool:
@@ -38991,6 +39302,16 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t("ampr_zstd.regeln_lose", count=gewaehlt.nach_regeln_lose))
             for pfad in gewaehlt.ungueltig[:10]:
                 self._append_to_log(self._t("ampr_zstd.pfad_ungueltig", path=pfad))
+
+            def _alter_index() -> bytes:
+                datei = next(d for d in baum.dateien() if d.rel == ampr_zstdpack.INDEX_NAME)
+                return b"".join(datei.lesen())
+
+            # Ein schon gepacktes Spiel ohne Originale wuerde sein altes Pack verlieren (Gesamtpruefung 14.11.2026, P1).
+            grund = ampr_zstdpack.pack_bestand_pruefen(gewaehlt, _alter_index)
+            if grund:
+                self._append_to_log(self._t(grund))
+                return False
             if not gewaehlt.gepackt:
                 self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
                 return False
@@ -39166,6 +39487,17 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t("ampr_zstd.regeln_lose", count=gewaehlt.nach_regeln_lose))
             for pfad in gewaehlt.ungueltig[:10]:
                 self._append_to_log(self._t("ampr_zstd.pfad_ungueltig", path=pfad))
+
+            def _alter_index() -> bytes:
+                with open(os.path.join(ordner, ampr_zstdpack.INDEX_NAME), "rb") as fh:
+                    return fh.read()
+
+            # Ein schon gepacktes Spiel ohne Originale verloere sonst sein altes Pack: das neue ersetzt es und nennt nur die
+            # losen Dateien (Gesamtpruefung 14.11.2026, P1). Ebenso duerfen LZ4-Baender nicht als Daten ins zstd-Pack wandern.
+            grund = ampr_zstdpack.pack_bestand_pruefen(gewaehlt, _alter_index)
+            if grund:
+                self._append_to_log(self._t(grund))
+                return False
             if not gewaehlt.gepackt:
                 self._append_to_log(self._t("ampr_zstd.nichts_zu_packen"))
                 return False
@@ -41705,6 +42037,13 @@ class PS5ConverterGUI:
                 if not sources:
                     self._append_to_log(self._t("ampr.nothing_to_apply"))
                     return False
+                # Eine andere AMPR-Fassung als NG macht ein zstd-Pack ohne Originale unlesbar (R6-2) - ohne Wunsch ist
+                # matches[0] die neueste von drakmor.
+                ampr_quelle = next((q for q, n in sources
+                                    if (n or os.path.basename(q)).lower() == self._AMPR_SPRX_NAME.lower()), None)
+                if (ampr_quelle is not None and not self._ampr_ist_ng_datei(ampr_quelle)
+                        and not self._ampr_nicht_ng_erlaubt(search_root)):
+                    return False
 
                 for source_file, lib_name in sources:
                     if not self._ampr_apply_library(
@@ -41715,6 +42054,10 @@ class PS5ConverterGUI:
 
             elif action == "ampr_restore":
                 self.progress_engine.begin_prepare(self._t("progress.prepare.restore_original"))
+                # Wiederherstellen nimmt NG heraus (R6-2) - nur wenn es eine Sicherung gibt, aendert es ueberhaupt etwas.
+                if (self._ampr_lib_gemeint(target_libs) and self._ampr_ng_wuerde_weichen(search_root, "ampr_restore")
+                        and not self._ampr_nicht_ng_erlaubt(search_root, raus=True)):
+                    return False
                 ergebnisse = [self._ampr_restore_library(search_root, lib_name)
                               for lib_name in target_libs]
                 if "failed" in ergebnisse:
@@ -41732,6 +42075,9 @@ class PS5ConverterGUI:
 
             elif action == "ampr_remove":
                 self.progress_engine.begin_prepare(self._t("progress.prepare.remove_ampr_lib"))
+                if (self._ampr_lib_gemeint(target_libs) and self._ampr_ng_wuerde_weichen(search_root, "ampr_remove")
+                        and not self._ampr_nicht_ng_erlaubt(search_root, raus=True)):
+                    return False                            # Entfernen nimmt NG heraus (R6-2)
                 removed_any = False
                 for lib_name in target_libs:
                     if self._ampr_remove_library(search_root, lib_name):
@@ -45550,6 +45896,9 @@ class PS5ConverterGUI:
         if cp_tmp_dir and os.path.isdir(cp_tmp_dir):
             tmp_dir = cp_tmp_dir
             self._append_to_log(self._t('log.auto.0280', v0=tmp_dir))
+            # Die Wiederaufnahme laeuft am Strom vorbei: Ein selbsttaetig gesetztes "Originale weglassen" (NG + LZ4 im Strom) gilt
+            # hier nicht - wie bei jedem Rueckfall (Gesamtpruefung 14.11.2026, R2-A4).
+            self._ampr_weglassen_nach_rueckfall()
         else:
             tmp_dir = self._mkdtemp(prefix="ps5conv_exfat_")
 
@@ -57584,9 +57933,12 @@ class PS5ConverterGUI:
         """Fragt, ob fremde AMPR-/PlayGo-Bibliotheken im Dump durch AMPR EMU und den PlayGo-Stub ersetzt werden sollen.
 
         Hat der Dump ``libSceAmpr.sprx`` oder ``libScePlayGo.sprx`` schon im ``fakelib``-Ordner (von einem anderen
-        Werkzeug), fasst der Backport sie nicht an - der mitgelieferte Satz hat keine von beiden. Das Spiel stuerzt dann
-        beim Start ab (``0xa0020104``; gemessen an Hollow Knight, Firmware 4.03). Behoben hat es das Ersetzen durch die
-        Dateien aus AMPR EMU. Ersetzt wird eine der beiden nicht, wenn der Lauf AMPR EMU (``ampr_an``) bzw. PlayGo
+        Werkzeug), blieb sie beim Backport frueher unberuehrt - der Satz hatte keine von beiden. Seit 28.10.2026 bringt er beide
+        mit und ersetzt eine fremde Datei gleichen Namens beim Kopieren; was hier noch ankommt, ist eine fremde, unmarkierte
+        Datei, die den Kopierschritt ueberlebt (etwa weil "Nur benoetigte Bibliotheken" unsere Datei weglaesst). Ein vorhandenes
+        AMPR EMU, ampr-emu-ng oder der PlayGo-Stub bleibt unveraendert (``ps5_backport.emulator_bleibt``). Das Spiel stuerzt mit
+        einer fremden Datei beim Start ab (``0xa0020104``; gemessen an Hollow Knight, Firmware 4.03). Behoben hat es das Ersetzen
+        durch die Dateien aus AMPR EMU. Ersetzt wird eine der beiden nicht, wenn der Lauf AMPR EMU (``ampr_an``) bzw. PlayGo
         (``playgo_an``) ohnehin einbaut.
 
         Zwei Wege, je nach Aufrufer:
@@ -59727,6 +60079,10 @@ class PS5ConverterGUI:
                 melde(self._t("amprgen.lib_chosen", lib=eintrag.get("lib", ""),
                               version=eintrag.get("version", "?"),
                               variant=eintrag.get("variant", "-")))
+            # Ein zstd-Pack im Spielordner liest nur NG; die neueste Fassung (vorgewaehlt) ist es nicht (R8-2).
+            if not self._ampr_gen_zstd_vertraeglich(fenster, ftp, lokal, spielpfad, gewaehlt_libs, herkunft, melde):
+                melde(self._t("amprgen.cancelled"))
+                return
 
             # ── 6. Stimmt die config.ini? ──────────────────────────────
             if not lokal:
@@ -63262,14 +63618,22 @@ class PS5ConverterGUI:
                             count=len(unnoetig), names=", ".join(unnoetig)))
                 ziel = ps5_backport.fakelib_ziel(ordner, self._fakelib_ordnername())
                 if quellen:
-                    stand(self._t("backport.state_libs", count=len(quellen)))
+                    # Gezaehlt wird, was wirklich kopiert wird - ein vorhandenes AMPR EMU / NG bleibt (R7-1).
+                    stand(self._t("backport.state_libs", count=sum(
+                        1 for q in quellen if not ps5_backport.emulator_bleibt(os.path.join(ziel, os.path.basename(q))))))
                     os.makedirs(ziel, exist_ok=True)
+                    geblieben: list[str] = []
                     for quelle in quellen:
                         ziel_datei = os.path.join(ziel, os.path.basename(quelle))
-                        shutil.copy2(quelle, ziel_datei)
+                        if ps5_backport.emulator_bleibt(ziel_datei):
+                            geblieben.append(os.path.basename(quelle))      # R7-1: nicht ueber ein vorhandenes AMPR EMU / NG kopieren
+                        else:
+                            shutil.copy2(quelle, ziel_datei)
+                            kopiert += 1
                         installiert.append(ziel_datei)
-                        kopiert += 1
                     self._append_to_log(self._t("backport.log_libs", count=kopiert, path=ziel))
+                    if geblieben:
+                        self._append_to_log(self._t("backport.log_emu_bleibt", names=", ".join(geblieben)))
                     # Was nicht mitkommt, ausdruecklich nennen. Im FW7-Satz liegt
                     # eine ps5-backpork.elf - der Payload des Referenzwerkzeugs,
                     # keine Bibliothek. ShadowMount+ haengt den Ordner nach
@@ -68500,6 +68864,7 @@ class PS5ConverterGUI:
     def _ampr_ftp_apply_set(
         self, ftp: Any, game_root: str, store_dir: str,
         version: str = "", variant: str = "", libs: tuple[str, ...] = (),
+        pack_sperre: bool = True, wiederholung: bool = False,
     ) -> tuple[int, int]:
         """Überträgt das komplette AMPR-Set (AMPR + PlayGo) in den fakelib-Ordner.
 
@@ -68507,8 +68872,16 @@ class PS5ConverterGUI:
         _prepare_ampr_support lokal stellt. Ein einzeln übertragenes
         libSceAmpr.sprx bliebe auf der Konsole wirkungslos.
 
+        Args:
+            pack_sperre: ``True`` = liegt im Spielordner ein zstd-Pack (``ampr_zstd.index``) und das Set ist keine NG-Fassung, kommt
+                nichts hinueber, sondern ``_AmprFtpPackSperre`` (R6-2). ``False`` nach einer ausdruecklichen Zusage des Anwenders (R7-3).
+            wiederholung: ``True`` beim zweiten Aufruf nach der Zusage: Die Zeilen zur gewaehlten Fassung stehen schon im Protokoll.
+
         Returns:
             (übertragen, fehlgeschlagen).
+
+        Raises:
+            _AmprFtpPackSperre: siehe ``pack_sperre``; vorher ist nichts uebertragen.
         """
         entries = self._ampr_scan_version_store(store_dir)
         if not entries:
@@ -68519,6 +68892,7 @@ class PS5ConverterGUI:
         remote_fakelib = self._ampr_ftp_join(game_root, self._fakelib_ordnername())
         done = failed = 0
 
+        gewaehlt: list[tuple[str, dict[str, Any]]] = []
         for lib_name in wanted:
             matches = [e for e in entries if e["lib"] == lib_name]
             if version:
@@ -68526,16 +68900,29 @@ class PS5ConverterGUI:
             if variant:
                 matches = [e for e in matches if e["variant"] == variant.lower()]
             if not matches:
-                self._append_to_log(self._t(
-                    "ampr.no_match_in_store", name=lib_name,
-                    version=version or "*", variant=variant or "*",
-                ))
+                if not wiederholung:
+                    self._append_to_log(self._t(
+                        "ampr.no_match_in_store", name=lib_name,
+                        version=version or "*", variant=variant or "*",
+                    ))
                 continue
             chosen = matches[0]
-            self._append_to_log(self._t(
-                "ampr.selected_version", name=lib_name,
-                version=chosen["version"], variant=chosen["variant"],
-            ))
+            if not wiederholung:
+                self._append_to_log(self._t(
+                    "ampr.selected_version", name=lib_name,
+                    version=chosen["version"], variant=chosen["variant"],
+                ))
+            gewaehlt.append((lib_name, chosen))
+
+        # Ein zstd-Pack im Spielordner liest nur NG; ohne Wunsch ist matches[0] die neueste Fassung von drakmor (R6-2). Dann geht
+        # das ganze Set nicht hinueber - auch PlayGo nicht, es gehoert zur Fassung.
+        ampr = next((c for n, c in gewaehlt if n == self._AMPR_SPRX_NAME), None)
+        if (pack_sperre and ampr is not None and not self._ampr_bibliothek_ist_ng(ampr)
+                and self._ampr_ftp_zstd_pack_da(ftp, game_root)):
+            self._append_to_log(self._t("ampr_zstd.ftp_pack_nur_ng", path=game_root))
+            raise _AmprFtpPackSperre(game_root)
+
+        for lib_name, chosen in gewaehlt:
             if self._ampr_ftp_upload_file(ftp, remote_fakelib, chosen["path"], lib_name):
                 done += 1
                 if lib_name == self._AMPR_SPRX_NAME and self._ampr_ist_ng_datei(chosen["path"]):
@@ -68920,6 +69307,14 @@ class PS5ConverterGUI:
             pfad = state["path"]
 
             def _getauscht(ergebnis, fehler) -> None:
+                if isinstance(fehler, _AmprFtpPackSperre):
+                    # zstd-Pack im Spielordner, Set ohne NG (R6-2): erst fragen, nicht stillschweigend "fehlgeschlagen" zeigen (R7-3).
+                    if self._ampr_ftp_pack_nachfragen(win, pfad):
+                        _im_faden(lambda: self._ampr_ftp_apply_set(ftp, pfad, store, pack_sperre=False, wiederholung=True),
+                                  _getauscht, self._t("ampr.picker_uploading", path=remote_dir))
+                    else:
+                        status_var.set(self._t("ampr_zstd.ftp_pack_status"))
+                    return
                 if fehler is not None:
                     _log(self._t("ampr.picker_action_failed", error=fehler))
                     return
@@ -68949,6 +69344,8 @@ class PS5ConverterGUI:
                 return
             name = os.path.basename(chosen)
             remote_dir = self._ampr_ftp_join(state["path"], self._fakelib_ordnername())
+            # Bewusst ohne Pack-Sperre (anders als _swap_set): Der Anwender waehlt die Datei selbst, und das ist auch der Weg, eine
+            # NG-Fassung in einen zstd-Ordner zu legen, wenn das Set (drakmor) gesperrt ist (Gesamtpruefung 14.11.2026, R6-2/R7-3).
             if not messagebox.askyesno(
                 self._t("ampr.picker_title"),
                 self._t("ampr.ask_hotswap", name=name, path=remote_dir),

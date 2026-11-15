@@ -88,7 +88,8 @@ class ZielIstQuelleTests(unittest.TestCase):
         knoten = next(k for k in ast.walk(baum)
                       if isinstance(k, ast.FunctionDef) and k.name == "_run_engine_thread")
         quelltext = ast.unparse(knoten)
-        self.assertIn("os.path.normcase(os.path.abspath(output_exists_path))",
+        # Seit 14.11.2026 ueber pfadvergleich (auch dieselbe Datei in anderer Schreibung auf macOS/exFAT unter Linux).
+        self.assertIn("pfadvergleich.gleicher_ort(output_exists_path, src)",
                       quelltext,
                       "Der Vergleich Ziel==Quelle fehlt - dann loescht der "
                       "Ueberschreib-Zweig wieder die Quelldatei.")
@@ -389,6 +390,36 @@ class BatchVorpruefungTests(unittest.TestCase):
         gui._batch_vorpruefung(
             [str(self.src_ordner)], str(self.ordner), "ffpfsc")
         self.assertIsNone(gui._batch_arbeitskopie_vorab)
+
+    def test_ordner_mit_punkt_im_namen_wird_erkannt(self):
+        """Gesamtpruefung 14.11.2026, S-B: "Astro.Bot.PS5" baut "Astro.Bot.PS5.ffpfsc", nicht "Astro.Bot.ffpfsc"."""
+        quelle = self.ordner / "quellen" / "Astro.Bot.PS5"
+        (quelle / "sce_sys").mkdir(parents=True)
+        (self.ordner / "Astro.Bot.PS5.ffpfsc").write_bytes(b"frueheres Ergebnis")
+        gui = self._gui(antwort=False)
+        gui._batch_vorpruefung([str(quelle), str(self.src_datei)], str(self.ordner), "ffpfsc")
+        self.assertEqual(1, len(self.gefragt))
+        gui._batch_ueberschreiben = None
+        self.gefragt.clear()
+        gui._batch_erzeugte_ziele = set()
+        self.assertFalse(gui._batch_ueberschreiben_klaeren(str(quelle), str(self.ordner), "ffpfsc"))
+        self.assertEqual(1, len(self.gefragt))
+        self.assertEqual(b"frueheres Ergebnis", (self.ordner / "Astro.Bot.PS5.ffpfsc").read_bytes())
+
+    def test_gegenprobe_die_gekuerzte_datei_loest_nichts_aus(self):
+        """Nur die Datei mit dem ganzen Ordnernamen zaehlt - "Astro.Bot.ffpfsc" ist ein anderes Ergebnis."""
+        quelle = self.ordner / "quellen" / "Astro.Bot.PS5"
+        (quelle / "sce_sys").mkdir(parents=True)
+        (self.ordner / "Astro.Bot.ffpfsc").write_bytes(b"anderes Spiel")
+        gui = self._gui(antwort=False)
+        gui._batch_erzeugte_ziele = set()
+        self.assertTrue(gui._batch_ueberschreiben_klaeren(str(quelle), str(self.ordner), "ffpfsc"))
+        self.assertEqual([], self.gefragt)
+
+    def test_dateiquelle_verliert_nur_die_endung(self):
+        gui = self._gui()
+        self.assertEqual("Spiel_B", gui._batch_zielname(str(self.src_datei), "ffpfsc"))
+        self.assertEqual("Spiel_A", gui._batch_zielname(str(self.src_ordner), "ffpfsc"))
 
     def test_i18n_schluessel_vorhanden(self):
         from ps5_validator.utils import i18n

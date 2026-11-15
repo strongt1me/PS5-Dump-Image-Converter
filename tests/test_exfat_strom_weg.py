@@ -530,7 +530,7 @@ class OrdnerStromTests(_Grundlage):
         g._umhuellt_neu_packen = False
         temp, ziel, dump = g._platzbedarf_je_quelle(self.spiel, "exfat")
         self.assertLess(temp, 10 * 1024 ** 3, "Eine Arbeitskopie des Spiels darf nicht mehr eingerechnet werden")
-        self.assertEqual(0, dump)
+        self.assertLess(dump, 10 * 1024 ** 3)  # nur der Ueberlagerungsordner, gezaehlt wie der Dump-Ordner (S-C)
         g._strom_fuer_ordner_gewaehlt = lambda: False
         self.assertGreater(g._platzbedarf_je_quelle(self.spiel, "exfat")[0], 150 * 1024 ** 3)
 
@@ -692,6 +692,15 @@ class PfsStromTests(_Grundlage):
         ergebnis, aufrufe = self._aufgabe2(checkpoint={"tmp_dir": zwischenstand, "stage": "task2_step1_done"})
         self.assertEqual([], aufrufe, "Mit vorhandenem Zwischenstand soll der alte Weg fortsetzen, nicht der Strom neu anfangen")
 
+    def test_die_fortsetzung_nimmt_den_selbsttaetigen_verzicht_zurueck(self) -> None:
+        """Gesamtpruefung 14.11.2026, R2-A4: Am Strom vorbei gilt das selbsttaetige "Originale weglassen" (NG + LZ4) nicht."""
+        zwischenstand = os.path.join(self.tmp, "alter_zwischenstand2")
+        os.makedirs(zwischenstand)
+        gerufen: list = []
+        with mock.patch.object(GUI, "_ampr_weglassen_nach_rueckfall", lambda self: gerufen.append(1), create=True):
+            self._aufgabe2(checkpoint={"tmp_dir": zwischenstand, "stage": "task2_step1_done"})
+        self.assertEqual([1], gerufen)
+
     def test_platzbedarf_ffpfsc_ohne_entpacktes_spiel(self) -> None:
         g = GUI.__new__(GUI)
         g._strom_weg_gewaehlt = lambda: True
@@ -701,7 +710,7 @@ class PfsStromTests(_Grundlage):
         g._umhuellt_neu_packen = False
         temp, ziel, dump = g._platzbedarf_je_quelle("spiel.ffpfsc", "exfat")
         self.assertLess(temp, 10 * 1024 ** 3, "Das entpackte Spiel darf nicht mehr im Arbeitsordner eingerechnet werden")
-        self.assertEqual(0, dump)
+        self.assertLess(dump, 10 * 1024 ** 3)  # nur der Ueberlagerungsordner, gezaehlt wie der Dump-Ordner (S-C)
         self.assertEqual(int(150 * 1024 ** 3 // 2 * g._PLATZFAKTOR_ZIEL["exfat"]), ziel)
         g._strom_weg_gewaehlt = lambda: False
         self.assertGreaterEqual(g._platzbedarf_je_quelle("spiel.ffpfsc", "exfat")[0], 150 * 1024 ** 3)
@@ -1038,7 +1047,7 @@ class FfpfscAusgabeTests(_Grundlage):
         g._umhuellt_neu_packen = False
         temp, ziel, dump = g._platzbedarf_je_quelle(self.spiel, "ffpfsc")
         self.assertLess(temp, 10 * 1024 ** 3)
-        self.assertEqual(0, dump)
+        self.assertLess(dump, 10 * 1024 ** 3)  # nur der Ueberlagerungsordner, gezaehlt wie der Dump-Ordner (S-C)
         self.assertEqual(int(150 * 1024 ** 3 * g._PLATZFAKTOR_ZIEL["ffpfsc"]), ziel)
         temp, _ziel, _dump = g._platzbedarf_je_quelle("spiel.exfat", "ffpfsc")
         self.assertLess(temp, 10 * 1024 ** 3)
@@ -1053,7 +1062,7 @@ class FfpfscAusgabeTests(_Grundlage):
         for quelle in (self.spiel, "spiel.exfat"):
             temp, ziel, dump = g._platzbedarf_je_quelle(quelle, "ffpkg")
             self.assertLess(temp, 10 * 1024 ** 3, quelle)
-            self.assertEqual(0, dump)
+            self.assertLess(dump, 10 * 1024 ** 3)  # nur der Ueberlagerungsordner, gezaehlt wie der Dump-Ordner (S-C)
             self.assertEqual(int(150 * 1024 ** 3 * g._PLATZFAKTOR_ZIEL["ffpkg"]), ziel)
         g._strom_erlaubt = lambda *, einbau_noetig: False                    # ohne Strom wieder der Zwischenordner
         self.assertGreater(g._platzbedarf_je_quelle("spiel.exfat", "ffpkg")[0], 10 * 1024 ** 3)
@@ -1069,7 +1078,7 @@ class FfpfscAusgabeTests(_Grundlage):
         for quelle in (self.spiel, "spiel.exfat"):
             temp, ziel, dump = g._platzbedarf_je_quelle(quelle, "ffpfs")
             self.assertLess(temp, 10 * 1024 ** 3, quelle)
-            self.assertEqual(0, dump)
+            self.assertLess(dump, 10 * 1024 ** 3)  # nur der Ueberlagerungsordner, gezaehlt wie der Dump-Ordner (S-C)
             self.assertEqual(int(150 * 1024 ** 3 * g._PLATZFAKTOR_ZIEL["ffpfs"]), ziel)
         g._strom_weg_gewaehlt = lambda: False                                # ohne Strom wieder der Zwischenordner
         g._strom_fuer_ordner_gewaehlt = lambda: False
@@ -2123,7 +2132,7 @@ class Ufs2StromTests(_Grundlage):
         g._umhuellt_neu_packen = False
         temp, _ziel, dump = g._platzbedarf_je_quelle("spiel.ffpkg", "exfat")
         self.assertLess(temp, 10 * 1024 ** 3, "Im Arbeitsordner liegt nicht mehr das entpackte Spiel")
-        self.assertEqual(0, dump)
+        self.assertLess(dump, 10 * 1024 ** 3)  # nur der Ueberlagerungsordner, gezaehlt wie der Dump-Ordner (S-C)
         g._strom_weg_gewaehlt = lambda: False
         self.assertGreaterEqual(g._platzbedarf_je_quelle("spiel.ffpkg", "exfat")[0], 100 * 1024 ** 3)
 
@@ -2238,17 +2247,33 @@ class WegwahlTests(unittest.TestCase):
         g._integration_gewuenscht = lambda: True
         g._umhuellt_neu_packen = False
         temp, ziel, dump = g._platzbedarf_je_quelle("spiel.exfat", "exfat")
-        self.assertEqual(0, dump)
+        self.assertLess(dump, 10 * 1024 ** 3)  # nur der Ueberlagerungsordner, gezaehlt wie der Dump-Ordner (S-C)
         self.assertLess(temp, 10 * 1024 ** 3, "Temp-Platz darf nicht mit dem Spiel wachsen")
         self.assertEqual(int(150 * 1024 ** 3 * g._PLATZFAKTOR_ZIEL["exfat"]), ziel)
         # kleine Quelle: nie mehr als die Quelle selbst
         g._quellgroesse_ermitteln = lambda src: 500 * 1024 ** 2
-        self.assertEqual(500 * 1024 ** 2, g._platzbedarf_je_quelle("spiel.exfat", "exfat")[0])
+        self.assertEqual(500 * 1024 ** 2, g._platzbedarf_je_quelle("spiel.exfat", "exfat")[2])
         # Weg ueber den Ordner (Strom aus): der Arbeitsordner braucht wieder das ganze Spiel
         g._quellgroesse_ermitteln = lambda src: 150 * 1024 ** 3
         g._ampr_pack_verfahren = lambda: "lz4"
         g._strom_weg_gewaehlt = lambda: False
         self.assertGreater(g._platzbedarf_je_quelle("spiel.exfat", "exfat")[0], 150 * 1024 ** 3)
+
+    def test_der_ueberlagerungsordner_zaehlt_dort_wo_er_entsteht(self) -> None:
+        """Gesamtpruefung 14.11.2026, S-C: Er entsteht wie der Dump-Ordner (``_dump_ordner_basis``) - in der Vorgabe im Ziel."""
+        g = self._probe()
+        g._quellgroesse_ermitteln = lambda src: 150 * 1024 ** 3
+        g._estimate_unpack_space_requirement = lambda src: None
+        g._integration_gewuenscht = lambda: True
+        g._umhuellt_neu_packen = False
+        _t, ziel_allein, ueberlagerung = g._platzbedarf_je_quelle("spiel.exfat", "exfat")
+        self.assertGreater(ueberlagerung, 0)
+        g._dump_im_arbeitsordner = lambda: False
+        self.assertEqual((0, ziel_allein + ueberlagerung), g._platzbedarf_schaetzen("pack_file", "spiel.exfat", "exfat"))
+        self.assertIsNotNone(g._dump_ordner_basis("D:/Ziel"), "Vorbedingung: der Ordner entsteht im Ziel")
+        g._dump_im_arbeitsordner = lambda: True
+        self.assertEqual((ueberlagerung, ziel_allein), g._platzbedarf_schaetzen("pack_file", "spiel.exfat", "exfat"))
+        self.assertIsNone(g._dump_ordner_basis("D:/Ziel"))
 
     def test_umpacken_ruft_den_strom_zuerst(self) -> None:
         g = GUI.__new__(GUI)

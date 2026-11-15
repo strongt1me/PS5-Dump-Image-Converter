@@ -252,6 +252,11 @@ class TempResteNachAufgabeTests(unittest.TestCase):
         self.assertLess(aufraeumen, herunterfahren,
                         "Das Herunterfahren darf nicht vor dem Aufraeumen "
                         "eingeplant werden.")
+        # Gesamtpruefung 14.11.2026, R2-A2: Die Quelle des Laufs schuetzt _temp_in_gebrauch nur, solange _lauf_quelle noch steht.
+        leeren = [k.lineno for anweisung in finalbody for k in ast.walk(anweisung)
+                  if isinstance(k, ast.Assign) and any(isinstance(z, ast.Attribute) and z.attr == "_lauf_quelle" for z in k.targets)]
+        self.assertTrue(leeren)
+        self.assertLess(aufraeumen, min(leeren), "Erst aufraeumen, dann _lauf_quelle leeren.")
 
 
 class FfpkgVerschiebenTests(unittest.TestCase):

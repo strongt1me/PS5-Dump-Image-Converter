@@ -556,12 +556,18 @@ class BearbeitenFenster:
             return
         self._direkt_schliessen()
         self._arbeitsordner_leeren()
-        rueckgaengig = os.path.exists(abbild_direkt.journal_pfad(bild))
         try:
+            # Ein liegengebliebenes Journal zuerst - mit Ergebnis: zurueckgespielt, oder (E3) es gehoert zu einem anderen Abbild gleichen
+            # Namens und liegt jetzt beiseite. Dann sagt das Fenster es, statt "rueckgaengig gemacht" (R2-J3).
+            ergebnis, beiseite = abbild_direkt.zurueckspielen(bild)
             self.direkt = abbild_direkt.oeffnen(bild)
         except (abbild_direkt.DirektFehler, OSError) as exc:
             messagebox.showerror(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_fehler", fehler=exc), parent=self.win)
             return
+        rueckgaengig = ergebnis == abbild_direkt.ZURUECKGESPIELT
+        if ergebnis == abbild_direkt.FREMD:
+            messagebox.showwarning(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_journal_fremd", pfad=beiseite),
+                                   parent=self.win)
         self.bild = os.path.normpath(bild)
         self.protokoll = ab.Protokoll()
         self.gespeichert_bei = 0
