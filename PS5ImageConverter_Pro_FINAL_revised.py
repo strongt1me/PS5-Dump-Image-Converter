@@ -157,6 +157,7 @@ from ps5_validator.ui import geraete_fenster
 from ps5_validator.ui import updates_fenster
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
+from ps5_validator.ui.schmale_zeile import hinweise_bei_platzmangel_ausblenden, knoepfe_unter_liste, zeile_umbrechen
 from ps5_validator.ui.zeilenhoehe import treeview_zeilenhoehe
 from ps5_validator.utils import einstellungen
 from ps5_validator.utils import anzeige_skalierung
@@ -3200,6 +3201,10 @@ class RoundedButton(tk.Canvas):
         self._polster_x = knopfmass(polster_x, master)
         if self._breite_nach_text:
             self._breite_anpassen()
+        # Feste Breite des Aufrufers: bleibt sein Mass, waechst aber, wenn die Beschriftung nicht hineinpasst (am
+        # 15.11.2026 in der franzoesischen Oberflaeche gemessen: "Choisir les sources" 159 px in einem 150-px-Knopf).
+        self._feste_breite = 0 if self._breite_nach_text else int(float(kwargs.get("width") or 0))
+        self._breite_sichern()
         self.configure(cursor="hand2")
         self.bind("<Configure>", lambda _e: self._redraw())
         self.bind("<Button-1>", self._on_click)
@@ -3494,6 +3499,26 @@ class RoundedButton(tk.Canvas):
         except tk.TclError as exc:
             logger.debug("Knopfbreite nicht setzbar: %s", exc)
 
+    #: Luft je Seite, die eine Beschriftung in einem Knopf mit fester Breite mindestens behaelt. Bewusst klein: An allen
+    #: Seiten der deutschen, englischen und italienischen Oberflaeche (125 % und 200 %) bleibt dadurch **kein** Knopf
+    #: hinter seiner festen Breite zurueck - es aendert sich nur, was vorher beschnitten oder auf den Rand gedrueckt war.
+    _TEXT_RAND_MIN = 6
+
+    def _breite_sichern(self) -> None:
+        """Haelt einen Knopf mit fester Breite breit genug fuer seine Beschriftung (nur Aufrufer mit ``width``).
+
+        Die feste Breite ist an deutschen Texten gemessen. In anderen Sprachen sind Beschriftungen laenger
+        (franzoesisch "Choisir les sources" 159 px in 150 px) - der Text wurde an beiden Enden abgeschnitten. Mit
+        dem Sprachwechsel wird die Breite wieder auf das Mass des Aufrufers zurueckgenommen, wenn der Text kuerzer ist.
+        """
+        if not getattr(self, "_feste_breite", 0) or not self._text:
+            return
+        try:
+            noetig = self._textbreite() + 2 * knopfmass(self._TEXT_RAND_MIN, self)
+            tk.Canvas.configure(self, width=max(self._feste_breite, noetig))
+        except tk.TclError as exc:
+            logger.debug("Knopfbreite nicht sicherbar: %s", exc)
+
     def _zeichen_stand(self, w: int, h: int) -> tuple:
         """Alles, wovon das Bild einer Pille abhaengt - gleicher Stand, gleiches Bild.
 
@@ -3612,6 +3637,13 @@ class RoundedButton(tk.Canvas):
             redraw_needed = True
         if kwargs:
             super().configure(**kwargs)
+        if getattr(self, "_feste_breite", 0) and ("width" in kwargs or breite_neu):
+            if "width" in kwargs:
+                try:
+                    self._feste_breite = int(float(kwargs["width"]))
+                except (TypeError, ValueError):
+                    pass
+            self._breite_sichern()
         if zustand_neu and callable(getattr(self, "_bei_zustand", None)):
             try:
                 self._bei_zustand()
@@ -13980,6 +14012,11 @@ class PS5ConverterGUI:
         def _beschriftung(eltern, schluessel: str, breite: int = 0) -> "tk.Label":
             etikett = tk.Label(eltern, text=self._t(schluessel), anchor="w", font=(UI_SCHRIFT, pt(9)),
                                bg=karte_bg, fg=c["fg_secondary"], **({"width": breite} if breite else {}))
+            if not breite:
+                # Eine Schritt-Ueberschrift ueber die ganze Karte bricht um, statt abgeschnitten zu werden (gemessen bei
+                # 200 %: Text 641 px, Karte 486 px).
+                etikett.configure(justify="left")
+                etikett.bind("<Configure>", lambda e: etikett.configure(wraplength=max(100, e.width - 8)))
             self._register_translatable(etikett, schluessel)
             return etikett
 
@@ -14104,6 +14141,7 @@ class PS5ConverterGUI:
         herunterladen_knopf = self._seitenpille(zeile_rel, "y2jbupdater.btn_download", _herunterladen, klein=True)
         herunterladen_knopf.configure(state="disabled")
         herunterladen_knopf.grid(row=0, column=2)
+        zeile_umbrechen(zeile_rel, release_box, (release_laden_knopf, herunterladen_knopf))
 
         _beschriftung(karte_datei, "y2jbupdater.step_ziel").pack(fill="x", pady=(12, 3))
         zeile_ziel = tk.Frame(karte_datei, bg=karte_bg)
@@ -14114,7 +14152,7 @@ class PS5ConverterGUI:
                                 font=(UI_SCHRIFT, pt(10)), width=14)
         ziel_box.pack(side="left", ipady=_COMBO_IPADY)
         _pille(ziel_box, True)
-        self._konsole_hinweiszeile(karte_datei, "y2jbupdater.hint_target", bg=karte_bg)
+        hinweis_ziel = self._konsole_hinweiszeile(karte_datei, "y2jbupdater.hint_target", bg=karte_bg)
 
         upload_fortschritt_var = tk.DoubleVar(value=0.0)
         upload_balken = self._pw.Progressbar(karte_datei, variable=upload_fortschritt_var,
@@ -14182,8 +14220,13 @@ class PS5ConverterGUI:
             threading.Thread(target=_lauf, daemon=True, name="y2jb-upload").start()
 
         upload_knopf = self._seitenpille(fuss_datei, "y2jbupdater.btn_upload", _hochladen, klein=True, akzent=True)
-        upload_knopf.pack(side="right")
-        _statuszeile(fuss_datei, status_var).pack(side="left", fill="x", expand=True, padx=(0, 10))
+        # Statuszeile links, Knopf rechts - ist die Karte zu schmal, steht der Knopf unter dem Text (sonst blieb dem Text
+        # im kleinsten Fenster ein Streifen von 75 px und er wurde abgeschnitten).
+        fuss_datei.columnconfigure(0, weight=1)
+        status_datei = _statuszeile(fuss_datei, status_var)
+        status_datei.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        upload_knopf.grid(row=0, column=1)
+        zeile_umbrechen(fuss_datei, status_datei, (upload_knopf,), abstand=10, mindestbreite=170, rechts=True)
 
         # ---- Karte rechts: Autoloader aktualisieren (y2jb_update.zip, auf einen USB-Stick) ----
         karte_update = self._pw.Karte(spalten, bg=karte_bg, padx=14, pady=12)
@@ -14280,6 +14323,7 @@ class PS5ConverterGUI:
                                                        _update_herunterladen, klein=True)
         update_herunterladen_knopf.configure(state="disabled")
         update_herunterladen_knopf.grid(row=0, column=2)
+        zeile_umbrechen(zeile_update_rel, update_box, (update_laden_knopf, update_herunterladen_knopf))
 
         _beschriftung(karte_update, "y2jbupdater.step_ziel").pack(fill="x", pady=(12, 3))
         zeile_usb = tk.Frame(karte_update, bg=karte_bg)
@@ -14290,7 +14334,7 @@ class PS5ConverterGUI:
                                state="readonly", font=(UI_SCHRIFT, pt(10)), width=14)
         usb_box.pack(side="left", ipady=_COMBO_IPADY)
         _pille(usb_box, True)
-        self._konsole_hinweiszeile(karte_update, "y2jbupdater.hint_autoloader", bg=karte_bg)
+        hinweis_usb = self._konsole_hinweiszeile(karte_update, "y2jbupdater.hint_autoloader", bg=karte_bg)
 
         update_ul_balken = self._pw.Progressbar(karte_update, mode="determinate", maximum=100.0)
 
@@ -14356,8 +14400,11 @@ class PS5ConverterGUI:
 
         update_upload_knopf = self._seitenpille(fuss_update, "y2jbupdater.btn_upload_autoloader", _update_hochladen,
                                                 klein=True, akzent=True)
-        update_upload_knopf.pack(side="right")
-        _statuszeile(fuss_update, update_status_var).pack(side="left", fill="x", expand=True, padx=(0, 10))
+        fuss_update.columnconfigure(0, weight=1)
+        status_update = _statuszeile(fuss_update, update_status_var)
+        status_update.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        update_upload_knopf.grid(row=0, column=1)
+        zeile_umbrechen(fuss_update, status_update, (update_upload_knopf,), abstand=10, mindestbreite=170, rechts=True)
 
         # ---- "Fassungen laden": jede Karte hat ihren eigenen Knopf ---------------
         # Seit dem 12.11.2026 (Nutzerwunsch) je Karte statt einmal in der Leiste: Dort fiel er nicht auf. Beide
@@ -14429,6 +14476,10 @@ class PS5ConverterGUI:
             update_herunterladen_knopf.configure(state="disabled")
             update_status_var.set(self._t("y2jbupdater.status_releases_loading"))
             _fassungen_abfragen(_update_geladen)
+
+        # Reicht die Hoehe nicht (kleinstes Fenster, hohe Skalierung), gehen zuerst die erklaerenden Hinweise in den
+        # Karten - nicht die Knoepfe unten: Die Seite hat keinen Rollbalken.
+        hinweise_bei_platzmangel_ausblenden(seite, ((hinweis_ziel, zeile_ziel), (hinweis_usb, zeile_usb)))
 
     # --- Die Seite "WebKit Autoloader" (Knopf 2 der Ansicht KONSOLE) ---------------
     #
@@ -51803,6 +51854,8 @@ class PS5ConverterGUI:
         # Gepackte - das soll die Liste sein, nicht "Neu scannen" (unter 1366 px
         # Fensterbreite war der Knopf 44 px zu schmal, 04.10.2026 gemessen).
         folders_btns.pack(side="right", padx=(8, 0), before=ordner_karte)
+        # Reicht die Breite nicht (kleinstes Fenster: der Liste blieben 6 px), stehen die Knoepfe unter der Liste.
+        knoepfe_unter_liste(folders_row, folders_btns, ordner_karte, ordner_titel, mindestbreite=z.px(160))
         _rollbalken_nachfuehren()
 
         # --- unten zuerst: Statuszeile, dann die Knopfreihen --------------

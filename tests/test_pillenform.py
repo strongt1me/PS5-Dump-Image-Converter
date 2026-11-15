@@ -85,9 +85,14 @@ class BausteinTests(unittest.TestCase):
         self.assertGreater(knopf.winfo_reqwidth(), vorher, "Sprachwechsel zieht die Breite nach.")
 
     def test_ohne_breite_nach_text_bleibt_die_breite_stehen(self) -> None:
+        """Eine feste Breite folgt dem Text nicht - solange er hineinpasst.
+
+        Seit 15.11.2026 waechst sie, wenn die Beschriftung samt Luft sonst abgeschnitten wuerde (franzoesisch
+        "Choisir les sources" 159 px in 150 px); das sichert ``test_knopf_feste_breite``.
+        """
         knopf = APP.RoundedButton(self.rahmen, text="Kurz", width=150)
         vorher = knopf.winfo_reqwidth()
-        knopf.configure(text="Eine deutlich laengere Beschriftung")
+        knopf.configure(text="Etwas laenger")
         self.assertEqual(vorher, knopf.winfo_reqwidth())
 
     def test_pillenfelder_zweier_programmobjekte_auf_einer_wurzel(self) -> None:
