@@ -66,6 +66,8 @@ from __future__ import annotations
 import posixpath
 from typing import Any, Iterable
 
+from ps5_validator.utils.shadowmount_config import werte_gleich
+
 #: Die beiden Generationen.
 ALT = "alt"
 NEU = "neu"
@@ -651,6 +653,47 @@ def config_schluessel_fuer(generation: str, ort: str) -> tuple[str, ...]:
             return ()
         return ("update_emulators", "emulators_path")
     return ("backport_fakelib",)
+
+
+#: Was ShadowMount+ **ohne Eintrag** tut (``config.ini.example`` 1.7beta12: ``update_enabled = on``, ``auto_update_ampr = off``).
+NG_VORGABE = {"update_emulators": "1", "auto_update_ampr": "0"}
+
+
+def ng_config_soll(ort: str) -> dict[str, str]:
+    """Wie ``update_emulators`` und ``auto_update_ampr`` stehen muessen, damit ShadowMount+ ``ampr-emu-ng`` nicht ueberschreibt.
+
+    Nutzerwunsch 16.11.2026 (``config.ini.example``, README und ``src/sm_ampr_updater.c`` der Fassung 1.7beta12 gelesen: der
+    Updater legt die geladene Datei als ``libSceAmpr.sprx`` im ``emulators_path`` ab):
+
+    * ``update_emulators=1`` - die **Vorgabe** - ersetzt beim Spielstart die gleichnamige Datei im fakelib durch die aus dem
+      Emulator-Ordner, also auch eine NG-Datei. Deshalb ``0``. Liegt die NG-Datei selbst im Emulator-Ordner (``ORT_EMUS``),
+      ist ``1`` dagegen der Weg, auf dem sie ins Spiel kommt.
+    * ``auto_update_ampr=1`` holt nach dem Start und danach alle vier Stunden drakmors ``libSceAmpr.sprx`` von GitHub und legt
+      sie in den Emulator-Ordner - dort ueberschriebe sie die NG-Datei. Immer ``0``.
+
+    Args:
+        ort: Wohin die NG-Datei abgelegt wird (``ORT_*``).
+    """
+    return {"update_emulators": "1" if ort == ORT_EMUS else "0", "auto_update_ampr": "0"}
+
+
+def ng_abweichungen(werte: "dict[str, Any]", ort: str) -> list[tuple[str, str, str]]:
+    """Was in der config.ini fuer ``ampr-emu-ng`` umzustellen ist: ``(Schluessel, ist, soll)``.
+
+    Anders als bei den uebrigen Schluesseln der Einrichtung zaehlt hier auch ein **fehlender** (oder leerer) Eintrag: Er laeuft
+    auf der eingebauten Vorgabe, und die ist bei ``update_emulators`` genau die falsche. ``ist`` lautet dann ``1 (Vorgabe)``.
+
+    Args:
+        werte: Die Schluessel der config.ini in den Namen bis 1.7beta11 (bei Format 2 die Ansicht, siehe ``shadowmount_config``).
+        ort: Wohin die NG-Datei abgelegt wird (``ORT_*``).
+    """
+    ergebnis: list[tuple[str, str, str]] = []
+    for schluessel, soll in ng_config_soll(ort).items():
+        roh = str(werte.get(schluessel, "") or "").strip()
+        ist = roh or NG_VORGABE[schluessel]
+        if not werte_gleich(ist, soll):
+            ergebnis.append((schluessel, ist if roh else "%s (Vorgabe)" % ist, soll))
+    return ergebnis
 
 
 def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None = None,

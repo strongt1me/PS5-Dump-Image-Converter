@@ -60184,6 +60184,51 @@ class PS5ConverterGUI:
                 abweichungen.append((schluessel, str(ist).strip(), soll))
         return abweichungen
 
+    def _ampr_gen_auto_update(self, generation: str, ort: str, text: str, gewaehlt_libs: list,
+                              abweichungen: list[tuple[str, str, str]], melde) -> list[tuple[str, str, str]]:
+        """Zeigt, ob ShadowMount+ die AMPR-Datei von selbst ersetzt - und stellt das fuer ``ampr-emu-ng`` ab.
+
+        Nutzerwunsch 16.11.2026. ShadowMount+ kann die ``libSceAmpr.sprx`` im fakelib auf zwei Wegen ueberschreiben:
+        ``update_emulators`` (Vorgabe **an**) ersetzt sie beim Spielstart durch die aus dem Emulator-Ordner, und
+        ``auto_update_ampr`` (Vorgabe aus) holt alle vier Stunden drakmors Fassung von GitHub. Beides stand bisher nirgends
+        im Protokoll, und fuer NG verlangte die Einrichtung sogar ``update_emulators=1`` zurueck (das Soll der Generation), wer
+        den Schalter nach dem NG-Hinweis abgestellt hatte. Hier: Beide Schalter erscheinen mit ihrem Stand im Protokoll; ist
+        eine NG-Datei gewaehlt, ersetzen die NG-Sollwerte (``ng_abweichungen``) die der Generation - ein fehlender Eintrag zaehlt
+        mit seiner Vorgabe, und der Anwender entscheidet wie bei jeder Abweichung mit Ja/Nein.
+
+        Args:
+            generation: ``sm_gen.ALT`` oder ``sm_gen.NEU`` (die alte Fassung kennt beide Schluessel nicht).
+            ort: Wohin die Dateien abgelegt werden (``sm_gen.ORT_*``).
+            text: Die config.ini der Konsole (bei Format 2 die Ansicht in den alten Schluesseln).
+            gewaehlt_libs: Die gewaehlten Bibliotheken (Eintraege mit ``path``).
+            abweichungen: Das Ergebnis von :meth:`_ampr_gen_config_pruefen`.
+            melde: Schreibt eine Zeile in das Fenster.
+
+        Returns:
+            Die Abweichungen, die gefragt werden sollen.
+        """
+        if generation != sm_gen.NEU:
+            return abweichungen
+        werte = parse_flat_ini(text) if text else {}
+        for schluessel, zeile in (("update_emulators", "amprgen.auto_update_emulators"),
+                                  ("auto_update_ampr", "amprgen.auto_update_ampr")):
+            roh = str(werte.get(schluessel, "") or "").strip()
+            an = sm_cfg.werte_gleich(roh or sm_gen.NG_VORGABE[schluessel], "1")
+            zustand = self._t("amprgen.zustand_an" if an else "amprgen.zustand_aus")
+            if not roh:
+                zustand = self._t("amprgen.zustand_vorgabe", zustand=zustand)
+            melde(self._t(zeile, zustand=zustand))
+        ng = any(os.path.basename(str(e["path"])) == self._AMPR_SPRX_NAME and self._ampr_ist_ng_datei(str(e["path"]))
+                 for e in gewaehlt_libs)
+        if not ng:
+            return abweichungen
+        ng_abw = sm_gen.ng_abweichungen(werte, ort)
+        if ng_abw:
+            melde("!! " + self._t("amprgen.auto_ng_grund"))
+        # Die beiden Schluessel entscheidet fuer NG diese Rechnung, nicht das Soll der Generation (sonst kaeme "update_emulators=0 -> 1").
+        uebrige = [a for a in abweichungen if a[0] not in sm_gen.NG_VORGABE]
+        return uebrige + ng_abw
+
     def _ampr_gen_config_vorgaben(self, generation: str, text: str) -> list[str]:
         """Welche Schluessel laufen auf der eingebauten Vorgabe?
 
@@ -60492,6 +60537,7 @@ class PS5ConverterGUI:
                 melde(self._t("amprgen.step_config"))
                 text = config_text
                 abweichungen = self._ampr_gen_config_pruefen(generation, text)
+                abweichungen = self._ampr_gen_auto_update(generation, ort, text, gewaehlt_libs, abweichungen, melde)
                 # Ein gewaehlter Weg braucht seinen Schalter. Der steht
                 # normalerweise auf der eingebauten Vorgabe und taucht
                 # deshalb nicht unter den Abweichungen auf - abgeschaltet
