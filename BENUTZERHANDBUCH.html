@@ -1816,6 +1816,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   dem Dump-Ordner und gilt damit f&uuml;r alle Zielformate; er kommt vor dem AMPR EMU,
   damit dessen Index die neuen Dateien kennt.</p>
 
+  <p><strong>AMPR EMU</strong> fragt das Programm auf dieselbe Weise: Lädt die <code>eboot.bin</code> eines Spiels <code>libSceAmpr</code>, und liegt im Spiel weder ein AMPR EMU noch eine Laufzeit, fragt es vor der Arbeit, ob AMPR EMU eingeschaltet werden soll. Vorbelegt ist <em>Ja</em>. Das Programm liest das mit Dump Forge (<code>inspect</code>), bei einem Dump-Ordner und bei allen vier Abbildformaten, auch bei <code>.ffpkg</code>. Bei der Sammelkonvertierung und auf der Befehlszeile steht nur eine Protokollzeile. Beim Bau eines Pakets im Bereich PKG / FPKG ergänzt Dump Forge den AMPR EMU selbst.</p>
+
+  <p><strong>AMPR EMU NG mit Asset-Packs:</strong> Liegt eine NG-Fassung im Versionsspeicher und ist das Packwerkzeug einsatzbereit, fragt das Programm nicht nur mit Ja und Nein, sondern bietet eine Auswahl: <em>AMPR EMU (normal)</em>, <em>AMPR EMU NG mit Asset-Packs (zstd)</em>, <em>AMPR EMU NG mit Asset-Packs (LZ4)</em> oder weiter ohne. Methode und Packverfahren bleiben danach in den Einstellungen so gesetzt. Ist ein Spiel schon mit zstd-Packs gepackt und AMPR EMU mit einer Fassung angehakt, die keine NG ist, fragt das Programm vorab, ob auf NG umgestellt werden soll &ndash; zstd-Packs liest nur AMPR EMU NG.</p>
+
+  <p><strong>DLC EMU und PlayGo bei einem <code>.ffpkg</code>:</strong> In ein <code>.ffpkg</code> kann das Programm selbst nicht hineinsehen; die Fragen nach DLC EMU und PlayGo kommen trotzdem vor dem Lauf, weil Dump Forge dafür die Dateiliste und die Liste der Zusatzinhalte liest.</p>
+
+  <p><strong>Sammelkonvertierung:</strong> Das Programm prüft vor dem ersten Byte Arbeit jede Quelle mit Dump Forge und fragt <em>einmal gesammelt</em>, für welche Spiele AMPR EMU, DLC EMU und PlayGo eingeschaltet werden sollen. Ein Ja gilt nur für genau diese Spiele, die Kästchen im Fenster bleiben, wie sie sind. Archive und Quellen, die Dump Forge nicht liest, bleiben unbeachtet; auf der Befehlszeile steht je Spiel nur eine Protokollzeile.</p>
+
+  <p><strong>Paket bauen (PKG / FPKG):</strong> Fehlen der Quelle DLC EMU oder PlayGo, obwohl das Spiel sie braucht, fragt das Programm vor dem Bau, ob trotzdem ein Paket entstehen soll: Dump Forge übernimmt den Ordner <code>fakelib</code> der Quelle unverändert. Bauen Sie in diesem Fall erst in den Aufgaben 1 bis 6 mit angehaktem DLC EMU oder PlayGo ein Abbild und daraus das Paket. AMPR EMU legt Dump Forge für ein Spiel, das <code>libSceAmpr</code> lädt, selbst dazu.</p>
+
   <h3>11.4 Ein fertiges Asset-Pack pr&uuml;fen und entpacken</h3>
   <p>Seit v1.9.80 gibt es dazu ein eigenes Fenster: <strong>WEITERE TOOLS
   &rarr; ASSET-PACK PR&Uuml;FEN / ENTPACKEN</strong>. Es ist das Gegenst&uuml;ck
@@ -2274,11 +2284,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Zielordner zurück.</li>
   </ul>
   <div class="kasten warnung">
-    <span class="titel">Ob das Paket an Ihrer Konsole startet, ist hier nicht geprüft</span>
+    <span class="titel">Was die Konsole für den Start des Pakets braucht</span>
     <p>Das Werkzeug nennt als belegten Stand: Pakete dieser Art starten bis Firmware 11.60 mit kstuff-lite 1.13
     oder neuer. Auf neueren Firmwares (zum Beispiel 12.00) installiert sich ein solches Paket, startet aber nicht –
-    die Sperre liegt an der Konsole, nicht am Paket. Dieses Programm hat nur den Bau und die Prüfliste
-    gemessen; der Start an einer Konsole bleibt Ihr Versuch.</p>
+    die Sperre liegt an der Konsole, nicht am Paket. Ein mit diesem Programm gebautes Paket wurde an einer Konsole gestartet und läuft (vom Entwickler getestet); welche Firmware dabei lief, ist hier nicht festgehalten.</p>
   </div>
 
   <h4 id="k7forge">Ein Paket mit Dump Forge bauen</h4>
@@ -2307,11 +2316,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     63 Bytes (der Titel wird gekürzt, die Kennung bleibt). Der Platz im Zielordner wird vorher geprüft.</li>
     <li><strong>Plattformen:</strong> Die Befehlszeile liegt für Windows (x64), Linux (x64) und macOS bei. Fehlt sie auf Ihrer Plattform,
     baut das Programm Spielordner weiter über LibProsperoPkg; ein Abbild nimmt es dann nicht an und sagt es.</li>
-    <li><strong>Prüfen danach:</strong> Die Aktion <em>Prüfen</em> (die Prüfliste von LibProsperoPkg) meldet bei einem Paket von Dump Forge einen Befund zur RSA-Umhüllung (<code>cnt.wrap</code>): Gemessen an dem Paket aus dem Beispiel unten bestand es 33 Prüfungen und scheiterte an dieser einen, während ein mit LibProsperoPkg aus derselben Quelle gebautes 42 von 42 bestand. Ob das für den Start an der Konsole etwas bedeutet, ist nicht geprüft; Dump Forge prüft sein Paket nach seinen eigenen Regeln und besteht sie.</li>
+    <li><strong>Prüfen danach:</strong> Die Aktion <em>Prüfen</em> (die Prüfliste von LibProsperoPkg) meldet bei einem Paket von Dump Forge einen Befund zur RSA-Umhüllung (<code>cnt.wrap</code>): Gemessen an dem Paket aus dem Beispiel unten bestand es 33 Prüfungen und scheiterte an dieser einen, während ein mit LibProsperoPkg aus derselben Quelle gebautes 42 von 42 bestand. Ein Paket mit diesem Befund wurde an der Konsole gestartet und läuft; Dump Forge prüft sein Paket nach seinen eigenen Regeln und besteht sie.</li>
     <li><strong>Gemessen</strong> (16.11.2026, Befehlszeile v0.5.6 unter Windows): Ein Spielordner mit 72 Dateien (262&nbsp;MB) wurde in
     6,3&nbsp;s zu einem Paket von 164&nbsp;MB; aus einem kleinen selbst gebauten Spiel entstanden alle vier Abbildformate und aus jedem ein
-    Paket. Ob die Konsole ein solches Paket startet, ist nicht geprüft – Dump Forge nennt für die Installation an der Konsole kstuff,
-    fpkg-enable und ppr-patch.</li>
+    Paket. Ein so gebautes Paket wurde an einer Konsole gestartet und läuft; für die Installation an der Konsole nennt Dump Forge kstuff, fpkg-enable und ppr-patch.</li>
   </ul>
 
   <h4>Optionen</h4>

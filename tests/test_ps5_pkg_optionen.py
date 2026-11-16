@@ -74,6 +74,15 @@ class RegelTests(unittest.TestCase):
         self.assertEqual(fz.EINST_AKTION, opt.AKTION)
         self.assertEqual(fz.EINST_BIBLIOTHEK, opt.BIBLIOTHEK)
 
+    def test_das_vorgabeformat_ist_ffpkg_wie_es_das_programm_selbst_empfiehlt(self) -> None:
+        """Bis 16.11.2026 war es ``ffpfsc``, obwohl das Programm ``ffpkg`` fuer den Normalfall empfiehlt und bei
+        ``ffpfsc``/``ffpfs`` vor Rucklern warnt - fuer einen Laien ein Widerspruch."""
+        self.assertEqual("ffpkg", opt.STANDARD_FORMAT)
+        self.assertEqual(opt.STANDARD_FORMAT, opt.STANDARD[opt.FORMAT])
+        self.assertIn(opt.STANDARD_FORMAT, opt.FORMATE)
+        self.assertIn(opt.STANDARD_FORMAT, [f[0] for f in fz.FORMATE])
+        self.assertNotIn("ffpfsc", (opt.STANDARD[opt.FORMAT], opt.STANDARD_FORMAT))
+
     def test_jede_vorgabe_ist_ein_erlaubter_wert(self) -> None:
         for schluessel, wert in opt.STANDARD.items():
             with self.subTest(schluessel=schluessel):

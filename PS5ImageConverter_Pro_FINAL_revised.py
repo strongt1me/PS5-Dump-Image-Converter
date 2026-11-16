@@ -119,6 +119,7 @@ from ps5_validator.utils.self_reader import (
 from ps5_validator.utils import ampr_updates
 from ps5_validator.utils import dlc_emu
 from ps5_validator.utils import fake_signieren
+from ps5_validator.utils import forge_cli
 from ps5_validator.utils import werkzeug_updates
 from ps5_validator.utils.tk_masse import cget_pixel
 from ps5_validator.utils.tk_bindungen import an_toplevel_binden
@@ -32940,6 +32941,9 @@ class PS5ConverterGUI:
                 # Vor dem ersten Byte Arbeit fragen, ob PlayGo mit hinein
                 # soll - nicht erst, nachdem stundenlang kopiert oder
                 # entpackt wurde.
+                # Die Frage nach AMPR EMU noch vor dem NG-Hinweis: Er gilt nur, wenn AMPR EMU angehakt ist - auch
+                # durch ein "Ja" hier (16.11.2026).
+                self._ampr_vor_dem_lauf_klaeren(mode, src)
                 # Der NG-Hinweis zu ShadowMount+ (update_emulators=0) als Erstes: ein Fenster mitten im Lauf haelt
                 # ihn auf, und "danach herunterfahren" kommt nie (gemeldet 09.11.2026).
                 self._ampr_ng_vor_dem_lauf_hinweisen()
@@ -33442,6 +33446,10 @@ class PS5ConverterGUI:
             # Vorab-Antwort fuer die Arbeitskopie-Frage (Vorpruefung);
             # None bedeutet: noch nicht entschieden (Einzellauf oder keine Ordner).
             self._batch_arbeitskopie_vorab = None
+            # Welche Spiele AMPR EMU, DLC EMU oder PlayGo brauchen und nicht haben: einmal vorab fragen (auch bei einer
+            # einzigen Quelle - die Rueckfragen vor dem Lauf gelten fuer die Sammelkonvertierung sonst nie). Vor der
+            # Vorpruefung: Deren Frage nach der Arbeitskopie haengt davon ab.
+            self._batch_emulatoren_klaeren(sources)
             # Vorpruefung: alle Rueckfragen vor dem ersten Byte Arbeit klaeren.
             if len(sources) > 1 and not self._batch_vorpruefung(sources, dst, target_type):
                 self._param_batch_aktiv = False
@@ -33461,6 +33469,9 @@ class PS5ConverterGUI:
                     self._param_batch_aktiv = False
                     return False
                 anzeige = candidate
+                # Die Kaestchen dieses Spiels: die gesetzten, dazu was die gesammelte Frage fuer genau dieses Spiel
+                # eingeschaltet hat - vor jeder Pruefung des Wegs (``_conversion_block_reason`` liest sie).
+                self._batch_emu_anwenden(anzeige)
                 # Jede Datei bekommt ihren Abschnitt des Balkens: Datei 1 von 2
                 # fuellt 0-50 %, Datei 2 dann 50-100 %.
                 #
@@ -35484,6 +35495,9 @@ class PS5ConverterGUI:
         #    Einstellung "Arbeitskopie vorher" nicht schon automatisch antwortet.
         if self._batch_arbeitskopie_vorab is None and not self._arbeitskopie_vorher_aktiv():
             ampr_an = bool(self._tk_wert("ampr_integrate_var", False))
+            # Auch was die gesammelte Frage nach AMPR EMU, DLC EMU und PlayGo fuer einzelne Spiele eingeschaltet hat
+            # (``_batch_emulatoren_klaeren``): Es aendert den Ordner ebenso.
+            ampr_an = ampr_an or any((getattr(self, "_batch_je_spiel", None) or {}).values())
             backport_an = bool(self._tk_wert("backport_integrate_var", False))
             ordner_quellen = [s for s in sources if os.path.isdir(s)]
             if (ampr_an or backport_an) and ordner_quellen:
@@ -37056,7 +37070,11 @@ class PS5ConverterGUI:
             return self._titel_nutzt_playgo(src)
         if os.path.isfile(src):
             pfade = self._abbild_eintraege(src)
-            return None if pfade is None else self._playgo_merkmal_in(pfade)
+            if pfade is not None:
+                return self._playgo_merkmal_in(pfade)
+            # Ein .ffpkg (UFS2) liest die eigene Sicht nicht - Dump Forge schon (``inspect``, Dateiliste).
+            fakten = self._quellfakten_der_quelle(src)
+            return None if fakten is None else fakten.playgo_merkmal
         return None
 
     def _playgo_vor_dem_lauf_klaeren(self, mode: str, src: str) -> None:
@@ -37236,7 +37254,13 @@ class PS5ConverterGUI:
             return self._titel_hat_dlc(src)
         if os.path.isfile(src):
             pfade = self._abbild_eintraege(src)
-            return None if pfade is None else self._dlc_merkmal_in(pfade)
+            if pfade is not None:
+                return self._dlc_merkmal_in(pfade)
+            # Ein .ffpkg (UFS2) liest die eigene Sicht nicht - Dump Forge schon (``inspect``: seine Liste der DLC).
+            fakten = self._quellfakten_der_quelle(src)
+            if fakten is None:
+                return None
+            return fakten.dlc_merkmal if fakten.dlc_fehlt else ""
         return None
 
     def _dlc_vor_dem_lauf_klaeren(self, mode: str, src: str) -> None:
@@ -37294,6 +37318,286 @@ class PS5ConverterGUI:
             self.root.after(0, _im_fenster)
         except (AttributeError, RuntimeError, tk.TclError) as exc:
             logger.debug("DLC-Kaestchen nicht nachziehbar: %s", exc)
+
+    # ------------------------------------------------------------------
+    # AMPR EMU: Hinweis, wenn das Spiel libSceAmpr laedt und keinen Ersatz mitbringt (wie bei DLC EMU und PlayGo)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _forge_befehlszeile() -> str:
+        """Pfad zur mitgelieferten Befehlszeile von Dump Forge (``Dump-Forge-CLI``); ``""``, wenn es sie hier nicht gibt."""
+        unter = forge_cli.unterordner()
+        return _bundled_resource(forge_cli.ORDNER, unter, forge_cli.dateiname()) if unter else ""
+
+    def _quellfakten_der_quelle(self, src: str) -> "forge_cli.QuellFakten | None":
+        """Was Dump Forges ``inspect`` ueber die Quelle sagt: AMPR (auch Packs), DLC und PlayGo - einmal je Lauf.
+
+        Die Rueckfragen zu AMPR EMU, PlayGo und DLC EMU teilen sich die Antwort (``_quellfakten_zwischen``; sie wird zu
+        Beginn jeder Rueckfragenreihe geleert, ``_ampr_vor_dem_lauf_klaeren``). Das gilt fuer einen Spielordner und fuer
+        jedes der vier Abbilder - auch ein ``.ffpkg``, das die eigene Dateiliste (``_abbild_eintraege``) nicht lesen kann.
+        ``None``, wenn nicht nachzusehen war: keine Befehlszeile fuer diese Plattform, ein Archiv oder eine Quelle, die
+        Forge nicht liest.
+        """
+        if not (os.path.isdir(src) or forge_cli.ist_abbild(src)):
+            return None
+        zwischen = getattr(self, "_quellfakten_zwischen", None)
+        if zwischen is None:
+            zwischen = self._quellfakten_zwischen = {}
+        schluessel = os.path.normcase(os.path.abspath(str(src)))
+        if schluessel in zwischen:
+            return zwischen[schluessel]
+        exe = self._forge_befehlszeile()
+        if not exe:
+            return None
+        fakten = forge_cli.quellfakten_lesen(exe, src, abbruch=lambda: not getattr(self, "is_running", True))
+        if getattr(self, "is_running", True):
+            zwischen[schluessel] = fakten               # ein Abbruch ergibt nur "unbekannt" - das nicht merken
+        return fakten
+
+    def _ampr_ng_label(self) -> str:
+        """Die Beschriftung der neuesten AMPR-EMU-NG-Fassung (Variante ``ng``) im Versionsspeicher, sonst ``""``.
+
+        Aus der Liste, die der Lauf beim Start festgehalten hat; NG steht in der Liste beider Methoden (Normal und
+        Asset-Pack). Die Debug-Fassung (``ng-debug``) zaehlt nicht.
+        """
+        for beschriftung, eintrag in self._ampr_auswahl_beim_start().items():
+            if str((eintrag or {}).get("variant", "")).strip().lower() == "ng":
+                return str(beschriftung)
+        return ""
+
+    def _ampr_ng_angebot(self) -> str:
+        """Die NG-Fassung, die die Rueckfrage mit Asset-Packs anbieten darf - ``""``, wenn es keine gibt.
+
+        Voraussetzung: eine NG-Fassung im Versionsspeicher und ein Packwerkzeug samt LZ4-Modul (dieselbe Pruefung wie
+        beim Umschalten der Methode, ``_on_ampr_methode_changed``) - sonst fiele die Wahl dort sofort auf Normal zurueck.
+        """
+        ng = self._ampr_ng_label()
+        if not ng:
+            return ""
+        bereit, _grund = ampr_assetpakete.einsatzbereit()
+        return ng if bereit else ""
+
+    def _ampr_wahl_fragen(self) -> str:
+        """Die Wahl aus der Rueckfrage: ``"normal"``, ``"zstd"``, ``"lz4"`` oder ``""`` (ohne AMPR EMU weiter)."""
+        eintraege = {
+            self._t("ampr_wahl.normal"): "normal",
+            self._t("ampr_wahl.zstd"): "zstd",
+            self._t("ampr_wahl.lz4"): "lz4",
+            self._t("ampr_wahl.nein"): "",
+        }
+        gewaehlt = self._im_hauptfaden(
+            self._auswahl_dialog, self._t("dialog.title.ampr_wahl"), self._t("dialog.msg.ampr_wahl"), list(eintraege))
+        return eintraege.get(gewaehlt or "", "")
+
+    def _ampr_vor_dem_lauf_klaeren(self, mode: str, src: str) -> None:
+        """Fragt vor der eigentlichen Arbeit, ob AMPR EMU mit hinein soll - wenn das Spiel es braucht und keins hat.
+
+        Dasselbe Muster wie :meth:`_dlc_vor_dem_lauf_klaeren` (Nutzerwunsch 16.11.2026: Wer die Kaestchen beim
+        Erstellen nicht kennt, soll genau dann einen Hinweis bekommen, wenn sie gebraucht werden). Der Bedarf kommt aus
+        Dump Forges ``inspect`` (:func:`forge_cli.braucht_ampr`): Die ``eboot.bin`` importiert ``libSceAmpr``, und weder
+        ein Emulator noch eine Laufzeit liegt im Spiel. Ohne AMPR EMU startet so ein Spiel aus einem Abbild in der Regel
+        nicht (FAQ "Was ist AMPR EMU, und wann brauche ich es?"). AMPR EMU kommt nie von selbst dazu. Auf der
+        Kommandozeile und bei der Sammelkonvertierung wird nicht gefragt; dort steht nur ein Hinweis im Protokoll.
+        """
+        self._quellfakten_zwischen = {}              # eine neue Reihe von Rueckfragen: nichts aus einem frueheren Lauf
+        if mode not in self._MODE_TARGET_OPTIONS or mode == "batch_convert":
+            return
+        cli = bool(getattr(self, "_cli_mode", False))
+        angehakt = bool(self._tk_wert("ampr_integrate_var", False))
+        # Ohne Versionsspeicher gibt es nichts einzubauen: Das Kaestchen ist dann gesperrt, eine Frage waere sinnlos.
+        if not cli and not self._ampr_auswahl_beim_start():
+            return
+        self._set_status(self._t("status.ampr_pruefen"))
+        fakten = self._quellfakten_der_quelle(src)
+        if not getattr(self, "is_running", True):
+            return
+        if fakten is None or (not angehakt and fakten.ampr_fehlt is None):
+            if not angehakt:
+                self._append_to_log(self._t("main.ampr_nicht_pruefbar"))
+            return
+        if angehakt:
+            if not cli:
+                self._ampr_gepackt_pruefen(fakten)
+            return
+        if not fakten.ampr_fehlt:
+            return
+        if cli:
+            self._append_to_log(self._t("main.integrate_ampr_empfohlen"))
+            return
+        # Ein schon gepacktes Spiel behaelt seine Packs und seine Laufzeit; die Rueckfrage gilt nur der fehlenden Laufzeit.
+        ng = "" if fakten.gepackt else self._ampr_ng_angebot()
+        if not ng:
+            ja = self._ask_yesno_threadsafe(
+                self._t("dialog.title.ampr_empfohlen"),
+                self._t("dialog.msg.ampr_empfohlen"),
+                default_yes=True)
+            if not ja:
+                self._append_to_log(self._t("main.ampr_bleibt_aus"))
+                return
+            self._ampr_einschalten()
+            self._append_to_log(self._t("main.ampr_eingeschaltet"))
+            return
+        wahl = self._ampr_wahl_fragen()
+        if not wahl:
+            self._append_to_log(self._t("main.ampr_bleibt_aus"))
+            return
+        if wahl == "normal":
+            self._ampr_einschalten()
+            self._append_to_log(self._t("main.ampr_eingeschaltet"))
+            return
+        self._ampr_einschalten(ng_label=ng, verfahren=wahl)
+        self._append_to_log(self._t("main.ampr_eingeschaltet_pack", verfahren="zstd" if wahl == "zstd" else "LZ4"))
+
+    #: Die Kaestchen, die die Sammelkonvertierung je Spiel setzen kann: (Tk-Variable, Anzeigename, Text der Listenzeile).
+    _BATCH_EMULATOREN = (("ampr_integrate_var", "AMPR EMU", "batch.emu_zeile_ampr"),
+                         ("dlc_integrate_var", "DLC EMU", "batch.emu_zeile_dlc"),
+                         ("ampr_playgo_var", "PlayGo", "batch.emu_zeile_playgo"))
+
+    def _batch_emulatoren_klaeren(self, sources: "list[str]") -> None:
+        """Sammelkonvertierung: einmal vorab fragen, fuer welche Spiele AMPR EMU, DLC EMU oder PlayGo eingeschaltet werden.
+
+        Die Rueckfragen vor dem Lauf (``*_vor_dem_lauf_klaeren``) gelten nie fuer die Sammelkonvertierung - sie soll
+        unbeaufsichtigt durchlaufen. Hier wird deshalb **einmal gesammelt** gefragt, vor dem ersten Byte Arbeit: Dump Forge
+        liest jede Quelle (``_quellfakten_der_quelle``), die Frage nennt je Emulator die betroffenen Spiele. Mit "Ja" gilt
+        der Emulator **nur fuer diese Spiele** (``_batch_je_spiel``, angewandt von ``_batch_emu_anwenden``); die Kaestchen im
+        Fenster bleiben, wie sie sind - ein Spiel, das keinen braucht, bekommt auch keinen. Nichts schaltet sich ohne die
+        Antwort ein. Auf der Kommandozeile nur Protokollzeilen je Spiel; Archive und nicht lesbare Quellen bleiben unbeachtet.
+        """
+        self._batch_je_spiel = {}
+        self._quellfakten_zwischen = {}
+        basis = {name: bool(self._tk_wert(name, False)) for name, _anzeige, _zeile in self._BATCH_EMULATOREN}
+        self._batch_emu_basis = basis
+        cli = bool(getattr(self, "_cli_mode", False))
+        if not cli and getattr(self, "root", None) is None:
+            return                                      # kein Fenster, kein --cli: es kann niemand antworten
+        ampr_moeglich = cli or bool(self._ampr_auswahl_beim_start())
+        gefunden: "dict[str, list[tuple[str, str]]]" = {name: [] for name, _a, _z in self._BATCH_EMULATOREN}
+        for nummer, quelle in enumerate(sources, start=1):
+            if not getattr(self, "is_running", True):
+                return
+            self._set_status(self._t("status.batch_emu_pruefen", nummer=nummer, gesamt=len(sources)))
+            try:
+                fakten = self._quellfakten_der_quelle(quelle)
+            except Exception as exc:  # noqa: BLE001 - eine Hilfe vor dem Lauf, kein Hindernis fuer die Sammelkonvertierung
+                logger.debug("Quellfakten von %s nicht lesbar: %s", quelle, exc)
+                fakten = None
+            if fakten is None:
+                continue
+            spiel = os.path.basename(os.path.normpath(str(quelle)))
+            fehlt = {"ampr_integrate_var": bool(ampr_moeglich and fakten.ampr_fehlt),
+                     "dlc_integrate_var": fakten.dlc_fehlt, "ampr_playgo_var": fakten.playgo_fehlt}
+            for name, _anzeige, _zeile in self._BATCH_EMULATOREN:
+                if fehlt[name] and not basis[name]:
+                    gefunden[name].append((quelle, spiel))
+        if not any(gefunden.values()) or not getattr(self, "is_running", True):
+            return
+        if cli:
+            hinweise = {"ampr_integrate_var": "main.integrate_ampr_empfohlen"}
+            for name, anzeige, _zeile in self._BATCH_EMULATOREN:
+                for _quelle, spiel in gefunden[name]:
+                    self._append_to_log("[%s] %s: %s" % (spiel, anzeige, self._t(hinweise.get(name, "batch.emu_bleibt_aus")).strip()))
+            return
+        zeilen = []
+        for name, _anzeige, zeile in self._BATCH_EMULATOREN:
+            namen = [spiel for _quelle, spiel in gefunden[name]]
+            if namen:
+                zeilen.append(self._t(zeile, anzahl=len(namen),
+                                      namen=", ".join(namen[:5]) + (" …" if len(namen) > 5 else "")))
+        ja = self._ask_yesno_threadsafe(
+            self._t("dialog.title.batch_emu"), self._t("dialog.msg.batch_emu", liste="\n".join(zeilen)), default_yes=True)
+        if not ja:
+            self._append_to_log(self._t("batch.emu_bleibt_aus"))
+            return
+        for name, anzeige, _zeile in self._BATCH_EMULATOREN:
+            for quelle, _spiel in gefunden[name]:
+                self._batch_je_spiel.setdefault(quelle, {})[name] = True
+            if gefunden[name]:
+                self._append_to_log(self._t("batch.emu_eingeschaltet", emulator=anzeige, anzahl=len(gefunden[name])))
+
+    def _batch_emu_anwenden(self, quelle: str) -> None:
+        """Setzt die Kaestchen dieses Laufs fuer eine Quelle der Sammelkonvertierung: gesetzt oder fuer sie eingeschaltet.
+
+        Der Stand vom Start (``_lauf_variablen``) gilt fuer den ganzen Lauf; hier wird er je Spiel nachgefuehrt, damit
+        ein Emulator, der nur fuer Spiel 2 eingeschaltet wurde, bei Spiel 3 nicht mehr gilt.
+        """
+        stand = getattr(self, "_lauf_variablen", None)
+        basis = getattr(self, "_batch_emu_basis", None)
+        if stand is None or not basis:
+            return
+        je = (getattr(self, "_batch_je_spiel", None) or {}).get(quelle, {})
+        for name, wert in basis.items():
+            stand[name] = bool(wert) or bool(je.get(name))
+
+    def _ampr_gepackt_pruefen(self, fakten: "forge_cli.QuellFakten") -> None:
+        """AMPR EMU ist angehakt, das Spiel mit zstd-Packs gepackt: Die gewaehlte Fassung muss NG sein.
+
+        zstd-Packs liest nur ampr-emu-ng (``_integration_ampr`` lehnt jede andere Fassung ab). Das faellt sonst erst beim
+        Einbau auf - bei einem Abbild nach dem Entpacken, also nach Minuten. Hier steht es vorher; mit "Ja" wird auf die
+        neueste NG-Fassung umgestellt, mit "Nein" bleibt die Wahl (und der Einbau meldet es).
+        """
+        if fakten.gepackt != "zstd":
+            return
+        fassung = str(self._tk_wert("ampr_version_var", "") or "")
+        auswahl = self._ampr_auswahl_beim_start().get(fassung) or {}
+        if auswahl and self._ampr_bibliothek_ist_ng(auswahl):
+            return
+        ng = self._ampr_ng_label()
+        if not ng:
+            self._append_to_log(self._t("main.ampr_ng_fehlt"))
+            return
+        ja = self._ask_yesno_threadsafe(
+            self._t("dialog.title.ampr_ng_noetig"),
+            self._t("dialog.msg.ampr_ng_noetig", fassung=fassung or "-", ng=ng),
+            default_yes=True)
+        if not ja:
+            self._append_to_log(self._t("main.ampr_ng_bleibt", fassung=fassung or "-"))
+            return
+        self._ampr_einschalten(ng_label=ng)
+        self._append_to_log(self._t("main.ampr_ng_umgestellt", ng=ng))
+
+    def _ampr_einschalten(self, ng_label: str = "", verfahren: str = "") -> None:
+        """Hakt AMPR EMU an - fuer den laufenden Auftrag und im Fenster (wie :meth:`_dlc_einschalten`).
+
+        Args:
+            ng_label: Beschriftung der NG-Fassung, die gelten soll (leer: die Wahl im Fenster bleibt).
+            verfahren: ``"zstd"`` oder ``"lz4"``: Methode Asset-Pack mit diesem Packverfahren statt der normalen Methode.
+                Gilt fuer diesen Lauf (``_lauf_variablen``) und bleibt danach im Fenster und in den Einstellungen so
+                gesetzt - wie das Kaestchen selbst. Das Packverfahren liest ``_ampr_pack_verfahren``.
+        """
+        stand = getattr(self, "_lauf_variablen", None)
+        if stand is None:
+            stand = {}
+            self._lauf_variablen = stand
+        stand["ampr_integrate_var"] = True
+        if ng_label:
+            stand["ampr_version_var"] = ng_label
+        if verfahren in ("zstd", "lz4"):
+            stand["_ampr_methode"] = AMPR_METHODE_ASSETPACK
+            stand["ampr_methode_var"] = self._t("ampr_pack.methode_neu")
+            stand["_ampr_pack_verfahren"] = verfahren
+
+        def _im_fenster() -> None:
+            try:
+                self.ampr_integrate_var.set(True)
+                if verfahren in ("zstd", "lz4"):
+                    self._save_setting(self._AMPR_PACK_VERFAHREN_SETTING, verfahren)
+                    self._save_setting("integrate_ampr_methode", AMPR_METHODE_ASSETPACK)
+                    self.ampr_methode_var.set(self._t("ampr_pack.methode_neu"))
+                    self._ampr_versionsliste_fuellen()      # bei Asset-Pack stehen nur die pack-faehigen Fassungen darin
+                if ng_label and ng_label in (getattr(self, "_ampr_versionsauswahl", None) or {}):
+                    self.ampr_version_var.set(ng_label)
+                    self._save_setting("integrate_ampr_version", ng_label)
+                # Entsperrt die Fassungs-, Methoden- und Packverfahren-Liste und merkt das Kaestchen.
+                self._on_integration_changed()
+            except (AttributeError, RuntimeError, tk.TclError) as exc:
+                logger.debug("AMPR-Kaestchen nicht nachziehbar: %s", exc)
+
+        if threading.current_thread() is threading.main_thread():
+            _im_fenster()
+            return
+        try:
+            self.root.after(0, _im_fenster)
+        except (AttributeError, RuntimeError, tk.TclError) as exc:
+            logger.debug("AMPR-Kaestchen nicht nachziehbar: %s", exc)
 
     # ==================================================================
     # Integration beim Erstellen: AMPR EMU und BACKPORT
@@ -37676,6 +37980,11 @@ class PS5ConverterGUI:
         """
         cli = getattr(self, "_cli_ampr_pack_verfahren", None)
         wert = cli if cli else self._load_setting(self._AMPR_PACK_VERFAHREN_SETTING, "lz4")
+        if not cli and threading.current_thread() is not threading.main_thread():
+            # Die Rueckfrage vor dem Lauf kann das Verfahren fuer genau diesen Lauf setzen (``_ampr_einschalten``).
+            gewaehlt = (getattr(self, "_lauf_variablen", None) or {}).get("_ampr_pack_verfahren")
+            if gewaehlt in ("zstd", "lz4"):
+                wert = gewaehlt
         return "zstd" if str(wert or "").strip().lower() == "zstd" else "lz4"
 
     #: Anzeige im Auswahlfeld unter der Methode (kurz; die langen Namen stehen in den Einstellungen).

@@ -1798,6 +1798,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   la carpeta de dump y rige por tanto para todos los formatos de destino; va antes del AMPR EMU,
   para que su índice conozca los archivos nuevos.</p>
 
+  <p>El programa pregunta por <strong>AMPR EMU</strong> de la misma manera: si la <code>eboot.bin</code> de un juego carga <code>libSceAmpr</code> y el juego no incluye ni un AMPR EMU ni un runtime, pregunta antes del trabajo si debe activarse AMPR EMU. Está preseleccionado <em>Sí</em>. El programa lo lee con Dump Forge (<code>inspect</code>), en una carpeta de dump y en los cuatro formatos de imagen, también en <code>.ffpkg</code>. En la conversión por lotes y en la línea de comandos solo hay una línea en el registro. Al crear un paquete en el área PKG / FPKG, Dump Forge añade el AMPR EMU por sí mismo.</p>
+
+  <p><strong>AMPR EMU NG con asset packs:</strong> Si hay una versión NG en el almacén de versiones y la herramienta de empaquetado está lista, el programa ofrece una elección en lugar de solo sí y no: <em>AMPR EMU (normal)</em>, <em>AMPR EMU NG con asset packs (zstd)</em>, <em>AMPR EMU NG con asset packs (LZ4)</em> o continuar sin él. El método y el formato de pack quedan así en los ajustes. Si un juego ya está empaquetado con packs zstd y AMPR EMU está marcado con una versión que no es NG, el programa pregunta antes si debe cambiar a NG &ndash; los packs zstd solo los lee AMPR EMU NG.</p>
+
+  <p><strong>DLC EMU y PlayGo con un <code>.ffpkg</code>:</strong> El programa no puede ver dentro de un <code>.ffpkg</code>; las preguntas sobre DLC EMU y PlayGo llegan igualmente antes de la ejecución, porque Dump Forge lee para ello la lista de archivos y la de contenido adicional.</p>
+
+  <p><strong>Conversión por lotes:</strong> Antes del primer byte de trabajo el programa comprueba cada origen con Dump Forge y pregunta <em>una sola vez, de forma conjunta</em>, para qué juegos se activan AMPR EMU, DLC EMU y PlayGo. Un sí vale solo para esos juegos; las casillas de la ventana quedan como están. Los archivos comprimidos y los orígenes que Dump Forge no lee se ignoran; en la línea de comandos solo hay una línea de registro por juego.</p>
+
+  <p><strong>Crear un paquete (PKG / FPKG):</strong> Si al origen le faltan DLC EMU o PlayGo aunque el juego los necesita, el programa pregunta antes de crear si se debe hacer el paquete de todos modos: Dump Forge incluye la carpeta <code>fakelib</code> del origen sin cambios. En ese caso crea primero una imagen en las tareas 1 a 6 con DLC EMU o PlayGo marcado y luego el paquete a partir de ella. Dump Forge añade AMPR EMU por sí mismo a un juego que carga <code>libSceAmpr</code>.</p>
+
   <h3>11.4 Comprobar y descomprimir un asset pack terminado</h3>
   <p>Desde v1.9.80 hay para ello una ventana propia: <strong>MÁS HERRAMIENTAS
   → COMPROBAR / DESCOMPRIMIR ASSET PACK</strong>. Es la contrapartida
@@ -2256,11 +2266,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     carpeta de destino.</li>
   </ul>
   <div class="kasten warnung">
-    <span class="titel">Aquí no se ha comprobado si el paquete arranca en su consola</span>
+    <span class="titel">Qué necesita la consola para arrancar el paquete</span>
     <p>La herramienta indica como estado acreditado: los paquetes de este tipo arrancan hasta el firmware 11.60 con kstuff-lite 1.13
     o posterior. En firmwares más recientes (por ejemplo, 12.00), un paquete así se instala pero no arranca;
-    el bloqueo está en la consola, no en el paquete. Este programa solo ha medido la construcción y la lista de comprobación;
-    el arranque en una consola queda como una prueba de su parte.</p>
+    el bloqueo está en la consola, no en el paquete. Un paquete creado con este programa se arrancó en una consola y funciona (probado por el desarrollador); en qué firmware, no consta aquí.</p>
   </div>
 
   <h4 id="k7forge">Construir un paquete con Dump Forge</h4>
@@ -2289,11 +2298,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     se mantiene en 63 bytes (se acorta el título, el identificador permanece). El espacio de la carpeta de destino se comprueba antes.</li>
     <li><strong>Plataformas:</strong> La línea de comandos se incluye para Windows (x64), Linux (x64) y macOS. Si falta en su plataforma, el
     programa sigue construyendo carpetas de juego con LibProsperoPkg; una imagen entonces no la acepta y lo dice.</li>
-    <li><strong>Comprobar después:</strong> La acción <em>Comprobar</em> (la lista de LibProsperoPkg) indica un hallazgo en un paquete de Dump Forge sobre la envoltura RSA (<code>cnt.wrap</code>): medido en el paquete del ejemplo de abajo, superó 33 comprobaciones y falló esta, mientras que un paquete construido con LibProsperoPkg a partir del mismo origen superó 42 de 42. Si esto importa para arrancarlo en la consola, no está comprobado; Dump Forge comprueba su paquete según sus propias reglas y las supera.</li>
+    <li><strong>Comprobar después:</strong> La acción <em>Comprobar</em> (la lista de LibProsperoPkg) indica un hallazgo en un paquete de Dump Forge sobre la envoltura RSA (<code>cnt.wrap</code>): medido en el paquete del ejemplo de abajo, superó 33 comprobaciones y falló esta, mientras que un paquete construido con LibProsperoPkg a partir del mismo origen superó 42 de 42. Un paquete con este hallazgo se arrancó en la consola y funciona; Dump Forge comprueba su paquete según sus propias reglas y las supera.</li>
     <li><strong>Medido</strong> (16.11.2026, línea de comandos v0.5.6 en Windows): una carpeta de juego con 72 archivos (262&nbsp;MB) se convirtió en
     6,3&nbsp;s en un paquete de 164&nbsp;MB; de un pequeño juego creado a propósito salieron los cuatro formatos de imagen y un paquete de cada uno.
-    Si la consola arranca un paquete así, no está comprobado – para instalarlo en la consola Dump Forge menciona kstuff, fpkg-enable y
-    ppr-patch.</li>
+    Un paquete creado así se arrancó en una consola y funciona; para instalarlo en la consola Dump Forge menciona kstuff, fpkg-enable y ppr-patch.</li>
   </ul>
 
   <h4>Opciones</h4>

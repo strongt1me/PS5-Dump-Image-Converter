@@ -1806,6 +1806,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   sulla cartella dump e vale quindi per tutti i formati di destinazione; avviene prima dell’AMPR EMU,
   in modo che il suo indice conosca i nuovi file.</p>
 
+  <p>Il programma chiede di <strong>AMPR EMU</strong> allo stesso modo: se la <code>eboot.bin</code> di un gioco carica <code>libSceAmpr</code> e nel gioco non ci sono né un AMPR EMU né un runtime, prima del lavoro chiede se attivare AMPR EMU. È preselezionato <em>Sì</em>. Il programma lo legge con Dump Forge (<code>inspect</code>), per una cartella dump e per tutti e quattro i formati di immagine, anche <code>.ffpkg</code>. Nella conversione multipla e sulla riga di comando c’è solo una riga nel registro. Quando si crea un pacchetto nell’area PKG / FPKG, Dump Forge aggiunge l’AMPR EMU da sé.</p>
+
+  <p><strong>AMPR EMU NG con asset pack:</strong> Se nell’archivio delle versioni c’è una versione NG e lo strumento di compressione è pronto, il programma offre una scelta invece del solo sì e no: <em>AMPR EMU (normale)</em>, <em>AMPR EMU NG con asset pack (zstd)</em>, <em>AMPR EMU NG con asset pack (LZ4)</em> oppure proseguire senza. Metodo e formato dei pack restano poi così nelle impostazioni. Se un gioco è già compresso con pack zstd e AMPR EMU è selezionato con una versione che non è NG, il programma chiede prima se passare a NG &ndash; i pack zstd li legge solo AMPR EMU NG.</p>
+
+  <p><strong>DLC EMU e PlayGo con un <code>.ffpkg</code>:</strong> Il programma non può guardare dentro un <code>.ffpkg</code>; le domande su DLC EMU e PlayGo arrivano comunque prima dell’esecuzione, perché Dump Forge legge a tal fine l’elenco dei file e quello dei contenuti aggiuntivi.</p>
+
+  <p><strong>Conversione multipla:</strong> Prima del primo byte di lavoro il programma controlla ogni sorgente con Dump Forge e chiede <em>una sola volta, in blocco</em>, per quali giochi attivare AMPR EMU, DLC EMU e PlayGo. Un sì vale solo per quei giochi; le caselle nella finestra restano come sono. Gli archivi e le sorgenti che Dump Forge non legge vengono ignorati; sulla riga di comando c’è solo una riga di registro per gioco.</p>
+
+  <p><strong>Creare un pacchetto (PKG / FPKG):</strong> Se alla sorgente mancano DLC EMU o PlayGo anche se il gioco li richiede, il programma chiede prima della creazione se fare comunque il pacchetto: Dump Forge riprende la cartella <code>fakelib</code> della sorgente senza modifiche. In tal caso crea prima un’immagine nei compiti da 1 a 6 con DLC EMU o PlayGo selezionato e poi il pacchetto da essa. Dump Forge aggiunge da sé AMPR EMU a un gioco che carica <code>libSceAmpr</code>.</p>
+
   <h3>11.4 Verificare ed estrarre un asset pack già pronto</h3>
   <p>Dalla v1.9.80 esiste a questo scopo una finestra apposita: <strong>ALTRI STRUMENTI
   → VERIFICA / ESTRAI ASSET PACK</strong>. È l’equivalente
@@ -2264,11 +2274,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     cartella di destinazione.</li>
   </ul>
   <div class="kasten warnung">
-    <span class="titel">Se il pacchetto si avvia sulla propria console non è stato verificato qui</span>
+    <span class="titel">Che cosa serve alla console per avviare il pacchetto</span>
     <p>Lo strumento indica come stato documentato: i pacchetti di questo tipo si avviano fino al firmware 11.60 con kstuff-lite 1.13
     o successivo. Sui firmware più recenti (per esempio 12.00) un tale pacchetto si installa, ma non si avvia –
-    il blocco è nella console, non nel pacchetto. Questo programma ha misurato solo la costruzione e l’elenco di controllo;
-    l’avvio su una console resta un tentativo da fare in proprio.</p>
+    il blocco è nella console, non nel pacchetto. Un pacchetto creato con questo programma è stato avviato su una console e funziona (provato dallo sviluppatore); con quale firmware, qui non è annotato.</p>
   </div>
 
   <h4 id="k7forge">Costruire un pacchetto con Dump Forge</h4>
@@ -2297,11 +2306,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     entro 63 byte (il titolo viene accorciato, l’identificatore resta). Lo spazio nella cartella di destinazione viene verificato prima.</li>
     <li><strong>Piattaforme:</strong> La riga di comando è inclusa per Windows (x64), Linux (x64) e macOS. Se manca sulla vostra piattaforma,
     il programma continua a costruire le cartelle di gioco con LibProsperoPkg; un’immagine allora non la accetta e lo dice.</li>
-    <li><strong>Verifica successiva:</strong> L’azione <em>Verifica</em> (l’elenco di LibProsperoPkg) segnala un rilievo su un pacchetto di Dump Forge, riguardo all’involucro RSA (<code>cnt.wrap</code>): misurato sul pacchetto dell’esempio qui sotto, ha superato 33 verifiche e fallito questa, mentre un pacchetto costruito con LibProsperoPkg dalla stessa sorgente ne ha superate 42 su 42. Se questo conti per l’avvio sulla console non è verificato; Dump Forge verifica da sé il proprio pacchetto secondo le sue regole e le supera.</li>
+    <li><strong>Verifica successiva:</strong> L’azione <em>Verifica</em> (l’elenco di LibProsperoPkg) segnala un rilievo su un pacchetto di Dump Forge, riguardo all’involucro RSA (<code>cnt.wrap</code>): misurato sul pacchetto dell’esempio qui sotto, ha superato 33 verifiche e fallito questa, mentre un pacchetto costruito con LibProsperoPkg dalla stessa sorgente ne ha superate 42 su 42. Un pacchetto con questo rilievo è stato avviato sulla console e funziona; Dump Forge verifica da sé il proprio pacchetto secondo le sue regole e le supera.</li>
     <li><strong>Misurato</strong> (16.11.2026, riga di comando v0.5.6 su Windows): una cartella di gioco con 72 file (262&nbsp;MB) è diventata in
     6,3&nbsp;s un pacchetto di 164&nbsp;MB; da un piccolo gioco costruito appositamente sono nati tutti e quattro i formati di immagine e da
-    ciascuno un pacchetto. Se la console avvii un tale pacchetto non è verificato – per installarlo sulla console Dump Forge indica kstuff,
-    fpkg-enable e ppr-patch.</li>
+    ciascuno un pacchetto. Un pacchetto creato così è stato avviato su una console e funziona; per installarlo sulla console Dump Forge indica kstuff, fpkg-enable e ppr-patch.</li>
   </ul>
 
   <h4>Opzioni</h4>

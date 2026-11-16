@@ -1797,6 +1797,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   the dump folder and thus applies to all target formats; it comes before the AMPR EMU,
   so that its index knows the new files.</p>
 
+  <p>The program asks about <strong>AMPR EMU</strong> in the same way: if a game's <code>eboot.bin</code> loads <code>libSceAmpr</code> and the game ships neither an AMPR EMU nor a runtime, it asks before the work starts whether to switch AMPR EMU on. <em>Yes</em> is preselected. The program reads this with Dump Forge (<code>inspect</code>), for a dump folder and for all four image formats, <code>.ffpkg</code> included. During a batch conversion and on the command line there is only a log line. When a package is built in the PKG / FPKG area, Dump Forge adds the AMPR EMU itself.</p>
+
+  <p><strong>AMPR EMU NG with asset packs:</strong> If an NG version is in the version store and the packing tool is ready, the program offers a choice instead of just yes and no: <em>AMPR EMU (normal)</em>, <em>AMPR EMU NG with asset packs (zstd)</em>, <em>AMPR EMU NG with asset packs (LZ4)</em> or continue without. Method and pack format then stay set in the settings. If a game is already packed with zstd packs and AMPR EMU is ticked with a version that is not NG, the program asks beforehand whether to switch to NG &ndash; only AMPR EMU NG reads zstd packs.</p>
+
+  <p><strong>DLC EMU and PlayGo for a <code>.ffpkg</code>:</strong> The program cannot look into a <code>.ffpkg</code> itself; the questions about DLC EMU and PlayGo still come before the run, because Dump Forge reads the file list and the list of add-on content for it.</p>
+
+  <p><strong>Batch conversion:</strong> Before the first byte of work the program checks every source with Dump Forge and asks <em>once, collectively</em>, for which games AMPR EMU, DLC EMU and PlayGo should be enabled. A yes applies only to exactly those games; the boxes in the window stay as they are. Archives and sources Dump Forge does not read are left alone; on the command line there is only one log line per game.</p>
+
+  <p><strong>Building a package (PKG / FPKG):</strong> If the source lacks DLC EMU or PlayGo although the game needs them, the program asks before the build whether a package should be made anyway: Dump Forge takes the source's <code>fakelib</code> folder over unchanged. In that case first build an image in tasks 1 to 6 with DLC EMU or PlayGo ticked, and the package from it. Dump Forge adds AMPR EMU itself for a game that loads <code>libSceAmpr</code>.</p>
+
   <h3>11.4 Checking and unpacking a finished asset pack</h3>
   <p>Since v1.9.80 there is a dedicated window for this: <strong>MORE TOOLS
   &rarr; ASSET PACK CHECK / UNPACK</strong>. It is the PC counterpart
@@ -2256,11 +2266,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     target folder.</li>
   </ul>
   <div class="kasten warnung">
-    <span class="titel">Whether the package starts on your console has not been verified here</span>
+    <span class="titel">What the console needs to start the package</span>
     <p>The tool states the verified status as: packages of this kind start up to firmware 11.60 with kstuff-lite 1.13
     or newer. On newer firmware (for example 12.00), such a package installs but does not start –
-    the block is on the console, not in the package. This program has only measured the build and the checklist;
-    starting it on a console remains your own attempt.</p>
+    the block is on the console, not in the package. A package built with this program was started on a console and runs (tested by the developer); which firmware it ran on is not recorded here.</p>
   </div>
 
   <h4 id="k7forge">Building a package with Dump Forge</h4>
@@ -2289,11 +2298,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     extension stays within 63 bytes (the title is shortened, the identifier stays). The space in the target folder is checked beforehand.</li>
     <li><strong>Platforms:</strong> The command-line tool is included for Windows (x64), Linux (x64) and macOS. If it is missing on your
     platform, the program keeps building game folders with LibProsperoPkg; it then does not accept an image and says so.</li>
-    <li><strong>Checking afterwards:</strong> The action <em>Check</em> (the LibProsperoPkg checklist) reports one finding on a package from Dump Forge, about the RSA wrap (<code>cnt.wrap</code>): measured on the package from the example below, it passed 33 checks and failed this one, while a package built from the same source with LibProsperoPkg passed 42 of 42. Whether this matters for starting it on the console is not tested; Dump Forge checks its package by its own rules and passes them.</li>
+    <li><strong>Checking afterwards:</strong> The action <em>Check</em> (the LibProsperoPkg checklist) reports one finding on a package from Dump Forge, about the RSA wrap (<code>cnt.wrap</code>): measured on the package from the example below, it passed 33 checks and failed this one, while a package built from the same source with LibProsperoPkg passed 42 of 42. A package with this finding was started on the console and runs; Dump Forge checks its package by its own rules and passes them.</li>
     <li><strong>Measured</strong> (16 Nov 2026, command-line tool v0.5.6 on Windows): a game folder with 72 files (262&nbsp;MB) became a
-    package of 164&nbsp;MB in 6.3&nbsp;s; from a small self-made game all four image formats were produced and a package from each. Whether
-    the console launches such a package is not tested – for installing it on the console Dump Forge names kstuff, fpkg-enable and
-    ppr-patch.</li>
+    package of 164&nbsp;MB in 6.3&nbsp;s; from a small self-made game all four image formats were produced and a package from each. A package built this way was started on a console and runs; for installing it on the console Dump Forge names kstuff, fpkg-enable and ppr-patch.</li>
   </ul>
 
   <h4>Options</h4>

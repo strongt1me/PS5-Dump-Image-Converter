@@ -78,6 +78,8 @@ AKTIONEN = (AKTION_UMWANDELN, AKTION_EXTRAHIEREN, AKTION_PRUEFEN, AKTION_KONSOLE
 FORMATE = (("ffpkg", "FFPKG", ".ffpkg"), ("ffpfsc", "FFPFSC", ".ffpfsc"), ("ffpfs", "FFPFS", ".ffpfs"),
            ("exfat", "exFAT", ".exfat"), ("pkg", "Paket", ".pkg"))
 FORMAT_PAKET = "pkg"
+#: Bei diesen Formaten nennt das Fenster nach der Wahl das Tempo der Entpackung auf der Konsole (``main.pfs_speed_hint``).
+FORMATE_MIT_RUCKELHINWEIS = ("ffpfsc", "ffpfs")
 
 #: Ab wie viel freiem Platz (Vielfaches der Quellgroesse) das Fenster beim Bauen nachfragt bzw. abbricht. Gemessen am
 #: 09.10.2026: Ein 1,2-GB-Spiel wurde in ein 541-MB-Paket; auf einem Laufwerk ohne feste Verknuepfungen (exFAT) legt
@@ -418,8 +420,8 @@ class Ps5PkgFenster:
         self.aktion_var = tk.StringVar(value=str(self._einstellung(EINST_AKTION, AKTION_UMWANDELN)))
         if self.aktion_var.get() not in AKTIONEN:
             self.aktion_var.set(AKTION_UMWANDELN)
-        gespeichert = str(self._einstellung(EINST_FORMAT, "ffpfsc"))
-        self.format_schluessel = gespeichert if gespeichert in [f[0] for f in FORMATE] else "ffpfsc"
+        gespeichert = str(self._einstellung(EINST_FORMAT, opt.STANDARD_FORMAT))
+        self.format_schluessel = gespeichert if gespeichert in [f[0] for f in FORMATE] else opt.STANDARD_FORMAT
         self.ueberschreiben_var = tk.BooleanVar(value=False)
         # Auf die PS5 entpacken: die Adresse ist die der Ansicht KONSOLE (ein Feld fuer alle Seiten), der Ordner gemerkt.
         self.adresse_var = g._konsole_ip_var()
@@ -827,6 +829,9 @@ class Ps5PkgFenster:
         self._merken(EINST_FORMAT, schluessel)
         self._format_anzeigen()
         self._ergebnis_fuellen()
+        if schluessel in FORMATE_MIT_RUCKELHINWEIS:
+            # Wie im Hauptfenster (``_format_hinweis_setzen``): das Tempo der Entpackung und die Empfehlung, ein Satz.
+            self._status(self.t("main.pfs_speed_hint"))
 
     def _ablage_malen(self, _e=None) -> None:
         c = self.c
@@ -2186,6 +2191,8 @@ class Ps5PkgFenster:
             return
         if not self._platz_reicht(ziel, int(info.groesse * FORGE_PLATZ_FAKTOR), nachfragen=True):
             return
+        if not self._emulatoren_fragen(info):
+            return
         for text in self._forge_ignorierte_optionen():
             self._protokoll(self.t("ps5pkg.forge_ignoriert", option=text))
         # Der Bau entsteht im Zielordner (gleiches Laufwerk: das Umbenennen am Ende kostet nichts), unter einem
@@ -2197,6 +2204,53 @@ class Ps5PkgFenster:
         self._staging.append(temp)
         self._bau = {"temp": temp, "vorher": set(os.listdir(ziel)), "forge": True}
         self._job_starten("bauen", self._lauf_bauen, info, ziel)
+
+    def _quellfakten(self, info: "wz.PaketInfo") -> "forge.QuellFakten | None":
+        """Forges Fakten zur Quelle (DLC, PlayGo, AMPR): bei einem Abbild aus dem Lesen, bei einem Spielordner jetzt.
+
+        Einen Spielordner liest ``ffpfsc-pkg-tool`` - Dump Forge sieht ihn erst hier (``inspect``, meist unter einer
+        Sekunde; die Listen der Bibliothek bleiben so schnell). Das Ergebnis bleibt an der Quelle haengen.
+        """
+        if info.fakten is not None:
+            return info.fakten
+        exe = self._werkzeug_forge()
+        if not exe or not info.ist_ordner:
+            return None
+        self._status(self.t("ps5pkg.emu_pruefen"))
+        try:
+            self.win.update_idletasks()
+        except tk.TclError:
+            pass
+        info.fakten = forge.quellfakten_lesen(exe, info.pfad, popen_extra=self._popen_extra())
+        return info.fakten
+
+    def _emulatoren_fragen(self, info: "wz.PaketInfo") -> bool:
+        """Vor dem Bau: fehlen der Quelle DLC EMU oder PlayGo, obwohl das Spiel sie braucht? Dann fragen, ob trotzdem gebaut wird.
+
+        Dump Forge uebernimmt ``fakelib`` der Quelle unveraendert ins Paket (gemessen am Abbild mit AMPR EMU, PlayGo und
+        Backport: das Paket traegt alle drei) - was dort fehlt, fehlt im Paket. Einlegen laesst es sich in ein Abbild nicht;
+        der Weg ist ein Abbild aus den Aufgaben 1 bis 6 mit den Kaestchen DLC EMU und PlayGo, daraus das Paket. AMPR EMU
+        fragt der Bau nicht: Dump Forge legt ihn fuer ein Spiel, das ``libSceAmpr`` laedt, selbst dazu.
+
+        Returns:
+            ``False``, wenn der Anwender nicht bauen will.
+        """
+        fakten = self._quellfakten(info)
+        if fakten is None:
+            return True
+        zeilen: list[str] = []
+        if fakten.dlc_fehlt:
+            zeilen.append(self.t("ps5pkg.emu_zeile_dlc", merkmal=fakten.dlc_merkmal or "-"))
+        if fakten.playgo_fehlt:
+            zeilen.append(self.t("ps5pkg.emu_zeile_playgo", merkmal=fakten.playgo_merkmal))
+        if not zeilen:
+            return True
+        if not messagebox.askyesno(self.t("ps5pkg.emu_titel"), self.t("ps5pkg.emu_frage", liste="\n".join(zeilen)),
+                                   parent=self.win):
+            self._status(self.t("ps5pkg.emu_abgebrochen"))
+            return False
+        self._protokoll(self.t("ps5pkg.emu_log"))
+        return True
 
     def _forge_stufe_text(self, stufe: str) -> str:
         """Die Stufe aus Forges Fortschrittsstrom in der Sprache des Programms (unbekannte Stufen bleiben, wie sie sind)."""

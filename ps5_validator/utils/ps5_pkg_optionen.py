@@ -88,6 +88,12 @@ BUILDER_WERTE = ("forge", "lpp", "ppt")
 FORGE_KRAKEN_STUFEN = ("fast", "balanced", "smallest", "stored")
 KRAKEN_MODI = ("kraken", "zlib", "none")
 
+#: Das Format, das vor einer eigenen Wahl gilt. Seit 16.11.2026 ``ffpkg``: Das Programm empfiehlt es selbst fuer den
+#: Normalfall (``main.smp_rang_ffpkg``) und warnt bei ``ffpfsc``/``ffpfs`` vor Rucklern (150-250 MB/s beim Entpacken,
+#: ``main.pfs_speed_hint``); die Vorgabe war bis dahin ``ffpfsc`` (kleiner, gemessen 417 MB gegen 703 MB). Eine gespeicherte
+#: Wahl bleibt, wie sie ist.
+STANDARD_FORMAT = "ffpkg"
+
 #: Vorgaben der Optionen. Die Bibliothek selbst (``BIBLIOTHEK``) und die Bibliotheksordner gehoeren nicht zum Zuruecksetzen.
 STANDARD: dict = {
     REKURSIV: False,
@@ -99,7 +105,7 @@ STANDARD: dict = {
     BUILDER: "forge",
     ZIEL: "",
     TEMP_ORDNER: "",
-    FORMAT: "ffpfsc",
+    FORMAT: STANDARD_FORMAT,
     AKTION: "umwandeln",
     KRAKEN_MODUS: "kraken",
     KRAKEN_STUFE: 7,

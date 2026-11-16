@@ -130,6 +130,146 @@ def _cover_schreiben(daten_url: str, ordner: str) -> str:
     return pfad
 
 
+def inspect_daten(werkzeug: str, pfad: str, *, abbruch: "_Abbruch | None" = None, popen_extra: "dict | None" = None,
+                  vorspann: "tuple[str, ...]" = ()) -> dict:
+    """``inspect <Quelle> --json``: Forges Beschreibung eines Abbilds oder Spielordners als Woerterbuch.
+
+    Raises:
+        wz.Fehler: die Befehlszeile laesst sich nicht starten, liest die Quelle nicht oder antwortet nicht mit JSON.
+    """
+    rc, aus = wz.laufen(werkzeug, [*vorspann, "inspect", pfad, "--json"], abbruch=abbruch, popen_extra=popen_extra)
+    if rc == -1:
+        raise wz.Fehler("abgebrochen")
+    if rc != 0:
+        raise wz.Fehler(_fehlertext(aus))
+    return wz._json_aus(aus)  # noqa: SLF001 - dieselbe Aufbereitung wie bei ffpfsc-pkg-tool
+
+
+def braucht_ampr(daten: dict) -> "bool | None":
+    """Braucht das Spiel AMPR EMU - und bringt keinen mit? Nach Forges ``inspect``-Antwort.
+
+    ``True``: Die ``eboot.bin`` importiert ``libSceAmpr`` (``lz4.imports_ampr``), und weder eine Laufzeit
+    (``lz4.runtime``) noch ein Emulator namens AMPR liegt im Spiel. ``False``: kein Import oder ein Emulator ist da.
+    ``None``: Die Antwort sagt dazu nichts (kein Schluessel ``lz4`` - eine aeltere Befehlszeile), dann nichts raten.
+
+    Gemessen (16.11.2026) an Arcade Game Zone: ohne Einbau ``imports_ampr`` wahr, ``runtime`` "none", ``emulators``
+    leer; mit AMPR EMU ``runtime`` "other" und ``emulators`` mit ``fakelib/libSceAmpr.sprx`` (Name "AMPR"). Ein Spiel
+    ohne Import (Jobee's Lair) hat ``lz4`` gleich ``null``.
+    """
+    if not isinstance(daten, dict) or "lz4" not in daten:
+        return None
+    lz4 = daten.get("lz4")
+    if not isinstance(lz4, dict) or lz4.get("imports_ampr") is not True:
+        return False
+    if str(lz4.get("runtime") or "none").strip().lower() != "none":
+        return False
+    for emulator in daten.get("emulators") or []:
+        if not isinstance(emulator, dict):
+            continue
+        if (str(emulator.get("name", "")).strip().lower() == "ampr"
+                or str(emulator.get("path", "")).strip().lower().endswith("libsceampr.sprx")):
+            return False
+    return True
+
+
+def ampr_bedarf(werkzeug: str, pfad: str, *, abbruch: "_Abbruch | None" = None, popen_extra: "dict | None" = None,
+                vorspann: "tuple[str, ...]" = ()) -> "bool | None":
+    """Liest die Quelle mit ``inspect`` und sagt, ob AMPR EMU fehlt (:func:`braucht_ampr`); ``None``, wenn nicht lesbar.
+
+    Kein Fehler dringt nach aussen: Es ist eine Hilfe vor dem Lauf, kein Hindernis (auch ein Abbruch ergibt ``None``).
+    """
+    try:
+        return braucht_ampr(inspect_daten(werkzeug, pfad, abbruch=abbruch, popen_extra=popen_extra, vorspann=vorspann))
+    except wz.Fehler:
+        return None
+
+
+#: Dateien, mit denen ein Titel PlayGo-Inhalte erklaert (wie ``PS5ConverterGUI._PLAYGO_MERKMALE``; ein Test haelt beide gleich).
+PLAYGO_MERKMALE = ("sce_sys/playgo-scenario.json", "sce_sys/playgo-chunk.dat", "sce_sys/playgo_chunk.dat")
+
+
+@dataclass
+class QuellFakten:
+    """Was Forges ``inspect`` ueber eine Quelle sagt, soweit die Rueckfragen des Programms es brauchen.
+
+    Eine Antwort von Forge versorgt AMPR EMU (inklusive der NG-Packs), DLC EMU und PlayGo gemeinsam - auch fuer ein
+    ``.ffpkg``, das die eigene Dateiliste des Programms nicht lesen kann.
+    """
+
+    #: Die ``eboot.bin`` laedt ``libSceAmpr``.
+    ampr_importiert: bool = False
+    #: ``True``: AMPR EMU wird gebraucht und liegt nicht im Spiel (:func:`braucht_ampr`); ``None``: nicht zu sagen.
+    ampr_fehlt: "bool | None" = None
+    #: ``""`` (ungepackt), ``"lz4"`` (``ampr_assets``-Packs) oder ``"zstd"`` (``ampr_zstd``-Packs).
+    gepackt: str = ""
+    #: Forges Name der Laufzeit in ``fakelib/libSceAmpr.sprx``: ``none``, ``other``, ``zstd`` (ampr-emu-ng) usw.
+    laufzeit: str = ""
+    #: Die Emulatoren in ``fakelib/`` (Namen klein): ``ampr``, ``dlc``, ``playgo``, ``other``.
+    emulatoren: tuple = ()
+    #: Das Spiel traegt Zusatzinhalte (Forges ``dlcs``) ...
+    dlc_vorhanden: bool = False
+    #: ... und DLC EMU meldet sie schon (Emulator DLC oder ein Eintrag in ``dlc_emu.ini``).
+    dlc_emuliert: bool = False
+    #: Woran Forge das erste DLC erkannt hat (sein Ordner, sonst die Content-ID) - fuer die Rueckfrage.
+    dlc_merkmal: str = ""
+    #: Das erste PlayGo-Merkmal unter den Dateien (``sce_sys/playgo-scenario.json`` usw.), sonst ``""``.
+    playgo_merkmal: str = ""
+
+    @property
+    def dlc_fehlt(self) -> bool:
+        """Zusatzinhalte im Spiel, aber nichts meldet sie an der Konsole."""
+        return self.dlc_vorhanden and not self.dlc_emuliert
+
+    @property
+    def playgo_fehlt(self) -> bool:
+        """Das Spiel erklaert PlayGo-Inhalte, und der PlayGo-Stub liegt nicht darin."""
+        return bool(self.playgo_merkmal) and "playgo" not in self.emulatoren
+
+
+def _playgo_merkmal_in(pfade) -> str:
+    gesehen = {str(p or "").replace("\\", "/").lower().lstrip("/") for p in pfade}
+    for merkmal in PLAYGO_MERKMALE:
+        if merkmal in gesehen or any(p.endswith("/" + merkmal) for p in gesehen):
+            return merkmal
+    return ""
+
+
+def quellfakten(daten: dict) -> QuellFakten:
+    """Die Fakten aus Forges ``inspect``-Antwort (rein, ohne Start)."""
+    if not isinstance(daten, dict):
+        return QuellFakten()
+    lz4 = daten.get("lz4") if isinstance(daten.get("lz4"), dict) else {}
+    gepackt = "lz4" if lz4.get("packed") is not None else ("zstd" if daten.get("zstd_packed") is True else "")
+    emulatoren = tuple(sorted({str(e.get("name", "")).strip().lower()
+                               for e in (daten.get("emulators") or []) if isinstance(e, dict) and e.get("name")}))
+    dlcs = [d for d in (daten.get("dlcs") or []) if isinstance(d, dict)]
+    dateien = daten.get("files") if isinstance(daten.get("files"), list) else []
+    pfade = [str(f.get("path", "")) for f in dateien if isinstance(f, dict)]
+    return QuellFakten(
+        ampr_importiert=lz4.get("imports_ampr") is True,
+        ampr_fehlt=braucht_ampr(daten),
+        gepackt=gepackt,
+        laufzeit=str(lz4.get("runtime") or ""),
+        emulatoren=emulatoren,
+        dlc_vorhanden=bool(dlcs),
+        dlc_emuliert="dlc" in emulatoren or any(d.get("emulated") for d in dlcs),
+        dlc_merkmal=str((dlcs[0].get("folder") or dlcs[0].get("content_id") or "") if dlcs else ""),
+        playgo_merkmal=_playgo_merkmal_in(pfade),
+    )
+
+
+def quellfakten_lesen(werkzeug: str, pfad: str, *, abbruch: "_Abbruch | None" = None, popen_extra: "dict | None" = None,
+                      vorspann: "tuple[str, ...]" = ()) -> "QuellFakten | None":
+    """Liest die Quelle mit ``inspect`` und gibt ihre :class:`QuellFakten`; ``None``, wenn Forge sie nicht lesen konnte.
+
+    Kein Fehler dringt nach aussen: Es ist eine Hilfe vor dem Lauf, kein Hindernis (auch ein Abbruch ergibt ``None``).
+    """
+    try:
+        return quellfakten(inspect_daten(werkzeug, pfad, abbruch=abbruch, popen_extra=popen_extra, vorspann=vorspann))
+    except wz.Fehler:
+        return None
+
+
 def lesen(werkzeug: str, pfad: str, arbeitsordner: "str | None" = None, *, abbruch: "_Abbruch | None" = None,
           popen_extra: "dict | None" = None, vorspann: "tuple[str, ...]" = ()) -> "wz.PaketInfo":
     """Liest ein Abbild (oder einen Spielordner) fuer die Anzeige: ``inspect --json`` und das Cover.
@@ -140,12 +280,7 @@ def lesen(werkzeug: str, pfad: str, arbeitsordner: "str | None" = None, *, abbru
     Raises:
         wz.Fehler: die Befehlszeile laesst sich nicht starten, liest die Quelle nicht oder antwortet nicht mit JSON.
     """
-    rc, aus = wz.laufen(werkzeug, [*vorspann, "inspect", pfad, "--json"], abbruch=abbruch, popen_extra=popen_extra)
-    if rc == -1:
-        raise wz.Fehler("abgebrochen")
-    if rc != 0:
-        raise wz.Fehler(_fehlertext(aus))
-    daten = wz._json_aus(aus)  # noqa: SLF001 - dieselbe Aufbereitung wie bei ffpfsc-pkg-tool
+    daten = inspect_daten(werkzeug, pfad, abbruch=abbruch, popen_extra=popen_extra, vorspann=vorspann)
     param = daten.get("param_json")
     param = param if isinstance(param, dict) else {}
     art = str(daten.get("kind", "") or "")
@@ -161,6 +296,7 @@ def lesen(werkzeug: str, pfad: str, arbeitsordner: "str | None" = None, *, abbru
         befunde=[str(z) for z in (daten.get("findings") or [])],
         zusatzinhalt=bool(daten.get("additional_content")),
         patch=bool(daten.get("patch")),
+        fakten=quellfakten(daten),
     )
     try:
         ordner = tempfile.mkdtemp(prefix="ps5conv_pkgcover_", dir=arbeitsordner or None)

@@ -377,6 +377,140 @@ class ForgeFensterTests(unittest.TestCase):
         self.assertIn("[OK] Dump Forge:", log)
         self.assertIn("fpkg: verifying", log, "Forges eigene Protokollzeilen kommen durch das Fenster an")
 
+    # ---------------- Emulatoren (DLC EMU, PlayGo) ----------------
+    _DLC = dict(dlc_vorhanden=True, dlc_emuliert=False, dlc_merkmal="addcont0")
+    _PLAYGO = dict(playgo_merkmal="sce_sys/playgo-scenario.json")
+
+    def _abbild_mit_fakten(self, **fakten) -> str:
+        pfad = self._abbild()
+        self.infos[pfad].fakten = fc.QuellFakten(**fakten)
+        return pfad
+
+    def _fragen(self) -> list:
+        return [a for a in self.dialoge["frage"] if a and a[0] == _de("ps5pkg.emu_titel")]
+
+    def test_fehlt_dlc_emu_wird_vor_dem_bau_gefragt_und_mit_ja_gebaut(self) -> None:
+        self._laden(self._abbild_mit_fakten(**self._DLC))
+        with self._attrappe():
+            self._starten_und_warten()
+        fragen = self._fragen()
+        self.assertEqual(1, len(fragen))
+        self.assertIn(_de("ps5pkg.emu_zeile_dlc", merkmal="addcont0"), fragen[0][1])
+        self.assertNotIn("• PlayGo:", fragen[0][1], "nur die fehlende Zeile steht in der Liste")
+        self.assertEqual(1, len(self.aufrufe), "mit Ja wird gebaut")
+        self.assertIn(_de("ps5pkg.emu_log"), self.f.protokoll.get("1.0", "end"))
+
+    def test_fehlt_der_playgo_stub_wird_ebenso_gefragt(self) -> None:
+        self._laden(self._abbild_mit_fakten(**self._PLAYGO))
+        with self._attrappe():
+            self._starten_und_warten()
+        fragen = self._fragen()
+        self.assertEqual(1, len(fragen))
+        self.assertIn(_de("ps5pkg.emu_zeile_playgo", merkmal="sce_sys/playgo-scenario.json"), fragen[0][1])
+        self.assertNotIn("• DLC EMU:", fragen[0][1])
+        self.assertEqual(1, len(self.aufrufe))
+
+    def test_fehlen_beide_steht_es_in_einer_frage(self) -> None:
+        self._laden(self._abbild_mit_fakten(**self._DLC, **self._PLAYGO))
+        with self._attrappe():
+            self._starten_und_warten()
+        fragen = self._fragen()
+        self.assertEqual(1, len(fragen), "eine Frage, nicht zwei")
+        self.assertIn(_de("ps5pkg.emu_zeile_dlc", merkmal="addcont0"), fragen[0][1])
+        self.assertIn(_de("ps5pkg.emu_zeile_playgo", merkmal="sce_sys/playgo-scenario.json"), fragen[0][1])
+
+    def test_mit_nein_wird_nicht_gebaut_und_nichts_bleibt_liegen(self) -> None:
+        self._laden(self._abbild_mit_fakten(**self._DLC))
+        with self._attrappe(), mock.patch.object(fz.messagebox, "askyesno", return_value=False) as frage:
+            self.f._starten()
+        frage.assert_called_once()
+        self.assertEqual([], self.aufrufe)
+        self.assertIsNone(self.f._job)
+        self.assertEqual(_de("ps5pkg.emu_abgebrochen"), self.f.status_var.get())
+        self.assertEqual([], os.listdir(self.ziel), "kein Arbeitsordner, kein Paket")
+        self.assertNotIn(_de("ps5pkg.emu_log"), self.f.protokoll.get("1.0", "end"))
+
+    def test_liegen_die_emulatoren_in_der_quelle_oder_braucht_sie_das_spiel_nicht_keine_frage(self) -> None:
+        faelle = {
+            "DLC schon emuliert": dict(dlc_vorhanden=True, dlc_emuliert=True, dlc_merkmal="addcont0"),
+            "PlayGo-Stub liegt darin": dict(playgo_merkmal="sce_sys/playgo-scenario.json", emulatoren=("playgo",)),
+            "weder DLC noch PlayGo": dict(),
+            "AMPR fehlt (legt Forge selbst dazu)": dict(ampr_importiert=True, ampr_fehlt=True),
+        }
+        for name, fakten in faelle.items():
+            with self.subTest(fall=name):
+                self.dialoge["frage"].clear()
+                self.aufrufe.clear()
+                self._laden(self._abbild_mit_fakten(**fakten))
+                with self._attrappe():
+                    self._starten_und_warten()
+                self.assertEqual([], self._fragen())
+                self.assertEqual(1, len(self.aufrufe))
+                for p in os.listdir(self.ziel):
+                    os.remove(os.path.join(self.ziel, p))
+
+    def test_ohne_forges_fakten_wird_nicht_gefragt(self) -> None:
+        self._laden(self._abbild())
+        with self._attrappe():
+            self._starten_und_warten()
+        self.assertEqual([], self._fragen())
+
+    def test_ein_spielordner_wird_vor_dem_bau_von_forge_gelesen_und_das_nur_einmal(self) -> None:
+        ordner = self._spielordner()
+        self._laden(ordner)
+        self.f._format_waehlen("pkg")
+        with self._attrappe(), mock.patch.object(fc, "quellfakten_lesen",
+                                                 return_value=fc.QuellFakten(**self._DLC)) as lesen:
+            self._starten_und_warten()
+            self.assertEqual(1, lesen.call_count)
+            self.assertEqual(("forge-exe", ordner), lesen.call_args.args)
+            self.assertEqual(1, len(self._fragen()))
+            self.assertIsNotNone(self.f.aktuell.fakten, "die Antwort bleibt an der Quelle")
+            for p in os.listdir(self.ziel):
+                os.remove(os.path.join(self.ziel, p))
+            self._starten_und_warten()
+            self.assertEqual(1, lesen.call_count, "ein zweiter Bau liest nicht noch einmal")
+
+    def test_kann_forge_den_spielordner_nicht_lesen_wird_trotzdem_gebaut(self) -> None:
+        ordner = self._spielordner()
+        self._laden(ordner)
+        self.f._format_waehlen("pkg")
+        with self._attrappe(), mock.patch.object(fc, "quellfakten_lesen", return_value=None):
+            self._starten_und_warten()
+        self.assertEqual([], self._fragen())
+        self.assertEqual(1, len(self.aufrufe))
+
+    def test_die_frage_steht_nach_der_platzpruefung_und_vor_dem_ersten_arbeitsordner(self) -> None:
+        text = Path(fz.__file__).read_text(encoding="utf-8")
+        start = text.index("def _forge_bauen_starten")
+        platz = text.index("self._platz_reicht(ziel, int(info.groesse * FORGE_PLATZ_FAKTOR)", start)
+        frage = text.index("self._emulatoren_fragen(info)", start)
+        temp = text.index("tempfile.mkdtemp(prefix=\"ps5conv_forge_\"", start)
+        self.assertLess(platz, frage)
+        self.assertLess(frage, temp, "bei Nein darf kein Arbeitsordner entstehen")
+
+    # ---------------- Zielformat ----------------
+    def test_ohne_gespeicherte_wahl_gilt_ffpkg_eine_gespeicherte_bleibt(self) -> None:
+        """Bis 16.11.2026 galt ``ffpfsc``; das Programm empfiehlt ``ffpkg`` selbst. Wer gewaehlt hat, behaelt seine Wahl."""
+        for gespeichert, erwartet in ((None, "ffpkg"), ("ffpfsc", "ffpfsc"), ("exfat", "exfat"), ("kaputt", "ffpkg")):
+            with self.subTest(gespeichert=gespeichert):
+                self._schliessen()
+                with mock.patch.object(fz.Ps5PkgFenster, "_einstellung",
+                                       side_effect=lambda k, v, _g=gespeichert: _g if (k == fz.EINST_FORMAT and _g) else v):
+                    self.f = fz.oeffnen(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)
+                self.assertEqual(erwartet, self.f.format_schluessel)
+
+    def test_ffpfsc_und_ffpfs_nennen_das_tempo_ffpkg_und_exfat_und_paket_nicht(self) -> None:
+        """Wie im Hauptfenster: Nach der Wahl von ``ffpfsc``/``ffpfs`` steht ein Satz zu Tempo und Empfehlung."""
+        self._laden(self._spielordner())
+        hinweis = _de("main.pfs_speed_hint")
+        for schluessel, erwartet in (("ffpfsc", True), ("ffpfs", True), ("ffpkg", False), ("exfat", False), ("pkg", False)):
+            with self.subTest(format=schluessel):
+                self.f._status("vorher")
+                self.f._format_waehlen(schluessel)
+                self.assertEqual(schluessel, self.f.format_schluessel)
+                self.assertEqual(hinweis if erwartet else "vorher", self.f.status_var.get())
+
     # ---------------- Namen ----------------
     def test_der_name_kommt_aus_titel_und_kennung_und_bleibt_in_63_bytes(self) -> None:
         info = wz.PaketInfo(pfad=os.path.join(self.ordner, "x.exfat"), typ=wz.TYP_ABBILD, title_id="PPSA12345",

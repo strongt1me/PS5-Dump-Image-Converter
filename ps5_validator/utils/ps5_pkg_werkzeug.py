@@ -403,6 +403,8 @@ class PaketInfo:
     zusatzinhalt: bool = False
     #: Ein Patch-Paket (``\x7fLIH``): wird nur gelesen, nie umgewandelt.
     patch: bool = False
+    #: Nur bei einer von Dump Forge gelesenen Quelle: ``forge_cli.QuellFakten`` (AMPR, Packs, DLC, PlayGo), sonst ``None``.
+    fakten: object = None
 
     @property
     def ist_ordner(self) -> bool:

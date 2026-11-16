@@ -496,7 +496,7 @@ class Optionen:
             tk.Entry.configure(self.passcode_feld, show="•")
         self.sort_var.set(self._sortierungen().get(werte.get(opt.SORTIERUNG), self._sortierungen()["titel"]))
         self.aktion_var.set(self._aktionen().get(werte.get(opt.AKTION), self._aktionen()["umwandeln"]))
-        self.format_var.set(self._formate().get(werte.get(opt.FORMAT), self._formate()["ffpfsc"]))
+        self.format_var.set(self._formate().get(werte.get(opt.FORMAT), self._formate()[opt.STANDARD_FORMAT]))
         self.builder_var.set(self._builder().get(werte.get(opt.BUILDER), self._builder()[opt.STANDARD[opt.BUILDER]]))
         self.forge_kraken_var.set(self._forge_stufen().get(werte.get(opt.FORGE_KRAKEN), self._forge_stufen()["fast"]))
         self.forge_voll_var.set(bool(werte.get(opt.FORGE_VOLL_PRUEFEN, False)))
@@ -547,7 +547,7 @@ class Optionen:
             opt.TEMP_ORDNER: self.temp_ordner_var.get().strip(),
             opt.SORTIERUNG: self._schluessel_zu(self._sortierungen(), self.sort_var.get(), "titel"),
             opt.AKTION: self._schluessel_zu(self._aktionen(), self.aktion_var.get(), "umwandeln"),
-            opt.FORMAT: self._schluessel_zu(self._formate(), self.format_var.get(), "ffpfsc"),
+            opt.FORMAT: self._schluessel_zu(self._formate(), self.format_var.get(), opt.STANDARD_FORMAT),
         }
 
     # ------------------------------------------------------------------
