@@ -158,7 +158,7 @@ class AutomatikTests(unittest.TestCase):
         self.assertEqual(gui._t("amprgen.q_excluded"), frage[1])
         self.assertIn("fakelib_exclude=%s" % TITEL, frage[2])
         self.assertEqual(["stop", "weiter"], [o[0] for o in frage[3]])
-        self.assertIn("!! " + gui._t("amprgen.excluded", title_id=TITEL,
+        self.assertIn("!! " + gui._t("amprgen.excluded", title_id=TITEL, datei="config.ini",
                                      eintrag="fakelib_exclude=%s" % TITEL), meldungen)
         self.assertIn(gui._t("amprgen.cancelled"), meldungen)
         gui._ampr_alle_fassungen.assert_not_called()

@@ -688,7 +688,7 @@ class AblaufTests(_KonsolenTest):
         self.assertEqual(_text("amprmitschnitt.q_excluded"), frage[1])
         self.assertIn("fakelib_exclude=%s" % TITEL, frage[2])
         self.assertEqual(["stop", "weiter"], [o[0] for o in frage[3]])
-        self.assertIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL,
+        self.assertIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL, datei="config.ini",
                                     eintrag="fakelib_exclude=%s" % TITEL), self.zeilen)
         self.assertIn(_text("amprmitschnitt.cancelled"), self.zeilen)
         self.assertEqual(vorher, self._lesen(CONFIG))
@@ -715,7 +715,7 @@ class AblaufTests(_KonsolenTest):
                       "global_fakelib_exclude=%s\r\n"
                       "# fakelib_exclude=%s\r\n" % (TITEL, TITEL))
         self.assertEqual([SPIEL + "/fakelib"], self._pruefen())
-        self.assertNotIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL,
+        self.assertNotIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL, datei="config.ini",
                                        eintrag="fakelib_exclude=%s" % TITEL), self.zeilen)
 
     def test_hauptschalter_aus(self) -> None:
