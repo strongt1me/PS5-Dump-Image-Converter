@@ -2,7 +2,17 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.98):** Umwandlungen laufen ohne Zwischenordner, Abbilder lassen sich direkt ändern, und die Quelle lässt sich nach Erfolg löschen.
+> **Kurz zum aktuellen Stand (v1.9.99):** Neue AMPR-EMU-NG-Fassungen werden einmal am Tag automatisch gesucht, und die Oberfläche bleibt auch bei hoher Skalierung lesbar.
+
+---
+
+## v1.9.99 – 16.11.2026
+
+- **Neu:** Automatische Suche nach neuen AMPR-EMU-NG-Fassungen beim Start (einmal am Tag, unter EINSTELLUNGEN abschaltbar); ohne Internet bleibt sie still.
+- **Aktualisiert:** AMPR EMU NG 0.4.1, die jetzt die Vorgabe für zstd-Asset-Packs ist.
+- **Geändert:** Der Haken „Dump-Ordner im Arbeitsordner statt beim Ziel anlegen“ erscheint nur noch, wenn ein Arbeitsordner gebraucht wird.
+- **Behoben:** „Nach Aktualisierungen suchen“ im AMPR EMU Manager meldete nur einen Fehler.
+- **Behoben:** Listenzeilen, Haken, Beschriftungen, Statuszeile und Fenster werden bei hoher Skalierung und in anderen Sprachen nicht mehr abgeschnitten.
 
 ---
 
