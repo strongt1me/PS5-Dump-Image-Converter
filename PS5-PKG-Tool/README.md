@@ -1,7 +1,7 @@
 # PS5-PKG-Tool
 
 `ffpfsc-pkg-tool` fuer das Fenster „PS5 PKG Dump & Image Converter“ - gebaut aus dem Quelltext von
-**ps5-fpkg-converter 0.0.3** (GPL-3.0-or-later, `src/`); darin die Engine von ps5-ultrapack (MIT) und die
+**ps5-fpkg-converter 0.0.3** (GPL-3.0-or-later, `src/`); darin die Engine von ps5-ultrapack (Quelltext aus der MIT-Zeit bis 2.4.1) und die
 Bibliothek **LibProsperoPkg 1.2.0** (GPL-3.0-or-later; als fertige Datei `src/ffpfsc-pkg-tool/lib/`, die Quelle
 dazu liegt nicht bei - siehe `src/ffpfsc-pkg-tool/lib/README.md`).
 
@@ -10,6 +10,8 @@ Seit 31.10.2026 steht die Fassung auf **0.0.3** (30.10.2026). Der Vergleich 0.0.
 ist also unveraendert. Uebernommen ist die eine Verhaltensaenderung, die auch fuer unser Fenster zaehlt: Mit einem Temp-Ordner
 setzt der Aufruf auch `TMP`, `TEMP` und `TMPDIR` des Werkzeugs (`ps5_pkg_werkzeug._umgebung`) und legt den Ordner an, damit keine
 Zwischendatei auf dem Systemlaufwerk landet. An keinem echten Paket gemessen.
+
+Seit 16.11.2026 steht die Versionskonstante auf **2.5.1**. ps5-ultrapack 2.4.2 bis 2.5.1 aendern am C#-Teil nur den Kopf jeder Datei (drei Zeilen mit Lizenz- und Urheberhinweis) und die Konstante: Der Vergleich 2.4.1 bis 2.5.1 nennt unter `backend/native/src/ffpfsc-pkg-tool/` die zehn C#-Dateien, und nach Abzug des neuen Kopfes und der Konstante sind sie Zeichen fuer Zeichen gleich 2.4.1; `lib/` und `patches/` sind unveraendert, die gepatchte `LibProsperoPkg.dll` bleibt dieselbe Datei. **Lizenz:** Seit 2.4.2 steht ps5-ultrapack unter GPL-3.0-or-later mit Zusatzbedingungen nach Abschnitt 7 (Datei `NOTICE` dort: Urheberhinweise und Nennung bleiben, geaenderte Fassungen werden als solche gekennzeichnet); bis einschliesslich 2.4.1 ist es MIT. Der C#-Quelltext hier stammt aus der Zeit davor (ps5-fpkg-converter 0.0.3) - uebernommen wird nur die Versionsnummer, kein Quelltext der neueren Fassung. `ffpfsc-pkg-tool.dll` ist in allen vier Ordnern neu gebaut (nur diese Datei je Ordner; `dotnet publish -r <rid> --self-contained false`, wie bei 2.4.1); `dotnet ... version` zeigt 2.5.1 und LibProsperoPkg 1.2.0. Nicht uebernommen: die Neuerungen der Upstream-App (zstd-Packs fuer jedes Spiel, Intel-Mac-Fassung, Info-Seite mit der Lizenz) - sie betreffen die Oberflaeche und die Python-Seite der Upstream-App, nicht den C#-Teil hier. An keinem echten Paket gemessen.
 
 Seit 12.11.2026 steht die Versionskonstante auf **2.4.1**. ps5-ultrapack 2.4.1 aendert am C#-Teil nur die Konstante: Der Vergleich 2.4.0 bis 2.4.1 nennt unter `backend/native/src/ffpfsc-pkg-tool/` nur `Program.cs` (eine Zeile, die Konstante); `lib/` und `patches/` sind unveraendert, die gepatchte `LibProsperoPkg.dll` bleibt dieselbe Datei. `ffpfsc-pkg-tool.dll` ist in allen vier Ordnern neu gebaut (nur diese Datei je Ordner; `dotnet publish -r <rid> --self-contained false`, wie bei 2.4.0); `dotnet ... version` zeigt 2.4.1 und LibProsperoPkg 1.2.0. Nicht uebernommen: die Korrekturen der Upstream-App (nicht verbundenes Ausgabelaufwerk, PS4-Archive mit verschluesselten Dateinamen, mehrteilige RAR) - sie betreffen die Oberflaeche und die Auftragsliste der Upstream-App, nicht den C#-Teil hier. An keinem echten Paket gemessen.
 

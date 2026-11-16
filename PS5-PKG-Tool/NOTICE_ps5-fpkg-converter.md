@@ -11,7 +11,12 @@ Large parts of `engine/backend/` are vendored verbatim from
 `engine/NOTICES-ps5-ultrapack.md`). Its backend implements the conversion
 chain used here: PS5 fake package decoding, PFS/`.ffpfs`/`.ffpfsc` image
 building, exFAT image writing, executable fake-signing and backporting.
-Vendored as of upstream **v2.4.1** (2026-11-12).
+Vendored as of upstream **v2.4.1** (2026-11-12), the last MIT release.
+Since v2.4.2 ps5-ultrapack is under GPL-3.0-or-later with additional terms
+under section 7 (see its `NOTICE`). The version constant of the tool here
+follows **v2.5.1** (2026-11-16); the C# sources of v2.5.1 differ from v2.4.1
+only in a three-line licence header and that constant, and none of the newer
+source is taken over.
 
 ## LibProsperoPkg (GPL-3.0-or-later)
 

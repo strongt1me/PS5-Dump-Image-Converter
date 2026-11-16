@@ -2,7 +2,8 @@
 """Die Huelle um ``ffpfsc-pkg-tool`` - lesen, pruefen, entpacken und bauen von PS5-Paketen (seit v1.9.71).
 
 Das Werkzeug stammt aus dem Quelltext von **ps5-fpkg-converter 0.0.3** (GPL-3.0-or-later; darin die Engine von
-ps5-ultrapack, MIT) und liegt, fuer jede Plattform einzeln gebaut, unter ``PS5-PKG-Tool/<Plattform>/``. Es ist ein
+ps5-ultrapack; dessen Quelltext hier ist aus der MIT-Zeit bis 2.4.1) und liegt, fuer jede Plattform einzeln gebaut,
+unter ``PS5-PKG-Tool/<Plattform>/``. Es ist ein
 .NET-Programm (net10.0, abhaengig von der installierten Laufzeit - die braucht das Programm ohnehin) und kapselt
 LibProsperoPkg 1.2.0. Befehle, die hier gebraucht werden: ``inspect``, ``validate``, ``extract-inner`` (ganz oder
 mit ``--members``) und ``build`` (aus einem Spielordner ein Debug-Paket, :func:`bauen`).
