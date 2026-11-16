@@ -8,7 +8,7 @@
 and operate the console right alongside – on Windows, Linux and macOS.**
 
 ![Version](https://img.shields.io/badge/Version-v1.9.99-blue)
-![Tests](https://img.shields.io/badge/Tests-9178%20green-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-9292%20green-brightgreen)
 ![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)
