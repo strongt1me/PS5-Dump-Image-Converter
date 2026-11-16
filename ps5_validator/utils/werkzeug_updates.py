@@ -575,6 +575,11 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
              ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:0.0.3"),
     Werkzeug("ps5-ultrapack", "ps5-ultrapack (Engine im PS5-PKG-Tool)", GRUPPE_WERKZEUG, "knutwurst/ps5-ultrapack",
              ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:2.5.1"),
+    # Befehlszeile von Dump Forge (seit 16.11.2026): baut im Bereich "PKG / FPKG" Pakete aus Spielordnern und Abbildern.
+    # Dieselbe Freigabe wie die ELF "dump-forge" oben (die Konsolenfassung); hier die Fassung der mitgelieferten Befehlszeile,
+    # Dump-Forge-CLI/README.md haelt sie samt Pruefsummen fest.
+    Werkzeug("dump-forge-cli", "Dump Forge (Befehlszeile, baut Pakete)", GRUPPE_WERKZEUG, "quer3q/ps5-dump-forge",
+             ordner="Dump-Forge-CLI", art=ART_HINWEIS, hinweis="updates.hinweis_buendel", lokal="fest:0.5.6"),
     Werkzeug("wee-tools", "PS5 Wee Tools", GRUPPE_WERKZEUG, "andy-man/ps5-wee-tools", ordner="PS5-Wee-Tools-*",
              art=ART_HINWEIS, hinweis="updates.hinweis_festgelegt", lokal="ordnername"),
     Werkzeug("7zip", "7-Zip", GRUPPE_WERKZEUG, "ip7z/7zip", ordner="7-Zip-*", art=ART_HINWEIS,

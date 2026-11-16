@@ -100,6 +100,9 @@ class Optionen:
         self.passcode_var = tk.StringVar(master=self.win)
         self.passcode_zeigen_var = tk.BooleanVar(master=self.win)
         self.builder_var = tk.StringVar(master=self.win)
+        self.forge_kraken_var = tk.StringVar(master=self.win)
+        self.forge_voll_var = tk.BooleanVar(master=self.win)
+        self.forge_backport_var = tk.BooleanVar(master=self.win)
         self.kraken_modus_var = tk.StringVar(master=self.win)
         self.kraken_stufe_var = tk.StringVar(master=self.win)
         self.kraken_kerne_var = tk.StringVar(master=self.win)
@@ -134,7 +137,11 @@ class Optionen:
                 "exfat": "exFAT (.exfat)"}
 
     def _builder(self) -> dict[str, str]:
-        return {"lpp": "LibProsperoPkg 1.2.0", "ppt": "ProsperoPkgTool"}
+        return {"forge": "Dump Forge", "lpp": "LibProsperoPkg 1.2.0", "ppt": "ProsperoPkgTool"}
+
+    def _forge_stufen(self) -> dict[str, str]:
+        """Die Kompressionsstufen von Dump Forge (``--kraken``), sprachabhaengig benannt."""
+        return {s: self.t("ps5pkg.opt_forge_level_" + s) for s in opt.FORGE_KRAKEN_STUFEN}
 
     @staticmethod
     def _schluessel_zu(namen: dict[str, str], text: str, vorgabe: str) -> str:
@@ -286,6 +293,26 @@ class Optionen:
         aussen, karte = self.f.g._build_scrollable_body(karte)
         aussen.pack(fill="both", expand=True)
         self._info(karte, "ps5pkg.opt_build_info")
+
+        # Dump Forge (Standard-Paketersteller)
+        self._beschriftung(karte, "ps5pkg.opt_forge_head").pack(anchor="w")
+        tk.Label(karte, text=t("ps5pkg.opt_forge_info"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+                 anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(2, 8))
+        self._beschriftung(karte, "ps5pkg.opt_forge_level").pack(anchor="w")
+        self.forge_kraken_box = self.pw.Combobox(karte, textvariable=self.forge_kraken_var,
+                                                 values=list(self._forge_stufen().values()), state="readonly", width=24)
+        self.forge_kraken_box.pack(anchor="w", pady=(4, 0))
+        tk.Label(karte, text=t("ps5pkg.opt_forge_level_hint"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+                 anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 10))
+        self._haken(karte, "ps5pkg.opt_forge_full", self.forge_voll_var)
+        tk.Label(karte, text=t("ps5pkg.opt_forge_full_hint"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+                 anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 10))
+        self._haken(karte, "ps5pkg.opt_forge_backport", self.forge_backport_var)
+        tk.Label(karte, text=t("ps5pkg.opt_forge_backport_hint"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+                 anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 16))
+
+        # LibProsperoPkg (der fruehere Paketersteller)
+        self._beschriftung(karte, "ps5pkg.opt_lpp_head").pack(anchor="w", pady=(0, 8))
 
         # Kompressionsmodus
         self._beschriftung(karte, "ps5pkg.opt_build_mode").pack(anchor="w")
@@ -470,7 +497,10 @@ class Optionen:
         self.sort_var.set(self._sortierungen().get(werte.get(opt.SORTIERUNG), self._sortierungen()["titel"]))
         self.aktion_var.set(self._aktionen().get(werte.get(opt.AKTION), self._aktionen()["umwandeln"]))
         self.format_var.set(self._formate().get(werte.get(opt.FORMAT), self._formate()["ffpfsc"]))
-        self.builder_var.set(self._builder().get(werte.get(opt.BUILDER), self._builder()["lpp"]))
+        self.builder_var.set(self._builder().get(werte.get(opt.BUILDER), self._builder()[opt.STANDARD[opt.BUILDER]]))
+        self.forge_kraken_var.set(self._forge_stufen().get(werte.get(opt.FORGE_KRAKEN), self._forge_stufen()["fast"]))
+        self.forge_voll_var.set(bool(werte.get(opt.FORGE_VOLL_PRUEFEN, False)))
+        self.forge_backport_var.set(bool(werte.get(opt.FORGE_BACKPORT_ENTFERNEN, False)))
         self.kraken_modus_var.set(self._kraken_modi().get(
             werte.get(opt.KRAKEN_MODUS), self._kraken_modi()["kraken"]))
         self.kraken_stufe_var.set(str(werte.get(opt.KRAKEN_STUFE, 7)))
@@ -498,7 +528,10 @@ class Optionen:
             opt.COVER: bool(self.cover_var.get()),
             opt.OEFFNEN: bool(self.oeffnen_var.get()),
             opt.PASSCODE: self.passcode_var.get(),
-            opt.BUILDER: self._schluessel_zu(self._builder(), self.builder_var.get(), "lpp"),
+            opt.BUILDER: self._schluessel_zu(self._builder(), self.builder_var.get(), opt.STANDARD[opt.BUILDER]),
+            opt.FORGE_KRAKEN: self._schluessel_zu(self._forge_stufen(), self.forge_kraken_var.get(), "fast"),
+            opt.FORGE_VOLL_PRUEFEN: bool(self.forge_voll_var.get()),
+            opt.FORGE_BACKPORT_ENTFERNEN: bool(self.forge_backport_var.get()),
             opt.KRAKEN_MODUS: self._schluessel_zu(self._kraken_modi(), self.kraken_modus_var.get(), "kraken"),
             opt.KRAKEN_STUFE: max(-4, min(9, _int_safe(self.kraken_stufe_var.get(), 7))),
             opt.KRAKEN_KERNE: max(0, min(256, _int_safe(self.kraken_kerne_var.get(), 0))),

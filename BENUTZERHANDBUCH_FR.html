@@ -2220,12 +2220,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h4>Construire un paquet</h4>
   <p>Choisir un <strong>dossier de jeu</strong> (<code>eboot.bin</code> et <code>sce_sys/param.json</code>
-  s'y trouvent), le dossier de destination et la vignette <strong>Paquet</strong>. Le programme en construit un
-  <strong>paquet de débogage (FPKG)</strong> et le vérifie ensuite avec la même liste de vérification que l'action
-  <em>Vérifier</em>. L'outil qui construit est déterminé par le <strong>Builder</strong> dans les options
-  (voir plus bas)&nbsp;: avec <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, valeur par défaut), l'outil
-  fixe lui-même le nom de la sortie (<code>&lt;Content-ID&gt;-A…-V….pkg</code>)&nbsp;; avec
-  <strong>ProsperoPkgTool</strong>, elle s'appelle <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.</p>
+  s'y trouvent) ou une <strong>image</strong>, le dossier de destination et la vignette <strong>Paquet</strong>. Le programme en construit un
+  <strong>paquet de débogage (FPKG)</strong>. L'outil qui construit est déterminé par le <strong>Builder</strong> dans les options
+  (voir plus bas)&nbsp;: la valeur par défaut est <strong>Dump Forge</strong>, qui construit dossiers de jeu et images comme le fait
+  l'application Dump Forge (voir <a href="#k7forge">Construire un paquet avec Dump Forge</a>) et nomme le paquet
+  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. Une <strong>image</strong> est toujours construite par Dump Forge. Avec
+  <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, l'ancienne voie, dossiers de jeu uniquement), l'outil fixe lui-même
+  le nom de la sortie (<code>&lt;Content-ID&gt;-A…-V….pkg</code>) et le programme vérifie ensuite le paquet avec la même liste
+  de vérification que l'action <em>Vérifier</em>&nbsp;; avec <strong>ProsperoPkgTool</strong>, il s'appelle
+  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. Les points suivants décrivent la construction avec LibProsperoPkg.</p>
   <ul>
     <li><strong>Vérifiés au préalable</strong> : le Content-ID et l'ID du titre (issus de <code>param.json</code>) ainsi que le
     <code>param.json</code> lui-même, avec la même vérification que dans la tâche 1. S'il présente des contestations, le
@@ -2260,6 +2263,39 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     le démarrage sur une console reste votre essai.</p>
   </div>
 
+  <h4 id="k7forge">Construire un paquet avec Dump Forge</h4>
+  <p>Le programme fournit la ligne de commande de <strong>Dump Forge</strong> (<code>ps5-dump-forge</code>, dossier
+  <code>Dump-Forge-CLI</code>) et l'exécute lui-même – rien n'en est réimplémenté, la construction se déroule donc comme la fait la
+  version actuelle de Dump Forge. Les sources sont un <strong>dossier de jeu</strong> et les images <code>.ffpkg</code>,
+  <code>.ffpfsc</code>, <code>.ffpfs</code> et <code>.exFAT</code>&nbsp;: déposez-les sur le champ source, choisissez-les avec
+  <em>Choisir un fichier</em> ou déposez un dossier contenant de tels fichiers. D'une image, on ne peut construire ici que le <strong>paquet</strong> –
+  les formats FFPKG, FFPFSC, FFPFS et exFAT sont construits par les tâches 1 à 6&nbsp;; la vignette y passe d'elle-même.</p>
+  <ul>
+    <li><strong>Sans dossier temporaire&nbsp;:</strong> Dump Forge lit lui-même l'image (y compris l'image à l'intérieur d'un <code>.ffpfsc</code>) et
+    n'extrait rien sur le disque. Le paquet est créé dans un dossier de travail à l'intérieur du dossier de destination et n'arrive à sa place
+    qu'après la vérification&nbsp;: une construction échouée ou annulée ne laisse rien d'inachevé, et un paquet existant du même nom reste intact –
+    il n'est remplacé qu'avec la case <em>Écraser l'existant</em> et seulement après le succès.</li>
+    <li><strong>Vérification&nbsp;:</strong> Dump Forge vérifie lui-même la source (identifiants, signatures, longueurs de noms,
+    <code>param.json</code>) et signale ses constats dans le journal&nbsp;; le programme ne répare ici aucun <code>param.json</code> et n'ajoute pas de
+    liste de vérification propre avant ou après. Après la construction, Forge relit le paquet et vérifie sa structure et ses sommes de contrôle&nbsp;;
+    il vérifie le contenu par défaut sur un échantillon, avec <em>Vérifier complètement</em> dans les options octet par octet.</li>
+    <li><strong>Options</strong> (onglet <em>Construction</em>, en haut)&nbsp;: le <strong>niveau de compression</strong> (<em>Rapide</em>,
+    <em>Équilibré</em>, <em>Paquet le plus petit</em>, <em>Non compressé</em> – les deux niveaux intermédiaires réduisent le paquet d'environ 2,6&nbsp;%
+    et prennent environ 6 et 9 fois plus de temps), <strong>Vérifier complètement</strong> et <strong>Omettre les bibliothèques de backport</strong>
+    (<code>fakelib/</code>&nbsp;; Dump Forge le refuse si le SDK de <code>eboot.bin</code> a été abaissé). Le nombre de cœurs est celui des réglages
+    de construction (0 = tous). Ce que seul LibProsperoPkg connaît (firmware minimal, mode patch, intégrer le backport, chunks PlayGo,
+    construction reproductible), Dump Forge l'ignore – le journal le dit avant la construction.</li>
+    <li><strong>Nom et place&nbsp;:</strong> Le paquet s'appelle <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>&nbsp;; le nom sans extension reste
+    dans les 63 octets (le titre est raccourci, l'identifiant reste). La place dans le dossier de destination est vérifiée auparavant.</li>
+    <li><strong>Plateformes&nbsp;:</strong> La ligne de commande est fournie pour Windows (x64), Linux (x64) et macOS. Si elle manque sur votre
+    plateforme, le programme continue de construire les dossiers de jeu avec LibProsperoPkg&nbsp;; il n'accepte alors pas d'image et le dit.</li>
+    <li><strong>Vérifier ensuite&nbsp;:</strong> L'action <em>Vérifier</em> (la liste de LibProsperoPkg) signale un constat sur un paquet de Dump Forge, à propos de l'enveloppe RSA (<code>cnt.wrap</code>)&nbsp;: mesuré sur le paquet de l'exemple ci-dessous, il a réussi 33 vérifications et échoué à celle-ci, alors qu'un paquet construit avec LibProsperoPkg à partir de la même source en a réussi 42 sur 42. Que cela compte pour le démarrage sur la console n'est pas vérifié&nbsp;; Dump Forge vérifie lui-même son paquet selon ses propres règles et les réussit.</li>
+    <li><strong>Mesuré</strong> (16.11.2026, ligne de commande v0.5.6 sous Windows)&nbsp;: un dossier de jeu de 72 fichiers (262&nbsp;Mo) est devenu en
+    6,3&nbsp;s un paquet de 164&nbsp;Mo&nbsp;; à partir d'un petit jeu construit à la main, les quatre formats d'image sont apparus, et un paquet de chacun.
+    Que la console démarre un tel paquet n'est pas vérifié – pour l'installer sur la console, Dump Forge mentionne kstuff, fpkg-enable et
+    ppr-patch.</li>
+  </ul>
+
   <h4>Options</h4>
   <p>Le bouton <strong>Options</strong> à gauche ouvre les réglages en cinq onglets, pris en compte seulement avec
   <em>Enregistrer</em>&nbsp;:</p>
@@ -2274,11 +2310,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     l'extraction, la construction et l'extraction de cette zone – laissé vide, le dossier de travail habituel du programme
     s'applique (à définir seulement en cas de besoin, par exemple si le lecteur système manque de place pour de gros paquets) ;
     action et format de destination par défaut pour les nouvelles tâches ; <em>Ouvrir le dossier de sortie après une tâche réussie</em> ;
-    le <strong>Builder par défaut</strong> (LibProsperoPkg ou ProsperoPkgTool, uniquement pour «&nbsp;Construire un paquet&nbsp;») ; le
+    le <strong>Builder par défaut</strong> (Dump Forge – par défaut –, LibProsperoPkg ou ProsperoPkgTool ; uniquement pour «&nbsp;Construire un paquet&nbsp;», une image est toujours construite par Dump Forge) ; le
     <strong>code de débogage</strong> – laissé vide, il utilise la valeur par défaut de l'outil (32 zéros), sinon exactement
     32 caractères ASCII imprimables. Il s'applique à la lecture, à la vérification, à l'extraction et à la construction&nbsp;; un paquet construit avec un
     autre code ne peut pas être ouvert sans lui.</li>
-    <li><strong>Construction</strong> (uniquement pour «&nbsp;Construire un paquet&nbsp;», la plupart des champs seulement avec LibProsperoPkg) : mode de compression
+    <li><strong>Construction</strong> (uniquement pour «&nbsp;Construire un paquet&nbsp;» ; en haut les réglages de Dump Forge – niveau de compression, vérification complète, omettre les bibliothèques de backport –, en dessous ceux de LibProsperoPkg) : mode de compression
     (Kraken, zlib ou aucune) et niveau, nombre de cœurs de travail de construction, chunks PlayGo, construction reproductible octet par octet et
     reconstruction PlayGo forcée ; <strong>Intégrer le backport</strong> avec le firmware cible et un
     dossier fakelib propre (vide = ensemble fourni) ; une <strong>version de firmware minimale</strong> pour

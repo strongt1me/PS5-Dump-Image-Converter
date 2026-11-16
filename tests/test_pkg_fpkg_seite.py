@@ -412,6 +412,33 @@ class PkgFpkgUnterseitenTests(unittest.TestCase):
         self.assertEqual(self.app._t("main.config_for", task=self.app._t("pkg_fpkg_seite.tab_fpkg")),
                          s._untertitel.cget("text"))
 
+    def test_ein_abbild_oeffnet_den_ps5_bereich_und_geht_dorthin(self) -> None:
+        """Seit 16.11.2026 baut Dump Forge aus .ffpkg, .ffpfsc, .ffpfs und .exfat ein Paket: Sie sind PS5-Quellen."""
+        self._bereich_vorgeben(pkg_fpkg_seite.UNTERSEITE_PKG)
+        s = self._seite()
+        for endung in (".ffpkg", ".ffpfsc", ".ffpfs", ".exfat"):
+            with self.subTest(endung=endung):
+                pfad = os.path.join(self.ordner, "Spiel" + endung)
+                with open(pfad, "wb") as f:
+                    f.write(b"Abbild" * 100)
+                with mock.patch.object(ps5_pkg_fenster.Ps5PkgFenster, "_pakete_hinzufuegen") as hinzu:
+                    erg = s.quelle_waehlen([pfad])
+                _WURZEL.update()
+                self.assertEqual("ps5", erg.plattform)
+                self.assertEqual(pkg_fpkg_seite.UNTERSEITE_FPKG, s.unterseite)
+                hinzu.assert_called_once_with([pfad], waehlen=True)
+                self.assertEqual(pfad, s.quelle_var.get())
+
+    def test_die_dateiauswahl_bietet_pakete_und_abbilder_an(self) -> None:
+        s = self._seite()
+        with mock.patch.object(pkg_fpkg_seite.filedialog, "askopenfilenames", return_value=()) as dialog:
+            s._datei_waehlen()
+        arten = dict((name, muster) for name, muster in dialog.call_args.kwargs["filetypes"])
+        erstes = dialog.call_args.kwargs["filetypes"][0]
+        for endung in ("*.pkg", "*.ffpkg", "*.ffpfsc", "*.ffpfs", "*.exfat"):
+            self.assertIn(endung, erstes[1])
+        self.assertIn("PKG", arten)
+
     def test_die_quelle_wechselt_den_bereich_hin_und_her(self) -> None:
         s = self._seite()
         ps4_datei = cnt_paket(os.path.join(self.ordner, "a.pkg"))
@@ -482,10 +509,10 @@ class PkgFpkgUnterseitenTests(unittest.TestCase):
         self.assertEqual(pkg_fpkg_seite.UNTERSEITE_FPKG, s.unterseite, "Der Bereich bleibt, wie er war.")
         self.assertEqual(gueltig, s.quelle_var.get(), "Das Feld behaelt die letzte gueltige Wahl.")
         text = s._hinweis.cget("text")
-        self.assertIn("Keine gültige PKG", text)
+        self.assertIn("Keine gültige Quelle", text)
         self.assertIn("nicht übernommen", text)
         zeilen = self._ps5().protokoll.get("1.0", "end")
-        self.assertIn("Keine gültige PKG", zeilen, "Die Meldung steht auch im Protokoll - nichts geschieht stumm.")
+        self.assertIn("Keine gültige Quelle", zeilen, "Die Meldung steht auch im Protokoll - nichts geschieht stumm.")
 
     def test_ein_ordner_ohne_spiel_und_ohne_pkg_wird_klar_abgelehnt(self) -> None:
         s = self._seite()
@@ -493,7 +520,7 @@ class PkgFpkgUnterseitenTests(unittest.TestCase):
         os.makedirs(leer)
         erg = s.quelle_waehlen([leer])
         self.assertIsNone(erg.plattform)
-        self.assertIn("Keine gültige PKG", s._hinweis.cget("text"))
+        self.assertIn("Keine gültige Quelle", s._hinweis.cget("text"))
 
     def test_ein_gemischter_ordner_geht_in_den_ps4_bereich_und_sagt_es(self) -> None:
         s = self._seite()

@@ -2219,13 +2219,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   package.</p>
 
   <h4>Building a package</h4>
-  <p>Choose a <strong>game folder</strong> (containing <code>eboot.bin</code> and <code>sce_sys/param.json</code>),
-  the target folder and the <strong>Package</strong> tile. The program builds a
-  <strong>debug package (FPKG)</strong> from it and then checks it with the same checklist as the action
-  <em>Check</em>. Which tool does the building is determined by the <strong>builder</strong> in the options
-  (see below): with <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, default) the tool
-  chooses the name of the output itself (<code>&lt;Content-ID&gt;-A…-V….pkg</code>); with
-  <strong>ProsperoPkgTool</strong> it is named <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.</p>
+  <p>Choose a <strong>game folder</strong> (containing <code>eboot.bin</code> and <code>sce_sys/param.json</code>)
+  or an <strong>image</strong>, the target folder and the <strong>Package</strong> tile. The program builds a
+  <strong>debug package (FPKG)</strong> from it. Which tool does the building is determined by the <strong>builder</strong>
+  in the options (see below): the default is <strong>Dump Forge</strong>, which builds game folders and images the way the
+  Dump Forge application does (see <a href="#k7forge">Building a package with Dump Forge</a>) and names the package
+  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. An <strong>image</strong> is always built by Dump Forge. With
+  <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, the earlier path, game folders only) the tool chooses the
+  name of the output itself (<code>&lt;Content-ID&gt;-A…-V….pkg</code>) and the program then checks the package with the
+  same checklist as the action <em>Check</em>; with <strong>ProsperoPkgTool</strong> it is named
+  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. The points below describe building with LibProsperoPkg.</p>
   <ul>
     <li><strong>Checked beforehand</strong> are the content ID and title ID (from <code>param.json</code>) and
     <code>param.json</code> itself, with the same check as in Task 1. If it has findings, the
@@ -2260,6 +2263,39 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     starting it on a console remains your own attempt.</p>
   </div>
 
+  <h4 id="k7forge">Building a package with Dump Forge</h4>
+  <p>The program ships the command-line tool of <strong>Dump Forge</strong> (<code>ps5-dump-forge</code>, folder
+  <code>Dump-Forge-CLI</code>) and runs it itself – nothing of it is re-implemented, so the build works the way the current
+  version of Dump Forge does it. Sources are a <strong>game folder</strong> and the images <code>.ffpkg</code>,
+  <code>.ffpfsc</code>, <code>.ffpfs</code> and <code>.exFAT</code>: drag them onto the source field, pick them with
+  <em>Choose file</em> or drop a folder holding such files. From an image only the <strong>package</strong> can be built here –
+  the formats FFPKG, FFPFSC, FFPFS and exFAT are built by tasks 1 to 6; the tile jumps to it by itself.</p>
+  <ul>
+    <li><strong>No temporary folder:</strong> Dump Forge reads the image itself (including the image inside a <code>.ffpfsc</code>) and
+    unpacks nothing to disk. The package is made in a working folder inside the target folder and reaches its place only after the check:
+    a failed or cancelled build leaves nothing unfinished behind, and an existing package of the same name stays intact – it is replaced
+    only with the <em>Overwrite existing</em> tick, and only after success.</li>
+    <li><strong>Checking:</strong> Dump Forge checks the source itself (identifiers, signatures, name lengths, <code>param.json</code>) and
+    reports its findings in the log; the program repairs no <code>param.json</code> here and adds no checklist of its own before or
+    after. After the build Forge reads the package back and checks its structure and checksums; by default it checks the content on a
+    sample, with <em>Verify completely</em> in the options byte for byte.</li>
+    <li><strong>Options</strong> (tab <em>Build</em>, at the top): the <strong>compression level</strong> (<em>Fast</em>,
+    <em>Balanced</em>, <em>Smallest package</em>, <em>Stored</em> – the two middle ones make the package about 2.6&nbsp;% smaller
+    and take about 6 and 9 times as long), <strong>Verify completely</strong> and <strong>Leave out the backport libraries</strong>
+    (<code>fakelib/</code>; Dump Forge refuses this when the SDK in <code>eboot.bin</code> was lowered). The number of cores is the one
+    from the build settings (0 = all). What only LibProsperoPkg knows (minimum firmware, patch mode, apply backport, PlayGo chunks,
+    reproducible build) Dump Forge ignores – the log says so before the build.</li>
+    <li><strong>Name and space:</strong> The package is named <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>; the name without the
+    extension stays within 63 bytes (the title is shortened, the identifier stays). The space in the target folder is checked beforehand.</li>
+    <li><strong>Platforms:</strong> The command-line tool is included for Windows (x64), Linux (x64) and macOS. If it is missing on your
+    platform, the program keeps building game folders with LibProsperoPkg; it then does not accept an image and says so.</li>
+    <li><strong>Checking afterwards:</strong> The action <em>Check</em> (the LibProsperoPkg checklist) reports one finding on a package from Dump Forge, about the RSA wrap (<code>cnt.wrap</code>): measured on the package from the example below, it passed 33 checks and failed this one, while a package built from the same source with LibProsperoPkg passed 42 of 42. Whether this matters for starting it on the console is not tested; Dump Forge checks its package by its own rules and passes them.</li>
+    <li><strong>Measured</strong> (16 Nov 2026, command-line tool v0.5.6 on Windows): a game folder with 72 files (262&nbsp;MB) became a
+    package of 164&nbsp;MB in 6.3&nbsp;s; from a small self-made game all four image formats were produced and a package from each. Whether
+    the console launches such a package is not tested – for installing it on the console Dump Forge names kstuff, fpkg-enable and
+    ppr-patch.</li>
+  </ul>
+
   <h4>Options</h4>
   <p>The <strong>Options</strong> button on the left opens the settings in five tabs, applied only with
   <em>Save</em>:</p>
@@ -2274,11 +2310,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     unpacking, building and extracting in this area – empty means the program’s existing work folder
     applies (set it only if needed, for example when the system drive has too little space for large packages);
     default action and target format for new jobs; <em>Open the output folder after a successful job</em>;
-    the <strong>default builder</strong> (LibProsperoPkg or ProsperoPkgTool, only for “Build package”); the
+    the <strong>default builder</strong> (Dump Forge – the default –, LibProsperoPkg or ProsperoPkgTool; only for “Build package”, an image is always built by Dump Forge); the
     <strong>debug passcode</strong> – empty uses the tool’s default (32 zeros), otherwise exactly
     32 printable ASCII characters. It applies to reading, checking, unpacking and building; a package built with a
     different passcode cannot be opened without it.</li>
-    <li><strong>Build</strong> (only for “Build package”, most fields only with LibProsperoPkg): compression mode
+    <li><strong>Build</strong> (only for “Build package”; at the top the settings for Dump Forge – compression level, full verification, leave out backport libraries –, below them those for LibProsperoPkg): compression mode
     (Kraken, zlib or none) and level, number of build workers, PlayGo chunks, a byte-reproducible build and
     a forced PlayGo rebuild; <strong>Apply backport before build</strong> with target firmware and a separate
     fakelib folder (empty = bundled set); a <strong>minimum firmware version</strong> for

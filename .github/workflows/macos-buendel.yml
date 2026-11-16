@@ -102,6 +102,7 @@ on:
       - 'helloworld/**'
       - '7-Zip-26.06/**'
       - 'PS5-PKG-Tool/**'
+      - 'Dump-Forge-CLI/**'
       - 'Backport_Fakelibs/**'
       - 'PS5 WebKit Autoloader/**'
       - 'PS5-AppInstall/**'
@@ -278,6 +279,28 @@ jobs:
               assert helfer is None, 'dasselbe gilt fuer den DLC-Helfer'
               print('OK - auf dieser Architektur wird richtigerweise keiner angeboten.')
           " "$WURZEL"
+
+      - name: Dump-Forge-Befehlszeile im fertigen Buendel
+        # Das Fenster "PKG / FPKG" baut Pakete mit dieser Befehlszeile (seit 16.11.2026; Dump-Forge-CLI/macos-universal).
+        # Es gibt sie nur als eine Datei fuer beide Architekturen, und PyInstaller und codesign fassen sie beim Einbetten
+        # an - geprueft wird darum die Datei IM Buendel, auf beiden Laeufern: Sie muss starten, ein kleines Spiel lesen und
+        # daraus ein Paket bauen (die ersten Bytes sind 0x7f und FIH). An echter Apple-Hardware ist das sonst nirgends zu sehen.
+        run: |
+          set -e
+          EXE=$(find "dist/PS5 Dump & Image Converter.app/Contents" -type f -name ps5-dump-forge | head -1)
+          echo "Befehlszeile: $EXE"
+          test -n "$EXE"
+          file "$EXE"
+          T="$RUNNER_TEMP/forge_probe"
+          rm -rf "$T"
+          mkdir -p "$T/Spiel/sce_sys"
+          printf '%s' '{"contentId":"EP9999-PPSA99999_00-TESTSPIEL0000001","titleId":"PPSA99999","contentVersion":"01.000.000","masterVersion":"01.00","applicationCategoryType":0,"applicationDrmType":"standard","conceptId":"100000","requiredSystemSoftwareVersion":"0x0200000000000000","sdkVersion":"0x0200000000000000","localizedParameters":{"defaultLanguage":"en-US","en-US":{"titleName":"Testspiel"}}}' > "$T/Spiel/sce_sys/param.json"
+          head -c 4096 /dev/urandom > "$T/Spiel/eboot.bin"
+          head -c 12000 /dev/zero > "$T/Spiel/daten.bin"
+          "$EXE" inspect "$T/Spiel"
+          "$EXE" convert "$T/Spiel" --to pkg -o "$T/Testspiel.pkg"
+          test "$(head -c 4 "$T/Testspiel.pkg" | od -An -c | tr -d ' ')" = '177FIH'
+          echo "OK - die Befehlszeile im Buendel baut ein Paket."
 
       - name: Abbild ablegen
         uses: actions/upload-artifact@v7

@@ -410,7 +410,8 @@ class PkgFpkgSeite:
     def _datei_waehlen(self) -> None:
         pfade = filedialog.askopenfilenames(
             parent=self.rahmen, title=self.t("pkg_fpkg_seite.choose_files"),
-            filetypes=[("PKG", "*.pkg"), (self.t("filetype.all_files"), "*.*")])
+            filetypes=[(self.t("pkg_fpkg_seite.filetype_sources"), "*.pkg *.ffpkg *.ffpfsc *.ffpfs *.exfat"),
+                       ("PKG", "*.pkg"), (self.t("filetype.all_files"), "*.*")])
         if pfade:
             self.quelle_waehlen([os.path.normpath(p) for p in pfade])
 

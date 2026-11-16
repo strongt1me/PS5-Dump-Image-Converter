@@ -26,6 +26,7 @@ pruefumgebung.umlenken("ps5pkgoptionen")
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 from ps5_validator.ui import ps5_pkg_fenster as fz          # noqa: E402
 from ps5_validator.ui import ps5_pkg_optionen as ui         # noqa: E402
+from ps5_validator.utils import forge_cli                   # noqa: E402
 from ps5_validator.utils import ps5_pkg_optionen as opt     # noqa: E402
 from ps5_validator.utils import ps5_pkg_werkzeug as wz      # noqa: E402
 from ps5_validator.utils.i18n import STRINGS                # noqa: E402
@@ -110,13 +111,30 @@ class RegelTests(unittest.TestCase):
             with self.subTest(wert=falsch):
                 self.assertIsNone(opt.normalisieren(opt.PASSCODE, falsch))
 
-    def test_builder_kennt_nur_lpp_und_ppt(self) -> None:
+    def test_builder_kennt_forge_lpp_und_ppt(self) -> None:
+        self.assertEqual("forge", opt.normalisieren(opt.BUILDER, "forge"))
         self.assertEqual("lpp", opt.normalisieren(opt.BUILDER, "lpp"))
         self.assertEqual("ppt", opt.normalisieren(opt.BUILDER, "ppt"))
-        for falsch in ("", "LPP", "anderes", None, 1):
+        for falsch in ("", "LPP", "Forge", "anderes", None, 1):
             with self.subTest(wert=falsch):
                 self.assertIsNone(opt.normalisieren(opt.BUILDER, falsch))
-        self.assertEqual("lpp", opt.STANDARD[opt.BUILDER])
+        self.assertEqual("forge", opt.STANDARD[opt.BUILDER], "Dump Forge ist seit 16.11.2026 der Standard")
+
+    def test_die_forge_einstellungen_haben_vorgaben_und_pruefung(self) -> None:
+        self.assertEqual("fast", opt.STANDARD[opt.FORGE_KRAKEN])
+        self.assertIs(False, opt.STANDARD[opt.FORGE_VOLL_PRUEFEN])
+        self.assertIs(False, opt.STANDARD[opt.FORGE_BACKPORT_ENTFERNEN])
+        for stufe in opt.FORGE_KRAKEN_STUFEN:
+            self.assertEqual(stufe, opt.normalisieren(opt.FORGE_KRAKEN, stufe))
+        for falsch in ("", "Fast", "slow", None, 3, True):
+            with self.subTest(stufe=falsch):
+                self.assertIsNone(opt.normalisieren(opt.FORGE_KRAKEN, falsch))
+        for schluessel in (opt.FORGE_VOLL_PRUEFEN, opt.FORGE_BACKPORT_ENTFERNEN):
+            self.assertIs(True, opt.normalisieren(schluessel, True))
+            for falsch in ("ja", 1, None):
+                with self.subTest(schluessel=schluessel, wert=falsch):
+                    self.assertIsNone(opt.normalisieren(schluessel, falsch))
+        self.assertEqual(opt.FORGE_KRAKEN_STUFEN, forge_cli.KRAKEN_STUFEN, "die Stufen der Optionen sind die der Befehlszeile")
 
     def test_passcode_wird_in_der_rueckfrage_nicht_im_klartext_gezeigt(self) -> None:
         geheim = ("geheim" * 6)[:32]
@@ -431,6 +449,39 @@ class DialogTests(unittest.TestCase):
         self.assertEqual("titel", self.app._load_setting(opt.SORTIERUNG, "titel"))
         self.assertIsNone(getattr(self.f, ui.DIALOG_ATTRIBUT))
 
+    def test_die_dump_forge_einstellungen_haben_vorgaben_und_werden_gespeichert(self) -> None:
+        self._laden()
+        dialog = self._dialog()
+        self.assertEqual("Dump Forge", dialog.builder_var.get(), "der Standard-Paketersteller")
+        self.assertEqual(dialog._forge_stufen()["fast"], dialog.forge_kraken_var.get())
+        self.assertIs(False, dialog.forge_voll_var.get())
+        self.assertIs(False, dialog.forge_backport_var.get())
+        self.assertEqual(["Dump Forge", "LibProsperoPkg 1.2.0", "ProsperoPkgTool"], list(dialog.builder_box.cget("values")))
+        self.assertEqual(4, len(dialog.forge_kraken_box.cget("values")))
+        dialog.forge_kraken_var.set(dialog._forge_stufen()["smallest"])
+        dialog.forge_voll_var.set(True)
+        dialog.forge_backport_var.set(True)
+        dialog.speichern()
+        _pumpen(0.3)
+        self.assertEqual("smallest", self._gespeichert(opt.FORGE_KRAKEN))
+        self.assertIs(True, self._gespeichert(opt.FORGE_VOLL_PRUEFEN))
+        self.assertIs(True, self._gespeichert(opt.FORGE_BACKPORT_ENTFERNEN))
+        self.assertEqual("forge", self._gespeichert(opt.BUILDER))
+        # ein neuer Dialog zeigt, was gespeichert wurde
+        neu = self._dialog()
+        self.assertEqual(neu._forge_stufen()["smallest"], neu.forge_kraken_var.get())
+        self.assertIs(True, neu.forge_voll_var.get())
+        neu.schliessen()
+
+    def test_zuruecksetzen_stellt_die_forge_vorgaben_wieder_her(self) -> None:
+        for schluessel, wert in ((opt.FORGE_KRAKEN, "stored"), (opt.FORGE_VOLL_PRUEFEN, True),
+                                 (opt.FORGE_BACKPORT_ENTFERNEN, True), (opt.BUILDER, "ppt")):
+            self.app._save_setting(schluessel, wert)
+        zurueck = opt.zuruecksetzen_werte()
+        self.assertEqual(("fast", False, False, "forge"), (
+            zurueck[opt.FORGE_KRAKEN], zurueck[opt.FORGE_VOLL_PRUEFEN], zurueck[opt.FORGE_BACKPORT_ENTFERNEN],
+            zurueck[opt.BUILDER]))
+
     def test_speichern_setzt_alles_um(self) -> None:
         self._laden()
         dialog = self._dialog()
@@ -579,12 +630,12 @@ class DialogTests(unittest.TestCase):
         dialog.schliessen()
 
     # ---------------- Wirkung im Fenster ----------------
-    def test_builder_ist_lpp_ohne_gespeicherten_wert(self) -> None:
-        self.assertEqual("lpp", self.f._builder())
+    def test_builder_ist_forge_ohne_gespeicherten_wert(self) -> None:
+        self.assertEqual("forge", self.f._builder())
 
-    def test_ein_ungueltig_gespeicherter_builder_faellt_auf_lpp_zurueck(self) -> None:
+    def test_ein_ungueltig_gespeicherter_builder_faellt_auf_forge_zurueck(self) -> None:
         self.app._save_setting(opt.BUILDER, "irgendwas")
-        self.assertEqual("lpp", self.f._builder())
+        self.assertEqual("forge", self.f._builder())
 
     def test_paket_bauen_mit_ppt_ohne_werkzeug_meldet_den_fehler(self) -> None:
         self._laden()

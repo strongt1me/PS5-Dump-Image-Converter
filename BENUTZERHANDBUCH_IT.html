@@ -2227,13 +2227,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   l’intero pacchetto.</p>
 
   <h4>Costruire un pacchetto</h4>
-  <p>Scegliere una <strong>cartella di gioco</strong> (con dentro <code>eboot.bin</code> e <code>sce_sys/param.json</code>),
-  la cartella di destinazione e il riquadro <strong>Pacchetto</strong>. Il programma ne costruisce un
-  <strong>pacchetto di debug (FPKG)</strong> e lo verifica poi con lo stesso elenco di controllo dell’azione
-  <em>Verifica</em>. Quale strumento costruisca lo decide il <strong>builder</strong> nelle opzioni
-  (vedere sotto): con <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, predefinito) lo strumento
-  stabilisce da sé il nome dell’output (<code>&lt;Content-ID&gt;-A…-V….pkg</code>); con
-  <strong>ProsperoPkgTool</strong> si chiama <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.</p>
+  <p>Scegliere una <strong>cartella di gioco</strong> (con dentro <code>eboot.bin</code> e <code>sce_sys/param.json</code>)
+  oppure un’<strong>immagine</strong>, la cartella di destinazione e il riquadro <strong>Pacchetto</strong>. Il programma ne costruisce un
+  <strong>pacchetto di debug (FPKG)</strong>. Quale strumento costruisca lo decide il <strong>builder</strong> nelle opzioni
+  (vedere sotto): quello predefinito è <strong>Dump Forge</strong>, che costruisce cartelle di gioco e immagini come fa
+  l’applicazione Dump Forge (vedere <a href="#k7forge">Costruire un pacchetto con Dump Forge</a>) e chiama il pacchetto
+  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. Un’<strong>immagine</strong> la costruisce sempre Dump Forge. Con
+  <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, la via precedente, solo cartelle di gioco) lo strumento stabilisce da sé
+  il nome dell’output (<code>&lt;Content-ID&gt;-A…-V….pkg</code>) e il programma verifica poi il pacchetto con lo stesso elenco di
+  controllo dell’azione <em>Verifica</em>; con <strong>ProsperoPkgTool</strong> si chiama
+  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. I punti seguenti descrivono la costruzione con LibProsperoPkg.</p>
   <ul>
     <li><strong>Controllati in anticipo</strong> sono Content-ID e Title-ID (dal <code>param.json</code>) e il
     <code>param.json</code> stesso, con lo stesso controllo dell’attività 1. Se presenta rilievi, il
@@ -2268,6 +2271,39 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     l’avvio su una console resta un tentativo da fare in proprio.</p>
   </div>
 
+  <h4 id="k7forge">Costruire un pacchetto con Dump Forge</h4>
+  <p>Il programma include la riga di comando di <strong>Dump Forge</strong> (<code>ps5-dump-forge</code>, cartella
+  <code>Dump-Forge-CLI</code>) e la esegue da sé – nulla è stato riscritto, quindi la costruzione procede come la fa la versione attuale
+  di Dump Forge. Le sorgenti sono una <strong>cartella di gioco</strong> e le immagini <code>.ffpkg</code>,
+  <code>.ffpfsc</code>, <code>.ffpfs</code> e <code>.exFAT</code>: trascinarle sul campo della sorgente, sceglierle con
+  <em>Scegli file</em> oppure rilasciare una cartella con tali file. Da un’immagine qui si può costruire solo il <strong>pacchetto</strong> –
+  i formati FFPKG, FFPFSC, FFPFS ed exFAT li costruiscono le attività da 1 a 6; il riquadro passa da solo a questa scelta.</p>
+  <ul>
+    <li><strong>Senza cartella temporanea:</strong> Dump Forge legge da sé l’immagine (anche l’immagine dentro un <code>.ffpfsc</code>) e
+    non estrae nulla sul disco. Il pacchetto nasce in una cartella di lavoro dentro la cartella di destinazione e arriva al suo posto solo dopo
+    la verifica: una costruzione fallita o annullata non lascia nulla di incompleto, e un pacchetto esistente con lo stesso nome resta intatto –
+    viene sostituito solo con il segno di spunta <em>Sovrascrivi l’esistente</em> e solo dopo il successo.</li>
+    <li><strong>Verifica:</strong> Dump Forge verifica da sé la sorgente (identificatori, firme, lunghezze dei nomi, <code>param.json</code>) e
+    riporta i suoi rilievi nel registro; il programma qui non ripara alcun <code>param.json</code> e non aggiunge un elenco di controllo proprio
+    prima o dopo. Dopo la costruzione Forge rilegge il pacchetto e ne verifica struttura e somme di controllo; il contenuto lo verifica per
+    impostazione predefinita su un campione, con <em>Verifica completa</em> nelle opzioni byte per byte.</li>
+    <li><strong>Opzioni</strong> (scheda <em>Costruzione</em>, in alto): il <strong>livello di compressione</strong> (<em>Veloce</em>,
+    <em>Bilanciato</em>, <em>Pacchetto più piccolo</em>, <em>Non compresso</em> – i due intermedi riducono il pacchetto di circa il 2,6&nbsp;%
+    e richiedono circa 6 e 9 volte più tempo), <strong>Verifica completa</strong> e <strong>Escludi le librerie di backport</strong>
+    (<code>fakelib/</code>; Dump Forge lo rifiuta se l’SDK in <code>eboot.bin</code> è stato abbassato). Il numero di core è quello delle
+    impostazioni di costruzione (0 = tutti). Ciò che conosce solo LibProsperoPkg (firmware minimo, modalità patch, integrare il backport,
+    chunk PlayGo, costruzione riproducibile) Dump Forge lo ignora – il registro lo dice prima della costruzione.</li>
+    <li><strong>Nome e spazio:</strong> Il pacchetto si chiama <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>; il nome senza estensione resta
+    entro 63 byte (il titolo viene accorciato, l’identificatore resta). Lo spazio nella cartella di destinazione viene verificato prima.</li>
+    <li><strong>Piattaforme:</strong> La riga di comando è inclusa per Windows (x64), Linux (x64) e macOS. Se manca sulla vostra piattaforma,
+    il programma continua a costruire le cartelle di gioco con LibProsperoPkg; un’immagine allora non la accetta e lo dice.</li>
+    <li><strong>Verifica successiva:</strong> L’azione <em>Verifica</em> (l’elenco di LibProsperoPkg) segnala un rilievo su un pacchetto di Dump Forge, riguardo all’involucro RSA (<code>cnt.wrap</code>): misurato sul pacchetto dell’esempio qui sotto, ha superato 33 verifiche e fallito questa, mentre un pacchetto costruito con LibProsperoPkg dalla stessa sorgente ne ha superate 42 su 42. Se questo conti per l’avvio sulla console non è verificato; Dump Forge verifica da sé il proprio pacchetto secondo le sue regole e le supera.</li>
+    <li><strong>Misurato</strong> (16.11.2026, riga di comando v0.5.6 su Windows): una cartella di gioco con 72 file (262&nbsp;MB) è diventata in
+    6,3&nbsp;s un pacchetto di 164&nbsp;MB; da un piccolo gioco costruito appositamente sono nati tutti e quattro i formati di immagine e da
+    ciascuno un pacchetto. Se la console avvii un tale pacchetto non è verificato – per installarlo sulla console Dump Forge indica kstuff,
+    fpkg-enable e ppr-patch.</li>
+  </ul>
+
   <h4>Opzioni</h4>
   <p>Il pulsante <strong>Opzioni</strong> a sinistra apre le impostazioni in cinque schede, applicate solo con
   <em>Salva</em>:</p>
@@ -2282,11 +2318,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     estrazione, costruzione ed estrazione di file di quest’area – se vuota vale la cartella di lavoro già usata dal programma
     (da impostare solo se necessario, per esempio se l’unità di sistema ha troppo poco spazio per pacchetti grandi);
     azione e formato di destinazione standard per le nuove attività; <em>Apri la cartella di output dopo un’operazione riuscita</em>;
-    il <strong>builder predefinito</strong> (LibProsperoPkg o ProsperoPkgTool, solo per “costruire pacchetto”); il
+    il <strong>builder predefinito</strong> (Dump Forge – quello predefinito –, LibProsperoPkg o ProsperoPkgTool; solo per “costruire pacchetto”, un’immagine la costruisce sempre Dump Forge); il
     <strong>codice di debug</strong> – se vuoto vale il valore standard dello strumento (32 zeri), altrimenti esattamente
     32 caratteri ASCII stampabili. Vale per leggere, verificare, estrarre e costruire; un pacchetto costruito con un
     altro codice non si può aprire senza di esso.</li>
-    <li><strong>Costruzione</strong> (solo per “costruire pacchetto”, la maggior parte dei campi solo con LibProsperoPkg): modalità di compressione
+    <li><strong>Costruzione</strong> (solo per “costruire pacchetto”; in alto le impostazioni di Dump Forge – livello di compressione, verifica completa, escludere le librerie di backport –, sotto quelle di LibProsperoPkg): modalità di compressione
     (Kraken, zlib o nessuna) e livello, numero di worker di costruzione, chunk PlayGo, una costruzione riproducibile al byte e
     una ricostruzione forzata di PlayGo; <strong>integrare il backport</strong> con firmware di destinazione e una
     cartella fakelib propria (vuoto = set incluso); un <strong>firmware minimo</strong> per

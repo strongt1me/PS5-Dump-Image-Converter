@@ -148,6 +148,15 @@ if os.path.isdir(os.path.join(_pkgtool, _rid_mac)):
     _datas.append((os.path.join(_pkgtool, 'LICENSE'), 'PS5-PKG-Tool'))
     _datas.append((os.path.join(_pkgtool, 'NOTICE_Magick.NET.txt'), 'PS5-PKG-Tool'))
 
+# Befehlszeile von Dump Forge (quer3q, GPL-3.0-or-later) fuer den Bau von Paketen aus Spielordnern und Abbildern
+# im Bereich „PKG / FPKG“ (seit 16.11.2026; Herkunft und Pruefsummen in Dump-Forge-CLI/README.md). Nur die
+# Befehlszeile dieser Plattform, dazu Lizenz und Hinweise.
+_forgecli = os.path.join(_here, 'Dump-Forge-CLI')
+if os.path.isdir(os.path.join(_forgecli, 'macos-universal')):
+    _datas.append((os.path.join(_forgecli, 'macos-universal'), 'Dump-Forge-CLI/macos-universal'))
+    for _n in ('LICENSE', 'THIRD-PARTY-NOTICES.md', 'README.md'):
+        _datas.append((os.path.join(_forgecli, _n), 'Dump-Forge-CLI'))
+
 # Lizenzen der mitgelieferten Fremdkomponenten einbetten. Das Programm enthaelt
 # die Payloads aus helloworld/ - darunter zftpd unter MIT-Lizenz, die verlangt,
 # dass der Lizenztext jeder Kopie beiliegt. Im Fenster CREDITS ist die Datei

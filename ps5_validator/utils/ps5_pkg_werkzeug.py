@@ -35,6 +35,9 @@ _Abbruch = Callable[[], bool]
 
 #: ``PaketInfo.typ`` eines Spielordners.
 TYP_ORDNER = "Ordner"
+#: ``PaketInfo.typ`` eines Abbilds (``.ffpkg``, ``.ffpfsc``, ``.ffpfs``, ``.exfat``) - gelesen von Dump Forge
+#: (:mod:`ps5_validator.utils.forge_cli`), baubar nur zu einem Paket.
+TYP_ABBILD = "Abbild"
 
 #: So oft (Sekunden) zeigt :func:`extrahieren` ein Lebenszeichen, wenn das Werkzeug nichts meldet. Gemessen am 12.10.2026
 #: an einem 31-GB-Paket auf einer Festplatte: Das Lesen des Inhalts (``list-inner``) dauerte mit kaltem Zwischenspeicher
@@ -386,11 +389,29 @@ class PaketInfo:
     param: dict = field(default_factory=dict)
     icon: str = ""                #: Pfad der ausgelesenen ``icon0.png`` (leer, wenn keine)
     arbeit: str = ""              #: Ordner mit dem ausgelesenen Cover - gehoert dem Fenster, wird beim Schliessen entfernt
+    #: Nur bei einem Abbild: Forges Formatname (``exfat``, ``ffpkg``, ``ffpfs``, ``ffpfsc``).
+    abbild: str = ""
+    #: Forges Vorabbefunde zur Quelle (Fehler und Warnungen, je Zeile einer) - nur von Dump Forge gelesene Quellen.
+    befunde: list = field(default_factory=list)
+    #: Ein DLC oder Update (kein ``eboot.bin``, aber ein gueltiges ``param.json``) - baut nur zu einem Paket.
+    zusatzinhalt: bool = False
+    #: Ein Patch-Paket (``\x7fLIH``): wird nur gelesen, nie umgewandelt.
+    patch: bool = False
 
     @property
     def ist_ordner(self) -> bool:
         """Ein Spielordner (Dump) statt eines Pakets."""
         return self.typ == TYP_ORDNER
+
+    @property
+    def ist_abbild(self) -> bool:
+        """Ein Abbild (``.ffpkg``, ``.ffpfsc``, ``.ffpfs``, ``.exfat``) statt eines Pakets oder Spielordners."""
+        return self.typ == TYP_ABBILD
+
+    @property
+    def ist_quelle(self) -> bool:
+        """Etwas, aus dem ein Paket erst gebaut wird (Spielordner oder Abbild) - kein fertiges Paket."""
+        return self.typ in (TYP_ORDNER, TYP_ABBILD)
 
     @property
     def debug(self) -> bool:

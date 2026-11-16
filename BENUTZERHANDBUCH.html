@@ -2239,12 +2239,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h4>Ein Paket bauen</h4>
   <p>Wählen Sie einen <strong>Spielordner</strong> (<code>eboot.bin</code> und <code>sce_sys/param.json</code>
-  liegen darin), den Zielordner und die Kachel <strong>Paket</strong>. Das Programm baut daraus ein
-  <strong>Debug-Paket (FPKG)</strong> und prüft es danach mit derselben Prüfliste wie die Aktion
-  <em>Prüfen</em>. Welches Werkzeug dabei baut, bestimmt der <strong>Baumeister</strong> in den Optionen
-  (siehe unten): mit <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, Vorgabe) legt das Werkzeug
-  den Namen der Ausgabe selbst fest (<code>&lt;Content-ID&gt;-A…-V….pkg</code>); mit
-  <strong>ProsperoPkgTool</strong> heißt sie <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.</p>
+  liegen darin) oder ein <strong>Abbild</strong>, den Zielordner und die Kachel <strong>Paket</strong>. Das Programm baut daraus ein
+  <strong>Debug-Paket (FPKG)</strong>. Welches Werkzeug dabei baut, bestimmt der <strong>Baumeister</strong> in den Optionen
+  (siehe unten): Vorgabe ist <strong>Dump Forge</strong>; es baut Spielordner und Abbilder so, wie es die Dump-Forge-Anwendung tut
+  (siehe <a href="#k7forge">Ein Paket mit Dump Forge bauen</a>), und nennt das Paket <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.
+  Ein <strong>Abbild</strong> baut immer Dump Forge. Mit <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, der frühere Weg,
+  nur für Spielordner) legt das Werkzeug den Namen der Ausgabe selbst fest (<code>&lt;Content-ID&gt;-A…-V….pkg</code>) und das
+  Programm prüft das Paket danach mit derselben Prüfliste wie die Aktion <em>Prüfen</em>; mit <strong>ProsperoPkgTool</strong>
+  heißt es <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. Die folgenden Punkte beschreiben den Bau mit LibProsperoPkg.</p>
   <ul>
     <li><strong>Vorher geprüft</strong> werden Content-ID und Title-ID (aus der <code>param.json</code>) und die
     <code>param.json</code> selbst, mit derselben Prüfung wie in Aufgabe 1. Hat sie Beanstandungen, bietet das
@@ -2279,6 +2281,39 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     gemessen; der Start an einer Konsole bleibt Ihr Versuch.</p>
   </div>
 
+  <h4 id="k7forge">Ein Paket mit Dump Forge bauen</h4>
+  <p>Das Programm bringt die Befehlszeile von <strong>Dump Forge</strong> (<code>ps5-dump-forge</code>, Ordner
+  <code>Dump-Forge-CLI</code>) mit und führt sie selbst aus – nichts davon ist nachgebaut, der Bau läuft so, wie ihn die aktuelle
+  Fassung von Dump Forge macht. Quellen sind ein <strong>Spielordner</strong> und die Abbilder <code>.ffpkg</code>,
+  <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.exFAT</code>: Ziehen Sie sie auf das Quellfeld, wählen Sie sie mit
+  <em>Datei wählen</em> oder legen Sie einen Ordner mit solchen Dateien ab. Aus einem Abbild geht hier nur das <strong>Paket</strong> –
+  die Formate FFPKG, FFPFSC, FFPFS und exFAT bauen die Aufgaben 1 bis 6; die Kachel springt von selbst darauf.</p>
+  <ul>
+    <li><strong>Ohne Zwischenordner:</strong> Dump Forge liest das Abbild selbst (auch das Abbild in einer <code>.ffpfsc</code>) und
+    entpackt nichts auf die Platte. Das Paket entsteht in einem Arbeitsordner im Zielordner und kommt erst nach der Prüfung an seinen
+    Platz: Ein gescheiterter oder abgebrochener Bau lässt nichts Unfertiges zurück, und ein vorhandenes Paket gleichen Namens bleibt
+    unversehrt – es wird nur mit dem Haken <em>Vorhandenes überschreiben</em> und erst nach dem Erfolg ersetzt.</li>
+    <li><strong>Prüfung:</strong> Dump Forge prüft die Quelle selbst (Kennungen, Signaturen, Namenslängen, <code>param.json</code>) und
+    meldet seine Befunde im Protokoll; das Programm repariert dabei keine <code>param.json</code> und legt keine eigene Prüfliste davor
+    oder danach. Nach dem Bau liest Forge das Paket zurück und prüft Aufbau und Prüfsummen; den Inhalt prüft es in der Vorgabe an einer
+    Stichprobe, mit <em>Vollständig prüfen</em> in den Optionen Byte für Byte.</li>
+    <li><strong>Optionen</strong> (Register <em>Bau</em>, oben): die <strong>Kompressionsstufe</strong> (<em>Schnell</em>,
+    <em>Ausgewogen</em>, <em>Kleinstes Paket</em>, <em>Unkomprimiert</em> – die beiden mittleren machen das Paket etwa 2,6&nbsp;% kleiner
+    und brauchen etwa 6- bzw. 9-mal so lange), <strong>Vollständig prüfen</strong> und <strong>Backport-Bibliotheken weglassen</strong>
+    (<code>fakelib/</code>; Dump Forge lehnt das ab, wenn das SDK in der <code>eboot.bin</code> gesenkt wurde). Die Zahl der Kerne ist
+    die aus den Bau-Einstellungen (0 = alle). Was nur LibProsperoPkg kennt (Mindest-Firmware, Patch-Modus, Backport einbauen,
+    PlayGo-Chunks, reproduzierbarer Bau), ignoriert Dump Forge – das Protokoll sagt es vor dem Bau.</li>
+    <li><strong>Name und Platz:</strong> Das Paket heißt <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>; der Name ohne Endung bleibt in
+    63 Bytes (der Titel wird gekürzt, die Kennung bleibt). Der Platz im Zielordner wird vorher geprüft.</li>
+    <li><strong>Plattformen:</strong> Die Befehlszeile liegt für Windows (x64), Linux (x64) und macOS bei. Fehlt sie auf Ihrer Plattform,
+    baut das Programm Spielordner weiter über LibProsperoPkg; ein Abbild nimmt es dann nicht an und sagt es.</li>
+    <li><strong>Prüfen danach:</strong> Die Aktion <em>Prüfen</em> (die Prüfliste von LibProsperoPkg) meldet bei einem Paket von Dump Forge einen Befund zur RSA-Umhüllung (<code>cnt.wrap</code>): Gemessen an dem Paket aus dem Beispiel unten bestand es 33 Prüfungen und scheiterte an dieser einen, während ein mit LibProsperoPkg aus derselben Quelle gebautes 42 von 42 bestand. Ob das für den Start an der Konsole etwas bedeutet, ist nicht geprüft; Dump Forge prüft sein Paket nach seinen eigenen Regeln und besteht sie.</li>
+    <li><strong>Gemessen</strong> (16.11.2026, Befehlszeile v0.5.6 unter Windows): Ein Spielordner mit 72 Dateien (262&nbsp;MB) wurde in
+    6,3&nbsp;s zu einem Paket von 164&nbsp;MB; aus einem kleinen selbst gebauten Spiel entstanden alle vier Abbildformate und aus jedem ein
+    Paket. Ob die Konsole ein solches Paket startet, ist nicht geprüft – Dump Forge nennt für die Installation an der Konsole kstuff,
+    fpkg-enable und ppr-patch.</li>
+  </ul>
+
   <h4>Optionen</h4>
   <p>Der Knopf <strong>Optionen</strong> links öffnet die Einstellungen in fünf Reitern, erst mit
   <em>Speichern</em> übernommen:</p>
@@ -2293,11 +2328,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Entpacken, Bauen und Extrahieren dieses Bereichs – leer lässt den bisherigen Arbeitsordner des Programms
     gelten (nur bei Bedarf setzen, etwa wenn das Systemlaufwerk für große Pakete zu wenig Platz hat);
     Standard-Aktion und -Zielformat für neue Aufträge; <em>Ausgabeordner nach erfolgreichem Auftrag öffnen</em>;
-    der <strong>Standard-Builder</strong> (LibProsperoPkg oder ProsperoPkgTool, nur für „Paket bauen“); der
+    der <strong>Standard-Builder</strong> (Dump Forge – die Vorgabe –, LibProsperoPkg oder ProsperoPkgTool; nur für „Paket bauen“, ein Abbild baut immer Dump Forge); der
     <strong>Debug-Passcode</strong> – leer verwendet den Standard des Werkzeugs (32 Nullen), andernfalls genau
     32 druckbare ASCII-Zeichen. Er gilt fürs Lesen, Prüfen, Entpacken und Bauen; ein Paket, das mit einem
     anderen Passcode gebaut wurde, lässt sich ohne ihn nicht öffnen.</li>
-    <li><strong>Bau</strong> (nur für „Paket bauen“, meiste Felder nur bei LibProsperoPkg): Kompressionsmodus
+    <li><strong>Bau</strong> (nur für „Paket bauen“; oben die Einstellungen für Dump Forge – Kompressionsstufe, vollständige Prüfung, Backport-Bibliotheken weglassen –, darunter die für LibProsperoPkg): Kompressionsmodus
     (Kraken, zlib oder keine) und -stufe, Zahl der Bau-Worker, PlayGo-Chunks, ein byte-reproduzierbarer Bau und
     ein erzwungener PlayGo-Neuaufbau; <strong>Backport einbauen</strong> mit Ziel-Firmware und einem eigenen
     Fakelib-Ordner (leer = mitgelieferter Satz); eine <strong>Mindest-Firmware</strong> für

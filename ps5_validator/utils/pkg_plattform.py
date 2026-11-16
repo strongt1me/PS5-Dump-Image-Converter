@@ -36,6 +36,11 @@ CNT_MAGIC = b"\x7fCNT"
 FIH_MAGIC = b"\x7fFIH"
 LIH_MAGIC = b"\x7fLIH"
 
+#: Abbilder, die Dump Forge zu einem Paket baut (:mod:`ps5_validator.utils.forge_cli`): Endung (klein) -> Forges Name.
+#: Sie tragen keine Paketkennung; ob PS4 oder PS5, sagt erst ihr Inhalt - Forge kennt nur PS5-Titel, darum gelten sie hier
+#: als PS5 (ein PS4-Abbild meldet Forge beim Lesen selbst).
+ENDUNGEN_ABBILD = {".ffpkg": "ffpkg", ".ffpfsc": "ffpfsc", ".ffpfs": "ffpfs", ".exfat": "exfat"}
+
 _KOPF_GROESSE = 0x5A0
 _EINTRAG = 0x20
 _MAX_EINTRAEGE = 0x10000
@@ -70,6 +75,18 @@ def _lesen(pfad: str, menge: int) -> bytes:
             return f.read(menge)
     except OSError:
         return b""
+
+
+def ist_abbild(pfad: str) -> bool:
+    """Eine Abbilddatei (``.ffpkg``, ``.ffpfsc``, ``.ffpfs``, ``.exfat``) nach der Endung."""
+    return os.path.splitext(str(pfad))[1].lower() in ENDUNGEN_ABBILD
+
+
+def datei_plattform(pfad: str) -> "tuple[str | None, str]":
+    """Die Plattform einer Datei: Abbild nach der Endung (PS5), sonst :func:`paket_plattform` am Kopf."""
+    if ist_abbild(pfad):
+        return PS5, "Abbild %s" % os.path.splitext(pfad)[1].lower()
+    return paket_plattform(pfad)
 
 
 def paket_plattform(pfad: str) -> "tuple[str | None, str]":
@@ -107,19 +124,25 @@ def _eintrag_kennungen(pfad: str, kopf: bytes) -> "set[int]":
         return set()
 
 
+def _pkg_name(name: str) -> bool:
+    """Ein ``.pkg`` oder eine Abbilddatei - was ein Ordner an Quellen hergibt."""
+    klein = name.lower()
+    return klein.endswith(".pkg") or ist_abbild(klein)
+
+
 def _pkg_dateien(ordner: str) -> "list[str]":
-    """Die ``.pkg`` eines Ordners, eine Ebene tief (Spiele liegen oft in je einem Unterordner)."""
+    """Die ``.pkg`` und Abbilder eines Ordners, eine Ebene tief (Spiele liegen oft in je einem Unterordner)."""
     gefunden: "list[str]" = []
     try:
         for eintrag in sorted(os.scandir(ordner), key=lambda e: e.name.lower()):
             if len(gefunden) >= _MAX_DATEIEN:
                 break
-            if eintrag.is_file() and eintrag.name.lower().endswith(".pkg"):
+            if eintrag.is_file() and _pkg_name(eintrag.name):
                 gefunden.append(eintrag.path)
             elif eintrag.is_dir():
                 try:
                     for tiefer in sorted(os.scandir(eintrag.path), key=lambda e: e.name.lower()):
-                        if tiefer.is_file() and tiefer.name.lower().endswith(".pkg"):
+                        if tiefer.is_file() and _pkg_name(tiefer.name):
                             gefunden.append(tiefer.path)
                 except OSError:
                     continue
@@ -171,18 +194,18 @@ def erkennen(pfade: "list[str] | str") -> Erkennung:
                 continue
             dateien = _pkg_dateien(pfad)
             for datei in dateien:
-                plattform, grund = paket_plattform(datei)
+                plattform, grund = datei_plattform(datei)
                 if plattform is not None:
                     merken(plattform, datei, grund)
             ordner_art = ordner_art or ART_ORDNER
         elif os.path.isfile(pfad):
-            plattform, grund = paket_plattform(pfad)
+            plattform, grund = datei_plattform(pfad)
             if plattform is not None:
                 merken(plattform, pfad, grund)
 
     if not ps4 and not ps5:
         if ordner_gewaehlt:
-            return Erkennung(None, "weder Spielordner (sce_sys) noch .pkg im Ordner", pfade=pfade)
+            return Erkennung(None, "weder Spielordner (sce_sys) noch .pkg oder Abbild im Ordner", pfade=pfade)
         return Erkennung(None, "keine bekannte Paket-Magic", pfade=pfade)
 
     erg = Erkennung(None, "", pfade=pfade, anzahl_ps4=len(ps4), anzahl_ps5=len(ps5))

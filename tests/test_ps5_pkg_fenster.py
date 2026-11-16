@@ -147,8 +147,10 @@ class FensterTests(unittest.TestCase):
             m.start()
             self.addCleanup(m.stop)
         # Die Einstellungen des Fensters stehen im umgelenkten Ordner - frueher gespeichertes soll nichts vorgeben.
+        # Paketersteller: Seit 16.11.2026 ist Dump Forge die Vorgabe - die Tests dieser Klasse pruefen den Weg ueber
+        # LibProsperoPkg (die Forge-Tests stehen in ``test_ps5_pkg_forge.py``).
         for schluessel, wert in ((fz.EINST_AKTION, fz.AKTION_UMWANDELN), (fz.EINST_FORMAT, "ffpfsc"),
-                                 (fz.EINST_BIBLIOTHEK, []), (fz.EINST_ZIEL, "")):
+                                 (fz.EINST_BIBLIOTHEK, []), (fz.EINST_ZIEL, ""), (opt.BUILDER, "lpp")):
             self.app._save_setting(schluessel, wert)
         self.f = fz.oeffnen(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)
         self.addCleanup(self._schliessen)

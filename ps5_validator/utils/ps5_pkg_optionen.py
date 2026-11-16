@@ -15,6 +15,7 @@ import os
 from typing import Any, Callable
 
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
+from ps5_validator.utils.pkg_plattform import ENDUNGEN_ABBILD
 
 #: Bibliotheksordner (Liste von Pfaden) - ihre Pakete kommen beim Speichern und, mit ``START_SCAN``, bei jedem Start dazu.
 ORDNER = "ps5pkg_ordner"
@@ -30,10 +31,10 @@ OEFFNEN = "ps5pkg_oeffnen"
 #: (32 Nullen). Ein Paket, das mit einem anderen Passcode gebaut wurde, liesse sich sonst nicht lesen (nicht sein Kopf -
 #: der ist immer offen -, aber param.json, Cover und der Inhalt).
 PASSCODE = "ps5pkg_passcode"
-#: Welches Werkzeug "Paket bauen" verwendet - "lpp" (LibProsperoPkg 1.2.0, ffpfsc-pkg-tool, Vorgabe) oder "ppt"
-#: (ProsperoPkgTool, zweiter Paketersteller seit 12.10.2026). Gilt nur fuer den Bau; Lesen, Pruefen und Entpacken
-#: bleiben immer bei LibProsperoPkg (ffpfsc-pkg-tool kennt --json, Passcode und die CNT-Metadaten-Zusammenfuehrung,
-#: ProsperoPkgTool nicht).
+#: Welches Werkzeug "Paket bauen" verwendet - "forge" (Dump Forge, Vorgabe seit 16.11.2026), "lpp" (LibProsperoPkg
+#: 1.2.0, ffpfsc-pkg-tool, der fruehere Weg) oder "ppt" (ProsperoPkgTool, zweiter Paketersteller seit 12.10.2026). Gilt
+#: nur fuer den Bau eines Spielordners (ein Abbild baut immer Dump Forge); Lesen, Pruefen und Entpacken eines Pakets
+#: bleiben immer bei LibProsperoPkg (ffpfsc-pkg-tool kennt --json, Passcode und die CNT-Metadaten-Zusammenfuehrung).
 BUILDER = "ps5pkg_builder"
 ZIEL = "ps5pkg_ziel"
 #: Eigener Arbeitsordner fuer Entpacken/Bauen/Extrahieren dieses Fensters (seit v1.9.83). Leer (Vorgabe) = wie
@@ -43,6 +44,14 @@ TEMP_ORDNER = "ps5pkg_temp_ordner"
 FORMAT = "ps5pkg_format"
 AKTION = "ps5pkg_aktion"
 BIBLIOTHEK = "ps5pkg_bibliothek"
+
+# --- Dump Forge (seit 16.11.2026) -----------------------------------------
+#: Kompressionsstufe des Pakets (``--kraken``): "fast" (Vorgabe von Dump Forge), "balanced", "smallest" oder "stored".
+FORGE_KRAKEN = "ps5pkg_forge_kraken"
+#: Das fertige Paket Byte fuer Byte gegen die Quelle pruefen (``--full-verify``); aus = Stichprobe (Vorgabe von Forge).
+FORGE_VOLL_PRUEFEN = "ps5pkg_forge_voll_pruefen"
+#: Die Backport-Bibliotheken aus ``fakelib/`` weglassen, die Emulatoren behalten (``--remove-backport``).
+FORGE_BACKPORT_ENTFERNEN = "ps5pkg_forge_backport_entfernen"
 
 # --- Bau-Einstellungen (seit v1.9.83) ------------------------------------
 #: Kompressionsmodus beim Bau: "none", "zlib" oder "kraken" (Vorgabe).
@@ -75,7 +84,8 @@ passcode_gueltig = wz.passcode_gueltig
 SORTIERUNGEN = ("titel", "titel_id", "groesse")
 AKTIONEN = ("umwandeln", "extrahieren", "pruefen")
 FORMATE = ("ffpkg", "ffpfsc", "ffpfs", "exfat")
-BUILDER_WERTE = ("lpp", "ppt")
+BUILDER_WERTE = ("forge", "lpp", "ppt")
+FORGE_KRAKEN_STUFEN = ("fast", "balanced", "smallest", "stored")
 KRAKEN_MODI = ("kraken", "zlib", "none")
 
 #: Vorgaben der Optionen. Die Bibliothek selbst (``BIBLIOTHEK``) und die Bibliotheksordner gehoeren nicht zum Zuruecksetzen.
@@ -86,7 +96,7 @@ STANDARD: dict = {
     SORTIERUNG: "titel",
     OEFFNEN: False,
     PASSCODE: "",
-    BUILDER: "lpp",
+    BUILDER: "forge",
     ZIEL: "",
     TEMP_ORDNER: "",
     FORMAT: "ffpfsc",
@@ -102,6 +112,9 @@ STANDARD: dict = {
     BACKPORT_FAKELIB_ORDNER: "",
     MIN_FW_VERSION: "",
     PATCH_MODUS: False,
+    FORGE_KRAKEN: "fast",
+    FORGE_VOLL_PRUEFEN: False,
+    FORGE_BACKPORT_ENTFERNEN: False,
 }
 
 #: Alles, was Export und Import kennen.
@@ -127,6 +140,10 @@ def normalisieren(schluessel: str, wert):
         return wert if wert in BUILDER_WERTE else None
     if schluessel == KRAKEN_MODUS:
         return wert if wert in KRAKEN_MODI else None
+    if schluessel == FORGE_KRAKEN:
+        return wert if wert in FORGE_KRAKEN_STUFEN else None
+    if schluessel in (FORGE_VOLL_PRUEFEN, FORGE_BACKPORT_ENTFERNEN):
+        return wert if isinstance(wert, bool) else None
     if schluessel == KRAKEN_STUFE:
         try:
             v = int(wert)
@@ -227,7 +244,7 @@ def zuruecksetzen_werte() -> dict[str, Any]:
 
 
 def ordner_durchsuchen(ordner: str, ist_spiel: Callable[[str], bool], grenze: int = 5000) -> list[str]:
-    """Alle ``.pkg`` und Spielordner unter ``ordner``, beliebig tief (ein Spielordner wird nicht weiter durchsucht).
+    """Alle ``.pkg``, Abbilder und Spielordner unter ``ordner``, beliebig tief (ein Spielordner wird nicht weiter durchsucht).
 
     ``grenze`` schuetzt vor einem versehentlich gewaehlten Laufwerk: Danach hoert die Suche auf.
     """
@@ -245,7 +262,7 @@ def ordner_durchsuchen(ordner: str, ist_spiel: Callable[[str], bool], grenze: in
         for eintrag in eintraege:
             try:
                 if eintrag.is_file():
-                    if eintrag.name.lower().endswith(".pkg"):
+                    if eintrag.name.lower().endswith(".pkg") or os.path.splitext(eintrag.name)[1].lower() in ENDUNGEN_ABBILD:
                         gefunden.append(eintrag.path)
                 elif eintrag.is_dir():
                     if eintrag.name.lower() in _UEBERSPRINGEN:

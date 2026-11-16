@@ -182,6 +182,58 @@ class ErkennenTests(unittest.TestCase):
                 f.write(os.urandom(32))
         self.assertIsNone(pp.erkennen([os.path.join(self.ordner, "misch")]).plattform)
 
+    # ---------------- Abbilder (seit 16.11.2026: Dump Forge baut sie zum Paket) ----------------
+    def test_ein_abbild_ist_ps5_und_traegt_keine_ps4_art(self) -> None:
+        for endung in (".ffpkg", ".ffpfsc", ".ffpfs", ".exfat", ".EXFAT"):
+            with self.subTest(endung=endung):
+                pfad = self.p("spiel" + endung)
+                with open(pfad, "wb") as f:
+                    f.write(b"kein Paketkopf" * 40)
+                erg = pp.erkennen([pfad])
+                self.assertEqual((pp.PS5, ""), (erg.plattform, erg.art))
+                self.assertEqual([pfad], erg.pfade)
+                self.assertIn("Abbild", erg.grund)
+                self.assertEqual((pp.PS5, erg.grund), pp.datei_plattform(pfad))
+
+    def test_andere_endungen_bleiben_ohne_paketkopf_unerkannt(self) -> None:
+        for name in ("a.zip", "a.exfat.txt", "a.7z", "a.img"):
+            with self.subTest(name=name):
+                pfad = self.p(name)
+                with open(pfad, "wb") as f:
+                    f.write(b"x" * 100)
+                self.assertIsNone(pp.erkennen([pfad]).plattform)
+
+    def test_ein_ordner_mit_abbildern_und_ps5_paketen_geht_komplett_in_den_ps5_bereich(self) -> None:
+        a = self.p("ordner", "a.exfat")
+        b = fih_paket(self.p("ordner", "b.pkg"))
+        c = self.p("ordner", "unter", "c.ffpfsc")
+        for pfad in (a, c):
+            with open(pfad, "wb") as f:
+                f.write(b"x" * 64)
+        erg = pp.erkennen([os.path.join(self.ordner, "ordner")])
+        self.assertEqual(pp.PS5, erg.plattform)
+        self.assertEqual(3, erg.anzahl_ps5)
+        self.assertFalse(erg.gemischt)
+
+    def test_ein_ordner_nur_mit_einem_abbild_ist_gueltig(self) -> None:
+        with open(self.p("nur", "x.ffpkg"), "wb") as f:
+            f.write(b"x")
+        erg = pp.erkennen([os.path.join(self.ordner, "nur")])
+        self.assertEqual((pp.PS5, 1), (erg.plattform, erg.anzahl_ps5))
+
+    def test_ps4_pakete_neben_abbildern_sind_gemischt_und_gehen_in_den_ps4_bereich(self) -> None:
+        cnt_paket(self.p("mix", "a.pkg"))
+        with open(self.p("mix", "b.exfat"), "wb") as f:
+            f.write(b"x")
+        erg = pp.erkennen([os.path.join(self.ordner, "mix")])
+        self.assertTrue(erg.gemischt)
+        self.assertEqual(pp.PS4, erg.plattform)
+
+    def test_die_endungen_gelten_fuer_forge_und_die_optionen_gleich(self) -> None:
+        from ps5_validator.utils import forge_cli
+        self.assertEqual(pp.ENDUNGEN_ABBILD, forge_cli.ENDUNGEN_ABBILD)
+        self.assertEqual({".ffpkg": "ffpkg", ".ffpfsc": "ffpfsc", ".ffpfs": "ffpfs", ".exfat": "exfat"}, pp.ENDUNGEN_ABBILD)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2219,13 +2219,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   todo el paquete.</p>
 
   <h4>Construir un paquete</h4>
-  <p>Elija una <strong>carpeta de juego</strong> (que contenga <code>eboot.bin</code> y <code>sce_sys/param.json</code>),
-  la carpeta de destino y el mosaico <strong>Paquete</strong>. El programa construye con ello un
-  <strong>paquete de depuración (FPKG)</strong> y lo comprueba después con la misma lista de comprobación que la acción
-  <em>Comprobar</em>. La herramienta que construye la determina el <strong>Builder</strong> en las opciones
-  (véase abajo): con <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, valor predeterminado) la herramienta
-  fija por sí misma el nombre de la salida (<code>&lt;Content-ID&gt;-A…-V….pkg</code>); con
-  <strong>ProsperoPkgTool</strong> se llama <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.</p>
+  <p>Elija una <strong>carpeta de juego</strong> (que contenga <code>eboot.bin</code> y <code>sce_sys/param.json</code>)
+  o una <strong>imagen</strong>, la carpeta de destino y el mosaico <strong>Paquete</strong>. El programa construye con ello un
+  <strong>paquete de depuración (FPKG)</strong>. La herramienta que construye la determina el <strong>Builder</strong> en las
+  opciones (véase abajo): el valor predeterminado es <strong>Dump Forge</strong>, que construye carpetas de juego e imágenes como
+  lo hace la aplicación Dump Forge (véase <a href="#k7forge">Construir un paquete con Dump Forge</a>) y llama al paquete
+  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. Una <strong>imagen</strong> siempre la construye Dump Forge. Con
+  <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, la vía anterior, solo carpetas de juego) la herramienta fija por
+  sí misma el nombre de la salida (<code>&lt;Content-ID&gt;-A…-V….pkg</code>) y el programa comprueba después el paquete con la
+  misma lista de comprobación que la acción <em>Comprobar</em>; con <strong>ProsperoPkgTool</strong> se llama
+  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. Los puntos siguientes describen la construcción con LibProsperoPkg.</p>
   <ul>
     <li>Se <strong>comprueba de antemano</strong> el Content ID, el Title ID (de <code>param.json</code>) y el propio
     <code>param.json</code>, con la misma comprobación que en la tarea 1. Si tiene objeciones, el
@@ -2260,6 +2263,39 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     el arranque en una consola queda como una prueba de su parte.</p>
   </div>
 
+  <h4 id="k7forge">Construir un paquete con Dump Forge</h4>
+  <p>El programa incluye la línea de comandos de <strong>Dump Forge</strong> (<code>ps5-dump-forge</code>, carpeta
+  <code>Dump-Forge-CLI</code>) y la ejecuta él mismo – nada de ello está reimplementado, así que la construcción funciona como la hace la
+  versión actual de Dump Forge. Las fuentes son una <strong>carpeta de juego</strong> y las imágenes <code>.ffpkg</code>,
+  <code>.ffpfsc</code>, <code>.ffpfs</code> y <code>.exFAT</code>: arrástrelas al campo de origen, elíjalas con
+  <em>Elegir archivo</em> o suelte una carpeta con esos archivos. De una imagen aquí solo se puede construir el <strong>paquete</strong> –
+  los formatos FFPKG, FFPFSC, FFPFS y exFAT los construyen las tareas 1 a 6; el mosaico salta solo a esa opción.</p>
+  <ul>
+    <li><strong>Sin carpeta temporal:</strong> Dump Forge lee la imagen por sí mismo (también la imagen dentro de una <code>.ffpfsc</code>) y
+    no desempaqueta nada en el disco. El paquete se crea en una carpeta de trabajo dentro de la carpeta de destino y solo llega a su sitio
+    tras la comprobación: una construcción fallida o cancelada no deja nada a medias, y un paquete existente del mismo nombre queda intacto –
+    solo se sustituye con la marca <em>Sobrescribir lo existente</em> y únicamente tras el éxito.</li>
+    <li><strong>Comprobación:</strong> Dump Forge comprueba el origen por sí mismo (identificadores, firmas, longitudes de nombre,
+    <code>param.json</code>) y comunica sus hallazgos en el registro; el programa no repara aquí ningún <code>param.json</code> ni añade una
+    lista de comprobación propia antes o después. Tras la construcción, Forge vuelve a leer el paquete y comprueba su estructura y sus sumas;
+    el contenido lo comprueba por defecto en una muestra, con <em>Comprobar por completo</em> en las opciones byte a byte.</li>
+    <li><strong>Opciones</strong> (pestaña <em>Construcción</em>, arriba): el <strong>nivel de compresión</strong> (<em>Rápido</em>,
+    <em>Equilibrado</em>, <em>Paquete más pequeño</em>, <em>Sin comprimir</em> – los dos intermedios reducen el paquete un 2,6&nbsp;%
+    aproximadamente y tardan unas 6 y 9 veces más), <strong>Comprobar por completo</strong> y <strong>Omitir las bibliotecas de backport</strong>
+    (<code>fakelib/</code>; Dump Forge lo rechaza si se redujo el SDK en <code>eboot.bin</code>). El número de núcleos es el de los ajustes
+    de construcción (0 = todos). Lo que solo conoce LibProsperoPkg (firmware mínimo, modo Patch, integrar backport, chunks PlayGo,
+    construcción reproducible) lo ignora Dump Forge – el registro lo indica antes de construir.</li>
+    <li><strong>Nombre y espacio:</strong> El paquete se llama <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>; el nombre sin la extensión
+    se mantiene en 63 bytes (se acorta el título, el identificador permanece). El espacio de la carpeta de destino se comprueba antes.</li>
+    <li><strong>Plataformas:</strong> La línea de comandos se incluye para Windows (x64), Linux (x64) y macOS. Si falta en su plataforma, el
+    programa sigue construyendo carpetas de juego con LibProsperoPkg; una imagen entonces no la acepta y lo dice.</li>
+    <li><strong>Comprobar después:</strong> La acción <em>Comprobar</em> (la lista de LibProsperoPkg) indica un hallazgo en un paquete de Dump Forge sobre la envoltura RSA (<code>cnt.wrap</code>): medido en el paquete del ejemplo de abajo, superó 33 comprobaciones y falló esta, mientras que un paquete construido con LibProsperoPkg a partir del mismo origen superó 42 de 42. Si esto importa para arrancarlo en la consola, no está comprobado; Dump Forge comprueba su paquete según sus propias reglas y las supera.</li>
+    <li><strong>Medido</strong> (16.11.2026, línea de comandos v0.5.6 en Windows): una carpeta de juego con 72 archivos (262&nbsp;MB) se convirtió en
+    6,3&nbsp;s en un paquete de 164&nbsp;MB; de un pequeño juego creado a propósito salieron los cuatro formatos de imagen y un paquete de cada uno.
+    Si la consola arranca un paquete así, no está comprobado – para instalarlo en la consola Dump Forge menciona kstuff, fpkg-enable y
+    ppr-patch.</li>
+  </ul>
+
   <h4>Opciones</h4>
   <p>El botón <strong>Opciones</strong> de la izquierda abre los ajustes en cinco pestañas, que solo se aplican con
   <em>Guardar</em>:</p>
@@ -2274,11 +2310,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     desempaquetar, construir y extraer en esta zona (si se deja vacía, rige la carpeta de trabajo habitual del programa;
     configúrela solo si hace falta, por ejemplo, cuando la unidad del sistema tiene poco espacio para paquetes grandes);
     acción y formato de destino predeterminados para tareas nuevas; <em>Abrir la carpeta de salida tras un trabajo satisfactorio</em>;
-    el <strong>Builder predeterminado</strong> (LibProsperoPkg o ProsperoPkgTool, solo para «Construir paquete»); el
+    el <strong>Builder predeterminado</strong> (Dump Forge – el predeterminado –, LibProsperoPkg o ProsperoPkgTool; solo para «Construir paquete»; una imagen siempre la construye Dump Forge); el
     <strong>código de depuración</strong>: si se deja vacío, se usa el valor predeterminado de la herramienta (32 ceros); si no, exactamente
     32 caracteres ASCII imprimibles. Rige para leer, comprobar, desempaquetar y construir; un paquete construido con otro
     código no puede abrirse sin él.</li>
-    <li><strong>Construcción</strong> (solo para «Construir paquete»; la mayoría de los campos solo con LibProsperoPkg): modo de compresión
+    <li><strong>Construcción</strong> (solo para «Construir paquete»; arriba los ajustes de Dump Forge – nivel de compresión, comprobación completa, omitir las bibliotecas de backport –, debajo los de LibProsperoPkg): modo de compresión
     (Kraken, zlib o ninguna) y nivel, número de workers de construcción, chunks PlayGo, una construcción reproducible byte a byte y
     una regeneración forzada de PlayGo; <strong>Integrar backport</strong> con firmware de destino y una
     carpeta fakelib propia (vacía = conjunto incluido); una <strong>versión mínima de firmware</strong> para
