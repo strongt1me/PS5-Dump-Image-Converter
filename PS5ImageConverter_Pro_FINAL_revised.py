@@ -254,6 +254,8 @@ from ps5_validator.utils.plattform import (
     herunterfahren as _system_herunterfahren,
     im_dateimanager_zeigen as _system_im_dateimanager_zeigen,
     arbeitsbereich as _system_arbeitsbereich,
+    arbeitsbereich_am_punkt as _system_arbeitsbereich_am_punkt,
+    kurzinfo_ort as _system_kurzinfo_ort,
     maximierte_flaeche as _system_maximierte_flaeche,
     oeffnen_versuchen as _system_oeffnen_versuchen,
     ist_administrator as _system_ist_administrator,
@@ -2941,6 +2943,19 @@ class DelayedTooltip:
             font=(UI_SCHRIFT, pt(9)),
         )
         label.pack()
+        # Im sichtbaren Bereich halten: Ein Haken am rechten Bildschirmrand (BACKPORT) zeigte seine Kurzinfo bis zu 397 Pixel
+        # ueber den Rand hinaus - der Text war abgeschnitten (gemessen 16.11.2026). Die Groesse kommt vom Label (steht schon
+        # nach dem Anlegen fest), damit das Fenster nicht erst an der falschen Stelle erscheint und dann springt.
+        try:
+            bereich = _system_arbeitsbereich_am_punkt(
+                self.widget.winfo_rootx() + self.widget.winfo_width() // 2, self.widget.winfo_rooty(),
+                (self.widget.winfo_screenwidth(), self.widget.winfo_screenheight()))
+            neu = _system_kurzinfo_ort(x, y, label.winfo_reqwidth(), label.winfo_reqheight(), bereich,
+                                       self.widget.winfo_rooty())
+            if neu != (x, y):
+                tip.wm_geometry(f"+{neu[0]}+{neu[1]}")
+        except tk.TclError as exc:
+            logger.debug("Kurzinfo nicht verschiebbar: %s", exc)
         self._tip_window = tip
 
     def _hide(self, _event: object = None) -> None:
@@ -40661,7 +40676,8 @@ class PS5ConverterGUI:
         with urllib.request.urlopen(anfrage, timeout=self._AMPR_UPDATE_FRIST) as antwort:
             return antwort.read()
 
-    def _ampr_nach_updates_sehen(self, danach=None, nur_ng: bool = False, auto: bool = False) -> None:
+    def _ampr_nach_updates_sehen(self, danach=None, nur_ng: bool = False, auto: bool = False,
+                                 rueckmeldung=None, fertig=None) -> None:
         """Sieht nach neueren AMPR-EMU-Fassungen - auf Knopfdruck, oder automatisch, wenn der Anwender das eingeschaltet hat.
 
         **Nur auf Knopfdruck.** Das Programm fragt nirgends von selbst nach;
@@ -40681,6 +40697,9 @@ class PS5ConverterGUI:
                 damit die Auswahllisten die neuen Fassungen zeigen.
             nur_ng: Nur ``quer3q/ampr-emu-ng`` fragen (die automatische Suche), nicht auch drakmor.
             auto: Der Aufruf kommt von der automatischen Suche (vermerkt die Zeit, nennt die neue Vorgabe).
+            rueckmeldung: Wird im Hauptstrang mit jeder Zeile gerufen, die auch ins Protokoll geht (Einstellungen: die Statuszeile
+                unter dem Knopf "Jetzt suchen" - dort sieht man sonst nicht, dass gesucht wird, Nutzerwunsch 16.11.2026).
+            fertig: Wird im Hauptstrang gerufen, wenn der Lauf zu Ende ist - auch nach einem Fehler.
         """
         if getattr(self, "_ampr_update_laeuft", False):
             return
@@ -40688,9 +40707,11 @@ class PS5ConverterGUI:
 
         def _arbeiten() -> None:
             try:
-                self._ampr_updates_arbeiten(danach, nur_ng=nur_ng, auto=auto)
+                self._ampr_updates_arbeiten(danach, nur_ng=nur_ng, auto=auto, rueckmeldung=rueckmeldung)
             finally:
                 self._ampr_update_laeuft = False
+                if fertig is not None:
+                    self._hauptfaden_planen(fertig)
 
         threading.Thread(target=_arbeiten, daemon=True,
                          name="ampr_updates").start()
@@ -40703,7 +40724,7 @@ class PS5ConverterGUI:
         (ampr_updates.NG_PROJEKT, ampr_updates.ng_angebote_lesen, True),
     )
 
-    def _ampr_updates_arbeiten(self, danach=None, nur_ng: bool = False, auto: bool = False) -> bool:
+    def _ampr_updates_arbeiten(self, danach=None, nur_ng: bool = False, auto: bool = False, rueckmeldung=None) -> bool:
         """Der eigentliche Ablauf - laeuft im Nebenstrang.
 
         Erst die Quellen fragen (mit ``nur_ng`` nur NG), dann gemeinsam holen. Faellt eine Quelle aus, laeuft die andere weiter.
@@ -40725,6 +40746,12 @@ class PS5ConverterGUI:
         # 03.11.2026 fuer drakmor und ampr-emu-ng.
         bestand = [e for e in self._ampr_alle_fassungen()
                    if e.get("lib") == self._AMPR_SPRX_NAME]
+        def melden(text: str) -> None:
+            """Eine Zeile ins Protokoll - und, wenn jemand fragt (Einstellungen), auch an dessen Anzeige."""
+            self._melde_im_hauptstrang(text)
+            if rueckmeldung is not None:
+                self._hauptfaden_planen(lambda: rueckmeldung(text))
+
         neu: list = []
         geantwortet = False
         angekuendigt = False
@@ -40736,7 +40763,7 @@ class PS5ConverterGUI:
                 # Die automatische Suche meldet sich erst, wenn GitHub geantwortet hat: Wer ohne Netz startet, sieht weder
                 # eine "Suche laeuft"-Zeile noch eine Fehlermeldung (Wunsch des Nutzers, 15.11.2026).
                 if not auto:
-                    self._melde_im_hauptstrang(self._t("ampr.update_suche", quelle=projekt))
+                    melden(self._t("ampr.update_suche", quelle=projekt))
                 rohtext = self._ampr_lade_adresse(
                     ampr_updates.ADRESSE % projekt).decode("utf-8", "replace")
             except Exception as exc:  # noqa: BLE001
@@ -40744,23 +40771,22 @@ class PS5ConverterGUI:
                     logger.info("Automatische NG-Suche: keine Antwort von %s (%s) - nichts wird geholt, naechster Start versucht es erneut",
                                 projekt, exc)
                 else:
-                    self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=exc))
+                    melden(self._t("ampr.update_fehler", fehler=exc))
                 continue
             geantwortet = True
             if auto and not angekuendigt:
                 angekuendigt = True
-                self._melde_im_hauptstrang(self._t("ampr.auto_start"))
+                melden(self._t("ampr.auto_start"))
             angebote = lesen(rohtext)
             if not angebote:
-                self._melde_im_hauptstrang(self._t("ampr.update_nichts_gefunden"))
+                melden(self._t("ampr.update_nichts_gefunden"))
                 continue
             vorhanden = [(e["version"], self._ampr_variantenklasse(e["variant"]))
                          for e in bestand if self._ampr_ist_ng(e) == ist_ng]
             frisch = [a for a in ampr_updates.neuere(angebote, vorhanden)
                       if not ampr_updates.schon_da(self._ampr_updates_ordner(), a)]
             if not frisch:
-                self._melde_im_hauptstrang(
-                    self._t("ampr.update_aktuell", neueste=vorsatz + angebote[0].fassung))
+                melden(self._t("ampr.update_aktuell", neueste=vorsatz + angebote[0].fassung))
                 continue
             neu.extend(frisch)
         if not neu:
@@ -40770,8 +40796,7 @@ class PS5ConverterGUI:
 
         namen = ", ".join(sorted({("NG " if a.variante in (ampr_updates.NG, ampr_updates.NG_DEBUG) else "")
                                   + a.fassung for a in neu}))
-        self._melde_im_hauptstrang(
-            self._t("ampr.update_gefunden", fassungen=namen, anzahl=len(neu)))
+        melden(self._t("ampr.update_gefunden", fassungen=namen, anzahl=len(neu)))
 
         lade = self._ampr_lade_adresse
         netzfehler: list[str] = []
@@ -40795,15 +40820,13 @@ class PS5ConverterGUI:
                         netzfehler[0], len(fehler))
             sichtbar = [z for z in fehler if not z.endswith(": " + netzfehler[0])]
         for zeile in sichtbar:
-            self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=zeile))
+            melden(self._t("ampr.update_fehler", fehler=zeile))
         if auto:
             if geantwortet and not fehler:
                 self._ng_auto_vermerken()          # ein Fehlschlag beim Holen wird beim naechsten Start wiederholt
             self._ng_auto_vorgabe_melden(neu, abgelegt)
         if abgelegt:
-            self._melde_im_hauptstrang(
-                self._t("ampr.update_geholt", anzahl=len(abgelegt),
-                        ordner=self._ampr_updates_ordner()))
+            melden(self._t("ampr.update_geholt", anzahl=len(abgelegt), ordner=self._ampr_updates_ordner()))
             if danach is not None:
                 def _danach_sicher() -> None:
                     # Wer den Dialog waehrend des Ladens geschlossen hat, hat
@@ -71052,11 +71075,42 @@ class PS5ConverterGUI:
             activebackground=c["bg_card"], activeforeground=c["fg_primary"],
             selectcolor=c["bg_main"], anchor="w", justify="left",
             highlightthickness=0, bd=0, wraplength=440).pack(anchor="w", fill="x", pady=(0, 6))
-        # Von Hand, ohne die Automatik: nur NG, Ergebnis im Protokoll des Hauptfensters (wie der Knopf im AMPR EMU Manager).
-        self._pw.Button(
-            body, text=self._t("settings_dialog.ng_auto_jetzt"),
-            command=lambda: self._ampr_nach_updates_sehen(self._ampr_versionsliste_nachladen, nur_ng=True),
-        ).pack(anchor="w", pady=(0, 10))
+        # Von Hand, ohne die Automatik: nur NG. Das Ergebnis steht im Protokoll des Hauptfensters (wie beim Knopf im AMPR EMU
+        # Manager) UND als Zeile unter dem Knopf - ohne sie sah man hier nicht, ob ueberhaupt gesucht wird (Nutzer, 16.11.2026).
+        ng_such_text = tk.StringVar(value="")
+        ng_such_stand = {"zeilen": 0}
+
+        def _ng_such_zeile(text: str) -> None:
+            """Eine Zeile des laufenden Suchlaufs unter dem Knopf (Rueckruf im Hauptstrang; der Dialog kann schon zu sein)."""
+            try:
+                ng_such_stand["zeilen"] += 1
+                ng_such_text.set(text.removeprefix("[AMPR] "))
+            except tk.TclError:
+                pass
+
+        def _ng_such_ende() -> None:
+            try:
+                if not ng_such_stand["zeilen"]:
+                    ng_such_text.set(self._t("settings_dialog.ng_such_ende"))
+                if ng_such_knopf.winfo_exists():
+                    ng_such_knopf.configure(state="normal")
+            except tk.TclError:
+                pass
+
+        def _ng_jetzt_suchen() -> None:
+            if getattr(self, "_ampr_update_laeuft", False):
+                ng_such_text.set(self._t("settings_dialog.ng_such_schon"))      # etwa die Automatik beim Start
+                return
+            ng_such_stand["zeilen"] = 0
+            ng_such_text.set(self._t("settings_dialog.ng_such_laeuft"))
+            ng_such_knopf.configure(state="disabled")
+            self._ampr_nach_updates_sehen(self._ampr_versionsliste_nachladen, nur_ng=True,
+                                          rueckmeldung=_ng_such_zeile, fertig=_ng_such_ende)
+
+        ng_such_knopf = self._pw.Button(body, text=self._t("settings_dialog.ng_auto_jetzt"), command=_ng_jetzt_suchen)
+        ng_such_knopf.pack(anchor="w", pady=(0, 4))
+        tk.Label(body, textvariable=ng_such_text, font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+                 anchor="w", justify="left", wraplength=460).pack(anchor="w", fill="x", pady=(0, 10))
 
         # ── Farbsehschwaeche ────────────────────────────────────────────
         #

@@ -654,6 +654,7 @@ class QuelltextTests(unittest.TestCase):
         "_fenstergeometrie_wiederherstellen": "holt ein verlorenes Fenster auf den ersten Schirm",
         "_go_fullscreen": "Vollbild fuellt den echten Schirm",
         "_mode_ampr_manager._show_ampr_dialog": "zentriert",
+        "_show": "Kurzinfo (DelayedTooltip): haelt sich im echten Schirm (Lage); die Groesse nimmt das Label",
         "_show_ampr_ftp_picker": "zentriert",
         "_show_credits": "zentriert (die Groesse nimmt _bildschirm_fuer_fenster)",
         "_show_resources": "zentriert (die Groesse nimmt _bildschirm_fuer_fenster)",

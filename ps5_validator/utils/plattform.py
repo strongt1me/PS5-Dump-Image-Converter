@@ -243,6 +243,74 @@ def arbeitsbereich(erkannt: tuple[int, int]) -> tuple[int, int, int, int]:
     return 0, 0, breite, hoehe
 
 
+def arbeitsbereich_am_punkt(x: int, y: int, erkannt: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Der nutzbare Teil des Bildschirms, auf dem der Punkt ``(x, y)`` liegt: ``(links, oben, breite, hoehe)``.
+
+    Anders als :func:`arbeitsbereich` (nur der erste Bildschirm) fragt diese Funktion unter Windows den Bildschirm am Punkt
+    (``MonitorFromPoint``, ``rcWork``) - eine Kurzinfo an einem zweiten Bildschirm soll an dessen Rand halten, nicht am ersten.
+    Die Links-/Oben-Werte koennen dort negativ sein. Sonst, oder wenn die Frage scheitert, gilt der erste Bildschirm
+    (:func:`arbeitsbereich`); unter Linux und macOS der erkannte Bildschirm ab ``(0, 0)``.
+
+    Args:
+        x, y: Ein Punkt in Bildschirmkoordinaten (Tk: ``winfo_rootx`` / ``winfo_rooty``).
+        erkannt: ``(breite, hoehe)`` laut Tk - die Rueckfallgroesse.
+    """
+    breite, hoehe = int(erkannt[0]), int(erkannt[1])
+    if IST_WINDOWS:
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _MonitorInfo(ctypes.Structure):
+                _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                            ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+            benutzer = ctypes.windll.user32  # type: ignore[attr-defined]
+            benutzer.MonitorFromPoint.restype = ctypes.c_void_p
+            benutzer.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+            benutzer.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_MonitorInfo)]
+            monitor = benutzer.MonitorFromPoint(wintypes.POINT(int(x), int(y)), 2)    # MONITOR_DEFAULTTONEAREST
+            info = _MonitorInfo()
+            info.cbSize = ctypes.sizeof(_MonitorInfo)
+            if monitor and benutzer.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                arbeit = info.rcWork
+                b, h = arbeit.right - arbeit.left, arbeit.bottom - arbeit.top
+                if b > 0 and h > 0:
+                    return int(arbeit.left), int(arbeit.top), int(b), int(h)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Arbeitsbereich am Punkt nicht lesbar: %s", exc)
+        return arbeitsbereich(erkannt)
+    return 0, 0, breite, hoehe
+
+
+def kurzinfo_ort(x: int, y: int, breite: int, hoehe: int, bereich: tuple[int, int, int, int],
+                 widget_oben: int, abstand: int = 8) -> tuple[int, int]:
+    """Haelt eine Kurzinfo (``breite`` x ``hoehe`` Pixel, gewuenscht links oben bei ``x``/``y``) im sichtbaren Bereich.
+
+    Gemessen am 16.11.2026: Ein Haken am rechten Bildschirmrand (BACKPORT) zeigte seine Kurzinfo 397 Pixel ueber den Rand
+    hinaus - der Text war ab der Mitte abgeschnitten. Hier gilt: Ragt sie rechts hinaus, rueckt sie nach links; ragt sie
+    unten hinaus, steht sie ueber dem Widget (``widget_oben`` ist dessen Oberkante) statt darunter; nie ueber den linken oder
+    oberen Rand des Bereichs. Ist der Bereich kleiner als die Kurzinfo, gewinnt links/oben (dort beginnt der Text).
+
+    Args:
+        bereich: ``(links, oben, breite, hoehe)``, siehe :func:`arbeitsbereich_am_punkt`.
+        abstand: Luft zwischen Widget und Kurzinfo, wenn sie ueber dem Widget steht.
+
+    Returns:
+        ``(x, y)`` der linken oberen Ecke.
+    """
+    links, oben, b, h = (int(v) for v in bereich)
+    rechts, unten = links + b, oben + h
+    x, y = int(x), int(y)
+    if x + breite > rechts:
+        x = rechts - int(breite)
+    if y + hoehe > unten:
+        y = int(widget_oben) - int(abstand) - int(hoehe)
+    x = max(links, x)
+    y = max(oben, min(y, unten - int(hoehe)))
+    return x, y
+
+
 def titelleistenhoehe(dpi: int = 0) -> int:
     """Wie hoch die Titelleiste eines Fensters ist, in Pixeln (``SM_CYCAPTION``); 0, wenn unbekannt.
 

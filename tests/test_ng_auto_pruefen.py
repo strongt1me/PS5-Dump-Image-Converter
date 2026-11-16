@@ -17,8 +17,11 @@ import datetime
 import hashlib
 import json
 import os
+import queue
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -38,7 +41,8 @@ QUELLE = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding
 JETZT = datetime.datetime(2026, 11, 15, 20, 0, 0)
 
 SCHLUESSEL = ("ampr.auto_start", "ampr.auto_neue_vorgabe", "settings_dialog.ng_auto_section",
-              "settings_dialog.ng_auto_checkbox", "settings_dialog.ng_auto_hint", "settings_dialog.ng_auto_jetzt")
+              "settings_dialog.ng_auto_checkbox", "settings_dialog.ng_auto_hint", "settings_dialog.ng_auto_jetzt",
+              "settings_dialog.ng_such_laeuft", "settings_dialog.ng_such_schon", "settings_dialog.ng_such_ende")
 
 
 def _eintrag(version: str, variante: str) -> dict:
@@ -370,6 +374,78 @@ class AblaufTests(unittest.TestCase):
         gui._ng_automatisch_pruefen()          # wirft nicht
         self.assertEqual([], self.anfragen)
 
+    # --- Rueckmeldung an die Einstellungen (Nutzer, 16.11.2026: man sah dort nicht, ob gesucht wird) ---
+
+    def test_die_rueckmeldung_bekommt_dieselben_zeilen_wie_das_protokoll(self) -> None:
+        gui = self._gui(self._antworten(_ng_antwort("0.4.1")))
+        zeilen: list[str] = []
+        gui._ampr_updates_arbeiten(None, nur_ng=True, rueckmeldung=zeilen.append)
+        self.assertEqual(self.protokoll, zeilen)
+        self.assertEqual(["ampr.update_suche|quelle=" + au.NG_PROJEKT, "ampr.update_aktuell|neueste=NG 0.4.1"], zeilen,
+                         "erst 'Suche laeuft', dann das Ergebnis")
+
+    def test_neu_geholt_endet_mit_der_geholt_zeile(self) -> None:
+        gui = self._gui(self._antworten(_ng_antwort("0.5.0", "0.4.1")))
+        zeilen: list[str] = []
+        gui._ampr_updates_arbeiten(None, nur_ng=True, rueckmeldung=zeilen.append)
+        self.assertTrue(zeilen[0].startswith("ampr.update_suche"), zeilen)
+        self.assertTrue(zeilen[1].startswith("ampr.update_gefunden"), zeilen)
+        self.assertTrue(zeilen[-1].startswith("ampr.update_geholt"), zeilen)
+
+    def test_ohne_netz_meldet_die_rueckmeldung_den_fehler(self) -> None:
+        """Von Hand gedrueckt darf der Fehler sichtbar sein (nur die Automatik beim Start bleibt still)."""
+        gui = self._gui(self._antworten(OSError("kein Netz")) | {"api.github.com/repos/quer3q/ampr-emu-ng": OSError("kein Netz")})
+        zeilen: list[str] = []
+        gui._ampr_updates_arbeiten(None, nur_ng=True, rueckmeldung=zeilen.append)
+        self.assertEqual(["ampr.update_suche|quelle=" + au.NG_PROJEKT, "ampr.update_fehler|fehler=kein Netz"], zeilen)
+
+
+class NachUpdatesSehenTests(unittest.TestCase):
+    """Der echte ``_ampr_nach_updates_sehen`` (mit Strang): ``rueckmeldung`` und ``fertig`` kommen im Hauptstrang an."""
+
+    def _gui(self, arbeiten):
+        gui = G.__new__(G)
+        gui._hauptfaden_planen = lambda f, *a, **k: f(*a)
+        gui._ampr_updates_arbeiten = arbeiten
+        return gui
+
+    def test_fertig_kommt_nach_der_letzten_zeile(self) -> None:
+        ereignisse: list[str] = []
+        ende = threading.Event()
+
+        def _arbeiten(danach=None, nur_ng=False, auto=False, rueckmeldung=None):
+            rueckmeldung("eins")
+            rueckmeldung("zwei")
+            return True
+
+        gui = self._gui(_arbeiten)
+        gui._ampr_nach_updates_sehen(None, nur_ng=True, rueckmeldung=ereignisse.append,
+                                     fertig=lambda: (ereignisse.append("fertig"), ende.set()))
+        self.assertTrue(ende.wait(10), "der Lauf kam nicht zu Ende")
+        self.assertEqual(["eins", "zwei", "fertig"], ereignisse)
+        self.assertFalse(gui._ampr_update_laeuft, "danach darf wieder gesucht werden")
+
+    def test_fertig_kommt_auch_nach_einem_fehler(self) -> None:
+        ende = threading.Event()
+
+        def _arbeiten(danach=None, nur_ng=False, auto=False, rueckmeldung=None):
+            raise RuntimeError("kaputt")
+
+        gui = self._gui(_arbeiten)
+        with mock.patch.object(threading, "excepthook", lambda *a: None):             # der Strang bricht gewollt ab
+            gui._ampr_nach_updates_sehen(None, nur_ng=True, fertig=ende.set)
+            self.assertTrue(ende.wait(10), "ohne 'fertig' bliebe der Knopf in den Einstellungen fuer immer gesperrt")
+        self.assertFalse(gui._ampr_update_laeuft)
+
+    def test_laeuft_schon_eine_suche_startet_keine_zweite(self) -> None:
+        gerufen: list[str] = []
+        gui = self._gui(lambda *a, **k: gerufen.append("arbeiten"))
+        gui._ampr_update_laeuft = True
+        gui._ampr_nach_updates_sehen(None, nur_ng=True, rueckmeldung=gerufen.append, fertig=lambda: gerufen.append("fertig"))
+        time.sleep(0.2)
+        self.assertEqual([], gerufen)
+        self.assertTrue(gui._ampr_update_laeuft, "die laufende Suche bleibt unangetastet")
+
 
 try:
     import tkinter as tk
@@ -452,6 +528,103 @@ class DialogTests(unittest.TestCase):
         self.assertTrue(callable(sehen.call_args.args[0]), "die Listen werden danach aufgefrischt")
         self.assertTrue(sehen.call_args.kwargs.get("nur_ng"))
         self.assertFalse(sehen.call_args.kwargs.get("auto"), "von Hand: keine Zeit vermerken, keine Automatik")
+
+    # --- Man sieht, dass gesucht wird (Nutzer, 16.11.2026) ---
+
+    def _texte(self, dlg) -> list[str]:
+        """Alles, was im Dialog als Beschriftung steht - auch Zeilen, die ueber eine ``textvariable`` laufen."""
+        texte: list[str] = []
+        for w in self._alle(dlg):
+            try:
+                variable = str(w.cget("textvariable"))
+                texte.append(str(dlg.getvar(variable)) if variable else str(w.cget("text")))
+            except (tk.TclError, AttributeError, ValueError):
+                continue
+        return texte
+
+    def _knopf_jetzt(self, dlg):
+        knopf = self._mit_text(self._alle(dlg), STRINGS["settings_dialog.ng_auto_jetzt"]["de"])
+        self.assertEqual(1, len(knopf))
+        return knopf[0]
+
+    def test_nach_dem_druck_steht_da_dass_gesucht_wird_und_der_knopf_ist_gesperrt(self) -> None:
+        dlg = self._dialog()
+        knopf = self._knopf_jetzt(dlg)
+        laeuft = STRINGS["settings_dialog.ng_such_laeuft"]["de"]
+        self.assertNotIn(laeuft, self._texte(dlg), "vorher steht dort nichts")
+        with mock.patch.object(self.app, "_ampr_nach_updates_sehen") as sehen:
+            knopf.invoke()
+        self.assertIn(laeuft, self._texte(dlg), "sofort sichtbar, noch bevor GitHub antwortet")
+        self.assertEqual("disabled", str(knopf.cget("state")), "ein zweiter Druck waehrend der Suche bewirkt nichts")
+        # Der Lauf meldet sich zu Ende: der Knopf ist wieder frei, und ohne eigene Zeile steht ein neutraler Schluss da.
+        sehen.call_args.kwargs["fertig"]()
+        self.assertEqual("normal", str(knopf.cget("state")))
+        self.assertIn(STRINGS["settings_dialog.ng_such_ende"]["de"], self._texte(dlg))
+        self.assertNotIn(laeuft, self._texte(dlg))
+
+    def test_das_ergebnis_ersetzt_die_laeuft_zeile_und_bleibt_nach_dem_ende_stehen(self) -> None:
+        dlg = self._dialog()
+        knopf = self._knopf_jetzt(dlg)
+        with mock.patch.object(self.app, "_ampr_nach_updates_sehen") as sehen:
+            knopf.invoke()
+        zeile, fertig = sehen.call_args.kwargs["rueckmeldung"], sehen.call_args.kwargs["fertig"]
+        zeile("[AMPR] Sehe bei quer3q/ampr-emu-ng nach neueren Fassungen…")
+        zeile("[AMPR] Nichts Neues – die Quelle führt NG 0.4.1, und das liegt bereits vor.")
+        fertig()
+        texte = self._texte(dlg)
+        self.assertIn("Nichts Neues – die Quelle führt NG 0.4.1, und das liegt bereits vor.", texte, "ohne das [AMPR]-Kürzel")
+        self.assertNotIn(STRINGS["settings_dialog.ng_such_ende"]["de"], texte, "das Ergebnis wird nicht uebermalt")
+        self.assertFalse(any(t.startswith("[AMPR]") for t in texte))
+
+    def test_laeuft_schon_eine_suche_sagt_der_dialog_es(self) -> None:
+        dlg = self._dialog()
+        knopf = self._knopf_jetzt(dlg)
+        self.app.__dict__["_ampr_update_laeuft"] = True
+        self.addCleanup(lambda: self.app.__dict__.__setitem__("_ampr_update_laeuft", False))
+        with mock.patch.object(self.app, "_ampr_nach_updates_sehen") as sehen:
+            knopf.invoke()
+        sehen.assert_not_called()
+        self.assertIn(STRINGS["settings_dialog.ng_such_schon"]["de"], self._texte(dlg))
+        self.assertEqual("normal", str(knopf.cget("state")), "gesperrt wird nur, wenn dieser Knopf die Suche gestartet hat")
+
+    def test_ganzer_weg_mit_echtem_strang_und_attrappe_statt_netz(self) -> None:
+        """Knopf -> Strang -> Zeile unter dem Knopf -> Knopf wieder frei; GitHub ist durch eine Attrappe ersetzt."""
+        dlg = self._dialog()
+        knopf = self._knopf_jetzt(dlg)
+        ordner = tempfile.mkdtemp(prefix="ng_dialog_")
+        self.addCleanup(lambda: __import__("shutil").rmtree(ordner, ignore_errors=True))
+        bestand = [_eintrag("0.4.1", "ng"), _eintrag("0.4.1", "ng-debug")]
+        # Im Test laeuft keine mainloop: ``root.after`` aus dem Strang wirft dann "main thread is not in main loop". Die
+        # Rueckrufe des Strangs landen deshalb in einer Warteschlange, die der Test im Hauptstrang abarbeitet.
+        warteschlange: queue.Queue = queue.Queue()
+
+        def _planen(rueckruf, *args, ms: int = 0) -> bool:
+            warteschlange.put(lambda: rueckruf(*args))
+            return True
+
+        def _abarbeiten() -> None:
+            while True:
+                try:
+                    warteschlange.get_nowait()()
+                except queue.Empty:
+                    return
+
+        with mock.patch.object(self.app, "_ampr_lade_adresse", return_value=_ng_antwort("0.4.1")), \
+                mock.patch.object(self.app, "_ampr_alle_fassungen", return_value=bestand), \
+                mock.patch.object(self.app, "_ampr_updates_ordner", return_value=ordner), \
+                mock.patch.object(self.app, "_hauptfaden_planen", _planen):
+            knopf.invoke()
+            frist = time.monotonic() + 15
+            while time.monotonic() < frist and (self.app.__dict__.get("_ampr_update_laeuft")
+                                                or str(knopf.cget("state")) == "disabled"):
+                _abarbeiten()
+                _WURZEL.update()
+                time.sleep(0.02)
+            _abarbeiten()
+            _WURZEL.update()
+        texte = self._texte(dlg)
+        self.assertTrue(any("Nichts Neues" in t and "NG 0.4.1" in t for t in texte), texte)
+        self.assertEqual("normal", str(knopf.cget("state")), "nach dem Lauf wieder frei")
 
 
 if __name__ == "__main__":
