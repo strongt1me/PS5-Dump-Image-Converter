@@ -274,6 +274,12 @@ def laufen(werkzeug: str, argumente: list[str], *, zeile: _Zeile | None = None, 
             _beenden(prozess)
         with _LAUFEND_SPERRE:
             _LAUFEND.discard(prozess)
+        # Das Lesende der Ausgabe-Leitung gehoert diesem Aufruf: Ohne Schliessen bleibt es bis zur Speicherbereinigung
+        # offen (ResourceWarning "unclosed file", gemessen 16.11.2026 beim Lesen eines Abbilds mit Dump Forge).
+        try:
+            prozess.stdout.close()
+        except OSError:
+            pass
 
 
 def _json_aus(ausgabe: str) -> dict[str, Any]:

@@ -118,6 +118,28 @@ class LaufenTests(unittest.TestCase):
         self.assertLess(time.time() - start, 10)
         self.assertEqual(0, wz.laufende())
 
+    def test_das_lesende_der_ausgabeleitung_ist_nach_jedem_lauf_geschlossen(self) -> None:
+        """Gemessen 16.11.2026: ``laufen`` schloss das Lesende der Leitung nie - jeder Aufruf hinterliess eine
+        ResourceWarning "unclosed file" (so beim Lesen eines Abbilds mit Dump Forge), bis die Speicherbereinigung kam.
+        Geprueft werden das normale Ende und der Abbruch."""
+        echte = wz.subprocess.Popen
+        prozesse: list = []
+
+        def merken(*args, **kwargs):
+            prozess = echte(*args, **kwargs)
+            if args and args[0] and args[0][0] == sys.executable:
+                prozesse.append(prozess)
+            return prozess
+
+        gesehen: list[str] = []
+        with mock.patch.object(wz.subprocess, "Popen", side_effect=merken):
+            wz.laufen(sys.executable, ["-c", "print('x')"])
+            wz.laufen(sys.executable, ["-c", "import time; print('los', flush=True); time.sleep(60)"],
+                      zeile=gesehen.append, abbruch=lambda: bool(gesehen))
+        self.assertEqual(2, len(prozesse), "beide Laeufe sind erfasst")
+        for prozess in prozesse:
+            self.assertTrue(prozess.stdout.closed)
+
     def test_nach_dem_abbruch_startet_kein_werkzeug_mehr(self) -> None:
         with mock.patch.object(wz.subprocess, "Popen") as popen:
             self.assertEqual((-1, ""), wz.laufen("x.exe", ["list-inner", "a.pkg"], abbruch=lambda: True))
