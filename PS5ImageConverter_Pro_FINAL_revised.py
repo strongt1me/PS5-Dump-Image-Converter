@@ -40716,6 +40716,49 @@ class PS5ConverterGUI:
         threading.Thread(target=_arbeiten, daemon=True,
                          name="ampr_updates").start()
 
+    def _ampr_suche_mit_anzeige(self, knopf, anzeige: "tk.StringVar", danach=None, nur_ng: bool = False) -> None:
+        """Die Suche nach neuen AMPR-EMU-Fassungen von einem Knopf aus - mit sichtbarem Stand neben dem Knopf.
+
+        Bis zum 16.11.2026 ging das Ergebnis nur ins Protokoll des Hauptfensters; wer im Einstellungsfenster oder im AMPR EMU
+        Manager auf den Knopf drueckte, sah dort nicht, ob ueberhaupt gesucht wird (Nutzerwunsch). Jetzt steht in ``anzeige`` sofort
+        "Suche laeuft", danach jede Zeile des Laufs (zuletzt das Ergebnis oder der Fehler), und ``knopf`` ist bis zum Ende gesperrt.
+        Laeuft schon eine Suche (etwa die Automatik beim Start), sagt ``anzeige`` das und der Knopf bleibt frei.
+
+        Args:
+            knopf: Der Knopf, der die Suche gestartet hat (wird gesperrt und danach wieder freigegeben).
+            anzeige: Die Textvariable einer Beschriftung neben dem Knopf.
+            danach: Wie bei :meth:`_ampr_nach_updates_sehen` (Auswahllisten auffrischen, wenn etwas geholt wurde).
+            nur_ng: Nur ``quer3q/ampr-emu-ng`` fragen.
+        """
+        if getattr(self, "_ampr_update_laeuft", False):
+            anzeige.set(self._t("ampr.update_anzeige_schon"))
+            return
+        stand = {"zeilen": 0}
+
+        def _zeile(text: str) -> None:
+            """Eine Zeile des Laufs (Rueckruf im Hauptstrang; das Fenster kann inzwischen zu sein)."""
+            try:
+                stand["zeilen"] += 1
+                anzeige.set(text.removeprefix("[AMPR] "))
+            except tk.TclError:
+                pass
+
+        def _ende() -> None:
+            if not stand["zeilen"]:
+                try:
+                    anzeige.set(self._t("ampr.update_anzeige_ende"))
+                except tk.TclError:
+                    pass
+            try:
+                if knopf.winfo_exists():
+                    knopf.configure(state="normal")
+            except tk.TclError:
+                pass
+
+        anzeige.set(self._t("ampr.update_anzeige_laeuft"))
+        knopf.configure(state="disabled")
+        self._ampr_nach_updates_sehen(danach, nur_ng=nur_ng, rueckmeldung=_zeile, fertig=_ende)
+
     #: Woher der Knopf neuere AMPR-EMU-Fassungen holt: (Projekt, Leser der Antwort, ampr-emu-ng?). Zwei
     #: unabhaengige Reihen (seit 03.11.2026): Jede wird nur gegen ihren eigenen Teil des Bestands gemessen -
     #: NG 0.3.0 ist neuer als 0.4.2.1, gegen drakmor gerechnet galte es als alt und umgekehrt.
@@ -42031,7 +42074,9 @@ class PS5ConverterGUI:
             # auf GitHub standen schon 0.3.6.4 und 0.3.6.6.
             _update_reihe = tk.Frame(sec_b, bg=c["bg_main"])
             _update_reihe.pack(anchor="w", fill="x", padx=10, pady=(0, 4))
-            self._pw.Button(
+            # Der Stand der Suche steht neben dem Knopf (Nutzerwunsch 16.11.2026) - vorher nur im Protokoll des Hauptfensters.
+            _such_text = tk.StringVar(value="")
+            _such_knopf = self._pw.Button(
                 _update_reihe, text=self._t("ampr.update_knopf"),
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -42040,8 +42085,14 @@ class PS5ConverterGUI:
                 # Der Knopf gehoert der Anordnung nach hierher, und das
                 # lambda loest den Namen erst beim Druecken auf - da ist
                 # die Funktion laengst da. Kein Vorwaertsbezug, der faellt.
-                command=lambda: self._ampr_nach_updates_sehen(_refresh_versions),
-            ).pack(side="left")
+                command=lambda: self._ampr_suche_mit_anzeige(_such_knopf, _such_text, _refresh_versions),
+            )
+            _such_knopf.pack(side="left")
+            tk.Label(
+                _update_reihe, textvariable=_such_text, font=(UI_SCHRIFT, pt(9)),
+                fg=c["fg_primary"], bg=c["bg_main"], anchor="w", justify="left",
+                wraplength=max(200, _fw - 300),
+            ).pack(side="left", fill="x", expand=True, padx=(12, 0))
             tk.Label(
                 sec_b, text=self._t("ampr.update_hinweis"),
                 font=(UI_SCHRIFT, pt(8)),
@@ -60397,7 +60448,7 @@ class PS5ConverterGUI:
                 if (not lokal and not fester_weg and title_id) else "")
             if sperr_eintrag:
                 melde("!! " + self._t("amprgen.excluded", title_id=title_id,
-                                      eintrag=sperr_eintrag))
+                                      eintrag=sperr_eintrag, datei=self._sm_datei_des_eintrags(sperr_eintrag)))
                 wahl = self._ampr_gen_frage(
                     fenster, self._t("amprgen.q_excluded"),
                     self._t("amprgen.q_excluded_why", title_id=title_id,
@@ -61058,11 +61109,11 @@ class PS5ConverterGUI:
                                                          generation)
         if sperr_eintrag:
             melde("!! " + self._t("amprmitschnitt.sm_excluded", title_id=title_id,
-                                  eintrag=sperr_eintrag))
+                                  eintrag=sperr_eintrag, datei=self._sm_datei_des_eintrags(sperr_eintrag)))
             wahl = self._ampr_gen_frage(
                 win, self._t("amprmitschnitt.q_excluded"),
                 self._t("amprmitschnitt.q_excluded_why", title_id=title_id,
-                        eintrag=sperr_eintrag),
+                        eintrag=sperr_eintrag, datei=self._sm_datei_des_eintrags(sperr_eintrag)),
                 [("stop", self._t("amprmitschnitt.q_excluded_stop"),
                   self._t("amprmitschnitt.q_excluded_stop_why")),
                  ("weiter", self._t("amprmitschnitt.q_excluded_go"),
@@ -61233,6 +61284,23 @@ class PS5ConverterGUI:
         if generation == sm_gen.ALT:
             return ""
         return sm_gen.fakelib_aus_eintrag(config_text, title_id)
+
+    def _sm_datei_des_eintrags(self, eintrag: str) -> str:
+        """In welcher Datei von ShadowMount+ steht dieser Eintrag - ``config.ini`` oder ``profiles.ini``?
+
+        Ab ShadowMount+ 1.7beta12 (Format 2) stehen Einstellungen je Spiel und je Abbild (``fakelib_exclude``,
+        ``fakelib_mode``, ``global_fakelib_exclude`` ...) in der ``profiles.ini``; die Vorgaben fuer alle Spiele
+        (``fakelib_default_mode``) bleiben in der ``config.ini``. Die Meldungen des AMPR-Bereichs sagten bis zum 16.11.2026 immer
+        "In der config.ini steht ..." (Nutzerwunsch: den AMPR EMU Manager an beta12 anpassen). Massgeblich ist wie bei ``_t`` das
+        gespeicherte Format.
+
+        Args:
+            eintrag: Der Eintrag wie ``fakelib_aus_eintrag`` ihn liefert, ``schluessel=wert``.
+        """
+        schluessel = str(eintrag).split("=", 1)[0].strip()
+        if self._sm_format_gespeichert() == sm_cfg.FORMAT_V2 and schluessel in sm_cfg.PROFIL_SCHLUESSEL:
+            return "profiles.ini"
+        return "config.ini"
 
     @classmethod
     def _ampr_titel_ohne_fakelib(cls, config_text: str, title_id: str,
@@ -71078,36 +71146,10 @@ class PS5ConverterGUI:
         # Von Hand, ohne die Automatik: nur NG. Das Ergebnis steht im Protokoll des Hauptfensters (wie beim Knopf im AMPR EMU
         # Manager) UND als Zeile unter dem Knopf - ohne sie sah man hier nicht, ob ueberhaupt gesucht wird (Nutzer, 16.11.2026).
         ng_such_text = tk.StringVar(value="")
-        ng_such_stand = {"zeilen": 0}
-
-        def _ng_such_zeile(text: str) -> None:
-            """Eine Zeile des laufenden Suchlaufs unter dem Knopf (Rueckruf im Hauptstrang; der Dialog kann schon zu sein)."""
-            try:
-                ng_such_stand["zeilen"] += 1
-                ng_such_text.set(text.removeprefix("[AMPR] "))
-            except tk.TclError:
-                pass
-
-        def _ng_such_ende() -> None:
-            try:
-                if not ng_such_stand["zeilen"]:
-                    ng_such_text.set(self._t("settings_dialog.ng_such_ende"))
-                if ng_such_knopf.winfo_exists():
-                    ng_such_knopf.configure(state="normal")
-            except tk.TclError:
-                pass
-
-        def _ng_jetzt_suchen() -> None:
-            if getattr(self, "_ampr_update_laeuft", False):
-                ng_such_text.set(self._t("settings_dialog.ng_such_schon"))      # etwa die Automatik beim Start
-                return
-            ng_such_stand["zeilen"] = 0
-            ng_such_text.set(self._t("settings_dialog.ng_such_laeuft"))
-            ng_such_knopf.configure(state="disabled")
-            self._ampr_nach_updates_sehen(self._ampr_versionsliste_nachladen, nur_ng=True,
-                                          rueckmeldung=_ng_such_zeile, fertig=_ng_such_ende)
-
-        ng_such_knopf = self._pw.Button(body, text=self._t("settings_dialog.ng_auto_jetzt"), command=_ng_jetzt_suchen)
+        ng_such_knopf = self._pw.Button(
+            body, text=self._t("settings_dialog.ng_auto_jetzt"),
+            command=lambda: self._ampr_suche_mit_anzeige(ng_such_knopf, ng_such_text,
+                                                         self._ampr_versionsliste_nachladen, nur_ng=True))
         ng_such_knopf.pack(anchor="w", pady=(0, 4))
         tk.Label(body, textvariable=ng_such_text, font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                  anchor="w", justify="left", wraplength=460).pack(anchor="w", fill="x", pady=(0, 10))

@@ -42,7 +42,7 @@ JETZT = datetime.datetime(2026, 11, 15, 20, 0, 0)
 
 SCHLUESSEL = ("ampr.auto_start", "ampr.auto_neue_vorgabe", "settings_dialog.ng_auto_section",
               "settings_dialog.ng_auto_checkbox", "settings_dialog.ng_auto_hint", "settings_dialog.ng_auto_jetzt",
-              "settings_dialog.ng_such_laeuft", "settings_dialog.ng_such_schon", "settings_dialog.ng_such_ende")
+              "ampr.update_anzeige_laeuft", "ampr.update_anzeige_schon", "ampr.update_anzeige_ende")
 
 
 def _eintrag(version: str, variante: str) -> dict:
@@ -447,6 +447,118 @@ class NachUpdatesSehenTests(unittest.TestCase):
         self.assertTrue(gui._ampr_update_laeuft, "die laufende Suche bleibt unangetastet")
 
 
+class _Variable:
+    """Vertritt eine ``tk.StringVar`` (die braucht ein Fenster): merkt sich nur den Text."""
+
+    def __init__(self, wirft: Exception | None = None) -> None:
+        self.text = ""
+        self._wirft = wirft
+
+    def set(self, text: str) -> None:
+        if self._wirft is not None:
+            raise self._wirft
+        self.text = text
+
+
+class _Knopf:
+    """Vertritt den Knopf: ``state`` und ob sein Fenster noch da ist."""
+
+    def __init__(self, existiert: bool = True) -> None:
+        self.state = "normal"
+        self.existiert = existiert
+
+    def configure(self, **optionen) -> None:
+        self.state = optionen.get("state", self.state)
+
+    def winfo_exists(self) -> int:
+        return 1 if self.existiert else 0
+
+
+class SucheMitAnzeigeTests(unittest.TestCase):
+    """``_ampr_suche_mit_anzeige``: die gemeinsame Anzeige fuer die Knoepfe in den Einstellungen und im AMPR EMU Manager.
+
+    Nutzerwunsch 16.11.2026: Wer auf "Nach Aktualisierungen suchen" drueckt, soll dort sehen, dass gesucht wird.
+    """
+
+    def _gui(self):
+        gui = G.__new__(G)
+        gui._t = lambda schluessel, **w: schluessel
+        gui._ampr_nach_updates_sehen = mock.Mock()
+        return gui
+
+    def test_sofort_steht_da_dass_gesucht_wird_und_der_knopf_ist_gesperrt(self) -> None:
+        gui, knopf, anzeige = self._gui(), _Knopf(), _Variable()
+        danach = lambda: None                                                              # noqa: E731
+        gui._ampr_suche_mit_anzeige(knopf, anzeige, danach, nur_ng=True)
+        self.assertEqual("ampr.update_anzeige_laeuft", anzeige.text)
+        self.assertEqual("disabled", knopf.state)
+        gui._ampr_nach_updates_sehen.assert_called_once()
+        self.assertIs(danach, gui._ampr_nach_updates_sehen.call_args.args[0])
+        self.assertTrue(gui._ampr_nach_updates_sehen.call_args.kwargs["nur_ng"])
+
+    def test_der_manager_sucht_ohne_nur_ng(self) -> None:
+        gui = self._gui()
+        gui._ampr_suche_mit_anzeige(_Knopf(), _Variable(), lambda: None)
+        self.assertFalse(gui._ampr_nach_updates_sehen.call_args.kwargs["nur_ng"], "der Manager fragt beide Quellen")
+
+    def test_das_ergebnis_ersetzt_die_zeile_und_das_ende_gibt_den_knopf_frei(self) -> None:
+        gui, knopf, anzeige = self._gui(), _Knopf(), _Variable()
+        gui._ampr_suche_mit_anzeige(knopf, anzeige)
+        kwargs = gui._ampr_nach_updates_sehen.call_args.kwargs
+        kwargs["rueckmeldung"]("[AMPR] Sehe bei drakmor/ampr_emu nach neueren Fassungen…")
+        kwargs["rueckmeldung"]("[AMPR] Nichts Neues – die Quelle führt 0.4.2.1, und das liegt bereits vor.")
+        self.assertEqual("disabled", knopf.state, "solange der Lauf geht, bleibt er gesperrt")
+        kwargs["fertig"]()
+        self.assertEqual("normal", knopf.state)
+        self.assertEqual("Nichts Neues – die Quelle führt 0.4.2.1, und das liegt bereits vor.", anzeige.text,
+                         "ohne das [AMPR]-Kuerzel, und das Ergebnis bleibt stehen")
+
+    def test_ohne_eigene_zeile_steht_am_ende_ein_neutraler_schluss(self) -> None:
+        gui, knopf, anzeige = self._gui(), _Knopf(), _Variable()
+        gui._ampr_suche_mit_anzeige(knopf, anzeige)
+        gui._ampr_nach_updates_sehen.call_args.kwargs["fertig"]()
+        self.assertEqual("ampr.update_anzeige_ende", anzeige.text)
+        self.assertEqual("normal", knopf.state)
+
+    def test_laeuft_schon_eine_suche_sagt_die_anzeige_es(self) -> None:
+        gui, knopf, anzeige = self._gui(), _Knopf(), _Variable()
+        gui._ampr_update_laeuft = True
+        gui._ampr_suche_mit_anzeige(knopf, anzeige)
+        self.assertEqual("ampr.update_anzeige_schon", anzeige.text)
+        self.assertEqual("normal", knopf.state, "gesperrt wird nur, wer die Suche selbst gestartet hat")
+        gui._ampr_nach_updates_sehen.assert_not_called()
+
+    def test_ein_zerstoertes_fenster_stoert_die_rueckrufe_nicht(self) -> None:
+        """Der Lauf dauert bis zu einer halben Minute: Wer das Fenster inzwischen schliesst, bekommt keinen Fehler."""
+        import tkinter
+        gui, knopf, anzeige = self._gui(), _Knopf(), _Variable()
+        gui._ampr_suche_mit_anzeige(knopf, anzeige)
+        kwargs = gui._ampr_nach_updates_sehen.call_args.kwargs
+        anzeige._wirft = tkinter.TclError("zerstoert")
+        kwargs["rueckmeldung"]("[AMPR] x")            # wirft nicht
+        # Und ein Lauf ohne eigene Zeile: Auch das Setzen des neutralen Schlusses wirft nichts nach aussen.
+        gui2, knopf2, anzeige2 = self._gui(), _Knopf(), _Variable()
+        gui2._ampr_suche_mit_anzeige(knopf2, anzeige2)
+        anzeige2._wirft = tkinter.TclError("zerstoert")
+        gui2._ampr_nach_updates_sehen.call_args.kwargs["fertig"]()
+        self.assertEqual("normal", knopf2.state, "der Knopf wird trotzdem freigegeben")
+
+    def test_ein_knopf_ohne_fenster_wird_nicht_mehr_angefasst(self) -> None:
+        gui, knopf, anzeige = self._gui(), _Knopf(), _Variable()
+        gui._ampr_suche_mit_anzeige(knopf, anzeige)
+        knopf.existiert = False
+        gui._ampr_nach_updates_sehen.call_args.kwargs["fertig"]()
+        self.assertEqual("disabled", knopf.state, "ein Knopf, den es nicht mehr gibt, wird nicht freigegeben")
+
+    def test_der_manager_benutzt_die_gemeinsame_anzeige(self) -> None:
+        """Der Knopf im AMPR EMU Manager ruft nicht mehr ``_ampr_nach_updates_sehen`` selbst (dann sah man dort nichts)."""
+        anfang = QUELLE.index("    def _mode_ampr_manager(")
+        ende = QUELLE.index("\n    def ", anfang + 10)
+        manager = QUELLE[anfang:ende]
+        self.assertIn("self._ampr_suche_mit_anzeige(_such_knopf, _such_text, _refresh_versions)", manager)
+        self.assertNotIn("self._ampr_nach_updates_sehen(", manager)
+
+
 try:
     import tkinter as tk
     _WURZEL = tk._default_root or tk.Tk()
@@ -550,7 +662,7 @@ class DialogTests(unittest.TestCase):
     def test_nach_dem_druck_steht_da_dass_gesucht_wird_und_der_knopf_ist_gesperrt(self) -> None:
         dlg = self._dialog()
         knopf = self._knopf_jetzt(dlg)
-        laeuft = STRINGS["settings_dialog.ng_such_laeuft"]["de"]
+        laeuft = STRINGS["ampr.update_anzeige_laeuft"]["de"]
         self.assertNotIn(laeuft, self._texte(dlg), "vorher steht dort nichts")
         with mock.patch.object(self.app, "_ampr_nach_updates_sehen") as sehen:
             knopf.invoke()
@@ -559,7 +671,7 @@ class DialogTests(unittest.TestCase):
         # Der Lauf meldet sich zu Ende: der Knopf ist wieder frei, und ohne eigene Zeile steht ein neutraler Schluss da.
         sehen.call_args.kwargs["fertig"]()
         self.assertEqual("normal", str(knopf.cget("state")))
-        self.assertIn(STRINGS["settings_dialog.ng_such_ende"]["de"], self._texte(dlg))
+        self.assertIn(STRINGS["ampr.update_anzeige_ende"]["de"], self._texte(dlg))
         self.assertNotIn(laeuft, self._texte(dlg))
 
     def test_das_ergebnis_ersetzt_die_laeuft_zeile_und_bleibt_nach_dem_ende_stehen(self) -> None:
@@ -573,7 +685,7 @@ class DialogTests(unittest.TestCase):
         fertig()
         texte = self._texte(dlg)
         self.assertIn("Nichts Neues – die Quelle führt NG 0.4.1, und das liegt bereits vor.", texte, "ohne das [AMPR]-Kürzel")
-        self.assertNotIn(STRINGS["settings_dialog.ng_such_ende"]["de"], texte, "das Ergebnis wird nicht uebermalt")
+        self.assertNotIn(STRINGS["ampr.update_anzeige_ende"]["de"], texte, "das Ergebnis wird nicht uebermalt")
         self.assertFalse(any(t.startswith("[AMPR]") for t in texte))
 
     def test_laeuft_schon_eine_suche_sagt_der_dialog_es(self) -> None:
@@ -584,7 +696,7 @@ class DialogTests(unittest.TestCase):
         with mock.patch.object(self.app, "_ampr_nach_updates_sehen") as sehen:
             knopf.invoke()
         sehen.assert_not_called()
-        self.assertIn(STRINGS["settings_dialog.ng_such_schon"]["de"], self._texte(dlg))
+        self.assertIn(STRINGS["ampr.update_anzeige_schon"]["de"], self._texte(dlg))
         self.assertEqual("normal", str(knopf.cget("state")), "gesperrt wird nur, wenn dieser Knopf die Suche gestartet hat")
 
     def test_ganzer_weg_mit_echtem_strang_und_attrappe_statt_netz(self) -> None:
