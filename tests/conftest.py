@@ -133,9 +133,14 @@ def _tk_stand(wurzel) -> dict:
 
 def _wurzel_zuruecksetzen(wurzel, vorher: dict) -> None:
     """Nimmt zurueck, was seit ``vorher`` an der Wurzel dazukam."""
+    # Nur den Zeitgeber abbrechen (``after cancel``), den Tcl-Befehl dahinter NICHT loeschen: ``Misc.after_cancel`` loescht ihn
+    # auch dann, wenn er einem Kind-Widget gehoert (``widget.after``) - dessen ``destroy()`` loescht ihn danach ein zweites Mal
+    # und wirft "can't delete Tcl command", der Abbau bricht mitten im Baum ab, ein Canvas samt Rueckruf bleibt stehen und haelt
+    # das Programmfenster fest (Volllauf 16.11.2026: ``content_area.after``). Befehle der Wurzel raeumt die Schleife unten ab,
+    # die der Kinder deren ``destroy()``.
     for job in set(wurzel.tk.splitlist(wurzel.tk.call("after", "info"))) - vorher["after"]:
         try:
-            wurzel.after_cancel(job)
+            wurzel.tk.call("after", "cancel", job)
         except tk.TclError:
             pass
     for kind in list(wurzel.winfo_children()):

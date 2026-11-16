@@ -94,5 +94,39 @@ class BIstAufgeraeumtTests(unittest.TestCase):
         self.assertTrue(_WURZEL.winfo_exists())
 
 
+class CZeitgeberEinesKindesTests(unittest.TestCase):
+    """Ein Zeitgeber, den ein Kind-Widget gesetzt hat, darf den Abbau nicht mitten im Baum abbrechen.
+
+    Volllauf 16.11.2026: ``content_area.after(...)`` im Programmfenster. ``Misc.after_cancel`` an der Wurzel loeschte den Tcl-Befehl
+    des Kindes; dessen ``destroy()`` loeschte ihn ein zweites Mal ("can't delete Tcl command"), der Abbau brach ab, ein Canvas samt
+    Rueckruf blieb an der Wurzel stehen - das Programmfenster lebte weiter und die Wurzel behielt Raster-Kinder, in die der naechste
+    Test mit ``pack`` nicht mehr hineinkam.
+    """
+
+    def setUp(self) -> None:
+        if not _unter_pytest_mit_conftest():
+            self.skipTest("nur unter pytest - dort liegt conftest.py")
+        if not TK_DA:
+            self.skipTest("keine Anzeige")
+
+    def test_ein_zeitgeber_am_kind_laesst_den_abbau_durchlaufen(self) -> None:
+        conftest = sys.modules["conftest"]
+        vorher = conftest._tk_stand(_WURZEL)
+        rahmen = tk.Frame(_WURZEL)
+        innen = tk.Frame(rahmen)
+        innen.pack()
+        innen.after(60000, lambda: None)                  # gehoert dem Kind, nicht der Wurzel
+        innen.after_idle(lambda: None)
+        innen.bind("<Configure>", lambda _e: None)
+        rahmen.after(60000, lambda: None)
+        pfad = str(rahmen)
+        conftest._wurzel_zuruecksetzen(_WURZEL, vorher)
+        self.assertFalse(int(_WURZEL.tk.call("winfo", "exists", pfad)),
+                         "Der Abbau liess ein Kind der Wurzel stehen (doppelt geloeschter Tcl-Befehl?).")
+        self.assertEqual(vorher["kinder"], set(_WURZEL.winfo_children()))
+        self.assertEqual(vorher["after"], set(_WURZEL.tk.splitlist(_WURZEL.tk.call("after", "info"))),
+                         "Ein Zeitgeber des Kindes lief weiter.")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
