@@ -204,6 +204,10 @@ RELEASES = {
         ('v0.2.1', False, '2026-10-15', ['neo-manager.elf', 'neo-manager.elf.sha256']),
         ('v0.2.0', False, '2026-10-15', ['neo-manager.elf', 'neo-manager.elf.sha256']),
     ],
+    'quer3q/kraken-mount': [
+        ('v0.2.1', False, '2026-11-16', ['kraken-mount.elf', 'SHA256SUMS']),
+        ('v0.2.0', False, '2026-11-15', ['kraken-mount.elf', 'SHA256SUMS']),
+    ],
     'aydencharles/onionHEN': [
         ('v0.9.0-beta2', True, '2026-10-07', ['OnionHEN.elf']),
         ('v0.9.0-beta1', True, '2026-10-03', ['OnionHEN.elf']),
@@ -312,7 +316,7 @@ HELLOWORLD = [
     "bfpilot_v0.4.4-multilang.elf", "dpiv2-13.60-1.00.elf", "dump_installer_v1.07.elf", "elfldr-ps5_v0.26.elf",
     "ftpsrv-ps5_v0.21.1.elf", "ftpsrv-ps5_v1.15-ng.elf", "ftpsrv-ps5_v1.16-ng-stable.elf",
     "game-compressor_v1.1.1.elf", "garlic-savemgr_v1.13.1.elf", "garlic-worker-ps5_2026-04-09.elf",
-    "gdbsrv-ps5_v0.9.elf", "klogsrv-ps5_v0.9.elf", "kstuff_lite_v1.11_Beta_EchoStretch.elf",
+    "gdbsrv-ps5_v0.9.elf", "klogsrv-ps5_v0.9.elf", "kraken-mount_v0.2.1.elf", "kstuff_lite_v1.11_Beta_EchoStretch.elf",
     "kstuff_v1.13-fpkg-dr-test5.elf", "lapy_jb_daemon-v1.2.elf", "nanodns_v0.4.elf", "neo-manager_v0.2.1.elf", "np-fake-signin-v1.3.elf",
     "patchdl_0.3.0.elf", "pkgmgr_v1.5.0.elf", "pldmgr_v0.6.0.elf", "ps4mount_v0.4.4.elf", "ps5-app-dumper_v2.10.elf", "ps5-backpork_v0.1.elf",
     "ps5-hwinfo-bench_v0.1.elf", "ps5-hwinfo-sysinfo_v0.1.elf", "ps5-self-pager-full-system_v1.2.elf",

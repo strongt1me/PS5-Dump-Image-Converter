@@ -269,6 +269,16 @@ KATALOG: tuple[Dienst, ...] = (
     # Autor beschreibt den Start ueber den Payload-Manager. Anlaufzeit geschaetzt.
     Dienst("homehider", 8090, "HomeHider_v*.elf", web="/", anlaufzeit=3.0,
            version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/status"),
+    # --- Kraken Mount (seit 16.11.2026) -------------------------------------------
+    # Spieleinbinder von quer3q (GPL-3.0-or-later): Spielordner (unverpackt, zstd oder LZ4) und Debug-FPKG-.pkg erscheinen mit
+    # eigener Kachel auf dem Startbildschirm, ohne installiert zu werden; ampr-emu-ng liegt bei. Port 8097 und Weboberflaeche aus
+    # dem DESIGN.md des Autors ("take port 8097", ``GET /api/state``) und aus dem ELF ("web UI on port"); das Payload nimmt den
+    # Port, bevor es auf kstuff und das Ende von ShadowMount+ wartet - die Seite ist also schon da, wenn noch nichts gemountet
+    # wird (``waiting`` in ``/api/state``). Gestartet wird das ELF ueber den ELF-Loader (payload_muster, README: ``nc -w 3 <IP> 9021
+    # < kraken-mount.elf``), aber nur, wenn kstuff geladen ist und ShadowMount+ NICHT laeuft - sonst wartet es nur. Keine
+    # version_muster: ``/api/state`` nennt ``version`` erst hinter den Spielen (Reihenfolge der Schluessel nicht gemessen), es
+    # gaebe sonst eine Spielfassung aus. An der Konsole noch NICHT nachgemessen. Anlaufzeit geschaetzt.
+    Dienst("kraken_mount", 8097, "kraken-mount_v*.elf", web="/", anlaufzeit=3.0),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,

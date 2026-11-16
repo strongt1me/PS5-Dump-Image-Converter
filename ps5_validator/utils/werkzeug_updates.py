@@ -500,6 +500,8 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     _p("ps4mount", "PS4Mount", "gasb07/ps4mount", "ps4mount_v*.elf", _d("ps4mount.elf", "ps4mount_v{f}.elf")),
     _p("neo-manager", "NeoEnabler", "gasb07/NeoEnabler", "neo-manager_v*.elf",
        _d("neo-manager.elf", "neo-manager_v{f}.elf")),
+    _p("kraken-mount", "Kraken Mount", "quer3q/kraken-mount", "kraken-mount_v*.elf",
+       _d("kraken-mount.elf", "kraken-mount_v{f}.elf")),
     _p("anypad", "AnyPad PS5", "codeberg:elmonomalva0/Any-Pad-ps5", "AnyPad-PS5-*.elf", _d("AnyPad-PS5-{f}.elf"),
        vorab=True, hinweis="updates.hinweis_vorab"),
     _p("onionhen", "OnionHEN", "aydencharles/onionHEN", "OnionHEN_v*.elf", _d("OnionHEN.elf", "OnionHEN_v{f}.elf"),
