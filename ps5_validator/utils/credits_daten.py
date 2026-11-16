@@ -224,6 +224,14 @@ ENTWICKLER: tuple[Entwickler, ...] = (
                (("AnyPad PS5", "https://codeberg.org/elmonomalva0/Any-Pad-ps5"),),
                {"de": "Danke für AnyPad PS5.",
                 "en": "Thank you for AnyPad PS5."}),
+    # Seit 16.11.2026 (Nutzer: Kraken Mount und Dump Forge ins Programm; Konto, Repos und "kein Fork" per GitHub-Schnittstelle
+    # geprueft). Das Profil nennt keinen Namen, darum der Login.
+    Entwickler("quer3q", "quer3q", WERKZEUGE,
+               (("Kraken Mount", _gh("quer3q/kraken-mount")),
+                ("ampr-emu-ng", _gh("quer3q/ampr-emu-ng")),
+                ("Dump Forge", _gh("quer3q/ps5-dump-forge"))),
+               {"de": "Danke für Kraken Mount, ampr-emu-ng und Dump Forge.",
+                "en": "Thank you for Kraken Mount, ampr-emu-ng and Dump Forge."}),
     # --- Community ---
     Entwickler("TheOfficialFloW", "TheFloW (Andy Nguyen)", COMMUNITY,
                (("PPPwn", _gh("TheOfficialFloW/PPPwn")),),

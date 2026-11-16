@@ -50,6 +50,12 @@ AUSNAHMEN: dict[str, str] = {
         "hat eine eigene Seite in der Ansicht KONSOLE (Knopf \"WebKit Autoloader\" mit "
         "Fassungswahl), die ihn sendet; seine Seite auf 18181 ist der Jailbreak-Host fuer den "
         "Browser der Konsole"),
+    # Seit 16.11.2026: Dump Forge (quer3q) liefert seine Seite auf Port 8095 aus - demselben Port wie AnyPad PS5. Der Katalog
+    # fuehrt je Port genau einen Dienst (``test_schluessel_und_ports_sind_eindeutig``; "laeuft" ist ein offener Port, ein
+    # zweiter Eintrag darauf meldete AnyPad bei laufendem Dump Forge als laufend und umgekehrt). Gesendet wird die Datei ueber
+    # den ELF-Sender (Schnellauswahl listet jede ELF aus helloworld/); ihre Seite steht im Handbuch.
+    "ps5-dump-forge_v*.elf": (
+        "teilt Port 8095 mit AnyPad PS5 (Zeile \"anypad\"); der Katalog fuehrt je Port einen Dienst"),
 }
 
 

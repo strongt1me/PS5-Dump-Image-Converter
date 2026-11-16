@@ -502,6 +502,10 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
        _d("neo-manager.elf", "neo-manager_v{f}.elf")),
     _p("kraken-mount", "Kraken Mount", "quer3q/kraken-mount", "kraken-mount_v*.elf",
        _d("kraken-mount.elf", "kraken-mount_v{f}.elf")),
+    # Dump Forge (quer3q, GPL-3.0-or-later): beim Autor ``ps5-dump-forge-<Fassung>-ps5.elf`` (neben den PC-Fassungen
+    # und ``SHA256SUMS``); hier auf das Namensschema des Ordners umbenannt.
+    _p("dump-forge", "Dump Forge", "quer3q/ps5-dump-forge", "ps5-dump-forge_v*.elf",
+       _d("ps5-dump-forge-{f}-ps5.elf", "ps5-dump-forge_v{f}.elf")),
     _p("anypad", "AnyPad PS5", "codeberg:elmonomalva0/Any-Pad-ps5", "AnyPad-PS5-*.elf", _d("AnyPad-PS5-{f}.elf"),
        vorab=True, hinweis="updates.hinweis_vorab"),
     _p("onionhen", "OnionHEN", "aydencharles/onionHEN", "OnionHEN_v*.elf", _d("OnionHEN.elf", "OnionHEN_v{f}.elf"),
