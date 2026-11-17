@@ -1702,8 +1702,10 @@ class Ps5PkgFenster:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Cover fuer die Seitenleiste nicht lesbar: %s", exc)
                 cover = None
+        # Vor ``_update_info_box``: Die Zeilen ueber dem Cover (Backport, LZ4- oder zstd-Pack) liest es aus der Quelle - auf dieser Seite
+        # ist das nicht das Quellfeld der Aufgaben 1 bis 6, sondern der Pfad des Pakets (``_pkg_spielinfo_pfad``).
+        spielinfo_knopf_setzen(g, True, info.pfad)   # auch der Knopf "Spiel Info - Updates & Patches" der Seitenleiste, wie bei Aufgabe 1 bis 6
         g._update_info_box(meta, cover, self._fmt(info.groesse), "")
-        spielinfo_knopf_setzen(g, True)          # der Knopf "Spiel Info - Updates & Patches" der Seitenleiste, wie bei Aufgabe 1 bis 6
         # Was die Info-Box aus der Quelle der Aufgaben 1 bis 6 liest, gehoert nicht zu diesem Paket.
         for schluessel in ("sdk_stand", "ampr_emu"):
             if schluessel in g._meta_labels:
@@ -2171,6 +2173,9 @@ class Ps5PkgFenster:
         if not self._werkzeug_forge():
             self._fehler(self.t("ps5pkg.err_no_tool_forge"))
             return
+        # Ein gepacktes Spiel (LZ4 oder zstd) laeuft als FPKG nicht: gar nicht erst anfangen (Nutzerwunsch 17.11.2026).
+        if not abbild and self._gepackt_sperren(info):
+            return
         # ``abbild``: das Formatkuerzel (``ffpkg`` usw.), wenn Forge ein Paket direkt in ein Abbild wandelt - im Strom, ohne
         # Entpacken (Nutzerwunsch 17.11.2026: kein Zwischenordner in Aufgabe 7). Leer: das Paket wird gebaut.
         name = self._forge_abbild_name(info, abbild) if abbild else self._forge_dateiname(info)
@@ -2224,6 +2229,34 @@ class Ps5PkgFenster:
             pass
         info.fakten = forge.quellfakten_lesen(exe, info.pfad, popen_extra=self._popen_extra())
         return info.fakten
+
+    def _gepackt_verfahren(self, info: "wz.PaketInfo") -> str:
+        """``"lz4"`` oder ``"zstd"``, wenn das Spiel Asset-Packs traegt, sonst ``""``.
+
+        Zuerst Forges ``inspect`` (liest auch ein Abbild, ohne es zu entpacken); bei einem Spielordner zaehlt zusaetzlich der
+        Pack-Index an der Wurzel - auch einer, den Forge nicht lesen kann (beschaedigt, fremde Fassung): Die Baender liegen dann
+        trotzdem im Spiel."""
+        fakten = self._quellfakten(info)
+        gepackt = fakten.gepackt if fakten is not None else ""
+        if not gepackt and info.ist_ordner:
+            gepackt = forge.gepackt_im_ordner(info.pfad)
+        return gepackt if gepackt in ("lz4", "zstd") else ""
+
+    def _gepackt_sperren(self, info: "wz.PaketInfo") -> bool:
+        """Ein Spiel mit LZ4- oder zstd-Packs wird nicht zum FPKG: Meldung, Protokollzeile, ``True`` (nicht bauen).
+
+        Nutzerwunsch 17.11.2026: Solche Spiele laufen als FPKG an der PS5 nicht (mit Kraken Mount) - wer es versucht, soll es vorher
+        erfahren und nicht erst an der Konsole. Als Abbild (``.ffpkg``, ``.ffpfsc`` ...) laeuft ein gepacktes Spiel, dort liest
+        AMPR EMU die Packs; die Sperre gilt darum nur fuer das Paket (``abbild`` leer)."""
+        verfahren = self._gepackt_verfahren(info)
+        if not verfahren:
+            return False
+        name = "LZ4" if verfahren == "lz4" else "zstd"
+        self._protokoll(self.t("ps5pkg.packs_gesperrt_log", verfahren=name))
+        self._status(self.t("ps5pkg.packs_gesperrt_status", verfahren=name))
+        messagebox.showerror(self.t("ps5pkg.packs_gesperrt_titel"), self.t("ps5pkg.packs_gesperrt", verfahren=name),
+                             parent=self.win)
+        return True
 
     def _emulatoren_fragen(self, info: "wz.PaketInfo") -> bool:
         """Vor dem Bau: sucht im Spiel nach AMPR EMU, Asset-Packs, PlayGo, DLC und BACKPORT und fragt, wenn etwas fehlt.
@@ -3319,14 +3352,18 @@ class Ps5PkgFenster:
             setattr(self.g, FENSTER_ATTRIBUT, None)
 
 
-def spielinfo_knopf_setzen(gui, frei: bool) -> None:
+def spielinfo_knopf_setzen(gui, frei: bool, pfad: str = "") -> None:
     """Gibt den Knopf "Spiel Info - Updates & Patches" der Seitenleiste frei oder sperrt ihn, solange Aufgabe 7 ein Spiel zeigt.
 
     Bei den Aufgaben 1 bis 6 schaltet ihn das Programm selbst, sobald das Quellfeld eine gueltige Quelle nennt. Aufgabe 7 hat
     dieses Feld nicht - die Seite liest ihr Spiel selbst und merkt es sich in ``_pkg_spielinfo_da``, damit auch eine spaetere
-    Neuberechnung (Wechsel der Aufgabe, der Sprache ...) den Knopf nicht wieder sperrt (``_on_source_path_changed``)."""
+    Neuberechnung (Wechsel der Aufgabe, der Sprache ...) den Knopf nicht wieder sperrt (``_on_source_path_changed``).
+
+    ``pfad``: das Spiel, das die Seite zeigt (``_pkg_spielinfo_pfad``). Die Info-Box und die Zeilen ueber dem Cover lesen die
+    Quelle daraus statt aus dem Quellfeld der Aufgaben 1 bis 6 (``_anzeige_quelle``), das hier leer oder veraltet ist."""
     try:
         gui._pkg_spielinfo_da = bool(frei)
+        gui._pkg_spielinfo_pfad = str(pfad or "") if frei else ""
         knopf = getattr(gui, "info_toggle_btn", None)
         if knopf is not None:
             knopf.config(state=tk.NORMAL if frei else tk.DISABLED)

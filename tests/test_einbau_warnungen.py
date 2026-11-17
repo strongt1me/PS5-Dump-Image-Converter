@@ -168,7 +168,7 @@ class EineRegelTests(unittest.TestCase):
         weiter an, bis jemand "Neu suchen" drueckt.
         """
         self.assertEqual((bib.EINBAU_REGEL, bib.FAKELIB_REIHENFOLGE),
-                         (2, ("fakelib2", "fakelib")),
+                         (3, ("fakelib2", "fakelib")),
                          "Reihenfolge geaendert? Dann EINBAU_REGEL erhoehen "
                          "und diesen Test nachziehen.")
 

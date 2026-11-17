@@ -764,9 +764,13 @@ FAKELIB_REIHENFOLGE: tuple[str, ...] = tuple(
 #: Stand der Regel in :func:`einbauten_bewerten`. Der Bildspeicher merkt sich
 #: Ergebnisse je Abbild; aendert sich die Regel, gelten gemerkte Ergebnisse
 #: mit einer anderen Nummer nicht mehr. 2: seit 27.09.2026 mit
-#: ``ampr_verdeckt``. Aendert sich ``FAKELIB_REIHENFOLGE``, muss die Nummer
-#: mit - ``test_einbau_warnungen`` haelt beide zusammen fest.
-EINBAU_REGEL = 2
+#: ``ampr_verdeckt``. 3: seit 17.11.2026 mit ``packverfahren`` (LZ4 oder zstd). Aendert sich
+#: ``FAKELIB_REIHENFOLGE``, muss die Nummer mit - ``test_einbau_warnungen`` haelt beide zusammen fest.
+EINBAU_REGEL = 3
+
+#: Womit die Wurzeldateien eines zstd-Packs beginnen (``ampr_zstd.index``, ``ampr_zstd-000.pak``); alles andere in der
+#: gepackten Asset-Schicht (``ampr_assets.index``, ``ampr_assets-000.pak``) ist LZ4. Ein Test haelt es gleich dem Packmodul.
+ZSTD_PACK_PRAEFIX = "ampr_zstd"
 
 #: Die Marken der Einbauten dieses Programms (siehe ``_fruehere_einbauten``).
 AMPR_DATEI = "libSceAmpr.sprx"
@@ -816,16 +820,19 @@ def einbauten_bewerten(dateien: Iterable[str], *, ordner: Iterable[str] = (),
 
     Returns:
         ``{"ordner", "verdeckt", "ampr", "playgo", "backport", "assetpack",
-        "ampr_verdeckt", "regel"}``: der Bibliotheksordner, der nach
-        :data:`FAKELIB_REIHENFOLGE` gilt (``""`` ohne), ob er einen zweiten
-        verdeckt, die Marken darin, die BACKPORT-Firmwareordner (sortiert),
-        ob ein Asset-Pack da ist, ob ein AMPR EMU nur im **verdeckten**
-        Ordner liegt (dort wirkt er nicht) und :data:`EINBAU_REGEL`.
+        "packverfahren", "ampr_verdeckt", "regel"}``: der Bibliotheksordner,
+        der nach :data:`FAKELIB_REIHENFOLGE` gilt (``""`` ohne), ob er einen
+        zweiten verdeckt, die Marken darin, die BACKPORT-Firmwareordner
+        (sortiert), ob ein Asset-Pack da ist und womit es gepackt ist
+        (``"lz4"``, ``"zstd"``, ohne Pack ``""``; ein Spiel mit beiden gilt
+        als zstd), ob ein AMPR EMU nur im **verdeckten** Ordner liegt (dort
+        wirkt er nicht) und :data:`EINBAU_REGEL`.
     """
     inhalt: dict[str, set[str]] = {name: set() for name in FAKELIB_REIHENFOLGE}
     unterordner: dict[str, set[str]] = {name: set() for name in FAKELIB_REIHENFOLGE}
     vorhanden: set[str] = set()
     assetpack = False
+    zstd = False
 
     def _merken(teile: list[str], ist_datei: bool) -> None:
         if not teile or teile[0] not in inhalt:
@@ -843,6 +850,7 @@ def einbauten_bewerten(dateien: Iterable[str], *, ordner: Iterable[str] = (),
             continue
         if assetpack_datei is not None and "/" not in rel and assetpack_datei(rel):
             assetpack = True
+            zstd = zstd or rel.startswith(ZSTD_PACK_PRAEFIX)
         _merken(rel.split("/"), True)
     for eintrag in ordner:
         rel = _relativ(eintrag).lower()
@@ -864,6 +872,7 @@ def einbauten_bewerten(dateien: Iterable[str], *, ordner: Iterable[str] = (),
                             if BACKPORT_ORDNER.fullmatch(n)),
                            key=lambda n: (len(n), n)),
         "assetpack": assetpack,
+        "packverfahren": ("zstd" if zstd else "lz4") if assetpack else "",
         "ampr_verdeckt": not ampr and any(
             AMPR_DATEI.lower() in inhalt[name] for name in vorhanden if name != gilt),
         "regel": EINBAU_REGEL,

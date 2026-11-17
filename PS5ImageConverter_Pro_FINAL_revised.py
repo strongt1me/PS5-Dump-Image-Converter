@@ -19006,7 +19006,10 @@ class PS5ConverterGUI:
         bleibt die deckende bg_main-Farbe unveraendert bestehen.
         """
         if self._sidebar_bg_image_cache is None:
+            self._sidebar_fw_ohne_bild()
             return
+        # Die Kacheln ueber dem Cover folgen einem Designwechsel (ihre Farben kommen aus der Palette).
+        self._sidebar_fw_chips_setzen(list(getattr(getattr(self, "_sidebar_fw_label", None), "_chips", []) or []))
         for label in getattr(self, "_sidebar_caption_labels", []):
             try:
                 if not label.winfo_exists() or not label.winfo_ismapped():
@@ -19022,13 +19025,16 @@ class PS5ConverterGUI:
                     label._caption_natural_size = natural_size
                     label._caption_natural_text = text
                 w, h = natural_size
+                if getattr(label, "_chips_aktiv", False):
+                    w = max(int(w), int(getattr(label, "_chips_breite", 0)) + 8)      # so breit wie die Reihe der Kacheln
                 crop = self._compute_sidebar_bg_crop(label, w, h)
                 if crop is None:
                     continue
                 self._beschriftung_lesbar_machen(label, crop)
                 photo = ImageTk.PhotoImage(crop)
                 label._caption_bg_photo = photo  # Referenz halten (sonst GC durch Tk)
-                label.config(image=photo, compound="center")
+                # Zeigt das Label kleine Kacheln (Firmware, Backport, Pack), traegt es nur den Bildausschnitt: nie den Text dazu.
+                label.config(image=photo, compound="none" if getattr(label, "_chips_aktiv", False) else "center")
             except Exception as exc:
                 logger.debug("Sidebar-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
 
@@ -22591,22 +22597,24 @@ class PS5ConverterGUI:
         if kurz:
             self._hauptfaden_planen(self._set_status_fluechtig, kurz)
 
-    def _quelle_einbauten_zeilen(self, src: str, aktuell: "Callable[[], bool] | None" = None) -> "list[str] | None":
-        """Die Zeilen der Pruefung einer Quelle (Faden): was schon eingebaut ist, und ob PlayGo noetig waere.
+    def _anzeige_quelle(self) -> str:
+        """Die Quelle, zu der die Seitenleiste und die Info-Box gerade etwas zeigen.
 
-        Eine Stelle fuer die Aufgaben 1 bis 6 (``_quelle_einbauten_pruefen``) und fuer Seite 7 PKG / FPKG (Nutzerwunsch
-        17.11.2026: "wie in Aufgabe 1-6 bereits" - dieselben ``[Pruefung]``-Zeilen im Protokoll, sobald die Quelle gewaehlt ist).
+        Bei den Aufgaben 1 bis 6 das Quellfeld; auf Seite 7 (PKG / FPKG) das Spiel, das die Seite zeigt
+        (``ps5_pkg_fenster.spielinfo_knopf_setzen``) - ihr Quellfeld ist leer oder gehoert zu einer frueheren Aufgabe."""
+        try:
+            if self.current_mode.get() == "pkg_fpkg" and getattr(self, "_pkg_spielinfo_pfad", ""):
+                return str(self._pkg_spielinfo_pfad)
+            return str(self.source_path.get())
+        except Exception:  # noqa: BLE001
+            return ""
 
-        Args:
-            aktuell: liefert ``False``, sobald die Antwort nicht mehr gebraucht wird (andere Quelle gewaehlt, Lauf gestartet).
+    def _einbauten_der_quelle(self, src: str) -> dict:
+        """Was eine Quelle schon eingebaut hat (Faden): ``_bibliothek_einbauten``, bei einem ``.pkg`` ueber Dump Forge.
 
-        Returns:
-            Die Zeilen (mit Zeilenende); ``None``, wenn ``aktuell`` waehrenddessen ``False`` wurde.
-        """
-        def _aktuell() -> bool:
-            return aktuell is None or bool(aktuell())
-
-        name = os.path.basename(os.path.normpath(src))
+        Eine Stelle fuer die ``[Pruefung]``-Zeilen des Protokolls und die Zeilen ueber dem Cover der Seitenleiste
+        (``_sidebar_firmware_aktualisieren``): beide zeigen, ob ein Asset-Pack da ist und womit es gepackt ist
+        (``packverfahren``: ``lz4``, ``zstd`` oder ``""``). Ein Fehler ergibt ``{"zustand": "unbekannt", ...}``."""
         art = "folder" if os.path.isdir(src) else os.path.splitext(src)[1].lower().lstrip(".")
         try:
             ergebnis = self._bibliothek_einbauten({"path": src, "kind": art})
@@ -22623,7 +22631,27 @@ class PS5ConverterGUI:
             if fakten is not None:
                 ergebnis = {"zustand": "ok", "backport": ["?"] if fakten.backport_vorhanden else [],
                             "ampr": "ampr" in fakten.emulatoren, "assetpack": bool(fakten.gepackt),
+                            "packverfahren": fakten.gepackt if fakten.gepackt in ("lz4", "zstd") else "",
                             "playgo": "playgo" in fakten.emulatoren}
+        return ergebnis
+
+    def _quelle_einbauten_zeilen(self, src: str, aktuell: "Callable[[], bool] | None" = None) -> "list[str] | None":
+        """Die Zeilen der Pruefung einer Quelle (Faden): was schon eingebaut ist, und ob PlayGo noetig waere.
+
+        Eine Stelle fuer die Aufgaben 1 bis 6 (``_quelle_einbauten_pruefen``) und fuer Seite 7 PKG / FPKG (Nutzerwunsch
+        17.11.2026: "wie in Aufgabe 1-6 bereits" - dieselben ``[Pruefung]``-Zeilen im Protokoll, sobald die Quelle gewaehlt ist).
+
+        Args:
+            aktuell: liefert ``False``, sobald die Antwort nicht mehr gebraucht wird (andere Quelle gewaehlt, Lauf gestartet).
+
+        Returns:
+            Die Zeilen (mit Zeilenende); ``None``, wenn ``aktuell`` waehrenddessen ``False`` wurde.
+        """
+        def _aktuell() -> bool:
+            return aktuell is None or bool(aktuell())
+
+        name = os.path.basename(os.path.normpath(src))
+        ergebnis = self._einbauten_der_quelle(src)
         if not _aktuell():
             return None
         zeilen: list[str] = []
@@ -22639,7 +22667,9 @@ class PS5ConverterGUI:
             elif ergebnis.get("ampr_verdeckt"):
                 gefunden.append(self._t("einbau_pruefung.ampr_verdeckt"))
             if ergebnis.get("assetpack"):
-                gefunden.append(self._t("einbau_pruefung.assetpack"))
+                # Mit dem Verfahren (LZ4 oder zstd): Ein gepacktes Spiel wird nicht zum FPKG (Nutzerwunsch 17.11.2026).
+                gefunden.append(self._t({"lz4": "einbau_pruefung.assetpack_lz4", "zstd": "einbau_pruefung.assetpack_zstd"}.get(
+                    str(ergebnis.get("packverfahren") or ""), "einbau_pruefung.assetpack")))
             if ergebnis.get("playgo"):
                 gefunden.append(self._t("einbau_pruefung.playgo"))
             if gefunden:
@@ -25333,8 +25363,15 @@ class PS5ConverterGUI:
         treffer = re.match(r"\s*(\d{1,2})\.(\d{1,2})", str(wert or ""))
         return "%d.%s" % (int(treffer.group(1)), treffer.group(2)) if treffer else ""
 
-    def _sidebar_fw_text_setzen(self, benoetigt: str, backport: str = "") -> None:
-        """Setzt die beiden Firmware-Zeilen ueber dem Cover (zweite Zeile leer ohne Backport)."""
+    def _sidebar_fw_text_setzen(self, benoetigt: str, backport: str = "", zusatz: "tuple | list" = ()) -> None:
+        """Setzt die beiden Firmware-Zeilen ueber dem Cover (zweite Zeile leer ohne Backport) und ihre kleinen Kacheln.
+
+        Der Text bleibt die Grundlage (Messung, Tests, Zugaenglichkeit); gezeigt werden dafuer kleine Kacheln je Rolle
+        (Nutzerwahl 17.11.2026): Firmware, Backport, LZ4- oder zstd-Pack - :meth:`_sidebar_fw_chips_setzen`.
+
+        Args:
+            zusatz: ``(Text, Art)`` der Kacheln nach der Firmware (``backport``, ``assetpack``).
+        """
         zeilen = getattr(self, "_sidebar_fw_label", None)
         if zeilen is None:
             return
@@ -25348,6 +25385,94 @@ class PS5ConverterGUI:
                 self._schedule_caption_redraw(self._redraw_sidebar_captions)
         except tk.TclError as exc:
             logger.debug("Firmware-Zeilen nicht setzbar: %s", exc)
+        chips = [(self._t("sidebar.fw_chip", fw=benoetigt), "neutral")] if benoetigt else []
+        self._sidebar_fw_chips_setzen(chips + list(zusatz or ()))
+
+    #: Hoehe einer kleinen Kachel ueber dem Cover (vor der Anzeigeskalierung) und der Abstand dazwischen in Pixeln.
+    _SIDEBAR_CHIP_HOEHE = 22
+    _SIDEBAR_CHIP_ABSTAND = 6
+
+    def _sidebar_fw_chips_setzen(self, chips: "list[tuple[str, str]]") -> None:
+        """Zeigt die Firmware-Zeilen als kleine Kacheln je Rolle: ``[FW 3.00] [Backport 7.00] [LZ4]``.
+
+        Nutzerwahl 17.11.2026 (Vorschau "Kleine Kacheln je Rolle"): Farben und Rundung wie die Marken der Bibliothek
+        (``bibliothek_zeichnen.chip_farben``; Bernstein = Backport, Blau = Asset-Pack, grau = Firmware). Jede Kachel ist
+        eine Pille (``RoundedButton``) in der Seitenleiste, mittig ueber dem Firmware-Label ``place``-t (``in_``: so schneidet das
+        Label sie nicht ab, und sie liegen ueber seinem Bild); das Label zeigt dann nur den
+        Bildausschnitt der Seitenleiste (``compound="none"``, ``_redraw_sidebar_captions``) und bleibt so gross wie
+        seine zwei Textzeilen - das Cover springt nicht.
+
+        Args:
+            chips: ``(Text, Art)`` je Kachel, ``Art`` wie bei ``chip_farben``; leer = keine Kacheln, die Zeilen stehen als Text da.
+        """
+        label = getattr(self, "_sidebar_fw_label", None)
+        if label is None:
+            return
+        chips = [(str(t), str(a)) for t, a in chips if str(t).strip()]
+        farben = tuple(str(self._COLORS.get(n, "")) for n in
+                       ("bg_main", "bg_card", "fg_primary", "fg_secondary", "fg_accent", "fg_warning", "fg_success"))
+        stand = (tuple(chips), farben)
+        vorhanden = list(getattr(label, "_chip_widgets", []) or [])
+        if stand == getattr(label, "_chip_stand", None) and (vorhanden or not chips):
+            return
+        label._chip_stand = stand
+        label._chips = chips
+        try:
+            for alt in vorhanden:
+                alt.destroy()
+            label._chip_widgets = []
+            if not chips:
+                label._chips_aktiv = False
+                label.configure(fg=self._COLORS.get("fg_secondary", label.cget("fg")), compound="center")
+                self._schedule_caption_redraw(self._redraw_sidebar_captions)
+                return
+            breiten: list[int] = []
+            for text, art in chips:
+                f = bibliothek_zeichnen.chip_farben(self._COLORS, art)
+                flaeche = str(f["fuellung"]) or str(self._COLORS.get("bg_card", "#1d1d23"))
+                chip = RoundedButton(
+                    label.master, text=text, command=None, font=(UI_SCHRIFT, pt(9)), bg=flaeche, fg=str(f["text"]),
+                    activebackground=flaeche, activeforeground=str(f["text"]), outline=str(f["rand"]),
+                    radius=self._SIDEBAR_CHIP_HOEHE, height=self._SIDEBAR_CHIP_HOEHE, pille=True,
+                    hintergrund=self._rund_hintergrund, breite_nach_text=True, polster_x=10)
+                tk.Canvas.configure(chip, cursor="")          # eine Kachel zeigt etwas an, sie ist kein Knopf
+                label._chip_widgets.append(chip)
+                breiten.append(int(chip.winfo_reqwidth()))
+            abstand = knopfmass(self._SIDEBAR_CHIP_ABSTAND, label)
+            gesamt = sum(breiten) + abstand * (len(breiten) - 1)
+            x = -gesamt // 2
+            for chip, breite in zip(label._chip_widgets, breiten):
+                chip.place(in_=label, relx=0.5, rely=0.5, x=x, anchor="w")
+                x += breite + abstand
+            # Das Label sollte mindestens so breit sein wie die Reihe (die Zeichenroutine legt ihm einen Bildausschnitt dieser Breite unter).
+            label._chips_breite = gesamt
+            label._chips_aktiv = True
+            if not getattr(label, "_chips_map_gebunden", False):
+                # Wird das Label erst nach dem Setzen angezeigt (das Cover kommt spaeter), zeichnet erst die Anzeige den Ausschnitt.
+                label._chips_map_gebunden = True
+                label.bind("<Map>", lambda _e: self._schedule_caption_redraw(self._redraw_sidebar_captions), add="+")
+            # Bis der Bildausschnitt gezeichnet ist, soll der Text nicht neben den Kacheln stehen.
+            label.configure(fg=self._COLORS.get("bg_main", label.cget("bg")))
+            self._schedule_caption_redraw(self._redraw_sidebar_captions)
+        except tk.TclError as exc:
+            logger.debug("Kacheln ueber dem Cover nicht setzbar: %s", exc)
+
+    def _sidebar_fw_ohne_bild(self) -> None:
+        """Ohne Seitenleistenbild zeichnet ``_redraw_sidebar_captions`` nichts: Das Firmware-Label bekommt hier eine leere Flaeche
+        in der Fensterfarbe, damit der Text nicht neben seinen Kacheln steht."""
+        label = getattr(self, "_sidebar_fw_label", None)
+        if label is None or not getattr(label, "_chips_aktiv", False):
+            return
+        try:
+            if not label.winfo_exists() or not label.winfo_ismapped():
+                return
+            w, h = self._caption_natuerliche_groesse(label)
+            w = max(int(w), int(getattr(label, "_chips_breite", 0)) + 8)
+            foto = ImageTk.PhotoImage(Image.new("RGB", (max(1, int(w)), max(1, int(h))), self._COLORS["bg_main"]))
+            label._caption_bg_photo = foto
+            label.config(image=foto, compound="none")
+        except Exception as exc:  # noqa: BLE001 - eine Anzeige, kein Hindernis
+            logger.debug("Fensterfarbe unter den Kacheln nicht gesetzt: %s", exc)
 
     def _sidebar_firmware_aktualisieren(self, meta: dict, quelle: str) -> None:
         """Zeigt ueber dem Cover die benoetigte Firmware und - bei eingebautem Backport - dessen Firmware.
@@ -25367,7 +25492,9 @@ class PS5ConverterGUI:
         self._sidebar_fw_benoetigt = benoetigt
         if not gleiche_quelle:
             self._sidebar_fw_backport = ""
-        self._sidebar_fw_text_setzen(benoetigt, getattr(self, "_sidebar_fw_backport", ""))
+            self._sidebar_fw_zusatz = ()
+        self._sidebar_fw_text_setzen(benoetigt, getattr(self, "_sidebar_fw_backport", ""),
+                                     getattr(self, "_sidebar_fw_zusatz", ()))
         if not quelle or not os.path.exists(quelle):
             return
         try:
@@ -25380,8 +25507,9 @@ class PS5ConverterGUI:
         if merker is None:
             merker = self._sidebar_fw_merker = {}
         if schluessel in merker:
-            self._sidebar_fw_backport = merker[schluessel]
-            self._sidebar_fw_text_setzen(benoetigt, merker[schluessel])
+            text, zusatz = merker[schluessel]
+            self._sidebar_fw_backport, self._sidebar_fw_zusatz = text, zusatz
+            self._sidebar_fw_text_setzen(benoetigt, text, zusatz)
             return
         laufend = getattr(self, "_sidebar_fw_laufend", None)
         if laufend is None:
@@ -25390,31 +25518,44 @@ class PS5ConverterGUI:
             return
         laufend.add(schluessel)
 
-        def _fertig(text: str) -> None:
+        def _fertig(text: str, zusatz: tuple) -> None:
             laufend.discard(schluessel)
             if len(merker) >= 64:
                 merker.clear()
-            merker[schluessel] = text
+            merker[schluessel] = (text, zusatz)
             if getattr(self, "_sidebar_fw_quelle", None) == quelle:
-                self._sidebar_fw_backport = text
-                self._sidebar_fw_text_setzen(getattr(self, "_sidebar_fw_benoetigt", ""), text)
+                self._sidebar_fw_backport, self._sidebar_fw_zusatz = text, zusatz
+                self._sidebar_fw_text_setzen(getattr(self, "_sidebar_fw_benoetigt", ""), text, zusatz)
 
         def _lesen() -> None:
             text = ""
+            kacheln: list[tuple[str, str]] = []
             try:
                 ordner = os.path.isdir(quelle)
-                art = "folder" if ordner else os.path.splitext(quelle)[1].lower().lstrip(".")
-                ergebnis = self._bibliothek_einbauten({"path": quelle, "kind": art})
-                marken = list(ergebnis.get("backport") or []) if ergebnis.get("zustand") == "ok" else []
+                ergebnis = self._einbauten_der_quelle(quelle)
+                gelesen = ergebnis.get("zustand") == "ok"
+                marken = list(ergebnis.get("backport") or []) if gelesen else []
+                teile: list[str] = []
                 if marken:
                     nummern = sorted({int(m) for n in marken for m in re.findall(r"\d+", n)})
                     fw = ""
                     if ordner:
                         fw, _hinweis = self._sdk_stand_lesen(quelle)
-                    text = self._t("sidebar.fw_backport", fw=fw or ", ".join(str(n) for n in nummern))
-            except Exception as exc:  # noqa: BLE001 - ohne Backport-Zeile geht es weiter
-                logger.debug("Backport-Firmware fuer die Seitenleiste nicht ermittelbar: %s", exc)
-            if not self._spaeter_im_fenster(self.root, _fertig, text):
+                    fw = fw or ", ".join(str(n) for n in nummern) or "?"
+                    teile.append(self._t("sidebar.fw_backport", fw=fw))
+                    kacheln.append((self._t("sidebar.fw_chip_backport", fw=fw), "backport"))
+                # Ein gepacktes Spiel (LZ4 oder zstd) laeuft als FPKG nicht: Die Kennzeichnung steht in derselben zweiten
+                # Zeile wie der Backport (Nutzerwunsch 17.11.2026) - allein ausgeschrieben, neben dem Backport kurz - und
+                # als Kachel neben der Firmware.
+                verfahren = str(ergebnis.get("packverfahren") or "") if gelesen and ergebnis.get("assetpack") else ""
+                if verfahren:
+                    name = "zstd" if verfahren == "zstd" else "LZ4"
+                    teile.append(self._t("sidebar.fw_pack_kurz" if teile else "sidebar.fw_pack", verfahren=name))
+                    kacheln.append((name, "assetpack"))
+                text = " · ".join(teile)
+            except Exception as exc:  # noqa: BLE001 - ohne zweite Zeile geht es weiter
+                logger.debug("Backport und Pack fuer die Seitenleiste nicht ermittelbar: %s", exc)
+            if not self._spaeter_im_fenster(self.root, _fertig, text, tuple(kacheln)):
                 laufend.discard(schluessel)
 
         threading.Thread(target=_lesen, daemon=True, name="seitenleiste-firmware").start()
@@ -25816,7 +25957,7 @@ class PS5ConverterGUI:
         self._update_sidebar_preview(cover, title_str)
         # Firmware-Zeilen ueber dem Cover (benoetigte Firmware, ggf. Backport).
         try:
-            self._sidebar_firmware_aktualisieren(meta, self.source_path.get())
+            self._sidebar_firmware_aktualisieren(meta, self._anzeige_quelle())
         except Exception as exc:  # noqa: BLE001 - die Anzeige darf die Infobox nicht stoeren
             logger.debug("Firmware-Zeilen der Seitenleiste nicht aktualisiert: %s", exc)
 

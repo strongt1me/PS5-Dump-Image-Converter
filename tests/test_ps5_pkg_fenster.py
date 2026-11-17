@@ -436,6 +436,42 @@ class FensterTests(unittest.TestCase):
         self.assertNotIn("version_file_uri", self.app._letzte_meta)
         self.assertEqual("PPSA00001", self.app._cached_title_id)
 
+    def test_die_zeilen_ueber_dem_cover_lesen_auf_dieser_seite_den_pfad_des_pakets(self) -> None:
+        """Nutzerwunsch 17.11.2026 (Kacheln FW / Backport / LZ4 / zstd): Das Quellfeld der Aufgaben 1 bis 6 ist hier leer oder veraltet -
+        ``_update_info_box`` fragt ``_anzeige_quelle``, und die liefert auf Seite 7 den Pfad des gewaehlten Pakets."""
+        app = self.app
+        self._knopf_sperren()
+        alte_quelle = app.source_path.get()
+        self.addCleanup(app.source_path.set, alte_quelle)
+        app.source_path.set(os.path.join(self.ordner, "veraltet"))
+        app.current_mode.set("pkg_fpkg")
+        with mock.patch.object(app, "_sidebar_firmware_aktualisieren") as zeilen:
+            self._laden("alpha.pkg")
+        pfad = self.f.aktuell.pfad
+        self.assertEqual(pfad, app._pkg_spielinfo_pfad)
+        self.assertEqual(pfad, app._anzeige_quelle())
+        self.assertIn(mock.call(mock.ANY, pfad), zeilen.call_args_list, "die Seitenleiste bekommt den Pfad des Pakets, nicht das Quellfeld")
+
+    def test_in_den_aufgaben_1_bis_6_bleibt_das_quellfeld_die_quelle(self) -> None:
+        app = self.app
+        self._knopf_sperren()
+        alte_quelle = app.source_path.get()
+        self.addCleanup(app.source_path.set, alte_quelle)
+        self._laden("alpha.pkg")
+        app.source_path.set(os.path.join(self.ordner, "quellfeld"))
+        app.current_mode.set("inspect")
+        self.assertEqual(os.path.join(self.ordner, "quellfeld"), app._anzeige_quelle())
+        app.current_mode.set("pkg_fpkg")
+        self.assertEqual(self.f.aktuell.pfad, app._anzeige_quelle(), "nur Seite 7 nimmt den Pfad des Pakets")
+
+    def test_zuruecksetzen_vergisst_den_pfad_des_pakets(self) -> None:
+        app = self.app
+        self._knopf_sperren()
+        self._laden("alpha.pkg")
+        self.assertTrue(app._pkg_spielinfo_pfad)
+        fz.spielinfo_zuruecksetzen(app)
+        self.assertEqual("", app._pkg_spielinfo_pfad)
+
     def test_die_seitenwahl(self) -> None:
         self.f._seite_zeigen("bibliothek")
         self.assertEqual("bibliothek", self.f.aktuelle_seite)

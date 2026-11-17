@@ -331,6 +331,26 @@ def quellfakten_lesen(werkzeug: str, pfad: str, *, abbruch: "_Abbruch | None" = 
         return None
 
 
+#: Die Wurzeldateien, an denen ein Spielordner als gepackt zu erkennen ist: der Index der zstd-Packs (ampr-emu-ng) und das Manifest der
+#: LZ4-Packs (``ampr_assets``-Bestand des Packwerkzeugs). Ein Test haelt beide Namen gleich denen der Packmodule.
+PACK_INDEXE = (("ampr_zstd.index", "zstd"), ("ampr_assets.index", "lz4"))
+
+
+def gepackt_im_ordner(ordner: str) -> str:
+    """``"zstd"`` oder ``"lz4"``, wenn im Spielordner ein Pack-Index liegt, sonst ``""`` - ohne Forge, nur nach den Dateien an der Wurzel.
+
+    Die zweite Meinung zu Forges ``inspect`` (:attr:`QuellFakten.gepackt`): Ein Manifest, das Forge nicht lesen kann (beschaedigt, fremde
+    Fassung), meldet es nicht als gepackt - die Pack-Baender liegen aber trotzdem im Spiel.
+    """
+    try:
+        for name, verfahren in PACK_INDEXE:
+            if os.path.isfile(os.path.join(ordner, name)):
+                return verfahren
+    except (OSError, TypeError, ValueError):
+        pass
+    return ""
+
+
 def lesen(werkzeug: str, pfad: str, arbeitsordner: "str | None" = None, *, abbruch: "_Abbruch | None" = None,
           popen_extra: "dict | None" = None, vorspann: "tuple[str, ...]" = ()) -> "wz.PaketInfo":
     """Liest ein Abbild (oder einen Spielordner) fuer die Anzeige: ``inspect --json`` und das Cover.
