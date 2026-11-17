@@ -1703,6 +1703,7 @@ class Ps5PkgFenster:
                 logger.debug("Cover fuer die Seitenleiste nicht lesbar: %s", exc)
                 cover = None
         g._update_info_box(meta, cover, self._fmt(info.groesse), "")
+        spielinfo_knopf_setzen(g, True)          # der Knopf "Spiel Info - Updates & Patches" der Seitenleiste, wie bei Aufgabe 1 bis 6
         # Was die Info-Box aus der Quelle der Aufgaben 1 bis 6 liest, gehoert nicht zu diesem Paket.
         for schluessel in ("sdk_stand", "ampr_emu"):
             if schluessel in g._meta_labels:
@@ -3318,9 +3319,25 @@ class Ps5PkgFenster:
             setattr(self.g, FENSTER_ATTRIBUT, None)
 
 
+def spielinfo_knopf_setzen(gui, frei: bool) -> None:
+    """Gibt den Knopf "Spiel Info - Updates & Patches" der Seitenleiste frei oder sperrt ihn, solange Aufgabe 7 ein Spiel zeigt.
+
+    Bei den Aufgaben 1 bis 6 schaltet ihn das Programm selbst, sobald das Quellfeld eine gueltige Quelle nennt. Aufgabe 7 hat
+    dieses Feld nicht - die Seite liest ihr Spiel selbst und merkt es sich in ``_pkg_spielinfo_da``, damit auch eine spaetere
+    Neuberechnung (Wechsel der Aufgabe, der Sprache ...) den Knopf nicht wieder sperrt (``_on_source_path_changed``)."""
+    try:
+        gui._pkg_spielinfo_da = bool(frei)
+        knopf = getattr(gui, "info_toggle_btn", None)
+        if knopf is not None:
+            knopf.config(state=tk.NORMAL if frei else tk.DISABLED)
+    except tk.TclError as exc:
+        logger.debug("Knopf Spiel Info nicht schaltbar: %s", exc)
+
+
 def spielinfo_zuruecksetzen(gui) -> None:
     """Nimmt die Angaben dieser Seite aus Seitenleiste und Info-Box und laesst das Programm die Quelle der gewaehlten
     Aufgabe neu lesen (derselbe Weg wie bei einem Wechsel der Quelle)."""
+    spielinfo_knopf_setzen(gui, False)
     try:
         gui._last_preview_ctx = None
         gui._on_source_path_changed()

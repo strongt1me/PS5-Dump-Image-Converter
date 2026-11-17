@@ -23242,7 +23242,10 @@ class PS5ConverterGUI:
             self._calc_generation += 1
             self._quellgroesse_merken("", 0)
             if hasattr(self, "info_toggle_btn"):
-                self.info_toggle_btn.config(state=tk.DISABLED)
+                # Aufgabe 7 (PKG / FPKG) hat keine Quelle im Feld der Aufgaben 1 bis 6, liest ihr Spiel aber selbst
+                # (``ps5_pkg_fenster._spielinfo_zeigen``): Solange dort eins gewaehlt ist, bleibt der Knopf frei.
+                _seite_frei = mode == "pkg_fpkg" and bool(getattr(self, "_pkg_spielinfo_da", False))
+                self.info_toggle_btn.config(state=tk.NORMAL if _seite_frei else tk.DISABLED)
             self._hauptfaden_planen(self._hide_info_box)
             self._hauptfaden_planen(lambda: self._set_size_label_idle(""))
             self._hauptfaden_planen(lambda: self._update_sidebar_preview(None, ""))

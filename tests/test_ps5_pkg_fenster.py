@@ -363,6 +363,79 @@ class FensterTests(unittest.TestCase):
         self.assertIsNone(self.app._sidebar_cover_source)
         self.assertNotEqual("Alpha Spiel", self.app._meta_labels["title"].get())
 
+    # ---------------- der Knopf "Spiel Info - Updates & Patches" (Nutzerwunsch 17.11.2026) ----------------
+    def _knopf_zustand(self) -> str:
+        return str(self.app.info_toggle_btn.cget("state"))
+
+    def _knopf_sperren(self) -> None:
+        """Wie vor der Paketwahl: gesperrt, und die Seite hat noch kein Spiel gemeldet."""
+        app = self.app
+        alt = (app.info_toggle_btn.cget("state"), getattr(app, "_pkg_spielinfo_da", False), app.current_mode.get())
+        self.addCleanup(lambda: (setattr(app, "_pkg_spielinfo_da", alt[1]), app.current_mode.set(alt[2]),
+                                 app.info_toggle_btn.config(state=alt[0])))
+        app._pkg_spielinfo_da = False
+        app.info_toggle_btn.config(state=tk.DISABLED)
+
+    def test_der_knopf_spiel_info_ist_nach_der_paketwahl_frei(self) -> None:
+        """Gemeldet am 17.11.2026: Mit einem PS5-Spiel als Quelle blieb der Knopf ausgegraut, die Updates waren nicht erreichbar -
+        bei Aufgabe 1 bis 6 schaltet ihn das Programm nach der Quellwahl frei."""
+        self._knopf_sperren()
+        self.assertEqual("disabled", self._knopf_zustand())
+        self._laden("alpha.pkg")
+        self.assertEqual("normal", self._knopf_zustand())
+
+    def test_eine_neuberechnung_der_quelle_sperrt_den_knopf_auf_dieser_seite_nicht(self) -> None:
+        """Der Wechsel zu Aufgabe 7, der Sprache usw. loest ``_on_source_path_changed`` aus: Das Quellfeld ist hier leer, das
+        sperrte den Knopf bisher jedes Mal wieder."""
+        app = self.app
+        self._knopf_sperren()
+        self._laden("alpha.pkg")
+        app.current_mode.set("pkg_fpkg")
+        app._last_preview_ctx = None
+        app._on_source_path_changed()
+        _pumpen(0.5)
+        self.assertEqual("normal", self._knopf_zustand())
+
+    def test_in_anderen_aufgaben_sperrt_ein_leeres_quellfeld_den_knopf_weiterhin(self) -> None:
+        """Gegenprobe: Die Ausnahme gilt nur fuer Aufgabe 7 - bei den Aufgaben 1 bis 6 entscheidet weiter das Quellfeld."""
+        app = self.app
+        self._knopf_sperren()
+        self._laden("alpha.pkg")
+        alte_quelle = app.source_path.get()
+        self.addCleanup(app.source_path.set, alte_quelle)
+        app.source_path.set("")
+        app.current_mode.set("inspect")
+        app._last_preview_ctx = None
+        app._on_source_path_changed()
+        _pumpen(0.5)
+        self.assertEqual("disabled", self._knopf_zustand())
+
+    def test_zuruecksetzen_sperrt_den_knopf_wieder(self) -> None:
+        self._knopf_sperren()
+        self._laden("alpha.pkg")
+        self.assertEqual("normal", self._knopf_zustand())
+        fz.spielinfo_zuruecksetzen(self.app)
+        self.assertFalse(self.app._pkg_spielinfo_da)
+        self.assertEqual("disabled", self._knopf_zustand())
+        _pumpen(0.4)
+        self.assertEqual("disabled", self._knopf_zustand(), "auch nach der Neuberechnung")
+
+    def test_die_updatesuche_bekommt_sonys_adresse_aus_der_param_json(self) -> None:
+        """Wie ``_updates_online`` aus dem Menue: Sonys eigene Updateliste statt Raten und prosperopatches.com. Die Adresse liefert
+        schon der Leser der param.json (``version_file_uri``); der Knopf der Seitenleiste liest sie aus denselben Angaben."""
+        pfad = next(p for p in self.pakete if p.endswith("alpha.pkg"))
+        self.pakete[pfad].param["versionFileUri"] = "https://gs2.ww.prod.dl.playstation.net/gs2/ppkgo/prod/x/y/z.json"
+        self._laden("alpha.pkg")
+        self.assertTrue(_warten(lambda: self.app._letzte_meta.get("title") == "Alpha Spiel"))
+        self.assertEqual(self.pakete[pfad].param["versionFileUri"], self.app._letzte_meta.get("version_file_uri"))
+        self.assertEqual("PPSA00001", self.app._cached_title_id, "die Title-ID fuer die Suche steht bereit")
+
+    def test_ohne_adresse_in_der_param_json_bleibt_es_bei_der_title_id(self) -> None:
+        self._laden("alpha.pkg")
+        self.assertTrue(_warten(lambda: self.app._letzte_meta.get("title") == "Alpha Spiel"))
+        self.assertNotIn("version_file_uri", self.app._letzte_meta)
+        self.assertEqual("PPSA00001", self.app._cached_title_id)
+
     def test_die_seitenwahl(self) -> None:
         self.f._seite_zeigen("bibliothek")
         self.assertEqual("bibliothek", self.f.aktuelle_seite)
