@@ -9486,6 +9486,58 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("streaming.log_abbruch", format=format_name))
             return ("abbruch", "")
 
+    #: Was das Programm aus der entpackten Kopie eines Archivs selbst entfernen kann: Name in ``fakelib`` -> Anzeigename.
+    _ARCHIV_ENTFERNBAR = {"libSceAmpr.sprx": "AMPR EMU", "libScePlayGo.sprx": "PlayGo"}
+
+    def _archiv_einbauten_klaeren(self, mode: str, src: str) -> list[str]:
+        """Archiv als Quelle: fragt, ob fruehere Einbauten aus der entpackten Kopie entfernt werden sollen (Nutzerwunsch 17.11.2026).
+
+        Gemeldet wurde die Warnung "Der Quellordner enthaelt schon Teile aus einem frueheren Einbau" bei einem 7z: Das Archiv wird
+        ohnehin entpackt, die Kopie gehoert dem Programm - die Teile liessen sich dort also entfernen, statt sie mitzunehmen. Die
+        Kaestchen AMPR EMU und PlayGo legen nur dazu; was schon im Archiv liegt, ging bisher ohne Haken trotzdem mit ins Ergebnis.
+
+        Gefragt wird nur, wenn die Quelle **die Kopie eines entpackten Archivs** ist (``ps5conv_archiv_*``, in ``_archiv_herkunft``,
+        kein ZIP-Schattenordner) - nie bei einem Ordner des Anwenders - und nur fuer ``fakelib/libSceAmpr.sprx`` und
+        ``fakelib/libScePlayGo.sprx`` ohne passenden Haken und **ohne** ``.orig``-Sicherung (mit Sicherung stammt die Datei vom
+        Spiel selbst, das wiederherzustellen ist Sache des AMPR EMU Managers). BACKPORT-Markierungen und Asset-Packs bleiben, die
+        Preflight-Warnung nennt sie weiter. Nie still: Nein laesst alles, wie es ist. Das Archiv selbst wird nie angefasst. Auf der
+        Kommandozeile gibt es niemanden zu fragen.
+
+        Returns:
+            Die entfernten Eintraege (``fakelib/libSceAmpr.sprx`` ...); leer, wenn nichts gefragt oder nichts entfernt wurde.
+        """
+        if getattr(self, "_cli_mode", False) or mode not in self._MODE_TARGET_OPTIONS or not src or not os.path.isdir(src):
+            return []
+        archiv = (getattr(self, "_archiv_herkunft", None) or {}).get(self._archiv_schluessel(src), "")
+        if (not archiv or self._archiv_schatten_info(src) is not None
+                or not any(teil.startswith("ps5conv_archiv_") for teil in Path(os.path.abspath(src)).parts)):
+            return []
+        fakelib = self._fakelib_pfad(src)
+        reste = [rest for rest in self._fruehere_einbauten(src)
+                 if rest.split("/", 1)[-1] in self._ARCHIV_ENTFERNBAR
+                 and not (fakelib / (rest.split("/", 1)[-1] + self._AMPR_BACKUP_SUFFIX)).is_file()]
+        if not reste:
+            return []
+        schluessel = (self._archiv_schluessel(src), tuple(reste))
+        beantwortet = self.__dict__.setdefault("_archiv_einbauten_antwort", {})
+        if schluessel in beantwortet:
+            return []                                              # schon gefragt (ein Start, der danach abgebrochen wurde)
+        zeilen = "\n".join("- %s (%s)" % (self._ARCHIV_ENTFERNBAR[rest.split("/", 1)[-1]], rest) for rest in reste)
+        if not messagebox.askyesno(self._t("archiv_einbau.titel"),
+                                   self._t("archiv_einbau.frage", name=os.path.basename(archiv), dateien=zeilen), parent=self.root):
+            beantwortet[schluessel] = False
+            self._append_to_log(self._t("archiv_einbau.log_bleibt", dateien=", ".join(reste)))
+            return []
+        beantwortet[schluessel] = True
+        entfernt, geblieben = [], []
+        for rest in reste:
+            (entfernt if self._ampr_remove_library(src, rest.split("/", 1)[-1]) else geblieben).append(rest)
+        if entfernt:
+            self._append_to_log(self._t("archiv_einbau.log_entfernt", dateien=", ".join(entfernt)))
+        if geblieben:
+            self._append_to_log(self._t("archiv_einbau.log_fehler", dateien=", ".join(geblieben)))
+        return entfernt
+
     def _fruehere_einbauten(self, ordner: str) -> list[str]:
         """Was aus einem frueheren Einbau im Ordner liegt und ohne Haken mitginge.
 
@@ -28968,6 +29020,9 @@ class PS5ConverterGUI:
 
         # Release-Test-Gate (entfernt)
         pass
+
+        # Archiv als Quelle: fruehere Einbauten in der entpackten Kopie entfernen? Vor der Preflight-Warnung, die sie sonst nennt.
+        self._archiv_einbauten_klaeren(mode, src)
 
         # Preflight-Risikoanalyse (vor UI-Start und Thread-Launch).
         pf_errors, pf_warnings = self._run_preflight_checks(

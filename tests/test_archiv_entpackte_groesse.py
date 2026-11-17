@@ -147,8 +147,7 @@ class EntpackteGroesseTests(unittest.TestCase):
 
             def _zeilen(self):
                 self._ende.wait(15)
-                return
-                yield b""
+                yield from ()                                  # keine Zeile, nur das Ende
 
             def kill(self) -> None:
                 self._ende.set()
