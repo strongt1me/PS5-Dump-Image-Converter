@@ -78,7 +78,7 @@ Leggere ed estrarre pacchetti PS4 e PS5, crearne immagini, scaricare aggiornamen
 <td valign="top">
 
 🧩 **AMPR EMU & BACKPORT**<br>
-Integrazione in fase di creazione, con Asset Pack (LZ4, per AMPR EMU NG anche zstd con regole TOML proprie). Per ASTRO BOT, EA Sports UFC 6 e per i giochi Unity e
+Integrazione in fase di creazione, con [Asset Pack](#asset-pack-lz4-o-zstd) (LZ4, per AMPR EMU NG anche zstd con regole TOML proprie). Per ASTRO BOT, EA Sports UFC 6 e per i giochi Unity e
 Insomniac sono inclusi profili di pacchetto testati.
 
 </td>
@@ -234,6 +234,41 @@ La funzione esatta di ogni pulsante è spiegata nel **[Manuale utente](BENUTZERH
 brevi si trovano nelle **[FAQ](FAQ_IT.html)**. Nel programma entrambi si aprono con i pulsanti **MANUALE UTENTE** e **FAQ**
 nella barra del titolo, nella lingua dell'interfaccia.
 
+## Asset Pack: LZ4 o zstd
+
+Un **Asset Pack** riunisce i file di un gioco in pochi grandi volumi (`.pak`) e li divide in blocchi compressi
+singolarmente. Una directory (`.index`) dice ad AMPR EMU sulla console quale file si trova in quale blocco; durante il gioco legge e
+decomprime solo i blocchi che servono in quel momento. Così si risparmia spazio sul supporto e descrittori di file sulla console.
+Il programma crea i volumi quando genera l'immagine e li controlla rispetto alla sorgente (struttura per intero, contenuto a campione; con «Verifica completa», ogni byte); la sorgente stessa resta invariata.
+
+Sono disponibili due metodi di packing:
+
+| | **LZ4** (predefinito) | **zstd** |
+| --- | --- | --- |
+| Risultato | `ampr_assets-*.pak` + `ampr_assets.index` | `ampr_zstd-NNN.pak` + `ampr_zstd.index` |
+| Letto da | ogni versione di AMPR EMU che legge i pack (drakmor dalla 0.4.2.1 e NG) | solo **AMPR EMU NG** (ampr-emu-ng) |
+| Spazio | più piccolo dei file singoli | di solito ancora più piccolo |
+| Livelli | 1–12, predefinito 9 | 1–22, predefinito 5 |
+| Cosa viene impacchettato | secondo il profilo di packing (standard, incluso o proprio) | tutto tranne i file di sistema; regole proprie in un file TOML |
+
+**Come si usa** (compiti 1–6; compito 7 nella conversione in un'immagine):
+
+1. Scegliere la sorgente (a seconda del compito una cartella dump, un'immagine o un archivio).
+2. Nel gruppo **INTEGRA DURANTE LA CREAZIONE** spuntare **AMPR EMU** e scegliere **Asset Pack** come metodo. Con «Normale» non viene impacchettato nulla.
+3. Nella seconda riga scegliere il **metodo di packing** (LZ4 o zstd) e, a destra, il **livello di packing**. Con zstd l'elenco delle versioni mostra solo NG.
+4. Creare. Il registro indica quanti file vengono impacchettati e quanti restano singoli.
+
+La stessa scelta esiste in **IMPOSTAZIONI** e sulla riga di comando (`--ampr-pack-verfahren zstd --ampr-zstd-stufe 9`).
+
+Da sapere:
+
+- Con NG gli originali impacchettati mancano nel risultato (sempre con zstd; con LZ4 finché si impacchetta senza cartella intermedia): conservare il dump di origine finché il gioco non funziona sulla console.
+- Il pack non nasce solo da una cartella dump: se si converte un'immagine (per esempio un `.ffpfsc` in una cartella dump), il programma la estrae prima in una cartella di lavoro e impacchetta lì; gli originali impacchettati scompaiono solo in questa copia di lavoro, la sorgente resta invariata.
+- Solo una prova sulla console mostra se un gioco specifico funziona con zstd. Finora due giochi con pack zstd di questo programma hanno funzionato senza errori (FW 12.00).
+- I file di sistema (`eboot.bin`, moduli, `sce_sys`) restano sempre singoli.
+
+Altro nella **[Guida a LZ4 e Asset Pack](Anleitungen/AMPR_Asset_Packs_Mitschnitt_Assistent_IT.html)** (nel programma: il pulsante **Guida a LZ4 e Asset Pack** in alto, nella barra del titolo) e nel [manuale utente](BENUTZERHANDBUCH_IT.html).
+
 ## Documentazione
 
 | Documento | Contenuto | Formati |
@@ -245,7 +280,7 @@ nella barra del titolo, nella lingua dell'interfaccia.
 | **FAQ (Italiano)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_IT.html) · [PDF](FAQ_IT.pdf) |
 | **FAQ (Francese)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_FR.html) · [PDF](FAQ_FR.pdf) |
 | **Changelog** | cosa è cambiato in ogni versione | [CHANGELOG.md](CHANGELOG.md) |
-| **Guide** | AMPR Asset Pack con procedura guidata di registrazione, ShadowMount+ `fakelib` | [Anleitungen/](Anleitungen) |
+| **Guide** | AMPR Asset Pack con procedura guidata di registrazione (anche LZ4 e zstd), ShadowMount+ `fakelib` | [Anleitungen/](Anleitungen) |
 
 ## Per utenti avanzati
 

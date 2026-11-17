@@ -76,7 +76,7 @@ PS4- und PS5-Pakete lesen, entpacken, zu Abbildern bauen, Updates laden und an d
 <td valign="top">
 
 🧩 **AMPR EMU & BACKPORT**<br>
-Beim Erstellen einbauen, mit Asset-Packs (LZ4, für AMPR EMU NG auch zstd mit eigenen TOML-Regeln). Für ASTRO BOT, EA Sports UFC 6 sowie Unity- und
+Beim Erstellen einbauen, mit [Asset-Packs](#asset-packs-lz4-oder-zstd) (LZ4, für AMPR EMU NG auch zstd mit eigenen TOML-Regeln). Für ASTRO BOT, EA Sports UFC 6 sowie Unity- und
 Insomniac-Spiele liegen getestete Packprofile bei.
 
 </td>
@@ -232,6 +232,42 @@ Was jeder Knopf genau macht, erklärt das **[Benutzerhandbuch](BENUTZERHANDBUCH.
 stehen in der **[FAQ](FAQ.html)**. Im Programm öffnen beides die Knöpfe **BENUTZERHANDBUCH** und **FAQ**
 oben in der Titelleiste, in der Sprache der Oberfläche.
 
+## Asset-Packs: LZ4 oder zstd
+
+Ein **Asset-Pack** legt die Dateien eines Spiels in wenige große Bänder (`.pak`) und teilt sie in Blöcke, die einzeln
+verdichtet werden. Ein Verzeichnis (`.index`) sagt dem AMPR EMU auf der Konsole, welche Datei in welchem Block liegt; beim Spielen
+liest und entpackt er nur die Blöcke, die gerade gebraucht werden. Das spart Platz auf dem Datenträger und Dateideskriptoren auf
+der Konsole. Das Programm baut die Bänder beim Erstellen des Abbilds und prüft sie gegen die Quelle (Aufbau ganz, Inhalt als Stichprobe; mit „Vollständige Prüfung“ jedes Byte); die Quelle selbst
+bleibt unverändert.
+
+Zur Wahl stehen zwei Packverfahren:
+
+| | **LZ4** (Vorgabe) | **zstd** |
+| --- | --- | --- |
+| Ergebnis | `ampr_assets-*.pak` + `ampr_assets.index` | `ampr_zstd-NNN.pak` + `ampr_zstd.index` |
+| Gelesen von | jeder AMPR-EMU-Fassung, die Packs liest (drakmor ab 0.4.2.1 und NG) | nur **AMPR EMU NG** (ampr-emu-ng) |
+| Platzbedarf | kleiner als lose Dateien | meist noch kleiner |
+| Stufen | 1–12, Vorgabe 9 | 1–22, Vorgabe 5 |
+| Was gepackt wird | nach Packprofil (Standard, mitgeliefert oder eigenes) | alles außer den Systemdateien; eigene Regeln als TOML-Datei |
+
+**So geht's** (Aufgaben 1–6; Aufgabe 7 beim Umwandeln in ein Abbild):
+
+1. Quelle wählen (je nach Aufgabe ein Dump-Ordner, ein Abbild oder ein Archiv).
+2. In der Gruppe **BEIM ERSTELLEN EINBAUEN** **AMPR EMU** anhaken und als Methode **Asset-Pack** wählen. Bei „Normal“ wird nichts gepackt.
+3. In der zweiten Zeile das **Packverfahren** (LZ4 oder zstd) und rechts daneben die **Packstufe** wählen. Bei zstd zeigt die Versionsliste nur NG.
+4. Erstellen. Das Protokoll nennt, wie viele Dateien gepackt werden und wie viele lose bleiben.
+
+Dieselbe Wahl gibt es unter **EINSTELLUNGEN** und auf der Kommandozeile (`--ampr-pack-verfahren zstd --ampr-zstd-stufe 9`).
+
+Gut zu wissen:
+
+- Mit NG fehlen die gepackten Originale im Ergebnis (bei zstd immer, bei LZ4, solange ohne Zwischenordner gepackt wird) – den Quell-Dump aufheben, bis das Spiel an der Konsole läuft.
+- Das Pack entsteht nicht nur aus einem Dump-Ordner: Wird ein Abbild umgewandelt (zum Beispiel ein `.ffpfsc` zu einem Dump-Ordner), entpackt das Programm es zuerst in einen Arbeitsordner und packt dort; die gepackten Originale fallen nur in dieser Arbeitskopie weg, die Quelle bleibt unverändert.
+- Ob ein bestimmtes Spiel mit zstd läuft, zeigt nur ein Test an der Konsole. Zwei Spiele mit zstd-Packs aus diesem Programm liefen bisher ohne Fehler (FW 12.00).
+- Systemdateien (`eboot.bin`, Module, `sce_sys`) bleiben immer lose.
+
+Mehr dazu in der **[LZ4 & Asset Pack Anleitung](Anleitungen/AMPR_Asset_Packs_Mitschnitt_Assistent.html)** (im Programm: Knopf **LZ4 & Asset Pack Anleitung** oben in der Titelleiste) und im [Benutzerhandbuch](BENUTZERHANDBUCH.html).
+
 ## Dokumentation
 
 | Dokument | Inhalt | Formate |
@@ -245,7 +281,7 @@ oben in der Titelleiste, in der Sprache der Oberfläche.
 | **FAQ (Italiano)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_IT.html) · [PDF](FAQ_IT.pdf) |
 | **FAQ (Français)** | les questions les plus fréquentes, avec des réponses brèves | [HTML](FAQ_FR.html) · [PDF](FAQ_FR.pdf) |
 | **Changelog** | was sich je Version geändert hat | [CHANGELOG.md](CHANGELOG.md) |
-| **Anleitungen** | AMPR Asset Packs mit Mitschnitt-Assistent, ShadowMount+ `fakelib` | [Anleitungen/](Anleitungen) |
+| **Anleitungen** | AMPR Asset Packs mit Mitschnitt-Assistent (auch LZ4 und zstd), ShadowMount+ `fakelib` | [Anleitungen/](Anleitungen) |
 
 ## Für Fortgeschrittene
 

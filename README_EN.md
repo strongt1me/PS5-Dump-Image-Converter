@@ -78,7 +78,7 @@ Read and unpack PS4 and PS5 packages, build them into images, download updates a
 <td valign="top">
 
 🧩 **AMPR EMU & BACKPORT**<br>
-Integrate while creating, with asset packs (LZ4, and for AMPR EMU NG also zstd with custom TOML rules). Tested pack profiles are included for ASTRO BOT, EA Sports UFC 6, and Unity and
+Integrate while creating, with [asset packs](#asset-packs-lz4-or-zstd) (LZ4, and for AMPR EMU NG also zstd with custom TOML rules). Tested pack profiles are included for ASTRO BOT, EA Sports UFC 6, and Unity and
 Insomniac games.
 
 </td>
@@ -234,6 +234,41 @@ What each button does exactly is explained in the **[User manual](BENUTZERHANDBU
 are in the **[FAQ](FAQ_EN.html)**. Inside the program, the **USER MANUAL** and **FAQ** buttons
 at the top of the title bar open both, in the language of the interface.
 
+## Asset packs: LZ4 or zstd
+
+An **asset pack** puts a game's files into a few large volumes (`.pak`) and splits them into blocks that are compressed
+one by one. A directory (`.index`) tells AMPR EMU on the console which file sits in which block; while playing, it reads and unpacks
+only the blocks it needs right now. That saves space on the drive and file descriptors on the console. The program builds the
+volumes when it creates the image and checks them against the source (structure completely, content by sampling; with “Full verification” every byte); the source itself stays unchanged.
+
+Two pack methods are available:
+
+| | **LZ4** (default) | **zstd** |
+| --- | --- | --- |
+| Result | `ampr_assets-*.pak` + `ampr_assets.index` | `ampr_zstd-NNN.pak` + `ampr_zstd.index` |
+| Read by | every AMPR EMU version that reads packs (drakmor from 0.4.2.1, and NG) | only **AMPR EMU NG** (ampr-emu-ng) |
+| Space | smaller than loose files | usually smaller still |
+| Levels | 1–12, default 9 | 1–22, default 5 |
+| What is packed | by pack profile (standard, bundled or your own) | everything except the system files; own rules as a TOML file |
+
+**How to use it** (tasks 1–6; task 7 when converting to an image):
+
+1. Choose the source (depending on the task a dump folder, an image or an archive).
+2. In the group **INTEGRATE WHEN BUILDING**, tick **AMPR EMU** and choose **Asset pack** as the method. With “Normal” nothing is packed.
+3. In the second row, choose the **pack method** (LZ4 or zstd) and, to its right, the **pack level**. With zstd the version list shows only NG.
+4. Create. The log says how many files are packed and how many stay loose.
+
+The same choice exists under **SETTINGS** and on the command line (`--ampr-pack-verfahren zstd --ampr-zstd-stufe 9`).
+
+Good to know:
+
+- With NG the packed originals are missing from the result (always with zstd; with LZ4 as long as packing runs without an intermediate folder) – keep the source dump until the game runs on the console.
+- The pack is not only built from a dump folder: when an image is converted (for example a `.ffpfsc` into a dump folder), the program first unpacks it into a working folder and packs there; the packed originals disappear only in this working copy, the source stays unchanged.
+- Only a test on the console shows whether a particular game runs with zstd. Two games with zstd packs from this program have run without errors so far (FW 12.00).
+- System files (`eboot.bin`, modules, `sce_sys`) always stay loose.
+
+More in the **[LZ4 & Asset Pack Guide](Anleitungen/AMPR_Asset_Packs_Mitschnitt_Assistent_EN.html)** (in the program: the **LZ4 & Asset Pack Guide** button at the top of the title bar) and in the [user manual](BENUTZERHANDBUCH_EN.html).
+
 ## Documentation
 
 | Document | Contents | Formats |
@@ -245,7 +280,7 @@ at the top of the title bar open both, in the language of the interface.
 | **FAQ (Italian)** | the most common questions, answered briefly | [HTML](FAQ_IT.html) · [PDF](FAQ_IT.pdf) |
 | **FAQ (French)** | the most common questions, answered briefly | [HTML](FAQ_FR.html) · [PDF](FAQ_FR.pdf) |
 | **Changelog** | what changed in each version | [CHANGELOG.md](CHANGELOG.md) |
-| **Guides** | AMPR asset packs with the trace wizard, ShadowMount+ `fakelib` | [Anleitungen/](Anleitungen) |
+| **Guides** | AMPR asset packs with the trace wizard (also LZ4 and zstd), ShadowMount+ `fakelib` | [Anleitungen/](Anleitungen) |
 
 ## Advanced
 

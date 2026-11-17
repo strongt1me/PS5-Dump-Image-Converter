@@ -178,6 +178,7 @@ footer b{color:#fff}
       <a href="#konsole">Console test</a>
       <a href="#probleme">Problems</a>
       <a href="#regeln">Rules</a>
+      <a href="#verfahren">Pack method</a>
       <a href="#lz4">LZ4 &amp; latest versions</a>
     </nav>
   </div>
@@ -196,7 +197,7 @@ footer b{color:#fff}
       <span class="badge">drakmor/ampr_emu, GPL-3.0</span>
       <span class="badge">AMPR EMU 0.4.2.1 with LZ4</span>
       <span class="badge">zstd with AMPR EMU NG</span>
-      <span class="badge">As of: November 6, 2026</span>
+      <span class="badge">As of: November 17, 2026</span>
     </div>
 
     <div class="alert">
@@ -212,7 +213,7 @@ footer b{color:#fff}
   <!-- 1 -->
   <section id="was">
     <div class="sec-head"><span class="sec-mark">01</span><h2>What an asset pack is – and what it is not</h2></div>
-    <p class="lede">An asset pack replaces the loose game files in the <code class="inline">/app0</code> folder with one or more seekable, independently compressed LZ4 volumes (<code class="inline">.pak</code>) plus a directory (<code class="inline">ampr_assets.index</code>). AMPR EMU reads from it just as it would otherwise read from the loose original files – only faster and with fewer file accesses.</p>
+    <p class="lede">An asset pack replaces the loose game files in the <code class="inline">/app0</code> folder with one or more seekable, independently compressed LZ4 volumes (<code class="inline">.pak</code>) plus a directory (<code class="inline">ampr_assets.index</code>). AMPR EMU reads from it just as it would otherwise read from the loose original files – only faster and with fewer file accesses. With AMPR EMU NG, zstd volumes are possible instead of LZ4 (section 11).</p>
     <div class="card">
       <p style="margin:0 0 14px;font-size:14.5px">The key point remains unchanged: an asset pack is <b style="color:#fff">not</b> created by simply “compressing all files”. The vendor recommends building it on a <b style="color:#fff">trace of real read accesses</b> (<code class="inline">ampr_commands.bin</code>) from actual play sessions – this yields a proposal (TOML profile) that you should review and complete before packing. It also works without a trace, in which case a cautious, generic profile is used (section “Two ways”).</p>
       <p style="margin:0;font-size:14.5px;color:var(--muted)">Source: <code class="inline">drakmor/ampr_emu</code>, directory <code class="inline">docs/</code> (<code class="inline">ASSET_PACK_WORKFLOW_EN.md</code>), GPL-3.0, as well as the tool <code class="inline">AMPR_PackTools-4.0</code> supplied by the author (included with the program and called by it directly).</p>
@@ -420,8 +421,58 @@ footer b{color:#fff}
   </section>
 
   <!-- 11 -->
+  <section id="verfahren">
+    <div class="sec-head"><span class="sec-mark">11</span><h2>Pack method: LZ4 or zstd</h2></div>
+    <p class="lede">An asset pack puts a game's files into a few large volumes (.pak) and splits them into blocks that are compressed one by one. A directory (.index) tells AMPR EMU which file sits in which block; while playing, the console reads and unpacks only the blocks it needs right now. The program builds these volumes when it creates the image (tasks 1 to 6, section 05). Compression is either LZ4 (default) or zstd.</p>
+    <div class="prio">
+      <div class="p default">
+        <span class="tag">Default</span>
+        <h4>LZ4</h4>
+        <p>The standard method. The volumes work with every AMPR EMU version that reads packs – with drakmor's runtime (from 0.4.2.1) as well as with AMPR EMU NG.</p>
+        <ul>
+          <li>Result: <code class="inline">ampr_assets-*.pak</code> and <code class="inline">ampr_assets.index</code>.</li>
+          <li>Levels 1 to 12, default 9. According to measurements on real game data, level 12 saves at most 0.6 percentage points more but takes 1.2 to 3.6 times as long.</li>
+          <li>The pack profile (trace wizard, bundled game profiles or your own) decides the block size and which files stay loose.</li>
+        </ul>
+      </div>
+      <div class="p">
+        <span class="tag">AMPR EMU NG only</span>
+        <h4>zstd</h4>
+        <p>Usually compresses more strongly than LZ4; high levels pack slowly. Only AMPR EMU NG (ampr-emu-ng) reads these packs – drakmor's runtime does not know them.</p>
+        <ul>
+          <li>Result: <code class="inline">ampr_zstd-NNN.pak</code> and <code class="inline">ampr_zstd.index</code>, in blocks of 256 KiB.</li>
+          <li>Levels 1 to 22, default 5 (fast); 9 is balanced, 19 small and slow.</li>
+          <li>Every non-empty file is packed except the system files; a TOML rule file decides what stays loose.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="path-title" style="margin-top:28px">How the method is chosen</p>
+    <div class="card">
+      <ol class="flow">
+        <li>Open one of tasks 1 to 6 (task 7, PKG / FPKG, works too when the target format is an image) and choose the source: depending on the task a dump folder, an image or an archive.</li>
+        <li>In the group <b>INTEGRATE WHEN BUILDING</b>, tick <b>AMPR EMU</b> and choose <b>Asset pack</b> as the method. With “Normal” the packing fields stay greyed out, because nothing is packed then.</li>
+        <li>In the second row below it, under the method, choose the pack method <b>LZ4</b> or <b>zstd</b>, and the pack level to its right. With zstd the version list shows only AMPR EMU NG; the program takes the newest regular NG version unless an NG version is already selected.</li>
+        <li>If wanted, tick <b>Full verification</b>: when off (default), the structure, headers and position of every block are always checked completely and the content by sampling; when on, every byte is checked.</li>
+        <li>Create. The log shows <code class="inline">[AMPR-PACK]</code> lines: how many files are packed and how many stay loose.</li>
+        <li>The same choice exists under <b>SETTINGS</b> (it is the same setting) and on the command line: <code class="inline">--ampr-pack-verfahren</code>, <code class="inline">--ampr-lz4-stufe</code>, <code class="inline">--ampr-zstd-stufe</code>.</li>
+      </ol>
+    </div>
+    <p class="path-title" style="margin-top:28px">LZ4 and zstd compared</p>
+    <div class="table-scroll"><table>
+      <tr><th>Feature</th><th>LZ4</th><th>zstd</th></tr>
+      <tr><td class="key">Read by</td><td>every AMPR EMU version that reads packs (drakmor from 0.4.2.1, NG)</td><td>AMPR EMU NG only</td></tr>
+      <tr><td class="key">Levels</td><td>1–12, default 9</td><td>1–22, default 5</td></tr>
+      <tr><td class="key">Block size</td><td>from the pack profile (16 KiB to 1 MiB; the standard profile uses 64 KiB)</td><td>fixed 256 KiB</td></tr>
+      <tr><td class="key">What is packed</td><td>by pack profile; with drakmor's runtime, already compressed files (images, audio, video) stay loose</td><td>every non-empty file except the system files</td></tr>
+      <tr><td class="key">Own rules</td><td>profile by hand or from the trace wizard: <code class="inline">&lt;Ordnername&gt;_ampr_pack.toml</code></td><td><code class="inline">&lt;Ordnername&gt;_ampr_pack.toml</code> next to the dump, or a rule file chosen in the settings; actions <code class="inline">compress</code>, <code class="inline">store</code>, <code class="inline">loose</code></td></tr>
+      <tr><td class="key">Tested on the console</td><td>NG with LZ4 checked on two Unity games (without the packed originals)</td><td>two games with zstd packs from this program ran without errors (FW 12.00, ShadowMount+)</td></tr>
+    </table></div>
+    <p class="note">With both methods the system files (<code class="inline">eboot.bin</code>, modules, <code class="inline">sce_sys</code> and others) always stay loose. With AMPR EMU NG the packed originals are missing from the result (always with zstd; with LZ4 as long as packing runs without an intermediate folder); with drakmor's runtime they always stay in the image. Keep the source dump until the game runs on the console. Only a test there shows whether a particular game runs with zstd – and a game whose zstd pack replaced the originals stays with AMPR EMU NG. When an image is converted (for example a .ffpfsc into a dump folder), the program first unpacks it into a working folder and packs there; the packed originals disappear only in this working copy, the source stays unchanged.</p>
+  </section>
+
+  <!-- 12 -->
   <section id="lz4">
-    <div class="sec-head"><span class="sec-mark">11</span><h2>LZ4 and the latest versions (as of October 21, 2026)</h2></div>
+    <div class="sec-head"><span class="sec-mark">12</span><h2>LZ4 and the latest versions (as of October 21, 2026)</h2></div>
     <p class="lede">Since AMPR EMU 0.4.2.1, asset packs can be compressed with LZ4. According to the vendor's documentation, games become about half the size and load 30 to 40&nbsp;% faster as a result.</p>
     <div class="card">
       <ul class="checklist">
