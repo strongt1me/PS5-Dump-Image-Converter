@@ -300,9 +300,8 @@ class FensterTests(unittest.TestCase):
         self.assertEqual((), fz.SICHTBARE_REITER, "Keine Reiterzeile mehr: Die Seite ist eine Spalte wie Aufgabe 1 bis 6.")
         self.assertEqual({}, f._nav)
         with mock.patch.object(fz.optionen_ui, "oeffnen") as oeffnen:
-            f.optionen_knopf.invoke()
+            f.protokoll_menue.invoke(f._menue_eintraege["optionen"])
         oeffnen.assert_called_once_with(f)
-        self.assertIs(f.leiste, f.optionen_knopf.master)
         self.assertEqual({"umwandeln", "bibliothek", "extras"}, set(f.seiten), "Die Seiten werden weiter gebaut.")
         for name in ("_seite_bibliothek", "_seite_extras", "_dds_konvertieren", "_exfat_reparieren",
                      "_exfat_entpacken", "_exfat_aufbauen", "_ffpkg_befehl_kopieren", "_bibliothek_aktualisieren",

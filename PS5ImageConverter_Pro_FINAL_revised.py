@@ -22301,8 +22301,30 @@ class PS5ConverterGUI:
         (:meth:`_playgo_merkmal_der_quelle`). Schaltet nichts ein - PlayGo
         kommt nie von selbst dazu; der Hinweis sagt, welcher Haken es waere.
         """
+        zeilen = self._quelle_einbauten_zeilen(
+            src, lambda: gen == self._calc_generation and not self.is_running)
+        if not zeilen:
+            return
+        for zeile in zeilen:
+            self._append_to_log(zeile)
+        kurz = zeilen[-1].strip().split("\n", 1)[0] if zeilen else ""
+        if kurz:
+            self._hauptfaden_planen(self._set_status_fluechtig, kurz)
+
+    def _quelle_einbauten_zeilen(self, src: str, aktuell: "Callable[[], bool] | None" = None) -> "list[str] | None":
+        """Die Zeilen der Pruefung einer Quelle (Faden): was schon eingebaut ist, und ob PlayGo noetig waere.
+
+        Eine Stelle fuer die Aufgaben 1 bis 6 (``_quelle_einbauten_pruefen``) und fuer Seite 7 PKG / FPKG (Nutzerwunsch
+        17.11.2026: "wie in Aufgabe 1-6 bereits" - dieselben ``[Pruefung]``-Zeilen im Protokoll, sobald die Quelle gewaehlt ist).
+
+        Args:
+            aktuell: liefert ``False``, sobald die Antwort nicht mehr gebraucht wird (andere Quelle gewaehlt, Lauf gestartet).
+
+        Returns:
+            Die Zeilen (mit Zeilenende); ``None``, wenn ``aktuell`` waehrenddessen ``False`` wurde.
+        """
         def _aktuell() -> bool:
-            return gen == self._calc_generation and not self.is_running
+            return aktuell is None or bool(aktuell())
 
         name = os.path.basename(os.path.normpath(src))
         art = "folder" if os.path.isdir(src) else os.path.splitext(src)[1].lower().lstrip(".")
@@ -22311,8 +22333,19 @@ class PS5ConverterGUI:
         except Exception as exc:  # noqa: BLE001
             logger.debug("Einbauten von %s nicht pruefbar: %s", src, exc)
             ergebnis = {"zustand": "unbekannt", "grund": "unlesbar"}
+        if ergebnis.get("zustand") != "ok" and forge_cli.ist_paket(src):
+            # Ein .pkg liest die eigene Sicht nicht - Dump Forge schon (``inspect``, wie fuer ein .ffpkg).
+            try:
+                fakten = self._quellfakten_der_quelle(src)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Einbauten von %s (Forge) nicht pruefbar: %s", src, exc)
+                fakten = None
+            if fakten is not None:
+                ergebnis = {"zustand": "ok", "backport": ["?"] if fakten.backport_vorhanden else [],
+                            "ampr": "ampr" in fakten.emulatoren, "assetpack": bool(fakten.gepackt),
+                            "playgo": "playgo" in fakten.emulatoren}
         if not _aktuell():
-            return
+            return None
         zeilen: list[str] = []
         if ergebnis.get("zustand") != "ok":
             zeilen.append(self._t("einbau_pruefung.unbekannt", name=name))
@@ -22342,18 +22375,14 @@ class PS5ConverterGUI:
                 logger.debug("PlayGo-Merkmal von %s nicht pruefbar: %s", src, exc)
                 merkmal = None
             if not _aktuell():
-                return
+                return None
             if merkmal is None:
                 zeilen.append(self._t("einbau_pruefung.playgo_unbekannt"))
             elif merkmal:
                 zeilen.append(self._t("einbau_pruefung.playgo_noetig", datei=merkmal))
             else:
                 zeilen.append(self._t("einbau_pruefung.playgo_nicht_noetig"))
-        for zeile in zeilen:
-            self._append_to_log(zeile)
-        kurz = zeilen[-1].strip().split("\n", 1)[0] if zeilen else ""
-        if kurz:
-            self._hauptfaden_planen(self._set_status_fluechtig, kurz)
+        return zeilen
 
     def _on_source_path_changed(self, *_args) -> None:
         """Berechnet Quellgröße, Endgrößen-Schätzung und befüllt die Info-Box.

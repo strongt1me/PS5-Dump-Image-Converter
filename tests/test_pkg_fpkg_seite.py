@@ -798,7 +798,8 @@ class AussehenTests(unittest.TestCase):
         self.assertLess(f.start_knopf.winfo_rooty(), f.protokoll.winfo_rooty(), "Das Protokoll steht unter der Leiste.")
         self.assertGreater(f.start_knopf.winfo_rooty(), f.ziel_feld.winfo_rooty(), "Die Leiste steht unter den Abschnitten.")
         self.assertLess(f.start_knopf.winfo_rootx(), f.abbrechen_knopf.winfo_rootx())
-        self.assertLess(f.abbrechen_knopf.winfo_rootx(), f.update_knopf.winfo_rootx())
+        for name in ("update_knopf", "browser_knopf", "detail_knopf", "optionen_knopf"):
+            self.assertFalse(hasattr(f, name), "%s: Die Leiste hat nur STARTEN und ABBRECHEN wie bei Aufgabe 1." % name)
         self._seite_zeigen("pkg")
         ps4 = getattr(self.app, ps4_dump_image.FENSTER_ATTRIBUT)
         self.assertLess(ps4.start_knopf.winfo_rootx(), ps4.abbrechen_knopf.winfo_rootx())
@@ -843,9 +844,7 @@ class AussehenTests(unittest.TestCase):
         _WURZEL.update()
         self.assertGreater(s.inhalt.winfo_width(), 400, "Anker: die Seite hat eine echte Breite.")
         self.assertEqual([], self._abgeschnitten([s._quelle_zeile, f.seiten["umwandeln"], f.leiste], s.inhalt))
-        self.assertEqual([], self._leiste_im_bild(
-            (f.start_knopf, f.abbrechen_knopf, f.update_knopf, f.browser_knopf, f.detail_knopf, f.optionen_knopf),
-            s.inhalt))
+        self.assertEqual([], self._leiste_im_bild((f.start_knopf, f.abbrechen_knopf), s.inhalt))
 
     def test_die_pruefung_erkennt_ein_bedienelement_das_ueber_den_rand_ragt(self) -> None:
         """Gegenprobe: Ein Knopf, der rechts ueber die Flaeche hinausreicht, wird gemeldet."""

@@ -291,12 +291,13 @@ class DialogTests(unittest.TestCase):
     def test_die_navigation_hat_den_eintrag_optionen(self) -> None:
         # Seit 30.10.2026 stehen oben keine Reiter mehr (``SICHTBARE_REITER``); "Optionen" ist ein Knopf der Knopfleiste.
         self.assertEqual([], list(self.f._nav))
-        self.assertEqual("Optionen", self.f.optionen_knopf.cget("text"))
+        # Seit 17.11.2026 liegen die Zusatzfunktionen im Rechtsklick-Menue des Protokolls (die Leiste ist wie bei Aufgabe 1).
+        self.assertEqual("Optionen", self.f.protokoll_menue.entrycget(self.f._menue_eintraege["optionen"], "label"))
 
     def test_der_eintrag_optionen_ist_anklickbar_und_keine_seite(self) -> None:
         """Der Knopf ruft den Dialog; Optionen ist keine Seite des Fensters."""
         with mock.patch.object(ui, "oeffnen") as oeffnen:
-            self.f.optionen_knopf.invoke()
+            self.f.protokoll_menue.invoke(self.f._menue_eintraege["optionen"])
         oeffnen.assert_called_once_with(self.f)
         self.assertNotIn("optionen", self.f.seiten, "Optionen ist ein Dialog, keine Seite")
         self.assertIn(self.f.aktuelle_seite, ("umwandeln", "bibliothek"))

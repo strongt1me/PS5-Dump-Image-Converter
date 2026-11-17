@@ -3,8 +3,9 @@
 
 Nutzerwunsch 17.11.2026 (Seite 7, PKG / FPKG): Der Anwender soll sehen, ob das Programm selbst erkannt hat, was im Spiel
 liegt - AMPR EMU, Asset-Packs (LZ4, zstd), PlayGo, DLC, BACKPORT - und ob etwas eingebaut werden muss. Dieselben Zeilen
-stehen in der Karte der Seite, im Protokoll bei jedem Lauf und in der Rueckfrage vor dem Paketbau; sie kommen aus einer
-Stelle, damit die drei nie voneinander abweichen.
+stehen im Protokoll bei jedem Lauf (Aufgaben 1 bis 6 und Seite 7) und in der Rueckfrage vor dem Paketbau; sie kommen aus einer
+Stelle, damit beide nie voneinander abweichen. Was schon eingebaut ist, steht - wie in den Aufgaben 1 bis 6 - schon nach der
+Wahl der Quelle als ``[Pruefung]``-Zeilen im Protokoll (``PS5ConverterGUI._quelle_einbauten_zeilen``).
 
 Rein: nichts startet, nichts wird gelesen. Die Fakten liefert :func:`ps5_validator.utils.forge_cli.quellfakten_lesen`.
 """

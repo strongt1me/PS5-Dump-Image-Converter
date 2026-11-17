@@ -275,6 +275,30 @@ class ComboboxTests(_Basis):
     def test_klassenname_wie_beim_vorbild(self) -> None:
         self.assertEqual("Combobox", self.pw.Combobox(self.flaeche, values=[]).__class__.__name__)
 
+    def test_kompakt_ist_schmaler_und_zeigt_den_text_ganz(self) -> None:
+        """Nutzerwunsch 17.11.2026 (Seite 7, Karte wie Aufgabe 1): engerer Rand und kleinerer Pfeil - die Pille ist bei gleichem Text
+        schmaler, und ein Text, der dort gerade noch hineinpasst, wird nicht mit "..." gekuerzt."""
+        from ps5_validator.utils import bibliothek_raster as raster
+        text = "6 – Ausgewogen"
+        normal = self.pw.Combobox(self.flaeche, values=[text], state="readonly")
+        kompakt = self.pw.Combobox(self.flaeche, values=[text], state="readonly", kompakt=True)
+        for box in (normal, kompakt):
+            box.pack()
+        self.fenster.update_idletasks()
+        self.assertLess(kompakt.winfo_reqwidth(), normal.winfo_reqwidth() - 10, "die kompakte Pille ist schmaler")
+        z = kompakt._z
+        b = z.messen("knopf", text) + z.px(36)                      # zwischen den Raendern (kompakt 30, normal 44 design px)
+        flaeche = tk.Canvas(self.flaeche)
+        flaeche.pack()
+        normal_k = raster.knopf_zeichnen(flaeche, z, raster.KnopfSpec(name="a", text=text, stil="auswahl", chevron=True),
+                                         0, 0, b, z.px(30))
+        kompakt_k = raster.knopf_zeichnen(flaeche, z, raster.KnopfSpec(name="b", text=text, stil="auswahl", chevron=True,
+                                                                      kompakt=True), 0, 0, b, z.px(30))
+        self.assertNotEqual(text, flaeche.itemcget(normal_k.text, "text"), "normal wird hier gekuerzt")
+        self.assertEqual(text, flaeche.itemcget(kompakt_k.text, "text"), "kompakt zeigt den Text ganz")
+        self.assertFalse(normal._kompakt)
+        self.assertTrue(kompakt._kompakt)
+
 
 class RadioUndHakenTests(_Basis):
 

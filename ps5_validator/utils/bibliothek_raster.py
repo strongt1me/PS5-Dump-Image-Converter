@@ -298,6 +298,9 @@ class KnopfSpec:
     aktiv: bool = True
     chevron: bool = False
     fett: bool = False
+    #: Engerer Rand und kleinerer Pfeil (Klapplisten der Karte von Seite 7, Nutzerwunsch 17.11.2026: so schmal wie die Felder der
+    #: Aufgaben 1 bis 6) - der Text bleibt gleich gross, die Pille wird um rund 15 px schmaler.
+    kompakt: bool = False
 
 
 @dataclass
@@ -338,11 +341,11 @@ def knopf_zeichnen(flaeche: tk.Canvas, zeichner: Zeichner, spec: KnopfSpec, x: i
     schrift = zeichner.schrift_angabe(rolle)
     # Text auf einer Zeichenflaeche wird nie abgeschnitten: Was nicht in den Knopf passt (schmale
     # Karte, breitere Schrift unter Linux/macOS, andere Sprache), ragte sonst ueber seinen Rand hinaus.
-    frei = int(b) - (zeichner.px(44) if spec.chevron else 2 * zeichner.px(8))
+    frei = int(b) - ((zeichner.px(30) if spec.kompakt else zeichner.px(44)) if spec.chevron else 2 * zeichner.px(8))
     text = _passend(zeichner, rolle, spec.text, frei)
     if spec.chevron:
-        luft = zeichner.px(12)
-        groesse = zeichner.px(14)
+        luft = zeichner.px(8 if spec.kompakt else 12)
+        groesse = zeichner.px(12 if spec.kompakt else 14)
         cv = zeichner.foto(("chevron", groesse, farben["text"]),
                            lambda: zeichnen.chevron(groesse, farben["text"], max(1.4, 1.6 * zeichner.faktor)))
         knopf.fotos["chevron"] = cv
@@ -379,7 +382,7 @@ def knopf_umfaerben(flaeche: tk.Canvas, zeichner: Zeichner, knopf: GezeichneterK
         flaeche.coords(knopf.bild, knopf.x - ox, knopf.y - oy)
         flaeche.itemconfigure(knopf.text, fill=farben["text"])
         if knopf.chevron:
-            groesse = zeichner.px(14)
+            groesse = zeichner.px(12 if spec.kompakt else 14)
             cv = zeichner.foto(("chevron", groesse, farben["text"]),
                                lambda: zeichnen.chevron(groesse, farben["text"], max(1.4, 1.6 * zeichner.faktor)))
             knopf.fotos["chevron"] = cv

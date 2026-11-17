@@ -154,9 +154,8 @@ class TexteTests(unittest.TestCase):
         self.assertGreater(gesehen, 1000)
 
     def test_die_texte_der_karte_und_der_rueckfrage_gibt_es_in_allen_sprachen(self) -> None:
-        for schluessel in ("bericht.titel", "bericht.nicht_pruefbar", "bericht.keine_forge", "bericht.laedt",
-                           "bericht.keine_quelle", "bericht.einbau", "bericht.einbau_nichts", "bericht.einbau_paket",
-                           "ps5pkg.einbau_pruefung", "ps5pkg.einbau_nur_abbild", "ps5pkg.emu_zeile_ampr",
+        for schluessel in ("bericht.titel", "bericht.nicht_pruefbar", "bericht.einbau", "bericht.einbau_nichts",
+                           "bericht.einbau_paket", "ps5pkg.einbau_nur_abbild", "ps5pkg.emu_zeile_ampr",
                            "ps5pkg.emu_frage_wahl", "ps5pkg.emu_frage_entpacken", "ps5pkg.emu_wahl_abbild",
                            "ps5pkg.emu_wahl_paket", "ps5pkg.emu_abbild_log", "ps5pkg.lebt_zeit", "ps5pkg.lebt_still",
                            "ps5pkg.log_bauer", "ps5pkg.log_bauer_tipp", "ps5pkg.ask_bauer", "ps5pkg.log_bauer_bleibt",

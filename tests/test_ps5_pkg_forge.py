@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -28,6 +29,7 @@ if str(TESTS) not in sys.path:
 import test_ps5_pkg_fenster as basis                        # noqa: E402
 
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
+from ps5_validator.ui import pkg_einbau_karte as einbau_ui  # noqa: E402
 from ps5_validator.ui import ps5_pkg_fenster as fz          # noqa: E402
 from ps5_validator.utils import forge_cli as fc             # noqa: E402
 from ps5_validator.utils import ps5_pkg_optionen as opt     # noqa: E402
@@ -582,8 +584,8 @@ class EinbauSeiteTests(_ForgeBasis):
         self.f._paket_waehlen(info, aus_liste=True)
         return info
 
-    def _sichtbare_zeilen(self) -> "list[str]":
-        return [text.cget("text") for rahmen, _m, text in self.karte._bericht_zeilen if rahmen.winfo_manager()]
+    def _protokoll_text(self) -> str:
+        return self.f.protokoll.get("1.0", "end")
 
     def _schliessen_nicht_abwarten(self) -> None:
         basis._pumpen(0.1)
@@ -668,18 +670,39 @@ class EinbauSeiteTests(_ForgeBasis):
         self.f._einbau_abgleichen()
         self.assertEqual("disabled", karte.felder["kompression"].cget("state"), "bei .exFAT kennt das Format keine Stufe")
 
-    def test_ein_paket_nimmt_den_einbau_nicht_auf_felder_gesperrt_und_hinweis_steht_da(self) -> None:
+    def test_ein_paket_nimmt_den_einbau_nicht_auf_felder_gesperrt_und_der_hinweis_sagt_es(self) -> None:
         karte = self.karte
         self._laden(self._spielordner())
         self.f._format_waehlen("pkg")
         self.f._einbau_abgleichen()
         felder = [n for n in karte.felder if n != "worker"]
         self.assertTrue(all(str(karte.felder[n].cget("state")) == "disabled" for n in felder), "alle gesperrt")
-        self.assertEqual("grid", karte.hinweis.winfo_manager(), "der Hinweis erklaert es")
+        self.assertEqual(_de("ps5pkg.einbau_nur_abbild"), karte.format_hinweis.cget("text"), "der Hinweis erklaert es")
         self.f._format_waehlen("ffpkg")
         self.f._einbau_abgleichen()
-        self.assertEqual("", karte.hinweis.winfo_manager(), "bei einem Abbild steht er nicht da")
+        self.assertNotIn(_de("ps5pkg.einbau_nur_abbild"), karte.format_hinweis.cget("text"), "bei einem Abbild steht er nicht da")
         self.assertTrue(any(str(karte.felder[n].cget("state")) != "disabled" for n in felder))
+
+    def test_der_hinweis_unter_dem_zielformat_ist_der_des_hauptfensters(self) -> None:
+        """Wie ``format_info_label`` der Aufgaben 1 bis 6: das Ziel, bei den PFS-Containern Tempo und Empfehlung, sonst die
+        Einstufung des Autors von ShadowMount+."""
+        karte = self.karte
+        erwartet = {
+            "ffpfsc": "\n".join((_de("main.ziel_hint", formats="ffpfsc/ffpfs"), _de("main.pfs_speed_hint"))),
+            "ffpfs": "\n".join((_de("main.ziel_hint", formats="ffpfsc/ffpfs"), _de("main.pfs_speed_hint"))),
+            "ffpkg": "\n".join((_de("main.ziel_hint", formats=".ffpkg"), _de("main.smp_rang_ffpkg"))),
+            "exfat": "\n".join((_de("main.ziel_hint", formats=".exfat"), _de("main.smp_rang_exfat"))),
+            "pkg": _de("ps5pkg.einbau_nur_abbild"),
+        }
+        for format_, text in erwartet.items():
+            with self.subTest(format=format_):
+                self.f._format_waehlen(format_)
+                self.f._einbau_abgleichen()
+                self.assertEqual(text, karte.format_hinweis.cget("text"))
+        self.f.aktion_var.set("pruefen")
+        self.f._einbau_abgleichen()
+        self.assertEqual("", karte.format_hinweis.cget("text"), "bei einer Aktion ohne Zielformat steht nichts da")
+        self.f.aktion_var.set("umwandeln")
 
     def test_auch_extrahieren_und_pruefen_nehmen_keinen_einbau(self) -> None:
         self._paket()
@@ -691,17 +714,246 @@ class EinbauSeiteTests(_ForgeBasis):
         self.f.format_schluessel = "ffpkg"
         self.assertTrue(self.f._einbau_gilt())
 
-    def test_die_zeile_der_asset_packs_erscheint_mit_ampr_emu(self) -> None:
-        karte, var = self.karte, self.app.ampr_integrate_var
-        var.set(False)
+    def test_die_einbau_gruppe_hat_die_zwei_zeilen_der_aufgaben_1_bis_6(self) -> None:
+        """Zeile 1: AMPR EMU, Methode, Pfeil, Fassung, PlayGo, BACKPORT, Firmware. Zeile 2: DLC EMU, Packverfahren, Pfeil,
+        Packstufe, vollstaendige Pruefung - in einem Raster, die Spalten stehen buendig untereinander."""
+        self.karte._schmal_setzen(False)               # die breite Form (bei schmaler Karte steht der Rest in Zeile 3)
+        felder = self.karte.felder
+        ort = {n: (felder[n].grid_info()["row"], felder[n].grid_info()["column"]) for n in felder
+               if n in ("ampr", "methode", "version", "playgo", "backport", "backport_fw", "dlc", "packverfahren", "packstufe", "voll")}
+        self.assertEqual({"ampr": (1, 0), "methode": (1, 1), "version": (1, 3), "playgo": (1, 4), "backport": (1, 5),
+                          "backport_fw": (1, 6), "dlc": (2, 0), "packverfahren": (2, 1), "packstufe": (2, 3), "voll": (2, 5)}, ort)
+        self.assertEqual({"methode", "pack", "kompression", "worker", "pruefung"}, set(self.karte._pfeile),
+                         "ein Pfeil zwischen Methode und Fassung, Verfahren und Stufe und in der Zeile des Zielformats")
+
+    def _wo(self) -> "dict[str, tuple[int, int]]":
+        felder = self.karte.felder
+        return {n: (felder[n].grid_info()["row"], felder[n].grid_info()["column"])
+                for n in ("playgo", "backport", "backport_fw", "voll")}
+
+    def test_die_gruppe_steht_rechts_neben_der_zeile_und_bei_schmaler_karte_darunter(self) -> None:
+        """Nutzerwunsch 17.11.2026: BEIM ERSTELLEN EINBAUEN steht rechts neben PRUEFUNG in zwei Zeilen, wie bei Aufgabe 1. Reicht die
+        Breite nicht: daneben in drei Zeilen, dann darunter (in zwei Zeilen, wenn sie so passen, sonst in drei)."""
+        karte = self.karte
+        self.f.win.update_idletasks()                  # erst dann kennt Tk die Breite der Felder
+        reihe = karte.reihe.winfo_reqwidth() + einbau_ui.GRUPPE_LUFT
+        breit, schmal = karte._gruppe_breiten()
+        self.assertGreater(breit, schmal, "in drei Zeilen ist die Gruppe schmaler")
+        self.assertLessEqual(reihe + breit, 1295, "daneben passt sie bei einem 1920er Fenster (Karte 1295 px) in zwei Zeilen")
+        drei = {"playgo": (1, 4), "backport": (3, 0), "backport_fw": (3, 1), "voll": (3, 3)}
+        zwei = {"playgo": (1, 4), "backport": (1, 5), "backport_fw": (1, 6), "voll": (2, 5)}
+        faelle = ((3000, True, zwei, (0, 1)),                       # Platz: daneben, zwei Zeilen
+                  (reihe + breit, True, zwei, (0, 1)),              # gerade noch
+                  (reihe + breit - 1, True, drei, (0, 1)),          # knapp nicht mehr: daneben, drei Zeilen
+                  (reihe + schmal, True, drei, (0, 1)),
+                  (reihe + schmal - 1, False, zwei, (2, 0)),        # darunter, zwei Zeilen
+                  (breit, False, zwei, (2, 0)),
+                  (breit - 10, False, drei, (2, 0)),                # zu schmal fuer zwei Zeilen: drei
+                  (3000, True, zwei, (0, 1)))
+        for breite, neben, ort, grid in faelle:
+            with self.subTest(breite=breite), mock.patch.object(karte.rahmen, "winfo_width", return_value=breite):
+                karte._platz_pruefen()
+                self.assertEqual(neben, karte._neben)
+                info = karte.rechts.grid_info()
+                self.assertEqual(grid, (info["row"], info["column"]))
+                self.assertEqual(ort, self._wo())
+
+    def test_daneben_steht_die_gruppe_oben_rechts_von_der_pruefung(self) -> None:
+        karte = self.karte
+        with mock.patch.object(karte.rahmen, "winfo_width", return_value=3000):
+            karte._platz_pruefen()
+            self.f.win.update_idletasks()
+            pruefung = karte.felder["pruefung"]
+            self.assertGreaterEqual(karte.rechts.winfo_rootx(), pruefung.winfo_rootx() + pruefung.winfo_width(),
+                                    "rechts neben PRUEFUNG")
+            self.assertLessEqual(abs(karte.rechts.winfo_rooty() - karte.reihe.winfo_rooty()), 2, "in Hoehe der Zeile")
+            self.assertLessEqual(abs(karte.rechts.winfo_rootx() - karte.reihe.winfo_rootx() - karte.reihe.winfo_width()
+                                     - einbau_ui.GRUPPE_LUFT), 2, "mit dem Abstand der Aufgaben 1 bis 6")
+
+    def test_bei_mindestgroesse_ragt_nichts_aus_der_karte_und_nichts_springt_hin_und_her(self) -> None:
+        """Bei Mindestgroesse (1245 px) ragte die Zeile 39 px aus der Karte (``test_pkg_fpkg_seite``)."""
+        karte = self.karte
+        self.f.win.update_idletasks()
+        breit, schmal = karte._gruppe_breiten()
+        with mock.patch.object(karte.rahmen, "winfo_width", return_value=breit - 20):
+            karte._platz_pruefen()
+            self.f.win.update_idletasks()
+            self.assertEqual({"playgo": (1, 4), "backport": (3, 0), "backport_fw": (3, 1), "voll": (3, 3)}, self._wo())
+            self.assertLessEqual(karte.rechts.winfo_reqwidth(), breit - 20, "danach passt die Gruppe in die Karte")
+            gemessen = karte._gruppe_breiten()
+            karte._platz_pruefen()
+            self.assertEqual(gemessen, karte._gruppe_breiten(), "die Messung haengt nicht davon ab, wie die Gruppe gerade liegt")
+            self.assertEqual((3, 0), self._wo()["backport"], "und nichts springt zurueck, solange es eng ist")
+
+    def test_die_leiste_hat_nur_starten_und_abbrechen_wie_aufgabe_1(self) -> None:
+        """Nutzerwunsch 17.11.2026: die Knopfleiste "ist nicht gleich" - ohne "Updates Online", "Dateien anzeigen", "Details", "Optionen"."""
+        f = self.f
+        self.assertEqual(self.app._t("action.start"), str(f.start_knopf.cget("text")), "derselbe Text wie bei Aufgabe 1")
+        kinder = set(f.leiste.winfo_children())
+        self.assertEqual({f.start_knopf, f.abbrechen_knopf, f.balken_gesamt, f.prozent_label, f.groesse_label}, kinder,
+                         "STARTEN, ABBRECHEN, Fortschrittsbalken, Prozentzahl und Text - wie die Aktionsleiste der Aufgabe 1")
+        for name in ("update_knopf", "browser_knopf", "detail_knopf", "optionen_knopf"):
+            self.assertFalse(hasattr(f, name), name)
+
+    def test_fortschrittsbalken_prozent_und_text_stehen_wie_in_den_aufgaben_1_bis_6(self) -> None:
+        """Nutzerwunsch 17.11.2026: Balken samt Prozentzahl nur im Lauf (``progress``/``percent_label``), der Text rechts daneben
+        (``size_label``: im Leerlauf die Groesse der Quelle, im Lauf die Dateizeile), die Statuszeile rechts unten, kursiv."""
+        f = self.f
+        self._laden(self._spielordner())
+        f._takt_arbeiten()
+        f.win.update_idletasks()
+        self.assertFalse(f.balken_gesamt.winfo_manager(), "im Leerlauf ist der Balken nicht da")
+        self.assertFalse(f.prozent_label.winfo_manager())
+        self.assertEqual(f._fmt(8192), f.groesse_var.get(), "im Leerlauf steht die Groesse der Quelle da")
+        f._job = {"art": "bauen", "info": f.aktuell, "ziel": "", "start": time.monotonic() - 169,
+                  "letzte": time.monotonic(), "zeichen": None}
+        try:
+            f._anzeige_setzen(45, 30)
+            f.datei_var.set("Komprimieren · 11.4 GB / 37.6 GB")
+            f._takt_arbeiten()
+            f.win.update_idletasks()
+            self.assertEqual("grid", f.balken_gesamt.winfo_manager(), "im Lauf ist er da")
+            self.assertEqual("grid", f.prozent_label.winfo_manager())
+            self.assertEqual("30 %", f.prozent_var.get(), "die Prozentzahl gehoert zum sichtbaren Balken (Gesamtstand)")
+            self.assertEqual(30.0, float(f.balken_gesamt.cget("value")))
+            self.assertEqual("Komprimieren · 11.4 GB / 37.6 GB", f.groesse_var.get(), "im Lauf die Dateizeile")
+            self.assertIn("2:49", f.lebt_var.get())
+            self.assertEqual("grid", f.lebt_label.winfo_manager(), "das Lebenszeichen steht unter der Statuszeile")
+        finally:
+            f._job = None
+        f._takt_arbeiten()
+        f.win.update_idletasks()
+        self.assertFalse(f.balken_gesamt.winfo_manager(), "nach dem Lauf wieder weg")
+        self.assertFalse(f.lebt_label.winfo_manager())
+        self.assertEqual("e", str(f.status_label.cget("anchor")), "die Statuszeile steht rechts")
+        self.assertIn("italic", str(f.status_label.cget("font")), "und kursiv, wie bei den Aufgaben 1 bis 6")
+
+    def test_das_protokoll_hat_schrift_und_zeilenabstand_der_aufgaben_1_bis_6(self) -> None:
+        f = self.f
+        self.assertEqual(0, int(float(f.protokoll.cget("spacing3") or 0)), "Zeile an Zeile, ohne Abstand nach jeder Meldung")
+
+    def test_der_zaehler_steht_nur_bei_mehreren_quellen_da(self) -> None:
+        f = self.f
+        self._laden(self._spielordner("A", "PPSA00011", "Eins"))
+        f._liste_fuellen()
+        self.assertFalse(f.zaehler_label.winfo_manager(), "bei einer Quelle steht kein Zaehler da")
+        self._laden(self._spielordner("B", "PPSA00012", "Zwei"))
+        f._liste_fuellen()
+        self.assertEqual("grid", f.zaehler_label.winfo_manager(), "bei zwei Quellen steht er links unten")
+
+    def test_zu_wenig_platz_macht_nur_das_feld_zielformat_schmaler(self) -> None:
+        """Bei Mindestgroesse (1245 px) war die Zeile bis PRUEFUNG 18 px zu breit (``test_pkg_fpkg_seite``)."""
+        karte, box = self.karte, self.f.format_box
+        self.f.win.update_idletasks()
+        karte._eng = False
+        voll = box.winfo_reqwidth()
+        reihe = karte.reihe.winfo_reqwidth()
+        with mock.patch.object(karte.rahmen, "winfo_width", return_value=reihe - 10):
+            karte._platz_pruefen()
+            self.f.win.update_idletasks()
+            self.assertTrue(karte._eng)
+            self.assertLess(box.winfo_reqwidth(), voll, "das Feld ZIELFORMAT ist schmaler")
+            self.assertLessEqual(karte.reihe.winfo_reqwidth(), reihe - 10, "die Zeile passt")
+            karte._platz_pruefen()
+            self.assertTrue(karte._eng, "und springt nicht zurueck, solange es eng ist")
+        with mock.patch.object(karte.rahmen, "winfo_width", return_value=3000):
+            karte._platz_pruefen()
+            self.f.win.update_idletasks()
+        self.assertFalse(karte._eng)
+        self.assertEqual(voll, box.winfo_reqwidth(), "bei Platz wieder nach dem laengsten Eintrag")
+
+    def test_die_zusatzfunktionen_liegen_im_rechtsklick_menue_des_protokolls(self) -> None:
+        f = self.f
+        namen = {"update": "ps5pkg.btn_update", "browser": "ps5pkg.browser_button", "detail": "ps5pkg.detail_button",
+                 "optionen": "ps5pkg.nav_options"}
+        for name, schluessel in namen.items():
+            with self.subTest(eintrag=name):
+                self.assertEqual(_de(schluessel), f.protokoll_menue.entrycget(f._menue_eintraege[name], "label"))
+        zustand = lambda n: str(f.protokoll_menue.entrycget(f._menue_eintraege[n], "state"))   # noqa: E731
+        self._laden(self._spielordner())                       # ein Spielordner mit PS5-Kennung
+        f._knoepfe_pruefen()
+        self.assertEqual(("normal", "normal", "normal"), (zustand("update"), zustand("detail"), zustand("optionen")))
+        self._laden(self._abbild())                            # ein Abbild hat keine Detailansicht eines Ordners
+        f._knoepfe_pruefen()
+        self.assertEqual(("normal", "disabled", "normal"), (zustand("update"), zustand("detail"), zustand("optionen")))
+        for aufruf, eintrag in (("_updates_online", "update"), ("_browser_oeffnen", "browser"), ("_detail_oeffnen", "detail")):
+            with self.subTest(aufruf=aufruf), mock.patch.object(fz.Ps5PkgFenster, aufruf) as m:
+                # Der Befehl des Eintrags wird hier ersetzt; sein Zustand ist oben geprueft (ein gesperrter Eintrag ruft nichts).
+                f.protokoll_menue.entryconfigure(f._menue_eintraege[eintrag], command=m, state="normal")
+                f.protokoll_menue.invoke(f._menue_eintraege[eintrag])
+                m.assert_called_once_with()
+
+    def test_die_felder_sind_kompakt_und_zeigen_ihren_text_vollstaendig(self) -> None:
+        """Nutzerwunsch 17.11.2026 (Bild der Aufgabe 1): so schmale Felder wie dort - mit engem Rand und kleinem Pfeil; der Text bleibt
+        ganz (kein "..." im Feld) fuer jeden Wert, den die Liste anbietet."""
+        karte = self.karte
+        self.f.win.update_idletasks()
+        for name in ("kompression", "pruefung", "version", "methode", "packverfahren", "packstufe", "backport_fw"):
+            with self.subTest(feld=name):
+                feld = karte.felder[name]
+                self.assertTrue(feld._kompakt, "die Pille ist kompakt")
+        self.assertTrue(self.f.format_box._kompakt)
+        # Der laengste Wert, der in der Liste steht, ohne Auslassung: Breite - Rand (30 design px) reicht fuer die Schrift.
+        z = self.f.format_box._z
+        for name in ("kompression", "pruefung", "methode", "packverfahren", "packstufe", "backport_fw"):
+            feld = karte.felder[name]
+            if name in ("packstufe", "methode", "packverfahren"):
+                werte = [feld.get()] if feld.get() else []        # was gerade gewaehlt ist: die Liste der Stufen ist lang
+            else:
+                werte = list(feld.values)
+            for wert in werte:
+                with self.subTest(feld=name, wert=wert):
+                    self.assertLessEqual(z.messen("knopf", wert), int(feld.winfo_reqwidth()) - z.px(30),
+                                         "der Text passt in die Pille")
+        self.assertLessEqual(karte.reihe.winfo_reqwidth() + einbau_ui.GRUPPE_LUFT + karte._gruppe_breiten()[0], 1295,
+                             "die Gruppe passt in zwei Zeilen neben die Zeile (Karte 1295 px beim 1920er Fenster)")
+
+    def test_die_breite_der_gruppe_rechnet_mit_den_spannen(self) -> None:
+        """Die Packstufe reicht ueber die Spalten 3 und 4, die Pruefung ueber 5 und 6: Sie schieben Zeile 1 nur, wenn sie dort nicht mehr
+        Platz finden. Mit festen Breiten gerechnet (die Felder selbst sind so breit, dass die Pruefung gerade hineinpasst)."""
+        class Feld:
+            def __init__(self, breite: int) -> None:
+                self.breite = breite
+
+            def winfo_reqwidth(self) -> int:
+                return self.breite
+
+        karte = self.karte
+        alt = karte.felder
+        basis_breiten = dict(ampr=100, dlc=90, methode=110, packverfahren=90, version=120, packstufe=170, playgo=70, backport=100,
+                             backport_fw=60)
+        try:
+            karte.felder = {n: Feld(w) for n, w in dict(basis_breiten, voll=100).items()}
+            klein = karte._gruppe_breiten()
+            karte.felder = {n: Feld(w) for n, w in dict(basis_breiten, voll=400).items()}
+            gross = karte._gruppe_breiten()
+        finally:
+            karte.felder = alt
+        pfeil = 20 if karte._pfeile.get("methode") is not None else 0
+        links = 100 + 8 + 110 + pfeil                         # AMPR/DLC, Luft, Methode/Verfahren, Pfeil
+        schmal = links + 120 + max(10 + 70, 170 - 120)        # Fassung, dann PlayGo oder der Rest der Packstufe
+        self.assertEqual((schmal + max(14 + 100 + 6 + 60, 10 + 100) + 4, schmal + 4), klein,
+                         "die Pruefung passt hinter BACKPORT und Firmware: Zeile 1 bleibt, wie sie ist")
+        self.assertEqual((schmal + 10 + 400 + 4, schmal + 4), gross, "ist sie breiter, schiebt sie die Zeile")
+
+    def test_der_sichtbare_balken_wandert_mit_wenn_die_dauer_unbekannt_ist(self) -> None:
+        f = self.f
+        f._balken_wandern(True)
+        try:
+            self.assertEqual("indeterminate", str(f.balken_gesamt.cget("mode")), "der Balken in der Leiste wandert")
+            self.assertEqual("…", f.prozent_var.get())
+        finally:
+            f._balken_wandern(False)
+        self.assertEqual("determinate", str(f.balken_gesamt.cget("mode")))
+
+    def test_die_pfeile_sind_blass_wenn_das_feld_rechts_gesperrt_ist(self) -> None:
+        karte = self.karte
+        karte.abgleichen(False, False)                 # ein Paket: alles gesperrt
+        self.assertFalse(karte._pfeile["kompression"]._aktiv)
+        self.assertFalse(karte._pfeile["methode"]._aktiv)
+        self.assertTrue(karte._pfeile["worker"]._aktiv, "der Drehknopf hat keine Sperre")
         karte.abgleichen(True, True)
-        self.assertEqual("", karte._pack_zeile.winfo_manager())
-        var.set(True)
-        karte.abgleichen(True, True)
-        self.assertEqual("pack", karte._pack_zeile.winfo_manager())
-        var.set(False)
-        karte.abgleichen(True, True)
-        self.assertEqual("", karte._pack_zeile.winfo_manager())
+        self.assertTrue(karte._pfeile["kompression"]._aktiv)
 
     def test_die_kurzinfos_der_karte_haengen_nicht_am_hauptfenster(self) -> None:
         """``g._tooltip`` haelt jede Kurzinfo samt Feld fuer immer fest - je Fenster blieben 4 GDI-Objekte stehen
@@ -750,34 +1002,40 @@ class EinbauSeiteTests(_ForgeBasis):
                 self.assertGreater(feld.winfo_rootx(), self.f.format_box.winfo_rootx())
                 self.assertLess(abs(feld.winfo_rooty() - y), 12, "auf gleicher Hoehe wie das Zielformat")
 
-    # ---------------- die Pruefung der Quelle ----------------
-    def test_die_pruefung_zeigt_alle_fuenf_zeilen_gefaerbt(self) -> None:
-        fakten = fc.QuellFakten(ampr_importiert=True, ampr_fehlt=True, gepackt="zstd", dlc_vorhanden=True, dlc_merkmal="a0",
-                                playgo_merkmal="sce_sys/playgo-chunk.dat", emulatoren=("playgo",), sdk="10.00", firmware="11.20")
-        with mock.patch.object(APP.PS5ConverterGUI, "_konsole_fw_bekannt", return_value="7.99"):
-            self.f.format_schluessel = "ffpkg"
-            self.f._bericht_zeigen(None, fakten)
-        zeilen = self._sichtbare_zeilen()
-        self.assertEqual(5, len(zeilen))
-        self.assertEqual(_de("bericht.ampr_fehlt"), zeilen[0])
-        self.assertEqual(_de("bericht.packs_zstd"), zeilen[1])
-        self.assertEqual(_de("bericht.playgo_da"), zeilen[2])
-        self.assertEqual(_de("bericht.dlc_fehlt", merkmal="a0"), zeilen[3])
-        self.assertEqual(_de("bericht.backport_fehlt", spiel="11.20", konsole="7.xx"), zeilen[4])
-        farben = [str(m.cget("fg")).lower() for rahmen, m, _t in self.karte._bericht_zeilen if rahmen.winfo_manager()]
-        c = self.app._COLORS
-        erwartet = [c["fg_warning"], c["fg_success"], c["fg_success"], c["fg_warning"], c["fg_warning"]]
-        self.assertEqual([f.lower() for f in erwartet], farben, "fehlt = Warnfarbe, da oder nicht noetig = Erfolgsfarbe")
+    # ---------------- die Pruefung der Quelle: wie in den Aufgaben 1 bis 6 im Protokoll ----------------
+    def test_nach_der_wahl_steht_die_pruefung_der_aufgaben_1_bis_6_im_protokoll(self) -> None:
+        """Nutzerwunsch 17.11.2026: "automatisch im Spiel nach DLC, PlayGo, LZ4, zstd und AMPR EMU Inhalt gesucht, wie in
+        Aufgabe 1-6 bereits" - dieselben ``[Pruefung]``-Zeilen, sobald die Quelle gewaehlt ist (kein eigenes Feld)."""
+        ordner = self._spielordner()
+        with mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten()):
+            self._laden(ordner)
+            self.assertTrue(basis._warten(lambda: "[Prüfung]" in self._protokoll_text(), 8), "die Pruefung kommt von selbst")
+        text = self._protokoll_text()
+        self.assertIn(_de("einbau_pruefung.nichts", name="Spielordner").strip(), text)
+        self.assertIn(_de("einbau_pruefung.playgo_nicht_noetig").strip(), text)
 
-    def test_ohne_quelle_nicht_pruefbar_oder_ohne_forge_steht_der_grund_da(self) -> None:
-        karte = self.karte
-        self.assertEqual(_de("bericht.keine_quelle"), karte.status.cget("text"))
-        self.assertEqual([], self._sichtbare_zeilen())
-        with mock.patch.object(fz.Ps5PkgFenster, "_werkzeug_forge", return_value=""):
-            self._laden(self._spielordner())
-        self.assertEqual(_de("bericht.keine_forge"), karte.status.cget("text"))
-        self.f._bericht_zeigen(self.f.aktuell, None)
-        self.assertEqual(_de("bericht.nicht_pruefbar"), karte.status.cget("text"))
+    def test_die_zeilen_sind_die_der_aufgaben_1_bis_6_und_kommen_aus_einer_stelle(self) -> None:
+        zeilen = ["[Prüfung] Alpha: bereits eingebaut – AMPR EMU.\n", "[Prüfung] PlayGo nicht nötig: keine PlayGo-Dateien im Spiel.\n"]
+        ordner = self._spielordner()
+        with mock.patch.object(self.app, "_quelle_einbauten_zeilen", return_value=zeilen) as m, \
+                mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten()):
+            self._laden(ordner)
+            self.assertTrue(basis._warten(lambda: "bereits eingebaut" in self._protokoll_text(), 8))
+        self.assertEqual(ordner, m.call_args[0][0])
+        self.assertIn("[Prüfung] Alpha: bereits eingebaut – AMPR EMU.\n", self._protokoll_text())
+        self.assertNotIn("AMPR EMU.\n\n", self._protokoll_text(), "das Zeilenende der Meldung kommt nicht doppelt")
+
+    def test_dieselbe_quelle_wird_nur_einmal_gemeldet(self) -> None:
+        ordner = self._spielordner()
+        with mock.patch.object(self.app, "_quelle_einbauten_zeilen", return_value=["[Prüfung] X\n"]) as m, \
+                mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten()):
+            self._laden(ordner)
+            self.assertTrue(basis._warten(lambda: "[Prüfung] X" in self._protokoll_text(), 8))
+            self.f._bericht_aktualisieren()
+            self.f._bericht_aktualisieren()
+            basis._pumpen(0.3)
+        self.assertEqual(1, m.call_count)
+        self.assertEqual(1, self._protokoll_text().count("[Prüfung] X"))
 
     def test_ein_spielordner_wird_im_hintergrund_geprueft_und_der_bau_liest_nicht_noch_einmal(self) -> None:
         def langsam(*a, **k):
@@ -787,36 +1045,39 @@ class EinbauSeiteTests(_ForgeBasis):
         with mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam) as lesen:
             self._laden(ordner)
             info = self.f.aktuell
-            self.assertEqual(_de("bericht.laedt"), self.karte.status.cget("text"), "waehrend gelesen wird, steht es da")
             self.assertIsNone(info.fakten)
             fakten = self.f._quellfakten(info)                       # ein Bau, der jetzt startet, wartet auf den Faden
             self.assertIsNotNone(fakten)
             self.assertEqual(1, lesen.call_count, "nicht noch einmal gelesen")
-            self.assertTrue(basis._warten(lambda: bool(self._sichtbare_zeilen()), 5))
-        self.assertIn(_de("bericht.dlc_fehlt", merkmal="addcont0"), self._sichtbare_zeilen())
 
-    def test_eine_veraltete_antwort_gehoert_nicht_zur_neuen_quelle(self) -> None:
+    def test_die_antwort_einer_veralteten_quelle_steht_nicht_im_protokoll(self) -> None:
         a, b = self._spielordner("A", "PPSA00011", "Eins"), self._spielordner("B", "PPSA00012", "Zwei")
-        def lesen(exe, pfad, **k):
-            time.sleep(0.5 if pfad == a else 0.0)
-            return fc.QuellFakten(**self._DLC) if pfad == a else fc.QuellFakten()
-        with mock.patch.object(fc, "quellfakten_lesen", side_effect=lesen):
+
+        frei = threading.Event()                       # die Antwort der Quelle A kommt erst, wenn B schon gewaehlt ist
+
+        def zeilen(pfad, aktuell=None):
+            if pfad == a:
+                frei.wait(20)
+            return ["[Prüfung] Quelle %s\n" % ("A" if pfad == a else "B")]
+        with mock.patch.object(self.app, "_quelle_einbauten_zeilen", side_effect=zeilen), \
+                mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten()):
             self._laden(a)
             self._laden(b)
-            self.assertTrue(basis._warten(lambda: not self.karte.status.cget("text"), 5))
-            basis._pumpen(0.8)
-        self.assertEqual(_de("bericht.dlc_nicht_noetig"), self._sichtbare_zeilen()[3], "die Antwort der Quelle B steht da")
+            frei.set()
+            self.assertTrue(basis._warten(lambda: "Quelle B" in self._protokoll_text(), 8))
+            basis._pumpen(1.0)
+        self.assertNotIn("Quelle A", self._protokoll_text(), "die Antwort der Quelle A gehoert nicht mehr hierher")
 
-    def test_bei_einem_paket_von_dump_forge_ist_fehlendes_ampr_nur_ein_hinweis_in_der_karte(self) -> None:
-        fakten = fc.QuellFakten(ampr_importiert=True, ampr_fehlt=True)
-        info = self._spielordner()
-        self._laden(info)
-        self.f._format_waehlen("pkg")
-        self.f._bericht_zeigen(self.f.aktuell, fakten)
-        self.assertEqual(_de("bericht.ampr_forge"), self._sichtbare_zeilen()[0])
-        self.f._format_waehlen("ffpkg")
-        self.f._bericht_zeigen(self.f.aktuell, fakten)
-        self.assertEqual(_de("bericht.ampr_fehlt"), self._sichtbare_zeilen()[0], "als Abbild muss es eingebaut werden")
+    def test_ein_paket_wird_ueber_dump_forge_geprueft_wenn_die_eigene_sicht_es_nicht_liest(self) -> None:
+        """Die eigene Sicht der Aufgaben 1 bis 6 liest kein ``.pkg`` - Dump Forge schon (``inspect``, wie fuer ein ``.ffpkg``)."""
+        pfad = os.path.join(self.ordner, "Paket.pkg")
+        Path(pfad).write_bytes(b"pkg")
+        fakten = fc.QuellFakten(emulatoren=("ampr", "playgo"), gepackt="zstd", backport_vorhanden=True)
+        with mock.patch.object(APP.PS5ConverterGUI, "_quellfakten_der_quelle", return_value=fakten):
+            zeilen = self.app._quelle_einbauten_zeilen(pfad)
+        text = "".join(zeilen)
+        self.assertIn(_de("einbau_pruefung.schon_drin", name="Paket.pkg", liste="BACKPORT (?), AMPR EMU, Asset-Pack, PlayGo").strip(),
+                      text)
 
     # ---------------- die Rueckfrage vor dem Paketbau ----------------
     def _auswahl(self, antwort: str):
@@ -1196,6 +1457,285 @@ class EinbauSeiteTests(_ForgeBasis):
             with self.subTest(sekunden=sekunden):
                 self.assertEqual(text, fz.Ps5PkgFenster._dauer_text(sekunden))
 
+
+
+@unittest.skipUnless(basis._TK_DA, "ohne Anzeige kein Fenster")
+class NachErfolgTests(_ForgeBasis):
+    """Die Haken der Aufgaben 1 bis 6 auf Seite 7 (Nutzerwunsch 17.11.2026): Rechner herunterfahren, Ergebnis an die PS5 senden, Quelle
+    nach Erfolg loeschen, Arbeitskopie. Zwillinge der Haken im Hauptfenster; die Auftraege von Seite 7 wenden sie nach einem Erfolg an."""
+
+    HAKEN = {"herunterfahren": "shutdown_after_success", "senden": "senden_nach_erfolg_var", "loeschen": "quelle_loeschen_var",
+             "arbeitskopie": "arbeitskopie_vorher"}
+
+    def setUp(self) -> None:
+        super().setUp()
+        for variable in self.HAKEN.values():
+            var = getattr(self.app, variable)
+            self.addCleanup(var.set, var.get())
+            var.set(False)
+        for schluessel in ("shutdown_after_success", "senden_nach_erfolg", "arbeitskopie_vorher"):
+            self.addCleanup(self.app._save_setting, schluessel, self.app._load_setting(schluessel, False))
+            self.app._save_setting(schluessel, False)
+
+    def _quelle_und_ergebnis(self) -> "tuple[str, str, tuple | None]":
+        quelle = os.path.join(self.ordner, "Quelle")
+        os.makedirs(os.path.join(quelle, "sce_sys"))
+        Path(quelle, "eboot.bin").write_bytes(b"x")
+        ergebnis = os.path.join(self.ziel, "Ergebnis.ffpkg")
+        Path(ergebnis).write_bytes(b"abc")
+        return quelle, ergebnis, fz.quelle_loeschen.stempel_nehmen(quelle)
+
+    def _protokoll_text(self) -> str:
+        return self.f.protokoll.get("1.0", "end")
+
+    # ---------------- die Karte ----------------
+    def test_die_haken_haengen_an_den_variablen_der_aufgaben_1_bis_6(self) -> None:
+        for name, variable in self.HAKEN.items():
+            with self.subTest(haken=name):
+                self.assertEqual(str(getattr(self.app, variable)), self.f.nach_erfolg_haken[name].cget("variable"))
+        texte = {"herunterfahren": "main.shutdown_after_success", "senden": "main.senden_nach_erfolg",
+                 "loeschen": "main.quelle_loeschen", "arbeitskopie": "main.arbeitskopie_vorher"}
+        for name, schluessel in texte.items():
+            with self.subTest(text=name):
+                self.assertEqual(self.app._t(schluessel), self.f.nach_erfolg_haken[name].cget("text"), "derselbe Text wie dort")
+
+    def test_ein_klick_speichert_wie_in_den_aufgaben_1_bis_6(self) -> None:
+        for name, schluessel in (("herunterfahren", "shutdown_after_success"), ("senden", "senden_nach_erfolg"),
+                                 ("arbeitskopie", "arbeitskopie_vorher")):
+            with self.subTest(haken=name):
+                self.f.nach_erfolg_haken[name].invoke()
+                self.assertTrue(self.app._load_setting(schluessel, False), "dieselbe Einstellung wie dort")
+        # "Quelle loeschen" wird bewusst nicht gespeichert: jeder Start des Programms beginnt ohne
+        self.f.nach_erfolg_haken["loeschen"].invoke()
+        self.assertTrue(self.app.quelle_loeschen_var.get())
+
+    def test_die_haken_stehen_unter_dem_zielordner_in_zwei_spalten(self) -> None:
+        self.f._seite_zeigen("umwandeln")
+        basis._pumpen(0.3)
+        h = self.f.nach_erfolg_haken
+        self.assertGreater(h["herunterfahren"].winfo_rooty(), self.f.ziel_feld.winfo_rooty())
+        self.assertLess(h["herunterfahren"].winfo_rooty(), h["senden"].winfo_rooty())
+        self.assertLess(h["senden"].winfo_rooty(), h["loeschen"].winfo_rooty())
+        self.assertEqual("grid", h["arbeitskopie"].winfo_manager())
+        self.assertEqual(h["herunterfahren"].winfo_rooty(), h["arbeitskopie"].winfo_rooty(), "die Arbeitskopie steht rechts daneben")
+        self.assertGreater(h["arbeitskopie"].winfo_rootx(), h["herunterfahren"].winfo_rootx() + 100)
+
+    def test_bei_schmaler_karte_steht_die_arbeitskopie_unter_den_anderen_haken(self) -> None:
+        """Bei Mindestgroesse ragte der Haken rechts aus der Karte (``test_pkg_fpkg_seite``); wie im Hauptfenster rutscht er dann
+        unter die anderen."""
+        f = self.f
+        f.win.update_idletasks()
+        h = f.nach_erfolg_haken
+        links = max(int(h[n].winfo_reqwidth()) for n in ("herunterfahren", "senden", "loeschen"))
+        noetig = links + 32 + int(h["arbeitskopie"].winfo_reqwidth())
+        wo = lambda: (h["arbeitskopie"].grid_info()["row"], h["arbeitskopie"].grid_info()["column"])   # noqa: E731
+        for breite, ort in ((noetig, (0, 1)), (noetig - 1, (3, 0)), (3000, (0, 1)), (200, (3, 0))):
+            with self.subTest(breite=breite):
+                f._haken_anordnen(breite)
+                self.assertEqual(ort, wo())
+
+    # ---------------- die Rueckfrage vor dem Start ----------------
+    def test_ohne_haken_wird_nicht_gefragt(self) -> None:
+        info = wz.PaketInfo(pfad=os.path.join(self.ordner, "x"), typ=wz.TYP_ORDNER)
+        with mock.patch.object(APP.PS5ConverterGUI, "_quelle_loeschen_bestaetigen") as frage:
+            self.assertEqual((True, None), self.f._loeschen_vorbereiten("bauen", info))
+        frage.assert_not_called()
+
+    def test_die_rueckfrage_und_ihre_antworten(self) -> None:
+        quelle, _ergebnis, _stempel = self._quelle_und_ergebnis()
+        info = wz.PaketInfo(pfad=quelle, typ=wz.TYP_ORDNER)
+        self.app.quelle_loeschen_var.set(True)
+        for antwort, erwartet in ((None, (False, None)), (False, (True, None))):
+            with self.subTest(antwort=antwort), mock.patch.object(APP.PS5ConverterGUI, "_quelle_loeschen_bestaetigen",
+                                                                 return_value=antwort) as frage:
+                self.assertEqual(erwartet, self.f._loeschen_vorbereiten("bauen", info))
+                frage.assert_called_once_with("pkg_fpkg", quelle)
+        with mock.patch.object(APP.PS5ConverterGUI, "_quelle_loeschen_bestaetigen", return_value=True):
+            weiter, loeschen = self.f._loeschen_vorbereiten("bauen", info)
+        self.assertTrue(weiter)
+        self.assertEqual(quelle, loeschen["quelle"])
+        self.assertEqual(fz.quelle_loeschen.stempel_nehmen(quelle), loeschen["stempel"], "der Stempel merkt den Stand beim Start")
+
+    def test_pruefen_und_konsole_fragen_nie_nach_dem_loeschen(self) -> None:
+        info = wz.PaketInfo(pfad=os.path.join(self.ordner, "x"), typ=wz.TYP_ORDNER)
+        self.app.quelle_loeschen_var.set(True)
+        with mock.patch.object(APP.PS5ConverterGUI, "_quelle_loeschen_bestaetigen") as frage:
+            for art in ("pruefen", "konsole"):
+                self.assertEqual((True, None), self.f._loeschen_vorbereiten(art, info))
+        frage.assert_not_called()
+
+    def test_abbrechen_der_rueckfrage_startet_nichts(self) -> None:
+        quelle, _ergebnis, _stempel = self._quelle_und_ergebnis()
+        info = wz.PaketInfo(pfad=quelle, typ=wz.TYP_ORDNER)
+        self.app.quelle_loeschen_var.set(True)
+        lauf = mock.Mock()
+        with mock.patch.object(APP.PS5ConverterGUI, "_quelle_loeschen_bestaetigen", return_value=None):
+            self.f._job_starten("bauen", lauf, info, self.ziel)
+        basis._pumpen(0.2)
+        self.assertIsNone(self.f._job)
+        lauf.assert_not_called()
+
+    # ---------------- nach einem Erfolg: Quelle loeschen ----------------
+    def _loeschen_und_warten(self, ergebnis: str, loeschen: dict, befund: bool = False) -> None:
+        self.f._nach_erfolg("bauen", ergebnis, loeschen, befund)
+        self.assertTrue(basis._warten(lambda: not self.f.beschaeftigt(), 15), "das Loeschen ist zu Ende gegangen")
+        basis._pumpen(0.2)
+
+    def test_die_quelle_wird_nach_dem_erfolg_geloescht_und_das_protokoll_sagt_es(self) -> None:
+        quelle, ergebnis, stempel = self._quelle_und_ergebnis()
+        self.f._nach_erfolg("bauen", ergebnis, {"quelle": quelle, "stempel": stempel})
+        self.assertTrue(self.f.beschaeftigt(), "waehrend des Loeschens gilt das Fenster als beschaeftigt (Schliessen, Herunterfahren)")
+        self.assertTrue(basis._warten(lambda: not self.f.beschaeftigt() and not os.path.exists(quelle), 15))
+        basis._pumpen(0.2)
+        self.assertFalse(os.path.exists(quelle))
+        self.assertTrue(os.path.exists(ergebnis), "das Ergebnis bleibt")
+        log = self._protokoll_text()
+        self.assertIn(self.app._t("log.quelle_wird_geloescht", pfad=quelle), log)
+        self.assertIn(self.app._t("log.quelle_geloescht", pfad=quelle), log)
+
+    def test_bei_einem_befund_bleibt_die_quelle(self) -> None:
+        quelle, ergebnis, stempel = self._quelle_und_ergebnis()
+        self.f._nach_erfolg("bauen", ergebnis, {"quelle": quelle, "stempel": stempel}, befund=True)
+        basis._pumpen(0.3)
+        self.assertTrue(os.path.isdir(quelle))
+        self.assertFalse(self.f.beschaeftigt())
+
+    def test_fehlt_das_ergebnis_oder_hat_sich_die_quelle_geaendert_bleibt_sie_und_das_protokoll_nennt_den_grund(self) -> None:
+        quelle, ergebnis, stempel = self._quelle_und_ergebnis()
+        self._loeschen_und_warten(os.path.join(self.ziel, "gibt_es_nicht.ffpkg"), {"quelle": quelle, "stempel": stempel})
+        self.assertTrue(os.path.isdir(quelle), "ohne Ergebnis wird nichts geloescht")
+        self.assertIn(self.app._t("log.quelle_bleibt", pfad=quelle, grund=self.app._t("quelle_loeschen.grund.ergebnis_fehlt")),
+                      self._protokoll_text())
+        Path(quelle, "neu.txt").write_text("waehrend des Laufs dazugekommen", encoding="utf-8")
+        self._loeschen_und_warten(ergebnis, {"quelle": quelle, "stempel": stempel})
+        self.assertTrue(os.path.isdir(quelle), "wer die Quelle waehrend des Laufs aendert, behaelt sie")
+        self.assertIn(self.app._t("quelle_loeschen.grund.geaendert"), self._protokoll_text())
+
+    def test_ein_fehler_beim_loeschen_ist_kein_absturz(self) -> None:
+        quelle, ergebnis, stempel = self._quelle_und_ergebnis()
+        with mock.patch.object(fz.quelle_loeschen, "loeschen", return_value="Zugriff verweigert"):
+            self._loeschen_und_warten(ergebnis, {"quelle": quelle, "stempel": stempel})
+        self.assertIn(self.app._t("log.quelle_loeschen_fehler", pfad=quelle, fehler="Zugriff verweigert"), self._protokoll_text())
+
+    # ---------------- nach einem Erfolg: an die PS5 senden, herunterfahren ----------------
+    def test_senden_fragt_wie_in_den_aufgaben_1_bis_6_und_sendet_nur_bei_ja(self) -> None:
+        _quelle, ergebnis, _stempel = self._quelle_und_ergebnis()
+        self.app.senden_nach_erfolg_var.set(True)
+        name = os.path.basename(ergebnis)
+        with mock.patch.object(APP.PS5ConverterGUI, "_nach_erfolg_senden_starten") as senden:
+            with mock.patch.object(fz.messagebox, "askyesno", return_value=True) as frage:
+                self.f._nach_erfolg("bauen", ergebnis, None)
+            self.assertEqual((self.app._t("dialog.title.nach_erfolg_senden"),
+                              self.app._t("dialog.msg.nach_erfolg_senden_frage", name=name)), frage.call_args[0])
+            senden.assert_called_once_with([ergebnis])
+            senden.reset_mock()
+            with mock.patch.object(fz.messagebox, "askyesno", return_value=False):
+                self.f._nach_erfolg("abbild", ergebnis, None)
+            senden.assert_not_called()
+
+    def test_ohne_haken_ueber_aufgabe_1_und_ohne_ergebnis_wird_nichts_gesendet(self) -> None:
+        _quelle, ergebnis, _stempel = self._quelle_und_ergebnis()
+        with mock.patch.object(APP.PS5ConverterGUI, "_nach_erfolg_senden_starten") as senden, \
+                mock.patch.object(fz.messagebox, "askyesno", return_value=True) as frage:
+            self.f._nach_erfolg("bauen", ergebnis, None)                 # Haken aus
+            self.app.senden_nach_erfolg_var.set(True)
+            self.f._nach_erfolg("umwandeln", ergebnis, None)             # Aufgabe 1 hat gesendet
+            self.f._nach_erfolg("pruefen", "", None)                     # keine Datei
+            self.f._nach_erfolg("konsole", "", None)                     # liegt schon auf der Konsole
+        senden.assert_not_called()
+        frage.assert_not_called()
+
+    def test_herunterfahren_nach_dem_erfolg_aber_nie_nach_einem_befund_und_ohne_sendefrage(self) -> None:
+        _quelle, ergebnis, _stempel = self._quelle_und_ergebnis()
+        self.app.shutdown_after_success.set(True)
+        self.app.senden_nach_erfolg_var.set(True)
+        gemerkt: list = []
+        with mock.patch.object(APP.PS5ConverterGUI, "_maybe_shutdown_after_task",
+                               side_effect=lambda: gemerkt.append(bool(self.app._last_task_ok))), \
+                mock.patch.object(fz.messagebox, "askyesno", return_value=True) as frage:
+            self.f._nach_erfolg("bauen", ergebnis, None, befund=True)
+            self.assertEqual([], gemerkt, "nach einem Befund bleibt der Rechner an")
+            self.f._nach_erfolg("bauen", ergebnis, None)
+            self.f._nach_erfolg("pruefen", "", None)
+            self.f._nach_erfolg("konsole", "", None)
+            self.f._nach_erfolg("extrahieren", ergebnis, None)
+        self.assertEqual([True, True, True, True], gemerkt, "bei Erfolg: der Merker steht auf Erfolg")
+        frage.assert_not_called()                                          # niemand koennte antworten - wie in den Aufgaben 1 bis 6
+
+    def test_der_rechner_faehrt_erst_nach_dem_loeschen_herunter(self) -> None:
+        quelle, ergebnis, stempel = self._quelle_und_ergebnis()
+        self.app.shutdown_after_success.set(True)
+        stand: list = []
+        with mock.patch.object(APP.PS5ConverterGUI, "_maybe_shutdown_after_task",
+                               side_effect=lambda: stand.append(os.path.exists(quelle))):
+            self.f._nach_erfolg("bauen", ergebnis, {"quelle": quelle, "stempel": stempel})
+            self.assertTrue(basis._warten(lambda: bool(stand), 15))
+        self.assertEqual([False], stand, "die Quelle war schon weg, als das Herunterfahren begann")
+
+    # ---------------- der Weg ueber Aufgabe 1 ----------------
+    def test_die_uebergabe_fragt_nicht_noch_einmal_nach_dem_arbeitsordner(self) -> None:
+        """Seite 7 hat beim Start nach dem Paket gefragt; Aufgabe 1 bekommt nur den Arbeitsordner und soll nicht nach ihm fragen."""
+        self.app.quelle_loeschen_var.set(True)
+        gesehen: list = []
+        with mock.patch.object(self.app, "_launch_task", side_effect=lambda: gesehen.append(self.app.quelle_loeschen_var.get())):
+            self.assertTrue(self.f._uebergeben(self.ordner, quelle_schon_gefragt=True))
+            self.assertTrue(self.app.quelle_loeschen_var.get(), "der Haken bleibt, wie er war")
+            self.assertTrue(self.f._uebergeben(self.ordner))
+        self.assertEqual([False, True], gesehen, "ein Spielordner als Quelle: Aufgabe 1 fragt selbst")
+
+    def test_nach_der_uebergabe_loescht_seite_7_die_quelle_des_pakets(self) -> None:
+        quelle, ergebnis, stempel = self._quelle_und_ergebnis()
+        loeschen = {"quelle": quelle, "stempel": stempel}
+        f = self.f
+        f._uebergabe = {"staging": "", "gesehen": True, "info": None, "ziel": self.ziel, "ziel_vorher": None, "name": "Quelle",
+                        "loeschen": loeschen}
+        self.app._last_task_ok = True
+        self.app.task_final_output_path = ergebnis
+        aufrufe: list = []
+        with mock.patch.object(type(f), "_a1_arbeitet_noch", return_value=False), \
+                mock.patch.object(self.app, "is_running", False), \
+                mock.patch.object(type(f), "_nach_erfolg", side_effect=lambda *a, **k: aufrufe.append(a)):
+            f._uebergabe_beobachten()
+        self.assertEqual([("umwandeln", ergebnis, loeschen)], aufrufe)
+
+    def test_jeder_auftrag_meldet_seinen_erfolg_mit_dem_richtigen_ergebnis(self) -> None:
+        """Bauen, Abbild, Extrahieren, Pruefen und Auf-die-PS5-entpacken rufen am Ende ``_nach_erfolg``: mit dem Ergebnis auf dem
+        Rechner (Paket, Abbild, Ordner), der Loeschung vom Start und - bei einem Befund - dem Befund."""
+        f = self.f
+        info = wz.PaketInfo(pfad=os.path.join(self.ordner, "Q"), typ=wz.TYP_ORDNER)
+        loeschen = {"quelle": info.pfad, "stempel": None}
+        faelle = (
+            ("bauen", {"ok": True, "pkg": "P.pkg", "pruefung": "p", "befund": False}, loeschen, ("bauen", "P.pkg", loeschen, False)),
+            ("abbild", {"ok": True, "pkg": "A.ffpkg", "pruefung": "p", "befund": True}, loeschen, ("abbild", "A.ffpkg", loeschen, True)),
+            ("extrahieren", {"ok": True, "text": "t"}, loeschen, ("extrahieren", self.ordner, loeschen)),
+            ("pruefen", {"ok": True, "text": "t", "befund": True}, None, ("pruefen", "", None, True)),
+            ("konsole", {"ok": True, "text": "t"}, None, ("konsole", "", None)),
+        )
+        aufrufe: list = []
+        for art, ende, loesch, erwartet in faelle:
+            with self.subTest(art=art), mock.patch.object(type(f), "_nach_erfolg", side_effect=lambda *a, **k: aufrufe.append(a)), \
+                    mock.patch.object(type(f), "_ausgabe_nach_erfolg"):
+                aufrufe.clear()
+                f._job = {"art": art, "info": info, "ziel": self.ordner, "start": time.monotonic(), "letzte": time.monotonic(),
+                          "zeichen": None, "loeschen": loesch}
+                f._job_beendet(ende)
+                self.assertEqual([erwartet], aufrufe)
+
+    def test_das_entpacken_gibt_die_loeschung_an_die_uebergabe_weiter(self) -> None:
+        """Ein Paket wird erst entpackt (Arbeitsordner) und geht dann an Aufgabe 1: Die Rueckfrage zur Quelle - dem Paket - stand
+        beim Start; sie wandert mit in die Uebergabe, und Aufgabe 1 fragt nicht noch einmal."""
+        f = self.f
+        loeschen = {"quelle": os.path.join(self.ordner, "Paket.pkg"), "stempel": None}
+        info = wz.PaketInfo(pfad=loeschen["quelle"], typ=wz.TYP_ORDNER)
+        f._job = {"art": "umwandeln", "info": info, "ziel": self.ordner, "start": time.monotonic(), "letzte": time.monotonic(),
+                  "zeichen": None, "loeschen": loeschen}
+        self.addCleanup(setattr, f, "_uebergabe", None)
+        aufrufe: list = []
+        with mock.patch.object(type(f), "_uebergeben", side_effect=lambda staging, quelle_schon_gefragt=False: (
+                aufrufe.append((staging, quelle_schon_gefragt)), True)[1]):
+            f._job_beendet({"ok": True, "text": "entpackt"})
+        self.assertEqual(loeschen, f._uebergabe["loeschen"])
+        self.assertEqual([(self.ordner, True)], aufrufe)
 
 
 if __name__ == "__main__":

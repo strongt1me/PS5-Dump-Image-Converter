@@ -199,7 +199,7 @@ class _Dehnbar:
         except tk.TclError:
             pass
         spec = raster.KnopfSpec(name="knopf", text=self._text, stil=self.stil, aktiv=self._state != "disabled",
-                                chevron=self._chevron, fett=self._fett)
+                                chevron=self._chevron, fett=self._fett, kompakt=bool(getattr(self, "_kompakt", False)))
         try:
             self._knopf = raster.knopf_zeichnen(self, self._z, spec, links, oben, breite, self._h,
                                                 zustand=self._zustand())
@@ -325,15 +325,17 @@ class Combobox(_Dehnbar, raster.KartenKnopf):
     Kennt ``get``, ``set``, ``current``, ``values`` (auch als ``box["values"]``), ``state``
     (``readonly``/``normal`` bedienbar, ``disabled`` gesperrt), ``textvariable`` und das Ereignis
     ``<<ComboboxSelected>>``. ``width`` zaehlt in Zeichen, ohne Angabe passt sich die Pille dem
-    laengsten Wert an.
+    laengsten Wert an. ``kompakt``: engerer Rand und kleinerer Pfeil - die Pille ist bei gleichem Text rund 15 px schmaler (Karte
+    von Seite 7, ``pkg_einbau_karte``: so schmal wie die Felder der Aufgaben 1 bis 6).
     """
 
     def __init__(self, master, look: FensterLook, textvariable: "tk.Variable | None" = None, values: Any = (),
                  state: str = "readonly", width=None, postcommand: "Callable | None" = None,
-                 **legacy: Any) -> None:
+                 kompakt: bool = False, **legacy: Any) -> None:
         for name in ("font", "style", "justify", "exportselection", "height", "cursor", "takefocus",
                      "background", "foreground", "bg", "fg"):
             legacy.pop(name, None)
+        self._kompakt = bool(kompakt)
         self._look = look
         self._auswahl_befehle: list = []
         #: Was ``cget("state")`` im freigegebenen Zustand nennt: ``readonly`` (Vorgabe) oder ``normal``.
@@ -352,11 +354,11 @@ class Combobox(_Dehnbar, raster.KartenKnopf):
 
     # --- Groesse ---------------------------------------------------------------------
     def _breite_fuer(self, z: raster.Zeichner) -> int:
-        luft = z.px(48)
+        luft = z.px(32 if self._kompakt else 48)
         if self._zeichen_breite:
-            return max(z.messen("knopf", "0") * int(self._zeichen_breite) + luft, z.px(90))
+            return max(z.messen("knopf", "0") * int(self._zeichen_breite) + luft, z.px(46 if self._kompakt else 90))
         text = max((z.messen("knopf", w) for w in self._werte), default=0)
-        return max(z.px(110), text + luft)
+        return max(z.px(60 if self._kompakt else 110), text + luft)
 
     def _weg(self, ereignis: Any) -> None:
         if ereignis.widget is not self:

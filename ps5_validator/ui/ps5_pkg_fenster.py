@@ -44,6 +44,7 @@ from ps5_validator.utils import pkg_direkt
 from ps5_validator.utils import ps5_pkg_optionen as opt
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
 from ps5_validator.utils import prospero_pkg_tool as ppt
+from ps5_validator.utils import quelle_loeschen
 from ps5_validator.utils import quellbericht as qb
 from ps5_validator.ui import hauptknoepfe
 from ps5_validator.ui import pkg_einbau_karte as einbau_ui
@@ -248,7 +249,7 @@ class Ps5PkgFenster:
         self.format_schluessel = "ffpfsc"
         self._sperre = threading.Lock()
         self._z: dict = {"zeilen": [], "prozent": None, "schritt_text": None, "schritt": None, "fertig": None,
-                         "gelesen": [], "lesen_laeuft": 0, "scan": [], "bericht": []}
+                         "gelesen": [], "lesen_laeuft": 0, "scan": [], "bericht": [], "nachlauf": []}
         self._abbruch = False
         self._schliesst = False
         self._wandert = False                      # Schrittbalken im unbestimmten Modus (_balken_wandern)
@@ -265,6 +266,8 @@ class Ps5PkgFenster:
         self._befunde_gezeigt: "set[str]" = set()   # Quellen, deren Vorabbefunde schon im Protokoll stehen
         self.einbau = None                         # die Einbau-Karte der Seite (``_seite_umwandeln``)
         self._bericht_faden: "tuple | None" = None  # (Quelle, Faden) der laufenden Pruefung - ein Bau wartet darauf
+        self._einbauten_gemeldet: "tuple | None" = None   # (Pfad, Stand) der Quelle, deren [Pruefung]-Zeilen schon im Protokoll stehen
+        self._nachlauf = False                     # die Quelle wird gerade nach einem Erfolg geloescht (``_nach_erfolg``)
         self._bauen(vorgabe)
         self._takt()
 
@@ -438,13 +441,25 @@ class Ps5PkgFenster:
         self.auftrag_var = tk.StringVar(value=t("ps5pkg.job_ready"))
 
         # Statuszeile und Knopfleiste unten (zuerst packen - sonst quetscht sie die Mindesthoehe weg)
+        # Wie bei den Aufgaben 1 bis 6 (``status_label``, ``telemetry_label``): der Text rechts unten, kursiv, darunter klein, was
+        # noch laeuft - hier das Lebenszeichen. Links steht nur der Zaehler der Quellen, und nur, wenn es mehrere sind.
         status = tk.Frame(self.win, bg=c["bg_main"], padx=14, pady=5)
         status.pack(side="bottom", fill="x")
-        tk.Label(status, textvariable=self.status_var, font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
-                 anchor="w").pack(side="left")
+        status.columnconfigure(1, weight=1)
         self.zaehler_var = tk.StringVar(value="")
-        tk.Label(status, textvariable=self.zaehler_var, font=(F, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="right")
+        self.zaehler_label = tk.Label(status, textvariable=self.zaehler_var, font=(F, pt(9), "italic"), bg=c["bg_main"],
+                                      fg=c["fg_secondary"], anchor="w")
+        self.zaehler_label.grid(row=0, column=0, sticky="w")
+        self.zaehler_label.grid_remove()            # erst bei mehreren Quellen (``_liste_fuellen``)
+        self.status_label = tk.Label(status, textvariable=self.status_var, font=(F, pt(9), "italic"), bg=c["bg_main"],
+                                     fg=c["fg_secondary"], anchor="e", justify="right")
+        self.status_label.grid(row=0, column=1, sticky="e")
+        status.bind("<Configure>", lambda e: self.status_label.configure(wraplength=max(200, e.width - 200)), add="+")
+        self.lebt_var = tk.StringVar(value="")
+        self.lebt_label = tk.Label(status, textvariable=self.lebt_var, font=(F, pt(8)), bg=c["bg_main"],
+                                   fg=c["fg_secondary"], anchor="e", justify="right")
+        self.lebt_label.grid(row=1, column=0, columnspan=2, sticky="e")
+        self.lebt_label.grid_remove()               # ohne Lauf ganz aus dem Raster (wie ``telemetry_label``)
         rumpf = tk.Frame(self.win, bg=c["bg_main"])
         rumpf.pack(fill="both", expand=True)
         rumpf.columnconfigure(0, weight=1)
@@ -541,7 +556,7 @@ class Ps5PkgFenster:
         # ist weggefallen, beides steht unter AUFTRAG (``unten``) und rollt mit. ``spalte_rechts`` heisst weiter so
         # (Protokoll und Ergebnis liegen in ihr).
         rechts = tk.Frame(links, bg=c["bg_main"])
-        rechts.grid(row=4, column=0, sticky="nsew", pady=(12, 8))
+        rechts.grid(row=4, column=0, sticky="nsew", pady=(8, 4))
         self.spalte_rechts = rechts
         # Die Knopfleiste steht wie bei den Aufgaben 1 bis 6 unter den Abschnitten, das Protokoll darunter.
         self._leiste_bauen(links)
@@ -565,7 +580,7 @@ class Ps5PkgFenster:
         # beiden Knoepfe werden weiter gebaut (Befehle und Ziele unveraendert), aber nicht angezeigt.
         quelle = self._karte(konf, "", flach=True)
         self.quelle_karte = quelle
-        quelle.grid(row=basis + 1, column=0, sticky="ew", pady=(18, 0))
+        quelle.grid(row=basis + 1, column=0, sticky="ew", pady=(6, 0))
         oben = tk.Frame(quelle, bg=c["bg_main"])
         oben.columnconfigure(0, weight=1)
         self.ablage = tk.Canvas(oben, height=74, bg=c["bg_main"], highlightthickness=0, cursor="hand2")
@@ -606,7 +621,7 @@ class Ps5PkgFenster:
         # Zielordner / Konsole haengen sich hinter das Paket (``aktion_reihe``).
         self.aktion_reihe = self.paket_playgo
         ziel = tk.Frame(quelle, bg=c["bg_main"])
-        ziel.pack(fill="x", pady=(16, 0))
+        ziel.pack(fill="x", pady=(8, 0))
         self.ziel_reihe = ziel
         ziel.columnconfigure(1, weight=1)
         # Wie die Zielordner-Zeile der Aufgaben 1 bis 6: die Beschriftung in Grossbuchstaben darueber, Feld und Knopf darunter.
@@ -615,11 +630,12 @@ class Ps5PkgFenster:
         self.ziel_feld = pw.Entry(ziel, textvariable=self.ziel_var, font=(F, pt(12)), bg=c["bg_main"],
                                   fg=c["fg_primary"], insertbackground=c["fg_primary"], relief="flat")
         self.ziel_feld.grid(row=1, column=0, columnspan=2, sticky="ew", ipady=3)
-        pw.Button(ziel, text=t("ps5pkg.choose_target"), command=self._ziel_waehlen, hoehe=36, fett=True).grid(
+        pw.Button(ziel, text=g._t("main.choose_folder_button"), command=self._ziel_waehlen, hoehe=36, fett=True).grid(
             row=1, column=2, padx=(8, 0))
         self.ueberschreiben = pw.Checkbutton(quelle, text=t("ps5pkg.overwrite"), variable=self.ueberschreiben_var,
-                                             font=(F, pt(10)))
+                                             font=(F, pt(9)))
         self.ueberschreiben.pack(anchor="w", pady=(6, 0))
+        self._nach_erfolg_haken_bauen(quelle)
         # Auf die PS5 entpacken: statt des Zielordners auf dem PC die Adresse und der Ordner auf der Konsole. Erst
         # sichtbar, wenn diese Aktion gewaehlt ist (:meth:`_aktion_anwenden`).
         fern = tk.Frame(quelle, bg=c["bg_main"])
@@ -645,66 +661,29 @@ class Ps5PkgFenster:
         # ZIELFORMAT
         formate = self._karte(konf, "", flach=True)
         formate.grid(row=basis, column=0, sticky="ew")
-        # Wie im Hauptfenster stehen ZIELFORMAT, KOMPRESSION (PFS), WORKER-THREADS und PRUEFUNG in einer Zeile (Nutzerwunsch
-        # 17.11.2026: "so aussieht wie bei Aufgabe 1 bis 6"); darunter BEIM ERSTELLEN EINBAUEN und die Pruefung der Quelle.
-        kopfzeile = tk.Frame(formate, bg=c["bg_main"])
-        kopfzeile.pack(fill="x", anchor="w")
-        format_block = tk.Frame(kopfzeile, bg=c["bg_main"])
-        format_block.pack(side="left", anchor="n")
-        tk.Label(format_block, text=t("ps5pkg.card_format").upper(), font=(F, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(anchor="w", pady=(0, 5))
+        # Wie die Karte der Aufgaben 1 bis 6 (Nutzerwunsch 17.11.2026: "so aussieht wie bei Aufgabe 1 bis 6"): ZIELFORMAT ->
+        # KOMPRESSION (PFS) -> WORKER -> PRUEFUNG in einer Zeile mit Pfeilen, darunter der Hinweis, rechts daneben BEIM
+        # ERSTELLEN EINBAUEN (AMPR EMU, PlayGo, DLC EMU, BACKPORT) - mit denselben Variablen und Befehlen wie dort
+        # (``pkg_einbau_karte``). Der Lauf, der aus diesem Fenster an Aufgabe 1 geht, liest genau diese Felder.
+        self.einbau = einbau_ui.EinbauKarte(self, formate)
+        self.einbau.rahmen.pack(fill="x", anchor="w")
+        format_titel = tk.Label(self.einbau.reihe, text=t("ps5pkg.card_format").upper(), font=(F, pt(9), "bold"),
+                                bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
         # Seit 31.10.2026 (Nutzerwunsch) ein Auswahlfeld wie ZIELFORMAT bei Aufgabe 1 (direkt unter QUELLE) statt fuenf
         # Kacheln und der Aktionszeile: die fuenf Formate ("Umwandeln zu ...") und die Aktionen Extrahieren, Pruefen und
         # Auf die PS5 entpacken. Wirkung wie zuvor: ``_format_waehlen`` und ``_aktion_geaendert``.
         self.format_var = tk.StringVar(value="")
-        self.format_box = pw.Combobox(format_block, textvariable=self.format_var, state="readonly", width=24,
+        self.format_box = pw.Combobox(self.einbau.reihe, textvariable=self.format_var, state="readonly", width=16, kompakt=True,
                                       values=tuple(e[2] for e in self._format_eintraege()), font=(F, pt(10)))
-        self.format_box.pack(anchor="w")
         self.format_box.bind("<<ComboboxSelected>>", self._format_gewaehlt)
         self._format_anzeigen()
-        # Wie die Karte der Aufgaben 1 bis 6 (Nutzerwunsch 17.11.2026): KOMPRESSION (PFS), WORKER-THREADS, PRUEFUNG, BEIM
-        # ERSTELLEN EINBAUEN (AMPR EMU, PlayGo, DLC EMU, BACKPORT) und die Pruefung der Quelle - mit denselben Variablen und
-        # Befehlen wie dort (``pkg_einbau_karte``). Der Lauf, der aus diesem Fenster an Aufgabe 1 geht, liest genau diese Felder.
-        self.einbau = einbau_ui.EinbauKarte(self, formate)
-        self.einbau.kopf_bauen(kopfzeile)
-        self.einbau.rahmen.pack(fill="x", anchor="w", pady=(12, 0))
+        self.einbau.kopf_bauen(format_titel, self.format_box)
 
-        # AUFTRAG
-        auftrag = self._karte(links, "ps5pkg.card_job", flach=True)
-        auftrag.grid(row=3, column=0, sticky="nsew", pady=(16, 0))
-        auftrag_text = tk.Label(auftrag, textvariable=self.auftrag_var, font=(F, pt(11), "bold"), bg=c["bg_main"],
-                                fg=c["fg_primary"], anchor="w", wraplength=500, justify="left")
-        auftrag_text.pack(fill="x")
-        # Der Umbruch folgt der Breite der Karte (fest 700 ragte bei der Mindestbreite ueber den Rand).
-        auftrag.bind("<Configure>", lambda e: auftrag_text.configure(wraplength=max(160, e.width - 4)), add="+")
-        balken = tk.Frame(auftrag, bg=c["bg_main"])
-        balken.pack(fill="x", pady=(8, 0))
-        balken.columnconfigure(1, weight=1)
-        tk.Label(balken, text=t("ps5pkg.step_progress"), font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"]).grid(
-            row=0, column=0, sticky="w", padx=(0, 12))
-        self.balken = pw.Progressbar(balken, mode="determinate", maximum=100.0)
-        self.balken.grid(row=0, column=1, sticky="ew", pady=2)
-        tk.Label(balken, textvariable=self.schritt_var, width=6, anchor="e", font=(F, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_primary"]).grid(row=0, column=2, padx=(8, 0))
-        tk.Label(balken, text=t("ps5pkg.job_steps"), font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"]).grid(
-            row=1, column=0, sticky="w", padx=(0, 12))
-        self.balken_gesamt = pw.Progressbar(balken, mode="determinate", maximum=100.0)
-        self.balken_gesamt.grid(row=1, column=1, sticky="ew", pady=2)
-        # Was gerade entsteht (Datei, Menge, Dateien, Zeit) - ueber die ganze Breite der Karte (Nutzer 14.10.2026).
-        # "Ausgabe oeffnen" und "Verlauf leeren" stehen seit 31.10.2026 im Rechtsklick-Menue des Protokolls.
+        # Der Auftrag steht wie bei den Aufgaben 1 bis 6 in der Aktionsleiste (``_leiste_bauen``): ein Balken mit Prozentzahl, rechts
+        # daneben der Text. Die Werte des Schrittbalkens (``balken``) und des Gesamtbalkens (``balken_gesamt``) laufen weiter - der
+        # Schrittbalken ist nicht zu sehen, die Leiste zeigt den Gesamtstand.
+        auftrag = None
         self.datei_var = tk.StringVar(value="")
-        datei_zeile = tk.Label(auftrag, textvariable=self.datei_var, font=(F, pt(9)), bg=c["bg_main"],
-                               fg=c["fg_secondary"], anchor="w", justify="left")
-        # expand: steht mittig im freien Raum zwischen den Knoepfen und der Unterkante der Karte (Nutzer 14.10.2026)
-        datei_zeile.pack(fill="x", expand=True, pady=(10, 0))
-        auftrag.bind("<Configure>", lambda e: datei_zeile.configure(wraplength=max(120, e.width - 4)), add="+")
-        # Das Lebenszeichen (Nutzerwunsch 17.11.2026: "man sieht nicht, ob etwas passiert, oder ob das Programm haengt"):
-        # wie lange der Lauf schon geht, mit welchem Werkzeug, und - wenn es still wird - seit wann nichts Neues kam.
-        self.lebt_var = tk.StringVar(value="")
-        lebt_zeile = tk.Label(auftrag, textvariable=self.lebt_var, font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
-                              anchor="w", justify="left")
-        lebt_zeile.pack(fill="x", pady=(4, 0))
-        auftrag.bind("<Configure>", lambda e: lebt_zeile.configure(wraplength=max(120, e.width - 4)), add="+")
 
         # ERGEBNIS (Ausgabe, Titel-ID, Inhalt, Groesse, Freier Platz): Die Chips sind seit 31.10.2026 nicht mehr zu sehen
         # (Nutzerwunsch); die Werte werden weiter gefuellt (``_ergebnis_fuellen``), die Anzeige entfaellt.
@@ -715,18 +694,14 @@ class Ps5PkgFenster:
         # Das Protokoll liegt unter dem Auftrag: In der Karte AUFTRAG blieb ihm bei normaler Fensterhoehe keine Hoehe -
         # der Text war nicht zu sehen. Es hat eine feste Hoehe (die Seite rollt); die Breite bestimmt die Spalte
         # (width=1), nicht der Text.
-        self.protokoll = pw.Text(rechts, height=3, width=1, font=(self.M, pt(9)), bg=c["console_bg"],
+        self.protokoll = pw.Text(rechts, height=3, width=1, font=(self.M, pt(10)), bg=c["console_bg"],
                                  fg=c["console_fg"], relief="flat", wrap="word", state="disabled")
-        self.protokoll.pack(fill="both", expand=True, pady=(12, 0))
+        self.protokoll.pack(fill="both", expand=True, pady=(4, 0))
         self._protokoll_menue_einrichten()
-        # Abstand nach jeder Meldung (nicht zwischen den umbrochenen Zeilen einer Meldung) - so steht jede fuer sich und
-        # liest sich leichter (Nutzer 14.10.2026).
-        try:
-            self.protokoll.configure(spacing3=max(20, int(pt(22))))
-        except tk.TclError:
-            pass
+        # Seit 17.11.2026 ohne Abstand nach jeder Meldung (frueher 14.10.2026 mit): Das Protokoll sieht aus wie bei den Aufgaben 1
+        # bis 6 - Schrift 10 pt, Zeile an Zeile.
         # Alles unter dem Quellfeld: Zielformat, Paket, Knopfleiste, Auftrag, Protokoll (siehe ``rest_zeigen``).
-        self._rest = (formate, quelle, self.leiste, auftrag, rechts)
+        self._rest = (formate, quelle, self.leiste, rechts)
         self._rest_sichtbar = True
 
     def rest_zeigen(self, sichtbar: bool) -> bool:
@@ -746,32 +721,72 @@ class Ps5PkgFenster:
         return True
 
     def _leiste_bauen(self, eltern) -> None:
-        """Die Knopfleiste: wie bei den Aufgaben 1 bis 6 STARTEN links, ABBRECHEN daneben, danach die Zusatzfunktionen.
+        """Die Aktionsleiste wie bei den Aufgaben 1 bis 6 (``action_bar``): STARTEN, ABBRECHEN, dann - nur waehrend eines Laufs - der
+        Fortschrittsbalken mit der Prozentzahl, und rechts daneben der Text (im Leerlauf die Groesse der Quelle, im Lauf die
+        Dateizeile des Werkzeugs).
 
-        Sie steht unter den Abschnitten Quelle und Zielformat (Zeile 2 der Rollflaeche), darunter Auftrag, Ergebnis und
-        Protokoll, und bricht um, wenn die Breite nicht reicht - statt rechts
-        abgeschnitten zu werden (gemessen bei Mindestgroesse: "Details" lief aus dem Bild). "Optionen" ist seit
-        30.10.2026 ein Knopf hier statt eines Reiters.
+        Nutzerwunsch 17.11.2026: Fortschrittsbalken, Prozentzahl und Text sollen aussehen wie bei den anderen Aufgaben. "Updates
+        Online", "Dateien anzeigen", "Details" und "Optionen" liegen im Rechtsklick-Menue des Protokolls
+        (``_protokoll_menue_einrichten``). Die Leiste steht unter dem Abschnitt Quelle/Zielformat (Zeile 2 der Rollflaeche), darunter
+        das Protokoll.
         """
-        leiste = raster.FlussZeile(eltern, self.g._bibliothek_zeichner(), grund="bg_main", abstand=(10, 6))
-        leiste.grid(row=2, column=0, sticky="ew", pady=(20, 0))
+        c, F, pt = self.c, self.F, self.pt
+        leiste = tk.Frame(eltern, bg=c["bg_main"])
+        leiste.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        # Wie ``action_bar`` des Hauptfensters: der Balken ist die einzige dehnbare Spalte und gibt den Platz her, den Prozentzahl
+        # und Text rechts davon brauchen.
+        leiste.columnconfigure(2, weight=1, minsize=200)
+        leiste.columnconfigure(3, weight=0, minsize=56)
         self.leiste = leiste
-        # STARTEN und ABBRECHEN wie bei Aufgabe 1 (``run_btn``/``abort_btn``), die Zusatzfunktionen als Pillen.
-        haupt = hauptknoepfe.starten_abbrechen(self.g, leiste, self.t("ps5pkg.start_button"), self._starten,
-                                               self._abbrechen)
+        # STARTEN und ABBRECHEN wie bei Aufgabe 1 (``run_btn``/``abort_btn``): derselbe Text, dieselbe Groesse.
+        haupt = hauptknoepfe.starten_abbrechen(self.g, leiste, self.g._t("action.start"), self._starten, self._abbrechen)
         if haupt is not None:
             self.start_knopf, self.abbrechen_knopf = haupt
         else:
-            self.start_knopf = self._pille(leiste, "ps5pkg.start_button", self._starten, akzent=True)
+            self.start_knopf = self._pille(leiste, "action.start", self._starten, akzent=True)
             self.abbrechen_knopf = self._pille(leiste, "action.cancel", self._abbrechen)
+        self.start_knopf.grid(row=0, column=0, padx=(0, 12))
+        self.abbrechen_knopf.grid(row=0, column=1, padx=(0, 24))
         self.abbrechen_knopf.configure(state="disabled")
-        self.update_knopf = self._pille(leiste, "ps5pkg.btn_update", self._updates_online)
-        self.browser_knopf = self._pille(leiste, "ps5pkg.browser_button", self._browser_oeffnen)
-        self.detail_knopf = self._pille(leiste, "ps5pkg.detail_button", self._detail_oeffnen)
-        self.optionen_knopf = self._pille(leiste, "ps5pkg.nav_options", self._optionen_oeffnen)
-        for knopf in (self.start_knopf, self.abbrechen_knopf, self.update_knopf, self.browser_knopf, self.detail_knopf,
-                      self.optionen_knopf):
-            leiste.hinzufuegen(knopf)
+        pw = self.g._pw
+        # Der Schrittbalken ist nicht zu sehen (kein Elternfenster im Raster), laeuft aber mit - Tests und Anzeige-Logik lesen ihn.
+        self._balken_versteck = tk.Frame(self.win)
+        self.balken = pw.Progressbar(self._balken_versteck, mode="determinate", maximum=100.0)
+        self.balken_gesamt = pw.Progressbar(leiste, mode="determinate", maximum=100.0)
+        self.balken_gesamt.grid(row=0, column=2, sticky="ew", ipady=5)
+        self.prozent_var = tk.StringVar(value="0 %")
+        self.prozent_label = tk.Label(leiste, textvariable=self.prozent_var, width=5, anchor="e", font=(F, pt(11), "bold"),
+                                      bg=c["bg_main"], fg=c["fg_accent"])
+        self.prozent_label.grid(row=0, column=3, padx=(15, 0), sticky="e")
+        self.groesse_var = tk.StringVar(value="")
+        self.groesse_label = tk.Label(leiste, textvariable=self.groesse_var, font=(F, pt(9), "bold"), bg=c["bg_main"],
+                                      fg=c["fg_primary"], anchor="w", justify="left", wraplength=520)
+        self.groesse_label.grid(row=0, column=4, padx=(15, 0), sticky="w")
+        self._fortschritt_sichtbar = True
+        self._fortschritt_zeigen(False)             # im Leerlauf unsichtbar, wie ``progress`` und ``percent_label``
+
+    def _fortschritt_zeigen(self, an: bool) -> None:
+        """Balken und Prozentzahl nur waehrend eines Laufs (``_launch_task`` / Ende dort); der Text daneben bleibt."""
+        if an == self._fortschritt_sichtbar:
+            return
+        self._fortschritt_sichtbar = an
+        for teil in (self.balken_gesamt, self.prozent_label):
+            try:
+                teil.grid() if an else teil.grid_remove()
+            except tk.TclError:
+                pass
+
+    def _groesse_text(self) -> str:
+        """Der Text rechts neben dem Balken: im Lauf die Dateizeile (was gerade entsteht), sonst die Groesse der Quelle."""
+        if self._job is not None:
+            return self.datei_var.get()
+        info = self.aktuell
+        if info is None or not info.groesse:
+            return ""
+        try:
+            return self._fmt(int(info.groesse))
+        except (TypeError, ValueError):
+            return ""
 
     def _aktion_moeglich(self, aktion: str) -> bool:
         """Ein Spielordner oder Abbild kennt nur Erstellen / Umwandeln - entpacken und pruefen gibt es nur fuer Pakete."""
@@ -856,7 +871,6 @@ class Ps5PkgFenster:
         self._merken(EINST_FORMAT, schluessel)
         self._format_anzeigen()
         self._ergebnis_fuellen()
-        self._bericht_neu_zeigen()
         if schluessel in FORMATE_MIT_RUCKELHINWEIS:
             # Wie im Hauptfenster (``_format_hinweis_setzen``): das Tempo der Entpackung und die Empfehlung, ein Satz.
             self._status(self.t("main.pfs_speed_hint"))
@@ -1611,6 +1625,10 @@ class Ps5PkgFenster:
                 info.titel or os.path.basename(info.pfad), info.title_id, quelle, self._fmt(info.groesse), info.version))
             gezeigt += 1
         self.zaehler_var.set(self.t("ps5pkg.counter", shown=gezeigt, total=len(self.pakete)))
+        try:
+            self.zaehler_label.grid() if len(self.pakete) > 1 else self.zaehler_label.grid_remove()
+        except tk.TclError:
+            pass
         if auswaehlen and self.liste.exists(auswaehlen):
             self.liste.selection_set(auswaehlen)
 
@@ -1668,7 +1686,7 @@ class Ps5PkgFenster:
                 self._protokoll("[Dump Forge] %s" % befund)
         self._cover_zeigen(info)
         self._spielinfo_zeigen(info)
-        self._bericht_aktualisieren()            # die Pruefung der Quelle: AMPR EMU, Packs, PlayGo, DLC, BACKPORT
+        self._bericht_aktualisieren()            # die [Pruefung]-Zeilen der Aufgaben 1 bis 6 ins Protokoll (eingebaut? PlayGo noetig?)
         self.tech.delete(*self.tech.get_children())
         for eig, wert in uebersicht(info, self.t, self._fmt):
             self.tech.insert("", "end", values=(eig, wert))
@@ -1823,7 +1841,6 @@ class Ps5PkgFenster:
         self._format_anzeigen()
         self._ergebnis_fuellen()
         self._knoepfe_pruefen()
-        self._bericht_neu_zeigen()
 
     def _knoepfe_pruefen(self) -> None:
         laeuft = self._job is not None or self._uebergabe is not None
@@ -1839,11 +1856,14 @@ class Ps5PkgFenster:
             self.start_knopf.configure(state="disabled" if (laeuft or self.aktuell is None) else "normal")
             self.abbrechen_knopf.configure(state="normal" if laeuft else "disabled")
             self.cover_knopf.configure(state="normal" if self.aktuell is not None else "disabled")
-            self.update_knopf.configure(state="normal" if update_ok else "disabled")
-            self.browser_knopf.configure(state="normal" if browser_ok else "disabled")
-            self.detail_knopf.configure(state="normal" if detail_ok else "disabled")
         except tk.TclError:
             pass
+        # Die vier Zusatzfunktionen stehen im Rechtsklick-Menue des Protokolls: gesperrt, wo sie nichts bewirken.
+        for name, frei in (("update", update_ok), ("browser", browser_ok), ("detail", detail_ok)):
+            try:
+                self.protokoll_menue.entryconfigure(self._menue_eintraege[name], state="normal" if frei else "disabled")
+            except (tk.TclError, KeyError, AttributeError):
+                pass
 
     def _fehler(self, text: str) -> None:
         self._protokoll(text)
@@ -1856,12 +1876,15 @@ class Ps5PkgFenster:
         self._wandert = an
         try:
             if an:
-                self.balken.configure(mode="indeterminate")
-                self.balken.start()
+                for balken in (self.balken, self.balken_gesamt):
+                    balken.configure(mode="indeterminate")
+                    balken.start()
                 self.schritt_var.set("…")
+                self.prozent_var.set("…")
             else:
-                self.balken.stop()
-                self.balken.configure(mode="determinate")
+                for balken in (self.balken, self.balken_gesamt):
+                    balken.stop()
+                    balken.configure(mode="determinate")
         except tk.TclError:
             pass
 
@@ -1871,6 +1894,7 @@ class Ps5PkgFenster:
         self.balken["value"] = schritt
         self.balken_gesamt["value"] = gesamt
         self.schritt_var.set("%d %%" % int(schritt))
+        self.prozent_var.set("%d %%" % int(gesamt))
 
     def _anzeige_zuruecksetzen(self) -> None:
         """Ein neu gewaehltes Paket beginnt bei 0: Balken, Zahl, Auftrag und Dateizeile des vorigen Laufs verschwinden.
@@ -1886,8 +1910,8 @@ class Ps5PkgFenster:
             pass
 
     def beschaeftigt(self) -> bool:
-        """Laeuft gerade ein Auftrag oder die Umwandlung in Aufgabe 1?"""
-        return self._job is not None or self._uebergabe is not None
+        """Laeuft gerade ein Auftrag, die Umwandlung in Aufgabe 1 oder das Loeschen der Quelle danach?"""
+        return self._job is not None or self._uebergabe is not None or self._nachlauf
 
     def programmende(self, warten: float = 30.0) -> None:
         """Beim Beenden des Programms (aus dem Abbau-Faden): abbrechen, Werkzeuge beenden, Arbeitsordner wegraeumen.
@@ -2006,6 +2030,15 @@ class Ps5PkgFenster:
         menue.add_separator()
         menue.add_command(label=t("ps5pkg.open_output"), command=self._ausgabe_oeffnen)
         menue.add_command(label=t("ps5pkg.clear_log"), command=self._verlauf_leeren)
+        # Seit 17.11.2026 hier statt als Knoepfe in der Leiste (sie soll aussehen wie bei den Aufgaben 1 bis 6).
+        menue.add_separator()
+        self._menue_eintraege: "dict[str, int]" = {}
+        for name, schluessel, befehl in (("update", "ps5pkg.btn_update", self._updates_online),
+                                         ("browser", "ps5pkg.browser_button", self._browser_oeffnen),
+                                         ("detail", "ps5pkg.detail_button", self._detail_oeffnen),
+                                         ("optionen", "ps5pkg.nav_options", self._optionen_oeffnen)):
+            menue.add_command(label=t(schluessel), command=befehl)
+            self._menue_eintraege[name] = menue.index("end")
         self.protokoll_menue = menue
 
         def zeigen(ereignis) -> str:
@@ -2404,77 +2437,67 @@ class Ps5PkgFenster:
         gilt = self._einbau_gilt()
         wirkt = gilt and self.format_schluessel in getattr(self.g, "_KOMPRESSION_WIRKT_BEI", ("ffpfsc",))
         karte.abgleichen(gilt, wirkt)
+        karte.format_hinweis_setzen(self._format_hinweis())
 
-    def _forge_legt_ampr_dazu(self, info: "wz.PaketInfo") -> bool:
-        """Baut Dump Forge das Paket - und legt es AMPR EMU fuer ein Spiel mit ``libSceAmpr`` selbst dazu?"""
-        return (self.aktion_var.get() == AKTION_UMWANDELN and self.format_schluessel == FORMAT_PAKET
-                and self._bauer_fuer(info) == "forge")
+    def _format_hinweis(self) -> str:
+        """Der Hinweis unter dem ZIELFORMAT, wie ``_zielformat_hinweis`` im Hauptfenster: das Ziel, bei den PFS-Containern das
+        Tempo samt Empfehlung, sonst die Einstufung des Autors von ShadowMount+ - und beim Paket, dass der Einbau nichts bewirkt."""
+        t = self.t
+        if self.aktion_var.get() != AKTION_UMWANDELN:
+            return ""
+        if self.format_schluessel == FORMAT_PAKET:
+            return t("ps5pkg.einbau_nur_abbild")
+        if self.format_schluessel in FORMATE_MIT_RUCKELHINWEIS:
+            return "\n".join((t("main.ziel_hint", formats="ffpfsc/ffpfs"), t("main.pfs_speed_hint")))
+        endung = next((e for s, _n, e in FORMATE if s == self.format_schluessel), "")
+        zeilen = [t("main.ziel_hint", formats=endung)]
+        einstufung = getattr(self.g, "_SMP_EINSTUFUNG", {}).get(self.format_schluessel)
+        if einstufung:
+            zeilen.append(t(einstufung))
+        return "\n".join(zeilen)
 
     def _bericht_aktualisieren(self) -> None:
-        """Die Pruefung der Quelle in der Karte: AMPR EMU, Packs, PlayGo, DLC, BACKPORT - was da ist und was fehlt.
+        """Wie in den Aufgaben 1 bis 6: Ist eine Quelle gewaehlt, steht im Protokoll, was in dem Spiel schon eingebaut ist
+        (BACKPORT, AMPR EMU, Asset-Pack, PlayGo) - und, wenn nichts eingebaut ist, ob das Spiel PlayGo braeuchte.
 
-        Bei einem Abbild liegen die Fakten schon vom Lesen vor, bei einem Spielordner oder ``.pkg`` fragt Dump Forge im
-        Hintergrund (``inspect``, meist unter einer Sekunde, kalt einige); das Fenster bleibt bedienbar. Eine Antwort, die
-        zu einer inzwischen anderen Quelle gehoert, wird verworfen. Eine Quelle wird nie zweimal gleichzeitig gelesen: Waehlt der
-        Anwender dieselbe Quelle noch einmal (die Liste meldet eine Wahl mehrfach), laeuft der erste Faden weiter.
+        Nutzerwunsch 17.11.2026: "es soll automatisch im Spiel nach DLC, PlayGo, LZ4, zstd und AMPR EMU Inhalt gesucht
+        werden, wie in Aufgabe 1-6 bereits". Es sind dieselben ``[Pruefung]``-Zeilen (``_quelle_einbauten_zeilen`` des
+        Hauptfensters), einmal je Quelle und Stand. Gelesen wird im Hintergrund, das Fenster bleibt bedienbar; eine Antwort, die
+        zu einer inzwischen anderen Quelle gehoert, wird verworfen. Danach liest Dump Forge die Fakten fuer die Rueckfragen vor
+        dem Lauf vor (``inspect``, meist unter einer Sekunde) - ein Bau, der waehrenddessen startet, wartet darauf
+        (``_quellfakten``) und liest nicht ein zweites Mal.
         """
-        karte = self.einbau
-        if karte is None:
-            return
         info = self.aktuell
         if info is None:
-            karte.bericht_setzen(None, self.t("bericht.keine_quelle"))
             return
-        if info.fakten is not None:
-            self._bericht_zeigen(info, info.fakten)
+        try:
+            schluessel = (os.path.normcase(os.path.abspath(info.pfad)), int(os.path.getmtime(info.pfad)))
+        except OSError:
             return
+        if schluessel == self._einbauten_gemeldet:
+            return                                   # die Liste meldet eine Wahl mehrfach
+        self._einbauten_gemeldet = schluessel
         exe = self._werkzeug_forge()
-        if not (info.ist_ordner or forge.ist_paket(info.pfad)):
-            karte.bericht_setzen(None, self.t("bericht.nicht_pruefbar"))
-            return
-        if not exe:
-            karte.bericht_setzen(None, self.t("bericht.keine_forge"))
-            return
-        karte.bericht_setzen(None, self.t("bericht.laedt"))
-        laufend = self._bericht_faden
-        if laufend is not None and laufend[0] is info and laufend[1].is_alive():
-            return
         popen_extra = self._popen_extra()
 
         def lauf() -> None:
-            fakten = forge.quellfakten_lesen(exe, info.pfad, popen_extra=popen_extra)
-            # Die Antwort haengt gleich an der Quelle: Ein Bau, der waehrenddessen startet, wartet auf diesen Faden
-            # (``_quellfakten``) und liest nicht ein zweites Mal.
-            if fakten is not None:
-                info.fakten = fakten
-            # Angezeigt wird im Takt des Fensters (``_takt_arbeiten``), wie alles, was ein Faden meldet: Ein Faden fasst
+            zeilen = None
+            try:
+                zeilen = self.g._quelle_einbauten_zeilen(info.pfad, lambda: self.aktuell is info)
+            except Exception as exc:  # noqa: BLE001 - eine Auskunft, kein Hindernis fuer den Lauf
+                logger.debug("Einbauten von %s nicht pruefbar: %s", info.pfad, exc)
+            # Gemeldet wird im Takt des Fensters (``_takt_arbeiten``), wie alles, was ein Faden meldet: Ein Faden fasst
             # kein Widget an, und ``after`` aus einem Faden braucht die laufende Hauptschleife.
             with self._sperre:
-                self._z["bericht"].append((info, fakten))
+                self._z["bericht"].append((info, zeilen))
+            if info.fakten is None and exe and (info.ist_ordner or forge.ist_paket(info.pfad)):
+                fakten = forge.quellfakten_lesen(exe, info.pfad, popen_extra=popen_extra)
+                if fakten is not None:
+                    info.fakten = fakten
 
         faden = threading.Thread(target=lauf, daemon=True, name="ps5pkg-bericht")
         self._bericht_faden = (info, faden)
         faden.start()
-
-    def _bericht_neu_zeigen(self) -> None:
-        """Zeichnet die Pruefung der Quelle neu (anderes Format, andere Aktion), ohne noch einmal zu lesen."""
-        info = self.aktuell
-        if self.einbau is not None and info is not None and info.fakten is not None:
-            self._bericht_zeigen(info, info.fakten)
-
-    def _bericht_zeigen(self, info: "wz.PaketInfo", fakten: "forge.QuellFakten | None") -> None:
-        karte = self.einbau
-        if karte is None:
-            return
-        if fakten is None:
-            karte.bericht_setzen(None, self.t("bericht.nicht_pruefbar"))
-            return
-        konsole = ""
-        try:
-            konsole = self.g._konsole_fw_bekannt() or ""
-        except Exception as exc:  # noqa: BLE001 - die Firmware der Konsole ist eine Zugabe
-            logger.debug("Firmware der Konsole nicht lesbar: %s", exc)
-        karte.bericht_setzen(qb.zeilen(fakten, self.t, konsole, forge_ergaenzt_ampr=self._forge_legt_ampr_dazu(info)))
 
     @staticmethod
     def _dauer_text(sekunden: float) -> str:
@@ -2504,7 +2527,7 @@ class Ps5PkgFenster:
         job = self._job
         if job is None:
             if self._uebergabe is None:
-                self.lebt_var.set("")
+                self._lebt_setzen("")
             return
         jetzt = time.monotonic()
         start = job.get("start") or jetzt
@@ -2513,7 +2536,19 @@ class Ps5PkgFenster:
         still = jetzt - (job.get("letzte") or jetzt)
         if still >= self.STILLE_AB:
             text += "\n" + self.t("ps5pkg.lebt_still", still=self._dauer_text(still))
-        self.lebt_var.set(text)
+        self._lebt_setzen(text)
+
+    def _lebt_setzen(self, text: str) -> None:
+        """Das Lebenszeichen rechts unten (klein, unter der Statuszeile); ohne Text ganz aus dem Raster, wie ``telemetry_label``."""
+        if self.lebt_var.get() != text:
+            self.lebt_var.set(text)
+        try:
+            if text and not self.lebt_label.winfo_ismapped():
+                self.lebt_label.grid()
+            elif not text and self.lebt_label.winfo_manager():
+                self.lebt_label.grid_remove()
+        except tk.TclError:
+            pass
 
     def _bauer_wechseln_fragen(self, info: "wz.PaketInfo") -> bool:
         """Einmal fragen: Dump Forge statt eines Werkzeugs, das das Spiel zuerst in einen Arbeitsordner kopiert?
@@ -2689,10 +2724,17 @@ class Ps5PkgFenster:
         self._job_starten("bauen", self._lauf_bauen, info, ziel)
 
     def _job_starten(self, art: str, ziel_funktion, info: "wz.PaketInfo", ziel: str) -> None:
+        # Der Haken "Quelle nach Erfolg loeschen": vor dem Start bestaetigen, nie still. Abbrechen startet nichts.
+        weiter, loeschen = self._loeschen_vorbereiten(art, info)
+        if not weiter:
+            self._staging_raeumen()
+            self._bau = None
+            return
         self._abbruch = False
         jetzt = time.monotonic()
         # "start" und "letzte" fuer das Lebenszeichen (``_lebenszeichen_zeigen``): seit wann der Lauf geht, wann zuletzt etwas kam.
-        self._job = {"art": art, "info": info, "ziel": ziel, "start": jetzt, "letzte": jetzt, "zeichen": None}
+        self._job = {"art": art, "info": info, "ziel": ziel, "start": jetzt, "letzte": jetzt, "zeichen": None,
+                     "loeschen": loeschen}
         with self._sperre:
             # "prozent" erst mit der ersten Meldung des Laufs: Beim Pruefen kommt keine, der Balken wandert dann.
             self._z.update({"prozent": None, "fertig": None, "ausgabe": "", "gesamt": None, "schritt_text": None})
@@ -2980,10 +3022,19 @@ class Ps5PkgFenster:
         return {"staging": staging, "gesehen": False, "info": info, "ziel": ziel, "ziel_vorher": vorher,
                 "name": os.path.basename(os.path.normpath(quelle)) if quelle else ""}
 
-    def _uebergeben(self, staging: str) -> bool:
-        """Traegt den entpackten Ordner in Aufgabe 1 ein und startet sie."""
+    def _uebergeben(self, staging: str, quelle_schon_gefragt: bool = False) -> bool:
+        """Traegt den entpackten Ordner in Aufgabe 1 ein und startet sie.
+
+        ``quelle_schon_gefragt``: ``staging`` ist ein Arbeitsordner, nicht die Quelle des Anwenders - die Rueckfrage zu "Quelle nach
+        Erfolg loeschen" hat Seite 7 beim Start gestellt (fuer das Paket), Aufgabe 1 soll nicht noch einmal nach dem Arbeitsordner
+        fragen. Der Haken bleibt dabei, wie er war."""
         g = self.g
         ziel = self.ziel_var.get().strip()
+        var = getattr(g, "quelle_loeschen_var", None)
+        war = None
+        if quelle_schon_gefragt and var is not None:
+            war = bool(var.get())
+            var.set(False)
         try:
             g._set_mode_from_sidebar("pack_folder")
             g._batch_sources = []
@@ -2995,6 +3046,9 @@ class Ps5PkgFenster:
             logger.exception("Uebergabe an Aufgabe 1")
             self._fehler(self.t("ps5pkg.err_handoff", grund=str(exc)))
             return False
+        finally:
+            if war is not None and var is not None:
+                var.set(war)
         return True
 
     # ------------------------------------------------------------------
@@ -3026,9 +3080,15 @@ class Ps5PkgFenster:
             gesamt = self._z.get("gesamt")
             scan, self._z["scan"] = self._z["scan"], []
             berichte, self._z["bericht"] = self._z.get("bericht", []), []
-        for quelle, fakten in berichte:
-            if self.aktuell is quelle:                  # die Antwort einer inzwischen anderen Quelle zeigt niemand
-                self._bericht_zeigen(quelle, fakten)
+        for quelle, einbauten in berichte:
+            if self.aktuell is quelle and einbauten:    # die Antwort einer inzwischen anderen Quelle zeigt niemand
+                for text in einbauten:
+                    self._protokoll(text.rstrip("\n"))
+        with self._sperre:
+            nachlauf, self._z["nachlauf"] = self._z["nachlauf"], []
+        for art, ergebnis in nachlauf:
+            self._nachlauf = False
+            self._nach_erfolg_weiter(art, ergebnis)
         if self._job is not None:
             # Etwas Neues kam: eine Zeile des Werkzeugs, ein anderer Prozentwert oder eine andere Dateizeile (Lebenszeichen).
             zeichen = (prozent, datei)
@@ -3062,6 +3122,10 @@ class Ps5PkgFenster:
             self._uebergabe_beobachten()
         self._einbau_abgleichen()
         self._lebenszeichen_zeigen()
+        self._fortschritt_zeigen(self._job is not None)
+        groesse = self._groesse_text()
+        if self.groesse_var.get() != groesse:
+            self.groesse_var.set(groesse)
 
     def _job_beendet(self, ende: dict) -> None:
         job, self._job = self._job, None
@@ -3099,6 +3163,7 @@ class Ps5PkgFenster:
                 self._z["ausgabe"] = job["ziel"]
             self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
+            self._nach_erfolg("bauen", ende["pkg"], job.get("loeschen"), bool(ende.get("befund")))
             return
         if art == "abbild":
             # Dump Forge hat das Paket im Strom in ein Abbild geschrieben (kein Entpacken, kein Zwischenordner).
@@ -3111,18 +3176,21 @@ class Ps5PkgFenster:
             self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
             self._ausgabe_nach_erfolg()
+            self._nach_erfolg("abbild", ende["pkg"], job.get("loeschen"), bool(ende.get("befund")))
             return
         if art == "pruefen":
             self.auftrag_var.set(ende["text"])
             self._protokoll(("[BEFUND] " if ende.get("befund") else "[OK] ") + ende["text"])
             self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
+            self._nach_erfolg("pruefen", "", None, bool(ende.get("befund")))
             return
         if art == "konsole":
             self.auftrag_var.set(self.t("ps5pkg.job_done_console", ziel=job["ziel"]))
             self._protokoll(ende["text"])
             self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
+            self._nach_erfolg("konsole", "", None)
             return
         if art == "extrahieren":
             self.auftrag_var.set(self.t("ps5pkg.job_done_extract", ordner=job["ziel"]))
@@ -3132,13 +3200,15 @@ class Ps5PkgFenster:
             self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
             self._ausgabe_nach_erfolg()
+            self._nach_erfolg("extrahieren", job["ziel"], job.get("loeschen"))
             return
         # umwandeln: entpackt - nun Aufgabe 1
         self._protokoll(ende["text"])
         self.auftrag_var.set(self.t("ps5pkg.job_handoff"))
         self._uebergabe = self._uebergabe_neu(job["ziel"], job["info"], job["ziel"])
+        self._uebergabe["loeschen"] = job.get("loeschen")      # die Quelle ist die des Pakets, nicht der Arbeitsordner
         self._anzeige_setzen(0, 50)
-        if not self._uebergeben(job["ziel"]):
+        if not self._uebergeben(job["ziel"], quelle_schon_gefragt=True):
             self._uebergabe = None
             self._staging_raeumen()
         self._knoepfe_pruefen()
@@ -3243,12 +3313,147 @@ class Ps5PkgFenster:
             self._anzeige_setzen(100, 100)
             self._protokoll(self.t("ps5pkg.log_done_convert", name=self._ziel_name()))
             self._ausgabe_nach_erfolg()
+            if u.get("loeschen"):                 # Senden und Herunterfahren hat Aufgabe 1 selbst erledigt; die Quelle loescht Seite 7
+                self._nach_erfolg("umwandeln", str(getattr(self.g, "task_final_output_path", "") or ""), u["loeschen"])
         else:
             self.auftrag_var.set(self.t("ps5pkg.job_failed"))
             self._anzeige_setzen(0, 0)
             self._protokoll(self.t("ps5pkg.log_convert_not_done"))
         self._staging_raeumen()
         self._knoepfe_pruefen()
+
+    # ------------------------------------------------------------------
+    # Nach einem Erfolg: Quelle loeschen, Ergebnis an die PS5 senden, Rechner herunterfahren (Nutzerwunsch 17.11.2026: die Haken
+    # der Aufgaben 1 bis 6 auch hier). Dieselben Tk-Variablen, Einstellungen, Rueckfragen und Texte wie dort.
+    # ------------------------------------------------------------------
+    #: Auftraege, die ein Ergebnis auf dem Rechner hinterlassen: nur bei ihnen gilt "Quelle nach Erfolg loeschen".
+    ERGEBNIS_ARTEN = ("bauen", "abbild", "extrahieren", "umwandeln")
+
+    def _nach_erfolg_haken_bauen(self, quelle) -> None:
+        """Die Haken unter dem Zielordner wie bei Aufgabe 1: links herunterfahren, senden, Quelle loeschen; rechts die Arbeitskopie.
+
+        Zwillinge der Haken im Hauptfenster (gleiche Variablen, gleiche Befehle): Eine Wahl hier gilt dort und umgekehrt. Die
+        Arbeitskopie wirkt, wo in einen Spielordner eingebaut wird (der Weg ueber Aufgabe 1)."""
+        g, c, F, pt = self.g, self.c, self.F, self.pt
+        rahmen = tk.Frame(quelle, bg=c["bg_main"])
+        rahmen.pack(fill="x", pady=(2, 0))
+        self.nach_erfolg_rahmen = rahmen
+        self.nach_erfolg_haken: "dict[str, object]" = {}
+        # (Name, Text, Variable im Hauptfenster, Befehl dort, Zeile, Spalte)
+        for name, text, variable, befehl, zeile, spalte in (
+                ("herunterfahren", "main.shutdown_after_success", "shutdown_after_success", "_on_shutdown_setting_changed", 0, 0),
+                ("senden", "main.senden_nach_erfolg", "senden_nach_erfolg_var", "_on_senden_nach_erfolg_changed", 1, 0),
+                ("loeschen", "main.quelle_loeschen", "quelle_loeschen_var", "", 2, 0),
+                ("arbeitskopie", "main.arbeitskopie_vorher", "arbeitskopie_vorher", "_on_arbeitskopie_setting_changed", 0, 1)):
+            var = getattr(g, variable, None)
+            if var is None:
+                continue
+            kommando = getattr(g, befehl, None) if befehl else None
+            haken = g._pw.Checkbutton(rahmen, text=g._t(text), variable=var, command=kommando, font=(F, pt(9)))
+            haken.grid(row=zeile, column=spalte, sticky="w", padx=(32 if spalte else 0, 0), pady=(6 if zeile else 0, 0))
+            self.nach_erfolg_haken[name] = haken
+        self._arbeitskopie_daneben = True
+        rahmen.bind("<Configure>", lambda e: self._haken_anordnen(e.width), add="+")
+
+    def _haken_anordnen(self, breite: int) -> None:
+        """Die Arbeitskopie steht rechts neben "herunterfahren" - reicht die Breite nicht, unter den anderen (wie
+        ``_optionskaesten_ordnen`` im Hauptfenster): Sonst ragte der Haken aus der Karte, unsichtbar und nicht anklickbar."""
+        haken = getattr(self, "nach_erfolg_haken", {})
+        rechts = haken.get("arbeitskopie")
+        links = [haken[n] for n in ("herunterfahren", "senden", "loeschen") if n in haken]
+        if rechts is None or not links or breite <= 1:
+            return
+        try:
+            daneben = max(int(h.winfo_reqwidth()) for h in links) + 32 + int(rechts.winfo_reqwidth()) <= breite
+            if daneben == self._arbeitskopie_daneben:
+                return
+            self._arbeitskopie_daneben = daneben
+            if daneben:
+                rechts.grid_configure(row=0, column=1, padx=(32, 0), pady=(0, 0))
+            else:
+                rechts.grid_configure(row=3, column=0, padx=(0, 0), pady=(6, 0))
+        except tk.TclError as exc:
+            logger.debug("Haken nicht anordenbar: %s", exc)
+
+    def _loeschen_vorbereiten(self, art: str, info: "wz.PaketInfo") -> "tuple[bool, dict | None]":
+        """Fragt vor dem Start, ob die Quelle nach Erfolg geloescht wird (``_quelle_loeschen_bestaetigen`` der Aufgaben 1 bis 6).
+
+        Returns:
+            ``(False, None)``: nichts starten (Abbrechen). Sonst ``(True, None)`` ohne Loeschen oder ``(True, {"quelle", "stempel"})`` -
+            der Stempel merkt, wie die Quelle jetzt aussieht: Wer sie waehrend des Laufs aendert, behaelt sie.
+        """
+        g = self.g
+        gewaehlt = getattr(g, "_quelle_loeschen_gewaehlt", None)
+        if art not in self.ERGEBNIS_ARTEN or not callable(gewaehlt) or not gewaehlt():
+            return True, None
+        antwort = g._quelle_loeschen_bestaetigen("pkg_fpkg", info.pfad)
+        if antwort is None:
+            return False, None
+        if not antwort:
+            return True, None
+        quelle = g._quelle_zum_loeschen(info.pfad)
+        return True, {"quelle": quelle, "stempel": quelle_loeschen.stempel_nehmen(quelle)}
+
+    def _nach_erfolg(self, art: str, ergebnis: str, loeschen: "dict | None", befund: bool = False) -> None:
+        """Hauptfaden, nach einem Auftrag, der gut ausgegangen ist: Quelle loeschen, Ergebnis senden, herunterfahren.
+
+        Ein Befund der Pruefung zaehlt nicht als Erfolg: Dann bleibt die Quelle, nichts wird gesendet, der Rechner bleibt an.
+        Das Loeschen laeuft im Faden (ein Spielordner braucht Sekunden bis Minuten); danach geht der Takt weiter
+        (:meth:`_nach_erfolg_weiter`) - der Rechner faehrt nie mitten im Loeschen herunter.
+        """
+        if befund:
+            return
+        if loeschen and ergebnis:
+            self._nachlauf = True
+            threading.Thread(target=self._quelle_loeschen_lauf, args=(art, ergebnis, loeschen), daemon=True,
+                             name="ps5pkg-loeschen").start()
+            return
+        self._nach_erfolg_weiter(art, ergebnis)
+
+    def _quelle_loeschen_lauf(self, art: str, ergebnis: str, loeschen: dict) -> None:
+        """Faden: loescht die Quelle, wenn alles stimmt (``quelle_loeschen.pruefen``); sonst bleibt sie, und das Protokoll sagt warum."""
+        g = self.g
+        quelle = loeschen["quelle"]
+        try:
+            grund = quelle_loeschen.pruefen(quelle, ergebnis, loeschen.get("stempel"))
+            if grund:
+                self._melden(g._t("log.quelle_bleibt", pfad=quelle, grund=g._t("quelle_loeschen.grund." + grund)))
+            else:
+                self._melden(g._t("log.quelle_wird_geloescht", pfad=quelle))
+                haupt = _haupt(g)
+                fehler = quelle_loeschen.loeschen(quelle, ordner_loeschen=lambda p: bool(haupt._rmtree_force(p)),
+                                                  datei_loeschen=os.remove)
+                self._melden(g._t("log.quelle_loeschen_fehler", pfad=quelle, fehler=fehler) if fehler
+                             else g._t("log.quelle_geloescht", pfad=quelle))
+        except Exception as exc:  # noqa: BLE001 - im Zweifel bleibt die Quelle
+            logger.exception("Quelle loeschen")
+            self._melden(g._t("log.quelle_loeschen_fehler", pfad=quelle, fehler=str(exc)))
+        finally:
+            with self._sperre:
+                self._z["nachlauf"].append((art, ergebnis))
+
+    def _nach_erfolg_weiter(self, art: str, ergebnis: str) -> None:
+        """Ergebnis an die PS5 senden (nur nach Rueckfrage, und nicht, wenn der Rechner herunterfaehrt - niemand wuerde antworten),
+        danach herunterfahren. Ueber Aufgabe 1 (``umwandeln``) hat sie beides schon selbst erledigt."""
+        g = self.g
+        if art == "umwandeln":
+            return
+        herunterfahren = bool(getattr(g, "_shutdown_after_success_enabled", lambda: False)())
+        senden = getattr(g, "_senden_nach_erfolg_enabled", None)
+        if (not herunterfahren and ergebnis and art in ("bauen", "abbild", "extrahieren") and callable(senden) and senden()):
+            self._senden_fragen(ergebnis)
+        if herunterfahren:
+            g._last_task_ok = True                 # ``_should_shutdown_after_task`` liest den Erfolg aus diesem Merker
+            g._maybe_shutdown_after_task()
+
+    def _senden_fragen(self, ergebnis: str) -> None:
+        """Dieselbe Rueckfrage wie nach einem Lauf der Aufgaben 1 bis 6 (``_nach_erfolg_senden_fragen``), dann Senden."""
+        g = self.g
+        name = os.path.basename(os.path.normpath(ergebnis))
+        if not messagebox.askyesno(g._t("dialog.title.nach_erfolg_senden"), g._t("dialog.msg.nach_erfolg_senden_frage", name=name),
+                                   parent=self.win):
+            return
+        g._nach_erfolg_senden_starten([ergebnis])
 
     def _staging_raeumen(self) -> None:
         haupt = _haupt(self.g)
