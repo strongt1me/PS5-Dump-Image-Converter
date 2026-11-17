@@ -617,10 +617,7 @@ class Ps5PkgFenster:
         self.ziel_feld.grid(row=1, column=0, columnspan=2, sticky="ew", ipady=3)
         pw.Button(ziel, text=g._t("main.choose_folder_button"), command=self._ziel_waehlen, hoehe=36, fett=True).grid(
             row=1, column=2, padx=(8, 0))
-        self.ueberschreiben = pw.Checkbutton(quelle, text=t("ps5pkg.overwrite"), variable=self.ueberschreiben_var,
-                                             font=(F, pt(9)))
-        self.ueberschreiben.pack(anchor="w", pady=(6, 0))
-        self._nach_erfolg_haken_bauen(quelle)
+        self._nach_erfolg_haken_bauen(quelle)       # baut auch "Vorhandenes ueberschreiben": alle fuenf Haken teilen sich ein Raster
         # Auf die PS5 entpacken: statt des Zielordners auf dem PC die Adresse und der Ordner auf der Konsole. Erst
         # sichtbar, wenn diese Aktion gewaehlt ist (:meth:`_aktion_anwenden`).
         fern = tk.Frame(quelle, bg=c["bg_main"])
@@ -1791,12 +1788,14 @@ class Ps5PkgFenster:
         try:
             if konsole:
                 self.ziel_reihe.pack_forget()
-                self.ueberschreiben.pack_forget()
                 self.fern_reihe.pack(fill="x", pady=(10, 0), after=self.aktion_reihe)
             else:
                 self.fern_reihe.pack_forget()
                 self.ziel_reihe.pack(fill="x", pady=(10, 0), after=self.aktion_reihe)
-                self.ueberschreiben.pack(anchor="w", pady=(6, 0), after=self.ziel_reihe)
+            # "Vorhandenes ueberschreiben" gehoert zum Zielordner auf dem PC; die uebrigen Haken ruecken zusammen.
+            self._ueberschreiben_zeigen = not konsole
+            # Noch nicht angezeigt (Breite 1): eine Spalte; das erste <Configure> beim Anzeigen verteilt sie auf die wirkliche Breite.
+            self._haken_anordnen(int(self.nach_erfolg_rahmen.winfo_width()))
         except tk.TclError as exc:
             logger.debug("Zeilen der Aktion nicht umschaltbar: %s", exc)
 
@@ -3103,49 +3102,79 @@ class Ps5PkgFenster:
     #: meldet es dort selbst (``_finish_success`` im Hauptfenster) - eine zweite Meldung waere doppelt.
     MELDUNG_ARTEN = ("bauen", "abbild", "extrahieren")
 
-    def _nach_erfolg_haken_bauen(self, quelle) -> None:
-        """Die Haken unter dem Zielordner wie bei Aufgabe 1: links herunterfahren, senden, Quelle loeschen; rechts die Arbeitskopie.
+    #: Die fuenf Haken unter dem Zielordner in der Reihenfolge, in der sie die Spalten fuellen (von oben nach unten, dann nach rechts).
+    HAKEN_REIHENFOLGE = ("ueberschreiben", "arbeitskopie", "herunterfahren", "senden", "loeschen")
+    #: Hoechstens so viele Spalten nebeneinander; Abstand zwischen den Spalten in Pixeln.
+    HAKEN_SPALTEN_MAX = 3
+    HAKEN_ABSTAND = 32
 
-        Zwillinge der Haken im Hauptfenster (gleiche Variablen, gleiche Befehle): Eine Wahl hier gilt dort und umgekehrt. Die
-        Arbeitskopie wirkt, wo in einen Spielordner eingebaut wird (der Weg ueber Aufgabe 1)."""
+    def _nach_erfolg_haken_bauen(self, quelle) -> None:
+        """Die Haken unter dem Zielordner: "Vorhandenes ueberschreiben", die Arbeitskopie und die drei Haken der Aufgabe 1
+        (herunterfahren, senden, Quelle loeschen), auf so viele Spalten verteilt, wie nebeneinander passen.
+
+        Die drei Haken der Aufgabe 1 und die Arbeitskopie sind Zwillinge der Haken im Hauptfenster (gleiche Variablen, gleiche
+        Befehle): Eine Wahl hier gilt dort und umgekehrt. Die Arbeitskopie wirkt, wo in einen Spielordner eingebaut wird (der
+        Weg ueber Aufgabe 1)."""
         g, c, F, pt = self.g, self.c, self.F, self.pt
         rahmen = tk.Frame(quelle, bg=c["bg_main"])
-        rahmen.pack(fill="x", pady=(2, 0))
+        rahmen.pack(fill="x", pady=(6, 0))
         self.nach_erfolg_rahmen = rahmen
         self.nach_erfolg_haken: "dict[str, object]" = {}
-        # (Name, Text, Variable im Hauptfenster, Befehl dort, Zeile, Spalte)
-        for name, text, variable, befehl, zeile, spalte in (
-                ("herunterfahren", "main.shutdown_after_success", "shutdown_after_success", "_on_shutdown_setting_changed", 0, 0),
-                ("senden", "main.senden_nach_erfolg", "senden_nach_erfolg_var", "_on_senden_nach_erfolg_changed", 1, 0),
-                ("loeschen", "main.quelle_loeschen", "quelle_loeschen_var", "", 2, 0),
-                ("arbeitskopie", "main.arbeitskopie_vorher", "arbeitskopie_vorher", "_on_arbeitskopie_setting_changed", 0, 1)):
+        self.ueberschreiben = g._pw.Checkbutton(rahmen, text=self.t("ps5pkg.overwrite"), variable=self.ueberschreiben_var,
+                                                font=(F, pt(9)))
+        self.nach_erfolg_haken["ueberschreiben"] = self.ueberschreiben
+        # (Name, Text, Variable im Hauptfenster, Befehl dort)
+        for name, text, variable, befehl in (
+                ("herunterfahren", "main.shutdown_after_success", "shutdown_after_success", "_on_shutdown_setting_changed"),
+                ("senden", "main.senden_nach_erfolg", "senden_nach_erfolg_var", "_on_senden_nach_erfolg_changed"),
+                ("loeschen", "main.quelle_loeschen", "quelle_loeschen_var", ""),
+                ("arbeitskopie", "main.arbeitskopie_vorher", "arbeitskopie_vorher", "_on_arbeitskopie_setting_changed")):
             var = getattr(g, variable, None)
             if var is None:
                 continue
             kommando = getattr(g, befehl, None) if befehl else None
-            haken = g._pw.Checkbutton(rahmen, text=g._t(text), variable=var, command=kommando, font=(F, pt(9)))
-            haken.grid(row=zeile, column=spalte, sticky="w", padx=(32 if spalte else 0, 0), pady=(6 if zeile else 0, 0))
-            self.nach_erfolg_haken[name] = haken
-        self._arbeitskopie_daneben = True
-        rahmen.bind("<Configure>", lambda e: self._haken_anordnen(e.width), add="+")
+            self.nach_erfolg_haken[name] = g._pw.Checkbutton(rahmen, text=g._t(text), variable=var, command=kommando,
+                                                            font=(F, pt(9)))
+        self._ueberschreiben_zeigen = True
+        self._haken_ort: "tuple | None" = None
+        self._haken_anordnen(0)         # zunaechst schmal (eine Spalte); das erste <Configure> verteilt sie auf die wirkliche Breite
+        rahmen.bind("<Configure>", lambda e: self._haken_anordnen(e.width) if e.width > 1 else None, add="+")
+
+    def _haken_spalten(self, sichtbar: "list[str]", breite: int) -> "list[list[str]]":
+        """Verteilt die Haken auf drei, zwei oder eine Spalte - auf so viele, wie in ``breite`` Pixel nebeneinander passen.
+
+        Jede Spalte wird von oben nach unten gefuellt (bei fuenf Haken und drei Spalten 2 + 2 + 1, bei zwei Spalten 3 + 2), die
+        Karte bleibt so niedrig wie moeglich. Reicht die Breite fuer zwei Spalten nicht, stehen alle untereinander."""
+        haken = self.nach_erfolg_haken
+        for n in range(self.HAKEN_SPALTEN_MAX, 1, -1):
+            zeilen = -(-len(sichtbar) // n)
+            spalten = [sichtbar[i:i + zeilen] for i in range(0, len(sichtbar), zeilen)]
+            noetig = sum(max(int(haken[h].winfo_reqwidth()) for h in s) for s in spalten) + self.HAKEN_ABSTAND * (len(spalten) - 1)
+            if noetig <= breite:
+                return spalten
+        return [list(sichtbar)]
 
     def _haken_anordnen(self, breite: int) -> None:
-        """Die Arbeitskopie steht rechts neben "herunterfahren" - reicht die Breite nicht, unter den anderen (wie
-        ``_optionskaesten_ordnen`` im Hauptfenster): Sonst ragte der Haken aus der Karte, unsichtbar und nicht anklickbar."""
+        """Legt die sichtbaren Haken ins Raster. Reicht die Breite fuer die Spalten nicht, rutschen die letzten nach unten (wie
+        ``_optionskaesten_ordnen`` im Hauptfenster): Sonst ragte ein Haken aus der Karte, unsichtbar und nicht anklickbar."""
         haken = getattr(self, "nach_erfolg_haken", {})
-        rechts = haken.get("arbeitskopie")
-        links = [haken[n] for n in ("herunterfahren", "senden", "loeschen") if n in haken]
-        if rechts is None or not links or breite <= 1:
+        sichtbar = [n for n in self.HAKEN_REIHENFOLGE
+                    if n in haken and (n != "ueberschreiben" or getattr(self, "_ueberschreiben_zeigen", True))]
+        if not sichtbar:
             return
         try:
-            daneben = max(int(h.winfo_reqwidth()) for h in links) + 32 + int(rechts.winfo_reqwidth()) <= breite
-            if daneben == self._arbeitskopie_daneben:
+            spalten = self._haken_spalten(sichtbar, breite)
+            ort = tuple(tuple(s) for s in spalten)
+            if ort == getattr(self, "_haken_ort", None):
                 return
-            self._arbeitskopie_daneben = daneben
-            if daneben:
-                rechts.grid_configure(row=0, column=1, padx=(32, 0), pady=(0, 0))
-            else:
-                rechts.grid_configure(row=3, column=0, padx=(0, 0), pady=(6, 0))
+            self._haken_ort = ort
+            for name, h in haken.items():
+                if name not in sichtbar:
+                    h.grid_remove()
+            for spalte, namen in enumerate(spalten):
+                for zeile, name in enumerate(namen):
+                    haken[name].grid(row=zeile, column=spalte, sticky="w", padx=(self.HAKEN_ABSTAND if spalte else 0, 0),
+                                     pady=(6 if zeile else 0, 0))
         except tk.TclError as exc:
             logger.debug("Haken nicht anordenbar: %s", exc)
 

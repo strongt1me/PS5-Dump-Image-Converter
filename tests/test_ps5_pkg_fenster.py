@@ -1162,14 +1162,15 @@ class FensterTests(unittest.TestCase):
         f = self._konsole()
         self.assertEqual("pack", f.fern_reihe.winfo_manager())
         self.assertEqual("", f.ziel_reihe.winfo_manager(), "der Zielordner auf dem PC passt hier nicht")
-        self.assertEqual("", f.ueberschreiben.winfo_manager())
+        self.assertEqual("", f.ueberschreiben.winfo_manager(), "ohne Zielordner auf dem PC kein Haken dafuer")
         self.assertEqual("10.0.0.5:/mnt/usb0/Alpha", f.ergebnis_var["output"].get())
         self.assertNotEqual("disabled", str(f.format_box.cget("state")))
         f.aktion_var.set("extrahieren")
         f._aktion_geaendert()
         self.assertEqual("", f.fern_reihe.winfo_manager())
         self.assertEqual("pack", f.ziel_reihe.winfo_manager())
-        self.assertEqual("pack", f.ueberschreiben.winfo_manager())
+        f._haken_anordnen(3000)
+        self.assertEqual("grid", f.ueberschreiben.winfo_manager(), "der Haken steht im Raster der Haken unter dem Zielordner")
 
     def test_ein_spielordner_kennt_die_aktion_nicht(self) -> None:
         self._laden("alpha.pkg")

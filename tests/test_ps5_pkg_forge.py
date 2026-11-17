@@ -1463,30 +1463,82 @@ class NachErfolgTests(_ForgeBasis):
         self.f.nach_erfolg_haken["loeschen"].invoke()
         self.assertTrue(self.app.quelle_loeschen_var.get())
 
-    def test_die_haken_stehen_unter_dem_zielordner_in_zwei_spalten(self) -> None:
-        self.f._seite_zeigen("umwandeln")
-        basis._pumpen(0.3)
-        h = self.f.nach_erfolg_haken
-        self.assertGreater(h["herunterfahren"].winfo_rooty(), self.f.ziel_feld.winfo_rooty())
-        self.assertLess(h["herunterfahren"].winfo_rooty(), h["senden"].winfo_rooty())
-        self.assertLess(h["senden"].winfo_rooty(), h["loeschen"].winfo_rooty())
-        self.assertEqual("grid", h["arbeitskopie"].winfo_manager())
-        self.assertEqual(h["herunterfahren"].winfo_rooty(), h["arbeitskopie"].winfo_rooty(), "die Arbeitskopie steht rechts daneben")
-        self.assertGreater(h["arbeitskopie"].winfo_rootx(), h["herunterfahren"].winfo_rootx() + 100)
+    REIHE = ("ueberschreiben", "arbeitskopie", "herunterfahren", "senden", "loeschen")
 
-    def test_bei_schmaler_karte_steht_die_arbeitskopie_unter_den_anderen_haken(self) -> None:
-        """Bei Mindestgroesse ragte der Haken rechts aus der Karte (``test_pkg_fpkg_seite``); wie im Hauptfenster rutscht er dann
-        unter die anderen."""
+    def _ort(self) -> "dict[str, tuple[int, int]]":
+        """(Zeile, Spalte) jedes Hakens im Raster; ein Haken, der nicht im Raster steht, fehlt."""
+        h = self.f.nach_erfolg_haken
+        return {n: (int(h[n].grid_info()["row"]), int(h[n].grid_info()["column"])) for n in h if h[n].winfo_manager() == "grid"}
+
+    def _breiten(self) -> "tuple[int, int, int]":
+        """Die Breite, ab der drei, zwei und eine Spalte nebeneinander passen (Nutzerwunsch 17.11.2026: weniger Hoehe)."""
         f = self.f
         f.win.update_idletasks()
+        w = {n: int(h.winfo_reqwidth()) for n, h in f.nach_erfolg_haken.items()}
+        a = f.HAKEN_ABSTAND
+        drei = max(w["ueberschreiben"], w["arbeitskopie"]) + max(w["herunterfahren"], w["senden"]) + w["loeschen"] + 2 * a
+        zwei = max(w["ueberschreiben"], w["arbeitskopie"], w["herunterfahren"]) + max(w["senden"], w["loeschen"]) + a
+        return drei, zwei, max(w.values())
+
+    def test_die_haken_stehen_unter_dem_zielordner_nebeneinander_statt_untereinander(self) -> None:
+        """Gemeldet am 17.11.2026: Alles stand links untereinander und brauchte Hoehe. Bei genug Breite sind es zwei Zeilen."""
+        f = self.f
+        f._seite_zeigen("umwandeln")
+        basis._pumpen(0.3)
         h = f.nach_erfolg_haken
-        links = max(int(h[n].winfo_reqwidth()) for n in ("herunterfahren", "senden", "loeschen"))
-        noetig = links + 32 + int(h["arbeitskopie"].winfo_reqwidth())
-        wo = lambda: (h["arbeitskopie"].grid_info()["row"], h["arbeitskopie"].grid_info()["column"])   # noqa: E731
-        for breite, ort in ((noetig, (0, 1)), (noetig - 1, (3, 0)), (3000, (0, 1)), (200, (3, 0))):
+        self.assertEqual(set(self.REIHE), set(h), "alle fuenf Haken: Ueberschreiben, Arbeitskopie und die drei Haken der Aufgabe 1")
+        for name in self.REIHE:
+            with self.subTest(haken=name):
+                self.assertEqual("grid", h[name].winfo_manager())
+                self.assertGreater(h[name].winfo_rooty(), f.ziel_feld.winfo_rooty(), "unter dem Zielordner")
+        spalten = f._haken_spalten(list(self.REIHE), int(f.nach_erfolg_rahmen.winfo_width()))
+        zeilen = {h[n].winfo_rooty() for n in self.REIHE}
+        self.assertEqual(max(len(s) for s in spalten), len(zeilen), "so viele Zeilen wie die laengste Spalte")
+        self.assertLess(len(zeilen), len(self.REIHE), "nicht alle untereinander")
+
+    def test_bei_genug_breite_stehen_die_haken_in_drei_spalten_mit_zwei_zeilen(self) -> None:
+        f = self.f
+        drei, _zwei, _eine = self._breiten()
+        for breite in (drei, 3000):
             with self.subTest(breite=breite):
                 f._haken_anordnen(breite)
-                self.assertEqual(ort, wo())
+                self.assertEqual({"ueberschreiben": (0, 0), "arbeitskopie": (1, 0), "herunterfahren": (0, 1), "senden": (1, 1),
+                                  "loeschen": (0, 2)}, self._ort())
+
+    def test_reicht_die_breite_nicht_fuer_drei_spalten_sind_es_zwei_dann_eine(self) -> None:
+        """Bei Mindestgroesse ragte ein Haken rechts aus der Karte (``test_pkg_fpkg_seite``): er rutscht nach unten."""
+        f = self.f
+        drei, zwei, eine = self._breiten()
+        zwei_spalten = {"ueberschreiben": (0, 0), "arbeitskopie": (1, 0), "herunterfahren": (2, 0), "senden": (0, 1), "loeschen": (1, 1)}
+        eine_spalte = {n: (i, 0) for i, n in enumerate(self.REIHE)}
+        self.assertLess(zwei, drei)
+        for breite, erwartet in ((drei - 1, zwei_spalten), (zwei, zwei_spalten), (zwei - 1, eine_spalte), (eine, eine_spalte),
+                                 (200, eine_spalte)):
+            with self.subTest(breite=breite):
+                f._haken_anordnen(breite)
+                self.assertEqual(erwartet, self._ort())
+
+    def test_ueberschreiben_gilt_nur_fuer_den_zielordner_auf_dem_pc(self) -> None:
+        """Bei "Auf die PS5 entpacken" gibt es keinen Zielordner auf dem PC: der Haken verschwindet, die vier uebrigen ruecken
+        zusammen; danach ist er wieder da."""
+        f = self.f
+        self.addCleanup(lambda: (f.aktion_var.set(fz.AKTION_UMWANDELN), f._konsole_zeilen_zeigen(), f._haken_anordnen(3000)))
+        f.aktion_var.set(fz.AKTION_KONSOLE)
+        f._konsole_zeilen_zeigen()
+        f._haken_anordnen(3000)
+        self.assertEqual("", f.nach_erfolg_haken["ueberschreiben"].winfo_manager())
+        self.assertEqual({"arbeitskopie": (0, 0), "herunterfahren": (1, 0), "senden": (0, 1), "loeschen": (1, 1)}, self._ort())
+        f.aktion_var.set(fz.AKTION_UMWANDELN)
+        f._konsole_zeilen_zeigen()
+        f._haken_anordnen(3000)
+        self.assertEqual("grid", f.nach_erfolg_haken["ueberschreiben"].winfo_manager())
+        self.assertEqual((0, 0), self._ort()["ueberschreiben"])
+
+    def test_ueberschreiben_haengt_weiter_an_seiner_variable(self) -> None:
+        h = self.f.nach_erfolg_haken["ueberschreiben"]
+        self.assertEqual(str(self.f.ueberschreiben_var), h.cget("variable"))
+        self.assertIs(h, self.f.ueberschreiben)
+        self.assertEqual(self.f.t("ps5pkg.overwrite"), h.cget("text"))
 
     # ---------------- die Rueckfrage vor dem Start ----------------
     def test_ohne_haken_wird_nicht_gefragt(self) -> None:
