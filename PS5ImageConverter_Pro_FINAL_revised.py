@@ -120,6 +120,7 @@ from ps5_validator.utils import ampr_updates
 from ps5_validator.utils import dlc_emu
 from ps5_validator.utils import fake_signieren
 from ps5_validator.utils import forge_cli
+from ps5_validator.utils import quellbericht
 from ps5_validator.utils import werkzeug_updates
 from ps5_validator.utils.tk_masse import cget_pixel
 from ps5_validator.utils.tk_bindungen import an_toplevel_binden
@@ -11065,10 +11066,7 @@ class PS5ConverterGUI:
             path_card, textvariable=self.ampr_version_var, state="readonly",
             font=(UI_SCHRIFT, pt(9)), values=(), width=14,
         )
-        self.ampr_version_combo.bind(
-            "<<ComboboxSelected>>",
-            lambda _e: self._save_setting("integrate_ampr_version", self.ampr_version_var.get()),
-        )
+        self.ampr_version_combo.bind("<<ComboboxSelected>>", lambda _e: self._ampr_version_gewaehlt())
 
         # Wie eingebaut wird: einzeln liegenlassen oder zusaetzlich in
         # gepackte Baender legen. Gespeichert wird die Kennung, nicht der
@@ -11097,12 +11095,7 @@ class PS5ConverterGUI:
         # ffpfsc (Aufgabe 2) erscheint nur bei Methode Asset-Pack. Der Refresh
         # laeuft NACH _on_ampr_methode_changed, das die Wahl ggf. auf Normal
         # zurueckfallen laesst - so spiegelt die Liste immer den Endzustand.
-        self.ampr_methode_combo.bind(
-            "<<ComboboxSelected>>",
-            lambda _e: (self._on_ampr_methode_changed(),
-                        self._ampr_pack_combo_schalten(),
-                        self._refresh_target_format_options()
-                        if hasattr(self, "format_combo") else None))
+        self.ampr_methode_combo.bind("<<ComboboxSelected>>", lambda _e: self._ampr_methode_gewaehlt())
         self._tooltip(self.ampr_methode_combo, "ampr_pack.methode_hint",
                       delay_ms=900, wraplength=430)
 
@@ -11217,10 +11210,7 @@ class PS5ConverterGUI:
             font=(UI_SCHRIFT, pt(9)),
             values=[str(f) for f in self._backport_firmwares()], width=4,
         )
-        self.backport_fw_combo.bind(
-            "<<ComboboxSelected>>",
-            lambda _e: self._save_setting("integrate_backport_fw", self.backport_fw_var.get()),
-        )
+        self.backport_fw_combo.bind("<<ComboboxSelected>>", lambda _e: self._backport_fw_gewaehlt())
 
         # Erst nur die programmnahen Ordner – deren Größe ist bekannt. Der
         # selbst gesetzte kommt gleich darauf nach, wenn das Fenster steht:
@@ -32952,6 +32942,8 @@ class PS5ConverterGUI:
                 self._playgo_vor_dem_lauf_klaeren(mode, src)
                 self._dlc_vor_dem_lauf_klaeren(mode, src)
                 self._fake_vor_dem_lauf_klaeren(mode, src)
+                # Was Dump Forge im Spiel gefunden hat und was dieser Lauf einbaut: nach den Rueckfragen, vor der Arbeit.
+                self._quellbericht_ins_protokoll(mode, src)
                 success = self._run_flexible_conversion(mode, src, dst)
             elif mode == "inspect":
                 success = self._mode_inspect(src)
@@ -37335,11 +37327,12 @@ class PS5ConverterGUI:
 
         Die Rueckfragen zu AMPR EMU, PlayGo und DLC EMU teilen sich die Antwort (``_quellfakten_zwischen``; sie wird zu
         Beginn jeder Rueckfragenreihe geleert, ``_ampr_vor_dem_lauf_klaeren``). Das gilt fuer einen Spielordner und fuer
-        jedes der vier Abbilder - auch ein ``.ffpkg``, das die eigene Dateiliste (``_abbild_eintraege``) nicht lesen kann.
+        jedes der vier Abbilder - auch ein ``.ffpkg``, das die eigene Dateiliste (``_abbild_eintraege``) nicht lesen kann -
+        und seit 17.11.2026 fuer ein ``.pkg`` (Forge liest es im Strom, ``forge_cli.ist_paket``).
         ``None``, wenn nicht nachzusehen war: keine Befehlszeile fuer diese Plattform, ein Archiv oder eine Quelle, die
         Forge nicht liest.
         """
-        if not (os.path.isdir(src) or forge_cli.ist_abbild(src)):
+        if not (os.path.isdir(src) or forge_cli.ist_abbild(src) or forge_cli.ist_paket(src)):
             return None
         zwischen = getattr(self, "_quellfakten_zwischen", None)
         if zwischen is None:
@@ -37581,6 +37574,53 @@ class PS5ConverterGUI:
             self.root.after(0, _im_fenster)
         except (AttributeError, RuntimeError, tk.TclError) as exc:
             logger.debug("BACKPORT-Kaestchen nicht nachziehbar: %s", exc)
+
+    def _einbau_liste(self) -> "list[str]":
+        """Was dieser Lauf einbaut, als Namen fuers Protokoll: ``AMPR EMU (Asset-Pack, zstd)``, ``PlayGo``, ``DLC EMU``, ``BACKPORT (FW 9)``.
+
+        Gelesen wird der Stand, der fuer den Lauf gilt (``_tk_wert``) - auch im Arbeitsfaden, auch nach den Rueckfragen vor
+        dem Lauf, die ein Kaestchen setzen koennen.
+        """
+        liste: list[str] = []
+        if self._tk_wert("ampr_integrate_var", False):
+            zusatz = ""
+            if self._ampr_methode() == AMPR_METHODE_ASSETPACK:
+                zusatz = " (Asset-Pack, %s)" % ("zstd" if self._ampr_pack_verfahren() == "zstd" else "LZ4")
+            liste.append("AMPR EMU" + zusatz)
+        if self._tk_wert("ampr_playgo_var", False):
+            liste.append("PlayGo")
+        if self._tk_wert("dlc_integrate_var", False):
+            liste.append("DLC EMU")
+        if self._tk_wert("backport_integrate_var", False):
+            liste.append("BACKPORT (FW %s)" % self._tk_wert("backport_fw_var", ""))
+        return liste
+
+    def _quellbericht_ins_protokoll(self, mode: str, src: str) -> None:
+        """Schreibt ins Protokoll, was Dump Forge im Spiel gefunden hat (AMPR EMU, Asset-Packs, PlayGo, DLC, BACKPORT) und was einbaut wird.
+
+        Nutzerwunsch 17.11.2026: Der Anwender soll sehen, ob das Programm selbst erkannt hat, was im Spiel liegt und was
+        fehlt - nicht nur, wenn eine Rueckfrage kommt. Steht nach den Rueckfragen (``*_vor_dem_lauf_klaeren``), vor der
+        Arbeit; die Antwort von Forge ist dann schon im Zwischenspeicher (``_quellfakten_zwischen``). Nicht pruefbar
+        (Archiv, keine Befehlszeile, Quelle nicht lesbar) steht als eigene Zeile da. Die Sammelkonvertierung fragt gesammelt
+        und schreibt ihre eigenen Zeilen.
+        """
+        if mode not in self._MODE_TARGET_OPTIONS or mode == "batch_convert":
+            return
+        try:
+            fakten = self._quellfakten_der_quelle(src)
+            if not getattr(self, "is_running", True):
+                return
+            if fakten is None:
+                self._append_to_log(self._t("bericht.nicht_pruefbar"))
+            else:
+                konsole = self._konsole_fw_bekannt() or ""
+                for text in quellbericht.protokoll(quellbericht.zeilen(fakten, self._t, konsole), self._t):
+                    self._append_to_log(text)
+            liste = self._einbau_liste()
+            self._append_to_log(self._t("bericht.einbau", liste=", ".join(liste)) if liste
+                                else self._t("bericht.einbau_nichts"))
+        except Exception as exc:  # noqa: BLE001 - eine Auskunft, kein Hindernis fuer den Lauf
+            logger.debug("Bericht zur Quelle nicht schreibbar: %s", exc)
 
     #: Die Kaestchen, die die Sammelkonvertierung je Spiel setzen kann: (Tk-Variable, Anzeigename, Text der Listenzeile).
     _BATCH_EMULATOREN = (("ampr_integrate_var", "AMPR EMU", "batch.emu_zeile_ampr"),
@@ -38384,6 +38424,28 @@ class PS5ConverterGUI:
             return
         self._save_setting(self._AMPR_VOLL_PRUEFEN_SETTING, neu)
         logger.info("Vollstaendige Pruefung der zstd-Packs: %s", "an" if neu else "aus (Stichprobe)")
+
+    # Die drei Befehle der Auswahllisten in der Einbau-Zeile. Sie standen als Lambdas an den Listen; seit dem 17.11.2026
+    # ruft sie auch die Einbau-Karte der Seite 7 (``ps5_validator/ui/pkg_einbau_karte.py``) - eine Stelle fuer beide.
+    def _ampr_version_gewaehlt(self) -> None:
+        """Die Fassung von AMPR EMU wurde gewaehlt: merken."""
+        self._save_setting("integrate_ampr_version", self.ampr_version_var.get())
+
+    def _ampr_methode_gewaehlt(self) -> None:
+        """Die Methode (Normal / Asset-Pack) wurde gewaehlt.
+
+        Nach dem Methodenwechsel die Zielformat-Liste neu bewerten: ffpfsc -> ffpfsc (Aufgabe 2) erscheint nur bei Methode
+        Asset-Pack. Der Refresh laeuft NACH ``_on_ampr_methode_changed``, das die Wahl ggf. auf Normal zurueckfallen laesst -
+        so spiegelt die Liste immer den Endzustand.
+        """
+        self._on_ampr_methode_changed()
+        self._ampr_pack_combo_schalten()
+        if hasattr(self, "format_combo"):
+            self._refresh_target_format_options()
+
+    def _backport_fw_gewaehlt(self) -> None:
+        """Die Firmware von BACKPORT wurde gewaehlt: merken."""
+        self._save_setting("integrate_backport_fw", self.backport_fw_var.get())
 
     def _on_ampr_methode_changed(self) -> None:
         """Prueft die Voraussetzungen, sobald die neue Methode gewaehlt wird.

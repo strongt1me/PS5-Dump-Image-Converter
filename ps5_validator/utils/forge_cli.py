@@ -102,6 +102,18 @@ def dateiname_fuer(titel: str, kennung: str = "") -> str:
     return stamm + ".pkg"
 
 
+def stamm_kuerzen(dateiname: str, grenze: int = STAMM_GRENZE) -> str:
+    """Kuerzt den Namen ohne Endung auf ``grenze`` Bytes (UTF-8, an einer Zeichengrenze, ohne Leerzeichen und Punkte am Ende)."""
+    stamm, endung = os.path.splitext(str(dateiname))
+    kurz = stamm.encode("utf-8")[:max(1, int(grenze))].decode("utf-8", errors="ignore").rstrip(" .")
+    return (kurz or "Spiel") + endung
+
+
+def ist_paket(pfad: str) -> bool:
+    """Ein ``.pkg`` (Datei): Forge liest es im Strom (``inspect``, ``convert``), ohne etwas zu entpacken."""
+    return os.path.splitext(str(pfad))[1].lower() == ".pkg" and os.path.isfile(str(pfad))
+
+
 def abbild_art(pfad: str) -> str:
     """Forges Formatname (``ffpkg``, ``ffpfsc``, ``ffpfs``, ``exfat``) einer Abbilddatei nach der Endung, sonst ``""``."""
     return ENDUNGEN_ABBILD.get(os.path.splitext(str(pfad))[1].lower(), "")
@@ -369,12 +381,31 @@ class ForgeBau:
     proben: int = 0
 
 
+#: Die Abbildformate, in die ``convert`` ein Paket (oder einen Ordner) im Strom schreibt - ohne Zwischenordner.
+ABBILD_ZIELE = ("ffpkg", "ffpfsc", "ffpfs", "exfat")
+
+#: So viele Bytes darf der Name einer ``.ffpfsc`` ohne Endung haben (Forge: ``preflight::stem_limit``, 58 statt 63).
+STAMM_GRENZE_FFPFSC = 58
+
+
 def convert_argumente(quelle: str, ziel: str, *, kraken: str = "fast", voll_pruefen: bool = False,
-                      backport_entfernen: bool = False, kerne: int = 0) -> "list[str]":
-    """Die Argumente fuer ``ps5-dump-forge convert <Quelle> --to pkg`` (rein, ohne Start - das ist testbar)."""
+                      backport_entfernen: bool = False, kerne: int = 0, format: str = "pkg",
+                      stufe: "int | None" = None) -> "list[str]":
+    """Die Argumente fuer ``ps5-dump-forge convert <Quelle> --to <Format>`` (rein, ohne Start - das ist testbar).
+
+    ``format`` ist ``pkg`` (Vorgabe; dann gilt ``kraken``) oder eines der Abbildformate :data:`ABBILD_ZIELE`; fuer ``ffpfsc``
+    nimmt ``stufe`` (0 bis 9) die zlib-Stufe (``--level``). Ein Paket (``.pkg``) als Quelle liest Forge im Strom - es wird
+    nichts entpackt (gemessen 17.11.2026: ``.pkg`` -> ``.ffpkg``, ``.exfat`` und Ordner ohne Zwischenordner).
+    """
+    if format != "pkg" and format not in ABBILD_ZIELE:
+        raise wz.Fehler("Unbekanntes Zielformat: %s" % format)
     if kraken not in KRAKEN_STUFEN:
         raise wz.Fehler("Unbekannte Kompressionsstufe: %s" % kraken)
-    argumente = ["convert", quelle, "--to", "pkg", "-o", ziel, "--kraken", kraken]
+    argumente = ["convert", quelle, "--to", format, "-o", ziel]
+    if format == "pkg":
+        argumente += ["--kraken", kraken]
+    elif format == "ffpfsc" and stufe is not None and 0 <= int(stufe) <= 9:
+        argumente += ["--level", str(int(stufe))]
     if int(kerne) > 0:
         argumente += ["--threads", str(int(kerne))]
     if voll_pruefen:
@@ -446,8 +477,12 @@ class _Strom:
 def bauen(werkzeug: str, quelle: str, ziel: str, *, kraken: str = "fast", voll_pruefen: bool = False,
           backport_entfernen: bool = False, kerne: int = 0, zeile: "_Zeile | None" = None,
           fortschritt: "Callable[[int, str], None] | None" = None, abbruch: "_Abbruch | None" = None,
-          popen_extra: "dict | None" = None, vorspann: "tuple[str, ...]" = ()) -> ForgeBau:
+          popen_extra: "dict | None" = None, vorspann: "tuple[str, ...]" = (), format: str = "pkg",
+          stufe: "int | None" = None) -> ForgeBau:
     """Baut aus einem Spielordner oder Abbild ein Debug-Paket (``convert --to pkg``) und gibt das Ergebnis zurueck.
+
+    Mit ``format`` eines der Abbildformate (:data:`ABBILD_ZIELE`) entsteht statt des Pakets ein Abbild - aus einem Ordner,
+    einem Abbild oder einem ``.pkg``, im Strom und ohne Zwischenordner (``stufe``: zlib-Stufe fuer ``ffpfsc``).
 
     Args:
         ziel: Der vollstaendige Pfad der entstehenden ``.pkg`` (**Datei**). Forge schreibt zuerst ``<ziel>.<Kennung>.part``
@@ -466,7 +501,8 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, kraken: str = "fast", voll_p
             beim Abbruch (``wz.laufen`` beendet den Prozess samt Kindern; das Fenster raeumt die ``.part`` danach weg).
     """
     argumente = [*vorspann, *convert_argumente(quelle, ziel, kraken=kraken, voll_pruefen=voll_pruefen,
-                                               backport_entfernen=backport_entfernen, kerne=kerne)]
+                                               backport_entfernen=backport_entfernen, kerne=kerne, format=format,
+                                               stufe=stufe)]
     os.makedirs(os.path.dirname(os.path.abspath(ziel)) or ".", exist_ok=True)
     strom = _Strom(zeile, fortschritt)
     rc, aus = wz.laufen(werkzeug, argumente, zeile=strom.jede, abbruch=abbruch, popen_extra=popen_extra)

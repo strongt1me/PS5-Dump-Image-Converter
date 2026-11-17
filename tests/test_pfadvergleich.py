@@ -266,7 +266,8 @@ class EngineUeberschreibTests(_Ablage):
                      "_selbstziel_reste_entfernen", "_reste_nach_lauf", "_temp_reste_nach_aufgabe_abraeumen",
                      "_hauptfaden_planen", "_ampr_vor_dem_lauf_klaeren", "_backport_vor_dem_lauf_klaeren",
                      "_ampr_ng_vor_dem_lauf_hinweisen",
-                     "_playgo_vor_dem_lauf_klaeren", "_dlc_vor_dem_lauf_klaeren", "_fake_vor_dem_lauf_klaeren"):
+                     "_playgo_vor_dem_lauf_klaeren", "_dlc_vor_dem_lauf_klaeren", "_fake_vor_dem_lauf_klaeren",
+                     "_quellbericht_ins_protokoll"):
             setattr(gui, name, lambda *a, **k: None)
         gui._snapshot_exit_cleanup_paths = lambda: set()
         gui._archiv_schatten_vorbereiten = lambda *a, **k: True

@@ -44,7 +44,9 @@ from ps5_validator.utils import pkg_direkt
 from ps5_validator.utils import ps5_pkg_optionen as opt
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
 from ps5_validator.utils import prospero_pkg_tool as ppt
+from ps5_validator.utils import quellbericht as qb
 from ps5_validator.ui import hauptknoepfe
+from ps5_validator.ui import pkg_einbau_karte as einbau_ui
 from ps5_validator.ui import ps5_pkg_optionen as optionen_ui
 from ps5_validator.ui import pkg_datei_browser as browser_ui
 from ps5_validator.ui import spiel_detail_fenster as detail_ui
@@ -65,6 +67,8 @@ EINST_FORMAT = "ps5pkg_format"
 EINST_BIBLIOTHEK = "ps5pkg_bibliothek"
 EINST_AKTION = "ps5pkg_aktion"
 EINST_FERN = "ps5pkg_fern"
+#: Der Anwender wurde gefragt, ob Dump Forge statt eines Werkzeugs mit Arbeitsordner (LibProsperoPkg, ProsperoPkgTool) baut.
+EINST_BAUER_GEFRAGT = "ps5pkg_bauer_gefragt"
 
 AKTION_UMWANDELN = "umwandeln"
 AKTION_EXTRAHIEREN = "extrahieren"
@@ -244,7 +248,7 @@ class Ps5PkgFenster:
         self.format_schluessel = "ffpfsc"
         self._sperre = threading.Lock()
         self._z: dict = {"zeilen": [], "prozent": None, "schritt_text": None, "schritt": None, "fertig": None,
-                         "gelesen": [], "lesen_laeuft": 0, "scan": []}
+                         "gelesen": [], "lesen_laeuft": 0, "scan": [], "bericht": []}
         self._abbruch = False
         self._schliesst = False
         self._wandert = False                      # Schrittbalken im unbestimmten Modus (_balken_wandern)
@@ -259,6 +263,8 @@ class Ps5PkgFenster:
         self._werkzeug_ppt_pfad = ""
         self._werkzeug_forge_pfad = ""
         self._befunde_gezeigt: "set[str]" = set()   # Quellen, deren Vorabbefunde schon im Protokoll stehen
+        self.einbau = None                         # die Einbau-Karte der Seite (``_seite_umwandeln``)
+        self._bericht_faden: "tuple | None" = None  # (Quelle, Faden) der laufenden Pruefung - ein Bau wartet darauf
         self._bauen(vorgabe)
         self._takt()
 
@@ -637,17 +643,31 @@ class Ps5PkgFenster:
         fern.bind("<Configure>", lambda e: hinweis.configure(wraplength=max(120, e.width - 6)), add="+")
 
         # ZIELFORMAT
-        formate = self._karte(konf, "ps5pkg.card_format", flach=True)
+        formate = self._karte(konf, "", flach=True)
         formate.grid(row=basis, column=0, sticky="ew")
+        # Wie im Hauptfenster stehen ZIELFORMAT, KOMPRESSION (PFS), WORKER-THREADS und PRUEFUNG in einer Zeile (Nutzerwunsch
+        # 17.11.2026: "so aussieht wie bei Aufgabe 1 bis 6"); darunter BEIM ERSTELLEN EINBAUEN und die Pruefung der Quelle.
+        kopfzeile = tk.Frame(formate, bg=c["bg_main"])
+        kopfzeile.pack(fill="x", anchor="w")
+        format_block = tk.Frame(kopfzeile, bg=c["bg_main"])
+        format_block.pack(side="left", anchor="n")
+        tk.Label(format_block, text=t("ps5pkg.card_format").upper(), font=(F, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(anchor="w", pady=(0, 5))
         # Seit 31.10.2026 (Nutzerwunsch) ein Auswahlfeld wie ZIELFORMAT bei Aufgabe 1 (direkt unter QUELLE) statt fuenf
         # Kacheln und der Aktionszeile: die fuenf Formate ("Umwandeln zu ...") und die Aktionen Extrahieren, Pruefen und
         # Auf die PS5 entpacken. Wirkung wie zuvor: ``_format_waehlen`` und ``_aktion_geaendert``.
         self.format_var = tk.StringVar(value="")
-        self.format_box = pw.Combobox(formate, textvariable=self.format_var, state="readonly", width=34,
+        self.format_box = pw.Combobox(format_block, textvariable=self.format_var, state="readonly", width=24,
                                       values=tuple(e[2] for e in self._format_eintraege()), font=(F, pt(10)))
         self.format_box.pack(anchor="w")
         self.format_box.bind("<<ComboboxSelected>>", self._format_gewaehlt)
         self._format_anzeigen()
+        # Wie die Karte der Aufgaben 1 bis 6 (Nutzerwunsch 17.11.2026): KOMPRESSION (PFS), WORKER-THREADS, PRUEFUNG, BEIM
+        # ERSTELLEN EINBAUEN (AMPR EMU, PlayGo, DLC EMU, BACKPORT) und die Pruefung der Quelle - mit denselben Variablen und
+        # Befehlen wie dort (``pkg_einbau_karte``). Der Lauf, der aus diesem Fenster an Aufgabe 1 geht, liest genau diese Felder.
+        self.einbau = einbau_ui.EinbauKarte(self, formate)
+        self.einbau.kopf_bauen(kopfzeile)
+        self.einbau.rahmen.pack(fill="x", anchor="w", pady=(12, 0))
 
         # AUFTRAG
         auftrag = self._karte(links, "ps5pkg.card_job", flach=True)
@@ -678,6 +698,13 @@ class Ps5PkgFenster:
         # expand: steht mittig im freien Raum zwischen den Knoepfen und der Unterkante der Karte (Nutzer 14.10.2026)
         datei_zeile.pack(fill="x", expand=True, pady=(10, 0))
         auftrag.bind("<Configure>", lambda e: datei_zeile.configure(wraplength=max(120, e.width - 4)), add="+")
+        # Das Lebenszeichen (Nutzerwunsch 17.11.2026: "man sieht nicht, ob etwas passiert, oder ob das Programm haengt"):
+        # wie lange der Lauf schon geht, mit welchem Werkzeug, und - wenn es still wird - seit wann nichts Neues kam.
+        self.lebt_var = tk.StringVar(value="")
+        lebt_zeile = tk.Label(auftrag, textvariable=self.lebt_var, font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
+                              anchor="w", justify="left")
+        lebt_zeile.pack(fill="x", pady=(4, 0))
+        auftrag.bind("<Configure>", lambda e: lebt_zeile.configure(wraplength=max(120, e.width - 4)), add="+")
 
         # ERGEBNIS (Ausgabe, Titel-ID, Inhalt, Groesse, Freier Platz): Die Chips sind seit 31.10.2026 nicht mehr zu sehen
         # (Nutzerwunsch); die Werte werden weiter gefuellt (``_ergebnis_fuellen``), die Anzeige entfaellt.
@@ -829,6 +856,7 @@ class Ps5PkgFenster:
         self._merken(EINST_FORMAT, schluessel)
         self._format_anzeigen()
         self._ergebnis_fuellen()
+        self._bericht_neu_zeigen()
         if schluessel in FORMATE_MIT_RUCKELHINWEIS:
             # Wie im Hauptfenster (``_format_hinweis_setzen``): das Tempo der Entpackung und die Empfehlung, ein Satz.
             self._status(self.t("main.pfs_speed_hint"))
@@ -1640,6 +1668,7 @@ class Ps5PkgFenster:
                 self._protokoll("[Dump Forge] %s" % befund)
         self._cover_zeigen(info)
         self._spielinfo_zeigen(info)
+        self._bericht_aktualisieren()            # die Pruefung der Quelle: AMPR EMU, Packs, PlayGo, DLC, BACKPORT
         self.tech.delete(*self.tech.get_children())
         for eig, wert in uebersicht(info, self.t, self._fmt):
             self.tech.insert("", "end", values=(eig, wert))
@@ -1794,6 +1823,7 @@ class Ps5PkgFenster:
         self._format_anzeigen()
         self._ergebnis_fuellen()
         self._knoepfe_pruefen()
+        self._bericht_neu_zeigen()
 
     def _knoepfe_pruefen(self) -> None:
         laeuft = self._job is not None or self._uebergabe is not None
@@ -2018,8 +2048,11 @@ class Ps5PkgFenster:
         aktion = self.aktion_var.get()
         # Den Bau eines Pakets aus einem Abbild (oder, nach der Wahl in den Optionen, aus einem Spielordner) macht
         # Dump Forge: Es braucht weder ffpfsc-pkg-tool noch die .NET-Laufzeit.
-        forge_weg = (info.ist_quelle and aktion == AKTION_UMWANDELN and self.format_schluessel == FORMAT_PAKET
-                     and self._bauer_fuer(info) == "forge")
+        # Ein ``.pkg`` schreibt Dump Forge im Strom in ein Abbild (Nutzerwunsch 17.11.2026, kein Zwischenordner): auch dafuer
+        # braucht es weder ffpfsc-pkg-tool noch die .NET-Laufzeit.
+        direkt = aktion == AKTION_UMWANDELN and not info.ist_quelle and self._abbild_direkt_moeglich(info)
+        forge_weg = direkt or (info.ist_quelle and aktion == AKTION_UMWANDELN and self.format_schluessel == FORMAT_PAKET
+                               and self._bauer_fuer(info) == "forge")
         if forge_weg:
             if not self._werkzeug_forge():
                 self._fehler(self.t("ps5pkg.err_no_tool_forge"))
@@ -2070,6 +2103,10 @@ class Ps5PkgFenster:
             if not self._uebergeben(info.pfad):
                 self._uebergabe = None
             self._knoepfe_pruefen()
+            return
+        # Ein Paket schreibt Dump Forge im Strom in das Abbild: ohne Entpacken, ohne Arbeitsordner.
+        if direkt:
+            self._forge_bauen_starten(info, ziel, abbild=self.format_schluessel)
             return
         arbeit = self._arbeitsordner()
         if not self._platz_reicht(arbeit, int(info.groesse * ENTPACKT_FAKTOR)):
@@ -2174,7 +2211,7 @@ class Ps5PkgFenster:
                 liste.append(self.t(text))
         return liste
 
-    def _forge_bauen_starten(self, info: "wz.PaketInfo", ziel: str) -> None:
+    def _forge_bauen_starten(self, info: "wz.PaketInfo", ziel: str, abbild: str = "") -> None:
         """Baut das Paket mit Dump Forge: Name und Platz pruefen, Arbeitsordner im Zielordner anlegen, los.
 
         Dump Forge prueft die Quelle selbst (Vorabbefunde, Kennungen, Signaturen) und das Ergebnis danach (Struktur und
@@ -2184,17 +2221,24 @@ class Ps5PkgFenster:
         if not self._werkzeug_forge():
             self._fehler(self.t("ps5pkg.err_no_tool_forge"))
             return
-        datei = os.path.join(ziel, self._forge_dateiname(info))
-        # Ein Paket gleichen Namens im Ziel wird nur mit dem Haken ersetzt, und erst, wenn das neue fertig und geprueft ist.
+        # ``abbild``: das Formatkuerzel (``ffpkg`` usw.), wenn Forge ein Paket direkt in ein Abbild wandelt - im Strom, ohne
+        # Entpacken (Nutzerwunsch 17.11.2026: kein Zwischenordner in Aufgabe 7). Leer: das Paket wird gebaut.
+        name = self._forge_abbild_name(info, abbild) if abbild else self._forge_dateiname(info)
+        datei = os.path.join(ziel, name)
+        # Eine Datei gleichen Namens im Ziel wird nur mit dem Haken ersetzt, und erst, wenn die neue fertig und geprueft ist.
         if os.path.exists(datei) and not self.ueberschreiben_var.get():
-            messagebox.showinfo(self.t("ps5pkg.window_title"), self.t("ps5pkg.err_exists_pkg", pfad=datei), parent=self.win)
+            messagebox.showinfo(self.t("ps5pkg.window_title"),
+                                self.t("ps5pkg.err_exists_abbild" if abbild else "ps5pkg.err_exists_pkg", pfad=datei),
+                                parent=self.win)
             return
-        if not self._platz_reicht(ziel, int(info.groesse * FORGE_PLATZ_FAKTOR), nachfragen=True):
+        if not self._platz_reicht(ziel, int(info.groesse * (ENTPACKT_FAKTOR if abbild else FORGE_PLATZ_FAKTOR)),
+                                  nachfragen=True):
             return
-        if not self._emulatoren_fragen(info):
+        if not abbild and not self._emulatoren_fragen(info):
             return
-        for text in self._forge_ignorierte_optionen():
-            self._protokoll(self.t("ps5pkg.forge_ignoriert", option=text))
+        if not abbild:
+            for text in self._forge_ignorierte_optionen():
+                self._protokoll(self.t("ps5pkg.forge_ignoriert", option=text))
         # Der Bau entsteht im Zielordner (gleiches Laufwerk: das Umbenennen am Ende kostet nichts), unter einem
         # Arbeitsordner, den das Fenster bei Abbruch oder Fehler wieder entfernt.
         try:
@@ -2202,8 +2246,15 @@ class Ps5PkgFenster:
         except OSError:
             temp = tempfile.mkdtemp(prefix="ps5conv_forge_", dir=self._arbeitsordner())
         self._staging.append(temp)
-        self._bau = {"temp": temp, "vorher": set(os.listdir(ziel)), "forge": True}
-        self._job_starten("bauen", self._lauf_bauen, info, ziel)
+        self._bau = {"temp": temp, "vorher": set(os.listdir(ziel)), "forge": True, "format": abbild or "pkg", "name": name}
+        self._job_starten("abbild" if abbild else "bauen", self._lauf_bauen, info, ziel)
+
+    def _forge_abbild_name(self, info: "wz.PaketInfo", abbild: str) -> str:
+        """Der Name des Abbilds, das Dump Forge aus diesem Paket schreibt: wie bei den Aufgaben 1 bis 6, auf Forges Grenze gekuerzt."""
+        endung = next((e for s, _n, e in FORMATE if s == abbild), "." + abbild)
+        name = (anzeigename(info) + endung)
+        grenze = forge.STAMM_GRENZE_FFPFSC if abbild == "ffpfsc" else forge.STAMM_GRENZE
+        return forge.stamm_kuerzen(name, grenze)
 
     def _quellfakten(self, info: "wz.PaketInfo") -> "forge.QuellFakten | None":
         """Forges Fakten zur Quelle (DLC, PlayGo, AMPR): bei einem Abbild aus dem Lesen, bei einem Spielordner jetzt.
@@ -2211,10 +2262,13 @@ class Ps5PkgFenster:
         Einen Spielordner liest ``ffpfsc-pkg-tool`` - Dump Forge sieht ihn erst hier (``inspect``, meist unter einer
         Sekunde; die Listen der Bibliothek bleiben so schnell). Das Ergebnis bleibt an der Quelle haengen.
         """
+        faden = getattr(self, "_bericht_faden", None)
+        if info.fakten is None and faden is not None and faden[0] is info and faden[1].is_alive():
+            faden[1].join(60)                    # die Pruefung der Karte laeuft schon fuer diese Quelle: nicht noch einmal lesen
         if info.fakten is not None:
             return info.fakten
         exe = self._werkzeug_forge()
-        if not exe or not info.ist_ordner:
+        if not exe or not (info.ist_ordner or forge.ist_paket(info.pfad)):
             return None
         self._status(self.t("ps5pkg.emu_pruefen"))
         try:
@@ -2225,35 +2279,103 @@ class Ps5PkgFenster:
         return info.fakten
 
     def _emulatoren_fragen(self, info: "wz.PaketInfo") -> bool:
-        """Vor dem Bau: fehlen der Quelle DLC EMU oder PlayGo, obwohl das Spiel sie braucht? Dann fragen, ob trotzdem gebaut wird.
+        """Vor dem Bau: sucht im Spiel nach AMPR EMU, Asset-Packs, PlayGo, DLC und BACKPORT und fragt, wenn etwas fehlt.
 
-        Dump Forge uebernimmt ``fakelib`` der Quelle unveraendert ins Paket (gemessen am Abbild mit AMPR EMU, PlayGo und
-        Backport: das Paket traegt alle drei) - was dort fehlt, fehlt im Paket. Einlegen laesst es sich in ein Abbild nicht;
-        der Weg ist ein Abbild aus den Aufgaben 1 bis 6 mit den Kaestchen DLC EMU und PlayGo, daraus das Paket. AMPR EMU
-        fragt der Bau nicht: Dump Forge legt ihn fuer ein Spiel, das ``libSceAmpr`` laedt, selbst dazu.
+        Nutzerwunsch 17.11.2026: Die Seite soll wie die Aufgaben 1 bis 6 selbst nachsehen und fragen. Die Antwort von Dump
+        Forge (``inspect``) steht als Bericht im Protokoll - auch wenn nichts fehlt. Fehlt etwas, das das Spiel braucht,
+        fragt das Fenster: Dump Forge uebernimmt die Programmdateien und ``fakelib`` der Quelle unveraendert ins Paket
+        (gemessen am Abbild mit AMPR EMU, PlayGo und Backport: das Paket traegt alle drei), ein Paket nimmt also nichts auf.
+        Bei einem Spielordner bietet die Frage den Weg an, der es kann: ein Abbild (``.ffpkg``) mit den Kaestchen der
+        Aufgabe 1 (:meth:`_als_abbild_mit_einbau`). Bei einem Abbild bleibt nur "trotzdem bauen" - in ein fertiges Abbild laesst
+        sich nichts einlegen. AMPR EMU legt Dump Forge fuer ein Spiel, das ``libSceAmpr`` laedt, selbst dazu (Hinweis, keine
+        Frage); LibProsperoPkg und ProsperoPkgTool tun es nicht.
 
         Returns:
-            ``False``, wenn der Anwender nicht bauen will.
+            ``False``, wenn nicht gebaut wird (abgebrochen, oder als Abbild neu gestartet).
         """
-        fakten = self._quellfakten(info)
-        if fakten is None:
+        fakten, fehlt, liste = self._quelle_pruefen(info, paket=True)
+        if not fehlt:
             return True
-        zeilen: list[str] = []
-        if fakten.dlc_fehlt:
-            zeilen.append(self.t("ps5pkg.emu_zeile_dlc", merkmal=fakten.dlc_merkmal or "-"))
-        if fakten.playgo_fehlt:
-            zeilen.append(self.t("ps5pkg.emu_zeile_playgo", merkmal=fakten.playgo_merkmal))
-        backport = self._backport_zeile(fakten)
-        if backport:
-            zeilen.append(backport)
-        if not zeilen:
-            return True
-        if not messagebox.askyesno(self.t("ps5pkg.emu_titel"), self.t("ps5pkg.emu_frage", liste="\n".join(zeilen)),
-                                   parent=self.win):
+        if self._abbild_mit_einbau_moeglich(info):
+            gewaehlt = self.g._auswahl_dialog(
+                self.t("ps5pkg.emu_titel"), self.t("ps5pkg.emu_frage_wahl", liste=liste),
+                [self.t("ps5pkg.emu_wahl_abbild"), self.t("ps5pkg.emu_wahl_paket")], parent=self.win)
+            if not gewaehlt:
+                self._status(self.t("ps5pkg.emu_abgebrochen"))
+                return False
+            if gewaehlt == self.t("ps5pkg.emu_wahl_abbild"):
+                self._als_abbild_mit_einbau(info, fakten, fehlt)
+                return False
+        elif not messagebox.askyesno(self.t("ps5pkg.emu_titel"), self.t("ps5pkg.emu_frage", liste=liste),
+                                     parent=self.win):
             self._status(self.t("ps5pkg.emu_abgebrochen"))
             return False
         self._protokoll(self.t("ps5pkg.emu_log"))
         return True
+
+    def _quelle_pruefen(self, info: "wz.PaketInfo", paket: bool) -> "tuple[forge.QuellFakten | None, list[str], str]":
+        """Sucht in der Quelle nach AMPR EMU, Packs, PlayGo, DLC und BACKPORT, schreibt den Bericht und liefert, was fehlt.
+
+        Returns:
+            ``(Fakten, Schluessel dessen, was fehlt, die Punkte dazu als Text fuer die Frage)``; ohne Fakten (Quelle nicht
+            pruefbar) steht eine Zeile im Protokoll und es fehlt nichts.
+        """
+        fakten = self._quellfakten(info)
+        if fakten is None:
+            self._protokoll(self.t("bericht.nicht_pruefbar"))
+            return None, [], ""
+        # BACKPORT zuerst: Kennt das Programm die Firmware der Konsole nicht, fragt es hier einmal (``_backport_plan``).
+        backport = self._backport_zeile(fakten)
+        konsole = self.g._konsole_fw_bekannt() or ""
+        zeilen = qb.zeilen(fakten, self.t, konsole, forge_ergaenzt_ampr=paket and self._bauer_fuer(info) == "forge")
+        for text in qb.protokoll(zeilen, self.t):
+            self._protokoll(text)
+        self._protokoll(self.t("bericht.einbau_paket" if paket else "bericht.einbau_nichts"))
+        fehlt = [s for s in qb.fehlendes(zeilen) if s != "backport" or backport]
+        punkte = {"ampr": lambda: self.t("ps5pkg.emu_zeile_ampr"),
+                  "dlc": lambda: self.t("ps5pkg.emu_zeile_dlc", merkmal=fakten.dlc_merkmal or "-"),
+                  "playgo": lambda: self.t("ps5pkg.emu_zeile_playgo", merkmal=fakten.playgo_merkmal),
+                  "backport": lambda: backport}
+        return fakten, fehlt, "\n".join(punkte[s]() for s in fehlt)
+
+    def _abbild_mit_einbau_moeglich(self, info: "wz.PaketInfo") -> bool:
+        """Kann dieselbe Quelle als Abbild mit den Kaestchen der Aufgabe 1 entstehen? Nur ein Spielordner, und nur, wenn Aufgabe 1 frei ist."""
+        return bool(info.ist_ordner and not getattr(self.g, "is_running", False))
+
+    def _als_abbild_mit_einbau(self, info: "wz.PaketInfo", fakten: "forge.QuellFakten", fehlt: "list[str]") -> None:
+        """Haekt an, was fehlt (die Kaestchen der Aufgabe 1), stellt das Format auf ``.ffpkg`` und startet noch einmal.
+
+        Das Format wird **nicht gemerkt** (``_merken``): Es gilt fuer diesen Lauf, die Wahl des Anwenders bleibt. Der Lauf geht
+        an Aufgabe 1 und stellt dort die uebrigen Rueckfragen (Fassung und Packverfahren von AMPR EMU usw.).
+        """
+        namen = self._einbau_ankreuzen(fakten, fehlt)
+        self.format_schluessel = "ffpkg"
+        self._format_anzeigen()
+        self._ergebnis_fuellen()
+        self._protokoll(self.t("ps5pkg.emu_abbild_log", liste=", ".join(namen) or "-"))
+        self.win.after(150, self._starten)
+
+    def _einbau_ankreuzen(self, fakten: "forge.QuellFakten", fehlt: "list[str]") -> "list[str]":
+        """Haekt die Kaestchen der Aufgabe 1 fuer das an, was fehlt (dieselben Wege wie die Rueckfragen dort); liefert ihre Namen."""
+        g = self.g
+        namen: list[str] = []
+        for schluessel in fehlt:
+            if schluessel == "ampr" and getattr(g, "_ampr_versionsauswahl", None):
+                g._ampr_einschalten()
+                namen.append("AMPR EMU")
+            elif schluessel == "playgo":
+                g._playgo_einschalten()
+                namen.append("PlayGo")
+            elif schluessel == "dlc":
+                g._dlc_einschalten()
+                namen.append("DLC EMU")
+            elif schluessel == "backport":
+                plan = g._backport_plan(fakten, erfragen=False)
+                if plan is not None:
+                    g._backport_einschalten(plan[1])
+                    namen.append("BACKPORT")
+        self._einbau_abgleichen()
+        return namen
 
     def _backport_zeile(self, fakten: "forge.QuellFakten") -> str:
         """Die Zeile zu BACKPORT, wenn das Spiel eine neuere Firmware verlangt, als die Konsole hat - sonst ``""``.
@@ -2266,6 +2388,180 @@ class Ps5PkgFenster:
         if plan is None:
             return ""
         return self.t("ps5pkg.emu_zeile_backport", spiel=fakten.verlangt_text, konsole=self.g._konsole_fw_anzeige(plan[0]))
+
+    # ------------------------------------------------------------------
+    # Einbau-Karte, Pruefung der Quelle, Lebenszeichen (Nutzerwunsch 17.11.2026)
+    # ------------------------------------------------------------------
+    def _einbau_gilt(self) -> bool:
+        """Wirkt der Einbau bei dem, was die Seite gerade tut? Nur beim Umwandeln in ein Abbild - ein Paket nimmt ihn nicht auf."""
+        return self.aktion_var.get() == AKTION_UMWANDELN and self.format_schluessel != FORMAT_PAKET
+
+    def _einbau_abgleichen(self) -> None:
+        """Zieht Auswahllisten und Sperren der Einbau-Karte aus dem Hauptfenster nach (im Takt, nur wenn die Seite zu sehen ist)."""
+        karte = self.einbau
+        if karte is None or not self._rest_sichtbar:
+            return
+        gilt = self._einbau_gilt()
+        wirkt = gilt and self.format_schluessel in getattr(self.g, "_KOMPRESSION_WIRKT_BEI", ("ffpfsc",))
+        karte.abgleichen(gilt, wirkt)
+
+    def _forge_legt_ampr_dazu(self, info: "wz.PaketInfo") -> bool:
+        """Baut Dump Forge das Paket - und legt es AMPR EMU fuer ein Spiel mit ``libSceAmpr`` selbst dazu?"""
+        return (self.aktion_var.get() == AKTION_UMWANDELN and self.format_schluessel == FORMAT_PAKET
+                and self._bauer_fuer(info) == "forge")
+
+    def _bericht_aktualisieren(self) -> None:
+        """Die Pruefung der Quelle in der Karte: AMPR EMU, Packs, PlayGo, DLC, BACKPORT - was da ist und was fehlt.
+
+        Bei einem Abbild liegen die Fakten schon vom Lesen vor, bei einem Spielordner oder ``.pkg`` fragt Dump Forge im
+        Hintergrund (``inspect``, meist unter einer Sekunde, kalt einige); das Fenster bleibt bedienbar. Eine Antwort, die
+        zu einer inzwischen anderen Quelle gehoert, wird verworfen. Eine Quelle wird nie zweimal gleichzeitig gelesen: Waehlt der
+        Anwender dieselbe Quelle noch einmal (die Liste meldet eine Wahl mehrfach), laeuft der erste Faden weiter.
+        """
+        karte = self.einbau
+        if karte is None:
+            return
+        info = self.aktuell
+        if info is None:
+            karte.bericht_setzen(None, self.t("bericht.keine_quelle"))
+            return
+        if info.fakten is not None:
+            self._bericht_zeigen(info, info.fakten)
+            return
+        exe = self._werkzeug_forge()
+        if not (info.ist_ordner or forge.ist_paket(info.pfad)):
+            karte.bericht_setzen(None, self.t("bericht.nicht_pruefbar"))
+            return
+        if not exe:
+            karte.bericht_setzen(None, self.t("bericht.keine_forge"))
+            return
+        karte.bericht_setzen(None, self.t("bericht.laedt"))
+        laufend = self._bericht_faden
+        if laufend is not None and laufend[0] is info and laufend[1].is_alive():
+            return
+        popen_extra = self._popen_extra()
+
+        def lauf() -> None:
+            fakten = forge.quellfakten_lesen(exe, info.pfad, popen_extra=popen_extra)
+            # Die Antwort haengt gleich an der Quelle: Ein Bau, der waehrenddessen startet, wartet auf diesen Faden
+            # (``_quellfakten``) und liest nicht ein zweites Mal.
+            if fakten is not None:
+                info.fakten = fakten
+            # Angezeigt wird im Takt des Fensters (``_takt_arbeiten``), wie alles, was ein Faden meldet: Ein Faden fasst
+            # kein Widget an, und ``after`` aus einem Faden braucht die laufende Hauptschleife.
+            with self._sperre:
+                self._z["bericht"].append((info, fakten))
+
+        faden = threading.Thread(target=lauf, daemon=True, name="ps5pkg-bericht")
+        self._bericht_faden = (info, faden)
+        faden.start()
+
+    def _bericht_neu_zeigen(self) -> None:
+        """Zeichnet die Pruefung der Quelle neu (anderes Format, andere Aktion), ohne noch einmal zu lesen."""
+        info = self.aktuell
+        if self.einbau is not None and info is not None and info.fakten is not None:
+            self._bericht_zeigen(info, info.fakten)
+
+    def _bericht_zeigen(self, info: "wz.PaketInfo", fakten: "forge.QuellFakten | None") -> None:
+        karte = self.einbau
+        if karte is None:
+            return
+        if fakten is None:
+            karte.bericht_setzen(None, self.t("bericht.nicht_pruefbar"))
+            return
+        konsole = ""
+        try:
+            konsole = self.g._konsole_fw_bekannt() or ""
+        except Exception as exc:  # noqa: BLE001 - die Firmware der Konsole ist eine Zugabe
+            logger.debug("Firmware der Konsole nicht lesbar: %s", exc)
+        karte.bericht_setzen(qb.zeilen(fakten, self.t, konsole, forge_ergaenzt_ampr=self._forge_legt_ampr_dazu(info)))
+
+    @staticmethod
+    def _dauer_text(sekunden: float) -> str:
+        """``3:07`` oder ``1:02:09`` - so lange laeuft etwas schon."""
+        s = max(0, int(sekunden))
+        h, rest = divmod(s, 3600)
+        m, s = divmod(rest, 60)
+        return "%d:%02d:%02d" % (h, m, s) if h else "%d:%02d" % (m, s)
+
+    def _werkzeug_name(self, art: str, info: "wz.PaketInfo") -> str:
+        """Welches Werkzeug den Auftrag ausfuehrt, wie der Anwender es kennt."""
+        if art in ("bauen", "abbild"):
+            return {"forge": "Dump Forge", "ppt": "ProsperoPkgTool"}.get(self._bauer_fuer(info), "LibProsperoPkg")
+        if art in ("extrahieren", "umwandeln") and self._builder() == "ppt":
+            return "ProsperoPkgTool"
+        return "LibProsperoPkg"
+
+    #: Ab so vielen Sekunden ohne neue Meldung sagt die Seite, dass nichts Neues kam (und dass das bei grossen Dateien normal ist).
+    STILLE_AB = 20.0
+
+    def _lebenszeichen_zeigen(self) -> None:
+        """Wie lange der Lauf schon geht, mit welchem Werkzeug - und wenn es still wird, seit wann nichts Neues kam.
+
+        Nutzerwunsch 17.11.2026: "man sieht nicht, ob etwas passiert, oder ob das Programm haengt". Der Zaehler laeuft im Takt
+        des Fensters, unabhaengig vom Werkzeug; stehen Fortschritt und Dateizeile still, sagt die zweite Zeile es offen.
+        """
+        job = self._job
+        if job is None:
+            if self._uebergabe is None:
+                self.lebt_var.set("")
+            return
+        jetzt = time.monotonic()
+        start = job.get("start") or jetzt
+        text = self.t("ps5pkg.lebt_zeit", dauer=self._dauer_text(jetzt - start),
+                      werkzeug=self._werkzeug_name(job.get("art", ""), job.get("info")) if job.get("info") is not None else "")
+        still = jetzt - (job.get("letzte") or jetzt)
+        if still >= self.STILLE_AB:
+            text += "\n" + self.t("ps5pkg.lebt_still", still=self._dauer_text(still))
+        self.lebt_var.set(text)
+
+    def _bauer_wechseln_fragen(self, info: "wz.PaketInfo") -> bool:
+        """Einmal fragen: Dump Forge statt eines Werkzeugs, das das Spiel zuerst in einen Arbeitsordner kopiert?
+
+        Nutzerwunsch 17.11.2026: In Aufgabe 7 soll kein Zwischenordner mehr noetig sein. LibProsperoPkg und ProsperoPkgTool
+        kopieren das ganze Spiel (gemessen: "Staging 0/38'497 MiB"); Dump Forge liest die Quelle im Strom. Wer eines von beiden
+        eingestellt hat (frueher die Vorgabe), wird **einmal** gefragt - nichts wird still umgestellt. Die Antwort gilt dauerhaft
+        (``EINST_BAUER_GEFRAGT``); in den Optionen laesst sich der Paketersteller jederzeit aendern.
+
+        Returns:
+            ``True``, wenn nun Dump Forge baut.
+        """
+        if not self._werkzeug_forge() or not info.ist_ordner:
+            return False
+        if self._einstellung(EINST_BAUER_GEFRAGT, False) is True:
+            return False
+        name = "ProsperoPkgTool" if self._builder() == "ppt" else "LibProsperoPkg"
+        antwort = messagebox.askyesno(self.t("ps5pkg.window_title"), self.t("ps5pkg.ask_bauer", name=name), parent=self.win)
+        self._merken(EINST_BAUER_GEFRAGT, True)
+        if antwort:
+            self._merken(opt.BUILDER, "forge")
+            self._protokoll(self.t("ps5pkg.log_bauer_forge"))
+            return True
+        self._protokoll(self.t("ps5pkg.log_bauer_bleibt", name=name))
+        return False
+
+    def _abbild_direkt_moeglich(self, info: "wz.PaketInfo") -> bool:
+        """Kann Dump Forge dieses ``.pkg`` im Strom in das gewaehlte Abbild schreiben - ohne Entpacken, ohne Zwischenordner?
+
+        Nutzerwunsch 17.11.2026 ("im Strom bauen wie bei Aufgabe 1 bis 6"). Gemessen: ``convert x.pkg --to ffpkg|exfat|folder``
+        liest das Paket im Strom. Der Einbau (AMPR EMU, PlayGo, DLC EMU, BACKPORT) braucht den entpackten Ordner - dann bleibt
+        der Weg ueber den Arbeitsordner und Aufgabe 1. Fehlt dem Spiel etwas, fragt das Fenster, ob entpackt und eingebaut wird.
+        """
+        if info.ist_quelle or self.format_schluessel not in forge.ABBILD_ZIELE:
+            return False
+        if not self._werkzeug_forge() or not forge.ist_paket(info.pfad):
+            return False
+        liste = self.g._einbau_liste()
+        if liste:
+            self._protokoll(self.t("ps5pkg.log_einbau_braucht_ordner", liste=", ".join(liste)))
+            return False
+        fakten, fehlt, punkte = self._quelle_pruefen(info, paket=False)
+        if fehlt and messagebox.askyesno(self.t("ps5pkg.emu_titel"), self.t("ps5pkg.emu_frage_entpacken", liste=punkte),
+                                         parent=self.win):
+            namen = self._einbau_ankreuzen(fakten, fehlt)
+            self._protokoll(self.t("ps5pkg.log_einbau_braucht_ordner", liste=", ".join(namen) or "-"))
+            return False
+        return True
 
     def _forge_stufe_text(self, stufe: str) -> str:
         """Die Stufe aus Forges Fortschrittsstrom in der Sprache des Programms (unbekannte Stufen bleiben, wie sie sind)."""
@@ -2281,16 +2577,34 @@ class Ps5PkgFenster:
 
         try:
             temp = str(bau.get("temp") or "")
-            name = self._forge_dateiname(info)
+            abbild = str(bau.get("format") or "pkg")
+            name = str(bau.get("name") or "") or self._forge_dateiname(info)
             kraken = str(self._einstellung(opt.FORGE_KRAKEN, opt.STANDARD[opt.FORGE_KRAKEN]))
-            erg = forge.bauen(
-                self._werkzeug_forge(), info.pfad, os.path.join(temp, name),
-                kraken=kraken if kraken in forge.KRAKEN_STUFEN else "fast",
-                voll_pruefen=bool(self._einstellung(opt.FORGE_VOLL_PRUEFEN, False)),
-                backport_entfernen=bool(self._einstellung(opt.FORGE_BACKPORT_ENTFERNEN, False)),
-                kerne=int(self._einstellung(opt.KRAKEN_KERNE, 0)),
-                zeile=self._melden, fortschritt=fortschritt, abbruch=lambda: self._abbruch,
-                popen_extra=self._popen_extra())
+            if abbild == "pkg":
+                erg = forge.bauen(
+                    self._werkzeug_forge(), info.pfad, os.path.join(temp, name),
+                    kraken=kraken if kraken in forge.KRAKEN_STUFEN else "fast",
+                    voll_pruefen=bool(self._einstellung(opt.FORGE_VOLL_PRUEFEN, False)),
+                    backport_entfernen=bool(self._einstellung(opt.FORGE_BACKPORT_ENTFERNEN, False)),
+                    kerne=int(self._einstellung(opt.KRAKEN_KERNE, 0)),
+                    zeile=self._melden, fortschritt=fortschritt, abbruch=lambda: self._abbruch,
+                    popen_extra=self._popen_extra())
+            else:
+                # Ein Abbild aus einem Paket: Die Felder KOMPRESSION (PFS), WORKER-THREADS und PRUEFUNG der Karte gelten
+                # (dieselben Einstellungen wie in den Aufgaben 1 bis 6, gelesen aus dem Speicher - nie eine Tk-Variable im Faden).
+                try:
+                    stufe = int(self.g._load_setting("zstd_level", 6))
+                except (TypeError, ValueError):
+                    stufe = 6
+                try:
+                    kerne = int(self.g._load_setting("worker_count", 0) or 0)
+                except (TypeError, ValueError):
+                    kerne = 0
+                erg = forge.bauen(
+                    self._werkzeug_forge(), info.pfad, os.path.join(temp, name), format=abbild, stufe=stufe, kerne=kerne,
+                    voll_pruefen=str(self.g._load_setting("mkpfs_verify", "schnell") or "") == "voll",
+                    zeile=self._melden, fortschritt=fortschritt, abbruch=lambda: self._abbruch,
+                    popen_extra=self._popen_extra())
             with self._sperre:
                 self._z["prozent"] = 100.0
                 self._z["gesamt"] = 100.0
@@ -2320,7 +2634,7 @@ class Ps5PkgFenster:
 
     def _bauen_starten(self, info: "wz.PaketInfo", ziel: str) -> None:
         """Baut aus einem Spielordner ein Debug-Paket: Kennungen und ``param.json`` pruefen, Platz pruefen, los."""
-        if self._bauer_fuer(info) == "forge":
+        if self._bauer_fuer(info) == "forge" or self._bauer_wechseln_fragen(info):
             self._forge_bauen_starten(info, ziel)
             return
         if self._builder() == "ppt" and not self._werkzeug_ppt():
@@ -2364,6 +2678,8 @@ class Ps5PkgFenster:
         # Der Arbeitsordner liegt deshalb im Zielordner (nicht auf dem oft kleinen Systemlaufwerk).
         if not self._platz_reicht(ziel, int(info.groesse * BAU_PLATZ_WARNUNG), nachfragen=True):
             return
+        if not self._emulatoren_fragen(info):
+            return
         try:
             temp = tempfile.mkdtemp(prefix="ps5conv_pkgbau_", dir=ziel)
         except OSError:
@@ -2374,7 +2690,9 @@ class Ps5PkgFenster:
 
     def _job_starten(self, art: str, ziel_funktion, info: "wz.PaketInfo", ziel: str) -> None:
         self._abbruch = False
-        self._job = {"art": art, "info": info, "ziel": ziel}
+        jetzt = time.monotonic()
+        # "start" und "letzte" fuer das Lebenszeichen (``_lebenszeichen_zeigen``): seit wann der Lauf geht, wann zuletzt etwas kam.
+        self._job = {"art": art, "info": info, "ziel": ziel, "start": jetzt, "letzte": jetzt, "zeichen": None}
         with self._sperre:
             # "prozent" erst mit der ersten Meldung des Laufs: Beim Pruefen kommt keine, der Balken wandert dann.
             self._z.update({"prozent": None, "fertig": None, "ausgabe": "", "gesamt": None, "schritt_text": None})
@@ -2382,13 +2700,20 @@ class Ps5PkgFenster:
         self.datei_var.set("")
         text = {"pruefen": "ps5pkg.job_checking", "extrahieren": "ps5pkg.job_extracting",
                 "umwandeln": "ps5pkg.job_extracting_for", "bauen": "ps5pkg.job_building",
-                "konsole": "ps5pkg.job_console"}[art]
+                "abbild": "ps5pkg.job_abbild", "konsole": "ps5pkg.job_console"}[art]
         self.auftrag_var.set(self.t(text, name=anzeigename(info)))
         # Auch die Statuszeile sagt, dass gearbeitet wird - sie stand bisher waehrend des ganzen Laufs auf "Bereit."
         self._status(self.t(text, name=anzeigename(info)))
         if art == "pruefen":
             self._balken_wandern(True)
         self._protokoll(self.t("ps5pkg.log_start_" + art, name=os.path.basename(info.pfad)))
+        # Womit gearbeitet wird: Wer ProsperoPkgTool oder LibProsperoPkg eingestellt hat, sieht dort nur "Staging" ohne
+        # Lebenszeichen - das Protokoll nennt das Werkzeug und den Weg zu Dump Forge (Nutzerwunsch 17.11.2026).
+        if art in ("bauen", "abbild"):
+            name = self._werkzeug_name(art, info)
+            self._protokoll(self.t("ps5pkg.log_bauer", name=name))
+            if name != "Dump Forge" and self._werkzeug_forge():
+                self._protokoll(self.t("ps5pkg.log_bauer_tipp"))
         self._knoepfe_pruefen()
         threading.Thread(target=ziel_funktion, args=(info, ziel, art), daemon=True, name="ps5pkg-" + art).start()
 
@@ -2700,6 +3025,16 @@ class Ps5PkgFenster:
             liest = self._z["lesen_laeuft"]
             gesamt = self._z.get("gesamt")
             scan, self._z["scan"] = self._z["scan"], []
+            berichte, self._z["bericht"] = self._z.get("bericht", []), []
+        for quelle, fakten in berichte:
+            if self.aktuell is quelle:                  # die Antwort einer inzwischen anderen Quelle zeigt niemand
+                self._bericht_zeigen(quelle, fakten)
+        if self._job is not None:
+            # Etwas Neues kam: eine Zeile des Werkzeugs, ein anderer Prozentwert oder eine andere Dateizeile (Lebenszeichen).
+            zeichen = (prozent, datei)
+            if zeilen or zeichen != self._job.get("zeichen"):
+                self._job["letzte"] = time.monotonic()
+                self._job["zeichen"] = zeichen
         for z in zeilen:
             self._protokoll(z)
         if scan:
@@ -2725,12 +3060,15 @@ class Ps5PkgFenster:
             self._job_beendet(fertig)
         if self._uebergabe is not None:
             self._uebergabe_beobachten()
+        self._einbau_abgleichen()
+        self._lebenszeichen_zeigen()
 
     def _job_beendet(self, ende: dict) -> None:
         job, self._job = self._job, None
         art = job["art"]
         self._balken_wandern(False)
         self._status(self.t("ps5pkg.status_idle"))
+        self.lebt_var.set("")
         if ende.get("nichts") or ende.get("abgebrochen"):
             # Der Anwender hat bei der Rueckfrage verzichtet oder abgebrochen: kein Fehlschlag. Ein abgebrochener Lauf
             # zeigt 0 % (nicht den Stand beim Abbruch) - fertig ist nichts.
@@ -2761,6 +3099,18 @@ class Ps5PkgFenster:
                 self._z["ausgabe"] = job["ziel"]
             self._anzeige_setzen(100, 100)
             self._knoepfe_pruefen()
+            return
+        if art == "abbild":
+            # Dump Forge hat das Paket im Strom in ein Abbild geschrieben (kein Entpacken, kein Zwischenordner).
+            self._staging_raeumen()
+            self.auftrag_var.set(self.t("ps5pkg.job_done_convert"))
+            self._protokoll(self.t("ps5pkg.log_done_convert", name=os.path.basename(ende["pkg"])))
+            self._protokoll(("[BEFUND] " if ende.get("befund") else "[OK] ") + ende["pruefung"])
+            with self._sperre:
+                self._z["ausgabe"] = job["ziel"]
+            self._anzeige_setzen(100, 100)
+            self._knoepfe_pruefen()
+            self._ausgabe_nach_erfolg()
             return
         if art == "pruefen":
             self.auftrag_var.set(ende["text"])
@@ -2796,7 +3146,7 @@ class Ps5PkgFenster:
     def _lauf_reste_wegraeumen(self, job: dict) -> None:
         """Nach Abbruch oder Fehlschlag: was der Lauf halb angelegt hat (Arbeitsordner, halber Spielordner)."""
         art = job.get("art")
-        if art in ("umwandeln", "bauen"):
+        if art in ("umwandeln", "bauen", "abbild"):
             self._staging_raeumen()
         elif art == "extrahieren":
             self._teilergebnis_wegraeumen(job.get("ziel", ""))

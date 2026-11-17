@@ -149,9 +149,23 @@ class FensterTests(unittest.TestCase):
         # Die Einstellungen des Fensters stehen im umgelenkten Ordner - frueher gespeichertes soll nichts vorgeben.
         # Paketersteller: Seit 16.11.2026 ist Dump Forge die Vorgabe - die Tests dieser Klasse pruefen den Weg ueber
         # LibProsperoPkg (die Forge-Tests stehen in ``test_ps5_pkg_forge.py``).
+        # ``EINST_BAUER_GEFRAGT``: Die einmalige Frage "Dump Forge statt LibProsperoPkg?" (17.11.2026) ist beantwortet - diese
+        # Tests pruefen den Weg ueber LibProsperoPkg und den Arbeitsordner (die Frage hat ihre eigenen Tests).
         for schluessel, wert in ((fz.EINST_AKTION, fz.AKTION_UMWANDELN), (fz.EINST_FORMAT, "ffpfsc"),
-                                 (fz.EINST_BIBLIOTHEK, []), (fz.EINST_ZIEL, ""), (opt.BUILDER, "lpp")):
+                                 (fz.EINST_BIBLIOTHEK, []), (fz.EINST_ZIEL, ""), (opt.BUILDER, "lpp"),
+                                 (fz.EINST_BAUER_GEFRAGT, True)):
             self.app._save_setting(schluessel, wert)
+        # Ein Paket schreibt Dump Forge seit 17.11.2026 im Strom in ein Abbild (``_abbild_direkt_moeglich``); die Tests dieser
+        # Klasse pruefen das Entpacken in den Arbeitsordner und die Uebergabe an Aufgabe 1 - das gilt weiter, wenn der Einbau
+        # angehakt ist oder Dump Forge fehlt (der Strom hat seine Tests in ``test_ps5_pkg_forge.py``).
+        m = mock.patch.object(fz.Ps5PkgFenster, "_abbild_direkt_moeglich", return_value=False)
+        m.start()
+        self.addCleanup(m.stop)
+        # Keine echte Befehlszeile von Dump Forge: Die Pruefung der Quelle (Karte der Seite) startete sonst bei jeder Wahl einen
+        # Prozess, der beim Schliessen des Fensters mitten im Lesen beendet wird (Fehler im Lesefaden des Prozesses).
+        m = mock.patch.object(fz.Ps5PkgFenster, "_werkzeug_forge", return_value="")
+        m.start()
+        self.addCleanup(m.stop)
         self.f = fz.oeffnen(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)
         self.addCleanup(self._schliessen)
 
