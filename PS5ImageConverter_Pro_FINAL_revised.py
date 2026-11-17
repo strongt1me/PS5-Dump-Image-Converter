@@ -40628,7 +40628,8 @@ class PS5ConverterGUI:
     def _asset_pack_zstd_in_ordner(self, ordner: str, *, melden: "Callable[[str], None]",
                                    abbruch: "Callable[[], bool]",
                                    phase: "Callable[[str, float], None] | None" = None,
-                                   originale_entfernen: bool = False) -> dict[str, Any]:
+                                   originale_entfernen: bool = False,
+                                   ng_ueber_shadowmount: bool = False) -> dict[str, Any]:
         """zstd-Packs direkt in einen fertigen Spielordner bauen (Fenster "Asset-Pack", Knopf PACKEN).
 
         Dasselbe Verfahren wie :meth:`_ampr_zstdpakete_bauen` (Auswahl, Index-Abgleich, Packen in einen Nachbarordner,
@@ -40645,6 +40646,8 @@ class PS5ConverterGUI:
             abbruch: ``True`` heisst: abbrechen.
             phase: Wird mit ``("packen"|"pruefen", Anteil 0..1)`` gerufen.
             originale_entfernen: Die gepackten Originale nach bestandener Vollpruefung loeschen.
+            ng_ueber_shadowmount: Packen, obwohl ``fakelib/libSceAmpr.sprx`` im Ordner fehlt (NG kommt ueber ShadowMount+).
+                Ohne den Schalter bricht der Lauf in diesem Fall ab. Eine Bibliothek, die nicht NG ist, bricht immer ab.
 
         Returns:
             ``{"dateien": ..., "baender": ..., "originale_entfernt": ...}``.
@@ -40660,14 +40663,17 @@ class PS5ConverterGUI:
         if not ampr_zstdpack.verfuegbar():
             raise Fehler("ampr_zstd.bibliothek_fehlt")
 
-        # zstd-Packs liest nur NG. Fehlt die Bibliothek im Ordner, kann sie auch anderswo liegen (ShadowMount+ globaler
-        # Ordner): Das ist ein Hinweis, kein Hindernis. Liegt eine andere Fassung, scheitert das Spiel an der Konsole.
+        # zstd-Packs liest nur NG, die Fassung von drakmor nicht (das Spiel liefe dann nicht). Liegt eine Bibliothek im Ordner,
+        # muss es NG sein. Fehlt sie, kann NG ueber ShadowMount+ kommen (globaler Ordner/Emulatoren-Ordner) - das sieht dieser Weg
+        # nicht, deshalb packt er dann nur mit ausdruecklicher Bestaetigung (``ng_ueber_shadowmount``; Nutzer 17.11.2026: NG
+        # laeuft mit ShadowMount+, solange dessen automatisches Aktualisieren der AMPR-EMU-Bibliothek aus ist).
         lib = os.path.join(ordner, "fakelib", self._AMPR_SPRX_NAME)
-        if os.path.isfile(lib):
-            if not self._ampr_ist_ng_datei(lib):
-                raise Fehler(self._t("assetpack_tool.pack_lib_nicht_ng"))
-        else:
-            melden(self._t("assetpack_tool.pack_lib_fehlt"))
+        if not os.path.isfile(lib):
+            if not ng_ueber_shadowmount:
+                raise Fehler(self._t("assetpack_tool.pack_lib_fehlt"))
+            melden(self._t("assetpack_tool.pack_lib_ueber_sm"))
+        elif not self._ampr_ist_ng_datei(lib):
+            raise Fehler(self._t("assetpack_tool.pack_lib_nicht_ng"))
 
         index_pfad = os.path.join(ordner, self._AMPR_INDEX_NAME)
         if not os.path.isfile(index_pfad):
@@ -68769,6 +68775,15 @@ class PS5ConverterGUI:
             if not ampr_zstdpack.verfuegbar():
                 messagebox.showwarning(titel, self._t("ampr_zstd.bibliothek_fehlt").strip(), parent=win)
                 return
+            # Die Fragen und der Hinweis am Ende nennen Schluessel der config.ini: bis ShadowMount+ 1.7beta11 heissen sie
+            # update_emulators/auto_update_ampr, ab 1.7beta12 [emulators] update_enabled/auto_update_ampr. Welches Format
+            # gilt, fragt das Programm einmal und merkt es (wie beim NG-Hinweis, ``_ampr_ng_hinweis``); ``_t`` setzt die Namen ein.
+            self._sm_format_klaeren(parent=win)
+            # Ohne libSceAmpr.sprx im Ordner kommt NG nur ueber ShadowMount+ (Nutzer 17.11.2026): erst fragen, Vorgabe Nein.
+            lib_fehlt = not os.path.isfile(os.path.join(ordner, "fakelib", self._AMPR_SPRX_NAME))
+            if lib_fehlt and not messagebox.askyesno(
+                    titel, self._t("assetpack_tool.ask_lib_ueber_sm"), icon="warning", default="no", parent=win):
+                return
             if not messagebox.askyesno(
                     titel, self._t("assetpack_tool.ask_packen", ordner=ordner, stufe=self._ampr_zstd_stufe()),
                     parent=win):
@@ -68786,7 +68801,8 @@ class PS5ConverterGUI:
                 lauf["phase"] = self._t("assetpack_tool.phase_vorbereiten")
                 try:
                     erg = self._asset_pack_zstd_in_ordner(
-                        ordner, melden=_melden, abbruch=_abbruch, phase=_phase, originale_entfernen=weg)
+                        ordner, melden=_melden, abbruch=_abbruch, phase=_phase, originale_entfernen=weg,
+                        ng_ueber_shadowmount=lib_fehlt)
                 except ampr_zstdpack.ZstdPackFehler as exc:
                     raise ampr_assetpakete.PackFehler(str(exc)) from exc
                 finally:

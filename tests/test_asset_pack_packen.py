@@ -38,6 +38,7 @@ NEU = [
     "assetpack_tool.ask_originale", "assetpack_tool.pack_ordner_wurzel", "assetpack_tool.pack_lib_nicht_ng",
     "assetpack_tool.pack_lib_fehlt", "assetpack_tool.pack_index_gebaut", "assetpack_tool.pack_ausgabe_da",
     "assetpack_tool.pack_platz", "assetpack_tool.pack_hinweis", "assetpack_tool.pack_ok",
+    "assetpack_tool.ask_lib_ueber_sm", "assetpack_tool.pack_lib_ueber_sm",
 ]
 
 NG_BIB = b"..ampr-emu-ng 0.4.1.."
@@ -208,12 +209,34 @@ class KernTests(unittest.TestCase):
         self.assertFalse(z.ist_gepackt(self.spiel))
         self.assertFalse(os.path.exists(os.path.join(self.spiel, "ampr_emu.index")), "Nichts angelegt")
 
-    def test_fehlende_bibliothek_ist_nur_ein_hinweis(self) -> None:
-        spiel = _spiel(os.path.join(self._tmp, "ohne"), mit_lib=False)
+    def test_fehlende_bibliothek_mit_bestaetigung_packt_und_nennt_update_emulators(self) -> None:
+        """NG laeuft auch ueber ShadowMount+ (Nutzer 17.11.2026): mit der Bestaetigung wird gepackt, der Hinweis nennt die Falle."""
+        spiel = _spiel(os.path.join(self._tmp, "sm"), mit_lib=False)
         zeilen: list[str] = []
-        self.s._asset_pack_zstd_in_ordner(spiel, melden=zeilen.append, abbruch=lambda: False)
-        self.assertIn("assetpack_tool.pack_lib_fehlt", "\n".join(zeilen))
+        self.s._asset_pack_zstd_in_ordner(spiel, melden=zeilen.append, abbruch=lambda: False, ng_ueber_shadowmount=True)
         self.assertTrue(z.ist_gepackt(spiel))
+        self.assertIn("assetpack_tool.pack_lib_ueber_sm", "\n".join(zeilen))
+        for sprache in i18n.SUPPORTED_LANGUAGES:        # die Falle steht in jeder Sprache im Hinweis und in der Frage
+            for schluessel in ("assetpack_tool.pack_hinweis", "assetpack_tool.ask_lib_ueber_sm"):
+                self.assertIn("update_emulators", i18n.STRINGS[schluessel][sprache], (schluessel, sprache))
+
+    def test_bestaetigung_ersetzt_keine_fremde_bibliothek(self) -> None:
+        """Eine drakmor-Bibliothek im Ordner bleibt ein Hindernis, auch mit der ShadowMount+-Bestaetigung."""
+        Path(self.spiel, "fakelib", "libSceAmpr.sprx").write_bytes(b"drakmor 0.4.2.1")
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            self._lauf(ng_ueber_shadowmount=True)
+        self.assertIn("assetpack_tool.pack_lib_nicht_ng", str(ctx.exception))
+
+    def test_fehlende_bibliothek_haelt_an_und_aendert_nichts(self) -> None:
+        """Ohne Bestaetigung wird bei fehlender Bibliothek nicht gepackt; auch kein Index angelegt."""
+        spiel = _spiel(os.path.join(self._tmp, "ohne"), mit_lib=False)
+        vorher = _inhalt(spiel)
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            self.s._asset_pack_zstd_in_ordner(spiel, melden=self.zeilen.append, abbruch=lambda: False)
+        self.assertIn("assetpack_tool.pack_lib_fehlt", str(ctx.exception))
+        self.assertFalse(z.ist_gepackt(spiel))
+        self.assertEqual(vorher, _inhalt(spiel), "Der Ordner wurde veraendert")
+        self.assertFalse(os.path.exists(spiel + "_ampr_zstd"))
 
     def test_belegter_zwischenordner_wird_nicht_angefasst(self) -> None:
         ausgabe = self.spiel + "_ampr_zstd"
@@ -313,6 +336,9 @@ class FensterTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.mkdtemp(prefix="asset_pack_packen_fenster_")
         self.addCleanup(shutil.rmtree, self._tmp, True)
+        # Das Format der config.ini ist gemerkt (sonst fragte PACKEN einmal mit einem echten Fenster): ShadowMount+ bis beta11.
+        self.app._sm_format_setzen("v1")
+        self.addCleanup(self.app._sm_format_setzen, "")
         vorher = set(_WURZEL.winfo_children())
         self.app._show_asset_pack_werkzeug()
         _WURZEL.update_idletasks()
@@ -418,6 +444,57 @@ class FensterTests(unittest.TestCase):
         self._knopf("assetpack_tool.check_button").invoke()
         self._fertig()
         self.assertIn(self.app._t("assetpack_tool.log_check_gut").strip(), self._protokoll())
+
+    def test_ohne_bibliothek_fragt_das_fenster_zuerst_nach_shadowmount(self) -> None:
+        spiel = _spiel(self._tmp, mit_lib=False)
+        vorher = _inhalt(spiel)
+        self._ordner_eintragen(spiel)
+        with mock.patch.object(APP.messagebox, "askyesno", return_value=False) as frage:
+            self._knopf("assetpack_tool.pack_button").invoke()
+        self.assertEqual(1, frage.call_count)                      # Vorgabe Nein: nach der ersten Absage Schluss
+        self.assertIn(self.app._t("assetpack_tool.ask_lib_ueber_sm"), frage.call_args[0])
+        self.assertEqual("no", frage.call_args[1].get("default"))
+        self.assertEqual(vorher, _inhalt(spiel))
+
+    def test_die_schluessel_heissen_je_nach_shadowmount_fassung_anders(self) -> None:
+        """Bis 1.7beta11 update_emulators/auto_update_ampr, ab 1.7beta12 [emulators] update_enabled (Nutzerhinweis 17.11.2026).
+
+        Beide Schalter muessen genannt sein, wie im NG-Hinweis des Programms (``ampr.ng_update_emulators``).
+        """
+        for schluessel in ("assetpack_tool.ask_lib_ueber_sm", "assetpack_tool.pack_lib_ueber_sm",
+                           "assetpack_tool.pack_hinweis"):
+            self.app._sm_format_setzen("v1")
+            alt = self.app._t(schluessel)
+            self.assertIn("update_emulators=0", alt, schluessel)
+            self.assertIn("auto_update_ampr=0", alt, schluessel)
+            self.assertNotIn("update_enabled", alt, schluessel)
+            self.app._sm_format_setzen("v2")
+            neu = self.app._t(schluessel)
+            self.assertIn("[emulators] update_enabled", neu, schluessel)
+            self.assertIn("[emulators] auto_update_ampr", neu, schluessel)
+            self.assertNotIn("update_emulators", neu, schluessel)
+
+    def test_packen_klaert_das_format_vor_den_fragen(self) -> None:
+        spiel = _spiel(self._tmp)
+        self._ordner_eintragen(spiel)
+        reihenfolge: list[str] = []
+        with mock.patch.object(self.app, "_sm_format_klaeren", side_effect=lambda **kw: reihenfolge.append("format")), \
+                mock.patch.object(APP.messagebox, "askyesno",
+                                  side_effect=lambda *a, **kw: reihenfolge.append("frage") or False):
+            self._knopf("assetpack_tool.pack_button").invoke()
+        self.assertEqual(["format", "frage"], reihenfolge)
+
+    def test_ohne_bibliothek_packt_das_fenster_nach_bestaetigung(self) -> None:
+        spiel = _spiel(self._tmp, mit_lib=False)
+        self._ordner_eintragen(spiel)
+        with mock.patch.object(APP.messagebox, "askyesno", side_effect=[True, True, False]) as frage:
+            self._knopf("assetpack_tool.pack_button").invoke()
+            self._fertig()
+        self.assertEqual(3, frage.call_count)                      # ShadowMount+, Packen, Originale
+        text = self._protokoll()
+        self.assertNotIn("[FEHLER]", text)
+        self.assertIn("update_emulators", text)
+        self.assertTrue(z.ist_gepackt(spiel))
 
     def test_packen_ohne_originale_und_wieder_entpacken(self) -> None:
         spiel = _spiel(self._tmp)
