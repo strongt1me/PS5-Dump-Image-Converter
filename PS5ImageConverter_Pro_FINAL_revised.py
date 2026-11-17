@@ -188,6 +188,7 @@ from ps5_validator.utils import fenster_vorn
 from ps5_validator.utils import streaming_pruefung
 from ps5_validator.utils import vorabpruefung
 from ps5_validator.utils import stufenzeile
+from ps5_validator.utils import combobox_liste
 from ps5_validator.utils import ausgabename
 from ps5_validator.utils import reste_karte
 from ps5_validator.utils import y2jb_updater
@@ -10280,6 +10281,13 @@ class PS5ConverterGUI:
             self.root.option_add("*TCombobox*Listbox.font", (UI_SCHRIFT, pt(10)))
         except Exception as exc:
             logger.debug("Combobox-Popdown-Theme konnte nicht gesetzt werden: %s", exc)
+
+        # Die Aufklappliste jeder Combobox so breit wie ihr laengster Eintrag - Tk macht sie so breit wie das Feld und schnitt
+        # "Dump-Ordner (mit Einbau)" und "NG 0.4.0-beta debug" ab (Nutzerwunsch 17.11.2026).
+        try:
+            combobox_liste.installieren(self.root)
+        except tk.TclError as exc:
+            logger.debug("Combobox-Liste konnte nicht verbreitert werden: %s", exc)
 
         # Tk liefert Text, Entry und Listbox mit relief="sunken" und
         # borderwidth=1 aus - jedes einzelne Feld zeichnet also von sich aus
