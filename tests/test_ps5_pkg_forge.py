@@ -1312,6 +1312,50 @@ class EinbauSeiteTests(_ForgeBasis):
             self.assertTrue(self.f._abbild_direkt_moeglich(info), "Nein: direkt, ohne Einbau")
         self.assertFalse(self.app.dlc_integrate_var.get())
 
+    def test_bauform_steht_nur_beim_zielformat_ffpfsc_da_und_ist_ein_zwilling(self) -> None:
+        """Nutzerwunsch 17.11.2026: Ein ``.ffpfsc`` ist ein Abbild-Container - die BAUFORM (Container) gilt dort wie bei Aufgabe 1
+        und steht nur beim Zielformat ``.ffpfsc`` da (``_BAUFORM_WIRKT_BEI``). Dieselbe Variable und derselbe Befehl wie dort."""
+        f, app = self.f, self.app
+        self.addCleanup(app.bauform_var.set, app.bauform_var.get())
+        self.addCleanup(setattr, app, "bauform", app.bauform)
+        self.addCleanup(app._save_setting, "bauform", app._load_setting("bauform", app.bauform))
+        self.assertEqual(str(app.bauform_var), f.bauform_box.cget("textvariable"), "dieselbe Variable wie dort")
+        for format_, erwartet in (("ffpkg", ""), ("ffpfsc", "pack"), ("ffpfs", ""), ("exfat", ""), ("pkg", ""), ("ffpfsc", "pack")):
+            with self.subTest(format=format_):
+                f._format_waehlen(format_)
+                f._einbau_abgleichen()
+                self.assertEqual(erwartet, f.bauform_reihe.winfo_manager())
+        f.aktion_var.set("pruefen")
+        f._einbau_abgleichen()
+        self.assertEqual("", f.bauform_reihe.winfo_manager(), "Pruefen baut nichts")
+        f.aktion_var.set("umwandeln")
+        f._einbau_abgleichen()
+        self.assertEqual("pack", f.bauform_reihe.winfo_manager())
+        self.assertEqual(app._bauform_erklaerung(), f._bauform_tooltip.text, "derselbe Vergleich beider Formen im Tooltip")
+        f.bauform_box._gewaehlt(app._t("bauform.pfs"))
+        self.assertEqual("pfs", app.bauform, "dieselbe Wirkung wie die Liste bei Aufgabe 1")
+        self.assertEqual("pfs", app._load_setting("bauform", ""), "und dieselbe Einstellung")
+        vorher = f._bauform_tooltip.text
+        f._einbau_abgleichen()
+        self.assertEqual(app._bauform_erklaerung(), f._bauform_tooltip.text, "der Satz zur gewaehlten Form steht voran")
+        self.assertNotEqual(vorher, f._bauform_tooltip.text, "und wechselt mit der Wahl")
+        f.bauform_box._gewaehlt(app._t("bauform.exfat"))
+        self.assertEqual("exfat", app.bauform)
+
+    def test_pfs_im_container_geht_nicht_im_strom_sondern_ueber_aufgabe_1(self) -> None:
+        """Dump Forge baut ``.ffpfsc`` im Strom nur als exFAT im Container (wie ``_strom_nach_container_gewaehlt`` dort): Wer "PFS im
+        Container" gewaehlt hat, bekommt die gewaehlte Form vom Weg ueber den Arbeitsordner und Aufgabe 1 - nicht still die andere."""
+        info = self._umwandeln_vorbereiten("ffpfsc")
+        app = self.app
+        self.addCleanup(setattr, app, "bauform", app.bauform)
+        app.bauform = "exfat"
+        self.assertTrue(self.f._abbild_direkt_moeglich(info), "exFAT im Container: im Strom")
+        app.bauform = "pfs"
+        self.assertFalse(self.f._abbild_direkt_moeglich(info), "PFS im Container: ueber Aufgabe 1")
+        self.assertIn(_de("ps5pkg.log_bauform_braucht_ordner"), self.f.protokoll.get("1.0", "end"))
+        self.f.format_schluessel = "ffpkg"
+        self.assertTrue(self.f._abbild_direkt_moeglich(info), "die Bauform gilt nur fuer den .ffpfsc-Container")
+
     def test_wann_der_strom_nicht_gilt(self) -> None:
         info = self._umwandeln_vorbereiten("ffpkg")
         self.assertTrue(self.f._abbild_direkt_moeglich(info))

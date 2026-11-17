@@ -678,6 +678,7 @@ class Ps5PkgFenster:
         self.format_box.bind("<<ComboboxSelected>>", self._format_gewaehlt)
         self._format_anzeigen()
         self.einbau.kopf_bauen(format_titel, self.format_box)
+        self._bauform_reihe_bauen(formate)
 
         # Der Auftrag steht wie bei den Aufgaben 1 bis 6 in der Aktionsleiste (``_leiste_bauen``): ein Balken mit Prozentzahl, rechts
         # daneben der Text. Die Werte des Schrittbalkens (``balken``) und des Gesamtbalkens (``balken_gesamt``) laufen weiter - der
@@ -2429,6 +2430,56 @@ class Ps5PkgFenster:
         """Wirkt der Einbau bei dem, was die Seite gerade tut? Nur beim Umwandeln in ein Abbild - ein Paket nimmt ihn nicht auf."""
         return self.aktion_var.get() == AKTION_UMWANDELN and self.format_schluessel != FORMAT_PAKET
 
+    # ------------------------------------------------------------------
+    # BAUFORM (Container): nur beim Zielformat .ffpfsc (Nutzerwunsch 17.11.2026: ".ffpfsc ist ein Abbild - gilt das dort nicht auch?")
+    # ------------------------------------------------------------------
+    def _bauform_reihe_bauen(self, eltern) -> None:
+        """BAUFORM (Container) wie bei den Aufgaben 1 bis 6 (``bauform_title``, ``bauform_combo``): Zwilling der Liste dort - dieselbe
+        Variable (``bauform_var``), derselbe Befehl (``_on_bauform_changed``), derselbe Tooltip mit dem Vergleich beider Formen.
+        Die Reihe steht nur, wenn sie etwas bewirkt (``_BAUFORM_WIRKT_BEI``: der ``.ffpfsc``-Container)."""
+        g, c, F, pt = self.g, self.c, self.F, self.pt
+        self.bauform_box = None
+        self.bauform_reihe = tk.Frame(eltern, bg=c["bg_main"])
+        self._bauform_an = False
+        self._bauform_tooltip = None
+        var, optionen = getattr(g, "bauform_var", None), getattr(g, "_bauform_options", None)
+        if var is None or not optionen:
+            return
+        tk.Label(self.bauform_reihe, text=g._t("bauform.label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(side="left", padx=(0, 16))
+        self.bauform_box = g._pw.Combobox(self.bauform_reihe, textvariable=var, state="readonly", values=tuple(optionen), font=(F, pt(10)))
+        self.bauform_box.bind("<<ComboboxSelected>>", lambda _e: g._on_bauform_changed())
+        self.bauform_box.pack(side="left")
+        klasse = getattr(sys.modules.get(type(g).__module__), "DelayedTooltip", None)
+        if klasse is not None:
+            self._bauform_tooltip = klasse(self.bauform_box, g._bauform_erklaerung(), delay_ms=900, wraplength=430)
+
+    def _bauform_sichtbar(self) -> bool:
+        """Wirkt die Bauform bei dem, was die Seite tut? Beim Umwandeln in einen ``.ffpfsc`` (wie ``_BAUFORM_WIRKT_BEI`` dort)."""
+        return (self.aktion_var.get() == AKTION_UMWANDELN
+                and self.format_schluessel in getattr(self.g, "_BAUFORM_WIRKT_BEI", ("ffpfsc",)))
+
+    def _bauform_zeigen(self, an: bool) -> None:
+        if self.bauform_box is None:
+            return
+        if an and self._bauform_tooltip is not None:
+            self._bauform_tooltip.text = self.g._bauform_erklaerung()      # der Satz zur gewaehlten Form steht voran
+        if an == self._bauform_an:
+            return
+        self._bauform_an = an
+        try:
+            self.bauform_reihe.pack(fill="x", pady=(12, 0)) if an else self.bauform_reihe.pack_forget()
+        except tk.TclError as exc:
+            logger.debug("BAUFORM nicht schaltbar: %s", exc)
+
+    def _bauform_pfs_gewaehlt(self) -> bool:
+        """Ist beim Zielformat ``.ffpfsc`` die Bauform "PFS im Container" gewaehlt? Dann baut Dump Forge nicht im Strom."""
+        g = self.g
+        if self.format_schluessel not in getattr(g, "_BAUFORM_WIRKT_BEI", ("ffpfsc",)):
+            return False
+        exfat = getattr(_haupt(g), "BAUFORM_EXFAT", "exfat")
+        return str(getattr(g, "bauform", exfat)) != exfat
+
     def _einbau_abgleichen(self) -> None:
         """Zieht Auswahllisten und Sperren der Einbau-Karte aus dem Hauptfenster nach (im Takt, nur wenn die Seite zu sehen ist)."""
         karte = self.einbau
@@ -2438,6 +2489,7 @@ class Ps5PkgFenster:
         wirkt = gilt and self.format_schluessel in getattr(self.g, "_KOMPRESSION_WIRKT_BEI", ("ffpfsc",))
         karte.abgleichen(gilt, wirkt)
         karte.format_hinweis_setzen(self._format_hinweis())
+        self._bauform_zeigen(self._bauform_sichtbar())
 
     def _format_hinweis(self) -> str:
         """Der Hinweis unter dem ZIELFORMAT, wie ``_zielformat_hinweis`` im Hauptfenster: das Ziel, bei den PFS-Containern das
@@ -2585,6 +2637,11 @@ class Ps5PkgFenster:
         if info.ist_quelle or self.format_schluessel not in forge.ABBILD_ZIELE:
             return False
         if not self._werkzeug_forge() or not forge.ist_paket(info.pfad):
+            return False
+        if self._bauform_pfs_gewaehlt():
+            # Dump Forge baut im Strom nur die Bauform exFAT im Container; wer "PFS im Container" gewaehlt hat, bekommt sie vom Weg
+            # ueber Aufgabe 1 - nicht still die andere (wie ``_strom_nach_container_gewaehlt`` dort).
+            self._protokoll(self.t("ps5pkg.log_bauform_braucht_ordner"))
             return False
         liste = self.g._einbau_liste()
         if liste:
