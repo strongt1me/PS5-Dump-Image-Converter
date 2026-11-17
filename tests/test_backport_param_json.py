@@ -19,7 +19,6 @@ sys.path.insert(0, str(PROJEKT))
 
 import pruefumgebung                                        # noqa: E402,F401
 from ps5_validator.utils import ps5_backport as bp          # noqa: E402
-from ps5_validator.utils import ps5_pkg_backport as pkg     # noqa: E402
 
 #: Auszug einer echten param.json (Double Dragon Revive): CRLF, Einrueckung mit zwei Leerzeichen.
 ECHT = (b'{\r\n  "applicationCategoryType": 0,\r\n  "contentId": "JP0036-PPSA23000_00-DDRAGONREVIVE000",\r\n'
@@ -134,13 +133,6 @@ class DateiTests(unittest.TestCase):
                 bp.param_json_anpassen(str(self.dump), 7)
         self.assertEqual(ECHT, self.pfad.read_bytes())
         self.assertEqual([], list((self.dump / "sce_sys").glob("*.bp_neu")))
-
-    def test_pkg_backport_setzt_die_param_json_herab(self) -> None:
-        zeilen: list[str] = []
-        (self.dump / "eboot.bin").write_bytes(b"kein programm")
-        pkg.backport_einbauen(str(self.dump), 7, "", zeile=zeilen.append)
-        self.assertTrue(any("param.json" in z for z in zeilen), zeilen)
-        self.assertEqual("0x0700000000000000", _gelesen(self.pfad.read_bytes())["sdkVersion"])
 
 
 class QuelltextTests(unittest.TestCase):

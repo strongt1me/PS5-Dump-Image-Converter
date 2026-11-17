@@ -655,56 +655,6 @@ class BauenTests(unittest.TestCase):
         self.assertTrue(any(isinstance(k, ast.Return) for k in frage.body), "Nein bricht ab")
         self.assertIn("amprgen.cancelled", ast.unparse(ast.Module(body=frage.body, type_ignores=[])))
 
-    def test_der_pkg_backport_meldet_in_der_sprache_der_oberflaeche(self) -> None:
-        """R9-4: ps5_pkg_backport kennt keine Uebersetzung; das PKG-Fenster reicht sie als Funktion hinein."""
-        import inspect
-        from ps5_validator.ui import ps5_pkg_fenster
-        from ps5_validator.utils import ps5_pkg_backport as pkg
-        self._ohne_originale()
-        satz_lib = self._satz()
-        lib = Path(self.spiel, "fakelib", "libSceAmpr.sprx")
-        lib.parent.mkdir(exist_ok=True)
-        lib.write_bytes(b"..ampr-emu-ng 0.4.0.." + bytes(300))
-        for text, erwartet in ((lambda namen: "UEBERSETZT:" + namen, "UEBERSETZT:libSceAmpr.sprx"), (None, "Vorhandene AMPR-EMU")):
-            with self.subTest(text=text is not None):
-                zeilen: list[str] = []
-                with mock.patch.object(pkg.ps5_backport, "fakelib_dateien", return_value=[satz_lib]):
-                    pkg.backport_einbauen(self.spiel, 4, self._tmp, zeile=zeilen.append, text_emu_bleibt=text)
-                self.assertTrue(any(erwartet in z for z in zeilen), zeilen)
-        # Struktur statt Quelltext-Text: Der Aufruf von backport_einbauen im Fenster uebergibt text_emu_bleibt als Lambda auf backport.log_emu_bleibt.
-        import ast
-        baum = ast.parse(inspect.getsource(ps5_pkg_fenster))
-        aufruf = next(k for k in ast.walk(baum) if isinstance(k, ast.Call) and ast.unparse(k.func) == "bp_util.backport_einbauen")
-        wert = next(kw.value for kw in aufruf.keywords if kw.arg == "text_emu_bleibt")
-        self.assertIsInstance(wert, ast.Lambda)
-        self.assertIn("self.t('backport.log_emu_bleibt', names=", ast.unparse(wert.body))
-        self.assertIn(".strip()", ast.unparse(wert.body))
-
-    def test_der_backport_im_pkg_fenster_ueberschreibt_ng_nicht(self) -> None:
-        """R8-1: ps5_pkg_backport.backport_einbauen (PS5-PKG-Fenster) kopierte den Satz ohne Pruefung ueber NG - direkt im Spielordner."""
-        from ps5_validator.utils import ps5_pkg_backport as pkg
-        self._ohne_originale()
-        satz_lib = self._satz()
-        foo = os.path.join(os.path.dirname(satz_lib), "libSceFoo.sprx")
-        lib = Path(self.spiel, "fakelib", "libSceAmpr.sprx")
-        lib.parent.mkdir(exist_ok=True)
-        ng = b"..ampr-emu-ng 0.4.0.." + bytes(300)
-        lib.write_bytes(ng)
-        zeilen: list[str] = []
-        with mock.patch.object(pkg.ps5_backport, "fakelib_dateien", return_value=[satz_lib, foo]):
-            erg, meldung = pkg.backport_einbauen(self.spiel, 4, self._tmp, zeile=zeilen.append)
-        self.assertEqual(pkg.ERGEBNIS_OK, erg, meldung)
-        self.assertEqual(ng, lib.read_bytes(), "NG wurde ueberschrieben")
-        self.assertEqual(b"foo", Path(self.spiel, "fakelib", "libSceFoo.sprx").read_bytes())
-        self.assertIn("libs=1", meldung, "gezaehlt wird nur, was wirklich kopiert wurde")
-        self.assertTrue(any("libSceAmpr.sprx" in z and "bleibt" in z for z in zeilen), zeilen)
-        # Gegenprobe: ohne Emulator im Spiel kommt der Satz wie bisher hinueber.
-        lib.unlink()
-        with mock.patch.object(pkg.ps5_backport, "fakelib_dateien", return_value=[satz_lib, foo]):
-            erg, meldung = pkg.backport_einbauen(self.spiel, 4, self._tmp, zeile=zeilen.append)
-        self.assertIn(b"[AMPR_EMU]", lib.read_bytes())
-        self.assertIn("libs=2", meldung)
-
     def test_emulator_bleibt_nur_fuer_ampr_und_playgo_mit_kennzeichen(self) -> None:
         from ps5_validator.utils import ps5_backport as bp
         ordner = Path(self._tmp, "emu")

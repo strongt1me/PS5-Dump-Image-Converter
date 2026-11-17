@@ -1806,11 +1806,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <p><strong>Conversión por lotes:</strong> Antes del primer byte de trabajo el programa comprueba cada origen con Dump Forge y pregunta <em>una sola vez, de forma conjunta</em>, para qué juegos se activan AMPR EMU, DLC EMU y PlayGo. Un sí vale solo para esos juegos; las casillas de la ventana quedan como están. Los archivos comprimidos y los orígenes que Dump Forge no lee se ignoran; en la línea de comandos solo hay una línea de registro por juego.</p>
 
-  <p><strong>Crear un paquete (PKG / FPKG):</strong> El programa busca por sí mismo en el origen AMPR EMU, asset packs (LZ4, zstd), PlayGo, DLC y BACKPORT y escribe el resultado en el registro, incluso si no falta nada. Si falta algo que el juego necesita, pregunta antes de crear: un paquete no admite la integración, Dump Forge incluye sin cambios la carpeta <code>fakelib</code> del origen. En una carpeta de juego, la pregunta ofrece <em>Crear como imagen (.ffpkg)</em>: el programa marca entonces lo que falta en las casillas de la tarea 1 e inicia la ejecución como imagen (se conserva el formato guardado). <em>Crear el paquete igualmente</em> crea sin lo que falta. Con una imagen como origen solo queda &laquo;igualmente&raquo;. Dump Forge añade AMPR EMU él mismo para un juego que carga <code>libSceAmpr</code>; con LibProsperoPkg y ProsperoPkgTool también se pregunta.</p>
+  <p><strong>Crear un paquete (PKG / FPKG):</strong> El programa busca por sí mismo en el origen AMPR EMU, asset packs (LZ4, zstd), PlayGo, DLC y BACKPORT y escribe el resultado en el registro, incluso si no falta nada. Si falta algo que el juego necesita, pregunta antes de crear: un paquete no admite la integración, Dump Forge incluye sin cambios la carpeta <code>fakelib</code> del origen. En una carpeta de juego, la pregunta ofrece <em>Crear como imagen (.ffpkg)</em>: el programa marca entonces lo que falta en las casillas de la tarea 1 e inicia la ejecución como imagen (se conserva el formato guardado). <em>Crear el paquete igualmente</em> crea sin lo que falta. Con una imagen como origen solo queda &laquo;igualmente&raquo;. Dump Forge añade AMPR EMU él mismo para un juego que carga <code>libSceAmpr</code>.</p>
 
-  <p><strong>La tarea 7 tiene la misma tarjeta que las tareas 1 a 6:</strong> FORMATO DE DESTINO, COMPRESIÓN (PFS), HILOS DE TRABAJO y COMPROBACIÓN están en una fila (con flechas entre ellos); debajo, una nota sobre el formato de destino y a la derecha INTEGRAR AL CREAR (AMPR EMU con método y versión, método de empaquetado, nivel y comprobación completa, PlayGo, DLC EMU, BACKPORT con firmware). Los campos son los mismos que en las tareas 1 a 6 (una elección aquí vale allí y viceversa) y actúan al convertir a una imagen; un paquete no admite la integración, entonces están bloqueados. Con el formato de destino .ffpfsc aparece además, bajo la nota, FORMA DEL CONTENEDOR, como en las tareas 1 a 6 (exFAT o PFS dentro del contenedor; una elección aquí vale allí y viceversa). Dump Forge construye un paquete en flujo solo como exFAT dentro del contenedor; con «PFS dentro del contenedor» el programa descomprime el paquete y construye mediante la tarea 1, para que salga la forma elegida. <em>En cuanto eliges el origen, el programa busca por sí mismo, como en las tareas 1 a 6, lo que ya está integrado en el juego</em> (BACKPORT, AMPR EMU, asset pack, PlayGo) y si haría falta PlayGo; las líneas [Comprobación] aparecen en el registro. Antes de la ejecución busca además AMPR EMU (también LZ4 y zstd), PlayGo, DLC y BACKPORT y pregunta si falta algo. Debajo están, como allí, INICIAR y CANCELAR; durante una ejecución aparecen a su lado la barra de progreso con el porcentaje y, a la derecha, el texto correspondiente, y debajo el registro. Abajo del todo a la derecha está la línea de estado y, debajo, una línea pequeña muestra cuánto lleva la ejecución y con qué herramienta; si pasan más de 20 segundos sin novedades, indica desde cuándo &ndash; con archivos muy grandes es normal. Bajo la carpeta de destino están, como allí, las casillas «Apagar el equipo tras finalizar correctamente», «Enviar el resultado a la PS5 tras finalizar correctamente», «Eliminar el origen tras el éxito» y «Carpeta de dump: crear copia de trabajo antes (sin preguntar)» (una elección aquí vale allí y viceversa). El origen nunca se elimina en silencio: antes del inicio hay una pregunta, y solo se elimina tras un éxito verificado y si no cambió durante la ejecución. Tras un hallazgo de la comprobación se conserva, no se envía nada y el equipo sigue encendido. «Actualizaciones Online», «Mostrar archivos», «Detalles» y «Opciones» están en el menú contextual del registro.</p>
+  <p><strong>La tarea 7 tiene la misma tarjeta que las tareas 1 a 6:</strong> FORMATO DE DESTINO, COMPRESIÓN (PFS), HILOS DE TRABAJO y COMPROBACIÓN están en una fila (con flechas entre ellos); debajo, una nota sobre el formato de destino y a la derecha INTEGRAR AL CREAR (AMPR EMU con método y versión, método de empaquetado, nivel y comprobación completa, PlayGo, DLC EMU, BACKPORT con firmware). Los campos son los mismos que en las tareas 1 a 6 (una elección aquí vale allí y viceversa) y actúan al convertir a una imagen; un paquete no admite la integración, entonces están bloqueados. Con el formato de destino .ffpfsc aparece además, bajo la nota, FORMA DEL CONTENEDOR, como en las tareas 1 a 6 (exFAT o PFS dentro del contenedor; una elección aquí vale allí y viceversa). Dump Forge construye un paquete en flujo solo como exFAT dentro del contenedor; con «PFS dentro del contenedor» el programa descomprime el paquete y construye mediante la tarea 1, para que salga la forma elegida. <em>En cuanto eliges el origen, el programa busca por sí mismo, como en las tareas 1 a 6, lo que ya está integrado en el juego</em> (BACKPORT, AMPR EMU, asset pack, PlayGo) y si haría falta PlayGo; las líneas [Comprobación] aparecen en el registro. Antes de la ejecución busca además AMPR EMU (también LZ4 y zstd), PlayGo, DLC y BACKPORT y pregunta si falta algo. Debajo están, como allí, INICIAR y CANCELAR; durante una ejecución aparecen a su lado la barra de progreso con el porcentaje y, a la derecha, el texto correspondiente, y debajo el registro. Abajo del todo a la derecha está la línea de estado y, debajo, una línea pequeña muestra cuánto lleva la ejecución y con qué herramienta; si pasan más de 20 segundos sin novedades, indica desde cuándo &ndash; con archivos muy grandes es normal. Bajo la carpeta de destino están, como allí, las casillas «Apagar el equipo tras finalizar correctamente», «Enviar el resultado a la PS5 tras finalizar correctamente», «Eliminar el origen tras el éxito» y «Carpeta de dump: crear copia de trabajo antes (sin preguntar)» (una elección aquí vale allí y viceversa). El origen nunca se elimina en silencio: antes del inicio hay una pregunta, y solo se elimina tras un éxito verificado y si no cambió durante la ejecución. Tras un hallazgo de la comprobación se conserva, no se envía nada y el equipo sigue encendido. Tras un resultado creado correctamente (paquete, imagen o carpeta extraída), la página avisa, como las tareas 1 a 6, «¡Operación completada correctamente!» &ndash; solo después llega la pregunta de enviar a la PS5; con el apagado y tras un hallazgo el aviso no aparece. «Actualizaciones Online», «Mostrar archivos», «Detalles» y «Opciones» están en el menú contextual del registro.</p>
 
-  <p><strong>Sin carpeta intermedia:</strong> Dump Forge escribe un <code>.pkg</code> en una imagen (<code>.ffpkg</code>, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code>) en flujo, sin extraerlo. Solo si hay que integrar algo se extrae primero en la carpeta de trabajo y la tarea 1 crea la imagen con la integración. Una carpeta de juego se crea como paquete en flujo. Si como creador de paquetes sigue configurado LibProsperoPkg o ProsperoPkgTool (ambos copian primero el juego a una carpeta de trabajo), se te pregunta una vez si Dump Forge debe tomar el relevo; nada se cambia en silencio.</p>
+  <p><strong>Sin carpeta intermedia:</strong> Dump Forge escribe un <code>.pkg</code> en una imagen (<code>.ffpkg</code>, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code>) en flujo, sin extraerlo. Solo si hay que integrar algo se extrae primero en la carpeta de trabajo y la tarea 1 crea la imagen con la integración. Una carpeta de juego se crea como paquete en flujo.</p>
 
   <p><strong>BACKPORT:</strong> El programa conoce el firmware de tu consola si la vista CONSOLA lo ha medido; si no, pregunta <em>una sola vez</em> (una elección de 1.xx a 13.xx o posterior, o &laquo;No indicar&raquo;) y recuerda la respuesta. El dato se puede cambiar en AJUSTES. Si un juego exige más &ndash; por el SDK de su <code>eboot.bin</code> o por el firmware exigido &ndash; de lo que tiene la consola y aún no está reducido, el programa pregunta antes del trabajo si se debe activar BACKPORT. El destino es la etapa más alta con bibliotecas sustitutas que no supere la consola (como en la ventana BACKPORT). Está preseleccionado <em>Sí</em>; la casilla y el firmware quedan después así. En la conversión por lotes BACKPORT forma parte de la pregunta conjunta; en el área PKG / FPKG aparece como aviso antes de crear un paquete (un paquete no admite BACKPORT).</p>
 
@@ -2237,43 +2237,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>Construir un paquete</h4>
   <p>Elija una <strong>carpeta de juego</strong> (que contenga <code>eboot.bin</code> y <code>sce_sys/param.json</code>)
   o una <strong>imagen</strong>, la carpeta de destino y el mosaico <strong>Paquete</strong>. El programa construye con ello un
-  <strong>paquete de depuración (FPKG)</strong>. La herramienta que construye la determina el <strong>Builder</strong> en las
-  opciones (véase abajo): el valor predeterminado es <strong>Dump Forge</strong>, que construye carpetas de juego e imágenes como
-  lo hace la aplicación Dump Forge (véase <a href="#k7forge">Construir un paquete con Dump Forge</a>) y llama al paquete
-  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. Una <strong>imagen</strong> siempre la construye Dump Forge. Con
-  <strong>LibProsperoPkg</strong> (<code>ffpfsc-pkg-tool</code>, la vía anterior, solo carpetas de juego) la herramienta fija por
-  sí misma el nombre de la salida (<code>&lt;Content-ID&gt;-A…-V….pkg</code>) y el programa comprueba después el paquete con la
-  misma lista de comprobación que la acción <em>Comprobar</em>; con <strong>ProsperoPkgTool</strong> se llama
-  <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>. Los puntos siguientes describen la construcción con LibProsperoPkg.</p>
-  <ul>
-    <li>Se <strong>comprueba de antemano</strong> el Content ID, el Title ID (de <code>param.json</code>) y el propio
-    <code>param.json</code>, con la misma comprobación que en la tarea 1. Si tiene objeciones, el
-    programa ofrece la <strong>reparación</strong> (el archivo antiguo se deja al lado). No es un detalle menor: un
-    paquete con <code>applicationDrmType: upgradable</code> no recibe <code>license.dat</code> y muestra un candado en la
-    consola; con la reparación a <code>standard</code>, el paquete de prueba construido superó la comprobación
-    sin hallazgos (38 de 38; sin reparación, 2 hallazgos).</li>
-    <li>Los <strong>ajustes predeterminados</strong> son los que el autor de la herramienta ha acreditado en una consola: Kraken
-    sobre la imagen interna con el codificador integrado (los bloques almacenados se instalan, pero
-    no arrancan), firma falsa de los archivos ejecutables y nuevo índice AMPR si hay AMPR EMU en el juego.
-    El modo y el nivel de compresión, el número de workers de construcción, los chunks PlayGo, una construcción reproducible byte a byte y una
-    regeneración de PlayGo pueden cambiarse en la pestaña <em>Construcción</em> de las opciones (solo LibProsperoPkg).</li>
-    <li><strong>Integrar backport</strong> (pestaña <em>Construcción</em>, solo LibProsperoPkg): parchea los archivos ELF/SELF de la
-    carpeta de juego <strong>antes</strong> de construir para el firmware de destino elegido; es el mismo paso que en la
-    <a href="#k14">herramienta BACKPORT independiente</a>, pero sin su ventana. Además se puede fijar un
-    firmware mínimo (<code>requiredSystemSoftwareVersion</code> en <code>param.json</code>) y marcar el
-    <strong>modo Patch</strong> (<code>contentType</code> temporalmente en <code>PATCH</code>, para un
-    PKG de actualización; se restablece tras la construcción).</li>
-    <li><strong>Espacio:</strong> la carpeta de trabajo se encuentra dentro de la carpeta de destino (allí se crea también el paquete) y después se
-    elimina. En unidades sin vínculos fijos (por ejemplo, exFAT), la herramienta crea primero una copia
-    del juego. El programa pregunta si queda menos del doble del tamaño del juego como espacio libre y
-    se niega si queda menos de la mitad.</li>
-    <li>Si en la carpeta de destino ya hay un paquete con el mismo nombre, el programa solo lo sustituye con la casilla
-    <em>Sobrescribir lo existente</em>. Una construcción fallida o cancelada no deja nada sin terminar en la
-    carpeta de destino.</li>
-  </ul>
+  <strong>paquete de depuración (FPKG)</strong>. Desde el 17.11.2026 los paquetes se construyen <strong>solo con Dump Forge</strong> (véase
+  <a href="#k7forge">Construir un paquete con Dump Forge</a>); el paquete se llama <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.
+  Ya no hay un segundo creador de paquetes: LibProsperoPkg (<code>ffpfsc-pkg-tool</code>) solo lee, comprueba y desempaqueta paquetes,
+  y ProsperoPkgTool se ha eliminado. Con ellos han desaparecido la elección del Builder, la reparación de <code>param.json</code> antes de
+  construir, integrar backport antes de construir, el firmware mínimo, el modo Patch para un PKG de actualización, los chunks PlayGo y la
+  construcción reproducible.</p>
   <div class="kasten warnung">
     <span class="titel">Qué necesita la consola para arrancar el paquete</span>
-    <p>La herramienta indica como estado acreditado: los paquetes de este tipo arrancan hasta el firmware 11.60 con kstuff-lite 1.13
+    <p>LibProsperoPkg indica como estado acreditado: los paquetes de este tipo arrancan hasta el firmware 11.60 con kstuff-lite 1.13
     o posterior. En firmwares más recientes (por ejemplo, 12.00), un paquete así se instala pero no arranca;
     el bloqueo está en la consola, no en el paquete. Un paquete creado con este programa se arrancó en una consola y funciona (probado por el desarrollador); en qué firmware, no consta aquí.</p>
   </div>
@@ -2294,16 +2266,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <code>param.json</code>) y comunica sus hallazgos en el registro; el programa no repara aquí ningún <code>param.json</code> ni añade una
     lista de comprobación propia antes o después. Tras la construcción, Forge vuelve a leer el paquete y comprueba su estructura y sus sumas;
     el contenido lo comprueba por defecto en una muestra, con <em>Comprobar por completo</em> en las opciones byte a byte.</li>
-    <li><strong>Opciones</strong> (pestaña <em>Construcción</em>, arriba): el <strong>nivel de compresión</strong> (<em>Rápido</em>,
+    <li><strong>Opciones</strong> (pestaña <em>Construcción</em>): el <strong>nivel de compresión</strong> (<em>Rápido</em>,
     <em>Equilibrado</em>, <em>Paquete más pequeño</em>, <em>Sin comprimir</em> – los dos intermedios reducen el paquete un 2,6&nbsp;%
     aproximadamente y tardan unas 6 y 9 veces más), <strong>Comprobar por completo</strong> y <strong>Omitir las bibliotecas de backport</strong>
-    (<code>fakelib/</code>; Dump Forge lo rechaza si se redujo el SDK en <code>eboot.bin</code>). El número de núcleos es el de los ajustes
-    de construcción (0 = todos). Lo que solo conoce LibProsperoPkg (firmware mínimo, modo Patch, integrar backport, chunks PlayGo,
-    construcción reproducible) lo ignora Dump Forge – el registro lo indica antes de construir.</li>
+    (<code>fakelib/</code>; Dump Forge lo rechaza si se redujo el SDK en <code>eboot.bin</code>). El número de núcleos de trabajo se ajusta en la misma pestaña (0 = todos). Dump Forge no ofrece firmware mínimo, PKG de actualización (modo Patch), backport antes de construir, chunks PlayGo ni construcción reproducible; toma tal cual los archivos del programa y <code>fakelib</code> del origen.</li>
     <li><strong>Nombre y espacio:</strong> El paquete se llama <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>; el nombre sin la extensión
     se mantiene en 63 bytes (se acorta el título, el identificador permanece). El espacio de la carpeta de destino se comprueba antes.</li>
-    <li><strong>Plataformas:</strong> La línea de comandos se incluye para Windows (x64), Linux (x64) y macOS. Si falta en su plataforma, el
-    programa sigue construyendo carpetas de juego con LibProsperoPkg; una imagen entonces no la acepta y lo dice.</li>
+    <li><strong>Plataformas:</strong> La línea de comandos se incluye para Windows (x64 y arm64), Linux (x64 y arm64) y macOS; las dos versiones arm64 aún no se han probado en una máquina arm64. Si falta en su plataforma, el programa no construye ningún paquete y lo dice.</li>
     <li><strong>Comprobar después:</strong> La acción <em>Comprobar</em> (la lista de LibProsperoPkg) indica un hallazgo en un paquete de Dump Forge sobre la envoltura RSA (<code>cnt.wrap</code>): medido en el paquete del ejemplo de abajo, superó 33 comprobaciones y falló esta, mientras que un paquete construido con LibProsperoPkg a partir del mismo origen superó 42 de 42. Un paquete con este hallazgo se arrancó en la consola y funciona; Dump Forge comprueba su paquete según sus propias reglas y las supera.</li>
     <li><strong>Medido</strong> (16.11.2026, línea de comandos v0.5.6 en Windows): una carpeta de juego con 72 archivos (262&nbsp;MB) se convirtió en
     6,3&nbsp;s en un paquete de 164&nbsp;MB; de un pequeño juego creado a propósito salieron los cuatro formatos de imagen y un paquete de cada uno.
@@ -2324,15 +2293,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     desempaquetar, construir y extraer en esta zona (si se deja vacía, rige la carpeta de trabajo habitual del programa;
     configúrela solo si hace falta, por ejemplo, cuando la unidad del sistema tiene poco espacio para paquetes grandes);
     acción y formato de destino predeterminados para tareas nuevas; <em>Abrir la carpeta de salida tras un trabajo satisfactorio</em>;
-    el <strong>Builder predeterminado</strong> (Dump Forge – el predeterminado –, LibProsperoPkg o ProsperoPkgTool; solo para «Construir paquete»; una imagen siempre la construye Dump Forge); el
+    el
     <strong>código de depuración</strong>: si se deja vacío, se usa el valor predeterminado de la herramienta (32 ceros); si no, exactamente
-    32 caracteres ASCII imprimibles. Rige para leer, comprobar, desempaquetar y construir; un paquete construido con otro
-    código no puede abrirse sin él.</li>
-    <li><strong>Construcción</strong> (solo para «Construir paquete»; arriba los ajustes de Dump Forge – nivel de compresión, comprobación completa, omitir las bibliotecas de backport –, debajo los de LibProsperoPkg): modo de compresión
-    (Kraken, zlib o ninguna) y nivel, número de workers de construcción, chunks PlayGo, una construcción reproducible byte a byte y
-    una regeneración forzada de PlayGo; <strong>Integrar backport</strong> con firmware de destino y una
-    carpeta fakelib propia (vacía = conjunto incluido); una <strong>versión mínima de firmware</strong> para
-    <code>param.json</code>; el <strong>modo Patch</strong> para un PKG de actualización.</li>
+    32 caracteres ASCII imprimibles. Rige para leer, comprobar y desempaquetar; un paquete construido con otro código no puede abrirse sin él. Dump Forge construye siempre con el código predeterminado.</li>
+    <li><strong>Construcción</strong> (solo para «Construir paquete»; los ajustes de Dump Forge): nivel de compresión, comprobación completa, omitir las bibliotecas de backport y número de núcleos de trabajo.</li>
     <li><strong>Mantenimiento:</strong> exportar o importar las opciones como archivo (una vista previa de los cambios
     pide confirmación antes de aplicarlos) y restablecer los valores predeterminados; la biblioteca y sus carpetas
     se conservan.</li>

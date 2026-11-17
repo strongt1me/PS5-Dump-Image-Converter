@@ -533,7 +533,7 @@ footer{
 
   <div class="frage">
     <h3>Puis-je construire moi-même un PKG à partir d’un dossier de jeu, et que fait le « builder » ?</h3>
-    <p>Oui, dans <strong>PS5 PKG Dump &amp; Image Converter</strong> (tâche 7 – PKG / FPKG, page FPKG) : choisissez le dossier du jeu, le dossier de destination, la vignette <strong>Package</strong>, puis <em>Démarrer la conversion</em>. Dans <strong>Options</strong>, le <strong>builder</strong> détermine quel outil le construit – <strong>LibProsperoPkg</strong> (par défaut, avec options de compression, de firmware et de backport dans l’onglet <em>Construction</em>) ou <strong>ProsperoPkgTool</strong> (second constructeur de paquets, licence MIT). L’onglet <em>Construction</em> permet aussi d’intégrer <strong>BACKPORT</strong> juste avant la construction, de définir un <strong>firmware minimum</strong> ou de cocher le <strong>mode patch</strong> pour un PKG de mise à jour.</p>
+    <p>Oui, dans <strong>PS5 PKG Dump &amp; Image Converter</strong> (tâche 7 – PKG / FPKG, page FPKG) : choisissez le dossier du jeu ou une image, le dossier de destination, la vignette <strong>Package</strong>, puis <em>Démarrer la conversion</em>. Depuis le 17.11.2026, les paquets sont construits uniquement avec <strong>Dump Forge</strong> ; il n’y a plus de choix de builder. Dans l’onglet <em>Construction</em> des <strong>Options</strong>, vous réglez le niveau de compression, la vérification complète, l’omission des bibliothèques de backport et le nombre de cœurs de travail. <strong>LibProsperoPkg</strong> ne fait plus que lire, vérifier et extraire les paquets ; le firmware minimum, le mode patch (PKG de mise à jour) et BACKPORT juste avant la construction n’existent plus.</p>
   </div>
 
   <div class="frage">

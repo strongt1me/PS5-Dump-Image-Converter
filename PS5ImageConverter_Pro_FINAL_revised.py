@@ -55599,14 +55599,12 @@ class PS5ConverterGUI:
         def _werkzeuge():
             from ps5_validator.utils import orbispkg as _orb
             from ps5_validator.utils import ps5_pkg_werkzeug as _wz
-            from ps5_validator.utils import prospero_pkg_tool as _ppt
             wurzeln = [os.path.dirname(os.path.abspath(__file__))]
             meipass = getattr(sys, "_MEIPASS", "")
             if meipass:
                 wurzeln.insert(0, str(meipass))
             return bd.werkzeuge_messen({
                 "ffpfsc-pkg-tool (PS5 PKG)": lambda: _wz.werkzeug_suchen(wurzeln),
-                "ProsperoPkgTool (PS5 PKG bauen)": lambda: _ppt.werkzeug_suchen(wurzeln),
                 "OrbisPkgTool (PS4 PKG)": _orb.werkzeug_finden,
             }, dotnet=_wz.dotnet_ordner)
 

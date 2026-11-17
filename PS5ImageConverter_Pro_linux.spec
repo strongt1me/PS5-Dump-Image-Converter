@@ -118,8 +118,9 @@ if os.path.isdir(os.path.join(_pkgtool, 'linux-x64')):
 # im Bereich „PKG / FPKG“ (seit 16.11.2026; Herkunft und Pruefsummen in Dump-Forge-CLI/README.md). Nur die
 # Befehlszeile dieser Plattform, dazu Lizenz und Hinweise.
 _forgecli = os.path.join(_here, 'Dump-Forge-CLI')
-if os.path.isdir(os.path.join(_forgecli, 'linux-x64')):
-    _datas.append((os.path.join(_forgecli, 'linux-x64'), 'Dump-Forge-CLI/linux-x64'))
+_forge_unter = 'linux-arm64' if platform.machine().lower() in ('aarch64', 'arm64') else 'linux-x64'
+if os.path.isdir(os.path.join(_forgecli, _forge_unter)):
+    _datas.append((os.path.join(_forgecli, _forge_unter), 'Dump-Forge-CLI/' + _forge_unter))
     for _n in ('LICENSE', 'THIRD-PARTY-NOTICES.md', 'README.md'):
         _datas.append((os.path.join(_forgecli, _n), 'Dump-Forge-CLI'))
 

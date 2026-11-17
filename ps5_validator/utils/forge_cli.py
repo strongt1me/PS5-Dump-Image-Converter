@@ -55,16 +55,18 @@ _Abbruch = Callable[[], bool]
 def unterordner() -> str:
     """Die Plattform dieses Rechners, wie die Ordner unter ``Dump-Forge-CLI`` heissen; ``""``, wenn es keine gibt.
 
-    Windows (auch arm64: laeuft dort als x64) = ``win-x64``; macOS (Apple Silicon und Intel gleichermassen) =
-    ``macos-universal``; Linux nur auf x86-64 (``linux-x64``, statisch gegen musl gebunden).
+    Windows = ``win-x64``, mit einem arm64-Python ``win-arm64`` (ein x64-Python meldet auch auf einem ARM-Rechner ``AMD64``);
+    macOS (Apple Silicon und Intel gleichermassen) = ``macos-universal``; Linux auf x86-64 = ``linux-x64`` (statisch gegen
+    musl gebunden), auf arm64 = ``linux-arm64`` (dynamisch gegen glibc gebunden).
     """
+    arm = platform.machine().lower() in ("arm64", "aarch64")
     if sys.platform == "win32":
-        return "win-x64"
+        return "win-arm64" if arm else "win-x64"
     if sys.platform == "darwin":
         return "macos-universal"
     if platform.machine().lower() in ("x86_64", "amd64"):
         return "linux-x64"
-    return ""
+    return "linux-arm64" if arm else ""
 
 
 def dateiname() -> str:
@@ -76,10 +78,12 @@ def werkzeug_suchen(wurzeln: "list[str] | None" = None) -> str:
     unter = unterordner()
     if not unter:
         return ""
-    for wurzel in wurzeln or []:
-        kandidat = os.path.join(wurzel, ORDNER, unter, dateiname())
-        if os.path.isfile(kandidat):
-            return kandidat
+    # Windows arm64 fuehrt auch die x64-Fassung aus (Emulation): fehlt die native, nimmt die Suche diese.
+    for ordner in (unter, "win-x64") if unter == "win-arm64" else (unter,):
+        for wurzel in wurzeln or []:
+            kandidat = os.path.join(wurzel, ORDNER, ordner, dateiname())
+            if os.path.isfile(kandidat):
+                return kandidat
     return ""
 
 

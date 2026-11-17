@@ -43,7 +43,6 @@ from ps5_validator.utils import konsole_ftp as ftp
 from ps5_validator.utils import pkg_direkt
 from ps5_validator.utils import ps5_pkg_optionen as opt
 from ps5_validator.utils import ps5_pkg_werkzeug as wz
-from ps5_validator.utils import prospero_pkg_tool as ppt
 from ps5_validator.utils import quelle_loeschen
 from ps5_validator.utils import quellbericht as qb
 from ps5_validator.ui import hauptknoepfe
@@ -68,8 +67,6 @@ EINST_FORMAT = "ps5pkg_format"
 EINST_BIBLIOTHEK = "ps5pkg_bibliothek"
 EINST_AKTION = "ps5pkg_aktion"
 EINST_FERN = "ps5pkg_fern"
-#: Der Anwender wurde gefragt, ob Dump Forge statt eines Werkzeugs mit Arbeitsordner (LibProsperoPkg, ProsperoPkgTool) baut.
-EINST_BAUER_GEFRAGT = "ps5pkg_bauer_gefragt"
 
 AKTION_UMWANDELN = "umwandeln"
 AKTION_EXTRAHIEREN = "extrahieren"
@@ -86,11 +83,6 @@ FORMAT_PAKET = "pkg"
 #: Bei diesen Formaten nennt das Fenster nach der Wahl das Tempo der Entpackung auf der Konsole (``main.pfs_speed_hint``).
 FORMATE_MIT_RUCKELHINWEIS = ("ffpfsc", "ffpfs")
 
-#: Ab wie viel freiem Platz (Vielfaches der Quellgroesse) das Fenster beim Bauen nachfragt bzw. abbricht. Gemessen am
-#: 09.10.2026: Ein 1,2-GB-Spiel wurde in ein 541-MB-Paket; auf einem Laufwerk ohne feste Verknuepfungen (exFAT) legt
-#: das Werkzeug erst eine Kopie des Spiels an.
-BAU_PLATZ_WARNUNG = 2.0
-BAU_PLATZ_MINDEST = 1.05
 #: Ein entpacktes Spiel ist groesser als sein Paket (gemessen: 939 MB -> 1,55 GB).
 ENTPACKT_FAKTOR = 1.7
 #: Dump Forge legt keine Kopie an und liest Abbilder ohne Zwischenordner; das Paket wird nur so gross wie das Spiel
@@ -261,7 +253,6 @@ class Ps5PkgFenster:
         self._staging: list[str] = []
         self._bau: dict = {}                       # Arbeitsordner und Vorher-Stand des laufenden Baus
         self._werkzeug_pfad = ""
-        self._werkzeug_ppt_pfad = ""
         self._werkzeug_forge_pfad = ""
         self._befunde_gezeigt: "set[str]" = set()   # Quellen, deren Vorabbefunde schon im Protokoll stehen
         self.einbau = None                         # die Einbau-Karte der Seite (``_seite_umwandeln``)
@@ -297,12 +288,6 @@ class Ps5PkgFenster:
         if not self._werkzeug_pfad or not os.path.isfile(self._werkzeug_pfad):
             self._werkzeug_pfad = wz.werkzeug_suchen(self._wurzeln())
         return self._werkzeug_pfad
-
-    def _werkzeug_ppt(self) -> str:
-        """Pfad zu ProsperoPkgTool - dem zweiten, waehlbaren Paketersteller (nur fuer "Paket bauen")."""
-        if not self._werkzeug_ppt_pfad or not os.path.isfile(self._werkzeug_ppt_pfad):
-            self._werkzeug_ppt_pfad = ppt.werkzeug_suchen(self._wurzeln())
-        return self._werkzeug_ppt_pfad
 
     def _werkzeug_forge(self) -> str:
         """Pfad zur Befehlszeile von Dump Forge (Ordner ``Dump-Forge-CLI``); ``""``, wenn es sie hier nicht gibt."""
@@ -806,19 +791,6 @@ class Ps5PkgFenster:
         if info.ist_abbild:
             return schluessel == FORMAT_PAKET
         return schluessel != FORMAT_PAKET or info.ist_ordner
-
-    def _bauer_fuer(self, info: "wz.PaketInfo") -> str:
-        """Mit welchem Werkzeug das Paket aus dieser Quelle gebaut wird: ``forge``, ``lpp`` oder ``ppt``.
-
-        Ein Abbild baut nur Dump Forge (es liest die Abbilder selbst, ohne Zwischenordner). Fuer einen Spielordner gilt
-        die Wahl in den Optionen; ist Forge dafuer auf dieser Plattform nicht da, ist es LibProsperoPkg (``lpp``).
-        """
-        if info.ist_abbild:
-            return "forge"
-        wahl = self._builder()
-        if wahl == "forge" and not self._werkzeug_forge():
-            return "lpp"
-        return wahl
 
     def _format_eintraege(self) -> "list[tuple[str, str, str]]":
         """Die Eintraege des Auswahlfelds als (Art, Schluessel, Text): erst die Formate, dann die uebrigen Aktionen."""
@@ -1484,12 +1456,6 @@ class Ps5PkgFenster:
         wert = self._einstellung(opt.PASSCODE, "")
         return wert if isinstance(wert, str) and wz.passcode_gueltig(wert) else ""
 
-    def _builder(self) -> str:
-        """Welches Werkzeug "Paket bauen" verwendet - "forge", "lpp" oder "ppt" (siehe opt.BUILDER)."""
-        vorgabe = opt.STANDARD[opt.BUILDER]
-        wert = self._einstellung(opt.BUILDER, vorgabe)
-        return wert if wert in opt.BUILDER_WERTE else vorgabe
-
     def _ordner_scan_starten(self, ordner: list[str], rekursiv: bool) -> None:
         """Durchsucht die Bibliotheksordner im Hintergrund; neue Quellen traegt der Takt danach ein."""
         ordner = [o for o in ordner if os.path.isdir(o)]
@@ -1780,9 +1746,7 @@ class Ps5PkgFenster:
             name = os.path.basename(os.path.normpath(self.aktuell.pfad)) or name
         if self.aktion_var.get() == AKTION_UMWANDELN:
             if self.format_schluessel == FORMAT_PAKET:
-                if self._bauer_fuer(self.aktuell) == "forge":
-                    return self._forge_dateiname(self.aktuell)             # den Namen legt das Programm fest
-                return "%s….pkg" % (self.aktuell.content_id or name)       # den Namen legt das Werkzeug fest
+                return self._forge_dateiname(self.aktuell)                 # den Namen legt das Programm fest
             endung = next((e for s, _n, e in FORMATE if s == self.format_schluessel), "")
             return name + endung
         return name
@@ -2080,13 +2044,12 @@ class Ps5PkgFenster:
         if info is None or self._job is not None or self._uebergabe is not None:
             return
         aktion = self.aktion_var.get()
-        # Den Bau eines Pakets aus einem Abbild (oder, nach der Wahl in den Optionen, aus einem Spielordner) macht
-        # Dump Forge: Es braucht weder ffpfsc-pkg-tool noch die .NET-Laufzeit.
+        # Den Bau eines Pakets aus einem Abbild oder Spielordner macht Dump Forge, seit 17.11.2026 als einziger Paketersteller
+        # (LibProsperoPkg und ProsperoPkgTool bauen nicht mehr): Es braucht weder ffpfsc-pkg-tool noch die .NET-Laufzeit.
         # Ein ``.pkg`` schreibt Dump Forge im Strom in ein Abbild (Nutzerwunsch 17.11.2026, kein Zwischenordner): auch dafuer
         # braucht es weder ffpfsc-pkg-tool noch die .NET-Laufzeit.
         direkt = aktion == AKTION_UMWANDELN and not info.ist_quelle and self._abbild_direkt_moeglich(info)
-        forge_weg = direkt or (info.ist_quelle and aktion == AKTION_UMWANDELN and self.format_schluessel == FORMAT_PAKET
-                               and self._bauer_fuer(info) == "forge")
+        forge_weg = direkt or (info.ist_quelle and aktion == AKTION_UMWANDELN and self.format_schluessel == FORMAT_PAKET)
         if forge_weg:
             if not self._werkzeug_forge():
                 self._fehler(self.t("ps5pkg.err_no_tool_forge"))
@@ -2123,7 +2086,7 @@ class Ps5PkgFenster:
             self._job_starten("extrahieren", self._lauf_extrahieren, info, ordner)
             return
         if info.ist_quelle and self.format_schluessel == FORMAT_PAKET:
-            self._bauen_starten(info, ziel)
+            self._forge_bauen_starten(info, ziel)
             return
         # Umwandeln: ein Paket wird erst entpackt (Arbeitsordner), ein Spielordner geht gleich an Aufgabe 1
         if getattr(self.g, "is_running", False):
@@ -2198,53 +2161,6 @@ class Ps5PkgFenster:
             "ps5pkg.err_space", ordner=ordner, frei=self._fmt(frei), noetig=self._fmt(noetig)), parent=self.win)
         return False
 
-    @staticmethod
-    def _vorhandene_pakete(ziel: str, content_id: str) -> list[str]:
-        """Pakete im Zielordner, die so heissen, wie das Werkzeug das neue nennen wird (``<Content-ID>-A..-V...pkg``)."""
-        muster = re.compile(re.escape(content_id) + r"-A\d+-V\d+\.pkg$", re.IGNORECASE)
-        try:
-            return sorted(n for n in os.listdir(ziel) if muster.match(n))
-        except OSError:
-            return []
-
-    def _param_neu_lesen(self, info: "wz.PaketInfo") -> bool:
-        """Liest die ``param.json`` nach einer Reparatur neu und zieht Anzeige und Kennungen nach. ``False``, wenn die
-        Kennungen danach nicht tragen."""
-        import json
-        try:
-            with open(os.path.join(info.pfad, "sce_sys", "param.json"), encoding="utf-8-sig") as datei:
-                param = json.load(datei)
-        except (OSError, ValueError) as exc:
-            logger.debug("param.json nach der Reparatur nicht lesbar: %s", exc)
-            return False
-        if not isinstance(param, dict):
-            return False
-        info.param = param
-        info.titel = wz.titel_aus_param(param) or info.titel
-        info.content_id = str(param.get("contentId", "") or "")
-        info.title_id = str(param.get("titleId", "") or "")
-        self._liste_fuellen(auswaehlen=info.pfad)
-        self._paket_waehlen(info)
-        return bool(wz.CONTENT_ID.match(info.content_id) and wz.TITLE_ID.match(info.title_id))
-
-    def _forge_ignorierte_optionen(self) -> list[str]:
-        """Die Bau-Optionen, die nur LibProsperoPkg kennt und die gerade vom Standard abweichen (Dump Forge ignoriert sie).
-
-        Sie gelten weiter, sobald in den Optionen wieder LibProsperoPkg als Paketersteller steht. Nichts davon darf
-        stumm wegfallen: Das Fenster sagt es im Protokoll, bevor der Bau beginnt.
-        """
-        std = opt.STANDARD
-        liste: list[str] = []
-        for schluessel, text in ((opt.MIN_FW_VERSION, "ps5pkg.opt_build_min_fw"),
-                                 (opt.PATCH_MODUS, "ps5pkg.opt_build_patch_modus"),
-                                 (opt.BACKPORT_EINBAUEN, "ps5pkg.opt_build_backport"),
-                                 (opt.PLAYGO_CHUNKS, "ps5pkg.opt_build_playgo"),
-                                 (opt.DETERMINISTISCH, "ps5pkg.opt_build_deterministic"),
-                                 (opt.REGEN_PLAYGO, "ps5pkg.opt_build_regen_playgo")):
-            if self._einstellung(schluessel, std[schluessel]) != std[schluessel]:
-                liste.append(self.t(text))
-        return liste
-
     def _forge_bauen_starten(self, info: "wz.PaketInfo", ziel: str, abbild: str = "") -> None:
         """Baut das Paket mit Dump Forge: Name und Platz pruefen, Arbeitsordner im Zielordner anlegen, los.
 
@@ -2270,9 +2186,6 @@ class Ps5PkgFenster:
             return
         if not abbild and not self._emulatoren_fragen(info):
             return
-        if not abbild:
-            for text in self._forge_ignorierte_optionen():
-                self._protokoll(self.t("ps5pkg.forge_ignoriert", option=text))
         # Der Bau entsteht im Zielordner (gleiches Laufwerk: das Umbenennen am Ende kostet nichts), unter einem
         # Arbeitsordner, den das Fenster bei Abbruch oder Fehler wieder entfernt.
         try:
@@ -2322,7 +2235,7 @@ class Ps5PkgFenster:
         Bei einem Spielordner bietet die Frage den Weg an, der es kann: ein Abbild (``.ffpkg``) mit den Kaestchen der
         Aufgabe 1 (:meth:`_als_abbild_mit_einbau`). Bei einem Abbild bleibt nur "trotzdem bauen" - in ein fertiges Abbild laesst
         sich nichts einlegen. AMPR EMU legt Dump Forge fuer ein Spiel, das ``libSceAmpr`` laedt, selbst dazu (Hinweis, keine
-        Frage); LibProsperoPkg und ProsperoPkgTool tun es nicht.
+        Frage).
 
         Returns:
             ``False``, wenn nicht gebaut wird (abgebrochen, oder als Abbild neu gestartet).
@@ -2361,7 +2274,7 @@ class Ps5PkgFenster:
         # BACKPORT zuerst: Kennt das Programm die Firmware der Konsole nicht, fragt es hier einmal (``_backport_plan``).
         backport = self._backport_zeile(fakten)
         konsole = self.g._konsole_fw_bekannt() or ""
-        zeilen = qb.zeilen(fakten, self.t, konsole, forge_ergaenzt_ampr=paket and self._bauer_fuer(info) == "forge")
+        zeilen = qb.zeilen(fakten, self.t, konsole, forge_ergaenzt_ampr=paket)
         for text in qb.protokoll(zeilen, self.t):
             self._protokoll(text)
         self._protokoll(self.t("bericht.einbau_paket" if paket else "bericht.einbau_nichts"))
@@ -2560,12 +2473,8 @@ class Ps5PkgFenster:
         return "%d:%02d:%02d" % (h, m, s) if h else "%d:%02d" % (m, s)
 
     def _werkzeug_name(self, art: str, info: "wz.PaketInfo") -> str:
-        """Welches Werkzeug den Auftrag ausfuehrt, wie der Anwender es kennt."""
-        if art in ("bauen", "abbild"):
-            return {"forge": "Dump Forge", "ppt": "ProsperoPkgTool"}.get(self._bauer_fuer(info), "LibProsperoPkg")
-        if art in ("extrahieren", "umwandeln") and self._builder() == "ppt":
-            return "ProsperoPkgTool"
-        return "LibProsperoPkg"
+        """Welches Werkzeug den Auftrag ausfuehrt, wie der Anwender es kennt: Dump Forge baut, LibProsperoPkg liest, prueft und entpackt."""
+        return "Dump Forge" if art in ("bauen", "abbild") else "LibProsperoPkg"
 
     #: Ab so vielen Sekunden ohne neue Meldung sagt die Seite, dass nichts Neues kam (und dass das bei grossen Dateien normal ist).
     STILLE_AB = 20.0
@@ -2601,31 +2510,6 @@ class Ps5PkgFenster:
                 self.lebt_label.grid_remove()
         except tk.TclError:
             pass
-
-    def _bauer_wechseln_fragen(self, info: "wz.PaketInfo") -> bool:
-        """Einmal fragen: Dump Forge statt eines Werkzeugs, das das Spiel zuerst in einen Arbeitsordner kopiert?
-
-        Nutzerwunsch 17.11.2026: In Aufgabe 7 soll kein Zwischenordner mehr noetig sein. LibProsperoPkg und ProsperoPkgTool
-        kopieren das ganze Spiel (gemessen: "Staging 0/38'497 MiB"); Dump Forge liest die Quelle im Strom. Wer eines von beiden
-        eingestellt hat (frueher die Vorgabe), wird **einmal** gefragt - nichts wird still umgestellt. Die Antwort gilt dauerhaft
-        (``EINST_BAUER_GEFRAGT``); in den Optionen laesst sich der Paketersteller jederzeit aendern.
-
-        Returns:
-            ``True``, wenn nun Dump Forge baut.
-        """
-        if not self._werkzeug_forge() or not info.ist_ordner:
-            return False
-        if self._einstellung(EINST_BAUER_GEFRAGT, False) is True:
-            return False
-        name = "ProsperoPkgTool" if self._builder() == "ppt" else "LibProsperoPkg"
-        antwort = messagebox.askyesno(self.t("ps5pkg.window_title"), self.t("ps5pkg.ask_bauer", name=name), parent=self.win)
-        self._merken(EINST_BAUER_GEFRAGT, True)
-        if antwort:
-            self._merken(opt.BUILDER, "forge")
-            self._protokoll(self.t("ps5pkg.log_bauer_forge"))
-            return True
-        self._protokoll(self.t("ps5pkg.log_bauer_bleibt", name=name))
-        return False
 
     def _abbild_direkt_moeglich(self, info: "wz.PaketInfo") -> bool:
         """Kann Dump Forge dieses ``.pkg`` im Strom in das gewaehlte Abbild schreiben - ohne Entpacken, ohne Zwischenordner?
@@ -2724,62 +2608,6 @@ class Ps5PkgFenster:
                          gesamt=self._fmt(erg.gesamt_bytes), proben=erg.proben)
         return {"ok": True, "text": endgueltig, "ausgabe": ziel, "pkg": endgueltig, "pruefung": pruefung, "befund": False}
 
-    def _bauen_starten(self, info: "wz.PaketInfo", ziel: str) -> None:
-        """Baut aus einem Spielordner ein Debug-Paket: Kennungen und ``param.json`` pruefen, Platz pruefen, los."""
-        if self._bauer_fuer(info) == "forge" or self._bauer_wechseln_fragen(info):
-            self._forge_bauen_starten(info, ziel)
-            return
-        if self._builder() == "ppt" and not self._werkzeug_ppt():
-            self._fehler(self.t("ps5pkg.err_no_tool_ppt"))
-            return
-        if not (wz.CONTENT_ID.match(info.content_id) and wz.TITLE_ID.match(info.title_id)):
-            self._fehler(self.t("ps5pkg.err_content_id", cid=info.content_id or "-", tid=info.title_id or "-"))
-            return
-        try:
-            from ps5_validator.utils import param_check
-            befund = param_check.pruefe_datei(os.path.join(info.pfad, "sce_sys", "param.json"),
-                                              texte=self.g._param_check_texte(), paketbau=True)
-            zeilen = befund.als_text(mit_hinweisen=False)
-        except Exception as exc:  # noqa: BLE001 - die Pruefung ist eine Hilfe, kein Hindernis
-            logger.debug("param.json-Pruefung vor dem Bauen: %s", exc)
-            befund, zeilen = None, []
-        if befund is not None and not befund.ok:
-            for z in zeilen:
-                self._protokoll(z)
-            # Wie Aufgabe 1: erst die Reparatur anbieten (die alte Datei wird danebengelegt) - ein Paket mit
-            # applicationDrmType "upgradable" bekommt sonst kein license.dat und zeigt an der Konsole ein Schloss.
-            repariert = False
-            try:
-                repariert = bool(self.g._offer_repair_param_json(info.pfad, befund, paketbau=True))
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Reparatur der param.json: %s", exc)
-            if repariert:
-                if not self._param_neu_lesen(info):
-                    self._fehler(self.t("ps5pkg.err_content_id", cid=info.content_id or "-", tid=info.title_id or "-"))
-                    return
-            elif not messagebox.askyesno(self.t("ps5pkg.ask_param_title"), self.t(
-                    "ps5pkg.ask_param_text", befunde="\n".join(zeilen[:10])), parent=self.win):
-                return
-        # Ein Paket gleichen Namens im Ziel wird nur mit dem Haken ersetzt (das Werkzeug taete es still).
-        vorhanden = self._vorhandene_pakete(ziel, info.content_id)
-        if vorhanden and not self.ueberschreiben_var.get():
-            messagebox.showinfo(self.t("ps5pkg.window_title"), self.t(
-                "ps5pkg.err_exists_pkg", pfad=os.path.join(ziel, vorhanden[0])), parent=self.win)
-            return
-        # Das Werkzeug legt je nach Laufwerk eine Kopie des Spiels an und braucht Platz fuer das innere Abbild:
-        # Der Arbeitsordner liegt deshalb im Zielordner (nicht auf dem oft kleinen Systemlaufwerk).
-        if not self._platz_reicht(ziel, int(info.groesse * BAU_PLATZ_WARNUNG), nachfragen=True):
-            return
-        if not self._emulatoren_fragen(info):
-            return
-        try:
-            temp = tempfile.mkdtemp(prefix="ps5conv_pkgbau_", dir=ziel)
-        except OSError:
-            temp = tempfile.mkdtemp(prefix="ps5conv_pkgbau_", dir=self._arbeitsordner())
-        self._staging.append(temp)
-        self._bau = {"temp": temp, "vorher": set(os.listdir(ziel))}
-        self._job_starten("bauen", self._lauf_bauen, info, ziel)
-
     def _job_starten(self, art: str, ziel_funktion, info: "wz.PaketInfo", ziel: str) -> None:
         # Der Haken "Quelle nach Erfolg loeschen": vor dem Start bestaetigen, nie still. Abbrechen startet nichts.
         weiter, loeschen = self._loeschen_vorbereiten(art, info)
@@ -2806,13 +2634,9 @@ class Ps5PkgFenster:
         if art == "pruefen":
             self._balken_wandern(True)
         self._protokoll(self.t("ps5pkg.log_start_" + art, name=os.path.basename(info.pfad)))
-        # Womit gearbeitet wird: Wer ProsperoPkgTool oder LibProsperoPkg eingestellt hat, sieht dort nur "Staging" ohne
-        # Lebenszeichen - das Protokoll nennt das Werkzeug und den Weg zu Dump Forge (Nutzerwunsch 17.11.2026).
+        # Womit gearbeitet wird (Nutzerwunsch 17.11.2026): das Protokoll nennt das Werkzeug.
         if art in ("bauen", "abbild"):
-            name = self._werkzeug_name(art, info)
-            self._protokoll(self.t("ps5pkg.log_bauer", name=name))
-            if name != "Dump Forge" and self._werkzeug_forge():
-                self._protokoll(self.t("ps5pkg.log_bauer_tipp"))
+            self._protokoll(self.t("ps5pkg.log_bauer", name=self._werkzeug_name(art, info)))
         self._knoepfe_pruefen()
         threading.Thread(target=ziel_funktion, args=(info, ziel, art), daemon=True, name="ps5pkg-" + art).start()
 
@@ -2852,18 +2676,10 @@ class Ps5PkgFenster:
                 self._z["schritt_text"] = datei
 
         try:
-            if self._builder() == "ppt":
-                werkzeug_ppt = self._werkzeug_ppt()
-                if not werkzeug_ppt:
-                    raise wz.Fehler(self.t("ps5pkg.err_no_tool_ppt"))
-                ppt.extrahieren(werkzeug_ppt, info.pfad, ziel, passcode=self._passcode(), zeile=self._melden,
-                                abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
-                schluss = self.t("ps5pkg.log_extracted", anzahl="?")
-            else:
-                schluss = wz.extrahieren(self._werkzeug(), info.pfad, ziel, passcode=self._passcode(),
-                                         zeile=self._melden, fortschritt=fortschritt,
-                                         abbruch=lambda: self._abbruch, popen_extra=self._popen_extra(),
-                                         platz_pruefen=lambda gesamt: self._platz_fuer_entpacken(ziel, gesamt))
+            schluss = wz.extrahieren(self._werkzeug(), info.pfad, ziel, passcode=self._passcode(),
+                                     zeile=self._melden, fortschritt=fortschritt,
+                                     abbruch=lambda: self._abbruch, popen_extra=self._popen_extra(),
+                                     platz_pruefen=lambda gesamt: self._platz_fuer_entpacken(ziel, gesamt))
             ende = {"ok": True, "text": schluss, "ausgabe": ziel}
         except wz.Fehler as exc:
             ende = self._ende_bei_fehler(exc)
@@ -2932,111 +2748,9 @@ class Ps5PkgFenster:
             self._z["fertig"] = ende
 
     def _lauf_bauen(self, info: "wz.PaketInfo", ziel: str, art: str) -> None:
-        """Arbeitsfaden: ``build`` aus dem Spielordner, danach ``validate`` am neuen Paket."""
+        """Arbeitsfaden: Dump Forge baut das Paket (bei ``art == "abbild"`` das Abbild aus dem Paket) und prueft es danach selbst."""
         bau = getattr(self, "_bau", {}) or {}
-        if bau.get("forge"):
-            ende = self._lauf_bauen_forge(info, ziel, bau)
-            with self._sperre:
-                self._z["fertig"] = ende
-            return
-        param = info.param if isinstance(info.param, dict) else {}
-
-        def fortschritt(prozent: int, text: str) -> None:
-            with self._sperre:
-                self._z["prozent"] = float(prozent)
-                self._z["gesamt"] = prozent / 2.0
-                self._z["schritt_text"] = text
-
-        _min_fw_alt: "str | None" = None
-        _content_type_alt: "str | None" = None
-        try:
-            passcode = self._passcode()
-            if self._builder() == "ppt":
-                werkzeug_ppt = self._werkzeug_ppt()
-                if not werkzeug_ppt:
-                    raise wz.Fehler(self.t("ps5pkg.err_no_tool_ppt"))
-                # Anders als wz.bauen() (LibProsperoPkg) nimmt ppt.bauen() keinen ZielORDNER - "ziel" geht
-                # unveraendert als --out an ProsperoPkgTool, das dort eine DATEI oeffnet. Ein Ordnerpfad endete
-                # deshalb immer mit "Access to the path '...' is denied" (das Werkzeug kam bis zum letzten
-                # Schritt durch und scheiterte erst beim Schreiben; Durchsicht 17.10.2026 an einem echten Bau).
-                ppt_datei = os.path.join(ziel, anzeigename(info) + ".pkg")
-                pfad = ppt.bauen(werkzeug_ppt, info.pfad, ppt_datei, content_id=info.content_id, title_id=info.title_id,
-                                 passcode=passcode, zeile=self._melden, fortschritt=fortschritt,
-                                 abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
-            else:
-                min_fw_str = str(self._einstellung(opt.MIN_FW_VERSION, "")).strip()
-                min_fw_hex = wz.fw_hex(min_fw_str) if min_fw_str else ""
-                if min_fw_hex:
-                    try:
-                        _min_fw_alt = wz.param_json_setzen(
-                            info.pfad, "requiredSystemSoftwareVersion", min_fw_hex)
-                    except wz.Fehler as exc:
-                        raise wz.Fehler(self.t("ps5pkg.err_min_fw_write", error=str(exc))) from exc
-                if bool(self._einstellung(opt.PATCH_MODUS, False)):
-                    try:
-                        _content_type_alt = wz.param_json_setzen(info.pfad, "contentType", "PATCH")
-                    except wz.Fehler as exc:
-                        raise wz.Fehler(self.t("ps5pkg.err_patch_modus_write", error=str(exc))) from exc
-                backport_an = bool(self._einstellung(opt.BACKPORT_EINBAUEN, False))
-                if backport_an:
-                    from ps5_validator.utils import ps5_pkg_backport as bp_util
-                    fw = int(self._einstellung(opt.BACKPORT_FIRMWARE, 0))
-                    fakelib_konfiguriert = str(self._einstellung(opt.BACKPORT_FAKELIB_ORDNER, "")).strip()
-                    fakelib_basis = (fakelib_konfiguriert if fakelib_konfiguriert and os.path.isdir(fakelib_konfiguriert)
-                                     else getattr(self.g, "_backport_fakelib_basis", lambda: "")())
-                    erg, meldung = bp_util.backport_einbauen(
-                        info.pfad, fw, fakelib_basis, zeile=self._melden, abbruch=lambda: self._abbruch,
-                        text_emu_bleibt=lambda namen: self.t("backport.log_emu_bleibt", names=namen).strip())
-                    if erg == bp_util.ERGEBNIS_ABGEBROCHEN:
-                        raise wz.Fehler("abgebrochen")
-                    if erg == bp_util.ERGEBNIS_FEHLER:
-                        raise wz.Fehler(self.t("ps5pkg.err_backport", error=meldung))
-                pfad = wz.bauen(self._werkzeug(), info.pfad, ziel, content_id=info.content_id, title_id=info.title_id,
-                                titel=info.titel, version=str(param.get("contentVersion", "") or "01.000.000"),
-                                modus=self._einstellung(opt.KRAKEN_MODUS, "kraken"),
-                                stufe=int(self._einstellung(opt.KRAKEN_STUFE, 7)),
-                                kerne=int(self._einstellung(opt.KRAKEN_KERNE, 0)),
-                                playgo_chunks=int(self._einstellung(opt.PLAYGO_CHUNKS, 1)),
-                                deterministisch=bool(self._einstellung(opt.DETERMINISTISCH, False)),
-                                regen_playgo=bool(self._einstellung(opt.REGEN_PLAYGO, False)),
-                                passcode=passcode, temp=bau.get("temp"), zeile=self._melden, fortschritt=fortschritt,
-                                abbruch=lambda: self._abbruch, popen_extra=self._popen_extra())
-        except wz.Fehler as exc:
-            self._unfertiges_wegraeumen(ziel, bau)
-            ende = self._ende_bei_fehler(exc)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Paket bauen")
-            self._unfertiges_wegraeumen(ziel, bau)
-            ende = {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
-        else:
-            with self._sperre:
-                self._z["prozent"] = 100.0
-                self._z["gesamt"] = 60.0
-                self._z["schritt_text"] = self.t("ps5pkg.job_validating")
-            self._melden(self.t("ps5pkg.job_validating"))
-            try:
-                erg = wz.pruefen(self._werkzeug(), pfad, passcode=passcode, abbruch=lambda: self._abbruch,
-                                popen_extra=self._popen_extra())
-                for r in erg.get("results", []):
-                    if str(r.get("Level", "")) != "pass":
-                        self._melden("[%s] %s: %s" % (str(r.get("Level", "")).upper(), r.get("Check", ""), r.get("Message", "")))
-                pruef = self.t("ps5pkg.check_summary", ok=erg.get("pass", 0), warn=erg.get("warn", 0),
-                               fail=erg.get("fail", 0))
-                befund = int(erg.get("fail", 0)) > 0
-            except wz.Fehler as exc:
-                pruef, befund = str(exc), True
-            ende = {"ok": True, "text": pfad, "ausgabe": ziel, "pkg": pfad, "pruefung": pruef, "befund": befund}
-        finally:
-            if _min_fw_alt is not None:
-                try:
-                    wz.param_json_setzen(info.pfad, "requiredSystemSoftwareVersion", _min_fw_alt)
-                except wz.Fehler:
-                    pass
-            if _content_type_alt is not None:
-                try:
-                    wz.param_json_setzen(info.pfad, "contentType", _content_type_alt)
-                except wz.Fehler:
-                    pass
+        ende = self._lauf_bauen_forge(info, ziel, bau)
         with self._sperre:
             self._z["fertig"] = ende
 
@@ -3215,7 +2929,7 @@ class Ps5PkgFenster:
             self._protokoll(("[BEFUND] " if ende.get("befund") else "[OK] ") + ende["pruefung"])
             # Der Hinweis zum Start an der Konsole nennt "das Werkzeug" (ps5-fpkg-converter) - fuer ein Paket von Dump Forge
             # gilt Forges eigener Hinweis (kstuff, fpkg-enable, ppr-patch).
-            self._protokoll(self.t("ps5pkg.forge_note" if self._bauer_fuer(job["info"]) == "forge" else "ps5pkg.build_note"))
+            self._protokoll(self.t("ps5pkg.forge_note"))
             with self._sperre:
                 self._z["ausgabe"] = job["ziel"]
             self._anzeige_setzen(100, 100)
@@ -3385,6 +3099,9 @@ class Ps5PkgFenster:
     # ------------------------------------------------------------------
     #: Auftraege, die ein Ergebnis auf dem Rechner hinterlassen: nur bei ihnen gilt "Quelle nach Erfolg loeschen".
     ERGEBNIS_ARTEN = ("bauen", "abbild", "extrahieren", "umwandeln")
+    #: Auftraege, nach denen Seite 7 selbst "Vorgang erfolgreich abgeschlossen" meldet. Bei ``umwandeln`` laeuft Aufgabe 1, und die
+    #: meldet es dort selbst (``_finish_success`` im Hauptfenster) - eine zweite Meldung waere doppelt.
+    MELDUNG_ARTEN = ("bauen", "abbild", "extrahieren")
 
     def _nach_erfolg_haken_bauen(self, quelle) -> None:
         """Die Haken unter dem Zielordner wie bei Aufgabe 1: links herunterfahren, senden, Quelle loeschen; rechts die Arbeitskopie.
@@ -3490,18 +3207,30 @@ class Ps5PkgFenster:
                 self._z["nachlauf"].append((art, ergebnis))
 
     def _nach_erfolg_weiter(self, art: str, ergebnis: str) -> None:
-        """Ergebnis an die PS5 senden (nur nach Rueckfrage, und nicht, wenn der Rechner herunterfaehrt - niemand wuerde antworten),
-        danach herunterfahren. Ueber Aufgabe 1 (``umwandeln``) hat sie beides schon selbst erledigt."""
+        """Erfolgsmeldung, Ergebnis an die PS5 senden (nur nach Rueckfrage, und nicht, wenn der Rechner herunterfaehrt - niemand wuerde
+        antworten), danach herunterfahren - in der Reihenfolge der Aufgaben 1 bis 6. Ueber Aufgabe 1 (``umwandeln``) hat sie alles
+        schon selbst erledigt."""
         g = self.g
         if art == "umwandeln":
             return
         herunterfahren = bool(getattr(g, "_shutdown_after_success_enabled", lambda: False)())
+        if not herunterfahren and art in self.MELDUNG_ARTEN:
+            self._erfolg_melden()
         senden = getattr(g, "_senden_nach_erfolg_enabled", None)
         if (not herunterfahren and ergebnis and art in ("bauen", "abbild", "extrahieren") and callable(senden) and senden()):
             self._senden_fragen(ergebnis)
         if herunterfahren:
             g._last_task_ok = True                 # ``_should_shutdown_after_task`` liest den Erfolg aus diesem Merker
             g._maybe_shutdown_after_task()
+
+    def _erfolg_melden(self) -> None:
+        """Dieselbe Meldung wie nach einem Lauf der Aufgaben 1 bis 6: Titel "Erfolg", Text "Vorgang erfolgreich abgeschlossen!".
+
+        Beim Herunterfahren entfaellt sie (der Aufrufer prueft das): Sie wartete auf eine Bestaetigung, die niemand gibt - der Sinn
+        des Hakens ist ja, den Rechner unbeaufsichtigt zu lassen. Der Erfolg steht dann in der Statuszeile und im Protokoll.
+        """
+        g = self.g
+        messagebox.showinfo(g._t("dialog.title.success"), g._t("dialog.msg.task_completed_successfully"), parent=self.win)
 
     def _senden_fragen(self, ergebnis: str) -> None:
         """Dieselbe Rueckfrage wie nach einem Lauf der Aufgaben 1 bis 6 (``_nach_erfolg_senden_fragen``), dann Senden."""

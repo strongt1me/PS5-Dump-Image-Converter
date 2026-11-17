@@ -2,15 +2,14 @@
 """Der Dialog "Optionen" des Fensters "PS5 PKG Dump & Image Converter" (Nutzerwunsch 11.10.2026).
 
 Vier Register: **Bibliothek** (Ordner, Unterordner, Aktualisieren beim Start, Quellen entfernen), **Darstellung** (Cover,
-Sortierung), **Ausgabe & Vorgaben** (Zielordner, Temp-Ordner, Aktion, Zielformat, Standard-Builder, Debug-Passcode,
+Sortierung), **Ausgabe & Vorgaben** (Zielordner, Temp-Ordner, Aktion, Zielformat, Debug-Passcode,
 Ausgabeordner oeffnen) und **Wartung** (Export, Import, Zuruecksetzen). Nichts wird vor "Speichern" uebernommen;
 "Abbrechen" und das X lassen alles, wie es war. Seit 30.10.2026 zeigt der Dialog nur noch "Ausgabe & Vorgaben" und
 "Bau" (:data:`SICHTBARE_REGISTER`); die anderen Register sind gebaut, aber verborgen.
 
-**Standard-Builder** (seit 12.10.2026, wie in der Vorlage - der eigenen PKG-App des Nutzers): welches Werkzeug "Paket
-bauen" verwendet, LibProsperoPkg 1.2.0 (``ffpfsc-pkg-tool``, Vorgabe) oder ProsperoPkgTool (zweiter, MIT-lizenzierter
-Paketersteller, :mod:`ps5_validator.utils.prospero_pkg_tool`). Gilt nur fuer den Bau - Lesen, Pruefen und Entpacken
-bleiben immer bei ``ffpfsc-pkg-tool``, das als einziges Passcode, CNT-Metadaten und JSON-Ausgabe kennt.
+**Paketbau** (seit 17.11.2026): Dump Forge ist der einzige Paketersteller - ProsperoPkgTool und der Bau mit LibProsperoPkg
+sind entfallen, mit ihnen die Wahl des Paketerstellers und die Bau-Einstellungen, die nur sie kannten. Lesen, Pruefen und
+Entpacken bleiben bei ``ffpfsc-pkg-tool``, das als einziges Passcode, CNT-Metadaten und JSON-Ausgabe kennt.
 
 **Temp-Ordner** (seit v1.9.83): eigener Arbeitsordner fuer Entpacken/Bauen/Extrahieren dieses Fensters, nur bei
 Bedarf gesetzt (leer = Vorgabe wie bisher, siehe ``Ps5PkgFenster._arbeitsordner``).
@@ -99,21 +98,10 @@ class Optionen:
         self.format_var = tk.StringVar(master=self.win)
         self.passcode_var = tk.StringVar(master=self.win)
         self.passcode_zeigen_var = tk.BooleanVar(master=self.win)
-        self.builder_var = tk.StringVar(master=self.win)
         self.forge_kraken_var = tk.StringVar(master=self.win)
         self.forge_voll_var = tk.BooleanVar(master=self.win)
         self.forge_backport_var = tk.BooleanVar(master=self.win)
-        self.kraken_modus_var = tk.StringVar(master=self.win)
-        self.kraken_stufe_var = tk.StringVar(master=self.win)
         self.kraken_kerne_var = tk.StringVar(master=self.win)
-        self.playgo_chunks_var = tk.StringVar(master=self.win)
-        self.deterministisch_var = tk.BooleanVar(master=self.win)
-        self.regen_playgo_var = tk.BooleanVar(master=self.win)
-        self.backport_einbauen_var = tk.BooleanVar(master=self.win)
-        self.backport_firmware_var = tk.StringVar(master=self.win)
-        self.backport_fakelib_var = tk.StringVar(master=self.win)
-        self.min_fw_var = tk.StringVar(master=self.win)
-        self.patch_modus_var = tk.BooleanVar(master=self.win)
         self._bauen()
         self._felder_fuellen(self.aktuell)
         self._liste_zeigen()
@@ -135,9 +123,6 @@ class Optionen:
     def _formate(self) -> dict[str, str]:
         return {"ffpkg": "FFPKG (.ffpkg)", "ffpfsc": "FFPFSC (.ffpfsc)", "ffpfs": "FFPFS (.ffpfs)",
                 "exfat": "exFAT (.exfat)"}
-
-    def _builder(self) -> dict[str, str]:
-        return {"forge": "Dump Forge", "lpp": "LibProsperoPkg 1.2.0", "ppt": "ProsperoPkgTool"}
 
     def _forge_stufen(self) -> dict[str, str]:
         """Die Kompressionsstufen von Dump Forge (``--kraken``), sprachabhaengig benannt."""
@@ -278,9 +263,6 @@ class Optionen:
                 self.entfernt.append(pfad)
         self._liste_zeigen()
 
-    def _kraken_modi(self) -> dict[str, str]:
-        return {"kraken": "Kraken", "zlib": "Zlib", "none": self.t("ps5pkg.opt_build_mode_none")}
-
     # --- Bau-Einstellungen ----------------------------------------------
     def _register_bau(self, karte) -> None:
         c, F, pt, t = self.c, self.F, self.pt, self.t
@@ -294,7 +276,7 @@ class Optionen:
         aussen.pack(fill="both", expand=True)
         self._info(karte, "ps5pkg.opt_build_info")
 
-        # Dump Forge (Standard-Paketersteller)
+        # Dump Forge (der Paketersteller)
         self._beschriftung(karte, "ps5pkg.opt_forge_head").pack(anchor="w")
         tk.Label(karte, text=t("ps5pkg.opt_forge_info"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
                  anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(2, 8))
@@ -309,88 +291,17 @@ class Optionen:
                  anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 10))
         self._haken(karte, "ps5pkg.opt_forge_backport", self.forge_backport_var)
         tk.Label(karte, text=t("ps5pkg.opt_forge_backport_hint"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
-                 anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 16))
+                 anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 10))
 
-        # LibProsperoPkg (der fruehere Paketersteller)
-        self._beschriftung(karte, "ps5pkg.opt_lpp_head").pack(anchor="w", pady=(0, 8))
-
-        # Kompressionsmodus
-        self._beschriftung(karte, "ps5pkg.opt_build_mode").pack(anchor="w")
-        self.kraken_modus_box = self.pw.Combobox(karte, textvariable=self.kraken_modus_var,
-                                                 values=list(self._kraken_modi().values()),
-                                                 state="readonly", width=18)
-        self.kraken_modus_box.pack(anchor="w", pady=(4, 10))
-
-        # Kompressionsstufe + Threads nebeneinander
+        # Threads (``--threads``): 0 = ein Kern je CPU-Kern
         zeile = tk.Frame(karte, bg=c["bg_card"])
         zeile.pack(fill="x", pady=(0, 10))
-        tk.Label(zeile, text=t("ps5pkg.opt_build_level"), font=(F, pt(10)), bg=c["bg_card"],
-                 fg=c["fg_primary"], anchor="w").grid(row=0, column=0, sticky="w")
-        self.pw.Spinbox(zeile, textvariable=self.kraken_stufe_var, from_=-4, to=9, width=6,
-                        font=(F, pt(10))).grid(row=0, column=1, padx=(8, 24))
         tk.Label(zeile, text=t("ps5pkg.opt_build_cores"), font=(F, pt(10)), bg=c["bg_card"],
-                 fg=c["fg_primary"], anchor="w").grid(row=0, column=2, sticky="w")
+                 fg=c["fg_primary"], anchor="w").grid(row=0, column=0, sticky="w")
         self.pw.Spinbox(zeile, textvariable=self.kraken_kerne_var, from_=0, to=256, width=6,
-                        font=(F, pt(10))).grid(row=0, column=3, padx=(8, 0))
+                        font=(F, pt(10))).grid(row=0, column=1, padx=(8, 0))
         tk.Label(karte, text=t("ps5pkg.opt_build_cores_hint"), font=(F, pt(9)), bg=c["bg_card"],
                  fg=c["fg_secondary"], anchor="w").pack(fill="x", pady=(0, 10))
-
-        # PlayGo-Chunks
-        zeile2 = tk.Frame(karte, bg=c["bg_card"])
-        zeile2.pack(fill="x", pady=(0, 10))
-        tk.Label(zeile2, text=t("ps5pkg.opt_build_playgo"), font=(F, pt(10)), bg=c["bg_card"],
-                 fg=c["fg_primary"], anchor="w").pack(side="left")
-        self.pw.Spinbox(zeile2, textvariable=self.playgo_chunks_var, from_=1, to=255, width=6,
-                        font=(F, pt(10))).pack(side="left", padx=(8, 0))
-        tk.Label(karte, text=t("ps5pkg.opt_build_playgo_hint"), font=(F, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w").pack(fill="x", pady=(0, 10))
-
-        # Deterministisch
-        self._haken(karte, "ps5pkg.opt_build_deterministic", self.deterministisch_var)
-        tk.Label(karte, text=t("ps5pkg.opt_build_deterministic_hint"), font=(F, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 10))
-
-        # PlayGo neu generieren
-        self._haken(karte, "ps5pkg.opt_build_regen_playgo", self.regen_playgo_var)
-        tk.Label(karte, text=t("ps5pkg.opt_build_regen_playgo_hint"), font=(F, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 10))
-
-        # Backport einbauen
-        self._haken(karte, "ps5pkg.opt_build_backport", self.backport_einbauen_var)
-        tk.Label(karte, text=t("ps5pkg.opt_build_backport_hint"), font=(F, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 4))
-        bp_zeile = tk.Frame(karte, bg=c["bg_card"])
-        bp_zeile.pack(anchor="w", pady=(0, 4))
-        tk.Label(bp_zeile, text=t("ps5pkg.opt_build_backport_fw"), font=(F, pt(10)), bg=c["bg_card"],
-                 fg=c["fg_primary"]).pack(side="left", padx=(0, 8))
-        from ps5_validator.utils import ps5_pkg_backport as bp_util
-        fw_werte = [str(fw) for fw in bp_util.firmwares_fuer_auswahl("")]
-        self.backport_fw_combo = self.pw.Combobox(bp_zeile, textvariable=self.backport_firmware_var,
-                                                  values=fw_werte, state="readonly", width=8)
-        self.backport_fw_combo.pack(side="left")
-        tk.Label(bp_zeile, text=t("ps5pkg.opt_build_backport_fw_hint"), font=(F, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
-        self._beschriftung(karte, "ps5pkg.opt_build_backport_fakelib").pack(anchor="w", pady=(8, 0))
-        fakelib_zeile = tk.Frame(karte, bg=c["bg_card"])
-        fakelib_zeile.pack(fill="x", pady=(4, 0))
-        fakelib_zeile.columnconfigure(0, weight=1)
-        self.pw.Entry(fakelib_zeile, textvariable=self.backport_fakelib_var, font=(F, pt(10)),
-                      bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                      relief="flat").grid(row=0, column=0, sticky="ew", ipady=3)
-        self.pw.Button(fakelib_zeile, text=self.t("ps5pkg.opt_build_backport_fakelib_choose"),
-                       command=self._fakelib_waehlen).grid(row=0, column=1, padx=(8, 0))
-        tk.Label(karte, text=t("ps5pkg.opt_build_backport_fakelib_hint"), font=(F, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 0))
-
-        self._beschriftung(karte, "ps5pkg.opt_build_min_fw").pack(anchor="w", pady=(14, 4))
-        self.pw.Entry(karte, textvariable=self.min_fw_var, font=(F, pt(10)), width=10,
-                      bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                      relief="flat").pack(anchor="w", ipady=3)
-        tk.Label(karte, text=t("ps5pkg.opt_build_min_fw_hint"), font=(F, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 12))
-        self._haken(karte, "ps5pkg.opt_build_patch_modus", self.patch_modus_var)
-        tk.Label(karte, text=t("ps5pkg.opt_build_patch_modus_hint"), font=(F, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 0))
 
     # --- Darstellung ----------------------------------------------------
     def _register_darstellung(self, karte) -> None:
@@ -432,12 +343,6 @@ class Optionen:
         self.format_box = self.pw.Combobox(karte, textvariable=self.format_var, values=list(self._formate().values()),
                                            state="readonly", width=24)
         self.format_box.pack(anchor="w", pady=(4, 12))
-        self._beschriftung(karte, "ps5pkg.opt_builder").pack(anchor="w")
-        self.builder_box = self.pw.Combobox(karte, textvariable=self.builder_var, values=list(self._builder().values()),
-                                            state="readonly", width=24)
-        self.builder_box.pack(anchor="w", pady=(4, 0))
-        tk.Label(karte, text=self.t("ps5pkg.opt_builder_hint"), font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
-                 anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(4, 12))
         self._beschriftung(karte, "ps5pkg.opt_passcode").pack(anchor="w")
         passcode_zeile = tk.Frame(karte, bg=c["bg_card"])
         passcode_zeile.pack(fill="x", pady=(4, 0))
@@ -466,13 +371,6 @@ class Optionen:
         if gewaehlt:
             self.temp_ordner_var.set(os.path.normpath(gewaehlt))
 
-    def _fakelib_waehlen(self) -> None:
-        gewaehlt = filedialog.askdirectory(parent=self.win,
-                                           title=self.t("ps5pkg.opt_build_backport_fakelib"),
-                                           initialdir=self.backport_fakelib_var.get() or None)
-        if gewaehlt:
-            self.backport_fakelib_var.set(os.path.normpath(gewaehlt))
-
     # --- Wartung ---------------------------------------------------------
     def _register_wartung(self, karte) -> None:
         self._info(karte, "ps5pkg.opt_maint_info")
@@ -497,25 +395,10 @@ class Optionen:
         self.sort_var.set(self._sortierungen().get(werte.get(opt.SORTIERUNG), self._sortierungen()["titel"]))
         self.aktion_var.set(self._aktionen().get(werte.get(opt.AKTION), self._aktionen()["umwandeln"]))
         self.format_var.set(self._formate().get(werte.get(opt.FORMAT), self._formate()[opt.STANDARD_FORMAT]))
-        self.builder_var.set(self._builder().get(werte.get(opt.BUILDER), self._builder()[opt.STANDARD[opt.BUILDER]]))
         self.forge_kraken_var.set(self._forge_stufen().get(werte.get(opt.FORGE_KRAKEN), self._forge_stufen()["fast"]))
         self.forge_voll_var.set(bool(werte.get(opt.FORGE_VOLL_PRUEFEN, False)))
         self.forge_backport_var.set(bool(werte.get(opt.FORGE_BACKPORT_ENTFERNEN, False)))
-        self.kraken_modus_var.set(self._kraken_modi().get(
-            werte.get(opt.KRAKEN_MODUS), self._kraken_modi()["kraken"]))
-        self.kraken_stufe_var.set(str(werte.get(opt.KRAKEN_STUFE, 7)))
         self.kraken_kerne_var.set(str(werte.get(opt.KRAKEN_KERNE, 0)))
-        self.playgo_chunks_var.set(str(werte.get(opt.PLAYGO_CHUNKS, 1)))
-        self.deterministisch_var.set(bool(werte.get(opt.DETERMINISTISCH, False)))
-        self.regen_playgo_var.set(bool(werte.get(opt.REGEN_PLAYGO, False)))
-        self.backport_einbauen_var.set(bool(werte.get(opt.BACKPORT_EINBAUEN, False)))
-        fw = werte.get(opt.BACKPORT_FIRMWARE, 0)
-        self.backport_firmware_var.set(str(fw) if fw else (self.backport_fw_combo.cget("values")[0]
-                                                            if hasattr(self, "backport_fw_combo")
-                                                            and self.backport_fw_combo.cget("values") else "7"))
-        self.backport_fakelib_var.set(str(werte.get(opt.BACKPORT_FAKELIB_ORDNER, "")))
-        self.min_fw_var.set(str(werte.get(opt.MIN_FW_VERSION, "")))
-        self.patch_modus_var.set(bool(werte.get(opt.PATCH_MODUS, False)))
 
     def werte_aus_feldern(self) -> dict:
         """Die Optionen, wie sie gerade im Dialog stehen (noch nicht gespeichert)."""
@@ -528,21 +411,10 @@ class Optionen:
             opt.COVER: bool(self.cover_var.get()),
             opt.OEFFNEN: bool(self.oeffnen_var.get()),
             opt.PASSCODE: self.passcode_var.get(),
-            opt.BUILDER: self._schluessel_zu(self._builder(), self.builder_var.get(), opt.STANDARD[opt.BUILDER]),
             opt.FORGE_KRAKEN: self._schluessel_zu(self._forge_stufen(), self.forge_kraken_var.get(), "fast"),
             opt.FORGE_VOLL_PRUEFEN: bool(self.forge_voll_var.get()),
             opt.FORGE_BACKPORT_ENTFERNEN: bool(self.forge_backport_var.get()),
-            opt.KRAKEN_MODUS: self._schluessel_zu(self._kraken_modi(), self.kraken_modus_var.get(), "kraken"),
-            opt.KRAKEN_STUFE: max(-4, min(9, _int_safe(self.kraken_stufe_var.get(), 7))),
             opt.KRAKEN_KERNE: max(0, min(256, _int_safe(self.kraken_kerne_var.get(), 0))),
-            opt.PLAYGO_CHUNKS: max(1, min(255, _int_safe(self.playgo_chunks_var.get(), 1))),
-            opt.DETERMINISTISCH: bool(self.deterministisch_var.get()),
-            opt.REGEN_PLAYGO: bool(self.regen_playgo_var.get()),
-            opt.BACKPORT_EINBAUEN: bool(self.backport_einbauen_var.get()),
-            opt.BACKPORT_FIRMWARE: max(0, min(20, _int_safe(self.backport_firmware_var.get(), 0))),
-            opt.BACKPORT_FAKELIB_ORDNER: self.backport_fakelib_var.get().strip(),
-            opt.MIN_FW_VERSION: self.min_fw_var.get().strip(),
-            opt.PATCH_MODUS: bool(self.patch_modus_var.get()),
             opt.ZIEL: self.ziel_var.get().strip(),
             opt.TEMP_ORDNER: self.temp_ordner_var.get().strip(),
             opt.SORTIERUNG: self._schluessel_zu(self._sortierungen(), self.sort_var.get(), "titel"),

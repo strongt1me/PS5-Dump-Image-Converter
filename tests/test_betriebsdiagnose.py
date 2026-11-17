@@ -405,10 +405,9 @@ class WerkzeugeTests(_Ordner):
 
     def test_die_echten_programme_dieses_baums_sind_da(self) -> None:
         """Der Waechter am echten Baum: faellt eines weg (Virenscanner, falsches Entpacken), schlaegt er an."""
-        from ps5_validator.utils import orbispkg, ps5_pkg_werkzeug as wz, prospero_pkg_tool as ppt  # noqa: PLC0415
+        from ps5_validator.utils import orbispkg, ps5_pkg_werkzeug as wz  # noqa: PLC0415
         wurzeln = [str(PROJEKT)]
         lage = bd.werkzeuge_messen({"ffpfsc-pkg-tool": lambda: wz.werkzeug_suchen(wurzeln),
-                                    "ProsperoPkgTool": lambda: ppt.werkzeug_suchen(wurzeln),
                                     "OrbisPkgTool": orbispkg.werkzeug_finden})
         self.assertEqual((), lage.fehlend)
 

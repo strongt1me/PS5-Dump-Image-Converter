@@ -158,8 +158,7 @@ class TexteTests(unittest.TestCase):
                            "bericht.einbau_paket", "ps5pkg.einbau_nur_abbild", "ps5pkg.emu_zeile_ampr",
                            "ps5pkg.emu_frage_wahl", "ps5pkg.emu_frage_entpacken", "ps5pkg.emu_wahl_abbild",
                            "ps5pkg.emu_wahl_paket", "ps5pkg.emu_abbild_log", "ps5pkg.lebt_zeit", "ps5pkg.lebt_still",
-                           "ps5pkg.log_bauer", "ps5pkg.log_bauer_tipp", "ps5pkg.ask_bauer", "ps5pkg.log_bauer_bleibt",
-                           "ps5pkg.log_bauer_forge", "ps5pkg.job_abbild", "ps5pkg.log_start_abbild",
+                           "ps5pkg.log_bauer", "ps5pkg.job_abbild", "ps5pkg.log_start_abbild",
                            "ps5pkg.err_exists_abbild", "ps5pkg.log_einbau_braucht_ordner"):
             with self.subTest(schluessel=schluessel):
                 self.assertEqual({"de", "en", "es", "it", "fr"}, set(STRINGS[schluessel]))
@@ -169,7 +168,7 @@ class TexteTests(unittest.TestCase):
 
     def test_die_platzhalter_der_neuen_schluessel(self) -> None:
         erwartet = {"ps5pkg.lebt_zeit": {"dauer", "werkzeug"}, "ps5pkg.lebt_still": {"still"}, "ps5pkg.log_bauer": {"name"},
-                    "ps5pkg.ask_bauer": {"name"}, "ps5pkg.emu_frage_wahl": {"liste"}, "ps5pkg.emu_frage_entpacken": {"liste"},
+                    "ps5pkg.emu_frage_wahl": {"liste"}, "ps5pkg.emu_frage_entpacken": {"liste"},
                     "ps5pkg.emu_abbild_log": {"liste"}, "ps5pkg.log_einbau_braucht_ordner": {"liste"},
                     "ps5pkg.job_abbild": {"name"}, "ps5pkg.log_start_abbild": {"name"}, "bericht.einbau": {"liste"},
                     "bericht.ampr_da": {"laufzeit"}, "bericht.playgo_fehlt": {"merkmal"}, "bericht.dlc_fehlt": {"merkmal"},

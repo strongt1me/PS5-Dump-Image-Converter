@@ -87,10 +87,9 @@ class _ForgeBasis(unittest.TestCase):
         m.start()
         self.addCleanup(m.stop)
         for schluessel, wert in ((fz.EINST_AKTION, fz.AKTION_UMWANDELN), (fz.EINST_FORMAT, "ffpfsc"),
-                                 (fz.EINST_BIBLIOTHEK, []), (fz.EINST_ZIEL, ""), (opt.BUILDER, "forge"),
+                                 (fz.EINST_BIBLIOTHEK, []), (fz.EINST_ZIEL, ""),
                                  (opt.FORGE_KRAKEN, "fast"), (opt.FORGE_VOLL_PRUEFEN, False),
-                                 (opt.FORGE_BACKPORT_ENTFERNEN, False), (opt.KRAKEN_KERNE, 0),
-                                 (opt.MIN_FW_VERSION, ""), (opt.PATCH_MODUS, False), (fz.EINST_BAUER_GEFRAGT, True)):
+                                 (opt.FORGE_BACKPORT_ENTFERNEN, False), (opt.KRAKEN_KERNE, 0)):
             self.app._save_setting(schluessel, wert)
         self.f = fz.oeffnen(self.app, APP.UI_SCHRIFT, APP.MONO_SCHRIFT, APP.pt)
         self.addCleanup(self._schliessen)
@@ -206,9 +205,8 @@ class ForgeFensterTests(_ForgeBasis):
         pfad = self._abbild()
         self._laden(pfad)
         f = self.f
-        with self._attrappe(), mock.patch.object(wz, "bauen") as lpp, mock.patch.object(wz, "pruefen") as pruefen:
+        with self._attrappe(), mock.patch.object(wz, "pruefen") as pruefen:
             self._starten_und_warten()
-        lpp.assert_not_called()
         pruefen.assert_not_called()
         self.assertEqual(1, len(self.aufrufe))
         aufruf = self.aufrufe[0]
@@ -225,7 +223,6 @@ class ForgeFensterTests(_ForgeBasis):
         self.assertIn("[OK] Dump Forge: 2 Prüfungen bestanden", log)
         self.assertIn("Stichproben", log)
         self.assertIn(_de("ps5pkg.forge_note"), log, "der Konsolenhinweis nennt Dump Forge")
-        self.assertNotIn(_de("ps5pkg.build_note"), log, "nicht den des anderen Werkzeugs (ps5-fpkg-converter)")
         self.assertEqual(self.ziel, f._z.get("ausgabe"))
         self.assertEqual(100.0, float(f.balken_gesamt["value"]))
 
@@ -251,36 +248,23 @@ class ForgeFensterTests(_ForgeBasis):
         ordner = self._spielordner()
         self._laden(ordner)
         self.f._format_waehlen("pkg")
-        with self._attrappe(), mock.patch.object(wz, "bauen") as lpp:
+        with self._attrappe():
             self._starten_und_warten()
-        lpp.assert_not_called()
         self.assertEqual(ordner, self.aufrufe[0]["quelle"])
         self.assertEqual(["Gamma Spiel [PPSA00003].pkg"], os.listdir(self.ziel))
 
-    def test_ein_spielordner_baut_bei_lpp_weiter_ueber_libprosperopkg(self) -> None:
-        self.app._save_setting(opt.BUILDER, "lpp")
+    def test_ohne_dump_forge_wird_nicht_gebaut_und_der_grund_steht_da(self) -> None:
+        """Es gibt keinen zweiten Paketersteller mehr: Fehlt die Befehlszeile, meldet die Seite es und baut nichts."""
         ordner = self._spielordner()
         self._laden(ordner)
         self.f._format_waehlen("pkg")
-        self.assertEqual("lpp", self.f._bauer_fuer(self.f.aktuell))
-        self.assertEqual("forge", self.f._bauer_fuer(self.infos[self._abbild()]), "ein Abbild baut immer Forge")
-
-    def test_fehlt_forge_baut_ein_spielordner_ueber_libprosperopkg_statt_gar_nicht(self) -> None:
-        ordner = self._spielordner()
-        self._laden(ordner)
         with mock.patch.object(fz.Ps5PkgFenster, "_werkzeug_forge", return_value=""):
-            self.assertEqual("lpp", self.f._bauer_fuer(self.f.aktuell))
-
-    def test_nur_libprosperopkg_kennt_diese_optionen_und_forge_sagt_es_vor_dem_bau(self) -> None:
-        self.app._save_setting(opt.MIN_FW_VERSION, "9.00")
-        self.app._save_setting(opt.PATCH_MODUS, True)
-        self._laden(self._abbild())
-        with self._attrappe():
-            self._starten_und_warten()
-        log = self.f.protokoll.get("1.0", "end")
-        self.assertIn(_de("ps5pkg.forge_ignoriert", option=_de("ps5pkg.opt_build_min_fw")), log)
-        self.assertIn(_de("ps5pkg.forge_ignoriert", option=_de("ps5pkg.opt_build_patch_modus")), log)
-        self.assertNotIn(_de("ps5pkg.opt_build_backport"), log, "was nicht gesetzt ist, wird nicht gemeldet")
+            self.f._starten()
+        for name in ("bauen", "fw_hex", "param_json_setzen", "bau_fortschritt"):
+            self.assertFalse(hasattr(wz, name), "der Bau mit LibProsperoPkg ist weg: wz.%s" % name)
+        self.assertEqual([], self.aufrufe)
+        self.assertEqual(1, len(self.dialoge["fehler"]))
+        self.assertIn("Dump-Forge-CLI", self.dialoge["fehler"][0][1])
 
     def test_ohne_zielordner_wird_nicht_gebaut(self) -> None:
         self._laden(self._abbild())
@@ -566,7 +550,6 @@ class EinbauSeiteTests(_ForgeBasis):
             self.addCleanup(var.set, var.get())
         for name in ("zstd_level", "worker_count", "mkpfs_verify"):
             self.addCleanup(app._save_setting, name, app._load_setting(name, None))
-        self.addCleanup(app._save_setting, fz.EINST_BAUER_GEFRAGT, True)
         # Der Faden, der das PlayGo-Merkmal eines Pakets im Archiv sucht, soll hier nichts starten.
         m = mock.patch.object(wz, "playgo_erklaert_archiv", return_value="")
         m.start()
@@ -1141,17 +1124,12 @@ class EinbauSeiteTests(_ForgeBasis):
             self.assertFalse(self.f._abbild_mit_einbau_moeglich(self.f.aktuell))
         self.assertTrue(self.f._abbild_mit_einbau_moeglich(self.f.aktuell))
 
-    def test_ampr_fehlt_fragt_ein_werkzeug_mit_arbeitsordner_und_dump_forge_nicht(self) -> None:
+    def test_ampr_fehlt_fragt_nicht_weil_dump_forge_ihn_selbst_dazulegt(self) -> None:
         ordner = self._spielordner()
         self._laden(ordner)
         info = self.f.aktuell
         info.fakten = fc.QuellFakten(ampr_importiert=True, ampr_fehlt=True)
-        with self._auswahl(_de("ps5pkg.emu_wahl_paket")), mock.patch.object(self.f, "_bauer_fuer", return_value="lpp"):
-            self.assertTrue(self.f._emulatoren_fragen(info))
-        self.assertEqual(1, len(self.dialoge["auswahl"]), "LibProsperoPkg legt AMPR EMU nicht dazu: gefragt")
-        self.assertIn(_de("ps5pkg.emu_zeile_ampr"), self.dialoge["auswahl"][0][0])
-        self.dialoge["auswahl"].clear()
-        with self._auswahl(_de("ps5pkg.emu_wahl_paket")), mock.patch.object(self.f, "_bauer_fuer", return_value="forge"):
+        with self._auswahl(_de("ps5pkg.emu_wahl_paket")):
             self.assertTrue(self.f._emulatoren_fragen(info))
         self.assertEqual([], self.dialoge["auswahl"], "Dump Forge legt ihn selbst dazu: keine Frage")
         self.assertIn(_de("bericht.ampr_forge"), self.f.protokoll.get("1.0", "end"))
@@ -1185,63 +1163,6 @@ class EinbauSeiteTests(_ForgeBasis):
             self.assertTrue(self.f._emulatoren_fragen(self.f.aktuell))
         plan.assert_called_once()
         self.assertIn(_de("ps5pkg.emu_zeile_backport", spiel="11.20", konsole="7.xx"), self.dialoge["auswahl"][0][0])
-
-    # ---------------- der Paketersteller ----------------
-    def _flag(self, wert) -> None:
-        self.app._save_setting(fz.EINST_BAUER_GEFRAGT, wert)
-
-    def test_wer_libprosperopkg_oder_prosperopkgtool_hat_wird_einmal_gefragt(self) -> None:
-        for bauer, name in (("lpp", "LibProsperoPkg"), ("ppt", "ProsperoPkgTool")):
-            with self.subTest(bauer=bauer):
-                self.dialoge["frage"].clear()
-                self._flag(False)
-                self.app._save_setting(opt.BUILDER, bauer)
-                info = self._spielordner(name="O" + bauer)
-                self._laden(info)
-                self.assertTrue(self.f._bauer_wechseln_fragen(self.f.aktuell), "mit Ja baut Dump Forge")
-                self.assertEqual("forge", self.app._load_setting(opt.BUILDER, ""))
-                self.assertIs(True, self.app._load_setting(fz.EINST_BAUER_GEFRAGT, False))
-                self.assertIn(_de("ps5pkg.ask_bauer", name=name), [a[1] for a in self.dialoge["frage"]])
-                self.assertIn(_de("ps5pkg.log_bauer_forge"), self.f.protokoll.get("1.0", "end"))
-
-    def test_mit_nein_bleibt_der_paketersteller_und_es_wird_nie_wieder_gefragt(self) -> None:
-        self._flag(False)
-        self.app._save_setting(opt.BUILDER, "lpp")
-        self._laden(self._spielordner())
-        with mock.patch.object(fz.messagebox, "askyesno", return_value=False) as frage:
-            self.assertFalse(self.f._bauer_wechseln_fragen(self.f.aktuell))
-            frage.assert_called_once()
-            self.assertEqual("lpp", self.app._load_setting(opt.BUILDER, ""), "nichts wird still umgestellt")
-            self.assertFalse(self.f._bauer_wechseln_fragen(self.f.aktuell))
-            frage.assert_called_once()
-        self.assertIn(_de("ps5pkg.log_bauer_bleibt", name="LibProsperoPkg"), self.f.protokoll.get("1.0", "end"))
-
-    def test_keine_frage_ohne_dump_forge_oder_bei_einem_abbild_oder_nach_der_antwort(self) -> None:
-        self.app._save_setting(opt.BUILDER, "lpp")
-        self._laden(self._spielordner())
-        folder = self.f.aktuell
-        with mock.patch.object(fz.messagebox, "askyesno") as frage:
-            self._flag(False)
-            with mock.patch.object(fz.Ps5PkgFenster, "_werkzeug_forge", return_value=""):
-                self.assertFalse(self.f._bauer_wechseln_fragen(folder), "ohne Dump Forge gibt es nichts zu wechseln")
-            self.assertFalse(self.f._bauer_wechseln_fragen(self._paket()), "nur ein Spielordner wird kopiert")
-            self._flag(True)
-            self.assertFalse(self.f._bauer_wechseln_fragen(folder))
-            frage.assert_not_called()
-
-    def test_der_paketbau_mit_libprosperopkg_fragt_vor_dem_start(self) -> None:
-        self._flag(False)
-        self.app._save_setting(opt.BUILDER, "lpp")
-        self._laden(self._spielordner())
-        self.f._format_waehlen("pkg")
-        # LibProsperoPkg und .NET sind da (sonst kaeme der Bau gar nicht bis zur Frage); gebaut wird nach "Ja" mit Dump Forge.
-        with self._attrappe(), mock.patch.object(fz.Ps5PkgFenster, "_werkzeug", return_value="werkzeug"), \
-                mock.patch.object(wz, "dotnet_ordner", return_value="dotnet"):
-            self._starten_und_warten()
-        fragen = [a[1] for a in self.dialoge["frage"] if len(a) > 1]
-        self.assertIn(_de("ps5pkg.ask_bauer", name="LibProsperoPkg"), fragen)
-        self.assertEqual(1, len(self.aufrufe), "nach Ja baut Dump Forge - ohne Arbeitsordner des Werkzeugs")
-        self.assertEqual("forge", self.app._load_setting(opt.BUILDER, ""))
 
     # ---------------- ein Paket ohne Zwischenordner in ein Abbild ----------------
     def _umwandeln_vorbereiten(self, format: str = "ffpkg") -> "wz.PaketInfo":
@@ -1468,32 +1389,21 @@ class EinbauSeiteTests(_ForgeBasis):
         info = self._spielordner()
         self._laden(info)
         a = self.f.aktuell
-        for bauer, name in (("forge", "Dump Forge"), ("lpp", "LibProsperoPkg"), ("ppt", "ProsperoPkgTool")):
-            with self.subTest(bauer=bauer), mock.patch.object(self.f, "_bauer_fuer", return_value=bauer):
-                self.assertEqual(name, self.f._werkzeug_name("bauen", a))
+        self.assertEqual("Dump Forge", self.f._werkzeug_name("bauen", a))
         self.assertEqual("Dump Forge", self.f._werkzeug_name("abbild", a))
-        self.assertEqual("LibProsperoPkg", self.f._werkzeug_name("pruefen", a))
-        self.app._save_setting(opt.BUILDER, "ppt")
-        self.assertEqual("ProsperoPkgTool", self.f._werkzeug_name("extrahieren", a))
+        for art in ("pruefen", "extrahieren", "umwandeln", "konsole"):
+            with self.subTest(art=art):
+                self.assertEqual("LibProsperoPkg", self.f._werkzeug_name(art, a), "lesen, pruefen, entpacken: LibProsperoPkg")
 
-    def test_der_start_nennt_das_werkzeug_und_den_weg_zu_dump_forge(self) -> None:
+    def test_der_start_nennt_dump_forge_als_werkzeug(self) -> None:
         """Gemeldet am 17.11.2026: Mit ProsperoPkgTool stand nur "Staging (0/38'497 MiB)" da - woher das kam, sah man nicht."""
         self._laden(self._spielordner())
         a = self.f.aktuell
-        with mock.patch.object(self.f, "_bauer_fuer", return_value="ppt"), mock.patch.object(fz.threading, "Thread"):
-            self.f._job_starten("bauen", lambda *x: None, a, self.ziel)
-        log = self.f.protokoll.get("1.0", "end")
-        self.assertIn(_de("ps5pkg.log_bauer", name="ProsperoPkgTool"), log)
-        self.assertIn(_de("ps5pkg.log_bauer_tipp"), log)
-        self.f._job = None
-        self.f.protokoll.configure(state="normal")
-        self.f.protokoll.delete("1.0", "end")
-        self.f.protokoll.configure(state="disabled")
-        with mock.patch.object(self.f, "_bauer_fuer", return_value="forge"), mock.patch.object(fz.threading, "Thread"):
+        with mock.patch.object(fz.threading, "Thread"):
             self.f._job_starten("bauen", lambda *x: None, a, self.ziel)
         log = self.f.protokoll.get("1.0", "end")
         self.assertIn(_de("ps5pkg.log_bauer", name="Dump Forge"), log)
-        self.assertNotIn(_de("ps5pkg.log_bauer_tipp"), log, "wer schon Dump Forge hat, braucht den Tipp nicht")
+        self.assertNotIn("ProsperoPkgTool", log)
 
     def test_die_dauer_als_text(self) -> None:
         for sekunden, text in ((0, "0:00"), (59.9, "0:59"), (60, "1:00"), (125, "2:05"), (3599, "59:59"), (3600, "1:00:00"),
@@ -1715,6 +1625,71 @@ class NachErfolgTests(_ForgeBasis):
             self.f._nach_erfolg("bauen", ergebnis, {"quelle": quelle, "stempel": stempel})
             self.assertTrue(basis._warten(lambda: bool(stand), 15))
         self.assertEqual([False], stand, "die Quelle war schon weg, als das Herunterfahren begann")
+
+    # ---------------- die Erfolgsmeldung wie nach den Aufgaben 1 bis 6 ----------------
+    def _erfolgsmeldungen(self) -> list:
+        """Die Meldungen "Erfolg - Vorgang erfolgreich abgeschlossen!", die das Fenster bisher gezeigt hat."""
+        paar = (self.app._t("dialog.title.success"), self.app._t("dialog.msg.task_completed_successfully"))
+        return [a for a in self.dialoge["info"] if tuple(a[:2]) == paar]
+
+    def test_bauen_abbild_und_entpacken_melden_den_erfolg_wie_die_aufgaben_1_bis_6(self) -> None:
+        """Nutzerwunsch 17.11.2026: Nach einem erfolgreich erstellten Ergebnis erscheint dieselbe Meldung wie nach den Aufgaben 1 bis 6
+        (Titel "Erfolg", Text "Vorgang erfolgreich abgeschlossen!") - einmal je Auftrag."""
+        _quelle, ergebnis, _stempel = self._quelle_und_ergebnis()
+        for art in self.f.MELDUNG_ARTEN:
+            with self.subTest(art=art):
+                self.dialoge["info"].clear()
+                self.f._nach_erfolg(art, ergebnis, None)
+                self.assertEqual(1, len(self._erfolgsmeldungen()))
+        self.assertEqual(("bauen", "abbild", "extrahieren"), self.f.MELDUNG_ARTEN)
+
+    def test_der_ganze_auftrag_meldet_den_erfolg(self) -> None:
+        """Ueber ``_job_beendet`` mit dem echten ``_nach_erfolg``: Bauen, Abbild und Extrahieren zeigen die Meldung am Ende."""
+        f = self.f
+        _quelle, ergebnis, _stempel = self._quelle_und_ergebnis()
+        info = wz.PaketInfo(pfad=os.path.join(self.ordner, "Q"), typ=wz.TYP_ORDNER)
+        for art, ende in (("bauen", {"ok": True, "pkg": ergebnis, "pruefung": "p", "befund": False}),
+                          ("abbild", {"ok": True, "pkg": ergebnis, "pruefung": "p", "befund": False}),
+                          ("extrahieren", {"ok": True, "text": "t"})):
+            with self.subTest(art=art), mock.patch.object(type(f), "_ausgabe_nach_erfolg"):
+                self.dialoge["info"].clear()
+                f._job = {"art": art, "info": info, "ziel": self.ordner, "start": time.monotonic(), "letzte": time.monotonic(),
+                          "zeichen": None, "loeschen": None}
+                f._job_beendet(ende)
+                self.assertEqual(1, len(self._erfolgsmeldungen()))
+
+    def test_keine_meldung_bei_umwandeln_pruefen_konsole_befund_und_herunterfahren(self) -> None:
+        """Ueber Aufgabe 1 meldet Aufgabe 1 selbst (sonst doppelt); Pruefen und "auf die PS5 entpacken" erstellen nichts; ein Befund ist
+        kein Erfolg; beim Herunterfahren wuerde die Meldung auf eine Bestaetigung warten, die niemand gibt."""
+        _quelle, ergebnis, _stempel = self._quelle_und_ergebnis()
+        self.f._nach_erfolg("umwandeln", ergebnis, None)
+        self.f._nach_erfolg("pruefen", "", None)
+        self.f._nach_erfolg("konsole", "", None)
+        self.f._nach_erfolg("bauen", ergebnis, None, befund=True)
+        self.assertEqual([], self._erfolgsmeldungen())
+        self.app.shutdown_after_success.set(True)
+        with mock.patch.object(APP.PS5ConverterGUI, "_maybe_shutdown_after_task"):
+            for art in self.f.MELDUNG_ARTEN:
+                self.f._nach_erfolg(art, ergebnis, None)
+        self.assertEqual([], self._erfolgsmeldungen(), "beim Herunterfahren steht der Erfolg nur in Statuszeile und Protokoll")
+
+    def test_die_meldung_kommt_vor_der_sendefrage(self) -> None:
+        """Wie im Hauptfenster: erst "Vorgang erfolgreich abgeschlossen!", dann die Frage, ob das Ergebnis an die PS5 geht."""
+        _quelle, ergebnis, _stempel = self._quelle_und_ergebnis()
+        self.app.senden_nach_erfolg_var.set(True)
+        reihenfolge: list = []
+        with mock.patch.object(type(self.f), "_erfolg_melden", side_effect=lambda: reihenfolge.append("meldung")), \
+                mock.patch.object(type(self.f), "_senden_fragen", side_effect=lambda e: reihenfolge.append("senden")):
+            self.f._nach_erfolg("bauen", ergebnis, None)
+        self.assertEqual(["meldung", "senden"], reihenfolge)
+
+    def test_nach_dem_loeschen_der_quelle_kommt_die_meldung(self) -> None:
+        quelle, ergebnis, stempel = self._quelle_und_ergebnis()
+        self.f._nach_erfolg("bauen", ergebnis, {"quelle": quelle, "stempel": stempel})
+        self.assertEqual([], self._erfolgsmeldungen(), "erst wird die Quelle geloescht")
+        self.assertTrue(basis._warten(lambda: not self.f.beschaeftigt() and not os.path.exists(quelle), 15))
+        basis._pumpen(0.2)
+        self.assertEqual(1, len(self._erfolgsmeldungen()))
 
     # ---------------- der Weg ueber Aufgabe 1 ----------------
     def test_die_uebergabe_fragt_nicht_noch_einmal_nach_dem_arbeitsordner(self) -> None:

@@ -134,12 +134,9 @@ ENTWICKLER: tuple[Entwickler, ...] = (
                {"de": "Danke für SelfUtil – sein Entpackverfahren ist hier für BACKPORT nachgebaut.",
                 "en": "Thank you for SelfUtil – its unpacking method is rebuilt here for BACKPORT."}),
     Entwickler("pearlxcore", "pearlxcore", WERKZEUGE,
-               (("OrbisPkgTool", _gh("pearlxcore/OrbisPkgTool")),
-                ("ProsperoPkgTool", _gh("pearlxcore/ProsperoPkgTool"))),
-               {"de": "Danke für OrbisPkgTool – die Engine hinter „PS4 PKG Dump & Image Converter“ – und für "
-                      "ProsperoPkgTool, den zweiten Paketersteller im PS5-PKG-Fenster.",
-                "en": "Thank you for OrbisPkgTool – the engine behind “PS4 PKG Dump & Image Converter” – and for "
-                      "ProsperoPkgTool, the second package builder in the PS5 PKG window."}),
+               (("OrbisPkgTool", _gh("pearlxcore/OrbisPkgTool")),),
+               {"de": "Danke für OrbisPkgTool – die Engine hinter „PS4 PKG Dump & Image Converter“.",
+                "en": "Thank you for OrbisPkgTool – the engine behind “PS4 PKG Dump & Image Converter”."}),
     Entwickler("andy-man", "andy-man", WERKZEUGE,
                (("PS5 Wee Tools", _gh("andy-man/ps5-wee-tools")),),
                {"de": "Danke für PS5 Wee Tools – das Werkzeug für den NOR-Flash der Konsole.",

@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Die Huelle um ``ffpfsc-pkg-tool`` - lesen, pruefen, entpacken und bauen von PS5-Paketen (seit v1.9.71).
+"""Die Huelle um ``ffpfsc-pkg-tool`` - lesen, pruefen und entpacken von PS5-Paketen (seit v1.9.71).
 
 Das Werkzeug stammt aus dem Quelltext von **ps5-fpkg-converter 0.0.3** (GPL-3.0-or-later; darin die Engine von
 ps5-ultrapack; dessen Quelltext hier ist aus der MIT-Zeit bis 2.4.1) und liegt, fuer jede Plattform einzeln gebaut,
 unter ``PS5-PKG-Tool/<Plattform>/``. Es ist ein
 .NET-Programm (net10.0, abhaengig von der installierten Laufzeit - die braucht das Programm ohnehin) und kapselt
 LibProsperoPkg 1.2.0. Befehle, die hier gebraucht werden: ``inspect``, ``validate``, ``extract-inner`` (ganz oder
-mit ``--members``) und ``build`` (aus einem Spielordner ein Debug-Paket, :func:`bauen`).
+mit ``--members``). Gebaut wird seit 17.11.2026 nur noch mit Dump Forge (``utils/forge_cli.py``); ``build``, ``fw_hex`` und
+``param_json_setzen`` (Mindest-Firmware, Update-Paket) sind mit dem Bau mit diesem Werkzeug entfallen.
 
 Das Modul kennt keine Oberflaeche. Laeufe mit Fortschritt melden ueber Rueckrufe; der Abbruch beendet den ganzen
 Prozessbaum. Fehler sind :class:`Fehler` mit einer Meldung fuer das Protokoll.
@@ -308,51 +309,6 @@ def passcode_gueltig(passcode: str) -> bool:
     return passcode == "" or bool(PASSCODE_MUSTER.match(passcode))
 
 
-_FW_VERSION_MUSTER = re.compile(r"^(\d{1,2})[.,](\d{2})$")
-
-
-def fw_hex(version: str) -> str:
-    """Konvertiert eine FW-Versionsangabe in den Hex-Wert fuer param.json.
-
-    Beispiele: ``"9.00"`` -> ``"0x0900000000000000"``, ``"11.20"`` -> ``"0x0b14000000000000"``.
-    Gibt ``""`` zurueck, wenn ``version`` leer oder ungueltiges Format ist.
-    """
-    m = _FW_VERSION_MUSTER.match(str(version).strip())
-    if not m:
-        return ""
-    return "0x%02x%02x000000000000" % (int(m.group(1)), int(m.group(2)))
-
-
-def fw_version_gueltig(version: str) -> bool:
-    """``True``, wenn ``version`` leer (kein Override) oder eine gueltige FW-Version ist."""
-    v = str(version).strip()
-    return v == "" or bool(_FW_VERSION_MUSTER.match(v))
-
-
-def param_json_setzen(ordner: str, schluessel: str, wert: str) -> str:
-    """Aendert ein Feld in ``sce_sys/param.json`` des Spielordners in-place.
-
-    Gibt den alten Wert (als String) zurueck, damit er wiederhergestellt werden kann.
-    Wirft ``Fehler``, wenn die Datei nicht gelesen oder geschrieben werden kann.
-    """
-    pfad = os.path.join(ordner, "sce_sys", "param.json")
-    if not os.path.isfile(pfad):
-        raise Fehler("param.json nicht gefunden: %s" % pfad)
-    try:
-        with open(pfad, encoding="utf-8", errors="replace") as f:
-            daten = json.load(f)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise Fehler("param.json lesen fehlgeschlagen: %s" % exc) from exc
-    alt = str(daten.get(schluessel, ""))
-    daten[schluessel] = wert
-    try:
-        with open(pfad, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(daten, f, ensure_ascii=False, indent=2)
-    except OSError as exc:
-        raise Fehler("param.json schreiben fehlgeschlagen: %s" % exc) from exc
-    return alt
-
-
 def _passcode_args(passcode: str) -> list[str]:
     return ["--passcode", passcode] if passcode else []
 
@@ -531,99 +487,6 @@ def ordner_lesen(ordner: str, arbeitsordner: str | None = None, melden: _Zeile |
         except OSError:
             pass
     return info
-
-
-#: Die Phasen eines Baus und ihr Anteil am Balken (von, bis in Prozent) - so meldet ``build`` sich im Text.
-_BAU_PHASEN = (
-    (re.compile(r"\[stage\] copy (\d+)%"), 0, 10),
-    (re.compile(r"\[inner\]\s+read \d+/\d+ \(\s*(\d+)%\)"), 10, 25),
-    (re.compile(r"\[inner\]\s+data\s+(\d+)%"), 25, 80),
-    (re.compile(r"Writing and hashing outer-PFS data.*?:\s*(\d+)%"), 80, 93),
-    (re.compile(r"\[finalize\].*?:\s*(\d+)%"), 93, 99),
-)
-
-
-def bau_fortschritt(zeile: str) -> tuple[int, str] | None:
-    """Prozent des ganzen Baus (0 bis 99) und eine kurze Beschreibung aus einer Zeile von ``build``, sonst ``None``."""
-    for muster, von, bis in _BAU_PHASEN:
-        treffer = muster.search(zeile)
-        if treffer:
-            anteil = min(100, int(treffer.group(1)))
-            datei = re.search(r"\):\s*(\S.*?)(?: -> |$)", zeile)
-            return von + (bis - von) * anteil // 100, (datei.group(1) if datei else zeile.split("] ", 1)[-1])[:140]
-    return None
-
-
-#: So sieht eine Content-ID aus: ``UP8016-PPSA19015_00-0489895718491618`` (36 Zeichen).
-CONTENT_ID = re.compile(r"^[A-Z]{2}\d{4}-[A-Z]{4}\d{5}_\d{2}-[A-Za-z0-9]{16}$")
-TITLE_ID = re.compile(r"^[A-Z]{4}\d{5}$")
-
-
-def bauen(werkzeug: str, quelle: str, ziel: str, *, content_id: str, title_id: str, titel: str = "",
-          version: str = "01.000.000", stufe: int = 0, kerne: int = 0, modus: str = "kraken",
-          playgo_chunks: int = 1, deterministisch: bool = False, regen_playgo: bool = False,
-          fake_signieren: bool = True, ampr_index: bool = True, passcode: str = "",
-          temp: str | None = None, zeile: _Zeile | None = None,
-          fortschritt: Callable[[int, str], None] | None = None, abbruch: _Abbruch | None = None,
-          popen_extra: dict | None = None) -> str:
-    """Baut aus einem Spielordner ein Debug-Paket (``build``) und gibt den Pfad der ``.pkg`` zurueck.
-
-    Die Voreinstellungen sind die, die der Autor des Werkzeugs an einer Konsole belegt hat (PS5 mit Firmware 11.60 und
-    kstuff-lite 1.13): Kraken-Schicht ueber dem inneren Abbild und der **eingebaute** Kraken-Kodierer - mit gespeicherten
-    Bloecken installiert sich das Paket, startet aber nicht (CE-100096-6). ``stufe`` ist die Kraken-Stufe (-4 bis 9),
-    ``kerne`` die Zahl der Arbeiter (0 = einer je Kern). ``temp`` nimmt die Kopie des Spielordners und die
-    Zwischendateien auf (das Werkzeug arbeitet nie am Original).
-
-    Raises:
-        Fehler: ungueltige Kennung, Fehler des Werkzeugs, kein ``OK`` am Ende; ``abgebrochen`` beim Abbruch.
-    """
-    if not CONTENT_ID.match(content_id):
-        raise Fehler("Ungueltige Content-ID: %r" % content_id)
-    if not TITLE_ID.match(title_id):
-        raise Fehler("Ungueltige Title-ID: %r" % title_id)
-    Path(ziel).mkdir(parents=True, exist_ok=True)
-    modus_norm = modus if modus in ("none", "zlib", "kraken") else "kraken"
-    argumente = (["build", quelle, ziel, "--content-id", content_id, "--title-id", title_id, "--version", version,
-                 "--mode", modus_norm, "--level", str(int(stufe))]
-                + _passcode_args(passcode))
-    if modus_norm == "kraken":
-        argumente += ["--kraken-backend", "builtin"]
-    if titel:
-        argumente += ["--title", titel]
-    if temp:
-        argumente += ["--temp", temp]
-        try:
-            Path(temp).mkdir(parents=True, exist_ok=True)   # TMP/TEMP muessen existieren (wie ps5-fpkg-converter 0.0.3)
-        except OSError:
-            temp = None   # nicht anlegbar: das Werkzeug meldet den Ordner selbst, TMP bleibt unveraendert
-    if kerne and int(kerne) > 0:
-        argumente += ["--parallelism", str(int(kerne))]
-    if playgo_chunks and int(playgo_chunks) > 1:
-        argumente += ["--playgo-chunks", str(int(playgo_chunks))]
-    if deterministisch:
-        argumente.append("--deterministic")
-    if regen_playgo:
-        argumente.append("--regen-playgo")
-    if not fake_signieren:
-        argumente.append("--no-fake-sign")
-    if not ampr_index:
-        argumente.append("--no-ampr-index")
-
-    def jede(text: str) -> None:
-        gemeldet = bau_fortschritt(text)
-        if gemeldet and fortschritt:
-            fortschritt(gemeldet[0], gemeldet[1])
-        elif zeile and not text.startswith(("[inner]   read ", "[inner]   data ")):
-            zeile(text)
-
-    rc, aus = laufen(werkzeug, argumente, zeile=jede, abbruch=abbruch, popen_extra=popen_extra, temp=temp)
-    if rc == -1:
-        raise Fehler("abgebrochen")
-    ok = [z for z in aus.splitlines() if z.startswith("OK")]
-    if rc != 0 or not ok:
-        raise Fehler(_fehlertext(aus))
-    treffer = re.match(r"OK\s*[-\u2014]\s*wrote\s+(.+?)\s+\(([\d,. ]+) B\)\s*$", ok[-1])
-    return treffer.group(1) if treffer else ok[-1]
 
 
 def baum(werkzeug: str, paket: str, popen_extra: dict | None = None, *, passcode: str = "",

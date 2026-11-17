@@ -28,7 +28,6 @@ import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 from ps5_validator.ui import ps5_pkg_fenster as fz          # noqa: E402
 from ps5_validator.utils import ps5_pkg_optionen as opt     # noqa: E402
 from ps5_validator.utils import ps5_pkg_werkzeug as wz      # noqa: E402
-from ps5_validator.utils import prospero_pkg_tool as ppt    # noqa: E402
 from ps5_validator.utils.i18n import STRINGS                # noqa: E402
 
 try:
@@ -147,13 +146,10 @@ class FensterTests(unittest.TestCase):
             m.start()
             self.addCleanup(m.stop)
         # Die Einstellungen des Fensters stehen im umgelenkten Ordner - frueher gespeichertes soll nichts vorgeben.
-        # Paketersteller: Seit 16.11.2026 ist Dump Forge die Vorgabe - die Tests dieser Klasse pruefen den Weg ueber
-        # LibProsperoPkg (die Forge-Tests stehen in ``test_ps5_pkg_forge.py``).
-        # ``EINST_BAUER_GEFRAGT``: Die einmalige Frage "Dump Forge statt LibProsperoPkg?" (17.11.2026) ist beantwortet - diese
-        # Tests pruefen den Weg ueber LibProsperoPkg und den Arbeitsordner (die Frage hat ihre eigenen Tests).
+        # Die Tests dieser Klasse pruefen Lesen, Pruefen, Entpacken und den Weg ueber Aufgabe 1 (LibProsperoPkg). Gebaut wird seit
+        # 17.11.2026 nur noch mit Dump Forge (die Forge-Tests stehen in ``test_ps5_pkg_forge.py``).
         for schluessel, wert in ((fz.EINST_AKTION, fz.AKTION_UMWANDELN), (fz.EINST_FORMAT, "ffpfsc"),
-                                 (fz.EINST_BIBLIOTHEK, []), (fz.EINST_ZIEL, ""), (opt.BUILDER, "lpp"),
-                                 (fz.EINST_BAUER_GEFRAGT, True)):
+                                 (fz.EINST_BIBLIOTHEK, []), (fz.EINST_ZIEL, "")):
             self.app._save_setting(schluessel, wert)
         # Ein Paket schreibt Dump Forge seit 17.11.2026 im Strom in ein Abbild (``_abbild_direkt_moeglich``); die Tests dieser
         # Klasse pruefen das Entpacken in den Arbeitsordner und die Uebergabe an Aufgabe 1 - das gilt weiter, wenn der Einbau
@@ -1041,7 +1037,9 @@ class FensterTests(unittest.TestCase):
         f._format_waehlen("pkg")
         self.assertEqual("pkg", f.format_schluessel)
         self.assertEqual(".pkg", f.format_var.get())
-        self.assertTrue(f.ergebnis_var["output"].get().startswith("UP0000-PPSA00003_00-GAMMAGAMMAGAMMA0"))
+        ausgabe = f.ergebnis_var["output"].get()
+        self.assertTrue(ausgabe.endswith("[PPSA00003].pkg"), "Dump Forge nennt das Paket <Titel> [<Title-ID>].pkg: " + ausgabe)
+        self.assertFalse(ausgabe.startswith("UP0000-"), "nicht die Content-ID von LibProsperoPkg")
         self.assertTrue(ordner)
         self.f._pakete_hinzufuegen([os.path.join(self.ordner, "alpha.pkg")], waehlen=True)
         self.assertTrue(_warten(lambda: f.aktuell is not None and not f.aktuell.ist_ordner))
@@ -1057,228 +1055,6 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(ordner, "sce_sys", "param.json")))
         self.assertTrue(os.path.isfile(os.path.join(ordner, "eboot.bin")))
         self.assertFalse(os.path.exists(kopie), "nur die Kopie des Covers wird entfernt")
-
-    def _bauen_vorbereiten(self, bauen_attrappe, **kw) -> tuple[str, str]:
-        ordner = self._spielordner_laden(**kw)
-        f = self.f
-        ziel = os.path.join(self.ordner, "ziel")
-        os.makedirs(ziel)
-        f.ziel_var.set(ziel)
-        f._format_waehlen("pkg")
-        # Die Reparatur der param.json (Aufgabe 1) hat ihre eigenen Tests; hier wird sie abgelehnt.
-        reparatur = mock.patch.object(self.app, "_offer_repair_param_json", return_value=False)
-        reparatur.start()
-        self.addCleanup(reparatur.stop)
-        return ordner, ziel
-
-    def test_bauen_schreibt_das_paket_und_prueft_es(self) -> None:
-        ordner, ziel = self._bauen_vorbereiten(None)
-        f = self.f
-        aufrufe = {}
-
-        def bauen(werkzeug, quelle, zielordner, **kw):
-            aufrufe.update(kw, quelle=quelle, ziel=zielordner, temp_da=os.path.isdir(kw["temp"]))
-            kw["fortschritt"](50, "Media/x.bundle")
-            pfad = os.path.join(zielordner, "UP0000-PPSA00003_00-GAMMAGAMMAGAMMA0-A0102-V0102.pkg")
-            Path(pfad).write_bytes(b"pkg")
-            return pfad
-
-        with mock.patch.object(wz, "bauen", side_effect=bauen), mock.patch.object(wz, "pruefen", return_value={
-                "pass": 36, "warn": 0, "fail": 0, "results": []}):
-            f._starten()
-            self.assertTrue(_warten(lambda: f._job is None, 20))
-        self.assertEqual(ordner, aufrufe["quelle"])
-        self.assertEqual(ziel, aufrufe["ziel"])
-        self.assertEqual("UP0000-PPSA00003_00-GAMMAGAMMAGAMMA0", aufrufe["content_id"])
-        self.assertEqual(("PPSA00003", "Gamma Spiel", "01.002.000"), (aufrufe["title_id"], aufrufe["titel"], aufrufe["version"]))
-        self.assertTrue(aufrufe["temp_da"])
-        self.assertEqual(ziel, os.path.dirname(aufrufe["temp"]), "der Arbeitsordner liegt im Zielordner")
-        self.assertFalse(os.path.exists(aufrufe["temp"]), "und wird danach entfernt")
-        self.assertTrue(f.auftrag_var.get().startswith("Fertig. Paket: UP0000-PPSA00003"))
-        log = f.protokoll.get("1.0", "end")
-        self.assertIn("[OK] Prüfung: 36 bestanden", log)
-        self.assertIn("Debug-Paket (FPKG)", log)
-        self.assertEqual(ziel, f._z.get("ausgabe"))
-        self.assertEqual(100.0, float(f.balken_gesamt["value"]))
-
-    def test_ppt_baut_in_eine_datei_nicht_in_den_zielordner(self) -> None:
-        """17.10.2026 (Funktionspruefung an einem echten Spiel): ppt.bauen() erwartet in "ziel" den
-        vollstaendigen Dateipfad (anders als wz.bauen(), das selbst einen Namen im Zielordner waehlt) - der
-        blosse Zielordner endete beim echten ProsperoPkgTool immer mit "Access to the path '...' is denied",
-        weil es dort eine Datei zu OEFFNEN versuchte, wo ein Ordner lag."""
-        ordner, ziel = self._bauen_vorbereiten(None)
-        f = self.f
-        self.app._save_setting(opt.BUILDER, "ppt")
-        self.addCleanup(lambda: self.app._save_setting(opt.BUILDER, "lpp"))
-        aufrufe = {}
-
-        def bauen(werkzeug, quelle, ziel_datei, **kw):
-            aufrufe["ziel"] = ziel_datei
-            Path(ziel_datei).write_bytes(b"pkg")
-            return ziel_datei
-
-        with mock.patch.object(fz.Ps5PkgFenster, "_werkzeug_ppt", return_value="prospero"), \
-                mock.patch.object(ppt, "bauen", side_effect=bauen), mock.patch.object(wz, "pruefen", return_value={
-                "pass": 1, "warn": 0, "fail": 0, "results": []}):
-            f._starten()
-            self.assertTrue(_warten(lambda: f._job is None, 20))
-        self.assertNotEqual(ziel, aufrufe["ziel"], "ppt.bauen() darf nicht den blossen Zielordner bekommen")
-        self.assertEqual(ziel, os.path.dirname(aufrufe["ziel"]), "die Datei muss im Zielordner liegen")
-        self.assertTrue(aufrufe["ziel"].endswith(".pkg"))
-        self.assertTrue(os.path.isfile(aufrufe["ziel"]))
-
-    def test_ein_gescheiterter_bau_raeumt_unfertiges_weg(self) -> None:
-        ordner, ziel = self._bauen_vorbereiten(None)
-        f = self.f
-        alt = os.path.join(ziel, "alt.pkg")
-        Path(alt).write_bytes(b"alt")
-
-        def bauen(werkzeug, quelle, zielordner, **kw):
-            Path(zielordner, "halb.pkg").write_bytes(b"halb")
-            raise wz.Fehler("[error] kaputt")
-
-        with mock.patch.object(wz, "bauen", side_effect=bauen):
-            f._starten()
-            self.assertTrue(_warten(lambda: f._job is None, 20))
-        self.assertFalse(os.path.exists(os.path.join(ziel, "halb.pkg")))
-        self.assertTrue(os.path.isfile(alt), "was vorher da war, bleibt")
-        self.assertIn("Fehlgeschlagen", f.auftrag_var.get())
-        self.assertEqual([], [n for n in os.listdir(ziel) if n.startswith("ps5conv_pkgbau_")], "der Arbeitsordner ist weg")
-        self.assertTrue(os.path.isfile(os.path.join(ordner, "eboot.bin")), "der Spielordner bleibt unberuehrt")
-
-    def test_abbrechen_beim_bauen(self) -> None:
-        ordner, ziel = self._bauen_vorbereiten(None)
-        f = self.f
-
-        def bauen(werkzeug, quelle, zielordner, *, abbruch=None, **kw):
-            Path(zielordner, "halb.pkg").write_bytes(b"x")
-            ende = time.time() + 20
-            while time.time() < ende:
-                if abbruch():
-                    raise wz.Fehler("abgebrochen")
-                time.sleep(0.02)
-            return "x"
-
-        with mock.patch.object(wz, "bauen", side_effect=bauen):
-            f._starten()
-            _pumpen(0.5)
-            self.assertIsNotNone(f._job)
-            f._abbrechen()
-            self.assertTrue(_warten(lambda: f._job is None, 10))
-        self.assertEqual([], os.listdir(ziel))
-
-    def test_ohne_gueltige_content_id_wird_nicht_gebaut(self) -> None:
-        self._spielordner_laden(cid="kaputt")
-        f = self.f
-        f.ziel_var.set(self.ordner)
-        f._format_waehlen("pkg")
-        with mock.patch.object(wz, "bauen") as bauen:
-            f._starten()
-        bauen.assert_not_called()
-        self.assertEqual(1, len(self.dialoge["fehler"]))
-        self.assertIsNone(f._job)
-
-    def test_eine_beanstandete_param_json_fragt_nach(self) -> None:
-        self._bauen_vorbereiten(None)
-        f = self.f
-
-        class Befund:
-            ok = False
-
-            def als_text(self, mit_hinweisen=False):
-                return ["[FEHLER] applicationDrmType 'upgradable' ist ein Anwendungstyp"]
-
-        with mock.patch("ps5_validator.utils.param_check.pruefe_datei", return_value=Befund()), \
-                mock.patch.object(fz.messagebox, "askyesno", return_value=False) as frage, \
-                mock.patch.object(wz, "bauen") as bauen:
-            f._starten()
-        frage.assert_called_once()
-        self.assertIn("applicationDrmType", frage.call_args.args[1])
-        bauen.assert_not_called()
-        self.assertIsNone(f._job)
-
-    def test_eine_repariert_param_json_wird_neu_gelesen_und_gebaut(self) -> None:
-        ordner, ziel = self._bauen_vorbereiten(None)
-        f = self.f
-        param_pfad = os.path.join(ordner, "sce_sys", "param.json")
-
-        class Befund:
-            ok = False
-
-            def als_text(self, mit_hinweisen=False):
-                return ["[FEHLER] applicationDrmType 'upgradable' ist ein Anwendungstyp"]
-
-        def reparieren(quellordner, befund, paketbau=False) -> bool:
-            import json
-            daten = json.loads(Path(param_pfad).read_text(encoding="utf-8"))
-            daten["applicationDrmType"] = "standard"
-            daten["titleId"] = "PPSA00009"
-            daten["contentId"] = "UP0000-PPSA00009_00-REPARIERTREPARIE"
-            Path(param_pfad).write_text(json.dumps(daten), encoding="utf-8")
-            return True
-
-        gebaut = {}
-
-        def bauen(werkzeug, quelle, zielordner, **kw):
-            gebaut.update(kw)
-            pfad = os.path.join(zielordner, "x-A0102-V0102.pkg")
-            Path(pfad).write_bytes(b"p")
-            return pfad
-
-        with mock.patch("ps5_validator.utils.param_check.pruefe_datei", return_value=Befund()), \
-                mock.patch.object(self.app, "_offer_repair_param_json", side_effect=reparieren) as repar, \
-                mock.patch.object(fz.messagebox, "askyesno") as frage, \
-                mock.patch.object(wz, "bauen", side_effect=bauen), \
-                mock.patch.object(wz, "pruefen", return_value={"pass": 1, "warn": 0, "fail": 0, "results": []}):
-            f._starten()
-            self.assertTrue(_warten(lambda: f._job is None, 20))
-        repar.assert_called_once()
-        frage.assert_not_called()
-        self.assertEqual(("UP0000-PPSA00009_00-REPARIERTREPARIE", "PPSA00009"), (gebaut["content_id"], gebaut["title_id"]))
-        self.assertEqual("PPSA00009", f.aktuell.title_id)
-        self.assertTrue(f.auftrag_var.get().startswith("Fertig"))
-
-    def test_ein_vorhandenes_paket_gleichen_namens_wird_nur_mit_haken_ersetzt(self) -> None:
-        ordner, ziel = self._bauen_vorbereiten(None)
-        f = self.f
-        alt = os.path.join(ziel, "UP0000-PPSA00003_00-GAMMAGAMMAGAMMA0-A0102-V0102.pkg")
-        Path(alt).write_bytes(b"alt")
-        fremd = os.path.join(ziel, "UP0000-PPSA00099_00-ANDERESANDERES000-A0100-V0100.pkg")
-        Path(fremd).write_bytes(b"fremd")
-
-        def bauen(werkzeug, quelle, zielordner, **kw):
-            Path(alt).write_bytes(b"neu")
-            return alt
-
-        with mock.patch.object(wz, "bauen", side_effect=bauen) as lauf, \
-                mock.patch.object(wz, "pruefen", return_value={"pass": 1, "warn": 0, "fail": 0, "results": []}):
-            f._starten()
-            lauf.assert_not_called()
-            self.assertEqual(1, len(self.dialoge["info"]))
-            self.assertEqual(b"alt", Path(alt).read_bytes())
-            f.ueberschreiben_var.set(True)
-            f._starten()
-            self.assertTrue(_warten(lambda: f._job is None, 20))
-        self.assertEqual(b"neu", Path(alt).read_bytes())
-        self.assertEqual(b"fremd", Path(fremd).read_bytes(), "ein anderes Paket bleibt, wie es ist")
-
-    def test_der_platz_wird_vor_dem_bauen_geprueft(self) -> None:
-        self._bauen_vorbereiten(None)
-        f = self.f
-        info = f.aktuell
-        info.groesse = 10 * 1024 ** 3
-        wenig = mock.Mock(free=1024 ** 3)
-        with mock.patch.object(fz.shutil, "disk_usage", return_value=wenig), mock.patch.object(wz, "bauen") as bauen:
-            f._starten()
-        bauen.assert_not_called()
-        self.assertEqual(1, len(self.dialoge["fehler"]), "weniger als die Haelfte: Absage")
-        knapp = mock.Mock(free=int(info.groesse * 1.2))
-        with mock.patch.object(fz.shutil, "disk_usage", return_value=knapp), \
-                mock.patch.object(fz.messagebox, "askyesno", return_value=False) as frage, \
-                mock.patch.object(wz, "bauen") as bauen:
-            f._starten()
-        frage.assert_called()
-        bauen.assert_not_called()
 
     def test_ein_paket_wird_nicht_entpackt_wenn_der_arbeitsplatz_fehlt(self) -> None:
         self._laden("alpha.pkg")

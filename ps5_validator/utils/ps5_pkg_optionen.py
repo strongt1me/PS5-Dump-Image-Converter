@@ -27,15 +27,10 @@ COVER = "ps5pkg_cover"
 SORTIERUNG = "ps5pkg_sortierung"
 #: Nach einem erfolgreichen Auftrag den Ausgabeordner oeffnen.
 OEFFNEN = "ps5pkg_oeffnen"
-#: Passcode fuer ``list-inner``/``extract-inner``/``validate``/``build`` - leer heisst der Standard des Werkzeugs
-#: (32 Nullen). Ein Paket, das mit einem anderen Passcode gebaut wurde, liesse sich sonst nicht lesen (nicht sein Kopf -
+#: Passcode fuer ``list-inner``/``extract-inner``/``validate`` (LibProsperoPkg) - leer heisst der Standard des Werkzeugs
+#: (32 Nullen). Dump Forge baut Pakete immer mit dem Standard-Passcode. Ein Paket, das mit einem anderen Passcode gebaut wurde, liesse sich sonst nicht lesen (nicht sein Kopf -
 #: der ist immer offen -, aber param.json, Cover und der Inhalt).
 PASSCODE = "ps5pkg_passcode"
-#: Welches Werkzeug "Paket bauen" verwendet - "forge" (Dump Forge, Vorgabe seit 16.11.2026), "lpp" (LibProsperoPkg
-#: 1.2.0, ffpfsc-pkg-tool, der fruehere Weg) oder "ppt" (ProsperoPkgTool, zweiter Paketersteller seit 12.10.2026). Gilt
-#: nur fuer den Bau eines Spielordners (ein Abbild baut immer Dump Forge); Lesen, Pruefen und Entpacken eines Pakets
-#: bleiben immer bei LibProsperoPkg (ffpfsc-pkg-tool kennt --json, Passcode und die CNT-Metadaten-Zusammenfuehrung).
-BUILDER = "ps5pkg_builder"
 ZIEL = "ps5pkg_ziel"
 #: Eigener Arbeitsordner fuer Entpacken/Bauen/Extrahieren dieses Fensters (seit v1.9.83). Leer (Vorgabe) = wie
 #: bisher der Temp-Ordner aus den Haupteinstellungen bzw. System-Temp (``Ps5PkgFenster._arbeitsordner``) - nur
@@ -53,29 +48,11 @@ FORGE_VOLL_PRUEFEN = "ps5pkg_forge_voll_pruefen"
 #: Die Backport-Bibliotheken aus ``fakelib/`` weglassen, die Emulatoren behalten (``--remove-backport``).
 FORGE_BACKPORT_ENTFERNEN = "ps5pkg_forge_backport_entfernen"
 
-# --- Bau-Einstellungen (seit v1.9.83) ------------------------------------
-#: Kompressionsmodus beim Bau: "none", "zlib" oder "kraken" (Vorgabe).
-KRAKEN_MODUS = "ps5pkg_kraken_modus"
-#: Kompressionsstufe: -4..9 fuer Kraken, 0..9 fuer zlib (Vorgabe 7).
-KRAKEN_STUFE = "ps5pkg_kraken_stufe"
-#: Anzahl der Bau-Worker (0 = ein Kern je CPU-Kern, Vorgabe).
+# --- Bau (Dump Forge) ----------------------------------------------------
+#: Anzahl der Threads beim Bau (0 = ein Kern je CPU-Kern, Vorgabe) - ``--threads`` von Dump Forge. Bis 17.11.2026 gab es hier
+#: noch die Einstellungen des Baus mit LibProsperoPkg (Kompressionsmodus und -stufe, PlayGo-Chunks, deterministisch, PlayGo neu
+#: erzeugen, Backport einbauen, Mindest-Firmware, Update-Paket); LibProsperoPkg baut nicht mehr, gespeicherte Werte bleiben ungenutzt.
 KRAKEN_KERNE = "ps5pkg_kraken_kerne"
-#: PlayGo-Chunk-Anzahl beim Bau (1..255, Vorgabe 1).
-PLAYGO_CHUNKS = "ps5pkg_playgo_chunks"
-#: Byte-reproduzierbarer Bau (--deterministic).
-DETERMINISTISCH = "ps5pkg_deterministisch"
-#: Vorhandene PlayGo-Daten verwerfen und neu generieren (--regen-playgo).
-REGEN_PLAYGO = "ps5pkg_regen_playgo"
-#: Backport vor dem Bau einbauen (patcht ELF/SELF in-place).
-BACKPORT_EINBAUEN = "ps5pkg_backport_einbauen"
-#: Ziel-Firmware fuer den Backport (PS5-Hauptversion, z. B. 7 fuer FW 7.xx). 0 = Vorgabe.
-BACKPORT_FIRMWARE = "ps5pkg_backport_firmware"
-#: Benutzerdefinierter Fakelib-Ordner fuer den Backport (leer = gebundelter Pfad neben der EXE).
-BACKPORT_FAKELIB_ORDNER = "ps5pkg_backport_fakelib_ordner"
-#: Minimale FW-Version fuer den Bau (z. B. "9.00"); leer = unveraendert aus param.json.
-MIN_FW_VERSION = "ps5pkg_min_fw_version"
-#: contentType in param.json vor dem Bau auf "PATCH" setzen (Update-PKG); wird danach wiederhergestellt.
-PATCH_MODUS = "ps5pkg_patch_modus"
 
 #: Weitergereicht, damit die Oberflaeche (``ui/ps5_pkg_optionen.py``) fuer die Passcode-Pruefung nicht extra
 #: ``ps5_pkg_werkzeug`` importieren muss - alle Regeln zu den Optionen stehen hier.
@@ -84,9 +61,7 @@ passcode_gueltig = wz.passcode_gueltig
 SORTIERUNGEN = ("titel", "titel_id", "groesse")
 AKTIONEN = ("umwandeln", "extrahieren", "pruefen")
 FORMATE = ("ffpkg", "ffpfsc", "ffpfs", "exfat")
-BUILDER_WERTE = ("forge", "lpp", "ppt")
 FORGE_KRAKEN_STUFEN = ("fast", "balanced", "smallest", "stored")
-KRAKEN_MODI = ("kraken", "zlib", "none")
 
 #: Das Format, das vor einer eigenen Wahl gilt. Seit 16.11.2026 ``ffpkg``: Das Programm empfiehlt es selbst fuer den
 #: Normalfall (``main.smp_rang_ffpkg``) und warnt bei ``ffpfsc``/``ffpfs`` vor Rucklern (150-250 MB/s beim Entpacken,
@@ -102,22 +77,11 @@ STANDARD: dict = {
     SORTIERUNG: "titel",
     OEFFNEN: False,
     PASSCODE: "",
-    BUILDER: "forge",
     ZIEL: "",
     TEMP_ORDNER: "",
     FORMAT: STANDARD_FORMAT,
     AKTION: "umwandeln",
-    KRAKEN_MODUS: "kraken",
-    KRAKEN_STUFE: 7,
     KRAKEN_KERNE: 0,
-    PLAYGO_CHUNKS: 1,
-    DETERMINISTISCH: False,
-    REGEN_PLAYGO: False,
-    BACKPORT_EINBAUEN: False,
-    BACKPORT_FIRMWARE: 0,
-    BACKPORT_FAKELIB_ORDNER: "",
-    MIN_FW_VERSION: "",
-    PATCH_MODUS: False,
     FORGE_KRAKEN: "fast",
     FORGE_VOLL_PRUEFEN: False,
     FORGE_BACKPORT_ENTFERNEN: False,
@@ -142,43 +106,17 @@ def normalisieren(schluessel: str, wert):
         return wert if wert in FORMATE else None
     if schluessel == PASSCODE:
         return wert if isinstance(wert, str) and wz.passcode_gueltig(wert) else None
-    if schluessel == BUILDER:
-        return wert if wert in BUILDER_WERTE else None
-    if schluessel == KRAKEN_MODUS:
-        return wert if wert in KRAKEN_MODI else None
     if schluessel == FORGE_KRAKEN:
         return wert if wert in FORGE_KRAKEN_STUFEN else None
     if schluessel in (FORGE_VOLL_PRUEFEN, FORGE_BACKPORT_ENTFERNEN):
         return wert if isinstance(wert, bool) else None
-    if schluessel == KRAKEN_STUFE:
-        try:
-            v = int(wert)
-            return v if -4 <= v <= 9 else None
-        except (TypeError, ValueError):
-            return None
     if schluessel == KRAKEN_KERNE:
         try:
             v = int(wert)
             return v if 0 <= v <= 256 else None
         except (TypeError, ValueError):
             return None
-    if schluessel == PLAYGO_CHUNKS:
-        try:
-            v = int(wert)
-            return v if 1 <= v <= 255 else None
-        except (TypeError, ValueError):
-            return None
-    if schluessel in (DETERMINISTISCH, REGEN_PLAYGO, BACKPORT_EINBAUEN, PATCH_MODUS):
-        return wert if isinstance(wert, bool) else None
-    if schluessel == MIN_FW_VERSION:
-        return wert.strip() if isinstance(wert, str) and wz.fw_version_gueltig(wert.strip()) else None
-    if schluessel == BACKPORT_FIRMWARE:
-        try:
-            v = int(wert)
-            return v if 0 <= v <= 20 else None
-        except (TypeError, ValueError):
-            return None
-    if schluessel in (ZIEL, TEMP_ORDNER, BACKPORT_FAKELIB_ORDNER):
+    if schluessel in (ZIEL, TEMP_ORDNER):
         return wert.strip() if isinstance(wert, str) else None
     if schluessel in (ORDNER, BIBLIOTHEK):
         if not isinstance(wert, list) or not all(isinstance(p, str) and p.strip() for p in wert):

@@ -92,19 +92,27 @@ class RegelTests(unittest.TestCase):
         for schluessel, wert in ((opt.REKURSIV, "ja"), (opt.COVER, 1), (opt.SORTIERUNG, "alter"), (opt.AKTION, "bauen"),
                                  (opt.FORMAT, "pkg"), (opt.ZIEL, 5), (opt.TEMP_ORDNER, 5),
                                  (opt.ORDNER, "C:/x"), (opt.ORDNER, [1, 2]),
-                                 (opt.BIBLIOTHEK, ["", "a"]), ("gibt_es_nicht", True),
-                                 (opt.PATCH_MODUS, "ja"), (opt.PATCH_MODUS, 1),
-                                 (opt.MIN_FW_VERSION, "9"), (opt.MIN_FW_VERSION, "abc")):
+                                 (opt.BIBLIOTHEK, ["", "a"]), ("gibt_es_nicht", True)):
             with self.subTest(schluessel=schluessel, wert=wert):
                 self.assertIsNone(opt.normalisieren(schluessel, wert))
 
-    def test_patch_modus_und_min_fw_version(self) -> None:
-        self.assertEqual(False, opt.normalisieren(opt.PATCH_MODUS, False))
-        self.assertEqual(True, opt.normalisieren(opt.PATCH_MODUS, True))
-        self.assertEqual("", opt.normalisieren(opt.MIN_FW_VERSION, ""))
-        self.assertEqual("9.00", opt.normalisieren(opt.MIN_FW_VERSION, "9.00"))
-        self.assertEqual("9.00", opt.normalisieren(opt.MIN_FW_VERSION, " 9.00 "))
-        self.assertEqual("9,00", opt.normalisieren(opt.MIN_FW_VERSION, "9,00"))
+    def test_die_optionen_der_anderen_paketersteller_gibt_es_nicht_mehr(self) -> None:
+        """17.11.2026: Seite 7 baut nur noch mit Dump Forge. Paketersteller-Wahl, Kraken-Modus, PlayGo-Chunks, deterministischer
+        Bau, Backport vor dem Bau, Mindest-Firmware und Update-Paket gehoerten zu LibProsperoPkg/ProsperoPkgTool."""
+        for name in ("BUILDER", "BUILDER_WERTE", "KRAKEN_MODUS", "KRAKEN_STUFE", "KRAKEN_MODI", "PLAYGO_CHUNKS", "DETERMINISTISCH",
+                     "REGEN_PLAYGO", "BACKPORT_EINBAUEN", "BACKPORT_FIRMWARE", "FAKELIB_ORDNER", "MIN_FW_VERSION", "PATCH_MODUS"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(opt, name), name)
+        self.assertIn(opt.KRAKEN_KERNE, opt.STANDARD, "die Threads gelten fuer Dump Forge weiter")
+
+    def test_alte_gespeicherte_werte_der_entfernten_optionen_werden_nicht_mehr_gelesen(self) -> None:
+        alt = {"ps5pkg_builder": "ppt", "ps5pkg_min_fw_version": "9.00", "ps5pkg_patch_modus": True,
+               "ps5pkg_backport_einbauen": True, "ps5pkg_kraken_modus": "x", "ps5pkg_playgo_chunks": "y"}
+        for schluessel, wert in alt.items():
+            with self.subTest(schluessel=schluessel):
+                self.assertIsNone(opt.normalisieren(schluessel, wert), "unbekannt: wird abgelehnt")
+        gelesen = opt.lesen(lambda schluessel, vorgabe: alt.get(schluessel, vorgabe))
+        self.assertFalse(set(alt) & set(gelesen), "und taucht in den gelesenen Werten nicht auf")
 
     def test_listen_verlieren_doppelte_und_das_ziel_den_rand(self) -> None:
         self.assertEqual(["a", "b"], opt.normalisieren(opt.ORDNER, ["a", "b", "a"]))
@@ -119,15 +127,6 @@ class RegelTests(unittest.TestCase):
         for falsch in ("x" * 31, "x" * 33, "ä" * 32, "x" * 31 + "\n", "x" * 31 + "\t"):
             with self.subTest(wert=falsch):
                 self.assertIsNone(opt.normalisieren(opt.PASSCODE, falsch))
-
-    def test_builder_kennt_forge_lpp_und_ppt(self) -> None:
-        self.assertEqual("forge", opt.normalisieren(opt.BUILDER, "forge"))
-        self.assertEqual("lpp", opt.normalisieren(opt.BUILDER, "lpp"))
-        self.assertEqual("ppt", opt.normalisieren(opt.BUILDER, "ppt"))
-        for falsch in ("", "LPP", "Forge", "anderes", None, 1):
-            with self.subTest(wert=falsch):
-                self.assertIsNone(opt.normalisieren(opt.BUILDER, falsch))
-        self.assertEqual("forge", opt.STANDARD[opt.BUILDER], "Dump Forge ist seit 16.11.2026 der Standard")
 
     def test_die_forge_einstellungen_haben_vorgaben_und_pruefung(self) -> None:
         self.assertEqual("fast", opt.STANDARD[opt.FORGE_KRAKEN])
@@ -360,7 +359,8 @@ class DialogTests(unittest.TestCase):
 
         Converter": gibt es noch weitere solche Stellen? Gemessen: Das Register "Bau"
         (~10 Abschnitte) reichte 948 px gegen 845 px sichtbar ueber den Rand hinaus - selbst
-        nachdem sich der Dialog schon auf seinen Inhalt vergroessert hatte. Die anderen
+        nachdem sich der Dialog schon auf seinen Inhalt vergroessert hatte. Seit 17.11.2026 hat es nur noch die Einstellungen
+        von Dump Forge (549 px gegen 635 px): Der Inhalt passt, das Canvas bleibt fuer kleine Fenster. Die anderen
         Register (z. B. "Ausgabe & Vorgaben": 805 px gegen 845 px) passten und bleiben
         unveraendert ohne Canvas.
         """
@@ -373,8 +373,8 @@ class DialogTests(unittest.TestCase):
         rahmen.update_idletasks()
         region = canvas.bbox("all")
         self.assertIsNotNone(region)
-        self.assertGreater(region[3] - region[1], canvas.winfo_height(),
-                           "Die rund zehn Abschnitte sollten den sichtbaren Bereich ueberragen.")
+        self.assertLessEqual(region[3] - region[1], canvas.winfo_height(),
+                             "Mit nur noch den Dump-Forge-Einstellungen passt das Register Bau ohne zu rollen.")
         for schluessel in ("ausgabe", "bibliothek"):
             dialog.zeigen(schluessel)
             _pumpen(0.05)
@@ -462,11 +462,10 @@ class DialogTests(unittest.TestCase):
     def test_die_dump_forge_einstellungen_haben_vorgaben_und_werden_gespeichert(self) -> None:
         self._laden()
         dialog = self._dialog()
-        self.assertEqual("Dump Forge", dialog.builder_var.get(), "der Standard-Paketersteller")
+        self.assertFalse(hasattr(dialog, "builder_var"), "es gibt keine Wahl des Paketerstellers mehr")
         self.assertEqual(dialog._forge_stufen()["fast"], dialog.forge_kraken_var.get())
         self.assertIs(False, dialog.forge_voll_var.get())
         self.assertIs(False, dialog.forge_backport_var.get())
-        self.assertEqual(["Dump Forge", "LibProsperoPkg 1.2.0", "ProsperoPkgTool"], list(dialog.builder_box.cget("values")))
         self.assertEqual(4, len(dialog.forge_kraken_box.cget("values")))
         dialog.forge_kraken_var.set(dialog._forge_stufen()["smallest"])
         dialog.forge_voll_var.set(True)
@@ -476,7 +475,6 @@ class DialogTests(unittest.TestCase):
         self.assertEqual("smallest", self._gespeichert(opt.FORGE_KRAKEN))
         self.assertIs(True, self._gespeichert(opt.FORGE_VOLL_PRUEFEN))
         self.assertIs(True, self._gespeichert(opt.FORGE_BACKPORT_ENTFERNEN))
-        self.assertEqual("forge", self._gespeichert(opt.BUILDER))
         # ein neuer Dialog zeigt, was gespeichert wurde
         neu = self._dialog()
         self.assertEqual(neu._forge_stufen()["smallest"], neu.forge_kraken_var.get())
@@ -485,12 +483,11 @@ class DialogTests(unittest.TestCase):
 
     def test_zuruecksetzen_stellt_die_forge_vorgaben_wieder_her(self) -> None:
         for schluessel, wert in ((opt.FORGE_KRAKEN, "stored"), (opt.FORGE_VOLL_PRUEFEN, True),
-                                 (opt.FORGE_BACKPORT_ENTFERNEN, True), (opt.BUILDER, "ppt")):
+                                 (opt.FORGE_BACKPORT_ENTFERNEN, True)):
             self.app._save_setting(schluessel, wert)
         zurueck = opt.zuruecksetzen_werte()
-        self.assertEqual(("fast", False, False, "forge"), (
-            zurueck[opt.FORGE_KRAKEN], zurueck[opt.FORGE_VOLL_PRUEFEN], zurueck[opt.FORGE_BACKPORT_ENTFERNEN],
-            zurueck[opt.BUILDER]))
+        self.assertEqual(("fast", False, False), (
+            zurueck[opt.FORGE_KRAKEN], zurueck[opt.FORGE_VOLL_PRUEFEN], zurueck[opt.FORGE_BACKPORT_ENTFERNEN]))
 
     def test_speichern_setzt_alles_um(self) -> None:
         self._laden()
@@ -502,7 +499,6 @@ class DialogTests(unittest.TestCase):
         dialog.ziel_var.set(self.ordner)
         dialog.aktion_var.set("Extrahieren")
         dialog.format_var.set("exFAT (.exfat)")
-        dialog.builder_var.set("ProsperoPkgTool")
         dialog.speichern()
         _pumpen(0.3)
         self.assertIs(False, self._gespeichert(opt.COVER))
@@ -512,8 +508,6 @@ class DialogTests(unittest.TestCase):
         self.assertEqual(self.ordner, self._gespeichert(opt.ZIEL))
         self.assertEqual("exfat", self._gespeichert(opt.FORMAT))
         self.assertEqual("extrahieren", self._gespeichert(opt.AKTION))
-        self.assertEqual("ppt", self._gespeichert(opt.BUILDER))
-        self.assertEqual("ppt", self.f._builder())
         # ... und im Fenster selbst
         self.assertEqual(self.ordner, self.f.ziel_var.get())
         self.assertEqual("extrahieren", self.f.aktion_var.get())
@@ -640,20 +634,13 @@ class DialogTests(unittest.TestCase):
         dialog.schliessen()
 
     # ---------------- Wirkung im Fenster ----------------
-    def test_builder_ist_forge_ohne_gespeicherten_wert(self) -> None:
-        self.assertEqual("forge", self.f._builder())
-
-    def test_ein_ungueltig_gespeicherter_builder_faellt_auf_forge_zurueck(self) -> None:
-        self.app._save_setting(opt.BUILDER, "irgendwas")
-        self.assertEqual("forge", self.f._builder())
-
-    def test_paket_bauen_mit_ppt_ohne_werkzeug_meldet_den_fehler(self) -> None:
-        self._laden()
-        self.app._save_setting(opt.BUILDER, "ppt")
-        with mock.patch.object(fz.ppt, "werkzeug_suchen", return_value=""):
-            self.f._bauen_starten(self.f.aktuell, self.ordner)
-        self.assertEqual(1, len(self.dialoge["fehler"]))
-        self.assertIn("ProsperoPkgTool", self.dialoge["fehler"][0][1])
+    def test_die_seite_kennt_keine_wahl_des_paketerstellers_mehr(self) -> None:
+        for name in ("_builder", "_bauer_fuer", "_bauer_wechseln_fragen", "_bauen_starten", "_werkzeug_ppt", "_werkzeug_ppt_pfad",
+                     "_forge_ignorierte_optionen", "_vorhandene_pakete", "_param_neu_lesen"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(self.f, name), name)
+        self.assertFalse(hasattr(fz, "ppt"), "das Modul des ProsperoPkgTool ist weg")
+        self.assertFalse(hasattr(fz, "EINST_BAUER_GEFRAGT"))
 
     def test_ausgabeordner_oeffnen_nur_mit_der_option(self) -> None:
         with mock.patch.object(self.f, "_ausgabe_oeffnen") as oeffnen:

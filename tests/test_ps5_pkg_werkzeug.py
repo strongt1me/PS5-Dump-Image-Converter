@@ -463,90 +463,7 @@ class OrdnerTests(unittest.TestCase):
                 wz.ordner_lesen(ordner, t)
 
 
-class BauenTests(unittest.TestCase):
-
-    def test_der_fortschritt_der_phasen(self) -> None:
-        faelle = (
-            ("[stage] copy 50% (0.6 of 1.2 GB)", 5),
-            ("[inner]   read 3/178 ( 10%): /a/b (4 bytes)", 11),
-            ("[inner]   data  37% (48/178): /Media/x.bundle -> 21,170,156 bytes (Kraken, ratio 92.5 %)", 45),
-            ("[inner]   data 100% (178/178): /sce_module/libc.prx.esbak -> 1 bytes (stored, ratio 100.0 %)", 80),
-            ("[stage 3/6] Writing and hashing outer-PFS data (20 worker(s)): 40% (1 MiB / 2 MiB; 3 MiB/s).", 85),
-            ("[finalize] NAPS plaintext integrity tables (SHA3/ihsh/rhsh): 50% (1 / 2 blocks).", 96),
-        )
-        for zeile, soll in faelle:
-            with self.subTest(zeile=zeile[:40]):
-                self.assertEqual(soll, wz.bau_fortschritt(zeile)[0])
-        self.assertEqual("/Media/x.bundle", wz.bau_fortschritt(faelle[2][0])[1])
-        for ohne in ("Done (FIH).", "Building the PS5 package...", "[inner] Inode and AFID planning: 55% (192/192)"):
-            self.assertIsNone(wz.bau_fortschritt(ohne))
-
-    def test_der_fortschritt_steigt_ueber_die_phasen(self) -> None:
-        reihe = [wz.bau_fortschritt(z)[0] for z in (
-            "[stage] copy 100% (1 of 1 GB)", "[inner]   read 9/9 (100%): /x (1 bytes)",
-            "[inner]   data  50% (1/2): /x -> 1 bytes (Kraken, ratio 50 %)", "[inner]   data 100% (2/2): /y -> 1 bytes (Kraken, ratio 50 %)",
-            "[stage 4/6] Writing and hashing outer-PFS data (4 worker(s)): 100% (1 MiB / 1 MiB; 1 MiB/s).",
-            "[finalize] x: 100% (1 / 1 blocks).")]
-        self.assertEqual(sorted(reihe), reihe)
-        self.assertLess(reihe[-1], 100)
-
-    def test_content_und_title_id(self) -> None:
-        for gut in (CID, "EP6665-PPSA16709_00-AOH0000000000000"):
-            self.assertTrue(wz.CONTENT_ID.match(gut))
-        for schlecht in ("", "kaputt", CID + "0", CID.lower(), "UP8016-PPSA19015-0489895718491618"):
-            self.assertFalse(wz.CONTENT_ID.match(schlecht), schlecht)
-        self.assertTrue(wz.TITLE_ID.match("PPSA19015"))
-        self.assertFalse(wz.TITLE_ID.match("ppsa19015"))
-        self.assertFalse(wz.TITLE_ID.match("CUSA1234"))
-
-    def test_bauen_ruft_das_werkzeug_mit_den_belegten_voreinstellungen_auf(self) -> None:
-        gesehen = {}
-
-        def laufen(werkzeug, argumente, zeile=None, **_kw):
-            gesehen["argumente"] = list(argumente)
-            for z in ("[stage] copy 10% (1 of 9 GB)", "[inner]   data  50% (1/2): /Media/a -> 1 bytes (Kraken, ratio 50 %)",
-                      "Build finished in 00:00:25; output 5 bytes"):
-                zeile(z)
-            return 0, "OK \u2014 wrote E:\\Ziel mit Leerzeichen\\UP8016-PPSA19015_00-0489895718491618-A0103-V0103.pkg (567,330,298 B)\n"
-
-        fort, zeilen = [], []
-        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "laufen", side_effect=laufen):
-            pfad = wz.bauen("werkzeug", "Quelle", os.path.join(t, "ziel"), content_id=CID, title_id="PPSA19015", titel="Arcade",
-                            version="01.003.000", temp=os.path.join(t, "tmp"), zeile=zeilen.append,
-                            fortschritt=lambda p, d: fort.append((p, d)))
-            self.assertTrue(os.path.isdir(os.path.join(t, "ziel")))
-        a = gesehen["argumente"]
-        self.assertEqual(["build", "Quelle"], a[:2])
-        wert = lambda name: a[a.index(name) + 1]   # noqa: E731
-        self.assertEqual((CID, "PPSA19015", "01.003.000", "Arcade"),
-                         (wert("--content-id"), wert("--title-id"), wert("--version"), wert("--title")))
-        self.assertEqual(("kraken", "builtin", "0"), (wert("--mode"), wert("--kraken-backend"), wert("--level")))
-        self.assertEqual(os.path.join(t, "tmp"), wert("--temp"))
-        for aus in ("--no-fake-sign", "--no-ampr-index", "--parallelism"):
-            self.assertNotIn(aus, a)
-        self.assertEqual("E:\\Ziel mit Leerzeichen\\UP8016-PPSA19015_00-0489895718491618-A0103-V0103.pkg", pfad)
-        self.assertEqual([(1, "copy 10% (1 of 9 GB)"), (52, "/Media/a")], fort)
-        self.assertEqual(["Build finished in 00:00:25; output 5 bytes"], zeilen)
-
-    def test_die_wahlmoeglichkeiten_kommen_als_schalter_an(self) -> None:
-        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "laufen", return_value=(0, "OK - wrote x.pkg (1 B)")) as lauf:
-            wz.bauen("w", "q", os.path.join(t, "z"), content_id=CID, title_id="PPSA19015", stufe=-3, kerne=4,
-                     fake_signieren=False, ampr_index=False)
-        a = lauf.call_args.args[1]
-        self.assertEqual("-3", a[a.index("--level") + 1])
-        self.assertEqual("4", a[a.index("--parallelism") + 1])
-        self.assertIn("--no-fake-sign", a)
-        self.assertIn("--no-ampr-index", a)
-        self.assertNotIn("--title", a)
-        self.assertNotIn("--temp", a)
-        self.assertIsNone(lauf.call_args.kwargs.get("temp"))
-
-    def test_ein_temp_ordner_wird_angelegt_und_an_das_werkzeug_gereicht(self) -> None:
-        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "laufen", return_value=(0, "OK - wrote x.pkg (1 B)")) as lauf:
-            ordner = os.path.join(t, "neu", "tmp")
-            wz.bauen("w", "q", os.path.join(t, "z"), content_id=CID, title_id="PPSA19015", temp=ordner)
-            self.assertTrue(os.path.isdir(ordner))
-            self.assertEqual(ordner, lauf.call_args.kwargs["temp"])
+class UmgebungTests(unittest.TestCase):
 
     def test_die_umgebung_setzt_tmp_temp_und_tmpdir_nur_mit_temp_ordner(self) -> None:
         mit = wz._umgebung("D:\\Arbeit")
@@ -555,31 +472,6 @@ class BauenTests(unittest.TestCase):
         ohne = wz._umgebung()
         self.assertEqual(os.environ.get("TMP"), ohne.get("TMP"))
         self.assertEqual(os.environ.get("TMPDIR"), ohne.get("TMPDIR"))
-
-    def test_ungueltige_kennungen_werden_vorher_abgelehnt(self) -> None:
-        with mock.patch.object(wz, "laufen") as lauf:
-            with self.assertRaises(wz.Fehler):
-                wz.bauen("w", "q", "z", content_id="kaputt", title_id="PPSA19015")
-            with self.assertRaises(wz.Fehler):
-                wz.bauen("w", "q", "z", content_id=CID, title_id="kaputt")
-        lauf.assert_not_called()
-
-    def test_fehler_und_abbruch_beim_bauen(self) -> None:
-        with tempfile.TemporaryDirectory() as t:
-            for rueckgabe, text in (((1, "[error] IOException: voll\n"), "[error] IOException: voll"),
-                                    ((0, "kein ok am ende\n"), "kein ok am ende")):
-                with self.subTest(text=text), mock.patch.object(wz, "laufen", return_value=rueckgabe):
-                    with self.assertRaises(wz.Fehler) as ctx:
-                        wz.bauen("w", "q", os.path.join(t, "z"), content_id=CID, title_id="PPSA19015")
-                    self.assertEqual(text, str(ctx.exception))
-            with mock.patch.object(wz, "laufen", return_value=(-1, "")):
-                with self.assertRaises(wz.Fehler) as ctx:
-                    wz.bauen("w", "q", os.path.join(t, "z"), content_id=CID, title_id="PPSA19015")
-                self.assertEqual("abgebrochen", str(ctx.exception))
-
-    def test_ohne_pfad_in_der_schlusszeile_bleibt_die_zeile(self) -> None:
-        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "laufen", return_value=(0, "OK - fertig\n")):
-            self.assertEqual("OK - fertig", wz.bauen("w", "q", os.path.join(t, "z"), content_id=CID, title_id="PPSA19015"))
 
 
 class FensterHilfenTests(unittest.TestCase):
@@ -591,36 +483,6 @@ class FensterHilfenTests(unittest.TestCase):
         self.assertEqual("", fz.firmware_text(""))
         self.assertEqual("", fz.firmware_text(0))
         self.assertEqual("abc", fz.firmware_text("abc"))
-
-    def test_fw_hex_und_fw_version_gueltig(self) -> None:
-        self.assertEqual("0x0900000000000000", wz.fw_hex("9.00"))
-        self.assertEqual("0x0b14000000000000", wz.fw_hex("11.20"))
-        self.assertEqual("0x0c00000000000000", wz.fw_hex("12.00"))
-        self.assertEqual("0x0100000000000000", wz.fw_hex("1.00"))
-        self.assertEqual("", wz.fw_hex(""))
-        self.assertEqual("", wz.fw_hex("abc"))
-        self.assertEqual("", wz.fw_hex("9"))
-        self.assertTrue(wz.fw_version_gueltig(""))
-        self.assertTrue(wz.fw_version_gueltig("9.00"))
-        self.assertTrue(wz.fw_version_gueltig("12,00"))
-        self.assertFalse(wz.fw_version_gueltig("9"))
-        self.assertFalse(wz.fw_version_gueltig("abc"))
-
-    def test_param_json_setzen_liest_und_schreibt(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            sce = os.path.join(td, "sce_sys")
-            os.makedirs(sce)
-            param_pfad = os.path.join(sce, "param.json")
-            daten = {"contentType": "GAME", "requiredSystemSoftwareVersion": "0x0900000000000000"}
-            with open(param_pfad, "w", encoding="utf-8") as f:
-                json.dump(daten, f)
-            alt = wz.param_json_setzen(td, "contentType", "PATCH")
-            self.assertEqual("GAME", alt)
-            geladen = json.loads(open(param_pfad, encoding="utf-8").read())
-            self.assertEqual("PATCH", geladen["contentType"])
-            wz.param_json_setzen(td, "contentType", alt)
-            geladen2 = json.loads(open(param_pfad, encoding="utf-8").read())
-            self.assertEqual("GAME", geladen2["contentType"])
 
     def test_sauberer_name_und_anzeigename(self) -> None:
         self.assertEqual("A b c d", fz.sauberer_name('A:b/c?d'))
