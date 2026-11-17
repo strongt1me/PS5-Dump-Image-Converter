@@ -263,6 +263,7 @@ Gut zu wissen:
 
 - Mit NG fehlen die gepackten Originale im Ergebnis (bei zstd immer, bei LZ4, solange ohne Zwischenordner gepackt wird) – den Quell-Dump aufheben, bis das Spiel an der Konsole läuft.
 - Das Pack entsteht nicht nur aus einem Dump-Ordner: Wird ein Abbild umgewandelt (zum Beispiel ein `.ffpfsc` zu einem Dump-Ordner), entpackt das Programm es zuerst in einen Arbeitsordner und packt dort; die gepackten Originale fallen nur in dieser Arbeitskopie weg, die Quelle bleibt unverändert.
+- Ein fertiger Dump-Ordner lässt sich auch direkt packen, ohne Abbild: KONSOLE → **11. Asset-Pack** → **PACKEN …** baut zstd-Packs in den gewählten Spielordner (der mit `eboot.bin`; nur für AMPR EMU NG). Gepackt wird erst in einen Nachbarordner, geprüft, dann übernommen; fehlt der `ampr_emu.index`, wird er angelegt. Die Originale bleiben liegen, außer du bestätigst das Entfernen – dann wird jedes Byte geprüft, und **ENTPACKEN …** stellt die Dateien wieder her.
 - Ob ein bestimmtes Spiel mit zstd läuft, zeigt nur ein Test an der Konsole. Zwei Spiele mit zstd-Packs aus diesem Programm liefen bisher ohne Fehler (FW 12.00).
 - Systemdateien (`eboot.bin`, Module, `sce_sys`) bleiben immer lose.
 

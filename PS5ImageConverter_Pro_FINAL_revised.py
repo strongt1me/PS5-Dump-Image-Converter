@@ -40625,6 +40625,179 @@ class PS5ConverterGUI:
         self._phase_dauer_melden("phase.zstd_originale", t_originale)
         return True
 
+    def _asset_pack_zstd_in_ordner(self, ordner: str, *, melden: "Callable[[str], None]",
+                                   abbruch: "Callable[[], bool]",
+                                   phase: "Callable[[str, float], None] | None" = None,
+                                   originale_entfernen: bool = False) -> dict[str, Any]:
+        """zstd-Packs direkt in einen fertigen Spielordner bauen (Fenster "Asset-Pack", Knopf PACKEN).
+
+        Dasselbe Verfahren wie :meth:`_ampr_zstdpakete_bauen` (Auswahl, Index-Abgleich, Packen in einen Nachbarordner,
+        Pruefung, Uebernehmen), aber ohne den Zustand des Hauptfensters: Protokoll, Abbruch und Fortschritt kommen vom
+        Aufrufer, denn dort laeuft kein Hauptlauf (``is_running`` ist aus, und das Hauptprotokoll gehoert ihm).
+
+        Anders als beim Erstellen eines Abbilds ist der Ordner hier das Original des Anwenders. Deshalb bleiben die
+        gepackten Dateien liegen, solange ``originale_entfernen`` nicht gesetzt ist; mit dem Haken wird **immer** jedes
+        Byte geprueft (nie die Stichprobe), bevor etwas geloescht wird. ``ENTPACKEN`` im selben Fenster stellt sie wieder her.
+
+        Args:
+            ordner: Der Spielordner (Wurzel mit ``eboot.bin``); ohne Asset-Pack, sonst bricht der Lauf ab.
+            melden: Nimmt Protokollzeilen entgegen (aus dem Arbeitsfaden).
+            abbruch: ``True`` heisst: abbrechen.
+            phase: Wird mit ``("packen"|"pruefen", Anteil 0..1)`` gerufen.
+            originale_entfernen: Die gepackten Originale nach bestandener Vollpruefung loeschen.
+
+        Returns:
+            ``{"dateien": ..., "baender": ..., "originale_entfernt": ...}``.
+
+        Raises:
+            ampr_zstdpack.ZstdPackFehler: mit einem ``ampr_zstd.*``/``ampr_pack.*``-Schluessel oder fertigem Text.
+        """
+        Fehler = ampr_zstdpack.ZstdPackFehler
+        ordner = os.path.normpath(os.path.abspath(ordner))
+        eltern = os.path.dirname(ordner)
+        if not eltern or eltern == ordner:
+            raise Fehler(self._t("assetpack_tool.pack_ordner_wurzel"))
+        if not ampr_zstdpack.verfuegbar():
+            raise Fehler("ampr_zstd.bibliothek_fehlt")
+
+        # zstd-Packs liest nur NG. Fehlt die Bibliothek im Ordner, kann sie auch anderswo liegen (ShadowMount+ globaler
+        # Ordner): Das ist ein Hinweis, kein Hindernis. Liegt eine andere Fassung, scheitert das Spiel an der Konsole.
+        lib = os.path.join(ordner, "fakelib", self._AMPR_SPRX_NAME)
+        if os.path.isfile(lib):
+            if not self._ampr_ist_ng_datei(lib):
+                raise Fehler(self._t("assetpack_tool.pack_lib_nicht_ng"))
+        else:
+            melden(self._t("assetpack_tool.pack_lib_fehlt"))
+
+        index_pfad = os.path.join(ordner, self._AMPR_INDEX_NAME)
+        if not os.path.isfile(index_pfad):
+            # Ohne Pack ist ein neuer Index unbedenklich (ein vorhandener bleibt, wie er ist: er gehoert zu den Bibliotheken).
+            anzahl, _doppelte = self._build_ampr_index_local(Path(ordner), Path(index_pfad))
+            melden(self._t("assetpack_tool.pack_index_gebaut", count=anzahl))
+
+        ausgabe = os.path.join(eltern, os.path.basename(ordner) + "_ampr_zstd")
+        if os.path.exists(ausgabe):
+            raise Fehler(self._t("assetpack_tool.pack_ausgabe_da", path=ausgabe))
+
+        stufe = self._ampr_zstd_stufe()
+        voll = bool(originale_entfernen) or self._ampr_voll_pruefen()
+        melden(self._t("ampr_zstd.start", stufe=stufe))
+
+        # Packregeln: Datei neben dem Ordner ("<Name>_ampr_pack.toml"), sonst die gewaehlte aus den Einstellungen.
+        regeln = None
+        profil = ""
+        kandidat = ordner + self._EIGENES_PROFIL_ENDUNG
+        if os.path.isfile(kandidat):
+            if ampr_assetpakete.profil_ist_eigenes(kandidat):
+                melden(self._t("ampr_pack.eigenes_profil_ist_unseres", path=kandidat))
+            else:
+                profil = kandidat
+        if not profil:
+            gewaehlt_datei = str(self._load_setting(self._AMPR_ZSTD_REGELDATEI_SETTING, "") or "").strip()
+            if gewaehlt_datei and os.path.isfile(gewaehlt_datei):
+                profil = gewaehlt_datei
+            elif gewaehlt_datei:
+                melden(self._t("ampr_zstd.regeldatei_fehlt", path=gewaehlt_datei))
+        if profil:
+            regeln = ampr_zstdpack.regeln_laden(profil)
+            melden(self._t("ampr_zstd.regeln", count=len(regeln.regeln), default=regeln.standard))
+            if regeln.ignoriert:
+                melden(self._t("ampr_zstd.regeln_ignoriert", keys=", ".join(regeln.ignoriert[:12])))
+
+        auswahl = ampr_zstdpack.dateien_auswaehlen(
+            ordner, abbruch=abbruch, regeln=regeln,
+            melden=lambda pfad: melden(self._t("ampr_zstd.suche", path=pfad)))
+        melden(self._t("ampr_zstd.auswahl", packed=len(auswahl.gepackt), loose=len(auswahl.lose),
+                       size=self._fmt_bytes(auswahl.gepackte_bytes)))
+        if regeln is not None:
+            melden(self._t("ampr_zstd.regeln_lose", count=auswahl.nach_regeln_lose))
+        for pfad in auswahl.ungueltig[:10]:
+            melden(self._t("ampr_zstd.pfad_ungueltig", path=pfad))
+
+        def _alter_index() -> bytes:
+            with open(os.path.join(ordner, ampr_zstdpack.INDEX_NAME), "rb") as fh:
+                return fh.read()
+
+        grund = ampr_zstdpack.pack_bestand_pruefen(auswahl, _alter_index)
+        if grund:
+            raise Fehler(grund)
+        if not auswahl.gepackt:
+            raise Fehler("ampr_zstd.nichts_zu_packen")
+
+        # Der Index nennt jede Datei des Spiels; sonst verwirft NG das ganze Pack an der Konsole, ohne Meldung.
+        try:
+            with open(index_pfad, "rb") as fh:
+                index_daten = fh.read()
+        except OSError as exc:
+            raise Fehler("ampr_zstd.ampr_index_ungueltig: %s" % exc) from exc
+        befunde = ampr_zstdpack.ampr_index_abgleichen(auswahl.gepackt, ampr_zstdpack.ampr_index_lesen(index_daten))
+        if befunde:
+            for pfad, groesse, soll in befunde[:10]:
+                melden(self._t("ampr_zstd.index_fehlt", path=pfad) if soll is None
+                       else self._t("ampr_zstd.index_groesse", path=pfad, size=groesse, expected=soll))
+            raise Fehler("ampr_zstd.index_passt_nicht")
+
+        try:
+            frei = shutil.disk_usage(eltern).free
+            melden(self._t("assetpack_tool.pack_platz", frei=self._fmt_bytes(frei),
+                           bedarf=self._fmt_bytes(auswahl.gepackte_bytes)))
+        except OSError as exc:
+            logger.debug("Freier Platz nicht messbar (%s): %s", eltern, exc)
+
+        def _fort(name: str) -> "Callable[[float], None]":
+            return lambda anteil: phase(name, anteil) if phase is not None else None
+
+        uebernommen = False
+        entfernt = 0
+        try:
+            arbeiter = self._ampr_zstd_arbeiter()
+            melden(self._t("ampr_zstd.arbeiter", count=min(32, arbeiter or (os.cpu_count() or 2)),
+                           cores=os.cpu_count() or 0))
+            t_packen = time.monotonic()
+            ergebnis = ampr_zstdpack.packen(ordner, ausgabe, auswahl, stufe=stufe, arbeiter=arbeiter,
+                                            melden=melden, abbruch=abbruch, fortschritt=_fort("packen"))
+            melden(self._t("log.phase_dauer", phase=self._t("phase.zstd_packen"),
+                           zeit=self._dauer_text(time.monotonic() - t_packen)))
+            gesamt = max(1, ergebnis.logische_bytes)
+            melden(self._t("ampr_zstd.gepackt", files=ergebnis.dateien, chunks=ergebnis.chunks,
+                           zstd=ergebnis.zstd_chunks, raw=ergebnis.roh_chunks, volumes=len(ergebnis.baender),
+                           percent="%.1f" % (100.0 * ergebnis.gespeicherte_bytes / gesamt)))
+
+            t_pruefen = time.monotonic()
+            bericht: dict[str, Any] = {}
+            index = ampr_zstdpack.pruefen(ausgabe, ordner, melden=lambda _z: None, abbruch=abbruch,
+                                          fortschritt=_fort("pruefen"), stichprobe=not voll, bericht=bericht,
+                                          summen=ergebnis.pruefsummen)
+            if bericht.get("modus") == "stichprobe":
+                melden(self._t("ampr_zstd.pruefung_stichprobe", checked=self._fmt_bytes(bericht["geprueft"]),
+                               total=self._fmt_bytes(bericht["gesamt"]), seed=bericht["startwert"]))
+            else:
+                melden(self._t("ampr_zstd.pruefung_voll", size=self._fmt_bytes(bericht.get("gesamt", 0))))
+            melden(self._t("ampr_pack.geprueft"))
+            melden(self._t("log.phase_dauer", phase=self._t("phase.zstd_pruefen"),
+                           zeit=self._dauer_text(time.monotonic() - t_pruefen)))
+
+            ampr_zstdpack.uebernehmen(ausgabe, ordner, index, melden=lambda _z: None, abbruch=abbruch)
+            uebernommen = True
+            melden(self._t("ampr_zstd.uebernommen", count=len(index.baender) + 1))
+        finally:
+            # Nur der Ordner dieses Laufs wird weggeraeumt (er existierte vorher nicht, siehe oben).
+            if os.path.isdir(ausgabe) and (not uebernommen or not os.listdir(ausgabe)):
+                _rmtree_force(ausgabe)
+
+        if originale_entfernen:
+            try:
+                weg = ampr_zstdpack.originale_entfernen(ordner, index, abbruch=abbruch)
+            except Fehler as exc:
+                raise Fehler(self._t("ampr_pack.originale_fehlgeschlagen", error=exc)) from exc
+            entfernt = int(weg["files"])
+            melden(self._t("ampr_pack.originale_entfernt", count=weg["files"],
+                           size=self._fmt_bytes(weg["bytes"]), dirs=weg["directories"]))
+        else:
+            melden(self._t("ampr_pack.quellen_bleiben"))
+        melden(self._t("assetpack_tool.pack_hinweis"))
+        return {"dateien": ergebnis.dateien, "baender": len(index.baender), "originale_entfernt": entfernt}
+
     @staticmethod
     def _dauer_text(sekunden: float) -> str:
         """Eine Dauer als ``h:mm:ss`` (ein Lauf kann Stunden dauern, ``_fmt_eta`` kennt nur mm:ss)."""
@@ -68366,7 +68539,7 @@ class PS5ConverterGUI:
         # diese Werte (und den Abbruch-Event) und meldet ueber
         # _spaeter_im_fenster zurueck.
         lauf: dict[str, Any] = {"aktiv": False, "abbruch": threading.Event(),
-                                "start": 0.0, "schluessel": "", "uhr": None}
+                                "start": 0.0, "schluessel": "", "uhr": None, "phase": ""}
         merk: dict[str, Any] = {"ordner": "", "befund": None}
 
         ordner_var = tk.StringVar()
@@ -68403,7 +68576,8 @@ class PS5ConverterGUI:
                 return
             vergangen = int(time.monotonic() - lauf["start"])
             status_var.set(self._t(lauf["schluessel"],
-                                   zeit="%d:%02d" % (vergangen // 60, vergangen % 60)))
+                                   zeit="%d:%02d" % (vergangen // 60, vergangen % 60),
+                                   phase=lauf["phase"]))
             lauf["uhr"] = win.after(1000, _ticken)
 
         def _uhr_anhalten() -> None:
@@ -68428,6 +68602,7 @@ class PS5ConverterGUI:
             lauf["abbruch"].clear()
             lauf["start"] = time.monotonic()
             lauf["schluessel"] = uhr_schluessel
+            lauf["phase"] = ""
             _knoepfe_setzen(False)
             _ticken()
 
@@ -68575,6 +68750,54 @@ class PS5ConverterGUI:
 
             _starten(_arbeit, "assetpack_tool.status_checking")
 
+        def _packen() -> None:
+            """PACKEN: zstd-Packs in den gewaehlten Spielordner bauen (nur AMPR EMU NG liest sie)."""
+            ordner = ordner_var.get().strip()
+            if not ordner or not os.path.isdir(ordner):
+                messagebox.showwarning(titel, self._t("assetpack_tool.msg_choose_folder"), parent=win)
+                return
+            if ampr_assetpakete.manifest_im_ordner(ordner) or ampr_zstdpack.ist_gepackt(ordner):
+                messagebox.showwarning(titel, self._t("assetpack_tool.msg_schon_gepackt"), parent=win)
+                return
+            try:
+                ist_spielordner = any(n.lower() == "eboot.bin" for n in os.listdir(ordner))
+            except OSError:
+                ist_spielordner = False
+            if not ist_spielordner:
+                messagebox.showwarning(titel, self._t("assetpack_tool.msg_kein_spielordner"), parent=win)
+                return
+            if not ampr_zstdpack.verfuegbar():
+                messagebox.showwarning(titel, self._t("ampr_zstd.bibliothek_fehlt").strip(), parent=win)
+                return
+            if not messagebox.askyesno(
+                    titel, self._t("assetpack_tool.ask_packen", ordner=ordner, stufe=self._ampr_zstd_stufe()),
+                    parent=win):
+                return
+            # Vorgabe Nein: Wer die Originale behaelt, kann nichts verlieren (Packs liegen nur daneben).
+            weg = bool(messagebox.askyesno(
+                titel, self._t("assetpack_tool.ask_originale"), icon="warning", default="no", parent=win))
+
+            def _phase(name: str, anteil: float) -> None:
+                lauf["phase"] = "%s %d %%" % (
+                    self._t("phase.zstd_packen" if name == "packen" else "phase.zstd_pruefen"),
+                    int(max(0.0, min(1.0, anteil)) * 100))
+
+            def _arbeit() -> None:
+                lauf["phase"] = self._t("assetpack_tool.phase_vorbereiten")
+                try:
+                    erg = self._asset_pack_zstd_in_ordner(
+                        ordner, melden=_melden, abbruch=_abbruch, phase=_phase, originale_entfernen=weg)
+                except ampr_zstdpack.ZstdPackFehler as exc:
+                    raise ampr_assetpakete.PackFehler(str(exc)) from exc
+                finally:
+                    # Der Ordner hat sich geaendert: ein gemerkter Befund stimmt nicht mehr.
+                    merk["ordner"] = ""
+                    merk["befund"] = None
+                _melden(self._t("assetpack_tool.pack_ok", files=erg["dateien"], baender=erg["baender"],
+                                entfernt=erg["originale_entfernt"]))
+
+            _starten(_arbeit, "assetpack_tool.status_packing")
+
         def _entpacken() -> None:
             ordner = _ordner_gueltig()
             if not ordner:
@@ -68719,6 +68942,7 @@ class PS5ConverterGUI:
         aktionen = tk.Frame(main, bg=c["bg_main"])
         aktionen.pack(fill="x", pady=(0, 6))
         for schluessel, befehl in (("assetpack_tool.check_button", _pruefen),
+                                   ("assetpack_tool.pack_button", _packen),
                                    ("assetpack_tool.unpack_button", _entpacken)):
             knopf = self._pw.Button(
                 aktionen, text=self._t(schluessel), command=befehl,
