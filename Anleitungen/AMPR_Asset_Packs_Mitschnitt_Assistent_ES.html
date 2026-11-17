@@ -280,7 +280,7 @@ footer b{color:#fff}
       <p style="margin:0 0 14px;font-size:14.5px">ShadowMount+ monta por título exactamente <b style="color:#fff">una</b> carpeta fakelib: la primera que encuentra, incluso si está vacía. Una biblioteca de grabación en la carpeta equivocada quedaría sin efecto y nunca se produciría una grabación. Por eso el programa busca en el mismo orden que ShadowMount+:</p>
       <div class="table-scroll"><table>
         <tr><th>Ubicación</th><th>Se aplica cuando …</th><th>Observación</th></tr>
-        <tr><td><code class="inline">&lt;Suchpfad&gt;/backports/&lt;TITLE-ID&gt;/</code></td><td>existe una carpeta de backport para este título; allí también deposita la tarea 7. Tiene siempre prioridad sobre la carpeta del juego.</td><td>Se busca primero en la ruta de búsqueda del juego, luego en las entradas <code class="inline">scanpath</code> del config.ini y, desde la 1.7beta3, por último siempre también en <code class="inline">/data/homebrew</code>. ShadowMount+ hasta la 1.7 alpha6 solo lee allí <code class="inline">fakelib2</code>.</td></tr>
+        <tr><td><code class="inline">&lt;Suchpfad&gt;/backports/&lt;TITLE-ID&gt;/</code></td><td>existe una carpeta de backport para este título; allí también deposita el AMPR EMU Manager (vista CONSOLA). Tiene siempre prioridad sobre la carpeta del juego.</td><td>Se busca primero en la ruta de búsqueda del juego, luego en las entradas <code class="inline">scanpath</code> del config.ini y, desde la 1.7beta3, por último siempre también en <code class="inline">/data/homebrew</code>. ShadowMount+ hasta la 1.7 alpha6 solo lee allí <code class="inline">fakelib2</code>.</td></tr>
         <tr><td><code class="inline">&lt;Spielordner&gt;/fakelib2</code> o <code class="inline">/fakelib</code></td><td>no existe carpeta de backport.</td><td>Cuál se aplica depende de la versión de ShadowMount+. Si están las dos, la biblioteca va a ambas.</td></tr>
         <tr><td>creada de nuevo</td><td>no existe ninguna de las dos carpetas.</td><td><code class="inline">fakelib</code> desde la 1.7 alpha8, <code class="inline">fakelib2</code> hasta la alpha6. Al final la carpeta se vuelve a renombrar (más abajo).</td></tr>
       </table></div>
@@ -415,7 +415,7 @@ footer b{color:#fff}
         <li>Mientras el asistente de grabación cambia o restaura ShadowMount+, <b style="color:#fff">el juego no debe estar en ejecución</b>; de lo contrario ShadowMount+ retira sus overlays.</li>
         <li>eboot.bin, los archivos PRX/SPRX, los índices y las carpetas del sistema no se empaquetan ni se eliminan nunca automáticamente.</li>
         <li>El índice, el archivo de tiempo de ejecución y todos los volúmenes van siempre a la imagen como <b style="color:#fff">un único conjunto coherente</b>; no sustituir nunca archivos sueltos de él.</li>
-        <li>La tarea 7 (AMPR EMU Manager) no crea ni elimina volúmenes de asset pack; esto ocurre exclusivamente al crear una imagen (tareas 1–6) con el método “Asset Pack”.</li>
+        <li>El AMPR EMU Manager (vista CONSOLA) solo crea volúmenes de asset pack cuando se pulsa su botón (“Crear Asset-Pack”) y nunca los elimina; surgen por sí solos al crear una imagen (tareas 1–6, también la tarea 7, PKG / FPKG) con el método “Asset Pack”.</li>
       </ul>
     </div>
   </section>

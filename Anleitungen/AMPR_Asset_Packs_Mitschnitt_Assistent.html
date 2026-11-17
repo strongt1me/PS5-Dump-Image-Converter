@@ -280,7 +280,7 @@ footer b{color:#fff}
       <p style="margin:0 0 14px;font-size:14.5px">ShadowMount+ hängt je Titel genau <b style="color:#fff">einen</b> fakelib-Ordner ein – den ersten, den es findet, auch einen leeren. Eine Aufnahme-Bibliothek im falschen Ordner bliebe wirkungslos, und es entstünde nie ein Mitschnitt. Das Programm sucht deshalb in derselben Reihenfolge wie ShadowMount+:</p>
       <div class="table-scroll"><table>
         <tr><th>Ort</th><th>Gilt, wenn …</th><th>Hinweis</th></tr>
-        <tr><td><code class="inline">&lt;Suchpfad&gt;/backports/&lt;TITLE-ID&gt;/</code></td><td>es für diesen Titel einen Backport-Ordner gibt – dorthin legt auch Aufgabe 7 ab. Er geht dem Spielordner immer vor.</td><td>Gesucht wird zuerst im Suchpfad des Spiels, dann in den <code class="inline">scanpath</code>-Einträgen der config.ini, ab 1.7beta3 zuletzt immer noch in <code class="inline">/data/homebrew</code>. ShadowMount+ bis 1.7 alpha6 liest dort nur <code class="inline">fakelib2</code>.</td></tr>
+        <tr><td><code class="inline">&lt;Suchpfad&gt;/backports/&lt;TITLE-ID&gt;/</code></td><td>es für diesen Titel einen Backport-Ordner gibt – dorthin legt auch der AMPR EMU Manager (Ansicht KONSOLE) ab. Er geht dem Spielordner immer vor.</td><td>Gesucht wird zuerst im Suchpfad des Spiels, dann in den <code class="inline">scanpath</code>-Einträgen der config.ini, ab 1.7beta3 zuletzt immer noch in <code class="inline">/data/homebrew</code>. ShadowMount+ bis 1.7 alpha6 liest dort nur <code class="inline">fakelib2</code>.</td></tr>
         <tr><td><code class="inline">&lt;Spielordner&gt;/fakelib2</code> oder <code class="inline">/fakelib</code></td><td>es keinen Backport-Ordner gibt.</td><td>Welcher gilt, hängt an der ShadowMount+-Fassung. Liegen beide da, kommt die Bibliothek in beide.</td></tr>
         <tr><td>neu angelegt</td><td>es keinen der beiden Ordner gibt.</td><td><code class="inline">fakelib</code> ab 1.7 alpha8, <code class="inline">fakelib2</code> bis alpha6. Am Ende wird der Ordner wieder umbenannt (unten).</td></tr>
       </table></div>
@@ -415,7 +415,7 @@ footer b{color:#fff}
         <li>Während der Mitschnitt-Assistent ShadowMount+ umstellt oder zurückstellt, <b style="color:#fff">darf das Spiel nicht laufen</b> – sonst nimmt ShadowMount+ dessen Overlays heraus.</li>
         <li>eboot.bin, PRX-/SPRX-Dateien, Indexe und Systemordner werden nie automatisch gepackt oder entfernt.</li>
         <li>Index, Laufzeitdatei und alle Bänder gehören immer als <b style="color:#fff">ein zusammengehöriger Satz</b> ins Abbild – nie einzelne Dateien daraus austauschen.</li>
-        <li>Aufgabe 7 (AMPR EMU Manager) baut und entfernt keine Asset-Pack-Bänder – das geschieht ausschließlich beim Erstellen eines Abbilds (Aufgaben 1–6) mit Methode „Asset-Pack".</li>
+        <li>Der AMPR EMU Manager (Ansicht KONSOLE) baut Asset-Pack-Bänder nur auf ausdrücklichen Knopfdruck („Asset-Pack bauen“) und entfernt keine; von selbst entstehen sie beim Erstellen eines Abbilds (Aufgaben 1–6, auch Aufgabe 7, PKG / FPKG) mit Methode „Asset-Pack“.</li>
       </ul>
     </div>
   </section>

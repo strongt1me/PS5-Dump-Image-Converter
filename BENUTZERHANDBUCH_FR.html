@@ -778,7 +778,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   la couleur d'accent, puis en vert – et dans la couleur d'avertissement si la recherche sur
   la PS5 a échoué.</p>
   <p>Il n'est pas nécessaire de connaître l'adresse de la console. Comme l'AMPR EMU
-  Manager (tâche&nbsp;7), la bibliothèque essaie dans l'ordre l'adresse
+  Manager (bouton&nbsp;9), la bibliothèque essaie dans l'ordre l'adresse
   des paramètres, les profils FTP enregistrés, la diffusion de
   la recherche de console (UDP&nbsp;9302) et enfin le réseau local. Un port ouvert
   ne suffit pas – il faut qu'un répertoire n'existant que sur une console puisse être ouvert par FTP.
@@ -2819,7 +2819,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   tant que les deux versions de ShadowMount+ sont en circulation.</p>
 
 
-  <p><strong>ShadowMount+ à partir de 1.7beta12 &ndash; nouveau format de <code>config.ini</code>.</strong> Depuis 1.7beta12 (préversion du 08.11.2026), <code>config.ini</code> comporte des sections (<code>[general]</code>, <code>[emulators]</code> &hellip;)&nbsp;; les réglages par jeu et par image se trouvent dans un <code>profiles.ini</code> distinct. Au premier démarrage, ShadowMount+ convertit lui-même un ancien fichier et conserve une sauvegarde dans <code>config-v1-backup/</code>. Le programme demande donc <strong>une fois</strong> quelle version tourne sur la console (avant ou à partir de 1.7beta12), mémorise la réponse et écrit le fichier dans le bon format &ndash; dans l’éditeur ShadowMount+, dans l’automatisme de la tâche&nbsp;7, dans l’enregistrement AMPR et dans le message sur AMPR EMU NG (<code>update_emulators=0</code> devient alors <code>[emulators] update_enabled=0</code>). La réponse peut être modifiée sous <em>PARAMÈTRES</em> &rarr; <em>ShadowMount+ &ndash; config.ini</em>. Si la console présente visiblement l’autre format, le programme suit le fichier et le signale. Les clés qui n’existent plus dans le nouveau format (par exemple <code>kstuff_*</code>) ne sont pas écrites. Vérifié sur le PC avec une contrepartie simulée, pas sur la console.</p>
+  <p><strong>ShadowMount+ à partir de 1.7beta12 &ndash; nouveau format de <code>config.ini</code>.</strong> Depuis 1.7beta12 (préversion du 08.11.2026), <code>config.ini</code> comporte des sections (<code>[general]</code>, <code>[emulators]</code> &hellip;)&nbsp;; les réglages par jeu et par image se trouvent dans un <code>profiles.ini</code> distinct. Au premier démarrage, ShadowMount+ convertit lui-même un ancien fichier et conserve une sauvegarde dans <code>config-v1-backup/</code>. Le programme demande donc <strong>une fois</strong> quelle version tourne sur la console (avant ou à partir de 1.7beta12), mémorise la réponse et écrit le fichier dans le bon format &ndash; dans l’éditeur ShadowMount+, dans l’automatisme de l’AMPR EMU Manager, dans l’enregistrement AMPR et dans le message sur AMPR EMU NG (<code>update_emulators=0</code> devient alors <code>[emulators] update_enabled=0</code>). La réponse peut être modifiée sous <em>PARAMÈTRES</em> &rarr; <em>ShadowMount+ &ndash; config.ini</em>. Si la console présente visiblement l’autre format, le programme suit le fichier et le signale. Les clés qui n’existent plus dans le nouveau format (par exemple <code>kstuff_*</code>) ne sont pas écrites. Vérifié sur le PC avec une contrepartie simulée, pas sur la console.</p>
 
   <h3>14.10 WebKit Autoloader – icône sur l'écran d'accueil</h3>
   <p>Le WebKit Autoloader crée sur la console une icône qui permet de répéter

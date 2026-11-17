@@ -776,7 +776,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   the accent color during a search, afterwards green &ndash; and in the warning color if the search on
   the PS5 failed.</p>
   <p>You do not have to know the console's address for this. Like the AMPR EMU
-  Manager (task&nbsp;7), the library tries in turn the address
+  Manager (button&nbsp;9), the library tries in turn the address
   from the settings, the saved FTP profiles, the broadcast of the
   console search (UDP&nbsp;9302) and finally your own network. An open port
   is not enough &ndash; an FTP connection must be able to open a directory that
@@ -2818,7 +2818,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   as long as both ShadowMount+ versions are in circulation.</p>
 
 
-  <p><strong>ShadowMount+ from 1.7beta12 &ndash; new format of <code>config.ini</code>.</strong> Since 1.7beta12 (pre-release of 08.11.2026) <code>config.ini</code> has sections (<code>[general]</code>, <code>[emulators]</code> &hellip;); settings per game and per image live in a separate <code>profiles.ini</code>. On the first start ShadowMount+ converts an old file itself and keeps a backup in <code>config-v1-backup/</code>. The program therefore asks <strong>once</strong> which version is running on the console (before or from 1.7beta12), remembers the answer and writes the file in the matching format &ndash; in the ShadowMount+ editor, in the automatic mode of task&nbsp;7, in the AMPR capture and in the message about AMPR EMU NG (<code>update_emulators=0</code> then reads <code>[emulators] update_enabled=0</code>). The answer can be changed under <em>SETTINGS</em> &rarr; <em>ShadowMount+ &ndash; config.ini</em>. If the console visibly holds the other format, the program follows the file and says so. Keys that no longer exist in the new format (for example <code>kstuff_*</code>) are not written. Checked on the PC with a simulated counterpart, not on the console.</p>
+  <p><strong>ShadowMount+ from 1.7beta12 &ndash; new format of <code>config.ini</code>.</strong> Since 1.7beta12 (pre-release of 08.11.2026) <code>config.ini</code> has sections (<code>[general]</code>, <code>[emulators]</code> &hellip;); settings per game and per image live in a separate <code>profiles.ini</code>. On the first start ShadowMount+ converts an old file itself and keeps a backup in <code>config-v1-backup/</code>. The program therefore asks <strong>once</strong> which version is running on the console (before or from 1.7beta12), remembers the answer and writes the file in the matching format &ndash; in the ShadowMount+ editor, in the automatic mode of the AMPR EMU Manager, in the AMPR capture and in the message about AMPR EMU NG (<code>update_emulators=0</code> then reads <code>[emulators] update_enabled=0</code>). The answer can be changed under <em>SETTINGS</em> &rarr; <em>ShadowMount+ &ndash; config.ini</em>. If the console visibly holds the other format, the program follows the file and says so. Keys that no longer exist in the new format (for example <code>kstuff_*</code>) are not written. Checked on the PC with a simulated counterpart, not on the console.</p>
 
   <h3>14.10 WebKit Autoloader &ndash; Tile on the Home Screen</h3>
   <p>The WebKit Autoloader creates a tile on the console that repeats the

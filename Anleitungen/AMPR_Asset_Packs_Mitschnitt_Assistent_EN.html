@@ -280,7 +280,7 @@ footer b{color:#fff}
       <p style="margin:0 0 14px;font-size:14.5px">ShadowMount+ mounts exactly <b style="color:#fff">one</b> fakelib folder per title – the first one it finds, even an empty one. A recording library in the wrong folder would remain ineffective, and no trace would ever be created. The program therefore searches in the same order as ShadowMount+:</p>
       <div class="table-scroll"><table>
         <tr><th>Location</th><th>Applies if …</th><th>Note</th></tr>
-        <tr><td><code class="inline">&lt;Suchpfad&gt;/backports/&lt;TITLE-ID&gt;/</code></td><td>a backport folder exists for this title – task 7 stores its files there as well. It always takes precedence over the game folder.</td><td>The search covers first the game's search path, then the <code class="inline">scanpath</code> entries of config.ini, and from 1.7beta3 on, finally always <code class="inline">/data/homebrew</code>. ShadowMount+ up to 1.7 alpha6 reads only <code class="inline">fakelib2</code> there.</td></tr>
+        <tr><td><code class="inline">&lt;Suchpfad&gt;/backports/&lt;TITLE-ID&gt;/</code></td><td>a backport folder exists for this title – the AMPR EMU Manager (CONSOLE view) stores its files there as well. It always takes precedence over the game folder.</td><td>The search covers first the game's search path, then the <code class="inline">scanpath</code> entries of config.ini, and from 1.7beta3 on, finally always <code class="inline">/data/homebrew</code>. ShadowMount+ up to 1.7 alpha6 reads only <code class="inline">fakelib2</code> there.</td></tr>
         <tr><td><code class="inline">&lt;Spielordner&gt;/fakelib2</code> or <code class="inline">/fakelib</code></td><td>there is no backport folder.</td><td>Which one applies depends on the ShadowMount+ version. If both are present, the library goes into both.</td></tr>
         <tr><td>newly created</td><td>neither of the two folders exists.</td><td><code class="inline">fakelib</code> from 1.7 alpha8, <code class="inline">fakelib2</code> up to alpha6. At the end the folder is renamed again (below).</td></tr>
       </table></div>
@@ -415,7 +415,7 @@ footer b{color:#fff}
         <li>While the trace assistant switches ShadowMount+ over or restores it, <b style="color:#fff">the game must not be running</b> – otherwise ShadowMount+ removes its overlays.</li>
         <li>eboot.bin, PRX/SPRX files, indexes, and system folders are never packed or removed automatically.</li>
         <li>Index, runtime file, and all volumes always belong in the image as <b style="color:#fff">one coherent set</b> – never swap out individual files from it.</li>
-        <li>Task 7 (AMPR EMU Manager) neither builds nor removes asset pack volumes – that happens exclusively when creating an image (tasks 1–6) with the method “Asset pack”.</li>
+        <li>The AMPR EMU Manager (CONSOLE view) builds asset pack volumes only when you press its button (“Build asset pack”) and never removes them; they arise by themselves when an image is created (tasks 1–6, also task 7, PKG / FPKG) with the method “Asset pack”.</li>
       </ul>
     </div>
   </section>
