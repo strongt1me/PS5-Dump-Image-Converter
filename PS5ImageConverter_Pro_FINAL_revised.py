@@ -15225,6 +15225,32 @@ class PS5ConverterGUI:
                 logger.debug("Bauform-Zeile nicht umschaltbar: %s", exc)
         return sichtbar
 
+    def _quelle_ist_archiv(self) -> bool:
+        """Kommt die Quelle der gewaehlten Aufgabe aus einem Archiv (.zip, .7z, .rar)?
+
+        Aufgabe 1: das Archiv selbst im Feld QUELLE (kurz vor und waehrend des Entpackens) oder der Spielordner, der daraus entpackt
+        wurde (``_archiv_herkunft``). Sammelkonvertierung: ein Archiv unter den gewaehlten Quellen - es wird entpackt, wenn es dran ist.
+        In beiden Faellen liegt der Entpackordner im Arbeitsordner (``temp_path``).
+        """
+        try:
+            modus = str(self.current_mode.get() or "")
+            if modus == "pack_folder":
+                if getattr(self, "_archiv_laeuft", False):
+                    return True
+                quelle = str(self.source_path.get() or "").strip()
+                if not quelle:
+                    return False
+                return bool(archiv_quelle.ist_archiv(quelle)
+                            or self._archiv_schluessel(quelle) in (getattr(self, "_archiv_herkunft", None) or {}))
+            if modus == "batch_convert":
+                quellen = list(getattr(self, "_batch_sources", None) or [])
+                if not quellen:
+                    quellen = [str(self.source_path.get() or "").strip()]
+                return any(archiv_quelle.ist_archiv(str(q)) for q in quellen if q)
+        except Exception as exc:  # noqa: BLE001 - ohne Auskunft bleibt es beim bisherigen Verhalten
+            logger.debug("Archiv als Quelle nicht entscheidbar: %s", exc)
+        return False
+
     def _arbeitsordner_noetig(self) -> bool:
         """Legt der Lauf, den die Auswahl beschreibt, noch einen Zwischenordner an (``temp_path``)?
 
@@ -15232,7 +15258,12 @@ class PS5ConverterGUI:
         auf "aus", und AMPR EMU mit **LZ4**-Asset-Pack - dort schreibt der Strom (``ampr_lz4pack``, Etappe 14) nicht jedes Profil
         (Anwenderprofil, mehrere Gruppen, Striping), und der Lauf faellt dann auf den Weg ueber den Ordner zurueck. Im Zweifel
         (Einstellung nicht lesbar) bleibt das Feld sichtbar - lieber ein Feld zu viel als einen Ordner, den man nicht waehlen kann.
+
+        Dazu kommt (Nutzerwunsch 17.11.2026) ein **Archiv als Quelle**: Es wird in den Arbeitsordner entpackt, auch im Strom - dann soll der
+        Ordner waehlbar sein (:meth:`_quelle_ist_archiv`).
         """
+        if self._quelle_ist_archiv():
+            return True
         try:
             if not bool(self._load_setting(self._EXFAT_STROM_SETTING, True)):
                 return True
@@ -15257,6 +15288,7 @@ class PS5ConverterGUI:
         if not hasattr(self, "temp_entry"):
             return False
         sichtbar = self._arbeitsordner_noetig()
+        self._arbeitsordner_sichtbar_zuletzt = sichtbar
         for name in ("temp_title", "temp_entry", "temp_btn"):
             widget = getattr(self, name, None)
             if widget is None:
@@ -20494,7 +20526,7 @@ class PS5ConverterGUI:
 
         path = paths[0]
         if mode == "pack_folder" and archiv_quelle.ist_archiv(path):
-            self._archiv_als_quelle(os.path.normpath(path))
+            self._archiv_waehlen(os.path.normpath(path))
             return
         error_msg = self._validate_source_path(path, mode)
         if error_msg:
@@ -20704,7 +20736,7 @@ class PS5ConverterGUI:
             ],
         )
         if archiv:
-            self._archiv_als_quelle(os.path.normpath(archiv))
+            self._archiv_waehlen(os.path.normpath(archiv))
 
     def _browse_source(self) -> None:
         """Öffnet einen Datei- oder Verzeichnis-Dialog für den Quellpfad.
@@ -20888,6 +20920,98 @@ class PS5ConverterGUI:
         self._batch_sources = []
         self._remember_source_dialog_path(path)
         self.source_path.set(path)
+
+    def _archiv_braucht_entpacken(self, archiv: str) -> bool:
+        """Wird dieses Archiv als Quelle wirklich entpackt? Ein ZIP im Strom nicht: Es kommen nur ``sce_sys`` und ``eboot.bin`` in einen
+        kleinen Schattenordner, das Spiel liest der Lauf direkt aus dem Archiv (``_archiv_schatten_anlegen``)."""
+        return not (os.path.splitext(archiv)[1].lower() == ".zip" and self._archiv_strom_gewaehlt())
+
+    def _archiv_ordner_klaeren(self, archiv: str) -> bool:
+        """Fragt vor dem Entpacken, wohin das Archiv kommt (Nutzerwunsch 17.11.2026: der Arbeitsordner soll waehlbar sein).
+
+        Gefragt wird, wenn das Archiv wirklich entpackt wird (:meth:`_archiv_braucht_entpacken`) und fuer den Ordner, der jetzt gilt,
+        in dieser Sitzung noch nicht gefragt wurde - wer einmal bestaetigt oder gewaehlt hat, wird bei jedem weiteren Archiv nicht
+        wieder gefragt, und der Ordner steht sichtbar im Feld TEMP-ORDNER. Auf der Kommandozeile gibt es niemanden zu fragen
+        (``--temp`` bestimmt den Ordner). Waehrend eines Laufs entscheidet :meth:`_archiv_als_quelle` (Warnung).
+
+        Returns:
+            ``True``: weiter mit dem Entpacken; ``False``: abgebrochen, nichts wurde veraendert.
+        """
+        if getattr(self, "_cli_mode", False) or getattr(self, "is_running", False) or getattr(self, "_archiv_laeuft", False):
+            return True
+        if not self._archiv_braucht_entpacken(archiv):
+            return True
+        basis = self._get_runtime_temp_dir()
+        if os.path.normcase(os.path.normpath(basis)) == getattr(self, "_archiv_ordner_gefragt", ""):
+            return True
+        while True:
+            try:
+                frei, groesse = int(shutil.disk_usage(basis).free), int(os.path.getsize(archiv))
+            except OSError:
+                frei, groesse = None, None
+            wahl = self._archiv_ordner_dialog(os.path.basename(archiv), basis, groesse, frei)
+            if wahl == "abbrechen":
+                return False
+            if wahl == "waehlen":
+                neu = filedialog.askdirectory(
+                    title=self._t("archiv_ordner.waehlen_titel"),
+                    initialdir=basis if os.path.isdir(basis) else None, parent=self.root)
+                if not neu:
+                    continue                                    # nichts gewaehlt: zurueck zur Frage
+                basis = self._arbeitsordner_setzen(neu)
+                self._append_to_log(self._t("archiv_ordner.log_gewaehlt", ordner=basis))
+            elif hasattr(self, "temp_path") and not str(self.temp_path.get()).strip():
+                self.temp_path.set(basis)                       # "Hier entpacken": der Ordner steht danach im Feld
+            self._archiv_ordner_gefragt = os.path.normcase(os.path.normpath(basis))
+            return True
+
+    def _archiv_ordner_dialog(self, name: str, ordner: str, groesse: "int | None", frei: "int | None") -> str:
+        """Zeigt, wohin ein Archiv entpackt wird, und laesst einen anderen Ordner waehlen.
+
+        Returns:
+            ``"entpacken"`` (dort), ``"waehlen"`` (anderen Ordner waehlen) oder ``"abbrechen"``.
+        """
+        c = self._COLORS
+        fenster = self._build_modern_toplevel(
+            self._t("archiv_ordner.titel"), 760, 400, min_width=680, min_height=340, parent=self.root)
+        self._build_modern_header(fenster, self._t("archiv_ordner.titel"), self._t("archiv_ordner.untertitel"))
+        ergebnis = {"wahl": "abbrechen"}
+        koerper = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=10)
+        koerper.pack(fill="both", expand=True)
+        tk.Label(koerper, text=self._t("archiv_ordner.erklaerung", name=name), bg=c["bg_main"], fg=c["fg_secondary"],
+                 justify="left", wraplength=pt(660), font=(UI_SCHRIFT, pt(9)), anchor="w").pack(fill="x", pady=(0, 12))
+        karte = self._pw.Karte(koerper, bg=c["console_bg"], padx=14, pady=10)
+        karte.pack(fill="x", pady=(0, 8))
+        tk.Label(karte, text=self._t("main.temp_folder_label"), bg=c["console_bg"], fg=c["fg_primary"],
+                 font=(UI_SCHRIFT, pt(10), "bold"), anchor="w").pack(fill="x")
+        tk.Label(karte, text=ordner, bg=c["console_bg"], fg=c["fg_secondary"], font=("Consolas", pt(9)),
+                 anchor="w", wraplength=pt(620)).pack(fill="x")
+        if groesse is not None and frei is not None:
+            tk.Label(karte, text=self._t("archiv_ordner.zahlen", groesse=self._fmt_bytes(groesse), frei=self._fmt_bytes(frei)),
+                     bg=c["console_bg"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(9)), anchor="w",
+                     justify="left").pack(fill="x", pady=(6, 0))
+
+        def _schliessen(wahl: str) -> None:
+            ergebnis["wahl"] = wahl
+            fenster.destroy()
+
+        reihe = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=14)
+        reihe.pack(side="bottom", fill="x")
+        self._pw.Button(reihe, text=self._t("action.cancel"), command=lambda: _schliessen("abbrechen")).pack(side="right")
+        self._pw.Button(reihe, text=self._t("archiv_ordner.knopf_entpacken"), style="Accent.TButton",
+                        command=lambda: _schliessen("entpacken")).pack(side="right", padx=(0, 8))
+        self._pw.Button(reihe, text=self._t("archiv_ordner.knopf_waehlen"),
+                        command=lambda: _schliessen("waehlen")).pack(side="left")
+        fenster.bind("<Escape>", lambda _e: _schliessen("abbrechen"))
+        fenster.transient(self.root)
+        fenster.grab_set()
+        self.root.wait_window(fenster)
+        return ergebnis["wahl"]
+
+    def _archiv_waehlen(self, archiv: str) -> None:
+        """Ein Archiv ist als Quelle gewaehlt (Knopf "Archiv...", Ablegen): erst klaeren, wohin es entpackt wird, dann entpacken."""
+        if self._archiv_ordner_klaeren(archiv):
+            self._archiv_als_quelle(archiv)
 
     def _archiv_als_quelle(self, archiv: str, passwort: str = "") -> None:
         """Entpackt ein Archiv in den Arbeitsordner; der Spielordner darin wird die Quelle (Aufgabe 1).
@@ -21335,8 +21459,10 @@ class PS5ConverterGUI:
         self._archiv_quelle_vorher = None
         self._batch_sources = []
         self._remember_source_dialog_path(archiv)
-        self.source_path.set(wurzel)
+        # Erst die Herkunft, dann die Quelle: Der Trace auf die Quelle fragt (_quelle_ist_archiv) nach der Herkunft, und TEMP-ORDNER soll
+        # beim Wechsel vom Archiv zum entpackten Spielordner nicht kurz verschwinden.
         self._archiv_herkunft[self._archiv_schluessel(wurzel)] = archiv
+        self.source_path.set(wurzel)
         self._append_to_log(self._t("quelle.archiv_fertig", ordner=wurzel))
 
     def _validate_source_path(self, path: str, mode: str) -> str:
@@ -21517,6 +21643,37 @@ class PS5ConverterGUI:
             self.temp_path.set(os.path.normpath(path))
             # Sofort validieren und persistent speichern
             self._get_runtime_temp_dir()
+
+    def _arbeitsordner_setzen(self, pfad: str) -> str:
+        """Setzt den Arbeitsordner (Feld TEMP-ORDNER und Einstellung ``temp_dir``) und prueft ihn sofort. Leer heisst: Standard.
+
+        Gemeinsame Stelle fuer die Wahl beim Entpacken eines Archivs und fuer EINSTELLUNGEN. Gibt den Ordner zurueck, der danach gilt.
+        """
+        pfad = str(pfad or "").strip()
+        if hasattr(self, "temp_path"):
+            self.temp_path.set(os.path.normpath(pfad) if pfad else "")
+        if not pfad:
+            self._save_setting("temp_dir", "")          # ein leerer Ordner wird von _get_runtime_temp_dir nie gespeichert
+        self._temp_pruefung = None                      # die Schreibprobe galt nur fuer den alten Ordner
+        return self._get_runtime_temp_dir()
+
+    def _arbeitsordner_anzeige(self) -> str:
+        """Der Arbeitsordner, den der Anwender gewaehlt hat (Feld, sonst Einstellung); leer heisst Standard."""
+        try:
+            if hasattr(self, "temp_path"):
+                return str(self.temp_path.get()).strip()
+            return str(self._load_setting("temp_dir", "")).strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Arbeitsordner nicht lesbar: %s", exc)
+            return ""
+
+    def _arbeitsordner_nachziehen(self) -> None:
+        """Zeigt oder verbirgt TEMP-ORDNER, wenn sich der Bedarf geaendert hat (Quelle oder Aufgabe gewechselt, Archiv gewaehlt)."""
+        try:
+            if self._arbeitsordner_noetig() != getattr(self, "_arbeitsordner_sichtbar_zuletzt", None):
+                self._arbeitsordner_sichtbarkeit_setzen()
+        except Exception as exc:  # noqa: BLE001 - die Anzeige darf die Quellwahl nie stoeren
+            logger.debug("Arbeitsordner-Zeile nicht nachgezogen: %s", exc)
 
     def _temp_fallback_candidates(self, preferred: str | None = None) -> list[str]:
         """Liefert deduplizierte Kandidaten für Temp-Arbeitsverzeichnisse."""
@@ -22394,6 +22551,8 @@ class PS5ConverterGUI:
         if _args:
             # Der Hinweistext der Quelle haengt an der Aufgabe: sofort nachziehen, die Berechnung folgt entprellt.
             self._hinweisfelder_aktualisieren()
+            # Ein Archiv als Quelle (und der Wechsel der Aufgabe) zeigt oder verbirgt TEMP-ORDNER.
+            self._arbeitsordner_nachziehen()
             pending = getattr(self, "_source_change_after_id", None)
             if pending:
                 try:
@@ -70894,6 +71053,46 @@ class PS5ConverterGUI:
                 "zuruecksetzen_aktion": _zuruecksetzen, "bewegt": _bewegt,
                 "box_gewaehlt": _box_gewaehlt}
 
+    def _einstellungen_arbeitsordner_abschnitt(self, dlg, body) -> dict:
+        """EINSTELLUNGEN: der Arbeitsordner (Temp) von Hand - dieselbe Einstellung wie das Feld TEMP-ORDNER im Hauptfenster.
+
+        Dort ist das Feld nur zu sehen, wo ein Zwischenordner entsteht oder ein Archiv entpackt wird; hier laesst sich der Ordner
+        jederzeit waehlen (Nutzerwunsch 17.11.2026). Gewaehlt und zurueckgesetzt wird nur per Knopf, nicht beim Tippen: Jede Eingabe
+        wuerde sonst als Ordner geprueft und gespeichert.
+
+        Returns:
+            Die Bausteine (``var``, ``eingabe``, ``waehlen``, ``standard``) - fuer Tests.
+        """
+        c = self._COLORS
+        tk.Label(body, text=self._t("settings_dialog.arbeitsordner_section"), font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        standard = arbeitsordner.standard_ordner() or tempfile.gettempdir()
+        tk.Label(body, text=self._t("settings_dialog.arbeitsordner_hint", standard=standard), font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"], wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+        zeile = tk.Frame(body, bg=c["bg_card"])
+        zeile.pack(anchor="w", fill="x", pady=(0, 10))
+        var = tk.StringVar(value=self._arbeitsordner_anzeige())
+        eingabe = self._pw.Entry(zeile, textvariable=var, state="readonly", font=(UI_SCHRIFT, pt(10)))
+        eingabe.pack(side="left", fill="x", expand=True)
+
+        def _waehlen() -> None:
+            jetzt = self._arbeitsordner_anzeige()
+            neu = filedialog.askdirectory(
+                title=self._t("archiv_ordner.waehlen_titel"),
+                initialdir=jetzt if jetzt and os.path.isdir(jetzt) else None, parent=dlg)
+            if neu:
+                self._arbeitsordner_setzen(neu)
+                var.set(self._arbeitsordner_anzeige())
+
+        def _standard() -> None:
+            self._arbeitsordner_setzen("")
+            var.set(self._arbeitsordner_anzeige())
+
+        self._pw.Button(zeile, text=self._t("settings_dialog.arbeitsordner_waehlen"), command=_waehlen).pack(side="left", padx=(8, 0))
+        self._pw.Button(zeile, text=self._t("settings_dialog.arbeitsordner_standard"), command=_standard).pack(side="left", padx=(8, 0))
+        return {"var": var, "eingabe": eingabe, "waehlen": _waehlen, "standard": _standard}
+
     def _show_settings_dialog(self) -> None:
         """Zeigt den Einstellungen-Dialog (aktuell: Hintergrundbild)."""
         c = self._COLORS
@@ -71769,6 +71968,10 @@ class PS5ConverterGUI:
 
         archiv_eingabe.bind("<KeyRelease>", _archiv_passwoerter_speichern)
         _archiv_passwoerter_speichern()
+
+        # ── Arbeitsordner (Temp): dort werden Archive entpackt (Nutzerwunsch 17.11.2026) ──
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(8, 14))
+        self._einstellungen_arbeitsordner_abschnitt(dlg, body)
 
         # ── AMPR EMU NG: neue Fassungen automatisch holen ───────────────
         # Nutzerwunsch 15.11.2026. Ab Werk an (``ampr_updates.AUTO_VORGABE``): Beim Programmstart sucht das Programm hoechstens
