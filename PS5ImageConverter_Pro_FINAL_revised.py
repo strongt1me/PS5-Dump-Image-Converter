@@ -20926,6 +20926,39 @@ class PS5ConverterGUI:
         kleinen Schattenordner, das Spiel liest der Lauf direkt aus dem Archiv (``_archiv_schatten_anlegen``)."""
         return not (os.path.splitext(archiv)[1].lower() == ".zip" and self._archiv_strom_gewaehlt())
 
+    def _archiv_entpackt_groesse(self, archiv: str) -> "int | None":
+        """Wie viel Platz das Archiv entpackt braucht (aus seinem Verzeichnis, nicht die Dateigroesse); ``None``, wenn unbekannt.
+
+        Gemessen am 17.11.2026: Ein 7z von 36 GB belegt entpackt 160 GB - die Dateigroesse reicht fuer die Platzpruefung nicht. Das Ergebnis
+        wird je Archiv (Pfad, Groesse, Zeit) gemerkt, damit die Frage und der Start nicht zweimal das Verzeichnis lesen.
+        """
+        try:
+            st = os.stat(archiv)
+        except OSError:
+            return None
+        schluessel = (self._archiv_schluessel(archiv), st.st_size, st.st_mtime_ns)
+        gemerkt = self.__dict__.setdefault("_archiv_groessen", {})
+        if schluessel not in gemerkt:
+            wurzeln = [os.path.dirname(os.path.abspath(__file__))]
+            meipass = getattr(sys, "_MEIPASS", "")
+            if meipass:
+                wurzeln.insert(0, str(meipass))
+            popen_extra = ({"creationflags": _NO_WIN_FLAGS, "startupinfo": _silent_startupinfo()}
+                           if sys.platform == "win32" else {})
+            try:
+                self.root.config(cursor="watch")
+                self.root.update_idletasks()
+            except Exception:  # noqa: BLE001 - ohne Fenster (Kommandozeile, Test) gibt es keinen Zeiger zu aendern
+                pass
+            try:
+                gemerkt[schluessel] = archiv_quelle.entpackte_groesse(archiv, wurzeln=wurzeln, popen_extra=popen_extra)
+            finally:
+                try:
+                    self.root.config(cursor="")
+                except Exception:  # noqa: BLE001
+                    pass
+        return gemerkt[schluessel]
+
     def _archiv_ordner_klaeren(self, archiv: str) -> bool:
         """Fragt vor dem Entpacken, wohin das Archiv kommt (Nutzerwunsch 17.11.2026: der Arbeitsordner soll waehlbar sein).
 
@@ -20944,12 +20977,13 @@ class PS5ConverterGUI:
         basis = self._get_runtime_temp_dir()
         if os.path.normcase(os.path.normpath(basis)) == getattr(self, "_archiv_ordner_gefragt", ""):
             return True
+        entpackt = self._archiv_entpackt_groesse(archiv)
         while True:
             try:
                 frei, groesse = int(shutil.disk_usage(basis).free), int(os.path.getsize(archiv))
             except OSError:
                 frei, groesse = None, None
-            wahl = self._archiv_ordner_dialog(os.path.basename(archiv), basis, groesse, frei)
+            wahl = self._archiv_ordner_dialog(os.path.basename(archiv), basis, groesse, frei, entpackt)
             if wahl == "abbrechen":
                 return False
             if wahl == "waehlen":
@@ -20965,15 +20999,21 @@ class PS5ConverterGUI:
             self._archiv_ordner_gefragt = os.path.normcase(os.path.normpath(basis))
             return True
 
-    def _archiv_ordner_dialog(self, name: str, ordner: str, groesse: "int | None", frei: "int | None") -> str:
+    def _archiv_ordner_dialog(self, name: str, ordner: str, groesse: "int | None", frei: "int | None",
+                              entpackt: "int | None" = None) -> str:
         """Zeigt, wohin ein Archiv entpackt wird, und laesst einen anderen Ordner waehlen.
+
+        ``entpackt`` ist der Platz, den das Archiv entpackt braucht (:meth:`_archiv_entpackt_groesse`); passt er nicht in den Ordner,
+        sagt der Dialog es und "Hier entpacken" startet nichts.
 
         Returns:
             ``"entpacken"`` (dort), ``"waehlen"`` (anderen Ordner waehlen) oder ``"abbrechen"``.
         """
         c = self._COLORS
+        reserve = archiv_quelle.PLATZ_RESERVE
+        passt = entpackt is None or frei is None or frei - entpackt >= reserve
         fenster = self._build_modern_toplevel(
-            self._t("archiv_ordner.titel"), 760, 400, min_width=680, min_height=340, parent=self.root)
+            self._t("archiv_ordner.titel"), 760, 400 if passt else 480, min_width=680, min_height=340, parent=self.root)
         self._build_modern_header(fenster, self._t("archiv_ordner.titel"), self._t("archiv_ordner.untertitel"))
         ergebnis = {"wahl": "abbrechen"}
         koerper = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=10)
@@ -20987,19 +21027,34 @@ class PS5ConverterGUI:
         tk.Label(karte, text=ordner, bg=c["console_bg"], fg=c["fg_secondary"], font=("Consolas", pt(9)),
                  anchor="w", wraplength=pt(620)).pack(fill="x")
         if groesse is not None and frei is not None:
-            tk.Label(karte, text=self._t("archiv_ordner.zahlen", groesse=self._fmt_bytes(groesse), frei=self._fmt_bytes(frei)),
-                     bg=c["console_bg"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(9)), anchor="w",
+            zahlen = (self._t("archiv_ordner.zahlen_entpackt", groesse=self._fmt_bytes(groesse), entpackt=self._fmt_bytes(entpackt),
+                              frei=self._fmt_bytes(frei)) if entpackt is not None
+                      else self._t("archiv_ordner.zahlen", groesse=self._fmt_bytes(groesse), frei=self._fmt_bytes(frei)))
+            tk.Label(karte, text=zahlen, bg=c["console_bg"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(9)), anchor="w",
                      justify="left").pack(fill="x", pady=(6, 0))
+        if not passt:
+            tk.Label(karte, text=self._t("archiv_ordner.zu_wenig", entpackt=self._fmt_bytes(entpackt), frei=self._fmt_bytes(frei),
+                                         reserve=self._fmt_bytes(reserve)),
+                     bg=c["console_bg"], fg=c["fg_warning"], font=(UI_SCHRIFT, pt(9), "bold"), anchor="w", justify="left",
+                     wraplength=pt(620)).pack(fill="x", pady=(8, 0))
 
         def _schliessen(wahl: str) -> None:
             ergebnis["wahl"] = wahl
             fenster.destroy()
 
+        def _entpacken() -> None:
+            if not passt:
+                messagebox.showerror(self._t("dialog.title.invalid_source"),
+                                     self._t("quelle.archiv_platz_entpackt", frei=self._fmt_bytes(int(frei)),
+                                             groesse=self._fmt_bytes(int(entpackt)), reserve=self._fmt_bytes(reserve)), parent=fenster)
+                return
+            _schliessen("entpacken")
+
         reihe = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=14)
         reihe.pack(side="bottom", fill="x")
         self._pw.Button(reihe, text=self._t("action.cancel"), command=lambda: _schliessen("abbrechen")).pack(side="right")
         self._pw.Button(reihe, text=self._t("archiv_ordner.knopf_entpacken"), style="Accent.TButton",
-                        command=lambda: _schliessen("entpacken")).pack(side="right", padx=(0, 8))
+                        command=_entpacken).pack(side="right", padx=(0, 8))
         self._pw.Button(reihe, text=self._t("archiv_ordner.knopf_waehlen"),
                         command=lambda: _schliessen("waehlen")).pack(side="left")
         fenster.bind("<Escape>", lambda _e: _schliessen("abbrechen"))
@@ -21049,6 +21104,14 @@ class PS5ConverterGUI:
             messagebox.showerror(self._t("dialog.title.invalid_source"),
                                  self._t("quelle.archiv_platz", frei=self._fmt_bytes(int(frei)),
                                          groesse=self._fmt_bytes(int(groesse))), parent=self.root)
+            return
+        # Was entpackt wirklich gebraucht wird, steht im Verzeichnis des Archivs (ein 7z von 36 GB belegte entpackt 160 GB).
+        entpackt = self._archiv_entpackt_groesse(archiv) if self._archiv_braucht_entpacken(archiv) else None
+        if entpackt is not None and frei < entpackt + archiv_quelle.PLATZ_RESERVE:
+            messagebox.showerror(self._t("dialog.title.invalid_source"),
+                                 self._t("quelle.archiv_platz_entpackt", frei=self._fmt_bytes(int(frei)),
+                                         groesse=self._fmt_bytes(int(entpackt)),
+                                         reserve=self._fmt_bytes(archiv_quelle.PLATZ_RESERVE)), parent=self.root)
             return
         alt = getattr(self, "_archiv_ordner", "")
         if alt and os.path.isdir(alt):

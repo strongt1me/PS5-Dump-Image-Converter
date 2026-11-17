@@ -12,6 +12,7 @@ entpackten Dump-Ordner wie mit jedem anderen. Die Idee stammt aus PS5 FFPFSC PRO
 """
 from __future__ import annotations
 
+import collections
 import lzma
 import os
 import platform
@@ -20,6 +21,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 import zlib
@@ -49,6 +51,63 @@ def _platz_pruefen(ziel: str, benoetigt: int, reserve: int) -> None:
     if frei - benoetigt < reserve:
         raise ArchivFehler("Zu wenig Platz auf dem Ziellaufwerk: %d Byte frei, %d Byte muessten entpackt werden "
                            "(%d Byte bleiben mindestens frei)" % (frei, benoetigt, reserve))
+
+
+#: So lange darf das Lesen des Verzeichnisses eines Archivs dauern (Sekunden), bevor die entpackte Groesse als unbekannt gilt.
+LISTE_FRIST = 30.0
+#: Die Schlusszeile von ``7z l``: ``<Datum> <Uhrzeit>  <entpackt>  <gepackt>  <Anzahl> files, <Anzahl> folders`` (Datum und die Spalte
+#: der gepackten Groesse fehlen bei manchen Formaten).
+_LISTE_SUMME = re.compile(r"^\s*(?:\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})?\s+(\d+)\s+(?:\d+\s+)?\d+ files", re.M)
+
+
+def summe_aus_liste(ausgabe: str) -> "int | None":
+    """Die entpackte Gesamtgroesse aus dem Ende der Ausgabe von ``7z l``; ``None``, wenn die Schlusszeile fehlt."""
+    treffer = _LISTE_SUMME.findall(ausgabe)
+    return int(treffer[-1]) if treffer else None
+
+
+def entpackte_groesse(archiv: str, wurzeln: "list[str] | None" = None, popen_extra: "dict | None" = None,
+                      passwort: str = "", frist: float = LISTE_FRIST) -> "int | None":
+    """Wie viele Bytes das Archiv entpackt belegt - aus seinem Verzeichnis, ohne etwas zu entpacken.
+
+    Die Dateigroesse des Archivs sagt es nicht: Ein 7z von 36 GB brauchte entpackt 160 GB. ``.zip`` liest ``zipfile``, ``.7z`` und
+    ``.rar`` das Verzeichnis ueber ``7z l``. ``None``, wenn es sich nicht lesen laesst (verschluesseltes Verzeichnis, kein 7-Zip, mehr
+    als ``frist`` Sekunden, Fehler) - dann gilt die Pruefung des Aufrufers wie bisher.
+    """
+    endung = os.path.splitext(archiv)[1].lower()
+    if endung not in ENDUNGEN or not os.path.isfile(archiv):
+        return None
+    if endung == ".zip":
+        try:
+            with zipfile.ZipFile(archiv) as z:
+                return sum(max(0, i.file_size) for i in z.infolist())
+        except (zipfile.BadZipFile, OSError, NotImplementedError, EOFError):
+            return None
+    programm = siebenzip_suchen(wurzeln)
+    if not programm:
+        return None
+    try:
+        prozess = subprocess.Popen([programm, "l", "-y", "-p" + passwort, archiv], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                   stdin=subprocess.DEVNULL, **(popen_extra or {}))
+    except OSError:
+        return None
+    wachter = threading.Timer(max(1.0, float(frist)), prozess.kill)
+    wachter.daemon = True
+    wachter.start()
+    ende: "collections.deque[bytes]" = collections.deque(maxlen=8)        # die Liste kann Zehntausende Zeilen haben: nur das Ende zaehlt
+    try:
+        assert prozess.stdout is not None
+        for zeile in prozess.stdout:
+            ende.append(zeile)
+        rc = prozess.wait()
+    finally:
+        wachter.cancel()
+        if prozess.poll() is None:
+            prozess.kill()
+            prozess.wait()
+    if rc != 0:
+        return None
+    return summe_aus_liste(b"".join(ende).decode("utf-8", errors="replace"))
 
 
 class ArchivFehler(Exception):

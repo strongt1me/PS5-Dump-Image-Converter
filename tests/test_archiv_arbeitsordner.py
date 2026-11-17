@@ -11,6 +11,7 @@ import inspect
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -31,6 +32,9 @@ try:
 except Exception:                                    # pragma: no cover - ohne Anzeige
     TK_DA = False
     _WURZEL = None
+
+#: Eine Gibibyte (``archiv_quelle.PLATZ_RESERVE`` ist eine davon).
+GIB = 1 << 30
 
 
 def _datei(ordner: str, name: str) -> str:
@@ -315,6 +319,176 @@ class ArbeitsordnerTests(unittest.TestCase):
         _WURZEL.update()
         self.assertEqual(("abbrechen", "abbrechen"), (antwort, ohne_zahlen), "Schliessen ueber die Titelleiste heisst Abbrechen")
         self.assertEqual([a._t("archiv_ordner.titel")] * 2, gebaut)
+
+    # ------------------------------------------------------------------ die entpackte Groesse (17.11.2026)
+    def _dialog_texte(self, frei: int, entpackt: "int | None") -> "list[str]":
+        """Die Beschriftungen des Dialogs, wie sie beim Anzeigen stehen."""
+        a = self.app
+        texte: "list[str]" = []
+
+        def _sammeln(widget) -> None:
+            if isinstance(widget, tk.Label):
+                texte.append(str(widget.cget("text")))
+            for kind in widget.winfo_children():
+                _sammeln(kind)
+
+        def _statt_warten(fenster) -> None:
+            fenster.update_idletasks()
+            _sammeln(fenster)
+            fenster.destroy()
+
+        with mock.patch.object(tk.Toplevel, "grab_set"), mock.patch.object(a.root, "wait_window", side_effect=_statt_warten):
+            self.haupt.PS5ConverterGUI._archiv_ordner_dialog(a, "spiel.7z", "C:\\Temp", 38 * GIB, frei, entpackt)
+        time.sleep(0.45)                       # _build_modern_toplevel plant Nachmessungen
+        _WURZEL.update()
+        return texte
+
+    def test_der_dialog_nennt_die_entpackte_groesse(self) -> None:
+        a = self.app
+        texte = self._dialog_texte(300 * GIB, 160 * GIB)
+        self.assertIn(a._t("archiv_ordner.zahlen_entpackt", groesse=a._fmt_bytes(38 * GIB), entpackt=a._fmt_bytes(160 * GIB),
+                           frei=a._fmt_bytes(300 * GIB)), texte)
+        self.assertFalse([t for t in texte if t.startswith(a._t("archiv_ordner.zu_wenig", entpackt="", frei="", reserve="")[:18])],
+                         "es passt: keine Warnung")
+
+    def test_der_dialog_warnt_wenn_es_entpackt_nicht_passt(self) -> None:
+        a = self.app
+        texte = self._dialog_texte(100 * GIB, 160 * GIB)
+        self.assertIn(a._t("archiv_ordner.zu_wenig", entpackt=a._fmt_bytes(160 * GIB), frei=a._fmt_bytes(100 * GIB),
+                           reserve=a._fmt_bytes(archiv_quelle.PLATZ_RESERVE)), texte)
+
+    def test_knapp_ist_auch_zu_wenig_weil_die_reserve_frei_bleiben_soll(self) -> None:
+        a = self.app
+        texte = self._dialog_texte(160 * GIB + archiv_quelle.PLATZ_RESERVE - 1, 160 * GIB)
+        self.assertTrue([t for t in texte if "160" in t and a._t("archiv_ordner.zu_wenig", entpackt="", frei="", reserve="")[:12] in t])
+        texte = self._dialog_texte(160 * GIB + archiv_quelle.PLATZ_RESERVE, 160 * GIB)
+        self.assertFalse([t for t in texte if a._t("archiv_ordner.zu_wenig", entpackt="", frei="", reserve="")[:12] in t])
+
+    def test_ohne_bekannte_groesse_bleibt_es_bei_der_archivgroesse(self) -> None:
+        a = self.app
+        texte = self._dialog_texte(100 * GIB, None)
+        self.assertIn(a._t("archiv_ordner.zahlen", groesse=a._fmt_bytes(38 * GIB), frei=a._fmt_bytes(100 * GIB)), texte)
+
+    def _auf_den_knopf_druecken(self, frei: int, entpackt: "int | None") -> "tuple[str, list]":
+        """Zeigt den Dialog, drueckt "Hier entpacken" und liefert (Antwort, Aufrufe von showerror)."""
+        a = self.app
+
+        def _knoepfe(widget, gefunden: list) -> None:
+            if hasattr(widget, "invoke") and hasattr(widget, "cget"):
+                gefunden.append(widget)
+            for kind in widget.winfo_children():
+                _knoepfe(kind, gefunden)
+
+        def _statt_warten(fenster) -> None:
+            fenster.update_idletasks()
+            gefunden: list = []
+            _knoepfe(fenster, gefunden)
+            knopf = next(k for k in gefunden if str(k.cget("text")) == a._t("archiv_ordner.knopf_entpacken"))
+            knopf.invoke()
+            if fenster.winfo_exists():                       # der Dialog blieb offen: jetzt wie ueber die Titelleiste schliessen
+                fenster.destroy()
+
+        with mock.patch.object(tk.Toplevel, "grab_set"), mock.patch.object(a.root, "wait_window", side_effect=_statt_warten), \
+                mock.patch.object(self.haupt.messagebox, "showerror") as fehler:
+            antwort = self.haupt.PS5ConverterGUI._archiv_ordner_dialog(a, "spiel.7z", "C:\\Temp", 38 * GIB, frei, entpackt)
+        time.sleep(0.45)
+        _WURZEL.update()
+        return antwort, fehler.call_args_list
+
+    def test_hier_entpacken_tut_nichts_wenn_es_nicht_passt(self) -> None:
+        a = self.app
+        antwort, fehler = self._auf_den_knopf_druecken(100 * GIB, 160 * GIB)
+        self.assertEqual("abbrechen", antwort, "der Dialog blieb offen und wurde danach geschlossen - es wurde nichts entpackt")
+        self.assertEqual(1, len(fehler))
+        self.assertEqual(a._t("quelle.archiv_platz_entpackt", frei=a._fmt_bytes(100 * GIB), groesse=a._fmt_bytes(160 * GIB),
+                              reserve=a._fmt_bytes(archiv_quelle.PLATZ_RESERVE)), fehler[0].args[1])
+
+    def test_hier_entpacken_geht_wenn_es_passt_oder_die_groesse_unbekannt_ist(self) -> None:
+        for frei, entpackt in ((400 * GIB, 160 * GIB), (100 * GIB, None)):
+            with self.subTest(frei=frei, entpackt=entpackt):
+                antwort, fehler = self._auf_den_knopf_druecken(frei, entpackt)
+                self.assertEqual(("entpacken", []), (antwort, fehler))
+
+    def test_der_start_rechnet_die_reserve_mit(self) -> None:
+        a = self.app
+        for frei_bytes, meldung in ((160 * GIB + archiv_quelle.PLATZ_RESERVE - 1, True), (160 * GIB + archiv_quelle.PLATZ_RESERVE, False)):
+            with self.subTest(frei=frei_bytes):
+                frei = types.SimpleNamespace(total=500 * GIB, used=0, free=frei_bytes)
+                with tempfile.TemporaryDirectory() as t, \
+                        mock.patch.object(type(a), "_archiv_entpackt_groesse", return_value=160 * GIB), \
+                        mock.patch.object(self.haupt.shutil, "disk_usage", return_value=frei), \
+                        mock.patch.object(self.haupt.messagebox, "showerror") as fehler, \
+                        mock.patch.object(archiv_quelle, "siebenzip_suchen", return_value="7z"), \
+                        mock.patch.object(self.haupt.tempfile, "mkdtemp", side_effect=OSError("angehalten")):
+                    a._archiv_als_quelle(self._siebenzip(t))
+                platz = a._t("quelle.archiv_platz_entpackt", frei=a._fmt_bytes(frei_bytes), groesse=a._fmt_bytes(160 * GIB),
+                             reserve=a._fmt_bytes(archiv_quelle.PLATZ_RESERVE))
+                self.assertEqual(meldung, fehler.call_args.args[1] == platz)
+
+    def test_ein_zip_im_strom_braucht_keinen_platz_fuer_den_entpackten_inhalt(self) -> None:
+        """Es kommen nur sce_sys und eboot.bin in einen Schattenordner: die entpackte Groesse zaehlt dort nicht."""
+        a = self.app
+        frei = types.SimpleNamespace(total=500 * GIB, used=0, free=100 * GIB)
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(type(a), "_archiv_entpackt_groesse", return_value=160 * GIB) as groesse, \
+                mock.patch.object(type(a), "_archiv_strom_gewaehlt", return_value=True), \
+                mock.patch.object(self.haupt.shutil, "disk_usage", return_value=frei), \
+                mock.patch.object(self.haupt.messagebox, "showerror") as fehler, \
+                mock.patch.object(self.haupt.tempfile, "mkdtemp", side_effect=OSError("angehalten")):
+            a._archiv_als_quelle(_datei(t, "spiel.zip"))
+        groesse.assert_not_called()
+        self.assertEqual(a._t("quelle.archiv_fehler", grund="angehalten"), fehler.call_args.args[1])
+
+    def test_die_frage_reicht_die_entpackte_groesse_an_den_dialog(self) -> None:
+        a = self.app
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(type(a), "_archiv_entpackt_groesse", return_value=160 * GIB), \
+                mock.patch.object(a, "_archiv_ordner_dialog", return_value="entpacken") as dialog:
+            a._archiv_ordner_klaeren(self._siebenzip(t))
+        self.assertEqual(160 * GIB, dialog.call_args.args[4])
+
+    def test_der_start_bricht_ab_wenn_es_entpackt_nicht_passt_und_entpackt_nichts(self) -> None:
+        a = self.app
+        frei = types.SimpleNamespace(total=500 * GIB, used=400 * GIB, free=100 * GIB)
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(type(a), "_archiv_entpackt_groesse", return_value=160 * GIB), \
+                mock.patch.object(self.haupt.shutil, "disk_usage", return_value=frei), \
+                mock.patch.object(self.haupt.messagebox, "showerror") as fehler, \
+                mock.patch.object(archiv_quelle, "siebenzip_suchen", return_value="7z"), \
+                mock.patch.object(archiv_quelle, "entpacken") as entpacken:
+            a._archiv_als_quelle(self._siebenzip(t))
+        fehler.assert_called_once()
+        self.assertEqual(a._t("quelle.archiv_platz_entpackt", frei=a._fmt_bytes(100 * GIB), groesse=a._fmt_bytes(160 * GIB),
+                              reserve=a._fmt_bytes(archiv_quelle.PLATZ_RESERVE)), fehler.call_args.args[1])
+        entpacken.assert_not_called()
+        self.assertFalse(a._archiv_laeuft, "nichts laeuft")
+
+    def test_passt_es_geht_der_start_an_der_platzpruefung_vorbei(self) -> None:
+        """Gegenprobe: mit genug Platz kommt die Meldung des Platzes nicht (der Start scheitert hier erst am Arbeitsordner)."""
+        a = self.app
+        frei = types.SimpleNamespace(total=500 * GIB, used=100 * GIB, free=400 * GIB)
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(type(a), "_archiv_entpackt_groesse", return_value=160 * GIB), \
+                mock.patch.object(self.haupt.shutil, "disk_usage", return_value=frei), \
+                mock.patch.object(self.haupt.messagebox, "showerror") as fehler, \
+                mock.patch.object(archiv_quelle, "siebenzip_suchen", return_value="7z"), \
+                mock.patch.object(self.haupt.tempfile, "mkdtemp", side_effect=OSError("angehalten")):
+            a._archiv_als_quelle(self._siebenzip(t))
+        fehler.assert_called_once()
+        self.assertEqual(a._t("quelle.archiv_fehler", grund="angehalten"), fehler.call_args.args[1],
+                         "die Meldung ist die des Arbeitsordners, nicht die des Platzes")
+
+    def test_die_groesse_wird_je_archiv_gemerkt_und_bei_einer_aenderung_neu_gelesen(self) -> None:
+        a = self.app
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(archiv_quelle, "entpackte_groesse", return_value=5 * GIB) as lesen:
+            archiv = self._siebenzip(t)
+            self.assertEqual(5 * GIB, a._archiv_entpackt_groesse(archiv))
+            self.assertEqual(5 * GIB, a._archiv_entpackt_groesse(archiv))
+            self.assertEqual(1, lesen.call_count, "gemerkt")
+            Path(archiv).write_bytes(b"xx")                                    # eine andere Datei gleichen Namens
+            a._archiv_entpackt_groesse(archiv)
+            self.assertEqual(2, lesen.call_count)
+        self.assertIsNone(a._archiv_entpackt_groesse(os.path.join(t, "gibt-es-nicht.7z")))
 
     # ------------------------------------------------------------------ EINSTELLUNGEN
     def test_arbeitsordner_setzen_und_zuruecksetzen(self) -> None:
