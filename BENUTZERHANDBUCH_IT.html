@@ -1816,6 +1816,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <p><strong>Creare un pacchetto (PKG / FPKG):</strong> Se alla sorgente mancano DLC EMU o PlayGo anche se il gioco li richiede, il programma chiede prima della creazione se fare comunque il pacchetto: Dump Forge riprende la cartella <code>fakelib</code> della sorgente senza modifiche. In tal caso crea prima un’immagine nei compiti da 1 a 6 con DLC EMU o PlayGo selezionato e poi il pacchetto da essa. Dump Forge aggiunge da sé AMPR EMU a un gioco che carica <code>libSceAmpr</code>.</p>
 
+  <p><strong>BACKPORT:</strong> Il programma conosce il firmware della tua console se la vista CONSOLE lo ha misurato; altrimenti lo chiede <em>una sola volta</em> (una scelta da 1.xx a 13.xx o successivo, oppure &laquo;Non indicare&raquo;) e ricorda la risposta. L’indicazione si può modificare in IMPOSTAZIONI. Se un gioco richiede di più &ndash; secondo l’SDK della sua <code>eboot.bin</code> o il firmware richiesto &ndash; di quanto ha la console e non è ancora abbassato, il programma chiede prima del lavoro se attivare BACKPORT. L’obiettivo è la fase più alta con librerie sostitutive che non superi la console (come nella finestra BACKPORT). È preselezionato <em>Sì</em>; la casella e il firmware restano poi impostati. Nella conversione multipla BACKPORT fa parte della domanda collettiva; nell’area PKG / FPKG compare come avviso prima di creare un pacchetto (un pacchetto non accoglie BACKPORT).</p>
+
   <h3>11.4 Verificare ed estrarre un asset pack già pronto</h3>
   <p>Dalla v1.9.80 esiste a questo scopo una finestra apposita: <strong>ALTRI STRUMENTI
   → VERIFICA / ESTRAI ASSET PACK</strong>. È l’equivalente

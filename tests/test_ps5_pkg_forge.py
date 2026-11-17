@@ -61,6 +61,10 @@ class ForgeFensterTests(unittest.TestCase):
             "werkzeug": mock.patch.object(fz.Ps5PkgFenster, "_werkzeug", return_value=""),
             "forge": mock.patch.object(fz.Ps5PkgFenster, "_werkzeug_forge", return_value="forge-exe"),
             "dotnet": mock.patch.object(wz, "dotnet_ordner", return_value=""),
+            # Die Firmware der Konsole ist hier "nicht angegeben": Sonst fragte schon der erste Bau eines Spiels, das
+            # eine Firmware verlangt (die echte Befehlszeile liest 2.00), mit einem echten Auswahlfenster danach - der
+            # Vorschlag zu BACKPORT hat seine eigenen Tests (test_backport_empfehlung.py).
+            "konsole": mock.patch.object(APP.PS5ConverterGUI, "_konsole_fw_bekannt", return_value=""),
             "lesen": mock.patch.object(fc, "lesen", side_effect=lambda exe, pfad, arbeit=None, **k: self.infos[pfad]),
             "ordner_lesen": mock.patch.object(wz, "ordner_lesen",
                                               side_effect=lambda ordner, arbeit=None, **k: self.infos[ordner]),

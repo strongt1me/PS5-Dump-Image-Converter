@@ -2243,6 +2243,9 @@ class Ps5PkgFenster:
             zeilen.append(self.t("ps5pkg.emu_zeile_dlc", merkmal=fakten.dlc_merkmal or "-"))
         if fakten.playgo_fehlt:
             zeilen.append(self.t("ps5pkg.emu_zeile_playgo", merkmal=fakten.playgo_merkmal))
+        backport = self._backport_zeile(fakten)
+        if backport:
+            zeilen.append(backport)
         if not zeilen:
             return True
         if not messagebox.askyesno(self.t("ps5pkg.emu_titel"), self.t("ps5pkg.emu_frage", liste="\n".join(zeilen)),
@@ -2251,6 +2254,18 @@ class Ps5PkgFenster:
             return False
         self._protokoll(self.t("ps5pkg.emu_log"))
         return True
+
+    def _backport_zeile(self, fakten: "forge.QuellFakten") -> str:
+        """Die Zeile zu BACKPORT, wenn das Spiel eine neuere Firmware verlangt, als die Konsole hat - sonst ``""``.
+
+        Die Firmware der Konsole kennt das Hauptprogramm (gemessen in der Ansicht KONSOLE); kennt es sie nicht und verlangt
+        das Spiel etwas, wird sie jetzt einmal erfragt (dieselbe Frage wie vor einem Lauf der Aufgaben 1 bis 6; ``_backport_plan``).
+        Ein Paket nimmt BACKPORT nicht auf - Dump Forge baut die Quelle, wie sie ist -, darum steht es nur als Hinweis da.
+        """
+        plan = self.g._backport_plan(fakten, erfragen=True)
+        if plan is None:
+            return ""
+        return self.t("ps5pkg.emu_zeile_backport", spiel=fakten.verlangt_text, konsole=self.g._konsole_fw_anzeige(plan[0]))
 
     def _forge_stufe_text(self, stufe: str) -> str:
         """Die Stufe aus Forges Fortschrittsstrom in der Sprache des Programms (unbekannte Stufen bleiben, wie sie sind)."""

@@ -744,6 +744,9 @@ class BatchEmulatorenTests(unittest.TestCase):
     def _gui(fakten: dict, *, basis=None, cli=False, root=True, versionen=True, ja=True):
         g = GUI.__new__(GUI)
         stand = dict(basis or {})
+        g._konsole_fw_bekannt = lambda: ""              # "nicht angegeben": die Frage nach BACKPORT bleibt hier aussen vor
+        g._konsole_firmware_erfragen = mock.Mock(return_value="")
+        g._backport_firmwares = lambda: (4, 5, 6, 7)
         g._tk_wert = lambda name, vorgabe=None: stand.get(name, vorgabe)
         g._set_status = lambda *_a, **_k: None
         g._log = []

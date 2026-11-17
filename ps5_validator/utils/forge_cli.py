@@ -24,6 +24,7 @@ import binascii
 import json
 import os
 import platform
+import re
 import sys
 import tempfile
 from dataclasses import dataclass, field
@@ -214,6 +215,41 @@ class QuellFakten:
     dlc_merkmal: str = ""
     #: Das erste PlayGo-Merkmal unter den Dateien (``sce_sys/playgo-scenario.json`` usw.), sonst ``""``.
     playgo_merkmal: str = ""
+    #: Die SDK-Fassung der ``eboot.bin`` und die Firmware, die ``param.json`` verlangt (Forge: ``"7.00"``, ``"9.60"``).
+    sdk: str = ""
+    firmware: str = ""
+    #: Das Spiel traegt schon einen Backport (Ersatzbibliotheken oder herabgesetztes SDK, Forge: ``backport``/``backport_firmware``).
+    backport_vorhanden: bool = False
+
+    @property
+    def verlangt_teile(self) -> "tuple[int, int] | None":
+        """Das Meiste, was das Spiel verlangt, als (Haupt-, Nebenversion): SDK der ``eboot.bin`` oder verlangte Firmware."""
+        teile = [t for t in (_teile(self.sdk), _teile(self.firmware)) if t and t[0] > 0]
+        return max(teile) if teile else None
+
+    @property
+    def verlangt_haupt(self) -> int:
+        """Die Hauptversion dazu (0 = unbekannt)."""
+        teile = self.verlangt_teile
+        return teile[0] if teile else 0
+
+    @property
+    def verlangt_text(self) -> str:
+        """Die Angabe dazu in Forges Schreibweise (``"10.00"``); ``""``, wenn nichts bekannt ist."""
+        teile = self.verlangt_teile
+        return "%d.%02d" % teile if teile else ""
+
+    def backport_noetig(self, konsole: str) -> bool:
+        """Verlangt das Spiel mehr, als die Konsole hat - und ist es noch nicht herabgesetzt?
+
+        BACKPORT setzt das SDK der ``eboot.bin`` und die verlangte Firmware der ``param.json`` herab
+        (``ps5_backport``): Beides zaehlt hier, verglichen wie in der Bibliothek (Haupt- und Nebenversion,
+        ``bibliothek.firmware_vergleichen``). ``konsole`` ist ihre Firmware als Text (``"12.00"``); ``"7.99"`` steht fuer
+        "irgendeine 7.xx" (nur die Hauptversion bekannt), ``""`` fuer unbekannt - dann ist nichts noetig.
+        """
+        ist = _teile(konsole)
+        verlangt = self.verlangt_teile
+        return bool(not self.backport_vorhanden and ist and ist[0] > 0 and verlangt and verlangt > ist)
 
     @property
     def dlc_fehlt(self) -> bool:
@@ -224,6 +260,12 @@ class QuellFakten:
     def playgo_fehlt(self) -> bool:
         """Das Spiel erklaert PlayGo-Inhalte, und der PlayGo-Stub liegt nicht darin."""
         return bool(self.playgo_merkmal) and "playgo" not in self.emulatoren
+
+
+def _teile(text) -> "tuple[int, int] | None":
+    """Haupt- und Nebenversion einer Angabe wie ``"10.00"`` oder ``"9.60"``; ``None``, wenn es keine ist."""
+    treffer = re.match(r"\s*(\d{1,2})\.(\d{1,2})", str(text or ""))
+    return (int(treffer.group(1)), int(treffer.group(2))) if treffer else None
 
 
 def _playgo_merkmal_in(pfade) -> str:
@@ -255,6 +297,9 @@ def quellfakten(daten: dict) -> QuellFakten:
         dlc_emuliert="dlc" in emulatoren or any(d.get("emulated") for d in dlcs),
         dlc_merkmal=str((dlcs[0].get("folder") or dlcs[0].get("content_id") or "") if dlcs else ""),
         playgo_merkmal=_playgo_merkmal_in(pfade),
+        sdk=str(daten.get("sdk") or ""),
+        firmware=str(daten.get("firmware") or ""),
+        backport_vorhanden=bool(daten.get("backport")) or daten.get("backport_firmware") is not None,
     )
 
 

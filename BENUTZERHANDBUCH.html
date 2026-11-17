@@ -1826,6 +1826,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <p><strong>Paket bauen (PKG / FPKG):</strong> Fehlen der Quelle DLC EMU oder PlayGo, obwohl das Spiel sie braucht, fragt das Programm vor dem Bau, ob trotzdem ein Paket entstehen soll: Dump Forge übernimmt den Ordner <code>fakelib</code> der Quelle unverändert. Bauen Sie in diesem Fall erst in den Aufgaben 1 bis 6 mit angehaktem DLC EMU oder PlayGo ein Abbild und daraus das Paket. AMPR EMU legt Dump Forge für ein Spiel, das <code>libSceAmpr</code> lädt, selbst dazu.</p>
 
+  <p><strong>BACKPORT:</strong> Das Programm kennt die Firmware Ihrer Konsole, wenn die Ansicht KONSOLE sie gemessen hat; sonst fragt es <em>einmal</em> (Auswahl von 1.xx bis 13.xx oder neuer, oder &bdquo;Nicht angeben&ldquo;) und merkt sich die Antwort. Die Angabe lässt sich unter EINSTELLUNGEN ändern. Verlangt ein Spiel &ndash; nach dem SDK der <code>eboot.bin</code> oder der verlangten Firmware &ndash; mehr, als die Konsole hat, und ist es noch nicht herabgesetzt, fragt das Programm vor der Arbeit, ob BACKPORT eingeschaltet werden soll. Ziel ist die höchste Stufe mit Ersatzbibliotheken, die nicht über der Konsole liegt (wie im BACKPORT-Fenster). Vorbelegt ist <em>Ja</em>; das Kästchen und die Firmware bleiben danach gesetzt. In der Sammelkonvertierung steht BACKPORT in der gesammelten Frage, im Bereich PKG / FPKG als Hinweis vor dem Bau eines Pakets (ein Paket nimmt BACKPORT nicht auf).</p>
+
   <h3>11.4 Ein fertiges Asset-Pack pr&uuml;fen und entpacken</h3>
   <p>Seit v1.9.80 gibt es dazu ein eigenes Fenster: <strong>WEITERE TOOLS
   &rarr; ASSET-PACK PR&Uuml;FEN / ENTPACKEN</strong>. Es ist das Gegenst&uuml;ck

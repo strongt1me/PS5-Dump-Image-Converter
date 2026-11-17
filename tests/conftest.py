@@ -39,6 +39,7 @@ import gc
 import importlib
 import logging
 import os
+import sys
 
 import pytest
 
@@ -276,6 +277,15 @@ def _dialogsperre(name: str, geoeffnet: list):
     return _dialog
 
 
+def _auswahlsperre(geoeffnet: list):
+    """Die Sperre fuer ``PS5ConverterGUI._auswahl_dialog`` (ein Auswahlfenster mit Knoepfen, kein tkinter-Dialog)."""
+    def _auswahl_sperre(self, titel="", *args, **kwargs):
+        eintrag = "PS5ConverterGUI._auswahl_dialog(%r)" % (titel,)
+        geoeffnet.append(eintrag)
+        raise EchterDialogImTest("Echter Dialog im Test: " + eintrag)
+    return _auswahl_sperre
+
+
 @pytest.fixture(autouse=True)
 def _keine_echten_dialoge(monkeypatch: pytest.MonkeyPatch):
     """Ein echter Dialog laesst den Test sofort scheitern, statt den Lauf anzuhalten.
@@ -306,6 +316,14 @@ def _keine_echten_dialoge(monkeypatch: pytest.MonkeyPatch):
             continue  # schon durch eine Antwort des Tests ersetzt
         monkeypatch.setattr(modul, name,
                             _dialogsperre("%s.%s" % (modulname, name), geoeffnet))
+    # Der Auswahldialog des Programms (``PS5ConverterGUI._auswahl_dialog``) ist ein eigenes Toplevel und kein tkinter-Dialog:
+    # Ohne diese Sperre hielt ihn ein Test mit der echten Befehlszeile von Dump Forge fuer immer an (17.11.2026: die Frage
+    # nach der Firmware der Konsole vor dem Paketbau). Nur der echte wird ersetzt - was ein Test selbst gesetzt hat, bleibt.
+    haupt = sys.modules.get("PS5ImageConverter_Pro_FINAL_revised")
+    klasse = getattr(haupt, "PS5ConverterGUI", None)
+    echt = klasse.__dict__.get("_auswahl_dialog") if klasse is not None else None
+    if echt is not None and getattr(echt, "__qualname__", "") == "PS5ConverterGUI._auswahl_dialog":
+        monkeypatch.setattr(klasse, "_auswahl_dialog", _auswahlsperre(geoeffnet))
     yield
     if geoeffnet:
         pytest.fail("Der Test hat ein echtes Dialogfenster geoeffnet: "

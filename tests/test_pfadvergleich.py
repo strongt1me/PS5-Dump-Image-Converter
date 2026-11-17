@@ -264,7 +264,8 @@ class EngineUeberschreibTests(_Ablage):
         for name in ("_checkpoint_reste_raeumen", "_save_paths", "_save_runtime_checkpoint", "_set_status",
                      "_reset_ui_after_task", "_speicher_beobachtung_starten", "_speicher_beobachtung_beenden",
                      "_selbstziel_reste_entfernen", "_reste_nach_lauf", "_temp_reste_nach_aufgabe_abraeumen",
-                     "_hauptfaden_planen", "_ampr_vor_dem_lauf_klaeren", "_ampr_ng_vor_dem_lauf_hinweisen",
+                     "_hauptfaden_planen", "_ampr_vor_dem_lauf_klaeren", "_backport_vor_dem_lauf_klaeren",
+                     "_ampr_ng_vor_dem_lauf_hinweisen",
                      "_playgo_vor_dem_lauf_klaeren", "_dlc_vor_dem_lauf_klaeren", "_fake_vor_dem_lauf_klaeren"):
             setattr(gui, name, lambda *a, **k: None)
         gui._snapshot_exit_cleanup_paths = lambda: set()

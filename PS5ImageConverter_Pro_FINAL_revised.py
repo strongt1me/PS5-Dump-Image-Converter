@@ -32944,6 +32944,8 @@ class PS5ConverterGUI:
                 # Die Frage nach AMPR EMU noch vor dem NG-Hinweis: Er gilt nur, wenn AMPR EMU angehakt ist - auch
                 # durch ein "Ja" hier (16.11.2026).
                 self._ampr_vor_dem_lauf_klaeren(mode, src)
+                # BACKPORT, wenn das Spiel eine neuere Firmware verlangt, als die Konsole hat (einmal gemerkt).
+                self._backport_vor_dem_lauf_klaeren(mode, src)
                 # Der NG-Hinweis zu ShadowMount+ (update_emulators=0) als Erstes: ein Fenster mitten im Lauf haelt
                 # ihn auf, und "danach herunterfahren" kommt nie (gemeldet 09.11.2026).
                 self._ampr_ng_vor_dem_lauf_hinweisen()
@@ -37447,10 +37449,144 @@ class PS5ConverterGUI:
         self._ampr_einschalten(ng_label=ng, verfahren=wahl)
         self._append_to_log(self._t("main.ampr_eingeschaltet_pack", verfahren="zstd" if wahl == "zstd" else "LZ4"))
 
+    # ------------------------------------------------------------------
+    # BACKPORT: Hinweis, wenn das Spiel eine neuere Firmware verlangt, als die Konsole hat (einmalige Frage nach der Firmware)
+    # ------------------------------------------------------------------
+    #: Was der Anwender einmal als Firmware seiner Konsole genannt hat (nur die Hauptversion): ``""`` = noch nicht gefragt,
+    #: ``"keine"`` = nicht angeben, sonst ``"1"`` bis ``"13"`` (13 = "13.xx oder neuer"). Sie ergaenzt ``konsole_firmware``,
+    #: die Einstellung, die jede Messung der Ansicht KONSOLE schreibt (``_konsole_firmware``): Gemessen geht vor, gefragt
+    #: wird nur, wenn das Programm die Firmware nicht kennt.
+    _KONSOLE_FW_SETTING = "konsole_firmware_angabe"
+
+    def _konsole_fw_bekannt(self) -> "str | None":
+        """Die Firmware der Konsole als Text fuer den Vergleich: ``"12.00"`` (gemessen) oder ``"7.99"`` (genannt: "7.xx").
+
+        ``None``: unbekannt und noch nie gefragt; ``""``: der Anwender hat bewusst nichts angegeben.
+        """
+        gemessen = bibliothek_bestand.firmware_kurz(self._konsole_firmware())
+        if gemessen:
+            return gemessen
+        wert = str(self._load_setting(self._KONSOLE_FW_SETTING, "") or "").strip()
+        if not wert:
+            return None
+        return "%d.99" % int(wert) if wert.isdigit() and 1 <= int(wert) <= 99 else ""
+
+    @staticmethod
+    def _konsole_fw_anzeige(firmware: str) -> str:
+        """Die Firmware der Konsole, wie sie dem Anwender gezeigt wird: ``"7.xx"`` statt ``"7.99"``, sonst unveraendert."""
+        text = str(firmware or "")
+        return text[:-2] + "xx" if text.endswith(".99") else text
+
+    def _konsole_firmware_erfragen(self) -> str:
+        """Fragt einmal, welche Firmware die Konsole hat, und merkt die Antwort: ``"7.99"``, oder ``""`` = nicht angegeben.
+
+        Das Fenster schliessen oder "Nicht angeben" waehlen heisst: nicht noch einmal fragen (die Angabe laesst sich unter
+        EINSTELLUNGEN aendern). Kommt gar keine Antwort - das Hauptfenster ist weg -, wird nichts gemerkt.
+        """
+        eintraege: "dict[str, int]" = {self._t("konsole_fw.keine"): 0}
+        for haupt in range(1, 13):
+            eintraege["%d.xx" % haupt] = haupt
+        eintraege[self._t("konsole_fw.neuer")] = 13
+        gewaehlt = self._im_hauptfaden(
+            self._auswahl_dialog, self._t("dialog.title.konsole_fw"), self._t("dialog.msg.konsole_fw"), list(eintraege))
+        if gewaehlt is None:
+            return ""
+        haupt = eintraege.get(gewaehlt, 0)
+        self._save_setting(self._KONSOLE_FW_SETTING, str(haupt) if haupt else "keine")
+        if haupt:
+            self._append_to_log(self._t("main.konsole_fw_gemerkt", firmware="13.xx+" if haupt == 13 else "%d.xx" % haupt))
+        else:
+            self._append_to_log(self._t("main.konsole_fw_keine"))
+        return "%d.99" % haupt if haupt else ""
+
+    def _backport_plan(self, fakten: "forge_cli.QuellFakten | None", erfragen: bool) -> "tuple[str, int] | None":
+        """Braucht dieses Spiel BACKPORT, und fuer welche Firmware? ``(Firmware der Konsole als Text, Zielstufe)`` oder ``None``.
+
+        Noetig ist es, wenn das Spiel (SDK der ``eboot.bin`` oder verlangte Firmware, nach Dump Forges ``inspect``) mehr
+        verlangt, als die Konsole hat, und noch nicht herabgesetzt ist. Das Ziel ist die hoechste Stufe mit Ersatzbibliotheken,
+        die nicht ueber der Konsole liegt - wie im BACKPORT-Fenster (``ps5_backport.firmware_vorschlag``): Ein Spiel auf
+        mehr herabzusetzen, als die Konsole hat, startet dort nicht. Kennt das Programm die Firmware nicht, fragt es
+        (``erfragen``) einmal.
+        """
+        if fakten is None or fakten.backport_vorhanden or not fakten.verlangt_haupt:
+            return None
+        konsole = self._konsole_fw_bekannt()
+        if konsole is None:
+            if not erfragen:
+                return None
+            konsole = self._konsole_firmware_erfragen()
+        if not konsole or not fakten.backport_noetig(konsole):
+            return None
+        ziel = ps5_backport.firmware_vorschlag(konsole, self._backport_firmwares())
+        return None if ziel is None else (konsole, int(ziel))
+
+    def _backport_vor_dem_lauf_klaeren(self, mode: str, src: str) -> None:
+        """Fragt vor der eigentlichen Arbeit, ob BACKPORT eingeschaltet wird - wenn das Spiel mehr verlangt, als die Konsole hat.
+
+        Dasselbe Muster wie :meth:`_ampr_vor_dem_lauf_klaeren` (Nutzerwunsch 17.11.2026, "einmaliges Nachfragen"). Die
+        Firmware der Konsole kennt das Programm, wenn die Ansicht KONSOLE sie gemessen hat; sonst fragt es sie **einmal**
+        (``_konsole_firmware_erfragen``) und merkt sie. Mit "Ja" wird BACKPORT fuer die Zielstufe eingeschaltet
+        (``_backport_plan``). BACKPORT kommt nie von selbst dazu. Auf der Kommandozeile wird nicht gefragt (auch nicht nach
+        der Firmware), nur ein Hinweis geschrieben, wenn die Firmware bekannt ist.
+        """
+        if mode not in self._MODE_TARGET_OPTIONS or mode == "batch_convert":
+            return
+        if self._tk_wert("backport_integrate_var", False):
+            return
+        cli = bool(getattr(self, "_cli_mode", False))
+        self._set_status(self._t("status.backport_pruefen"))
+        fakten = self._quellfakten_der_quelle(src)
+        if fakten is None or not getattr(self, "is_running", True):
+            return
+        plan = self._backport_plan(fakten, erfragen=not cli)
+        if plan is None:
+            return
+        konsole, ziel = plan
+        werte = {"spiel": fakten.verlangt_text, "konsole": self._konsole_fw_anzeige(konsole)}
+        if cli:
+            self._append_to_log(self._t("main.integrate_backport_empfohlen", **werte))
+            return
+        ja = self._ask_yesno_threadsafe(
+            self._t("dialog.title.backport_empfohlen"), self._t("dialog.msg.backport_empfohlen", ziel=ziel, **werte),
+            default_yes=True)
+        if not ja:
+            self._append_to_log(self._t("main.backport_bleibt_aus", **werte))
+            return
+        self._backport_einschalten(ziel)
+        self._append_to_log(self._t("main.backport_eingeschaltet", ziel=ziel, spiel=werte["spiel"]))
+
+    def _backport_einschalten(self, firmware: int) -> None:
+        """Hakt BACKPORT an und stellt seine Firmware ein - fuer den laufenden Auftrag und im Fenster."""
+        stand = getattr(self, "_lauf_variablen", None)
+        if stand is None:
+            stand = {}
+            self._lauf_variablen = stand
+        stand["backport_integrate_var"] = True
+        stand["backport_fw_var"] = str(int(firmware))
+
+        def _im_fenster() -> None:
+            try:
+                self.backport_integrate_var.set(True)
+                self.backport_fw_var.set(str(int(firmware)))
+                self._save_setting("integrate_backport_fw", str(int(firmware)))
+                # Entsperrt die Firmware-Liste und merkt das Kaestchen.
+                self._on_integration_changed()
+            except (AttributeError, RuntimeError, tk.TclError) as exc:
+                logger.debug("BACKPORT-Kaestchen nicht nachziehbar: %s", exc)
+
+        if threading.current_thread() is threading.main_thread():
+            _im_fenster()
+            return
+        try:
+            self.root.after(0, _im_fenster)
+        except (AttributeError, RuntimeError, tk.TclError) as exc:
+            logger.debug("BACKPORT-Kaestchen nicht nachziehbar: %s", exc)
+
     #: Die Kaestchen, die die Sammelkonvertierung je Spiel setzen kann: (Tk-Variable, Anzeigename, Text der Listenzeile).
     _BATCH_EMULATOREN = (("ampr_integrate_var", "AMPR EMU", "batch.emu_zeile_ampr"),
                          ("dlc_integrate_var", "DLC EMU", "batch.emu_zeile_dlc"),
-                         ("ampr_playgo_var", "PlayGo", "batch.emu_zeile_playgo"))
+                         ("ampr_playgo_var", "PlayGo", "batch.emu_zeile_playgo"),
+                         ("backport_integrate_var", "BACKPORT", "batch.emu_zeile_backport"))
 
     def _batch_emulatoren_klaeren(self, sources: "list[str]") -> None:
         """Sammelkonvertierung: einmal vorab fragen, fuer welche Spiele AMPR EMU, DLC EMU oder PlayGo eingeschaltet werden.
@@ -37466,11 +37602,15 @@ class PS5ConverterGUI:
         self._quellfakten_zwischen = {}
         basis = {name: bool(self._tk_wert(name, False)) for name, _anzeige, _zeile in self._BATCH_EMULATOREN}
         self._batch_emu_basis = basis
+        self._batch_emu_fw_basis = self._tk_wert("backport_fw_var", None)
+        self._batch_backport_fw = 0
         cli = bool(getattr(self, "_cli_mode", False))
         if not cli and getattr(self, "root", None) is None:
             return                                      # kein Fenster, kein --cli: es kann niemand antworten
         ampr_moeglich = cli or bool(self._ampr_auswahl_beim_start())
         gefunden: "dict[str, list[tuple[str, str]]]" = {name: [] for name, _a, _z in self._BATCH_EMULATOREN}
+        alle: "list[tuple[str, str, forge_cli.QuellFakten]]" = []
+        verlangt: "dict[str, str]" = {}
         for nummer, quelle in enumerate(sources, start=1):
             if not getattr(self, "is_running", True):
                 return
@@ -37483,18 +37623,42 @@ class PS5ConverterGUI:
             if fakten is None:
                 continue
             spiel = os.path.basename(os.path.normpath(str(quelle)))
+            alle.append((quelle, spiel, fakten))
             fehlt = {"ampr_integrate_var": bool(ampr_moeglich and fakten.ampr_fehlt),
                      "dlc_integrate_var": fakten.dlc_fehlt, "ampr_playgo_var": fakten.playgo_fehlt}
             for name, _anzeige, _zeile in self._BATCH_EMULATOREN:
-                if fehlt[name] and not basis[name]:
+                if fehlt.get(name) and not basis[name]:
                     gefunden[name].append((quelle, spiel))
+        # BACKPORT: braucht die Firmware der Konsole. Wer sie noch nie angegeben hat, wird einmal gefragt - aber nur, wenn
+        # ein Spiel der Auswahl ueberhaupt etwas verlangt, das ein Backport betraefe (nicht auf der Kommandozeile).
+        konsole = ""
+        ziel = 0
+        if not basis["backport_integrate_var"] and getattr(self, "is_running", True):
+            konsole = self._konsole_fw_bekannt()
+            if konsole is None:
+                kann_wichtig_sein = any(f.verlangt_haupt and not f.backport_vorhanden for _q, _s, f in alle)
+                konsole = self._konsole_firmware_erfragen() if (kann_wichtig_sein and not cli) else ""
+            if konsole:
+                ziel = int(ps5_backport.firmware_vorschlag(konsole, self._backport_firmwares()) or 0)
+            if ziel:
+                for quelle, spiel, fakten in alle:
+                    if fakten.backport_noetig(konsole):
+                        gefunden["backport_integrate_var"].append((quelle, spiel))
+                        verlangt[quelle] = fakten.verlangt_text
+        self._batch_backport_fw = ziel
         if not any(gefunden.values()) or not getattr(self, "is_running", True):
             return
         if cli:
-            hinweise = {"ampr_integrate_var": "main.integrate_ampr_empfohlen"}
             for name, anzeige, _zeile in self._BATCH_EMULATOREN:
-                for _quelle, spiel in gefunden[name]:
-                    self._append_to_log("[%s] %s: %s" % (spiel, anzeige, self._t(hinweise.get(name, "batch.emu_bleibt_aus")).strip()))
+                for quelle, spiel in gefunden[name]:
+                    if name == "backport_integrate_var":
+                        text = self._t("main.integrate_backport_empfohlen", spiel=verlangt.get(quelle, ""),
+                                       konsole=self._konsole_fw_anzeige(konsole))
+                    elif name == "ampr_integrate_var":
+                        text = self._t("main.integrate_ampr_empfohlen")
+                    else:
+                        text = self._t("batch.emu_bleibt_aus")
+                    self._append_to_log("[%s] %s: %s" % (spiel, anzeige, text.strip()))
             return
         zeilen = []
         for name, _anzeige, zeile in self._BATCH_EMULATOREN:
@@ -37511,6 +37675,8 @@ class PS5ConverterGUI:
             for quelle, _spiel in gefunden[name]:
                 self._batch_je_spiel.setdefault(quelle, {})[name] = True
             if gefunden[name]:
+                if name == "backport_integrate_var":
+                    anzeige = "%s (%d.xx)" % (anzeige, ziel)
                 self._append_to_log(self._t("batch.emu_eingeschaltet", emulator=anzeige, anzahl=len(gefunden[name])))
 
     def _batch_emu_anwenden(self, quelle: str) -> None:
@@ -37526,6 +37692,14 @@ class PS5ConverterGUI:
         je = (getattr(self, "_batch_je_spiel", None) or {}).get(quelle, {})
         for name, wert in basis.items():
             stand[name] = bool(wert) or bool(je.get(name))
+        # Die Firmware gehoert zum BACKPORT dieses Spiels: die der Konsole, wenn es fuer dieses Spiel eingeschaltet wurde,
+        # sonst wieder die eingestellte (ein Backport fuer Spiel 2 darf Spiel 3 nicht herabsetzen).
+        fw = int(getattr(self, "_batch_backport_fw", 0) or 0)
+        fw_basis = getattr(self, "_batch_emu_fw_basis", None)
+        if je.get("backport_integrate_var") and fw:
+            stand["backport_fw_var"] = str(fw)
+        elif fw_basis is not None:
+            stand["backport_fw_var"] = fw_basis
 
     def _ampr_gepackt_pruefen(self, fakten: "forge_cli.QuellFakten") -> None:
         """AMPR EMU ist angehakt, das Spiel mit zstd-Packs gepackt: Die gewaehlte Fassung muss NG sein.
@@ -71358,6 +71532,40 @@ class PS5ConverterGUI:
             activebackground=c["bg_card"], activeforeground=c["fg_primary"],
             selectcolor=c["bg_main"], anchor="w", justify="left",
             highlightthickness=0, bd=0, wraplength=440).pack(anchor="w", fill="x", pady=(0, 10))
+
+        # ── Firmware der Konsole (fuer den Vorschlag, BACKPORT einzuschalten) ─────
+        # Das Programm fragt sie einmal vor einem Lauf (``_konsole_firmware_erfragen``); hier laesst sich die Angabe
+        # aendern - nach einem Update der Konsole - oder zuruecksetzen ("noch nicht angegeben": es fragt wieder einmal).
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(8, 14))
+        tk.Label(body, text=self._t("settings_dialog.konsole_fw_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.konsole_fw_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+        _fw_namen = {"": self._t("settings_dialog.konsole_fw_ungefragt"), "keine": self._t("konsole_fw.keine")}
+        for _haupt in range(1, 13):
+            _fw_namen[str(_haupt)] = "%d.xx" % _haupt
+        _fw_namen["13"] = self._t("konsole_fw.neuer")
+        _fw_zurueck = {text: kennung for kennung, text in _fw_namen.items()}
+        _fw_gespeichert = str(self._load_setting(self._KONSOLE_FW_SETTING, "") or "")
+        fw_var = tk.StringVar(value=_fw_namen.get(_fw_gespeichert, _fw_namen[""]))
+        fw_combo = self._pw.Combobox(
+            body, textvariable=fw_var, state="readonly",
+            values=list(_fw_namen.values()), font=(UI_SCHRIFT, pt(9)))
+        fw_combo.pack(anchor="w", fill="x", pady=(0, 10))
+
+        def _fw_gewaehlt(_ereignis=None) -> None:
+            neu = _fw_zurueck.get(fw_var.get())
+            if neu is None:
+                logger.warning("Firmware der Konsole: unbekannte Auswahl %r", fw_var.get())
+                return
+            self._save_setting(self._KONSOLE_FW_SETTING, neu)
+            logger.info("Firmware der Konsole auf %r gestellt", neu or "(noch nicht angegeben)")
+
+        fw_combo.bind("<<ComboboxSelected>>", _fw_gewaehlt)
 
         # ── Ausgabename (Vorlage) ───────────────────────────────────────
         # Wirkt beim Erstellen jedes Ergebnisses (Modul ausgabename). Gespeichert wird sofort, aber nur eine taugliche
