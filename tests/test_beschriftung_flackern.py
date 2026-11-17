@@ -168,6 +168,48 @@ class BeschriftungMessungTests(unittest.TestCase):
             ohne += sum(1 for ziel in ziele if not str(ziel.cget("image")))
         self.assertEqual(ohne, 0, f"{ohne} Mal ohne Hintergrundausschnitt gezeichnet")
 
+    def test_die_prozentzahl_steht_wie_die_uebrigen_beschriftungen_auf_dem_bild(self):
+        """Nutzerwunsch 17.11.2026: Hinter "0.2%" stand ein dunkler Kasten - das Label malte seine eigene Flaeche in der Fensterfarbe,
+        statt das Bild der Leiste zu tragen (die Karte, ``leiste_deckkraft`` und das Groessenlabel daneben taten es)."""
+        self._hintergrundbild_sicherstellen()
+        app = self.app
+        self.assertIn(app.percent_label, app._content_caption_labels)
+        app.percent_label.grid()
+        app.percent_label.config(text="0.2%")
+        try:
+            self.wurzel.update()
+            app._redraw_content_captions()
+            self.assertTrue(str(app.percent_label.cget("image")), "der Bildausschnitt liegt hinter der Zahl")
+            self.assertEqual("center", str(app.percent_label.cget("compound")))
+            foto = app.percent_label._caption_bg_photo
+            self.assertEqual(tuple(app.percent_label._caption_natural_size), (foto.width(), foto.height()))
+            for text in ("1.0%", "29.9%", "30%", "100%"):                # die Breite ist die von width=5: nichts springt
+                app.percent_label.config(text=text)
+                app._redraw_content_captions()
+                self.assertTrue(str(app.percent_label.cget("image")), text)
+        finally:
+            app.percent_label.grid_remove()
+            app.percent_label.config(text="")
+
+    def test_beim_erscheinen_bekommt_die_prozentzahl_von_selbst_ihren_bildausschnitt(self):
+        """Ein ausgeblendetes Label zeichnet die Routine nicht, und beim Einblenden meldet sich sonst niemand: Die Zahl bliebe
+        mit dem dunklen Kasten stehen (am echten Programm gemessen, 17.11.2026). ``<Map>`` bestellt das Zeichnen."""
+        self._hintergrundbild_sicherstellen()
+        app = self.app
+        self.assertTrue(app.percent_label.bind("<Map>"), "das Einblenden bestellt das Zeichnen")
+        app.percent_label.config(image="", text="0.5%")
+        app.percent_label._caption_natural_size = None
+        app.percent_label.grid()
+        try:
+            for _ in range(20):                                      # die Hauptschleife laeuft hier nicht: von Hand takten
+                self.wurzel.update()
+                if str(app.percent_label.cget("image")):
+                    break
+            self.assertTrue(str(app.percent_label.cget("image")), "ohne eigenen Aufruf der Zeichenroutine")
+        finally:
+            app.percent_label.grid_remove()
+            app.percent_label.config(text="")
+
     def test_zwilling_wird_nie_angezeigt(self):
         beschriftungen = self._alle()
         if not beschriftungen:

@@ -158,6 +158,7 @@ from ps5_validator.ui import abbild_bearbeiten_fenster
 from ps5_validator.ui import geraete_fenster
 from ps5_validator.ui import updates_fenster
 from ps5_validator.ui import fenster_pillen
+from ps5_validator.ui import leisten_balken
 from ps5_validator.ui import meldungen
 from ps5_validator.ui.schmale_zeile import hinweise_bei_platzmangel_ausblenden, knoepfe_unter_liste, zeile_umbrechen
 from ps5_validator.ui.zeilenhoehe import treeview_zeilenhoehe
@@ -11630,8 +11631,11 @@ class PS5ConverterGUI:
         self.abort_btn.grid(row=0, column=1, padx=(0, 24))
 
         self.progress_var = tk.DoubleVar()
-        self.progress = ttk.Progressbar(action_bar, variable=self.progress_var, maximum=100)
-        self.progress.grid(row=0, column=2, sticky="ew", ipady=5)
+        # Mit runden Enden ueber dem Bild der Leiste (Nutzerwunsch 17.11.2026: "hier bitte die Ecken abrunden"); vorher ein
+        # ttk.Progressbar mit rechteckiger Rinne. Die Hoehe haelt, was der Balken mit ``ipady=5`` hatte.
+        self.progress = leisten_balken.LeistenBalken(
+            action_bar, self._pw.look, hintergrund=self._rund_hintergrund, variable=self.progress_var, maximum=100)
+        self.progress.grid(row=0, column=2, sticky="ew")
         self.progress.grid_remove()  # Im Idle-Zustand unsichtbar
         self.percent_label = ttk.Label(
             action_bar,
@@ -11643,6 +11647,12 @@ class PS5ConverterGUI:
         )
         self.percent_label.grid(row=0, column=3, padx=(15, 0), sticky="e")
         self.percent_label.grid_remove()  # Im Idle-Zustand unsichtbar
+        # Wie das Groessenlabel daneben: Die Zahl steht auf dem Bild der Leiste, nicht in einem Kasten in der Fensterfarbe
+        # (Nutzerwunsch 17.11.2026: "0.2%" hatte einen dunklen Kasten hinter sich). Die Breite bleibt die von ``width=5``.
+        self._content_caption_labels.append(self.percent_label)
+        # Die Zeichenroutine ueberspringt ein Label, das nicht angezeigt wird - und beim Einblenden meldet sich sonst niemand:
+        # Sobald die Zahl erscheint, bekommt sie ihren Bildausschnitt.
+        self.percent_label.bind("<Map>", lambda _e: self._schedule_caption_redraw(self._redraw_content_captions), add="+")
         # Größen- und ETA-Label (Platz für verbleibende Größe und ETA-Zeit).
         #
         # KEINE feste Zeichenbreite: Der Platz wird bereits von der Spalte selbst
@@ -19440,7 +19450,7 @@ class PS5ConverterGUI:
             except tk.TclError:
                 continue
             for kind in kinder:
-                if isinstance(kind, (RunderHaken, Drehknopf, PackPfeil)) or (
+                if isinstance(kind, (RunderHaken, Drehknopf, PackPfeil, leisten_balken.LeistenBalken)) or (
                         isinstance(kind, RoundedButton) and kind._pille):
                     try:
                         kind.nachziehen()

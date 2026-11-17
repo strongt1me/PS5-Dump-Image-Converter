@@ -290,13 +290,8 @@ class FortschrittsPille(tk.Canvas):
             return
         self._zeichnen()
 
-    def _zeichnen(self) -> None:
-        try:
-            b, h = int(self.winfo_width()), int(self.winfo_height())
-        except tk.TclError:
-            return
-        if b < 6 or h < 4:
-            return
+    def _bild(self, b: int, h: int) -> "Image.Image":
+        """Das Bild des Balkens in ``b`` x ``h`` Pixeln: Rinne und Fuellung, ausserhalb der Rundung durchsichtig (RGBA)."""
         p = self._z.palette
         faktor = max(1.0, self._z.faktor)
         bild = zeichnen.rund_rechteck(b, h, h / 2.0, p["console_bg"], p["border"], faktor)
@@ -308,6 +303,16 @@ class FortschrittsPille(tk.Canvas):
             fuellung = zeichnen.verlauf_rechteck(innen_b, innen_h, innen_h / 2.0, links,
                                                  zeichnen.farbton_verschieben(links, 32.0))
             bild.alpha_composite(fuellung, (rand, rand))
+        return bild
+
+    def _zeichnen(self) -> None:
+        try:
+            b, h = int(self.winfo_width()), int(self.winfo_height())
+        except tk.TclError:
+            return
+        if b < 6 or h < 4:
+            return
+        bild = self._bild(b, h)
         self._foto = ImageTk.PhotoImage(bild, master=self)
         self.delete("all")
         self.create_image(0, 0, image=self._foto, anchor="nw")
