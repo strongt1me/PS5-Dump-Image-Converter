@@ -311,10 +311,13 @@ class Ps5PkgFenster:
         except Exception:  # noqa: BLE001
             return "%d B" % n
 
+    #: Eine Protokollzeile mit dieser Marke ist ein Hinweis und steht in der Warnfarbe (wie im Status-Log der Aufgaben 1 bis 6).
+    HINWEIS_MARKE = "⚠"
+
     def _protokoll(self, text: str) -> None:
         try:
             self.protokoll.configure(state="normal")
-            self.protokoll.insert("end", text + "\n")
+            self.protokoll.insert("end", text + "\n", ("hinweis",) if text.lstrip().startswith(self.HINWEIS_MARKE) else ())
             self.protokoll.see("end")
             self.protokoll.configure(state="disabled")
         except tk.TclError:
@@ -682,6 +685,8 @@ class Ps5PkgFenster:
         self.protokoll = pw.Text(rechts, height=3, width=1, font=(self.M, pt(10)), bg=c["console_bg"],
                                  fg=c["console_fg"], relief="flat", wrap="word", state="disabled")
         self.protokoll.pack(fill="both", expand=True, pady=(4, 0))
+        # Hinweise ("⚠ PlayGo-Dateien gefunden ...", "⚠ DLC-Inhalte gefunden ...") in der Warnfarbe, fett - wie im Bild des Nutzers.
+        self.protokoll.tag_configure("hinweis", foreground=c.get("fg_warning", "#f0a32e"), font=(self.M, pt(10), "bold"))
         self._protokoll_menue_einrichten()
         # Seit 17.11.2026 ohne Abstand nach jeder Meldung (frueher 14.10.2026 mit): Das Protokoll sieht aus wie bei den Aufgaben 1
         # bis 6 - Schrift 10 pt, Zeile an Zeile.
@@ -1617,28 +1622,10 @@ class Ps5PkgFenster:
         self.paket_typ.configure(text=self.t("ps5pkg.badge_folder") if info.ist_ordner
                                  else self.t("ps5pkg.badge_image", art=info.abbild.upper()) if info.ist_abbild
                                  else self.t("ps5pkg.badge_debug") if info.debug else (info.typ or ""))
-        # PlayGo-Hinweis: Ordner direkt, Archive im Hintergrund (Subprocess).
-        if info.ist_ordner:
-            merkmal = wz.playgo_erklaert_ordner(info.pfad)
-            self.paket_playgo.configure(
-                text=self.t("pkg.playgo_hinweis", datei=merkmal) if merkmal else "")
-        else:
-            self.paket_playgo.configure(text="")
-            ext = os.path.splitext(info.pfad)[1].lower()
-            # Ein Abbild liest ffpfsc-pkg-tool nicht (es ist kein Paket): Der PlayGo-Hinweis steht beim Lesen in Forges Befunden.
-            if ext in (".pkg", ".ffpfsc", ".ffpfs", ".exfat", ".ffpkg") and not info.ist_abbild:
-                pfad_snap = info.pfad
-                def _pruefe_archiv_playgo(p=pfad_snap):
-                    merkmal = wz.playgo_erklaert_archiv(p, self._werkzeug(), self._wurzeln())
-                    def _ui():
-                        if hasattr(self, "paket_playgo") and self.aktuell and self.aktuell.pfad == p:
-                            self.paket_playgo.configure(
-                                text=self.t("pkg.playgo_hinweis", datei=merkmal) if merkmal else "")
-                    # Die Seite hat kein eigenes ``after`` (``self.after`` warf hier AttributeError, still verschluckt:
-                    # der PlayGo-Hinweis eines Pakets erschien nie) - der Fensterfaden uebernimmt.
-                    self.g._hauptfaden_planen(_ui)
-                import threading as _threading
-                _threading.Thread(target=_pruefe_archiv_playgo, daemon=True).start()
+        # Der PlayGo-Hinweis ("⚠ PlayGo-Dateien gefunden (...) - PlayGo beim Backup einbinden!") steht seit 18.11.2026 im Protokoll
+        # (orange, wie bei den Aufgaben 1 bis 6) und nicht mehr unter der Quelle: ``_bericht_aktualisieren`` unten liefert ihn samt
+        # dem DLC-Hinweis fuer Ordner, Abbilder und Pakete (``_quelle_einbauten_zeilen``). Das Etikett bleibt als leerer Anker der Zeilen darunter.
+        self.paket_playgo.configure(text="")
         # Was fuer diese Quelle nicht geht, springt auf den Vorgabewert zurueck (ohne es zu speichern).
         if not self._aktion_moeglich(self.aktion_var.get()):
             self.aktion_var.set(AKTION_UMWANDELN)

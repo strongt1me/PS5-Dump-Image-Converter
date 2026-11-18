@@ -157,6 +157,7 @@ class FensterTests(unittest.TestCase):
         self.app._sidebar_fw_quelle = None
         self.app._sidebar_fw_backport = ""
         self.app._sidebar_fw_zusatz = ()
+        self.app._sidebar_fw_sdk = ""
         self.app._sidebar_fw_chips_setzen([])
         self.addCleanup(self.app._sidebar_fw_chips_setzen, [])
         for muster in (mock.patch.object(self.haupt.threading, "Thread", _SofortThread),
@@ -180,6 +181,89 @@ class FensterTests(unittest.TestCase):
         zeilen = self._text().split("\n")
         self.assertEqual(self.app._t("sidebar.fw_required", fw="10.00"), zeilen[0])
         self.assertEqual(self.app._t("sidebar.fw_backport", fw="7"), zeilen[1])
+
+    # ---------------- SDK-Stand als Rueckfall (Nutzerwunsch 18.11.2026) ----------------
+    # Anlass: "Arkanoid - Eternal Battle" - die param.json nennt weder requiredSystemSoftwareVersion noch sdkVersion, die
+    # eboot.bin traegt SDK 4.00 (gemessen). Die Seitenleiste zeigte nichts; jetzt den SDK-Stand, als "SDK" beschriftet.
+    def _sdk(self, wert=("4.00", "")):
+        return mock.patch.object(self.app, "_sdk_stand_lesen", return_value=wert)
+
+    def test_ohne_firmware_in_den_metadaten_zeigt_die_zeile_den_sdk_stand_der_eboot(self):
+        with self._sdk() as lesen:
+            self.app._sidebar_firmware_aktualisieren({}, self.ohne)
+        zeilen = self._text().split("\n")
+        self.assertEqual(2, len(zeilen), "immer zwei Zeilen - das Cover darf nicht springen")
+        self.assertEqual(self.app._t("sidebar.fw_sdk", fw="4.00"), zeilen[0])
+        self.assertEqual("", zeilen[1].strip())
+        self.assertEqual([(self.app._t("sidebar.fw_chip_sdk", fw="4.00"), "neutral")], self._kacheln())
+        lesen.assert_called_once_with(self.ohne)
+
+    def test_der_sdk_stand_heisst_sdk_und_nicht_benoetigte_firmware(self):
+        """Er sagt, womit das Spiel gebaut ist - nicht, was die Konsole mindestens braucht."""
+        with self._sdk():
+            self.app._sidebar_firmware_aktualisieren({}, self.ohne)
+        self.assertNotIn(self.app._t("sidebar.fw_required", fw="4.00"), self._text())
+        self.assertIn("SDK", self._text())
+
+    def test_eine_firmware_aus_den_metadaten_geht_vor_und_die_eboot_wird_nicht_gelesen(self):
+        with self._sdk() as lesen:
+            self.app._sidebar_firmware_aktualisieren({"required_firmware": "10.00.00.00"}, self.ohne)
+        self.assertEqual(self.app._t("sidebar.fw_required", fw="10.00"), self._text().split("\n")[0])
+        self.assertEqual([(self.app._t("sidebar.fw_chip", fw="10.00"), "neutral")], self._kacheln())
+        lesen.assert_not_called()
+
+    def test_kommt_beides_zusammen_an_gewinnt_die_firmware(self):
+        """Der Faden meldet den SDK-Stand womoeglich erst, nachdem die Metadaten die Firmware nachgeliefert haben."""
+        self.app._sidebar_fw_text_setzen("9.00", "", (), "4.00")
+        self.assertEqual(self.app._t("sidebar.fw_required", fw="9.00"), self._text().split("\n")[0])
+        self.assertEqual([(self.app._t("sidebar.fw_chip", fw="9.00"), "neutral")], self._kacheln())
+
+    def test_ohne_firmware_und_ohne_lesbaren_sdk_stand_bleibt_die_zeile_leer(self):
+        with self._sdk(("", "")):
+            self.app._sidebar_firmware_aktualisieren({}, self.ohne)
+        self.assertEqual("", self._text().split("\n")[0].strip())
+        self.assertEqual([], self._kacheln())
+
+    def test_bei_einem_backport_steht_der_sdk_stand_nur_in_der_zweiten_zeile(self):
+        with self._sdk(("7.00", "")) as lesen:
+            self.app._sidebar_firmware_aktualisieren({}, self.mit)
+        zeilen = self._text().split("\n")
+        self.assertEqual("", zeilen[0].strip(), "nicht doppelt: dort ist es die Firmware des Backports, nicht des Spiels")
+        self.assertEqual(self.app._t("sidebar.fw_backport", fw="7.00"), zeilen[1])
+        lesen.assert_called_once()
+
+    def test_ein_abbild_wird_nicht_auf_gut_glueck_gelesen(self):
+        abbild = os.path.join(os.path.dirname(self.ohne), "spiel.exfat")
+        Path(abbild).write_bytes(b"x" * 64)
+        with self._sdk() as lesen:
+            self.app._sidebar_firmware_aktualisieren({}, abbild)
+        self.assertEqual("", self._text().split("\n")[0].strip())
+        lesen.assert_not_called()
+
+    def test_der_sdk_stand_wird_je_ordner_nur_einmal_gelesen(self):
+        with self._sdk() as lesen:
+            self.app._sidebar_firmware_aktualisieren({}, self.ohne)
+            self.app._sidebar_fw_quelle = None                     # dieselbe Wahl noch einmal (etwa ein Sprachwechsel zurueck)
+            self.app._sidebar_firmware_aktualisieren({}, self.ohne)
+        lesen.assert_called_once()
+        self.assertEqual(self.app._t("sidebar.fw_sdk", fw="4.00"), self._text().split("\n")[0])
+
+    def test_der_zwischenspeicher_unterscheidet_mit_und_ohne_firmware(self):
+        """Erst mit Firmware (kein SDK gelesen), dann derselbe Ordner ohne: Der leere Eintrag darf nicht gelten."""
+        with self._sdk() as lesen:
+            self.app._sidebar_firmware_aktualisieren({"required_firmware": "10.00.00.00"}, self.ohne)
+            self.app._sidebar_firmware_aktualisieren({"required_firmware": "10.00.00.00"}, self.mit)   # andere Quelle dazwischen
+            self.app._sidebar_firmware_aktualisieren({}, self.ohne)
+        self.assertEqual(self.app._t("sidebar.fw_sdk", fw="4.00"), self._text().split("\n")[0])
+        self.assertGreaterEqual(lesen.call_count, 1)
+
+    def test_die_neuen_texte_gibt_es_in_allen_sprachen(self):
+        for schluessel in ("sidebar.fw_sdk", "sidebar.fw_chip_sdk"):
+            for sprache in ("de", "en", "es", "it", "fr"):
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    text = STRINGS[schluessel][sprache]
+                    self.assertIn("{fw}", text)
+                    self.assertIn("SDK", text)
 
     # ---------------- gepackte Spiele (LZ4, zstd) - Nutzerwunsch 17.11.2026 ----------------
     def _packordner(self, name: str, dateien, backport: bool = False) -> str:

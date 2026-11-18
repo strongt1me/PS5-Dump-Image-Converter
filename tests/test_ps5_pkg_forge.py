@@ -1226,6 +1226,49 @@ class EinbauSeiteTests(_ForgeBasis):
         self.assertIn(_de("einbau_pruefung.schon_drin", name="Paket.pkg", liste="BACKPORT (?), AMPR EMU, Asset-Pack (zstd), PlayGo").strip(),
                       text, "das Protokoll nennt das Verfahren des Packs (Nutzerwunsch 17.11.2026)")
 
+    # ---------------- Hinweise im Protokoll statt unter der Quelle (Nutzerwunsch 18.11.2026) ----------------
+    def _hinweiszeilen(self) -> "list[str]":
+        """Die Zeilen mit der Textmarke ``hinweis`` (Tk fasst aneinanderliegende markierte Zeilen zu einem Bereich zusammen)."""
+        markiert = self.f.protokoll.tag_ranges("hinweis")
+        return [z.strip() for a, e in zip(markiert[0::2], markiert[1::2])
+                for z in self.f.protokoll.get(str(a), str(e)).splitlines() if z.strip()]
+
+    def test_die_hinweise_zu_playgo_und_dlc_stehen_orange_im_protokoll_und_nicht_unter_der_quelle(self) -> None:
+        """"⚠ PlayGo-Dateien gefunden (...) - PlayGo beim Backup einbinden!" stand als Etikett unter der Quelle; jetzt, wie bei den
+        Aufgaben 1 bis 6, im Protokoll - in der Warnfarbe - und mit demselben Hinweis fuer Zusatzinhalte (DLC)."""
+        ordner = self._spielordner()
+        Path(ordner, "sce_sys", "playgo-scenario.json").write_text("{}", encoding="utf-8")
+        os.makedirs(os.path.join(ordner, "addcont0"))
+        Path(ordner, "addcont0", "inhalt.pkg").write_bytes(b"x")
+        for name in ("ampr_playgo_var", "dlc_integrate_var"):             # das Nachziehen der Haken gehoert nicht in andere Tests
+            self.addCleanup(getattr(self.app, name).set, False)
+        self.addCleanup(self.app.__dict__.pop, "_haken_auto", None)
+        with mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten()):
+            self._laden(ordner)
+            self.assertTrue(basis._warten(lambda: "⚠ DLC-Inhalte gefunden" in self._protokoll_text(), 10), self._protokoll_text())
+        text = self._protokoll_text()
+        self.assertIn(_de("pkg.playgo_hinweis", datei="sce_sys/playgo-scenario.json"), text, "wortgleich, wie das Etikett es zeigte")
+        self.assertIn(_de("einbau_pruefung.dlc_gefunden", merkmal="addcont0/").strip(), text)
+        self.assertEqual("", str(self.f.paket_playgo.cget("text")), "nichts mehr unter der Quelle")
+        # Beide Zeilen tragen die Textmarke mit der Warnfarbe.
+        zeilen = self._hinweiszeilen()
+        self.assertTrue(any(z.startswith("⚠ PlayGo-Dateien gefunden") for z in zeilen), zeilen)
+        self.assertTrue(any(z.startswith("⚠ DLC-Inhalte gefunden") for z in zeilen), zeilen)
+        self.assertEqual(self.app._COLORS.get("fg_warning", "#f0a32e"), str(self.f.protokoll.tag_cget("hinweis", "foreground")))
+
+    def test_nur_hinweiszeilen_sind_orange(self) -> None:
+        self.f._protokoll("[Prüfung] eine gewöhnliche Zeile")
+        self.f._protokoll("⚠ ein Hinweis")
+        self.assertEqual(["⚠ ein Hinweis"], self._hinweiszeilen())
+
+    def test_ohne_playgo_und_dlc_steht_kein_hinweis_da(self) -> None:
+        ordner = self._spielordner()
+        with mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten()):
+            self._laden(ordner)
+            self.assertTrue(basis._warten(lambda: "[Prüfung]" in self._protokoll_text(), 8))
+        self.assertNotIn("⚠ PlayGo-Dateien gefunden", self._protokoll_text())
+        self.assertNotIn("⚠ DLC-Inhalte gefunden", self._protokoll_text())
+
     # ---------------- die Rueckfrage vor dem Paketbau ----------------
     def _auswahl(self, antwort: str):
         return mock.patch.object(APP.PS5ConverterGUI, "_auswahl_dialog", side_effect=lambda _t, *a, **k: (

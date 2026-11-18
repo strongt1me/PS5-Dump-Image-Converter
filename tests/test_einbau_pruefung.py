@@ -53,8 +53,8 @@ class PruefungTests(unittest.TestCase):
         (self.spiel / "sce_sys" / "playgo-scenario.json").write_text("{}", encoding="utf-8")
         text = self._pruefen()
         self.assertIn("noch nichts eingebaut", text)
-        self.assertIn("PlayGo empfohlen", text)
-        self.assertIn("playgo-scenario.json", text)
+        # Der Hinweis steht seit 18.11.2026 so im Protokoll, wie ihn Seite 7 unter der Quelle zeigte (orange, "⚠").
+        self.assertIn("⚠ PlayGo-Dateien gefunden (sce_sys/playgo-scenario.json) – PlayGo beim Backup einbinden!", text)
 
     def test_ampr_und_backport_erkannt(self) -> None:
         fakelib = self.spiel / "fakelib"
@@ -72,7 +72,7 @@ class PruefungTests(unittest.TestCase):
         (self.spiel / "sce_sys" / "playgo-scenario.json").write_text("{}", encoding="utf-8")
         text = self._pruefen()
         self.assertIn("PlayGo", text)
-        self.assertNotIn("PlayGo empfohlen", text)
+        self.assertNotIn("PlayGo-Dateien gefunden", text)
 
     def test_veraltete_auswahl_meldet_nichts(self) -> None:
         gui = _gui()

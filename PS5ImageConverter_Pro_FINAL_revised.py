@@ -11705,6 +11705,7 @@ class PS5ConverterGUI:
                                    insertbackground="white", selectbackground=self._COLORS["fg_accent"],
                                    highlightthickness=0)
         self.console_view.grid(row=0, column=0, sticky="nsew")
+        self._log_hinweisfarbe_setzen()
 
         sb = ttk.Scrollbar(console_frame, command=self.console_view.yview,
                            style="Protokoll.Vertical.TScrollbar")
@@ -22694,6 +22695,7 @@ class PS5ConverterGUI:
             else:
                 zeilen.append(self._t("einbau_pruefung.nichts", name=name))
         # PlayGo pruefen, wenn es nicht schon drin ist
+        playgo_merkmal: "str | None" = ""       # "" = nichts zu tun (auch: PlayGo ist schon eingebaut)
         if not (ergebnis.get("zustand") == "ok" and ergebnis.get("playgo")):
             try:
                 merkmal = self._playgo_merkmal_der_quelle(src)
@@ -22702,13 +22704,112 @@ class PS5ConverterGUI:
                 merkmal = None
             if not _aktuell():
                 return None
+            playgo_merkmal = merkmal
             if merkmal is None:
                 zeilen.append(self._t("einbau_pruefung.playgo_unbekannt"))
             elif merkmal:
                 zeilen.append(self._t("einbau_pruefung.playgo_noetig", datei=merkmal))
             else:
                 zeilen.append(self._t("einbau_pruefung.playgo_nicht_noetig"))
+        # Haken nach dem Spiel (Nutzerwunsch 18.11.2026): hat es PlayGo- oder DLC-Inhalte, setzt das Programm den Haken selbst.
+        try:
+            dlc_merkmal = self._dlc_merkmal_der_quelle(src)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("DLC-Merkmal von %s nicht pruefbar: %s", src, exc)
+            dlc_merkmal = None
+        if not _aktuell():
+            return None
+        if dlc_merkmal:
+            zeilen.append(self._t("einbau_pruefung.dlc_gefunden", merkmal=dlc_merkmal))
+        self._haken_nach_quelle(playgo_merkmal, dlc_merkmal)
         return zeilen
+
+    #: Haken, die das Programm nach dem gewaehlten Spiel selbst setzt (Nutzerwunsch 18.11.2026): Tk-Variable -> Schluessel
+    #: des Namens im Protokoll. PlayGo und DLC EMU gehen an, sobald das Spiel ihre Inhalte hat.
+    _HAKEN_NACH_QUELLE = (("ampr_playgo_var", "main.integrate_playgo"),
+                          ("dlc_integrate_var", "main.integrate_dlc"))
+
+    def _haken_nach_quelle(self, playgo: "str | None", dlc: "str | None") -> None:
+        """Zieht die Haken PlayGo und DLC EMU nach dem Spiel nach - aus jedem Faden, gesetzt wird im Hauptfaden.
+
+        Args:
+            playgo: das gefundene PlayGo-Merkmal; ``""`` = nachgesehen, nichts noetig; ``None`` = nicht einsehbar.
+            dlc:    dasselbe fuer Zusatzinhalte (DLC EMU).
+        """
+        merkmale = {"ampr_playgo_var": playgo, "dlc_integrate_var": dlc}
+        if threading.current_thread() is threading.main_thread():
+            self._haken_nach_quelle_setzen(merkmale)
+        else:
+            self._hauptfaden_planen(self._haken_nach_quelle_setzen, merkmale)
+
+    def _haken_nach_quelle_setzen(self, merkmale: "dict[str, str | None]") -> None:
+        """Hauptfaden: hakt an, was das Spiel braucht, und nimmt zurueck, was das Programm fuer ein anderes Spiel angehakt hatte.
+
+        Warum nicht einfach "angehakt lassen": Ein Haken, den das Programm fuer Spiel A gesetzt hat, bliebe sonst bei Spiel B
+        und in der Sammelkonvertierung stehen - dort bekaeme ein Spiel stumm einen Stub, den es nicht braucht. Deshalb merkt
+        ``_haken_auto`` genau die Haken, die das Programm gesetzt hat; nur die nimmt es wieder zurueck. Ein Haken, den der
+        Anwender selbst gesetzt hat, bleibt unberuehrt. Gespeichert wird nichts (``_haken_wert_zum_speichern``): Die Einstellung
+        bleibt die Wahl des Anwenders. Waehrend eines Laufs wird nichts angefasst - er liest seinen Startstand.
+
+        Args:
+            merkmale: Tk-Variable -> Merkmal (``""`` = nichts noetig, ``None`` = nicht einsehbar: der Haken bleibt, wie er ist).
+        """
+        if getattr(self, "is_running", False):
+            return
+        auto = getattr(self, "_haken_auto", None)
+        if auto is None:
+            auto = self._haken_auto = {}
+        geaendert = False
+        for name, schluessel in self._HAKEN_NACH_QUELLE:
+            merkmal = merkmale.get(name)
+            var = getattr(self, name, None)
+            if merkmal is None or var is None:
+                continue
+            try:
+                an = bool(var.get())
+                if merkmal and not an:
+                    var.set(True)
+                    auto[name] = True
+                    geaendert = True
+                    self._append_to_log(self._t("einbau_pruefung.haken_gesetzt", name=self._t(schluessel), merkmal=merkmal))
+                elif not merkmal and auto.get(name):
+                    auto[name] = False
+                    if an:
+                        var.set(False)
+                        geaendert = True
+                        self._append_to_log(self._t("einbau_pruefung.haken_entfernt", name=self._t(schluessel)))
+            except (tk.TclError, RuntimeError) as exc:
+                logger.debug("Haken %s nicht nachziehbar: %s", name, exc)
+        if geaendert:
+            # Wie nach einem Klick: Listen und Sperren nachziehen - aber nichts speichern.
+            self._on_integration_changed(speichern=False)
+
+    def _haken_auto_zuruecknehmen(self) -> None:
+        """Nimmt die vom Programm gesetzten Haken zurueck, wenn es kein einzelnes Spiel mehr gibt (Hauptfaden).
+
+        Gilt fuer eine leere oder verschwundene Quelle und fuer Aufgaben ohne Einzelspiel (Sammelkonvertierung). Die
+        Pruefung der Einbauten wird fuer die naechste Wahl freigegeben, damit dasselbe Spiel danach wieder angehakt wird.
+        """
+        auto = getattr(self, "_haken_auto", None)
+        if not auto or not any(auto.values()):
+            return
+        self._haken_nach_quelle_setzen({name: "" for name, _schluessel in self._HAKEN_NACH_QUELLE})
+        self._einbauten_geprueft_fuer = None
+
+    def _haken_wert_zum_speichern(self, name: str) -> bool:
+        """Der Wert, der als Einstellung gespeichert wird: bei einem vom Programm gesetzten Haken die Wahl des Anwenders (aus).
+
+        ``_on_integration_changed`` speichert alle Haken, sobald der Anwender einen davon anklickt. Ohne diese Stelle
+        wuerde dabei auch ein automatisch gesetzter Haken fuer die naechste Sitzung festgeschrieben. Hat der Anwender ihn
+        selbst abgehakt, ist er nicht mehr "vom Programm gesetzt".
+        """
+        wert = bool(getattr(self, name).get())
+        auto = getattr(self, "_haken_auto", None) or {}
+        if auto.get(name):
+            if wert:
+                return False
+            auto[name] = False
+        return wert
 
     def _on_source_path_changed(self, *_args) -> None:
         """Berechnet Quellgröße, Endgrößen-Schätzung und befüllt die Info-Box.
@@ -22765,6 +22866,10 @@ class PS5ConverterGUI:
         src  = self.source_path.get().strip()
         mode = self.current_mode.get()
         self._refresh_target_format_options(mode)
+        # Haken, die das Programm fuer das vorige Spiel gesetzt hat, gelten nicht fuer "keine Quelle" und nicht fuer
+        # Aufgaben ohne Einzelspiel (Sammelkonvertierung). Seite 7 (PKG / FPKG) fuehrt ihre Haken nach ihrer eigenen Wahl nach.
+        if mode != "pkg_fpkg" and (mode not in self._EINBAU_PRUEFEN_MODI or not src or not os.path.exists(src)):
+            self._haken_auto_zuruecknehmen()
 
         # Bei Quellen-/Moduswechsel alte Vorschau-Caches verwerfen, damit
         # keine veralteten Metadaten/icon0-Kombinationen angezeigt werden.
@@ -25379,7 +25484,7 @@ class PS5ConverterGUI:
         treffer = re.match(r"\s*(\d{1,2})\.(\d{1,2})", str(wert or ""))
         return "%d.%s" % (int(treffer.group(1)), treffer.group(2)) if treffer else ""
 
-    def _sidebar_fw_text_setzen(self, benoetigt: str, backport: str = "", zusatz: "tuple | list" = ()) -> None:
+    def _sidebar_fw_text_setzen(self, benoetigt: str, backport: str = "", zusatz: "tuple | list" = (), sdk: str = "") -> None:
         """Setzt die beiden Firmware-Zeilen ueber dem Cover (zweite Zeile leer ohne Backport) und ihre kleinen Kacheln.
 
         Der Text bleibt die Grundlage (Messung, Tests, Zugaenglichkeit); gezeigt werden dafuer kleine Kacheln je Rolle
@@ -25387,11 +25492,17 @@ class PS5ConverterGUI:
 
         Args:
             zusatz: ``(Text, Art)`` der Kacheln nach der Firmware (``backport``, ``assetpack``).
+            sdk:    der SDK-Stand der ``eboot.bin`` (``4.00``) - nur als Rueckfall, wenn die Metadaten keine Firmware nennen
+                    (Nutzerwunsch 18.11.2026); eine genannte Firmware geht ihm immer vor. Er heisst "SDK", nicht "benoetigt":
+                    Er sagt, womit das Spiel gebaut ist, nicht, was die Konsole mindestens braucht.
         """
         zeilen = getattr(self, "_sidebar_fw_label", None)
         if zeilen is None:
             return
-        erste = self._t("sidebar.fw_required", fw=benoetigt) if benoetigt else ""
+        if benoetigt:
+            erste = self._t("sidebar.fw_required", fw=benoetigt)
+        else:
+            erste = self._t("sidebar.fw_sdk", fw=sdk) if sdk else ""
         # Zwei echte Zeilen, auch wenn eine leer ist (ein Leerzeichen): ein Label mit "Text\n" waere nur eine hoch,
         # und das Cover rutschte, sobald der Backport-Befund eintrifft.
         text = "%s\n%s" % (erste or " ", backport or " ")
@@ -25401,7 +25512,10 @@ class PS5ConverterGUI:
                 self._schedule_caption_redraw(self._redraw_sidebar_captions)
         except tk.TclError as exc:
             logger.debug("Firmware-Zeilen nicht setzbar: %s", exc)
-        chips = [(self._t("sidebar.fw_chip", fw=benoetigt), "neutral")] if benoetigt else []
+        if benoetigt:
+            chips = [(self._t("sidebar.fw_chip", fw=benoetigt), "neutral")]
+        else:
+            chips = [(self._t("sidebar.fw_chip_sdk", fw=sdk), "neutral")] if sdk else []
         self._sidebar_fw_chips_setzen(chips + list(zusatz or ()))
 
     #: Hoehe einer kleinen Kachel ueber dem Cover (vor der Anzeigeskalierung) und der Abstand dazwischen in Pixeln.
@@ -25509,23 +25623,26 @@ class PS5ConverterGUI:
         if not gleiche_quelle:
             self._sidebar_fw_backport = ""
             self._sidebar_fw_zusatz = ()
+            self._sidebar_fw_sdk = ""
         self._sidebar_fw_text_setzen(benoetigt, getattr(self, "_sidebar_fw_backport", ""),
-                                     getattr(self, "_sidebar_fw_zusatz", ()))
+                                     getattr(self, "_sidebar_fw_zusatz", ()), getattr(self, "_sidebar_fw_sdk", ""))
         if not quelle or not os.path.exists(quelle):
             return
         try:
             datei = os.stat(quelle)
         except OSError:
             return
+        # ``bool(benoetigt)``: Nur ohne Firmware in den Metadaten wird der SDK-Stand gelesen - ein Eintrag ohne ihn gilt
+        # nicht fuer denselben Ordner, sobald die Metadaten keine Firmware mehr nennen.
         schluessel = (os.path.normcase(os.path.abspath(quelle)), datei.st_size, datei.st_mtime_ns,
-                      getattr(self, "_current_language", ""))
+                      getattr(self, "_current_language", ""), bool(benoetigt))
         merker = getattr(self, "_sidebar_fw_merker", None)
         if merker is None:
             merker = self._sidebar_fw_merker = {}
         if schluessel in merker:
-            text, zusatz = merker[schluessel]
-            self._sidebar_fw_backport, self._sidebar_fw_zusatz = text, zusatz
-            self._sidebar_fw_text_setzen(benoetigt, text, zusatz)
+            text, zusatz, sdk = merker[schluessel]
+            self._sidebar_fw_backport, self._sidebar_fw_zusatz, self._sidebar_fw_sdk = text, zusatz, sdk
+            self._sidebar_fw_text_setzen(benoetigt, text, zusatz, sdk)
             return
         laufend = getattr(self, "_sidebar_fw_laufend", None)
         if laufend is None:
@@ -25534,17 +25651,18 @@ class PS5ConverterGUI:
             return
         laufend.add(schluessel)
 
-        def _fertig(text: str, zusatz: tuple) -> None:
+        def _fertig(text: str, zusatz: tuple, sdk: str = "") -> None:
             laufend.discard(schluessel)
             if len(merker) >= 64:
                 merker.clear()
-            merker[schluessel] = (text, zusatz)
+            merker[schluessel] = (text, zusatz, sdk)
             if getattr(self, "_sidebar_fw_quelle", None) == quelle:
-                self._sidebar_fw_backport, self._sidebar_fw_zusatz = text, zusatz
-                self._sidebar_fw_text_setzen(getattr(self, "_sidebar_fw_benoetigt", ""), text, zusatz)
+                self._sidebar_fw_backport, self._sidebar_fw_zusatz, self._sidebar_fw_sdk = text, zusatz, sdk
+                self._sidebar_fw_text_setzen(getattr(self, "_sidebar_fw_benoetigt", ""), text, zusatz, sdk)
 
         def _lesen() -> None:
             text = ""
+            sdk = ""
             kacheln: list[tuple[str, str]] = []
             try:
                 ordner = os.path.isdir(quelle)
@@ -25560,6 +25678,11 @@ class PS5ConverterGUI:
                     fw = fw or ", ".join(str(n) for n in nummern) or "?"
                     teile.append(self._t("sidebar.fw_backport", fw=fw))
                     kacheln.append((self._t("sidebar.fw_chip_backport", fw=fw), "backport"))
+                elif ordner and not benoetigt:
+                    # Nennt die param.json keine Firmware (Nutzerwunsch 18.11.2026, gemessen an Arkanoid - Eternal Battle:
+                    # weder requiredSystemSoftwareVersion noch sdkVersion), zeigt die Seitenleiste den SDK-Stand der eboot.bin.
+                    # Bei einem Backport steht er schon in der zweiten Zeile - dort ist es seine Firmware, nicht die des Spiels.
+                    sdk, _hinweis = self._sdk_stand_lesen(quelle)
                 # Ein gepacktes Spiel (LZ4 oder zstd) laeuft als FPKG nicht: Die Kennzeichnung steht in derselben zweiten
                 # Zeile wie der Backport (Nutzerwunsch 17.11.2026) - allein ausgeschrieben, neben dem Backport kurz - und
                 # als Kachel neben der Firmware.
@@ -25571,7 +25694,7 @@ class PS5ConverterGUI:
                 text = " · ".join(teile)
             except Exception as exc:  # noqa: BLE001 - ohne zweite Zeile geht es weiter
                 logger.debug("Backport und Pack fuer die Seitenleiste nicht ermittelbar: %s", exc)
-            if not self._spaeter_im_fenster(self.root, _fertig, text, tuple(kacheln)):
+            if not self._spaeter_im_fenster(self.root, _fertig, text, tuple(kacheln), sdk):
                 laufend.discard(schluessel)
 
         threading.Thread(target=_lesen, daemon=True, name="seitenleiste-firmware").start()
@@ -28008,6 +28131,22 @@ class PS5ConverterGUI:
         except tk.TclError:
             pass
 
+    #: Eine Protokollzeile, die mit dieser Marke beginnt, ist ein Hinweis und steht in der Warnfarbe des Designs (``fg_warning``,
+    #: fett) - wie "⚠ PlayGo-Dateien gefunden (...) – PlayGo beim Backup einbinden!" (Nutzerwunsch 18.11.2026: genau so im Status-Log).
+    _LOG_HINWEIS_MARKE = "⚠"
+    _LOG_HINWEIS_TAG = "log_hinweis"
+
+    def _log_hinweisfarbe_setzen(self) -> None:
+        """Legt die Textmarke der Hinweise im Status-Log an; beim Designwechsel erneut (die Warnfarbe wechselt mit)."""
+        ansicht = getattr(self, "console_view", None)
+        if ansicht is None:
+            return
+        try:
+            ansicht.tag_configure(self._LOG_HINWEIS_TAG, foreground=self._COLORS.get("fg_warning", "#f0a32e"),
+                                  font=(MONO_SCHRIFT, pt(10), "bold"))
+        except tk.TclError as exc:
+            logger.debug("Hinweisfarbe des Status-Logs nicht setzbar: %s", exc)
+
     def _append_to_log(self, text: str) -> None:
         """Fügt Text thread-sicher in das Konsolenfenster ein.
 
@@ -28094,7 +28233,9 @@ class PS5ConverterGUI:
             # Block der Engine klebte daran. Ein Balken laesst sich trotzdem
             # fortschreiben, weil _log_letzte_zeile_entfernen die Zeile samt
             # Umbruch wegnimmt.
-            ansicht.insert(tk.END, clean if clean.endswith("\n") else clean + "\n")
+            # Ein Hinweis (Zeile mit "⚠", etwa "PlayGo-Dateien gefunden") steht in der Warnfarbe (Nutzerwunsch 18.11.2026).
+            ansicht.insert(tk.END, clean if clean.endswith("\n") else clean + "\n",
+                           (self._LOG_HINWEIS_TAG,) if clean.lstrip().startswith(self._LOG_HINWEIS_MARKE) else ())
             self._log_letzte_war_balken = ist_balken or kam_mit_cr
             # Phase mitfuehren wie in _log_engine_zeilen - sonst gilt die naechste
             # Balkenzeile derselben Phase als Wechsel und wird angehaengt.
@@ -38595,9 +38736,9 @@ class PS5ConverterGUI:
 
         if speichern:
             self._save_setting("integrate_ampr", ampr_an)
-            self._save_setting("integrate_playgo", bool(self.ampr_playgo_var.get()))
+            self._save_setting("integrate_playgo", self._haken_wert_zum_speichern("ampr_playgo_var"))
             self._save_setting("integrate_backport", backport_an)
-            self._save_setting("integrate_dlc", bool(self.dlc_integrate_var.get()))
+            self._save_setting("integrate_dlc", self._haken_wert_zum_speichern("dlc_integrate_var"))
 
         # Die ffpfsc -> ffpfsc-Option von Aufgabe 2 haengt am Asset-Pack. Wird
         # der AMPR-Haken umgelegt, muss die Zielformat-Liste neu bewertet werden,
@@ -73644,6 +73785,7 @@ class PS5ConverterGUI:
             self.console_view.configure(
                 bg=self._protokoll_farbe(), fg=c["console_fg"],
                 selectbackground=c["fg_accent"])
+            self._log_hinweisfarbe_setzen()
 
         # Prozent-, Status- und Groessenanzeige werden zusammen mit allen
         # uebrigen Beschriftungen von _apply_caption_colors() gefaerbt (weiter
