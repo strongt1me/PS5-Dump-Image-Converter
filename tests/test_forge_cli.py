@@ -190,6 +190,46 @@ class ArgumenteTests(unittest.TestCase):
         self.assertIn("C:/Spiele/Ein Spiel [PPSA1]/x.exfat", a)
         self.assertIn("D:/Aus Ordner/Ä ö.pkg", a)
 
+    # ---------------- ein gepacktes Spiel beim Bauen entpacken (wie Dump Forge, 18.11.2026) ----------------
+    def test_ohne_verfahren_wird_nicht_entpackt(self) -> None:
+        a = fc.convert_argumente("Q", "Z.pkg")
+        self.assertNotIn("--lz4-unpack", a)
+        self.assertNotIn("--zstd-unpack", a)
+        self.assertNotIn("--lz4-unpack", fc.convert_argumente("Q", "Z.pkg", entpacken=""))
+
+    def test_die_packverfahren_haben_je_ihren_schalter(self) -> None:
+        """Forges Schalter (``convert --help``): ``--lz4-unpack`` und ``--zstd-unpack``, beide fuer jedes Ziel ausser ``lz4``."""
+        self.assertEqual(("lz4", "zstd"), fc.ENTPACK_VERFAHREN)
+        for verfahren in fc.ENTPACK_VERFAHREN:
+            with self.subTest(verfahren=verfahren):
+                a = fc.convert_argumente("Q", "Z.pkg", entpacken=verfahren)
+                self.assertIn("--%s-unpack" % verfahren, a)
+                andere = [v for v in fc.ENTPACK_VERFAHREN if v != verfahren]
+                self.assertTrue(all("--%s-unpack" % v not in a for v in andere), "nur der eine Schalter")
+                self.assertEqual(["convert", "Q", "--to", "pkg", "-o", "Z.pkg"], a[:6], "vor den uebrigen Schaltern, hinter dem Ziel")
+
+    def test_das_entpacken_gilt_zusammen_mit_kraken_und_backport(self) -> None:
+        a = fc.convert_argumente("Q", "Z.pkg", kraken="balanced", backport_entfernen=True, entpacken="zstd")
+        for schalter in ("--zstd-unpack", "--kraken", "--remove-backport"):
+            self.assertIn(schalter, a)
+
+    def test_ein_unbekanntes_verfahren_wird_abgelehnt_statt_durchgereicht(self) -> None:
+        for falsch in ("zip", "LZ4", "lz4-unpack", "--zstd-unpack"):
+            with self.subTest(falsch=falsch), self.assertRaises(wz.Fehler):
+                fc.convert_argumente("Q", "Z.pkg", entpacken=falsch)
+
+    def test_bauen_reicht_das_verfahren_an_den_prozess_weiter(self) -> None:
+        """``bauen`` ruft Forge mit genau diesen Argumenten (``wz.laufen``) - nichts geht auf dem Weg verloren."""
+        gesehen: list = []
+
+        def laufen(exe, argumente, **kw):
+            gesehen.append(list(argumente))
+            raise wz.Fehler("nur die Argumente ansehen")
+
+        with mock.patch.object(wz, "laufen", side_effect=laufen), self.assertRaises(wz.Fehler):
+            fc.bauen("forge", "Q", os.path.join(tempfile.mkdtemp(), "Z.pkg"), entpacken="lz4")
+        self.assertIn("--lz4-unpack", gesehen[0])
+
 
 class DateinameTests(unittest.TestCase):
     def test_titel_und_kennung(self) -> None:

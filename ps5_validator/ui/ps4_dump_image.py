@@ -36,6 +36,7 @@ from typing import Callable
 
 from ps5_validator.ui import hauptknoepfe
 from ps5_validator.utils import bibliothek_raster as raster
+from ps5_validator.utils import forge_cli
 from ps5_validator.utils import orbispkg
 from ps5_validator.utils import ps4_abbild as ab
 from ps5_validator.utils import ps4_fortschritt, ps4_werkzeug
@@ -941,6 +942,16 @@ class Ps4DumpImageFenster:
                                          **rest)
         return lauf
 
+    @staticmethod
+    def _gepackt_im_backup(s: "ab.Spiel") -> str:
+        """``"lz4"`` oder ``"zstd"``, wenn der entpackte Spielordner (Backup) Asset-Packs an der Wurzel traegt, sonst ``""``.
+
+        Nur ein Dump-Ordner kann gepackt sein; Pakete (Basis, Updates) tragen keine AMPR-Packs. Gelesen werden die Pack-Indexe an der
+        Wurzel (``forge_cli.gepackt_im_ordner``) und - wie bei der Spiel-Info - im Unterordner ``app``: keine Schreib- und keine Netzarbeit."""
+        if not s.dump_ordner:
+            return ""
+        return forge_cli.gepackt_im_ordner(s.dump_ordner) or forge_cli.gepackt_im_ordner(os.path.join(s.dump_ordner, "app"))
+
     def _pruefe_spiel(self, s: ab.Spiel, kennung: str) -> str:
         """Ein Satz, warum dieses Spiel mit diesem Format nicht geht - oder ``""``."""
         t = self.t
@@ -948,6 +959,11 @@ class Ps4DumpImageFenster:
             return t("ps4pkg.is_ps5_title", title_id=s.title_id)
         if not s.baubar:
             return t("ps4dib.ohne_basis", title_id=s.title_id)
+        # Aus einem Backup mit LZ4- oder zstd-Packs wird kein PS4-PKG gebaut (Nutzerwunsch 18.11.2026: bei den PS4-PKG gilt die Sperre).
+        # Gesperrt ist das Paket; ein Abbild (ffpfsc, exFAT) aus dem Backup bleibt, wie es war.
+        verfahren = self._gepackt_im_backup(s) if kennung == ab.FORMAT_PKG else ""
+        if verfahren:
+            return t("ps4dib.dump_gepackt", title_id=s.title_id, verfahren="LZ4" if verfahren == "lz4" else "zstd")
         if s.dump_ordner and kennung not in ab.ABBILD_FORMATE:
             return t("ps4dib.dump_nur_abbild")
         if kennung == ab.FORMAT_PKG and not s.updates:

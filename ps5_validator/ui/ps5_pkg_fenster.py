@@ -89,6 +89,9 @@ ENTPACKT_FAKTOR = 1.7
 #: (gemessen 16.11.2026: 261,97 MB Spielordner -> 164,41 MB Paket). Das Vielfache gilt der Quelle, die ein Abbild
 #: kleiner als das Spiel sein kann (``.ffpfsc``).
 FORGE_PLATZ_FAKTOR = 1.2
+#: Bei einem LZ4-/zstd-gepackten Spiel: Das Paket entsteht aus den entpackten Dateien, die Quelle ist kleiner als das Spiel
+#: (Packs gemessen: 0,9 bis 0,65 der Groesse; das Paket ist so gross wie aus dem ungepackten Spiel) - 1,2 / 0,65 gerundet.
+FORGE_PLATZ_FAKTOR_ENTPACKT = 1.8
 #: Die Stufen, die Dump Forge meldet - fuer jede gibt es einen Text ``ps5pkg.forge_stage_<Stufe>``.
 FORGE_STUFEN = ("extract", "scan", "preflight", "check", "plan", "compress", "write", "verify", "finalize")
 
@@ -2173,9 +2176,9 @@ class Ps5PkgFenster:
         if not self._werkzeug_forge():
             self._fehler(self.t("ps5pkg.err_no_tool_forge"))
             return
-        # Ein gepacktes Spiel (LZ4 oder zstd) laeuft als FPKG nicht: gar nicht erst anfangen (Nutzerwunsch 17.11.2026).
-        if not abbild and self._gepackt_sperren(info):
-            return
+        # Ein gepacktes Spiel (LZ4 oder zstd) laeuft als FPKG nur entpackt (mit Kraken Mount): Dump Forge entpackt die Packs, waehrend
+        # es das Paket schreibt - wie in seinem Reiter "Pack", Aktion "Unpack", Ziel .pkg (Nutzerwunsch 18.11.2026).
+        entpacken = "" if abbild else self._gepackt_verfahren(info)
         # ``abbild``: das Formatkuerzel (``ffpkg`` usw.), wenn Forge ein Paket direkt in ein Abbild wandelt - im Strom, ohne
         # Entpacken (Nutzerwunsch 17.11.2026: kein Zwischenordner in Aufgabe 7). Leer: das Paket wird gebaut.
         name = self._forge_abbild_name(info, abbild) if abbild else self._forge_dateiname(info)
@@ -2186,11 +2189,15 @@ class Ps5PkgFenster:
                                 self.t("ps5pkg.err_exists_abbild" if abbild else "ps5pkg.err_exists_pkg", pfad=datei),
                                 parent=self.win)
             return
-        if not self._platz_reicht(ziel, int(info.groesse * (ENTPACKT_FAKTOR if abbild else FORGE_PLATZ_FAKTOR)),
-                                  nachfragen=True):
+        # Das Paket wird aus den entpackten Dateien gebaut: so gross wie aus dem ungepackten Spiel (gemessen: gleich), und das ist
+        # mehr als die gepackte Quelle gross ist.
+        faktor = ENTPACKT_FAKTOR if abbild else FORGE_PLATZ_FAKTOR_ENTPACKT if entpacken else FORGE_PLATZ_FAKTOR
+        if not self._platz_reicht(ziel, int(info.groesse * faktor), nachfragen=True):
             return
         if not abbild and not self._emulatoren_fragen(info):
             return
+        if entpacken:
+            self._protokoll(self.t("ps5pkg.packs_entpacken_log", verfahren="LZ4" if entpacken == "lz4" else "zstd"))
         # Der Bau entsteht im Zielordner (gleiches Laufwerk: das Umbenennen am Ende kostet nichts), unter einem
         # Arbeitsordner, den das Fenster bei Abbruch oder Fehler wieder entfernt.
         try:
@@ -2198,7 +2205,8 @@ class Ps5PkgFenster:
         except OSError:
             temp = tempfile.mkdtemp(prefix="ps5conv_forge_", dir=self._arbeitsordner())
         self._staging.append(temp)
-        self._bau = {"temp": temp, "vorher": set(os.listdir(ziel)), "forge": True, "format": abbild or "pkg", "name": name}
+        self._bau = {"temp": temp, "vorher": set(os.listdir(ziel)), "forge": True, "format": abbild or "pkg", "name": name,
+                     "entpacken": entpacken}
         self._job_starten("abbild" if abbild else "bauen", self._lauf_bauen, info, ziel)
 
     def _forge_abbild_name(self, info: "wz.PaketInfo", abbild: str) -> str:
@@ -2231,32 +2239,21 @@ class Ps5PkgFenster:
         return info.fakten
 
     def _gepackt_verfahren(self, info: "wz.PaketInfo") -> str:
-        """``"lz4"`` oder ``"zstd"``, wenn das Spiel Asset-Packs traegt, sonst ``""``.
+        """``"lz4"`` oder ``"zstd"``, wenn das Spiel Asset-Packs traegt, sonst ``""`` - das Verfahren, das Dump Forge beim Bauen
+        des FPKG entpacken muss (``forge_cli.convert_argumente(entpacken=...)``).
+
+        Ein gepacktes Spiel laeuft als FPKG nur entpackt (mit Kraken Mount, Nutzerwunsch 17.11.2026); Dump Forge entpackt die Packs
+        waehrend des Bauens (Nutzerwunsch 18.11.2026: "schau es dir bei Dump Forge ab"). Als Abbild (``.ffpkg``, ``.ffpfsc`` ...) laeuft
+        ein gepacktes Spiel, dort liest AMPR EMU die Packs - das gilt nur fuers Paket.
 
         Zuerst Forges ``inspect`` (liest auch ein Abbild, ohne es zu entpacken); bei einem Spielordner zaehlt zusaetzlich der
-        Pack-Index an der Wurzel - auch einer, den Forge nicht lesen kann (beschaedigt, fremde Fassung): Die Baender liegen dann
-        trotzdem im Spiel."""
+        Pack-Index an der Wurzel - auch einer, den Forge nicht lesen kann (beschaedigt, fremde Fassung): Dann meldet Forge beim
+        Entpacken selbst, was nicht stimmt, statt dass ein Paket mit unlesbaren Packs entsteht."""
         fakten = self._quellfakten(info)
         gepackt = fakten.gepackt if fakten is not None else ""
         if not gepackt and info.ist_ordner:
             gepackt = forge.gepackt_im_ordner(info.pfad)
-        return gepackt if gepackt in ("lz4", "zstd") else ""
-
-    def _gepackt_sperren(self, info: "wz.PaketInfo") -> bool:
-        """Ein Spiel mit LZ4- oder zstd-Packs wird nicht zum FPKG: Meldung, Protokollzeile, ``True`` (nicht bauen).
-
-        Nutzerwunsch 17.11.2026: Solche Spiele laufen als FPKG an der PS5 nicht (mit Kraken Mount) - wer es versucht, soll es vorher
-        erfahren und nicht erst an der Konsole. Als Abbild (``.ffpkg``, ``.ffpfsc`` ...) laeuft ein gepacktes Spiel, dort liest
-        AMPR EMU die Packs; die Sperre gilt darum nur fuer das Paket (``abbild`` leer)."""
-        verfahren = self._gepackt_verfahren(info)
-        if not verfahren:
-            return False
-        name = "LZ4" if verfahren == "lz4" else "zstd"
-        self._protokoll(self.t("ps5pkg.packs_gesperrt_log", verfahren=name))
-        self._status(self.t("ps5pkg.packs_gesperrt_status", verfahren=name))
-        messagebox.showerror(self.t("ps5pkg.packs_gesperrt_titel"), self.t("ps5pkg.packs_gesperrt", verfahren=name),
-                             parent=self.win)
-        return True
+        return gepackt if gepackt in forge.ENTPACK_VERFAHREN else ""
 
     def _emulatoren_fragen(self, info: "wz.PaketInfo") -> bool:
         """Vor dem Bau: sucht im Spiel nach AMPR EMU, Asset-Packs, PlayGo, DLC und BACKPORT und fragt, wenn etwas fehlt.
@@ -2596,6 +2593,7 @@ class Ps5PkgFenster:
                     voll_pruefen=bool(self._einstellung(opt.FORGE_VOLL_PRUEFEN, False)),
                     backport_entfernen=bool(self._einstellung(opt.FORGE_BACKPORT_ENTFERNEN, False)),
                     kerne=int(self._einstellung(opt.KRAKEN_KERNE, 0)),
+                    entpacken=str(bau.get("entpacken") or ""),
                     zeile=self._melden, fortschritt=fortschritt, abbruch=lambda: self._abbruch,
                     popen_extra=self._popen_extra())
             else:

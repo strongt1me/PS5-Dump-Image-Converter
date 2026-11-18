@@ -484,8 +484,10 @@ class ForgeFensterTests(_ForgeBasis):
     def test_die_frage_steht_nach_der_platzpruefung_und_vor_dem_ersten_arbeitsordner(self) -> None:
         text = Path(fz.__file__).read_text(encoding="utf-8")
         start = text.index("def _forge_bauen_starten")
-        # Seit 17.11.2026 nimmt dieselbe Zeile fuer ein Abbild aus einem Paket den Faktor des Entpackens statt FORGE_PLATZ_FAKTOR.
-        platz = text.index("self._platz_reicht(ziel, int(info.groesse * (ENTPACKT_FAKTOR if abbild else FORGE_PLATZ_FAKTOR))", start)
+        # Seit 17.11.2026 nimmt dieselbe Zeile fuer ein Abbild aus einem Paket den Faktor des Entpackens statt FORGE_PLATZ_FAKTOR, seit
+        # 18.11.2026 fuer ein gepacktes Spiel den des entpackten Spiels (``faktor`` in der Zeile davor).
+        text.index("faktor = ENTPACKT_FAKTOR if abbild else FORGE_PLATZ_FAKTOR_ENTPACKT if entpacken else FORGE_PLATZ_FAKTOR", start)
+        platz = text.index("self._platz_reicht(ziel, int(info.groesse * faktor)", start)
         frage = text.index("self._emulatoren_fragen(info)", start)
         temp = text.index("tempfile.mkdtemp(prefix=\"ps5conv_forge_\"", start)
         self.assertLess(platz, frage)
@@ -1147,81 +1149,105 @@ class EinbauSeiteTests(_ForgeBasis):
                 self.assertIn(text, log)
         self.assertEqual([], self.dialoge["auswahl"])
 
-    # ---------------- gepackte Spiele (LZ4, zstd) werden nicht zum FPKG ----------------
-    def _gesperrt(self) -> list:
-        """Die Meldungen "Kein FPKG aus einem gepackten Spiel"."""
-        return [a for a in self.dialoge["fehler"] if a and a[0] == _de("ps5pkg.packs_gesperrt_titel")]
+    # ---------------- gepackte Spiele (LZ4, zstd) werden fuers FPKG entpackt - wie in Dump Forge ----------------
+    def _nichts_gemeldet(self) -> None:
+        """Weder ein Fehlerdialog noch eine Rueckfrage: Das Entpacken ist keine Stoerung, Dump Forge tut es ohne Frage."""
+        self.assertEqual([], self.dialoge["fehler"])
+        self.assertEqual([], self.dialoge["frage"] + self.dialoge["auswahl"])
 
-    def _nichts_gebaut(self) -> None:
-        self.assertEqual([], self.aufrufe, "Dump Forge wurde nicht gerufen")
-        self.assertEqual([], os.listdir(self.ziel), "weder Paket noch Arbeitsordner im Ziel")
-        self.assertIsNone(self.f._job)
-        self.assertEqual([], self.dialoge["frage"] + self.dialoge["auswahl"], "keine Rueckfrage danach")
-
-    def test_ein_mit_lz4_oder_zstd_gepacktes_abbild_wird_nicht_zum_fpkg(self) -> None:
-        """Nutzerwunsch 17.11.2026: Ein gepacktes Spiel laeuft als FPKG an der PS5 nicht (mit Kraken Mount) - vorher melden."""
+    def test_ein_gepacktes_abbild_wird_beim_bauen_entpackt(self) -> None:
+        """Nutzerwunsch 18.11.2026 ("schau es dir bei Dump Forge ab"): Forge erkennt ein LZ4- oder zstd-gepacktes Spiel und entpackt
+        die Packs, waehrend es das FPKG schreibt (Reiter Pack, Aktion Unpack, Ziel .pkg: ``--lz4-unpack`` / ``--zstd-unpack``)."""
         for verfahren, name in (("lz4", "LZ4"), ("zstd", "zstd")):
             with self.subTest(verfahren=verfahren):
+                self.aufrufe.clear()
                 self.dialoge["fehler"].clear()
-                pfad = self._abbild(name="Gepackt_%s.exfat" % verfahren, tid="PPSA0001%d" % (1 if verfahren == "lz4" else 2))
+                kennung = "PPSA0001%d" % (1 if verfahren == "lz4" else 2)
+                pfad = self._abbild(name="Gepackt_%s.exfat" % verfahren, tid=kennung)
                 self.infos[pfad].fakten = fc.QuellFakten(gepackt=verfahren)
                 self._laden(pfad)
                 with self._attrappe():
                     self._starten_und_warten()
-                meldungen = self._gesperrt()
-                self.assertEqual(1, len(meldungen))
-                self.assertEqual(_de("ps5pkg.packs_gesperrt", verfahren=name), meldungen[0][1])
-                self.assertIn(name, meldungen[0][1])
-                self._nichts_gebaut()
-                self.assertIn(_de("ps5pkg.packs_gesperrt_log", verfahren=name), self.f.protokoll.get("1.0", "end"))
-                self.assertEqual(_de("ps5pkg.packs_gesperrt_status", verfahren=name), self.f.status_var.get())
+                self.assertEqual(1, len(self.aufrufe), "gebaut wird, nichts wird gesperrt")
+                self.assertEqual(verfahren, self.aufrufe[0]["entpacken"], "Forge bekommt das Verfahren der Packs")
+                self.assertTrue(self.aufrufe[0]["temp_da"])
+                self.assertIn(_de("ps5pkg.packs_entpacken_log", verfahren=name), self.f.protokoll.get("1.0", "end"))
+                self.assertIn("Neun Spiel [%s].pkg" % kennung, [p for p in os.listdir(self.ziel) if p.endswith(".pkg")])
+                self._nichts_gemeldet()
 
-    def test_ein_spielordner_mit_pack_index_wird_auch_ohne_befund_von_forge_gesperrt(self) -> None:
-        """Forge liest ein beschaedigtes Manifest nicht als gepackt - die Baender liegen trotzdem im Spiel."""
-        for index, name in (("ampr_assets.index", "LZ4"), ("ampr_zstd.index", "zstd")):
+    def test_ein_spielordner_mit_pack_index_wird_auch_ohne_befund_von_forge_entpackt(self) -> None:
+        """Forge liest ein beschaedigtes Manifest nicht als gepackt - die Baender liegen trotzdem im Spiel: Mit der Option meldet
+        Forge selbst, was nicht stimmt, statt ein Paket mit unlesbaren Packs zu bauen."""
+        for index, verfahren in (("ampr_assets.index", "lz4"), ("ampr_zstd.index", "zstd")):
             with self.subTest(index=index):
-                self.dialoge["fehler"].clear()
-                ordner = self._spielordner(name="Spiel_" + index.split(".")[0], tid="PPSA0002%d" % (1 if name == "LZ4" else 2))
+                self.aufrufe.clear()
+                ordner = self._spielordner(name="Spiel_" + index.split(".")[0], tid="PPSA0002%d" % (1 if verfahren == "lz4" else 2))
                 Path(ordner, index).write_bytes(b"AMPRPAK4")
                 self._laden(ordner)
                 self.f._format_waehlen("pkg")
                 self.f.aktuell.fakten = fc.QuellFakten()                  # Forge sieht nichts
                 with self._attrappe():
                     self._starten_und_warten()
-                self.assertEqual(1, len(self._gesperrt()))
-                self.assertIn(name, self._gesperrt()[0][1])
-                self._nichts_gebaut()
+                self.assertEqual(1, len(self.aufrufe))
+                self.assertEqual(verfahren, self.aufrufe[0]["entpacken"])
 
-    def test_ein_ungepacktes_spiel_wird_weiter_gebaut(self) -> None:
+    def test_ein_ungepacktes_spiel_wird_nicht_entpackt(self) -> None:
         pfad = self._abbild()
         self.infos[pfad].fakten = fc.QuellFakten()
         self._laden(pfad)
         with self._attrappe():
             self._starten_und_warten()
-        self.assertEqual([], self._gesperrt())
         self.assertEqual(1, len(self.aufrufe))
+        self.assertEqual("", self.aufrufe[0]["entpacken"])
+        self.assertNotIn(_de("ps5pkg.packs_entpacken_log", verfahren="LZ4"), self.f.protokoll.get("1.0", "end"))
+        self.assertNotIn(_de("ps5pkg.packs_entpacken_log", verfahren="zstd"), self.f.protokoll.get("1.0", "end"))
 
-    def test_die_sperre_gilt_nur_fuers_fpkg_nicht_fuers_abbild(self) -> None:
+    def test_nur_das_fpkg_wird_entpackt_nicht_das_abbild(self) -> None:
         """Ein gepacktes Spiel laeuft als Abbild (dort liest AMPR EMU die Packs): ein Paket geht im Strom in ein ``.ffpkg``."""
         info = self._umwandeln_vorbereiten("ffpkg")
         info.fakten = fc.QuellFakten(gepackt="lz4")
         with self._attrappe():
             self._starten_und_warten()
-        self.assertEqual([], self._gesperrt())
         self.assertEqual(1, len(self.aufrufe))
         self.assertEqual("ffpkg", self.aufrufe[0]["format"])
+        self.assertNotIn("entpacken", self.aufrufe[0], "der Abbildweg kennt die Option nicht")
+        for verfahren in ("LZ4", "zstd"):
+            self.assertNotIn(_de("ps5pkg.packs_entpacken_log", verfahren=verfahren), self.f.protokoll.get("1.0", "end"),
+                             "kein Hinweis auf ein Entpacken, das nicht stattfindet")
+        self.assertEqual("", self.f._bau.get("entpacken", "") if self.f._bau else "")
 
-    def test_die_sperre_steht_vor_den_anderen_pruefungen(self) -> None:
-        """Auch mit fehlendem Platz-Hinweis, vorhandener Datei und fehlendem PlayGo kommt zuerst die Meldung zum Pack."""
+    def test_das_entpacken_wird_erst_nach_der_rueckfrage_gemeldet(self) -> None:
+        """Sagt der Anwender bei der Rueckfrage zu fehlendem PlayGo "Nein", wird nichts gebaut - und nichts vom Entpacken gesagt."""
         pfad = self._abbild()
         self.infos[pfad].fakten = fc.QuellFakten(gepackt="zstd", playgo_merkmal="sce_sys/playgo-scenario.json")
         self._laden(pfad)
-        Path(self.ziel, "Neun Spiel [PPSA00009].pkg").write_bytes(b"alt")
-        with self._attrappe():
+        with self._attrappe(), mock.patch.object(fz.messagebox, "askyesno", return_value=False):
             self._starten_und_warten()
-        self.assertEqual(1, len(self._gesperrt()))
-        self.assertEqual([], self.dialoge["info"], "nicht erst 'Datei vorhanden'")
         self.assertEqual([], self.aufrufe)
+        self.assertNotIn(_de("ps5pkg.packs_entpacken_log", verfahren="zstd"), self.f.protokoll.get("1.0", "end"))
+
+    def test_der_platz_wird_fuer_das_entpackte_spiel_gerechnet(self) -> None:
+        """Das Paket entsteht aus den entpackten Dateien: Die gepackte Quelle ist kleiner als das Spiel."""
+        gesehen: "list[int]" = []
+        for gepackt, erwartet in (("zstd", fz.FORGE_PLATZ_FAKTOR_ENTPACKT), ("", fz.FORGE_PLATZ_FAKTOR)):
+            with self.subTest(gepackt=gepackt):
+                gesehen.clear()
+                pfad = self._abbild(name="Platz_%s.exfat" % (gepackt or "ohne"), tid="PPSA0003%d" % (1 if gepackt else 2))
+                self.infos[pfad].fakten = fc.QuellFakten(gepackt=gepackt)
+                self._laden(pfad)
+                gross = 10 * 1024 ** 3
+                self.f.aktuell.groesse = gross
+                with self._attrappe(), mock.patch.object(fz.Ps5PkgFenster, "_platz_reicht",
+                                                         side_effect=lambda ordner, noetig, nachfragen=False: gesehen.append(noetig) or True):
+                    self._starten_und_warten()
+                self.assertEqual([int(gross * erwartet)], gesehen)
+                for p in os.listdir(self.ziel):
+                    os.remove(os.path.join(self.ziel, p))
+        self.assertGreater(fz.FORGE_PLATZ_FAKTOR_ENTPACKT, fz.FORGE_PLATZ_FAKTOR)
+
+    def test_die_sperre_gibt_es_nicht_mehr(self) -> None:
+        self.assertFalse(hasattr(fz.Ps5PkgFenster, "_gepackt_sperren"))
+        self.assertNotIn("ps5pkg.packs_gesperrt", STRINGS)
 
     def test_der_hilfsmann_erkennt_pack_indexe_an_der_wurzel(self) -> None:
         self.assertEqual("", fc.gepackt_im_ordner(self.ordner))

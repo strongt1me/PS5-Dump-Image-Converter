@@ -140,6 +140,86 @@ class FensterTests(unittest.TestCase):
         self.assertEqual(set(ab.FORMATE), set(f._formate))
         self.assertEqual(len(f._formate), len(tuple(f.format_box.cget("values"))))
 
+    # ---------------- Backups mit LZ4- oder zstd-Packs (Nutzerwunsch 18.11.2026) ----------------
+    def _backup(self, tmp: str, dateien=(), unterordner: str = "", title_id: str = "CUSA00001") -> "ab.Spiel":
+        """Ein entpackter Spielordner mit Dateien an der Wurzel (oder in ``unterordner``)."""
+        wurzel = os.path.join(tmp, title_id)
+        ziel = os.path.join(wurzel, unterordner) if unterordner else wurzel
+        os.makedirs(os.path.join(ziel, "sce_sys"), exist_ok=True)
+        for datei in dateien:
+            with open(os.path.join(ziel, datei), "wb") as d:
+                d.write(b"x")
+        return ab.Spiel(title_id=title_id, titel="Testspiel", dump_ordner=wurzel)
+
+    def test_aus_einem_backup_mit_lz4_oder_zstd_packs_wird_kein_ps4_pkg_gebaut(self) -> None:
+        f = self._fenster()
+        with tempfile.TemporaryDirectory() as tmp:
+            for dateien, name in ((("ampr_assets.index", "ampr_assets-000.pak"), "LZ4"), (("ampr_zstd.index", "ampr_zstd-000.pak"), "zstd")):
+                with self.subTest(verfahren=name):
+                    s = self._backup(tmp, dateien, title_id="CUSA0000%d" % (1 if name == "LZ4" else 2))
+                    text = f._pruefe_spiel(s, ab.FORMAT_PKG)
+                    self.assertEqual(STRINGS["ps4dib.dump_gepackt"]["de"].format(title_id=s.title_id, verfahren=name), text,
+                                     "die Sperre geht der Absage 'nur Abbild' voraus")
+
+    def test_ein_abbild_aus_dem_gepackten_backup_ist_nicht_gesperrt(self) -> None:
+        """Gesperrt ist nur das Paket (Nutzerwunsch): Ein Abbild aus dem Backup geht wie bisher."""
+        f = self._fenster()
+        with tempfile.TemporaryDirectory() as tmp:
+            s = self._backup(tmp, ("ampr_assets.index",))
+            for kennung in (ab.FORMAT_FFPFSC, ab.FORMAT_EXFAT):
+                with self.subTest(format=kennung):
+                    self.assertEqual("", f._pruefe_spiel(s, kennung))
+
+    def test_ein_spiel_ohne_dump_ordner_wird_nicht_im_arbeitsordner_gesucht(self) -> None:
+        """Ein Paket hat keinen Dump-Ordner: Der leere Pfad darf nicht als aktueller Ordner gelesen werden (dort koennte ein Index liegen)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "ampr_assets.index"), "wb") as d:
+                d.write(b"x")
+            alt = os.getcwd()
+            os.chdir(tmp)
+            try:
+                self.assertEqual("", fenster_modul.Ps4DumpImageFenster._gepackt_im_backup(ab.Spiel(title_id="CUSA00004", titel="Paket")))
+            finally:
+                # Vor dem Loeschen zurueck: unter Windows laesst sich der aktuelle Ordner nicht entfernen.
+                os.chdir(alt)
+
+    def test_die_packs_im_unterordner_app_zaehlen_wie_an_der_wurzel(self) -> None:
+        f = self._fenster()
+        with tempfile.TemporaryDirectory() as tmp:
+            s = self._backup(tmp, ("ampr_zstd.index",), unterordner="app")
+            self.assertIn("zstd", f._pruefe_spiel(s, ab.FORMAT_PKG))
+
+    def test_ein_ungepacktes_backup_und_ein_paket_bleiben_wie_bisher(self) -> None:
+        f = self._fenster()
+        with tempfile.TemporaryDirectory() as tmp:
+            s = self._backup(tmp, ("eboot.bin",))
+            self.assertEqual("", f._pruefe_spiel(s, ab.FORMAT_FFPFSC), "ein Backup zu einem Abbild geht weiter")
+            self.assertEqual(STRINGS["ps4dib.dump_nur_abbild"]["de"], f._pruefe_spiel(s, ab.FORMAT_PKG), "die bisherige Absage bleibt")
+            paket = ab.Spiel(title_id="CUSA00003", titel="Paket", basis=mock.Mock(pfad="E:/a.pkg"))
+            self.assertNotIn("gepackt", f._pruefe_spiel(paket, ab.FORMAT_FFPFSC).lower())
+
+    def test_der_start_zeigt_die_meldung_und_baut_nichts(self) -> None:
+        f = self._fenster()
+        with tempfile.TemporaryDirectory() as tmp:
+            s = self._backup(tmp, ("ampr_assets.index",))
+            ziel = os.path.join(tmp, "ziel")
+            os.makedirs(ziel)
+            f.ziel_var.set(ziel)
+            f.format_var.set(f._formate[ab.FORMAT_PKG])
+            vorher = len(f.warteschlange.schnappschuss())
+            with mock.patch.object(f, "_gewaehlt", return_value=[s]), mock.patch.object(f, "_basen_klaeren", return_value=True), \
+                    mock.patch.object(fenster_modul.messagebox, "showwarning") as warnung:
+                f._starten()
+            warnung.assert_called_once()
+            self.assertEqual(STRINGS["ps4dib.dump_gepackt"]["de"].format(title_id=s.title_id, verfahren="LZ4"), warnung.call_args[0][1])
+            self.assertEqual(vorher, len(f.warteschlange.schnappschuss()), "keine Aufgabe entstanden")
+
+    def test_der_text_nennt_das_verfahren_in_allen_sprachen(self) -> None:
+        for sprache, text in STRINGS["ps4dib.dump_gepackt"].items():
+            with self.subTest(sprache=sprache):
+                self.assertIn("{verfahren}", text)
+                self.assertIn("{title_id}", text)
+
     def test_eigener_temp_ordner_bestimmt_den_arbeitsordner(self) -> None:
         """21.10.2026: Wie bei FPKG waehlbar; leer oder nicht vorhanden = wie bisher beim Ziel."""
         import os

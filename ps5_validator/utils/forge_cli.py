@@ -412,20 +412,36 @@ ABBILD_ZIELE = ("ffpkg", "ffpfsc", "ffpfs", "exfat")
 STAMM_GRENZE_FFPFSC = 58
 
 
+#: Die Packverfahren, die Forge beim Umwandeln entpacken kann (``--lz4-unpack``, ``--zstd-unpack``); ``""`` = nicht entpacken.
+ENTPACK_VERFAHREN = ("lz4", "zstd")
+
+
 def convert_argumente(quelle: str, ziel: str, *, kraken: str = "fast", voll_pruefen: bool = False,
                       backport_entfernen: bool = False, kerne: int = 0, format: str = "pkg",
-                      stufe: "int | None" = None) -> "list[str]":
+                      stufe: "int | None" = None, entpacken: str = "") -> "list[str]":
     """Die Argumente fuer ``ps5-dump-forge convert <Quelle> --to <Format>`` (rein, ohne Start - das ist testbar).
 
     ``format`` ist ``pkg`` (Vorgabe; dann gilt ``kraken``) oder eines der Abbildformate :data:`ABBILD_ZIELE`; fuer ``ffpfsc``
     nimmt ``stufe`` (0 bis 9) die zlib-Stufe (``--level``). Ein Paket (``.pkg``) als Quelle liest Forge im Strom - es wird
     nichts entpackt (gemessen 17.11.2026: ``.pkg`` -> ``.ffpkg``, ``.exfat`` und Ordner ohne Zwischenordner).
+
+    ``entpacken``: ``"lz4"`` oder ``"zstd"`` - die Quelle ist so gepackt, und Forge entpackt die Packs, **waehrend** es das Paket
+    schreibt (``--lz4-unpack`` / ``--zstd-unpack``: ein Auftrag, im Strom, ohne Zwischenordner; die Laufzeit der Packs
+    wird durch die Fassung 0.4.2.1 ersetzt, ``ampr_emu.index`` neu geschrieben). So macht es Forge selbst (Reiter "Pack",
+    Aktion "Unpack", Ziel ``.pkg``); ohne die Option traegt die Umwandlung die Packs als gewoehnliche Dateien ins Paket,
+    und ein solches FPKG laeuft an der PS5 nicht (mit Kraken Mount). Gemessen am 18.11.2026 (Forge 0.5.6, 250-MB-Spiel): aus
+    dem zstd- wie aus dem LZ4-gepackten Ordner entsteht mit der Option ein Paket gleicher Groesse (164'412'910 Byte, 58 Dateien)
+    wie aus dem ungepackten Spiel; ohne sie 170'236'756 Byte in 44 Dateien (die Packs).
     """
     if format != "pkg" and format not in ABBILD_ZIELE:
         raise wz.Fehler("Unbekanntes Zielformat: %s" % format)
     if kraken not in KRAKEN_STUFEN:
         raise wz.Fehler("Unbekannte Kompressionsstufe: %s" % kraken)
+    if entpacken and entpacken not in ENTPACK_VERFAHREN:
+        raise wz.Fehler("Unbekanntes Packverfahren: %s" % entpacken)
     argumente = ["convert", quelle, "--to", format, "-o", ziel]
+    if entpacken:
+        argumente.append("--%s-unpack" % entpacken)
     if format == "pkg":
         argumente += ["--kraken", kraken]
     elif format == "ffpfsc" and stufe is not None and 0 <= int(stufe) <= 9:
@@ -502,7 +518,7 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, kraken: str = "fast", voll_p
           backport_entfernen: bool = False, kerne: int = 0, zeile: "_Zeile | None" = None,
           fortschritt: "Callable[[int, str], None] | None" = None, abbruch: "_Abbruch | None" = None,
           popen_extra: "dict | None" = None, vorspann: "tuple[str, ...]" = (), format: str = "pkg",
-          stufe: "int | None" = None) -> ForgeBau:
+          stufe: "int | None" = None, entpacken: str = "") -> ForgeBau:
     """Baut aus einem Spielordner oder Abbild ein Debug-Paket (``convert --to pkg``) und gibt das Ergebnis zurueck.
 
     Mit ``format`` eines der Abbildformate (:data:`ABBILD_ZIELE`) entsteht statt des Pakets ein Abbild - aus einem Ordner,
@@ -514,7 +530,9 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, kraken: str = "fast", voll_p
             vorhandene Datei wird nicht ersetzt - das Fenster fragt vorher).
         kraken: ``fast`` (Vorgabe), ``balanced``, ``smallest`` (~2,6 % kleiner, ~9-mal langsamer) oder ``stored``.
         voll_pruefen: ``--full-verify`` - das Ergebnis wird Byte fuer Byte gelesen (Vorgabe: Stichprobe).
-        backport_entfernen: ``--remove-backport`` - die Backport-Bibliotheken aus ``fakelib/`` weglassen.
+        backport_entfernen: ``--remove-backport`` - die Backport-Bibliotheken aus ``fakelib/`` weglassen (bei einem gepackten
+            Spiel nur zusammen mit ``entpacken``: Forge verweigert es sonst).
+        entpacken: ``"lz4"`` oder ``"zstd"``: die Packs der Quelle beim Bauen entpacken (:func:`convert_argumente`).
         zeile: Protokollzeilen Forges (gruppierte Wiederholungen gekuerzt).
         fortschritt: ``(Prozent 0..99, Stufe)``; die Stufen heissen ``scan``, ``preflight``, ``check``, ``plan``,
             ``compress``, ``write``, ``verify``, ``finalize`` (``extract`` zuerst bei einem Archiv).
@@ -526,7 +544,7 @@ def bauen(werkzeug: str, quelle: str, ziel: str, *, kraken: str = "fast", voll_p
     """
     argumente = [*vorspann, *convert_argumente(quelle, ziel, kraken=kraken, voll_pruefen=voll_pruefen,
                                                backport_entfernen=backport_entfernen, kerne=kerne, format=format,
-                                               stufe=stufe)]
+                                               stufe=stufe, entpacken=entpacken)]
     os.makedirs(os.path.dirname(os.path.abspath(ziel)) or ".", exist_ok=True)
     strom = _Strom(zeile, fortschritt)
     rc, aus = wz.laufen(werkzeug, argumente, zeile=strom.jede, abbruch=abbruch, popen_extra=popen_extra)
