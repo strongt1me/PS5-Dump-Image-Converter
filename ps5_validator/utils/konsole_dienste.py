@@ -160,7 +160,15 @@ KATALOG: tuple[Dienst, ...] = (
     Dienst("prosperomgr", 7070, "ProsperoMgr*.elf", web="/", anlaufzeit=2.0),
     # Port 9120 (AVA1) seit ps5upload 6.x - vorher 9113/9114. Beleg: ``payload/README.md`` und
     # ``client/src/lib/addr.ts`` (``PS5_AVA1_PORT``) des Autors, README "Quick start" (12.10.2026).
-    Dienst("upload", 9120, "ps5upload*.elf"),
+    #
+    # Weboberflaeche seit 18.11.2026: "PS5Upload Minion", die Seite des Helfers auf Port 9180 (README des Autors,
+    # ``payload/README.md``: ``WEBUI_PORT``). An der Konsole gemessen (ps5upload 12.6.8): Ab Werk bindet sie nur an
+    # 127.0.0.1 (``webui: serving on 127.0.0.1:9180`` im Protokoll, ``webui.json`` fehlt = ``lan:false``) - fuer den
+    # Browser der PS5 selbst, vom PC aus ConnectionRefused. Erst mit der Einstellung "Allow other devices on the
+    # network" in Minion (schreibt ``lan:true`` nach ``/data/ps5upload/webui.json``, wirkt nach einem Neustart des
+    # Helfers) lauscht sie auf 0.0.0.0, antwortet dann mit 200 (gzip, eine in sich geschlossene Seite) und hat
+    # KEIN Passwort. Der Dienstport bleibt 9120, die Seite liegt auf ``web_port`` (wie bei zftpd).
+    Dienst("upload", 9120, "ps5upload*.elf", web="/", web_port=9180),
     # --- Weitere Payloads mit Port (seit 02.10.2026) ---------------------------
     # Ports und Weboberflaechen stammen aus den Beschreibungen der Autoren und,
     # wo vorhanden, aus einer Zeichenkette im ELF selbst (CheatRunner 9999,

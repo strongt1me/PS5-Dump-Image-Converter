@@ -258,6 +258,19 @@ class WeitereDiensteTests(unittest.TestCase):
         # gesprochen wird - ein erwarteter Gruss koennte einen laufenden Dienst als stumm melden.
         self.assertFalse(eintrag.begruessung)
 
+    def test_ps5upload_traegt_die_minion_seite_auf_9180(self):
+        """Seit 18.11.2026: Der Dienst bleibt 9120 (dort wird geprueft und gestartet), die Weboberflaeche
+        "PS5Upload Minion" liegt auf 9180. An der Konsole gemessen: Ab Werk nur an 127.0.0.1 gebunden,
+        mit der Einstellung "andere Geraete im Netzwerk zulassen" (lan:true) vom PC aus mit 200 erreichbar."""
+        eintrag = kd.dienst("upload")
+        self.assertEqual((9120, "/", 9180, "ps5upload*.elf"),
+                         (eintrag.port, eintrag.web, eintrag.web_port, eintrag.payload_muster))
+        self.assertEqual("http://10.0.0.5:9180/", kd.web_adresse(eintrag, "10.0.0.5"))
+        # Der Zwecktext muss die Einschraenkung nennen, sonst fuehrt der Knopf bei ausgeschaltetem LAN ins Leere.
+        for sprache in ("de", "en", "es", "it", "fr"):
+            with self.subTest(sprache=sprache):
+                self.assertIn("9180", STRINGS["dienst.upload_zweck"][sprache])
+
     def test_bewusst_nicht_aufgenommen(self):
         """shsrv startet je Verbindung eine Shell (jede Abfrage wuerde einen Prozess erzeugen),
         MemDBG teilt sich TCP 9020 mit dem zweiten Port des ELF-Loaders, nanoDNS horcht auf UDP."""
