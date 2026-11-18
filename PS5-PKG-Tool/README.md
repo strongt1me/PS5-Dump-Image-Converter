@@ -5,6 +5,19 @@
 Bibliothek **LibProsperoPkg 1.2.0** (GPL-3.0-or-later; als fertige Datei `src/ffpfsc-pkg-tool/lib/`, die Quelle
 dazu liegt nicht bei - siehe `src/ffpfsc-pkg-tool/lib/README.md`).
 
+Geprueft am 18.11.2026: **ps5-ultrapack 2.6.0** (18.11.2026) ist **nicht** uebernommen, die Versionskonstante bleibt auf **2.5.1**. Anders als
+2.4.2 bis 2.5.1 aendert 2.6.0 den C#-Teil in der Sache: Der Vergleich 2.5.1 bis 2.6.0 nennt unter `backend/native/src/ffpfsc-pkg-tool/` die neuen
+Dateien `InnerInPackage.cs` (schreibt das innere Abbild gleich an seinen Platz im Paket) und `SourceImage.cs` (liest eine `.ffpfs`/`.ffpfsc` als
+Bauquelle an Ort und Stelle), Aenderungen an `Program.cs` (`build` mit Abbild als Quelle), `AmprIndex.cs` und `PkgTool.csproj` und eine andere
+gepatchte `LibProsperoPkg.dll` (Bau a3ee4c1a aus fpkg-gui 0.6.12 statt d7090eb6; Einzelheiten in `lib/README.md` und `patches/` dort). Alles
+betrifft nur den **Paketbau** (`build`); dieses Programm ruft ihn seit 17.11.2026 nicht mehr auf (Pakete baut allein Dump Forge) und nutzt von
+dem Werkzeug nur `validate`, `list-inner` und `extract-inner`. Die Konstante auf 2.6.0 zu heben waere unwahr (der Quelltext waere nicht der
+von 2.6.0), und die Neufassung zu uebernehmen hiesse, GPL-3.0-or-later-Quelltext mit Zusatzbedingungen nach Abschnitt 7 samt einer anderen
+gepatchten Bibliothek einzubauen - ohne Nutzen fuer die drei Befehle, die hier laufen, und gegen die Entscheidung vom 16.11.2026 (kein
+Quelltext der Fassungen ab 2.4.2). Die Neuerungen der Upstream-App (Option "In place", Formatfilter, Platzberechnung, Packen mit Faeden)
+betreffen die Oberflaeche und die Python-Seite. Sollte der Paketbau dieses Werkzeugs wieder gebraucht werden, ist 2.6.0 der Stand, der
+zusammengefuehrt werden muss (Dreiwege-Zusammenfuehrung mit unserem Befehl `stream-inner`, vier Plattformen neu bauen).
+
 Seit 31.10.2026 steht die Fassung auf **0.0.3** (30.10.2026). Der Vergleich 0.0.2 bis 0.0.3 nennt keine Datei unter `src/`
 (nur `app/engine.py`, `app/ui.py`, die Hilfetexte und `pyproject.toml` der Python-Oberflaeche des Autors) - das C#-Werkzeug hier
 ist also unveraendert. Uebernommen ist die eine Verhaltensaenderung, die auch fuer unser Fenster zaehlt: Mit einem Temp-Ordner

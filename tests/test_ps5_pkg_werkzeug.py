@@ -452,6 +452,38 @@ class OrdnerTests(unittest.TestCase):
             info = wz.ordner_lesen(self._spiel(t, icon=False), t)
             self.assertEqual(("", ""), (info.icon, info.arbeit))
 
+    # ---------------- die Groesse getrennt vom Lesen (Meldung des Nutzers 18.11.2026) ----------------
+    # Ghost of Yotei (84.218 Dateien, 150,75 GB) brauchte 348 s fuer das Zaehlen - bis dahin zeigte Seite 7 das Spiel nicht.
+    def test_ohne_groesse_sind_titel_und_cover_sofort_da_und_nichts_wird_gezaehlt(self) -> None:
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "ordner_groesse") as zaehlen:
+            info = wz.ordner_lesen(self._spiel(t), t, groesse=False)
+            zaehlen.assert_not_called()
+            self.assertEqual(("Arcade", "PPSA19015"), (info.titel, info.title_id))
+            self.assertTrue(info.icon and os.path.isfile(info.icon))
+            self.assertEqual((0, True), (info.groesse, info.groesse_offen))
+
+    def test_mit_groesse_bleibt_alles_wie_es_war(self) -> None:
+        with tempfile.TemporaryDirectory() as t:
+            info = wz.ordner_lesen(self._spiel(t), t)
+            self.assertGreater(info.groesse, 4000)
+            self.assertFalse(info.groesse_offen)
+
+    def test_die_groessenzaehlung_meldet_zwischenstaende(self) -> None:
+        stande: list[int] = []
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(wz, "GROESSE_MELDESCHRITT", 2):
+            ordner = os.path.join(t, "viele")
+            os.makedirs(ordner)
+            for i in range(7):
+                Path(ordner, "d%d.bin" % i).write_bytes(b"x" * 10)
+            summe = wz.ordner_groesse(ordner, fortschritt=stande.append)
+        self.assertEqual(70, summe)
+        self.assertEqual([2, 4, 6], stande, "alle 2 Dateien ein Zwischenstand")
+
+    def test_ohne_fortschrittsrueckruf_zaehlt_ordner_groesse_wie_vorher(self) -> None:
+        with tempfile.TemporaryDirectory() as t:
+            self.assertEqual(4000 + len(Path(self._spiel(t), "sce_sys", "param.json").read_bytes()) + 3,
+                             wz.ordner_groesse(os.path.join(t, "Spiel")))
+
     def test_ohne_lesbare_param_json_gibt_es_eine_meldung(self) -> None:
         with tempfile.TemporaryDirectory() as t:
             ordner = self._spiel(t)

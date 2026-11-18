@@ -1102,6 +1102,8 @@ class FensterTests(unittest.TestCase):
         ordner = self._spielordner(**kw)
         self.f._pakete_hinzufuegen([ordner], waehlen=True)
         self.assertTrue(_warten(lambda: self.f.aktuell is not None and self.f.aktuell.pfad == ordner))
+        # Das Spiel erscheint seit 18.11.2026 sofort; die Groesse wird danach gezaehlt und nachgetragen (``_groesse_nachtragen``).
+        self.assertTrue(_warten(lambda: not self.f.aktuell.groesse_offen), "die Groesse wird nachgetragen")
         return ordner
 
     def test_ein_spielordner_wird_gelesen_und_angezeigt(self) -> None:
@@ -1116,6 +1118,100 @@ class FensterTests(unittest.TestCase):
         self.assertEqual("Dump-Ordner", f.liste.item(ordner, "values")[2])
         self.assertEqual("Spielordner", f.paket_typ.cget("text"))
         self.assertEqual("Spielordner (Dump)", dict(f.tech.item(i, "values") for i in f.tech.get_children())["Quelle"])
+
+    # ---------------- ein grosses Spiel erscheint sofort, die Groesse kommt nach (Meldung des Nutzers 18.11.2026) ----------------
+    # Gemessen: Der Ordner von Ghost of Yotei (84.218 Dateien, 150,75 GB) brauchte 348 s, bis seine Groesse gezaehlt war - so lange
+    # erschien das Spiel auf Seite 7 gar nicht, das vorige blieb stehen, und unten rechts stand nur "Lese 1 Paket(e) ...".
+    def _langsame_groesse(self, summe: int = 123456, zwischenstand: int = 0):
+        """Ersatz fuer ``wz.ordner_groesse``, der erst fertig wird, wenn der Test es erlaubt."""
+        frei = threading.Event()
+        self.addCleanup(frei.set)
+
+        def groesse(ordner, melden=None, fortschritt=None):
+            if zwischenstand and fortschritt:
+                fortschritt(zwischenstand)
+            frei.wait(30)
+            if melden:
+                melden("[info] %s: 7 Dateien, 0.00 GB" % os.path.basename(ordner))
+            return summe
+        return frei, mock.patch.object(wz, "ordner_groesse", side_effect=groesse)
+
+    def test_ein_grosses_spiel_erscheint_sofort_und_die_groesse_kommt_nach(self) -> None:
+        frei, ersatz = self._langsame_groesse(summe=5 * 1024 ** 3)
+        f = self.f
+        with ersatz:
+            ordner = self._spielordner()
+            f._pakete_hinzufuegen([ordner], waehlen=True)
+            self.assertTrue(_warten(lambda: f.aktuell is not None and f.aktuell.pfad == ordner),
+                            "das Spiel erscheint, obwohl seine Groesse noch gezaehlt wird")
+            info = f.aktuell
+            self.assertTrue(info.groesse_offen)
+            self.assertEqual("Gamma Spiel", info.titel)
+            pending = self.f.t("ps5pkg.size_pending")
+            self.assertIn(pending, f.paket_pfad.cget("text"))
+            self.assertEqual(pending, f.liste.item(ordner, "values")[3])
+            self.assertEqual(pending, f._groesse_text())
+            self.assertEqual("disabled", str(f.start_knopf.cget("state")), "die Platzpruefung braucht die Groesse")
+            f._starten()                                                    # ein Klick ginge dennoch nicht durch
+            self.assertIsNone(f._job)
+            self.assertEqual(f.t("ps5pkg.size_wait"), f.status_var.get())
+            frei.set()
+            self.assertTrue(_warten(lambda: not info.groesse_offen), "die Groesse wird nachgetragen")
+        self.assertEqual(5 * 1024 ** 3, info.groesse)
+        size_text = f._fmt(info.groesse)
+        self.assertIn(size_text, f.paket_pfad.cget("text"))
+        self.assertEqual(size_text, f.liste.item(ordner, "values")[3])
+        self.assertEqual("normal", str(f.start_knopf.cget("state")))
+        self.assertEqual(size_text, dict(f.tech.item(i, "values") for i in f.tech.get_children())[f.t("ps5pkg.prop_size")])
+
+    def test_waehrend_die_groesse_gezaehlt_wird_steht_der_zwischenstand_in_der_statuszeile(self) -> None:
+        frei, ersatz = self._langsame_groesse(zwischenstand=12000)
+        with ersatz:
+            ordner = self._spielordner()
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)
+            self.assertTrue(_warten(lambda: "12000" in self.f.status_var.get()), self.f.status_var.get())
+            self.assertEqual(self.f.t("ps5pkg.size_progress", name=os.path.basename(ordner), count=12000), self.f.status_var.get())
+            frei.set()
+            self.assertTrue(_warten(lambda: not self.f.aktuell.groesse_offen))
+        self.assertTrue(_warten(lambda: "12000" not in self.f.status_var.get()), "danach steht wieder der Ruhetext da")
+
+    def test_kommen_spiel_und_groesse_im_selben_takt_an_geht_die_groesse_nicht_verloren(self) -> None:
+        """Bei einem kleinen Spiel zaehlt der Lesefaden die Groesse, noch bevor der Takt das Paket eingetragen hat: Beide Antworten
+        liegen dann im selben Takt bereit, und das Paket muss zuerst in die Liste (sonst ginge die Groesse verloren)."""
+        ordner = self._spielordner()
+        info = wz.ordner_lesen(ordner, self.ordner, groesse=False)
+        f = self.f
+        with f._sperre:
+            f._z["gelesen"].append(([info], ordner))
+            f._z["groesse_zaehler"][ordner] = 1000
+            f._z["groesse"].append((ordner, 4242))
+        f._takt_arbeiten()
+        self.assertIs(info, f.aktuell)
+        self.assertEqual((4242, False), (info.groesse, info.groesse_offen))
+        self.assertEqual(f._fmt(4242), f.liste.item(ordner, "values")[3])
+
+    def test_scheitert_das_zaehlen_bleibt_das_spiel_anzeigbar_und_startbar(self) -> None:
+        with mock.patch.object(wz, "ordner_groesse", side_effect=OSError("Laufwerk weg")):
+            ordner = self._spielordner()
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)
+            self.assertTrue(_warten(lambda: self.f.aktuell is not None and not self.f.aktuell.groesse_offen))
+        self.assertEqual(0, self.f.aktuell.groesse)
+        self.assertEqual("normal", str(self.f.start_knopf.cget("state")))
+        self.assertIn(self.f.t("ps5pkg.size_failed", name=os.path.basename(ordner)), self.f.protokoll.get("1.0", "end"))
+
+    def test_ein_zweites_spiel_erscheint_auch_dann_sofort_wenn_das_erste_noch_zaehlt(self) -> None:
+        """Der Fall des Nutzers: Ein Spiel mit langer Groessenberechnung blockiert nicht die Anzeige des naechsten."""
+        frei, ersatz = self._langsame_groesse()
+        with ersatz:
+            gross = self._spielordner(name="gross", titel="Gross", tid="PPSA00011", cid="UP0000-PPSA00011_00-GROSSGROSSGROSS00")
+            klein = self._spielordner(name="klein", titel="Klein", tid="PPSA00012", cid="UP0000-PPSA00012_00-KLEINKLEINKLEIN00")
+            self.f._pakete_hinzufuegen([gross], waehlen=True)
+            self.assertTrue(_warten(lambda: self.f.aktuell is not None and self.f.aktuell.pfad == gross))
+            self.f._pakete_hinzufuegen([klein], waehlen=True)
+            self.assertTrue(_warten(lambda: self.f.aktuell.pfad == klein), "das zweite Spiel wird gezeigt")
+            self.assertEqual("Klein", self.f.aktuell.titel)
+            frei.set()
+            self.assertTrue(_warten(lambda: all(not i.groesse_offen for i in self.f.pakete)))
 
     def test_ein_ordner_mit_spielordnern_und_paketen_liefert_alles(self) -> None:
         self._spielordner(name="a_spiel")

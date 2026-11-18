@@ -139,7 +139,7 @@ class Ps4DumpImageFenster:
         """Haengt eine Zeile an das Protokollfeld - nur im Fensterfaden."""
         if not self.protokoll.winfo_exists():
             return
-        self.protokoll.insert("end", text.rstrip("\n") + "\n")
+        self.protokoll.insert("end", text.rstrip("\n") + "\n", ("hinweis",) if text.lstrip().startswith("⚠") else ())
         self.protokoll.see("end")
 
     def _status(self, text: str) -> None:
@@ -347,6 +347,10 @@ class Ps4DumpImageFenster:
         self.protokoll = pw.Text(unten, height=1, font=(self.M, pt(9)), bg=c["console_bg"], fg=c["console_fg"],
                                  relief="flat", insertbackground=c["console_fg"], wrap="word")
         self.protokoll.pack(fill="both", expand=True, pady=(6, 10))
+        # Hinweise ("⚠ PlayGo-Dateien gefunden ...") in der Warnfarbe, fett - wie im Status-Log der Aufgaben 1 bis 6 und auf Seite 7.
+        self.protokoll.tag_configure("hinweis", foreground=c.get("fg_warning", "#f0a32e"), font=(self.M, pt(9), "bold"))
+        #: Dump-Ordner, zu denen der PlayGo-Hinweis schon im Protokoll steht (die Auswahl in der Liste wechselt oft).
+        self._playgo_gemeldet: set[str] = set()
 
         # ── Knopfleiste (oben im Koerper schon gepackt, hier gefuellt) ───────────────────────────────────
         # Kein SCHLIESSEN mehr (seit 12.10.2026): die Seite bleibt wie die uebrigen Seiten des Programms stehen.
@@ -762,8 +766,12 @@ class Ps4DumpImageFenster:
             merkmal = pkgwz.playgo_erklaert_ordner(s.dump_ordner) if s.dump_ordner else ""
         except Exception:  # noqa: BLE001
             merkmal = ""
-        self.playgo_hinweis.configure(
-            text=self.t("pkg.playgo_hinweis", datei=merkmal) if merkmal else "")
+        # Der Hinweis steht seit 18.11.2026 im Protokoll (orange, wie bei den Aufgaben 1 bis 7) und nicht mehr unter der Liste;
+        # je Dump-Ordner nur einmal, die Auswahl in der Liste wechselt oft. Das Etikett bleibt als leerer Anker.
+        self.playgo_hinweis.configure(text="")
+        if merkmal and s.dump_ordner not in self._playgo_gemeldet:
+            self._playgo_gemeldet.add(s.dump_ordner)
+            self._protokoll(self.t("pkg.playgo_hinweis", datei=merkmal))
 
     def _online_ergaenzen(self, s: "ab.Spiel", meta: dict, lokal_cover) -> None:
         """Fehlende Angaben (Hersteller, Genre, Erscheinungsdatum, Cover) online nachtragen - derselbe Weg wie bei den

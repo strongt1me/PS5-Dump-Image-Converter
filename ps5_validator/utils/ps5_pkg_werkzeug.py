@@ -365,6 +365,8 @@ class PaketInfo:
     patch: bool = False
     #: Nur bei einer von Dump Forge gelesenen Quelle: ``forge_cli.QuellFakten`` (AMPR, Packs, DLC, PlayGo), sonst ``None``.
     fakten: object = None
+    #: Die Groesse eines Spielordners ist noch nicht gezaehlt (``ordner_lesen(groesse=False)``): ``groesse`` ist 0 und gilt nicht.
+    groesse_offen: bool = False
 
     def __post_init__(self) -> None:
         # Die Kennung geht in Datei- und Ordnernamen (``anzeigename``, ``forge_cli.dateiname_fuer``) und damit in Pfade, die das Fenster
@@ -455,8 +457,17 @@ def ordner_ist_spiel(ordner: str) -> bool:
     return os.path.isfile(os.path.join(ordner, "sce_sys", "param.json"))
 
 
-def ordner_groesse(ordner: str, melden: _Zeile | None = None) -> int:
-    """Die Summe der Dateigroessen unter ``ordner``; ``melden`` bekommt am Ende eine Zeile (Dateizahl)."""
+#: Nach so vielen gezaehlten Dateien meldet ``ordner_groesse`` den Zwischenstand (``fortschritt``).
+GROESSE_MELDESCHRITT = 1000
+
+
+def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Callable[[int], None] | None" = None) -> int:
+    """Die Summe der Dateigroessen unter ``ordner``; ``melden`` bekommt am Ende eine Zeile (Dateizahl).
+
+    Bei einem grossen Spiel dauert das lange (gemessen 18.11.2026: Ghost of Yotei, 84.218 Dateien, 150,75 GB, auf dem
+    Laufwerk des Nutzers 348 s) - ``fortschritt`` bekommt darum alle :data:`GROESSE_MELDESCHRITT` Dateien die bisherige Zahl,
+    damit die Anzeige zeigen kann, dass etwas geschieht.
+    """
     summe = anzahl = 0
     for wurzel, _ordner, dateien in os.walk(ordner):
         for name in dateien:
@@ -465,16 +476,24 @@ def ordner_groesse(ordner: str, melden: _Zeile | None = None) -> int:
                 anzahl += 1
             except OSError:
                 continue
+            if fortschritt is not None and anzahl % GROESSE_MELDESCHRITT == 0:
+                fortschritt(anzahl)
     if melden:
         melden("[info] %s: %d Dateien, %.2f GB" % (os.path.basename(ordner), anzahl, summe / 1024 ** 3))
     return summe
 
 
-def ordner_lesen(ordner: str, arbeitsordner: str | None = None, melden: _Zeile | None = None) -> PaketInfo:
+def ordner_lesen(ordner: str, arbeitsordner: str | None = None, melden: _Zeile | None = None,
+                 groesse: bool = True) -> PaketInfo:
     """Liest einen Spielordner fuer die Anzeige: ``param.json``, Cover (als Kopie) und Groesse.
 
     Das Cover wird in einen eigenen Ordner kopiert (``PaketInfo.arbeit``); nur dieser wird beim Schliessen des
     Fensters entfernt - der Spielordner selbst wird nie angefasst.
+
+    Args:
+        groesse: ``False`` zaehlt die Dateien nicht (``PaketInfo.groesse_offen``): Titel und Cover sind sofort da, die
+            Groesse holt der Aufrufer mit :func:`ordner_groesse` nach. Bei einem Spiel mit zehntausenden Dateien dauert
+            das Zaehlen Minuten (Ghost of Yotei: 348 s) - so lange erschien das Spiel auf Seite 7 sonst gar nicht.
 
     Raises:
         Fehler: keine lesbare ``sce_sys/param.json``.
@@ -486,9 +505,9 @@ def ordner_lesen(ordner: str, arbeitsordner: str | None = None, melden: _Zeile |
         raise Fehler("param.json nicht lesbar: %s" % exc) from exc
     if not isinstance(param, dict):
         raise Fehler("param.json hat nicht die erwartete Form")
-    info = PaketInfo(pfad=ordner, groesse=ordner_groesse(ordner, melden), typ=TYP_ORDNER,
+    info = PaketInfo(pfad=ordner, groesse=ordner_groesse(ordner, melden) if groesse else 0, typ=TYP_ORDNER,
                      content_id=str(param.get("contentId", "") or ""), title_id=str(param.get("titleId", "") or ""),
-                     titel=titel_aus_param(param), param=param)
+                     titel=titel_aus_param(param), param=param, groesse_offen=not groesse)
     icon = os.path.join(ordner, "sce_sys", "icon0.png")
     if os.path.isfile(icon):
         try:

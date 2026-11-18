@@ -534,6 +534,22 @@ class FensterTests(unittest.TestCase):
             f._spielinfo_zeigen()
         box.assert_not_called()
 
+    def test_der_playgo_hinweis_steht_orange_im_protokoll_und_nicht_mehr_unter_der_liste(self) -> None:
+        """Nutzerwunsch 18.11.2026 (wie auf Seite 7): "⚠ PlayGo-Dateien gefunden ..." im Protokoll, in der Warnfarbe, je Dump-Ordner einmal."""
+        f = self._fenster()
+        f._protokoll("[Info] eine gewöhnliche Zeile")
+        f._protokoll("⚠ PlayGo-Dateien gefunden (sce_sys/playgo-scenario.json) – PlayGo beim Backup einbinden!")
+        markiert = f.protokoll.tag_ranges("hinweis")
+        zeilen = [z.strip() for a, e in zip(markiert[0::2], markiert[1::2])
+                  for z in f.protokoll.get(str(a), str(e)).splitlines() if z.strip()]
+        self.assertEqual(["⚠ PlayGo-Dateien gefunden (sce_sys/playgo-scenario.json) – PlayGo beim Backup einbinden!"], zeilen)
+        self.assertEqual(self.app._COLORS.get("fg_warning", "#f0a32e"), str(f.protokoll.tag_cget("hinweis", "foreground")))
+        quelle = (PROJEKT / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
+        rumpf = quelle.split("def _spielinfo_zeigen", 1)[1].split("def _online_ergaenzen", 1)[0]
+        self.assertIn('self.playgo_hinweis.configure(text="")', rumpf, "das Etikett unter der Liste bleibt leer")
+        self.assertIn('self._protokoll(self.t("pkg.playgo_hinweis", datei=merkmal))', rumpf)
+        self.assertIn("self._playgo_gemeldet", rumpf, "je Dump-Ordner nur einmal")
+
     def test_die_seite_pkg_zieht_die_spiel_info_nach(self) -> None:
         quelle = (PROJEKT / "ps5_validator" / "ui" / "pkg_fpkg_seite.py").read_text(encoding="utf-8")
         rumpf = quelle.split("def pkg_zeigen", 1)[1].split("def fpkg_zeigen", 1)[0]

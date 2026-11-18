@@ -16,7 +16,9 @@ Since v2.4.2 ps5-ultrapack is under GPL-3.0-or-later with additional terms
 under section 7 (see its `NOTICE`). The version constant of the tool here
 follows **v2.5.1** (2026-11-16); the C# sources of v2.5.1 differ from v2.4.1
 only in a three-line licence header and that constant, and none of the newer
-source is taken over.
+source is taken over. v2.6.0 (2026-11-18) was checked and is not followed: its
+C# sources change the package builder (new files, another patched
+LibProsperoPkg build), which this project does not call.
 
 ## LibProsperoPkg (GPL-3.0-or-later)
 
