@@ -261,6 +261,7 @@ class Ps5PkgFenster:
         self._befunde_gezeigt: "set[str]" = set()   # Quellen, deren Vorabbefunde schon im Protokoll stehen
         self.einbau = None                         # die Einbau-Karte der Seite (``_seite_umwandeln``)
         self._bericht_faden: "tuple | None" = None  # (Quelle, Faden) der laufenden Pruefung - ein Bau wartet darauf
+        self._bericht_start: float = 0.0            # ``time.monotonic()`` beim Start dieser Pruefung (Lebenszeichen, ``_pruefung_lebt``)
         self._einbauten_gemeldet: "tuple | None" = None   # (Pfad, Stand) der Quelle, deren [Pruefung]-Zeilen schon im Protokoll stehen
         self._nachlauf = False                     # die Quelle wird gerade nach einem Erfolg geloescht (``_nach_erfolg``)
         self._bauen(vorgabe)
@@ -2279,24 +2280,31 @@ class Ps5PkgFenster:
     def _quellfakten(self, info: "wz.PaketInfo") -> "forge.QuellFakten | None":
         """Forges Fakten zur Quelle (DLC, PlayGo, AMPR): bei einem Abbild aus dem Lesen, bei einem Spielordner jetzt.
 
-        Einen Spielordner liest ``ffpfsc-pkg-tool`` - Dump Forge sieht ihn erst hier (``inspect``, meist unter einer
-        Sekunde; die Listen der Bibliothek bleiben so schnell). Das Ergebnis bleibt an der Quelle haengen.
+        Einen Spielordner liest ``ffpfsc-pkg-tool`` - Dump Forge sieht ihn erst hier (``inspect``, bei kleinen Spielen unter
+        einer Sekunde; die Listen der Bibliothek bleiben so schnell). Bei einem sehr grossen Spielordner dauert es: gemessen
+        18.11.2026 an Ghost of Yotei (84.218 Dateien) rund 230 s - darum steht die Pruefmeldung schon, wenn auf den Faden der
+        Karte gewartet wird, nicht erst vor dem eigenen Lesen. Das Ergebnis bleibt an der Quelle haengen.
         """
         faden = getattr(self, "_bericht_faden", None)
         if info.fakten is None and faden is not None and faden[0] is info and faden[1].is_alive():
+            self._status_emu_pruefen()
             faden[1].join(60)                    # die Pruefung der Karte laeuft schon fuer diese Quelle: nicht noch einmal lesen
         if info.fakten is not None:
             return info.fakten
         exe = self._werkzeug_forge()
         if not exe or not (info.ist_ordner or forge.ist_paket(info.pfad)):
             return None
+        self._status_emu_pruefen()
+        info.fakten = forge.quellfakten_lesen(exe, info.pfad, popen_extra=self._popen_extra())
+        return info.fakten
+
+    def _status_emu_pruefen(self) -> None:
+        """Zeigt "Pruefe, was der Quelle fehlt ..." und zeichnet sofort - danach kann ein langes Lesen den Hauptfaden belegen."""
         self._status(self.t("ps5pkg.emu_pruefen"))
         try:
             self.win.update_idletasks()
         except tk.TclError:
             pass
-        info.fakten = forge.quellfakten_lesen(exe, info.pfad, popen_extra=self._popen_extra())
-        return info.fakten
 
     def _gepackt_verfahren(self, info: "wz.PaketInfo") -> str:
         """``"lz4"`` oder ``"zstd"``, wenn das Spiel Asset-Packs traegt, sonst ``""`` - das Verfahren, das Dump Forge beim Bauen
@@ -2552,6 +2560,7 @@ class Ps5PkgFenster:
 
         faden = threading.Thread(target=lauf, daemon=True, name="ps5pkg-bericht")
         self._bericht_faden = (info, faden)
+        self._bericht_start = time.monotonic()
         faden.start()
 
     @staticmethod
@@ -2578,7 +2587,7 @@ class Ps5PkgFenster:
         job = self._job
         if job is None:
             if self._uebergabe is None:
-                self._lebt_setzen("")
+                self._lebt_setzen(self._pruefung_lebt())
             return
         jetzt = time.monotonic()
         start = job.get("start") or jetzt
@@ -2588,6 +2597,24 @@ class Ps5PkgFenster:
         if still >= self.STILLE_AB:
             text += "\n" + self.t("ps5pkg.lebt_still", still=self._dauer_text(still))
         self._lebt_setzen(text)
+
+    #: Erst ab so vielen Sekunden zeigt die Seite, dass die Pruefung der Karte noch liest - die meisten Spiele sind nach weniger als einer Sekunde durch.
+    PRUEFUNG_LEBT_AB = 3.0
+
+    def _pruefung_lebt(self) -> str:
+        """Das Lebenszeichen waehrend die Karte das gewaehlte Spiel im Hintergrund prueft, sonst ``""``.
+
+        Nutzerwunsch 18.11.2026: Dump Forges ``inspect`` liest einen sehr grossen Spielordner lange (gemessen: Ghost of Yotei,
+        84.218 Dateien, rund 230 s) und meldet dabei nichts - ``inspect`` gibt erst am Ende eine Antwort. Eine Prozentzahl gibt es
+        deshalb nicht; die Seite zeigt, seit wann geprueft wird, und dass das bei grossen Spielen dauert (wie beim Lauf).
+        """
+        bericht = self._bericht_faden
+        if bericht is None or not bericht[1].is_alive() or bericht[0] is not self.aktuell:
+            return ""
+        dauer = time.monotonic() - self._bericht_start
+        if dauer < self.PRUEFUNG_LEBT_AB:
+            return ""
+        return self.t("ps5pkg.pruefung_lebt", dauer=self._dauer_text(dauer))
 
     def _lebt_setzen(self, text: str) -> None:
         """Das Lebenszeichen rechts unten (klein, unter der Statuszeile); ohne Text ganz aus dem Raster, wie ``telemetry_label``."""

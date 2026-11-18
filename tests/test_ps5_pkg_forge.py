@@ -1197,6 +1197,107 @@ class EinbauSeiteTests(_ForgeBasis):
             self.assertIsNotNone(fakten)
             self.assertEqual(1, lesen.call_count, "nicht noch einmal gelesen")
 
+    def test_die_pruefmeldung_steht_schon_waehrend_des_wartens_auf_den_faden_der_karte(self) -> None:
+        """Ein Bau, der startet, solange die Karte die Quelle noch liest, wartet bis zu 60 s auf sie (Ghost of Yotei: ``inspect`` rund
+        230 s). Die Meldung "Pruefe, was der Quelle fehlt" muss davor stehen, nicht erst nach dem Warten."""
+        def langsam(*a, **k):
+            time.sleep(1.5)
+            return fc.QuellFakten(**self._DLC)
+        ordner = self._spielordner()
+        zeitpunkte: list = []
+        with mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam):
+            self._laden(ordner)
+            info = self.f.aktuell
+            self.assertIsNone(info.fakten)
+            faden = self.f._bericht_faden[1]
+            meldung = self.f.t("ps5pkg.emu_pruefen")
+            with mock.patch.object(self.f, "_status", side_effect=lambda text: zeitpunkte.append((text, faden.is_alive()))):
+                self.assertIsNotNone(self.f._quellfakten(info))
+        self.assertEqual([(meldung, True)], zeitpunkte, "einmal, und zwar noch waehrend der Faden liest")
+
+    def test_waehrend_dump_forge_im_hintergrund_liest_zeigt_die_seite_ein_lebenszeichen(self) -> None:
+        """Nutzerwunsch 18.11.2026: ``inspect`` meldet bei einem sehr grossen Spielordner (Ghost of Yotei: rund 230 s) nichts, die Seite
+        zeigte keinen Fortschritt. Jetzt steht rechts unten, seit wann geprueft wird - und danach ist die Zeile wieder weg."""
+        frei = threading.Event()
+        self.addCleanup(frei.set)
+
+        def langsam(*a, **k):
+            frei.wait(20)
+            return fc.QuellFakten(**self._DLC)
+        ordner = self._spielordner()
+        with mock.patch.object(fz.Ps5PkgFenster, "PRUEFUNG_LEBT_AB", 0.2), \
+                mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam):
+            self._laden(ordner)
+            self.assertTrue(basis._warten(lambda: "Dump Forge prüft das Spiel seit" in self.f.lebt_var.get(), 8), self.f.lebt_var.get())
+            self.assertTrue(self.f.lebt_label.winfo_manager(), "das Lebenszeichen steht im Raster")
+            self.assertRegex(self.f.lebt_var.get(), r"seit \d+:\d\d ")
+            frei.set()
+            self.assertTrue(basis._warten(lambda: self.f.lebt_var.get() == "", 8), "nach dem Lesen verschwindet es wieder")
+
+    def test_ein_schnelles_spiel_bekommt_kein_lebenszeichen(self) -> None:
+        """Die meisten Spiele sind nach weniger als einer Sekunde durch - fuer sie blitzt keine Zeile auf (Schwelle ``PRUEFUNG_LEBT_AB``)."""
+        def kurz(*a, **k):
+            time.sleep(1.0)                              # liest eine Weile, aber unter der Schwelle (hier 30 s statt 3 s)
+            return fc.QuellFakten(**self._DLC)
+        ordner = self._spielordner()
+        gesehen: list = []
+        with mock.patch.object(fz.Ps5PkgFenster, "PRUEFUNG_LEBT_AB", 30.0), \
+                mock.patch.object(fc, "quellfakten_lesen", side_effect=kurz):
+            self._laden(ordner)
+            ende = time.monotonic() + 10.0
+            while time.monotonic() < ende and self.f.aktuell.fakten is None:
+                basis._pumpen(0.05)
+                gesehen.append(self.f.lebt_var.get())
+            basis._pumpen(0.2)
+            gesehen.append(self.f.lebt_var.get())
+        self.assertIsNotNone(self.f.aktuell.fakten, "die Pruefung wurde fertig")
+        self.assertGreater(len(gesehen), 10, "die Seite wurde waehrend des Lesens beobachtet")
+        self.assertEqual({""}, set(gesehen))
+
+    def test_das_lebenszeichen_zeigt_nie_die_pruefung_einer_anderen_quelle(self) -> None:
+        frei = threading.Event()
+        self.addCleanup(frei.set)
+        fremd = threading.Thread(target=frei.wait, args=(20,), daemon=True)
+        fremd.start()
+        self.addCleanup(fremd.join, 1)
+        ordner = self._spielordner()
+        self._laden(ordner)
+        with mock.patch.object(fz.Ps5PkgFenster, "PRUEFUNG_LEBT_AB", 0.0):
+            self.f._bericht_faden, self.f._bericht_start = (object(), fremd), time.monotonic() - 30
+            self.assertEqual("", self.f._pruefung_lebt(), "ein Faden, der zu einer anderen Quelle gehoert")
+            self.f._bericht_faden = (self.f.aktuell, fremd)
+            self.assertIn("0:3", self.f._pruefung_lebt(), "derselbe Faden, jetzt zur gewaehlten Quelle")
+
+    def test_das_lebenszeichen_gehoert_zur_gewaehlten_quelle(self) -> None:
+        """Wurde inzwischen ein anderes Spiel gewaehlt, zeigt die Seite nicht mehr die Zeit der alten Pruefung."""
+        a, b = self._spielordner("A", "PPSA00011", "Eins"), self._spielordner("B", "PPSA00012", "Zwei")
+        frei = threading.Event()
+        self.addCleanup(frei.set)
+
+        def langsam(werkzeug, pfad, **k):
+            if pfad == a:
+                frei.wait(20)
+            return fc.QuellFakten(**self._DLC)
+        with mock.patch.object(fz.Ps5PkgFenster, "PRUEFUNG_LEBT_AB", 0.2), \
+                mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam):
+            self._laden(a)
+            self.assertTrue(basis._warten(lambda: "Dump Forge prüft" in self.f.lebt_var.get(), 8))
+            self._laden(b)
+            self.assertTrue(basis._warten(lambda: self.f.aktuell is not None and self.f.aktuell.pfad == b, 8))
+            self.assertTrue(basis._warten(lambda: self.f.lebt_var.get() == "", 8), self.f.lebt_var.get())
+
+    def test_das_lebenszeichen_hat_in_jeder_sprache_dieselbe_dauer_marke(self) -> None:
+        for sprache in ("de", "en", "es", "it", "fr"):
+            with self.subTest(sprache=sprache):
+                self.assertIn("{dauer}", STRINGS["ps5pkg.pruefung_lebt"][sprache])
+
+    def test_die_pruefmeldung_nennt_die_dauer_bei_sehr_grossen_spielen(self) -> None:
+        """Gemessen 230 s fuer einen Ordner mit 84.218 Dateien; die Meldung sagt es in jeder Sprache (Minuten)."""
+        wort = {"de": "Minuten", "en": "minutes", "es": "minutos", "it": "minuti", "fr": "minutes"}
+        for sprache, minuten in wort.items():
+            with self.subTest(sprache=sprache):
+                self.assertIn(minuten, STRINGS["ps5pkg.emu_pruefen"][sprache])
+
     def test_die_antwort_einer_veralteten_quelle_steht_nicht_im_protokoll(self) -> None:
         a, b = self._spielordner("A", "PPSA00011", "Eins"), self._spielordner("B", "PPSA00012", "Zwei")
 
