@@ -234,7 +234,9 @@ class QuellFakten:
     #: Die SDK-Fassung der ``eboot.bin`` und die Firmware, die ``param.json`` verlangt (Forge: ``"7.00"``, ``"9.60"``).
     sdk: str = ""
     firmware: str = ""
-    #: Das Spiel traegt schon einen Backport (Ersatzbibliotheken oder herabgesetztes SDK, Forge: ``backport``/``backport_firmware``).
+    #: Das Spiel traegt schon einen Backport: Ersatzbibliotheken in ``fakelib/`` (Forge: ``backport``). Nicht ``backport_firmware``: Forge
+    #: setzt es, sobald irgendeine Datei in ``fakelib/`` liegt, auch bei einem Spiel nur mit AMPR EMU, PlayGo oder DLC EMU dort
+    #: (gemessen 18.11.2026: ``backport`` leer, ``backport_firmware`` "2.00"; Forges eigene Ausgabe wertet nur ``backport``).
     backport_vorhanden: bool = False
 
     @property
@@ -315,7 +317,7 @@ def quellfakten(daten: dict) -> QuellFakten:
         playgo_merkmal=_playgo_merkmal_in(pfade),
         sdk=str(daten.get("sdk") or ""),
         firmware=str(daten.get("firmware") or ""),
-        backport_vorhanden=bool(daten.get("backport")) or daten.get("backport_firmware") is not None,
+        backport_vorhanden=bool(daten.get("backport")),
     )
 
 

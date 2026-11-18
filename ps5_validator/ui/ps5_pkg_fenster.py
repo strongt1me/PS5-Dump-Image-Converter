@@ -668,7 +668,6 @@ class Ps5PkgFenster:
         # Der Auftrag steht wie bei den Aufgaben 1 bis 6 in der Aktionsleiste (``_leiste_bauen``): ein Balken mit Prozentzahl, rechts
         # daneben der Text. Die Werte des Schrittbalkens (``balken``) und des Gesamtbalkens (``balken_gesamt``) laufen weiter - der
         # Schrittbalken ist nicht zu sehen, die Leiste zeigt den Gesamtstand.
-        auftrag = None
         self.datei_var = tk.StringVar(value="")
 
         # ERGEBNIS (Ausgabe, Titel-ID, Inhalt, Groesse, Freier Platz): Die Chips sind seit 31.10.2026 nicht mehr zu sehen
@@ -1644,7 +1643,9 @@ class Ps5PkgFenster:
         if not self._aktion_moeglich(self.aktion_var.get()):
             self.aktion_var.set(AKTION_UMWANDELN)
         if not self._format_moeglich(self.format_schluessel):
-            self.format_schluessel = FORMAT_PAKET if info.ist_abbild else "ffpfsc"
+            # Zurueck auf die Vorgabe (.ffpkg), wenn sie fuer diese Quelle geht; aus einem Abbild geht hier nur das Paket.
+            standard = opt.STANDARD_FORMAT
+            self.format_schluessel = standard if self._format_moeglich(standard) else (FORMAT_PAKET if info.ist_abbild else "ffpfsc")
         self._aktion_anwenden()
         # Forges Vorabbefunde zur Quelle (Fehler und Warnungen): einmal je Quelle ins Protokoll, nicht stumm.
         if info.befunde and info.pfad not in self._befunde_gezeigt:
@@ -2049,6 +2050,12 @@ class Ps5PkgFenster:
         if info is None or self._job is not None or self._uebergabe is not None:
             return
         aktion = self.aktion_var.get()
+        # Zuerst das Ziel: Fehlt es, sollen keine Rueckfragen (BACKPORT, "Entpacken und einbauen?") und keine angehakten Kaestchen von
+        # Aufgabe 1 vorangehen, deren Folgen der Anwender dann nicht mehr los wird (Pruefung 18.11.2026).
+        ziel = self.ziel_var.get().strip()
+        if aktion not in (AKTION_PRUEFEN, AKTION_KONSOLE) and (not ziel or not os.path.isdir(ziel)):
+            self._fehler(self.t("ps5pkg.err_no_target"))
+            return
         # Den Bau eines Pakets aus einem Abbild oder Spielordner macht Dump Forge, seit 17.11.2026 als einziger Paketersteller
         # (LibProsperoPkg und ProsperoPkgTool bauen nicht mehr): Es braucht weder ffpfsc-pkg-tool noch die .NET-Laufzeit.
         # Ein ``.pkg`` schreibt Dump Forge im Strom in ein Abbild (Nutzerwunsch 17.11.2026, kein Zwischenordner): auch dafuer
@@ -2073,22 +2080,19 @@ class Ps5PkgFenster:
         if aktion == AKTION_KONSOLE:
             self._konsole_starten(info)
             return
-        ziel = self.ziel_var.get().strip()
-        if not ziel or not os.path.isdir(ziel):
-            self._fehler(self.t("ps5pkg.err_no_target"))
-            return
         self._merken(EINST_ZIEL, ziel)
         if aktion == AKTION_EXTRAHIEREN:
             ordner = os.path.join(ziel, anzeigename(info))
+            leeren: dict = {}
             if os.path.exists(ordner) and os.listdir(ordner):
                 if not self.ueberschreiben_var.get():
                     messagebox.showinfo(self.t("ps5pkg.window_title"), self.t("ps5pkg.err_exists", pfad=ordner),
                                         parent=self.win)
                     return
-                if not _haupt(self.g)._rmtree_force(ordner, ignore_errors=True) and os.path.exists(ordner):
-                    self._fehler(self.t("ps5pkg.err_cannot_clear", pfad=ordner))
-                    return
-            self._job_starten("extrahieren", self._lauf_extrahieren, info, ordner)
+                # Der alte Ordner wird erst geleert, wenn der Lauf feststeht (``_job_starten``): Die Frage "Quelle nach Erfolg loeschen?"
+                # kann noch mit "Abbrechen" enden - dann muss er unberuehrt bleiben (Pruefung 18.11.2026).
+                leeren = {"vorher_leeren": ordner}
+            self._job_starten("extrahieren", self._lauf_extrahieren, info, ordner, **leeren)
             return
         if info.ist_quelle and self.format_schluessel == FORMAT_PAKET:
             self._forge_bauen_starten(info, ziel)
@@ -2206,7 +2210,7 @@ class Ps5PkgFenster:
             temp = tempfile.mkdtemp(prefix="ps5conv_forge_", dir=self._arbeitsordner())
         self._staging.append(temp)
         self._bau = {"temp": temp, "vorher": set(os.listdir(ziel)), "forge": True, "format": abbild or "pkg", "name": name,
-                     "entpacken": entpacken}
+                     "entpacken": entpacken, "ersetzen": bool(self.ueberschreiben_var.get())}
         self._job_starten("abbild" if abbild else "bauen", self._lauf_bauen, info, ziel)
 
     def _forge_abbild_name(self, info: "wz.PaketInfo", abbild: str) -> str:
@@ -2617,35 +2621,66 @@ class Ps5PkgFenster:
                 self._z["gesamt"] = 100.0
                 self._z["schritt_text"] = self._forge_stufe_text("finalize")
             endgueltig = os.path.join(ziel, name)
-            if os.path.exists(endgueltig):
-                os.remove(endgueltig)               # nur mit dem Haken "Vorhandene ersetzen" (siehe _forge_bauen_starten)
+            if self._abbruch:
+                # ABBRECHEN kam, als der Bau schon fertig war: nichts ablegen (der Arbeitsordner mit dem Paket wird entfernt).
+                return self._ende_bei_fehler(wz.Fehler("abgebrochen"))
+            # Eine vorhandene Datei gibt es hier nur mit dem Haken "Vorhandene ersetzen" (siehe _forge_bauen_starten) - die Pruefung beim
+            # Start gilt aber nur fuer diesen Augenblick: Ist waehrend des langen Baus eine gleichnamige Datei entstanden, wird sie ohne den
+            # Haken nicht still ueberschrieben (Pruefung 18.11.2026). Ohne die Angabe in ``bau`` gilt der Haken als gesetzt.
+            if os.path.exists(endgueltig) and not bau.get("ersetzen", True):
+                raise wz.Fehler(self.t("ps5pkg.err_exists_pkg" if abbild == "pkg" else "ps5pkg.err_exists_abbild", pfad=endgueltig))
+            # Sie wird nicht vorher geloescht: ``os.replace`` ersetzt atomar. Geht das nicht (Arbeitsordner auf einem anderen Laufwerk,
+            # gesperrte Datei), wird erst neben das Ziel kopiert und dann ersetzt: Eine abgebrochene Kopie (Platte voll) laesst die alte
+            # Datei unberuehrt - ``shutil.move`` schriebe unter Windows mitten in sie hinein (Pruefung 18.11.2026).
             try:
                 os.replace(erg.pfad, endgueltig)
-            except OSError:                         # Arbeitsordner auf einem anderen Laufwerk
-                shutil.move(erg.pfad, endgueltig)
+            except OSError:
+                zwischen = endgueltig + ".ps5conv_neu"
+                try:
+                    shutil.copy2(erg.pfad, zwischen)
+                    os.replace(zwischen, endgueltig)
+                except BaseException:
+                    try:
+                        os.remove(zwischen)
+                    except FileNotFoundError:
+                        pass
+                    except OSError:
+                        logger.warning("Rest der Kopie nicht entfernt: %s", zwischen, exc_info=True)
+                    raise
         except wz.Fehler as exc:
             return self._ende_bei_fehler(exc)
         except OSError as exc:
             logger.exception("Paket von Dump Forge ablegen")
+            if self._abbruch:
+                return self._ende_bei_fehler(exc)
             return {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
         except Exception as exc:  # noqa: BLE001
             logger.exception("Paket bauen mit Dump Forge")
+            if self._abbruch:
+                return self._ende_bei_fehler(exc)
             return {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
         t = self.t
         if erg.modus == "full":
             pruefung = t("ps5pkg.forge_check_full", n=len(erg.pruefungen), gesamt=self._fmt(erg.gesamt_bytes))
         else:
-            pruefung = t("ps5pkg.forge_check_fast", n=len(erg.pruefungen), geprueft=self._fmt(erg.geprueft_bytes),
+            pruefung = t("ps5pkg.forge_check_fast", n=len(erg.pruefungen), menge=self._fmt(erg.geprueft_bytes),
                          gesamt=self._fmt(erg.gesamt_bytes), proben=erg.proben)
         return {"ok": True, "text": endgueltig, "ausgabe": ziel, "pkg": endgueltig, "pruefung": pruefung, "befund": False}
 
-    def _job_starten(self, art: str, ziel_funktion, info: "wz.PaketInfo", ziel: str) -> None:
+    def _job_starten(self, art: str, ziel_funktion, info: "wz.PaketInfo", ziel: str, vorher_leeren: str = "") -> None:
         # Der Haken "Quelle nach Erfolg loeschen": vor dem Start bestaetigen, nie still. Abbrechen startet nichts.
         weiter, loeschen = self._loeschen_vorbereiten(art, info)
         if not weiter:
             self._staging_raeumen()
             self._bau = None
             return
+        if vorher_leeren:
+            # Erst jetzt, da der Lauf feststeht: ein bestehender Ordner, der ersetzt werden soll (Haken "Vorhandenes ueberschreiben").
+            if not _haupt(self.g)._rmtree_force(vorher_leeren, ignore_errors=True) and os.path.exists(vorher_leeren):
+                self._fehler(self.t("ps5pkg.err_cannot_clear", pfad=vorher_leeren))
+                self._staging_raeumen()
+                self._bau = None
+                return
         self._abbruch = False
         jetzt = time.monotonic()
         # "start" und "letzte" fuer das Lebenszeichen (``_lebenszeichen_zeigen``): seit wann der Lauf geht, wann zuletzt etwas kam.

@@ -14,7 +14,7 @@ import logging
 import threading
 import tkinter as tk
 from tkinter import filedialog
-from typing import Any, Callable
+from typing import Callable
 
 from ps5_validator.utils import geraete_suche
 

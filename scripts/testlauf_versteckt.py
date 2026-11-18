@@ -108,6 +108,20 @@ def _unter_windows_starten(befehl: list[str], ausgabe: str, arbeitsordner: str) 
         user32.CloseDesktop(desktop)
 
 
+def befehl_aufloesen(befehl: list[str], ordner: str) -> list[str]:
+    """Ein relativer Programmpfad (``.venv\\Scripts\\python.exe``) gilt ab ``ordner`` - wie unter Linux und macOS (``cwd=``).
+
+    ``CreateProcessW`` loest ihn sonst gegen den Ordner des Aufrufers auf, nicht gegen ``lpCurrentDirectory``: Mit ``--ordner X``
+    scheiterte ein relativer Befehl mit ``OSError 2``. Ein Name ohne Ordnerteil (``python``) bleibt, wie er ist (Suche im PATH); ein
+    Pfad, den es ab ``ordner`` nicht gibt, ebenso.
+    """
+    programm = befehl[0]
+    if os.path.isabs(programm) or not (os.sep in programm or (os.altsep and os.altsep in programm)):
+        return list(befehl)
+    kandidat = os.path.join(ordner, programm)
+    return [os.path.abspath(kandidat) if os.path.exists(kandidat) else programm, *befehl[1:]]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Befehl auf einem unsichtbaren Windows-Desktop ausfuehren (Tests ohne Fenster).")
     parser.add_argument("--ausgabe", default="", help="Standard- und Fehlerausgabe des Befehls in diese Datei schreiben")
@@ -122,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
             with open(a.ausgabe, "wb") as datei:
                 return subprocess.call(befehl, cwd=a.ordner, stdout=datei, stderr=subprocess.STDOUT)
         return subprocess.call(befehl, cwd=a.ordner)
-    return _unter_windows_starten(befehl, a.ausgabe, a.ordner)
+    return _unter_windows_starten(befehl_aufloesen(befehl, a.ordner), a.ausgabe, a.ordner)
 
 
 if __name__ == "__main__":

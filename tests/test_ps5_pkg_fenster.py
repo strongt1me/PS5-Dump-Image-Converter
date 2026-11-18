@@ -1152,7 +1152,8 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(ordner)
         self.f._pakete_hinzufuegen([os.path.join(self.ordner, "alpha.pkg")], waehlen=True)
         self.assertTrue(_warten(lambda: f.aktuell is not None and not f.aktuell.ist_ordner))
-        self.assertEqual("ffpfsc", f.format_schluessel, "fuer ein Paket springt die Wahl zurueck")
+        # Seit 18.11.2026 springt die Wahl auf die Vorgabe (.ffpkg), nicht mehr fest auf .ffpfsc.
+        self.assertEqual("ffpkg", f.format_schluessel, "fuer ein Paket springt die Wahl zurueck")
 
     def test_beim_schliessen_bleibt_der_spielordner_unberuehrt(self) -> None:
         ordner = self._spielordner_laden()

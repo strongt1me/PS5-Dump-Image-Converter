@@ -271,6 +271,22 @@ class FrageTests(unittest.TestCase):
         g._ampr_einschalten.assert_not_called()
         self.assertEqual(["main.ampr_bleibt_aus"], g._log)
 
+    def test_ja_bei_einem_zstd_gepackten_spiel_prueft_gleich_auf_ng(self) -> None:
+        """Wie im Zweig "schon angehakt": zstd-Packs liest nur NG - lieber jetzt fragen als erst im Einbau (nach Minuten) abbrechen."""
+        g = _Stand.gui(gepackt="zstd")
+        g._ampr_gepackt_pruefen = mock.Mock()
+        g._ampr_vor_dem_lauf_klaeren("pack_folder", "C:/x")
+        g._ampr_einschalten.assert_called_once_with()
+        g._ampr_gepackt_pruefen.assert_called_once_with(g._quellfakten_der_quelle.return_value)
+
+    def test_nein_bei_einem_zstd_gepackten_spiel_prueft_nichts(self) -> None:
+        g = _Stand.gui(gepackt="zstd")
+        g._ask_yesno_threadsafe.return_value = False
+        g._ampr_gepackt_pruefen = mock.Mock()
+        g._ampr_vor_dem_lauf_klaeren("pack_folder", "C:/x")
+        g._ampr_einschalten.assert_not_called()
+        g._ampr_gepackt_pruefen.assert_not_called()
+
     def test_braucht_es_kein_ampr_keine_frage_und_keine_zeile(self) -> None:
         g = _Stand.gui(bedarf=False)
         g._ampr_vor_dem_lauf_klaeren("pack_folder", "C:/x")
@@ -376,13 +392,30 @@ class NgWahlTests(unittest.TestCase):
         g._ask_yesno_threadsafe.assert_called_once()
 
     def test_ein_gepacktes_spiel_behaelt_seine_packs_und_bekommt_nur_die_einfache_frage(self) -> None:
+        """Keine Wahl der Methode (``_ampr_wahl_fragen``): Die Packs bleiben, wie sie sind - nur die Frage nach AMPR EMU selbst."""
         for gepackt in ("lz4", "zstd"):
             with self.subTest(gepackt=gepackt):
                 g = _Stand.gui(ng="0.4.2.1 NG", gepackt=gepackt)
                 g._ampr_vor_dem_lauf_klaeren("pack_folder", "C:/x")
                 g._ampr_wahl_fragen.assert_not_called()
-                g._ask_yesno_threadsafe.assert_called_once()
-                g._ampr_einschalten.assert_called_once_with()
+                self.assertEqual("dialog.title.ampr_empfohlen", g._ask_yesno_threadsafe.call_args_list[0].args[0])
+                self.assertEqual(((), {}), (g._ampr_einschalten.call_args_list[0].args, g._ampr_einschalten.call_args_list[0].kwargs))
+
+    def test_bei_lz4_packs_bleibt_es_bei_der_einen_frage(self) -> None:
+        g = _Stand.gui(ng="0.4.2.1 NG", gepackt="lz4")
+        g._ampr_vor_dem_lauf_klaeren("pack_folder", "C:/x")
+        g._ask_yesno_threadsafe.assert_called_once()
+        g._ampr_einschalten.assert_called_once_with()
+
+    def test_bei_zstd_packs_kommt_nach_dem_ja_die_pruefung_auf_ng(self) -> None:
+        """zstd-Packs liest nur NG: Steht eine andere Fassung gewaehlt, fragt das Programm sofort, ob es auf NG umstellen soll
+        (``_ampr_gepackt_pruefen``) - statt erst im Einbau abzubrechen (Pruefung 18.11.2026)."""
+        g = _Stand.gui(ng="0.4.2.1 NG", gepackt="zstd")
+        g._ampr_vor_dem_lauf_klaeren("pack_folder", "C:/x")
+        self.assertEqual(["dialog.title.ampr_empfohlen", "dialog.title.ampr_ng_noetig"],
+                         [c.args[0] for c in g._ask_yesno_threadsafe.call_args_list])
+        self.assertEqual([(), ("0.4.2.1 NG",)], [(tuple(c.args) or tuple(c.kwargs.values())) for c in g._ampr_einschalten.call_args_list])
+        self.assertEqual(["main.ampr_eingeschaltet", "main.ampr_ng_umgestellt"], g._log)
 
     def test_die_ng_fassung_ist_die_neueste_der_variante_ng_und_nie_die_debugfassung(self) -> None:
         g = GUI.__new__(GUI)
@@ -535,14 +568,94 @@ class QuelleTests(unittest.TestCase):
             g._quellfakten_der_quelle(tmp)
             self.assertEqual(2, lesen.call_count)
 
-    def test_ein_abbruch_wird_nicht_gemerkt(self) -> None:
+    def test_ein_abbruch_waehrend_des_lesens_wird_nicht_gemerkt(self) -> None:
+        """ABBRECHEN mitten im ``inspect``: Das ``None`` des Abbruchs darf der naechste Lauf nicht als Antwort vorfinden."""
         g = self._gui()
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fc, "quellfakten_lesen", return_value=None) as lesen:
-            g.is_running = False
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fc, "quellfakten_lesen") as lesen:
+            def abgebrochen(*_a, **_k):
+                g.is_running = False
+                return None
+
+            lesen.side_effect = abgebrochen
             self.assertIsNone(g._quellfakten_der_quelle(tmp))
             g.is_running = True
-            g._quellfakten_der_quelle(tmp)
+            lesen.side_effect = None
+            lesen.return_value = fc.QuellFakten(gepackt="lz4")
+            self.assertEqual("lz4", g._quellfakten_der_quelle(tmp).gepackt, "ein gemerktes None haette hier gestanden")
             self.assertEqual(2, lesen.call_count)
+
+    def _mit_arbeitsfaden(self, g, arbeit) -> None:
+        """Fuehrt ``arbeit`` in einem Faden aus, der als ``_task_thread`` des Auftrags gilt (lebt, solange er rechnet)."""
+        faden = threading.Thread(target=arbeit)
+        g._task_thread = faden
+        faden.start()
+        faden.join(15)
+        self.assertFalse(faden.is_alive())
+
+    def test_der_arbeitsfaden_bleibt_nach_abbrechen_im_laufpfad(self) -> None:
+        """Zwischen zwei Rueckfragen kann ABBRECHEN kommen: Der Arbeitsfaden liest dann nicht ungebremst weiter, sondern bricht ab."""
+        g = self._gui()
+        g.is_running = False                                       # ABBRECHEN ist schon gedrueckt
+        ergebnis: dict = {}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fc, "quellfakten_lesen", return_value=None) as lesen:
+            self._mit_arbeitsfaden(g, lambda: ergebnis.update(r=g._quellfakten_der_quelle(tmp)))
+            abbruch = lesen.call_args.kwargs["abbruch"]
+        self.assertIsNotNone(abbruch, "der Arbeitsfaden bekommt den Abbruch-Rueckruf auch nach ABBRECHEN")
+        self.assertTrue(abbruch())
+
+    def test_ein_fremder_faden_liest_im_ruhezustand_auch_waehrend_ein_auftrag_laeuft(self) -> None:
+        """Seitenleiste und Seite 7 fragen auch mitten in einem Auftrag: Dessen Ende darf ihr Lesen nicht abbrechen, ihre Antwort
+        gehoert nicht in den Zwischenspeicher der Rueckfragen."""
+        g = self._gui()
+        g.is_running = True
+        gehalten = threading.Event()
+        arbeitsfaden = threading.Thread(target=gehalten.wait, args=(30,))
+        arbeitsfaden.start()
+        try:
+            g._task_thread = arbeitsfaden                                  # ein Auftrag laeuft, die Frage kommt von woanders
+            with tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten(gepackt="lz4")) as lesen:
+                self.assertEqual("lz4", g._quellfakten_der_quelle(tmp).gepackt)
+            self.assertIsNone(lesen.call_args.kwargs["abbruch"], "das Ende des fremden Auftrags darf dieses Lesen nicht abbrechen")
+            self.assertEqual({}, getattr(g, "_quellfakten_zwischen", {}), "nichts aus einem fremden Faden in den Zwischenspeicher")
+        finally:
+            gehalten.set()
+            arbeitsfaden.join(15)
+
+    def test_viele_dateien_gleichzeitig_verdraengen_ohne_fehler(self) -> None:
+        """Verschiedene Dateien haben verschiedene Schloesser, teilen aber das Merk-Woerterbuch (Pruefung 18.11.2026: ``pop`` zweier
+        Faeden warf KeyError, der Aufrufer zeigte \"unbekannt\")."""
+        g = self._gui()
+        g.is_running = False
+        fehler: list = []
+
+        def arbeit(teil):
+            try:
+                for _runde in range(6):
+                    for datei in teil:
+                        g._quellfakten_der_quelle(datei)
+            except BaseException as exc:  # noqa: BLE001 - jeder Fehler im Faden ist der Befund
+                fehler.append(exc)
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(fc, "quellfakten_lesen", side_effect=lambda *_a, **_k: fc.QuellFakten()):
+            dateien = []
+            for i in range(64):
+                datei = os.path.join(tmp, "s%02d.pkg" % i)
+                Path(datei).write_bytes(b"x")
+                dateien.append(datei)
+            faeden = [threading.Thread(target=arbeit, args=(dateien[k::8],)) for k in range(8)]
+            alt = sys.getswitchinterval()
+            sys.setswitchinterval(1e-6)                                    # viele Wechsel zwischen den Faeden erzwingen
+            try:
+                for faden in faeden:
+                    faden.start()
+                for faden in faeden:
+                    faden.join(60)
+            finally:
+                sys.setswitchinterval(alt)
+        self.assertEqual([], fehler)
+        self.assertLessEqual(len(g._quellfakten_ruhe), 16)
 
     def test_der_abbruch_des_laufs_wird_an_forge_weitergereicht(self) -> None:
         g = self._gui()
@@ -552,6 +665,99 @@ class QuelleTests(unittest.TestCase):
             self.assertFalse(abbruch())
             g.is_running = False
             self.assertTrue(abbruch())
+
+    def test_im_ruhezustand_wird_forge_gefragt_und_nicht_abgebrochen(self) -> None:
+        """Ohne laufenden Auftrag (Seitenleiste, [Pruefung]-Zeilen, Seite 7) ist ``is_running`` falsch - das ist kein Abbruch.
+
+        Gemessen 18.11.2026 am echten Programm: Der Rueckruf "nicht laufend = abgebrochen" liess ``wz.laufen`` vor dem Start zurueckkehren,
+        ein Spielordner und ein .pkg ergaben im Ruhezustand immer "unbekannt" (die Kacheln fehlten, das Protokoll sagte "nicht pruefbar").
+        Die Attrappe haelt den Vertrag von ``ps5_pkg_werkzeug.laufen`` ein: Ein Abbruch vor dem Start ergibt ``(-1, "")``.
+        """
+        g = self._gui()
+        g.is_running = False
+
+        def laufen(werkzeug, argumente, *, zeile=None, abbruch=None, **kw):
+            if abbruch and abbruch():
+                return -1, ""
+            return 0, '{"title_id": "PPSA01234", "emulators": [{"name": "AMPR"}], "backport": [], "backport_firmware": "2.00"}'
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fc.wz, "laufen", side_effect=laufen) as lauf:
+            fakten = g._quellfakten_der_quelle(tmp)
+        self.assertIsNotNone(fakten, "im Ruhezustand muss Dump Forge gefragt werden")
+        self.assertEqual(("ampr",), fakten.emulatoren)
+        self.assertFalse(fakten.backport_vorhanden, "nur AMPR EMU in fakelib/ ist kein Backport")
+        lauf.assert_called_once()
+        self.assertIsNone(lauf.call_args.kwargs["abbruch"], "ohne Lauf gibt es nichts abzubrechen")
+
+    def test_im_ruhezustand_gilt_nichts_aus_einem_frueheren_lauf_und_nichts_wird_gemerkt(self) -> None:
+        """Was ein Lauf zwischengespeichert hat, kann sich im Spiel inzwischen geaendert haben (etwa durch den Einbau selbst)."""
+        g = self._gui()
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten(gepackt="lz4")) as lesen:
+            self.assertEqual("lz4", g._quellfakten_der_quelle(tmp).gepackt)          # im Lauf: gemerkt
+            g.is_running = False
+            lesen.return_value = fc.QuellFakten(gepackt="")
+            self.assertEqual("", g._quellfakten_der_quelle(tmp).gepackt, "kein Rest aus dem Lauf")
+            g._quellfakten_der_quelle(tmp)
+            self.assertEqual(3, lesen.call_count, "im Ruhezustand wird nichts gemerkt")
+
+    def _paketdatei(self, tmp: str) -> str:
+        datei = os.path.join(tmp, "Spiel.pkg")
+        Path(datei).write_bytes(b"pkg")
+        return datei
+
+    def test_im_ruhezustand_wird_eine_datei_nur_einmal_gelesen_ein_ordner_immer_frisch(self) -> None:
+        """Bericht der Seite, Seitenleiste und PlayGo-Merkmal fragen dieselbe Quelle: eine Datei aendert sich nicht still."""
+        g = self._gui()
+        g.is_running = False
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten(gepackt="lz4")) as lesen:
+            datei = self._paketdatei(tmp)
+            self.assertEqual("lz4", g._quellfakten_der_quelle(datei).gepackt)
+            self.assertEqual("lz4", g._quellfakten_der_quelle(datei).gepackt)
+            self.assertEqual(1, lesen.call_count, "die Datei wird einmal gelesen")
+            g._quellfakten_der_quelle(tmp)
+            g._quellfakten_der_quelle(tmp)
+            self.assertEqual(3, lesen.call_count, "ein Ordner wird jedes Mal frisch gelesen")
+
+    def test_eine_geaenderte_datei_und_eine_unlesbare_antwort_werden_neu_gelesen(self) -> None:
+        g = self._gui()
+        g.is_running = False
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten(gepackt="lz4")) as lesen:
+            datei = self._paketdatei(tmp)
+            g._quellfakten_der_quelle(datei)
+            os.utime(datei, ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000))      # Aenderungszeit ein anderes Mal
+            g._quellfakten_der_quelle(datei)
+            self.assertEqual(2, lesen.call_count, "eine geaenderte Datei hat einen neuen Schluessel")
+            lesen.return_value = None
+            os.utime(datei, ns=(2_000_000_000_000_000_000, 2_000_000_000_000_000_000))
+            self.assertIsNone(g._quellfakten_der_quelle(datei))
+            self.assertIsNone(g._quellfakten_der_quelle(datei))
+            self.assertEqual(4, lesen.call_count, "\"Forge konnte nicht lesen\" wird nie gemerkt")
+
+    def test_gleichzeitige_fragen_im_ruhezustand_lesen_die_datei_nur_einmal(self) -> None:
+        """Bis zu drei ``inspect`` derselben Datei liefen gleichzeitig (Pruefung 18.11.2026): Ein Schloss je Quelle."""
+        g = self._gui()
+        g.is_running = False
+        tor = threading.Event()
+
+        def langsam(*_a, **_k):
+            tor.wait(10)
+            return fc.QuellFakten(gepackt="zstd")
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam) as lesen:
+            datei = self._paketdatei(tmp)
+            ergebnisse: list = []
+            faeden = [threading.Thread(target=lambda: ergebnisse.append(g._quellfakten_der_quelle(datei))) for _ in range(3)]
+            for faden in faeden:
+                faden.start()
+            threading.Event().wait(0.4)                 # alle drei sind unterwegs, der erste liest noch
+            tor.set()
+            for faden in faeden:
+                faden.join(15)
+            self.assertEqual(1, lesen.call_count)
+            self.assertEqual(["zstd", "zstd", "zstd"], [e.gepackt for e in ergebnisse])
 
     def test_die_befehlszeile_wird_im_projekt_gefunden(self) -> None:
         if not fc.unterordner():

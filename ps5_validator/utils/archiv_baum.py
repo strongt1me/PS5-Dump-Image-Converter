@@ -27,7 +27,7 @@ import stat
 import threading
 import zipfile
 import zlib
-from typing import Any, Callable, Iterable, Iterator
+from typing import Callable, Iterable, Iterator
 
 from ps5_validator.utils import archiv_quelle as aq
 from ps5_validator.utils.dlc_emu import ist_dlc_ordnername

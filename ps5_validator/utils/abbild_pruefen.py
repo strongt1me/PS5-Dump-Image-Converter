@@ -1089,8 +1089,6 @@ class Pruefstand:
             result["detail"] = self._t("verify.count_skipped_no_dokan")
             return result
 
-        import ctypes as _ct
-        import time as _time
 
         try:
             exe = self._extract_ufs2tool()

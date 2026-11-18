@@ -160,7 +160,7 @@ class Seitenbild:
         if type(kind).__name__ in ("RunderHaken", "Drehknopf"):
             self._haken(kind)
             return False
-        if isinstance(kind, (raster.KartenKnopf,)) or hasattr(kind, "_zeichnen") and isinstance(kind, tk.Canvas):
+        if isinstance(kind, (raster.KartenKnopf,)) or (hasattr(kind, "_zeichnen") and isinstance(kind, tk.Canvas)):
             self._leinwand(kind)
             return False
         if isinstance(kind, tk.Label):

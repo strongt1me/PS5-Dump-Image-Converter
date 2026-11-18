@@ -2044,10 +2044,8 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
 
     # -- Abschluss -----------------------------------------------------
     zeilen.append("")
-    zeilen.append("Doktor: %d geprüft, %d %s, %d %s"
-                  % (geprueft, hinweise,
-                     "Hinweis" if hinweise == 1 else "Hinweise",
-                     fehler, "Fehler" if fehler == 1 else "Fehler"))
+    zeilen.append("Doktor: %d geprüft, %d %s, %d Fehler"
+                  % (geprueft, hinweise, "Hinweis" if hinweise == 1 else "Hinweise", fehler))
     if not hinweise and not fehler:
         zeilen.append("Nichts zu beanstanden.")
     return zeilen
@@ -5768,6 +5766,10 @@ class PS5ConverterGUI:
 
         # Prozess-Variablen
         self.is_running = False
+        # Seite 7 (PKG / FPKG) merkt sich hier, ob und welches Spiel sie zeigt (``ps5_pkg_fenster.spielinfo_setzen``): Der Knopf
+        # "Spiel Info" und die Zeilen ueber dem Cover lesen es. Vorbelegt, damit die Zugriffe nie ins Leere laufen.
+        self._pkg_spielinfo_da = False
+        self._pkg_spielinfo_pfad = ""
         self.monitor_active = False
         self.current_process = None
         self._task_thread: threading.Thread | None = None  # Referenz auf Worker-Thread
@@ -14981,7 +14983,7 @@ class PS5ConverterGUI:
             hide_dest = (
                 mode == "inspect"
                 or mode == "dump_validator"
-                or mode == "ampr_manager" and os.path.isdir(src_val)
+                or (mode == "ampr_manager" and os.path.isdir(src_val))
             )
             # Flexible Konvertierer brauchen immer einen Zielordner.
             if mode in (
@@ -21002,6 +21004,15 @@ class PS5ConverterGUI:
         kleinen Schattenordner, das Spiel liest der Lauf direkt aus dem Archiv (``_archiv_schatten_anlegen``)."""
         return not (os.path.splitext(archiv)[1].lower() == ".zip" and self._archiv_strom_gewaehlt())
 
+    @staticmethod
+    def _archiv_wurzeln() -> "list[str]":
+        """Wo ``archiv_quelle.siebenzip_suchen`` nach 7-Zip sucht: neben dem Programm, in der gebauten EXE zuerst im Entpackordner."""
+        wurzeln = [os.path.dirname(os.path.abspath(__file__))]
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            wurzeln.insert(0, str(meipass))
+        return wurzeln
+
     def _archiv_entpackt_groesse(self, archiv: str) -> "int | None":
         """Wie viel Platz das Archiv entpackt braucht (aus seinem Verzeichnis, nicht die Dateigroesse); ``None``, wenn unbekannt.
 
@@ -21015,10 +21026,7 @@ class PS5ConverterGUI:
         schluessel = (self._archiv_schluessel(archiv), st.st_size, st.st_mtime_ns)
         gemerkt = self.__dict__.setdefault("_archiv_groessen", {})
         if schluessel not in gemerkt:
-            wurzeln = [os.path.dirname(os.path.abspath(__file__))]
-            meipass = getattr(sys, "_MEIPASS", "")
-            if meipass:
-                wurzeln.insert(0, str(meipass))
+            wurzeln = self._archiv_wurzeln()
             popen_extra = ({"creationflags": _NO_WIN_FLAGS, "startupinfo": _silent_startupinfo()}
                            if sys.platform == "win32" else {})
             try:
@@ -21049,6 +21057,10 @@ class PS5ConverterGUI:
         if getattr(self, "_cli_mode", False) or getattr(self, "is_running", False) or getattr(self, "_archiv_laeuft", False):
             return True
         if not self._archiv_braucht_entpacken(archiv):
+            return True
+        # Fehlt 7-Zip fuer ein .7z/.rar, sagt das ``_archiv_als_quelle`` sofort - ohne dass vorher eine Ordnerfrage beantwortet (und
+        # als beantwortet gemerkt) werden muss, die zu nichts fuehrt.
+        if os.path.splitext(archiv)[1].lower() != ".zip" and not archiv_quelle.siebenzip_suchen(self._archiv_wurzeln()):
             return True
         basis = self._get_runtime_temp_dir()
         if os.path.normcase(os.path.normpath(basis)) == getattr(self, "_archiv_ordner_gefragt", ""):
@@ -21162,10 +21174,7 @@ class PS5ConverterGUI:
             return
         name = os.path.basename(archiv)
         endung = os.path.splitext(archiv)[1].lower()
-        wurzeln = [os.path.dirname(os.path.abspath(__file__))]
-        meipass = getattr(sys, "_MEIPASS", "")
-        if meipass:
-            wurzeln.insert(0, str(meipass))
+        wurzeln = self._archiv_wurzeln()
         if endung != ".zip" and not archiv_quelle.siebenzip_suchen(wurzeln):
             messagebox.showerror(self._t("dialog.title.invalid_source"),
                                  self._t("quelle.siebenzip_fehlt"), parent=self.root)
@@ -21461,10 +21470,7 @@ class PS5ConverterGUI:
         """
         name = os.path.basename(archiv)
         endung = os.path.splitext(archiv)[1].lower()
-        wurzeln = [os.path.dirname(os.path.abspath(__file__))]
-        meipass = getattr(sys, "_MEIPASS", "")
-        if meipass:
-            wurzeln.insert(0, str(meipass))
+        wurzeln = self._archiv_wurzeln()
         if endung != ".zip" and not archiv_quelle.siebenzip_suchen(wurzeln):
             return "", "", self._t("quelle.siebenzip_fehlt")
         basis = self._get_runtime_temp_dir()
@@ -37802,19 +37808,66 @@ class PS5ConverterGUI:
         """
         if not (os.path.isdir(src) or forge_cli.ist_abbild(src) or forge_cli.ist_paket(src)):
             return None
+        # Nur der Arbeitsfaden eines laufenden Auftrags laesst sich abbrechen und teilt sich die Antwort. Alle anderen Faeden (Seitenleiste,
+        # [Pruefung]-Zeilen, Seite 7 - auch waehrend ein Auftrag laeuft) lesen im Ruhezustand: Ein Rueckruf "nicht laufend = abgebrochen"
+        # liesse Dump Forge dort nie starten (gemessen 18.11.2026: ein Ordner und ein .pkg ergaben immer "unbekannt"), und das Ende
+        # eines fremden Auftrags darf ihr Lesen nicht abbrechen. Dort wird nichts aus dem Lauf gemerkt: Was ein frueherer Lauf hinterlassen
+        # hat, kann sich im Spiel inzwischen geaendert haben. Der Arbeitsfaden bleibt auch nach ABBRECHEN im Laufpfad (``is_running`` falsch
+        # = sofort abgebrochen); ohne Arbeitsfaden (Tests, Befehlszeile) entscheidet ``is_running``.
+        faden = getattr(self, "_task_thread", None)
+        if faden is not None and faden.is_alive():
+            laeuft = threading.current_thread() is faden
+        else:
+            laeuft = bool(getattr(self, "is_running", True))
         zwischen = getattr(self, "_quellfakten_zwischen", None)
         if zwischen is None:
             zwischen = self._quellfakten_zwischen = {}
         schluessel = os.path.normcase(os.path.abspath(str(src)))
-        if schluessel in zwischen:
+        if laeuft and schluessel in zwischen:
             return zwischen[schluessel]
         exe = self._forge_befehlszeile()
         if not exe:
             return None
+        if not laeuft:
+            return self._quellfakten_im_ruhezustand(exe, src, schluessel)
         fakten = forge_cli.quellfakten_lesen(exe, src, abbruch=lambda: not getattr(self, "is_running", True))
         if getattr(self, "is_running", True):
             zwischen[schluessel] = fakten               # ein Abbruch ergibt nur "unbekannt" - das nicht merken
         return fakten
+
+    def _quellfakten_im_ruhezustand(self, exe: str, src: str, schluessel: str) -> "forge_cli.QuellFakten | None":
+        """Dump Forges Fakten ausserhalb eines Laufs (Seitenleiste, [Pruefung]-Zeilen, Seite 7): ohne Abbruch, hoechstens einmal je Datei.
+
+        Mehrere Faeden fragen dieselbe Quelle fast gleichzeitig (Bericht der Seite, Seitenleiste, PlayGo-Merkmal). Ein Schloss je Quelle
+        laesst den ersten lesen; die uebrigen finden die Antwort danach vor. Gemerkt wird nur eine **Datei** (Abbild, Paket) unter Pfad,
+        Groesse und Aenderungszeit - sie aendert sich nicht still. Ein Spielordner kann sich unter den Haenden aendern (Einbau, Packen) und
+        wird jedes Mal frisch gelesen. Eine Antwort ``None`` (Forge konnte die Quelle nicht lesen) wird nie gemerkt (Pruefung 18.11.2026:
+        bis zu drei gleichzeitige ``inspect`` derselben Datei).
+        """
+        try:
+            st = os.stat(src)
+        except OSError:
+            st = None
+        ist_datei = st is not None and stat.S_ISREG(st.st_mode)
+        sperre = self.__dict__.setdefault("_quellfakten_ruhe_sperren", {}).setdefault(schluessel, threading.Lock())
+        # Die Schloesser je Quelle sperren verschiedene Quellen nicht gegeneinander, das Merk-Woerterbuch teilen sie aber: Verdraengen und
+        # Eintragen laufen unter einem eigenen, kurzen Schloss (zwei Faeden mit verschiedenen Dateien warfen sonst KeyError beim ``pop``).
+        merk_sperre = self.__dict__.setdefault("_quellfakten_ruhe_merksperre", threading.Lock())
+        with sperre:
+            gemerkt = self.__dict__.setdefault("_quellfakten_ruhe", {})
+            if ist_datei:
+                key = (schluessel, st.st_size, st.st_mtime_ns)
+                with merk_sperre:
+                    bekannt = gemerkt.get(key)
+                if bekannt is not None:
+                    return bekannt
+            fakten = forge_cli.quellfakten_lesen(exe, src, abbruch=None)
+            if ist_datei and fakten is not None:
+                with merk_sperre:
+                    while len(gemerkt) >= 16:
+                        gemerkt.pop(next(iter(gemerkt)))
+                    gemerkt[key] = fakten
+            return fakten
 
     def _ampr_ng_label(self) -> str:
         """Die Beschriftung der neuesten AMPR-EMU-NG-Fassung (Variante ``ng``) im Versionsspeicher, sonst ``""``.
@@ -37898,6 +37951,9 @@ class PS5ConverterGUI:
                 return
             self._ampr_einschalten()
             self._append_to_log(self._t("main.ampr_eingeschaltet"))
+            # Ein zstd-gepacktes Spiel ohne Laufzeit braucht NG - wie im Zweig "schon angehakt": lieber jetzt fragen, als erst im
+            # Einbau (nach Minuten) abzubrechen.
+            self._ampr_gepackt_pruefen(fakten)
             return
         wahl = self._ampr_wahl_fragen()
         if not wahl:
@@ -40895,7 +40951,13 @@ class PS5ConverterGUI:
         index_pfad = os.path.join(ordner, self._AMPR_INDEX_NAME)
         if not os.path.isfile(index_pfad):
             # Ohne Pack ist ein neuer Index unbedenklich (ein vorhandener bleibt, wie er ist: er gehoert zu den Bibliotheken).
-            anzahl, _doppelte = self._build_ampr_index_local(Path(ordner), Path(index_pfad))
+            # Liegt schon eine gepackte Asset-Schicht daneben - oder liess sich das nicht feststellen -, entscheidet der Riegel aller
+            # Baustellen (``_ampr_index_neubau_erlaubt``): Ein Neubau macht deren Manifest unbrauchbar. Ohne Index laesst sich hier
+            # nicht packen; das steht dann da, statt dass ein Index entsteht, den niemand wollte (Volllauf 18.11.2026, Waechter
+            # ``test_jede_baustelle_hat_ihren_riegel``).
+            if not self._ampr_index_neubau_erlaubt(ordner):
+                raise Fehler(self._t("assetpack_tool.pack_index_assets"))
+            anzahl, _doppelte = self._build_ampr_index_local(Path(ordner), Path(index_pfad), abbruch=abbruch)
             melden(self._t("assetpack_tool.pack_index_gebaut", count=anzahl))
 
         ausgabe = os.path.join(eltern, os.path.basename(ordner) + "_ampr_zstd")
@@ -69435,8 +69497,13 @@ class PS5ConverterGUI:
         self._ampr_index_entschieden = True
         return True
 
-    def _build_ampr_index_local(self, root: Path, output: Path) -> tuple[int, int]:
+    def _build_ampr_index_local(self, root: Path, output: Path,
+                                abbruch: "Callable[[], bool] | None" = None) -> tuple[int, int]:
         """Baut ampr_emu.index aus einem lokalen Ordner (entspricht /app0 auf der PS5).
+
+        ``abbruch`` (nur das Fenster "Asset-Pack", Knopf PACKEN): liefert es ``True``, endet der Scan mit
+        ``ZstdPackFehler("ampr_pack.abgebrochen")``, ohne dass eine Indexdatei entsteht - bei einem Ordner mit Zehntausenden Dateien
+        wirkte ABBRECHEN sonst erst nach dem Index.
 
         Rein lesender Verzeichnis-Scan; schreibt die Indexdatei atomar über
         eine .tmp-Datei. Binärformat (Header "AMPRIDX3", Records, Pfad-Blob,
@@ -69487,6 +69554,8 @@ class PS5ConverterGUI:
             for filename in filenames:
                 fpath = Path(dirpath) / filename
                 gezaehlt += 1
+                if abbruch is not None and not gezaehlt % 256 and abbruch():
+                    raise ampr_zstdpack.ZstdPackFehler("ampr_pack.abgebrochen")
                 if callable(status_melden) and not gezaehlt % 256:
                     jetzt = time.monotonic()
                     if jetzt - letzte_meldung >= 1.0:      # ein Lebenszeichen je Sekunde, damit nichts "stillsteht"

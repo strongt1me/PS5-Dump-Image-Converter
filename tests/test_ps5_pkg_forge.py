@@ -9,6 +9,7 @@ Die Huelle um die echte Befehlszeile prueft ``test_forge_cli.py``.
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -134,8 +135,11 @@ class _ForgeBasis(unittest.TestCase):
             self.f._pakete_hinzufuegen([pfad], waehlen=True)
         self.assertTrue(basis._warten(lambda: self.f.aktuell is not None and self.f.aktuell.pfad == pfad))
 
-    def _attrappe(self, schreibt: bytes = b"pkg", warten=None, fehler: "Exception | None" = None):
-        """Ersetzt ``forge_cli.bauen``: schreibt die Datei (wie Forge nach bestandener Pruefung) und meldet Fortschritt."""
+    def _attrappe(self, schreibt: bytes = b"pkg", warten=None, fehler: "Exception | None" = None, nachher=None):
+        """Ersetzt ``forge_cli.bauen``: schreibt die Datei (wie Forge nach bestandener Pruefung) und meldet Fortschritt.
+
+        ``nachher``: wird gerufen, wenn die Datei geschrieben ist und Forge zurueckkehrt (der Bau ist dann fertig, abgelegt ist noch nichts).
+        """
         def bauen(exe, quelle, ziel, **kw):
             self.aufrufe.append(dict(kw, exe=exe, quelle=quelle, ziel=ziel, temp_da=os.path.isdir(os.path.dirname(ziel))))
             kw["fortschritt"](40, "compress")
@@ -145,6 +149,8 @@ class _ForgeBasis(unittest.TestCase):
             if fehler is not None:
                 raise fehler
             Path(ziel).write_bytes(schreibt)
+            if nachher is not None:
+                nachher()
             return fc.ForgeBau(pfad=ziel, bytes=len(schreibt), dateien=2, pruefungen=["fpkg verify: a", "check: b"],
                                modus=kw.get("voll_pruefen") and "full" or "fast", geprueft_bytes=1, gesamt_bytes=2, proben=1)
         return mock.patch.object(fc, "bauen", side_effect=bauen)
@@ -299,6 +305,127 @@ class ForgeFensterTests(_ForgeBasis):
             self._starten_und_warten()
         self.assertEqual(b"alt", Path(self.ziel, name).read_bytes())
         self.assertEqual([name], os.listdir(self.ziel), "und kein Arbeitsordner bleibt liegen")
+
+    def test_scheitert_das_ersetzen_selbst_bleibt_die_alte_datei(self) -> None:
+        """Die alte Datei wird nicht vor dem Umbenennen geloescht: Ist sie gesperrt (Virenscanner), bleibt sie, wie sie war (18.11.2026)."""
+        name = "Neun Spiel [PPSA00009].pkg"
+        Path(self.ziel, name).write_bytes(b"alt")
+        self._laden(self._abbild())
+        self.f.ueberschreiben_var.set(True)
+        echt_replace = os.replace
+
+        def replace(quelle, ziel, *a, **k):
+            if os.path.basename(str(ziel)) == name:
+                raise PermissionError("gesperrt")
+            return echt_replace(quelle, ziel, *a, **k)
+
+        with self._attrappe(schreibt=b"neu"), mock.patch.object(os, "replace", side_effect=replace):
+            self._starten_und_warten()
+        self.assertEqual(b"alt", Path(self.ziel, name).read_bytes())
+        self.assertEqual(_de("ps5pkg.job_failed"), self.f.auftrag_var.get())
+        self.assertEqual([name], os.listdir(self.ziel), "nichts Halbes: kein Zwischenstand und kein Arbeitsordner")
+
+    def _ersetzen_ueber_kopie(self, kopie_scheitert: bool) -> str:
+        """``os.replace`` von der Arbeitsdatei geht nicht (anderes Laufwerk); ersetzt wird ueber eine Kopie neben dem Ziel."""
+        name = "Neun Spiel [PPSA00009].pkg"
+        Path(self.ziel, name).write_bytes(b"alt")
+        self._laden(self._abbild())
+        self.f.ueberschreiben_var.set(True)
+        echt_replace, echt_copy2 = os.replace, shutil.copy2
+
+        def replace(quelle, ziel, *a, **k):
+            if os.path.basename(str(quelle)) == name and os.path.basename(str(ziel)) == name:
+                raise OSError(18, "anderes Laufwerk")
+            return echt_replace(quelle, ziel, *a, **k)
+
+        def copy2(quelle, ziel, *a, **k):
+            if str(ziel).endswith(".ps5conv_neu") and kopie_scheitert:
+                Path(ziel).write_bytes(b"halb")
+                raise OSError(28, "Platte voll")
+            return echt_copy2(quelle, ziel, *a, **k)
+
+        with self._attrappe(schreibt=b"neu"), mock.patch.object(os, "replace", side_effect=replace), \
+                mock.patch.object(shutil, "copy2", side_effect=copy2):
+            self._starten_und_warten()
+        return name
+
+    def test_bricht_die_kopie_beim_ersetzen_ab_bleibt_die_alte_datei_unversehrt(self) -> None:
+        """``shutil.move`` haette die alte Datei unter Windows schon mitten in der Kopie ueberschrieben (Pruefung 18.11.2026)."""
+        name = self._ersetzen_ueber_kopie(kopie_scheitert=True)
+        self.assertEqual(b"alt", Path(self.ziel, name).read_bytes())
+        self.assertEqual([name], os.listdir(self.ziel), "die halbe Kopie ist weg")
+
+    def test_geht_os_replace_nicht_wird_ueber_eine_kopie_ersetzt(self) -> None:
+        name = self._ersetzen_ueber_kopie(kopie_scheitert=False)
+        self.assertEqual(b"neu", Path(self.ziel, name).read_bytes())
+        self.assertEqual([name], os.listdir(self.ziel))
+
+    def test_ein_nicht_entfernbarer_kopierrest_steht_im_log(self) -> None:
+        """Haelt ein Virenscanner die halbe Kopie fest, bleibt sie liegen - dann soll wenigstens im Log stehen, welche Datei es ist."""
+        echt_remove = os.remove
+
+        def remove(pfad, *a, **k):
+            if str(pfad).endswith(".ps5conv_neu"):
+                raise PermissionError("gehalten")
+            return echt_remove(pfad, *a, **k)
+
+        with mock.patch.object(os, "remove", side_effect=remove), self.assertLogs(fz.logger, "WARNING") as protokoll:
+            name = self._ersetzen_ueber_kopie(kopie_scheitert=True)
+        self.assertEqual(b"alt", Path(self.ziel, name).read_bytes())
+        self.assertTrue(any(".ps5conv_neu" in zeile for zeile in protokoll.output), protokoll.output)
+
+    def test_eine_waehrend_des_baus_entstandene_datei_wird_ohne_haken_nicht_ueberschrieben(self) -> None:
+        """Die Pruefung \"Datei da, Haken aus\" lief nur beim Start; der Bau dauert Stunden, ein anderer Lauf kann dieselbe Datei anlegen."""
+        name = "Neun Spiel [PPSA00009].pkg"
+        self._laden(self._abbild())
+        self.assertFalse(self.f.ueberschreiben_var.get())
+        with self._attrappe(schreibt=b"neu", warten=lambda _abbruch: Path(self.ziel, name).write_bytes(b"fremd")):
+            self._starten_und_warten()
+        self.assertEqual(b"fremd", Path(self.ziel, name).read_bytes(), "die Datei, die inzwischen da war, ist unberuehrt")
+        self.assertEqual(_de("ps5pkg.job_failed"), self.f.auftrag_var.get())
+        self.assertIn(_de("ps5pkg.err_exists_pkg", pfad=os.path.join(self.ziel, name)), self.f.protokoll.get("1.0", "end"))
+        self.assertEqual([name], os.listdir(self.ziel), "und kein Arbeitsordner bleibt liegen")
+
+    def test_mit_dem_haken_wird_eine_waehrend_des_baus_entstandene_datei_ersetzt(self) -> None:
+        name = "Neun Spiel [PPSA00009].pkg"
+        self._laden(self._abbild())
+        self.f.ueberschreiben_var.set(True)
+        with self._attrappe(schreibt=b"neu", warten=lambda _abbruch: Path(self.ziel, name).write_bytes(b"fremd")):
+            self._starten_und_warten()
+        self.assertEqual(b"neu", Path(self.ziel, name).read_bytes())
+
+    def test_abbrechen_nach_dem_fertigen_bau_legt_nichts_ab(self) -> None:
+        """ABBRECHEN kommt, als Forge schon zurueckgekehrt ist: Es steht nicht \"fertig\" da, und im Ziel liegt nichts Neues."""
+        self._laden(self._abbild())
+        with self._attrappe(nachher=lambda: setattr(self.f, "_abbruch", True)):
+            self._starten_und_warten()
+        self.assertEqual(_de("ps4pkg.status_cancelled"), self.f.auftrag_var.get())
+        self.assertEqual([], os.listdir(self.ziel))
+
+    def test_ein_abbruch_beim_ablegen_zaehlt_als_abbruch_nicht_als_fehlschlag(self) -> None:
+        self._laden(self._abbild())
+
+        def replace(*_a, **_k):
+            self.f._abbruch = True                       # ABBRECHEN kommt mitten im Ablegen
+            raise PermissionError("gesperrt")
+
+        with self._attrappe(), mock.patch.object(os, "replace", side_effect=replace):
+            self._starten_und_warten()
+        self.assertEqual(_de("ps4pkg.status_cancelled"), self.f.auftrag_var.get())
+        self.assertNotEqual(_de("ps5pkg.job_failed"), self.f.auftrag_var.get())
+
+    def test_eine_manipulierte_kennung_fuehrt_nie_aus_dem_zielordner_heraus(self) -> None:
+        """Die Kennung steht in Dateinamen. Eine param.json mit ``X\\..\\..\\Y`` darf kein Paket ausserhalb des Ziels ablegen (18.11.2026;
+        die Pruefung im frueheren Bau von LibProsperoPkg war mit diesem entfallen)."""
+        echt = wz.PaketInfo(pfad=os.path.join(self.ordner, "Spiel.pkg"), titel="Spiel", title_id="PPSA01234")
+        self.assertEqual("Spiel [PPSA01234]", fz.anzeigename(echt), "eine echte Kennung bleibt")
+        for boese in ("X\\..\\..\\..\\Y", "../../Y", "A/B", "PPSA0000", "PPSA000099", "..", "PP SA01234", "PPSA01234\\.."):
+            with self.subTest(kennung=boese):
+                info = wz.PaketInfo(pfad=os.path.join(self.ordner, "Spiel.pkg"), titel="Spiel", title_id=boese)
+                self.assertEqual("", info.title_id)
+                for name in (fz.anzeigename(info), fz.Ps5PkgFenster._forge_dateiname(info)):
+                    pfad = os.path.normpath(os.path.join(self.ziel, name))
+                    self.assertEqual(self.ziel, os.path.dirname(pfad), name)
 
     # ---------------- Fehler und Abbruch ----------------
     def test_ein_fehler_von_forge_steht_im_protokoll_und_hinterlaesst_nichts(self) -> None:
@@ -550,7 +677,12 @@ class EinbauSeiteTests(_ForgeBasis):
         for name in ("ampr_integrate_var", "ampr_playgo_var", "dlc_integrate_var", "backport_integrate_var"):
             var = getattr(app, name)
             self.addCleanup(var.set, var.get())
-        for name in ("zstd_level", "worker_count", "mkpfs_verify"):
+        # Auch die gespeicherten Haken: Die Rueckfragen schalten ein Kaestchen ein UND speichern es (``_dlc_einschalten``,
+        # ``_playgo_einschalten`` ...). Ohne das baut jede spaetere App-Instanz im selben Prozess mit angehaktem Haken auf:
+        # ``test_ffpfsc_asset_umhuellen`` sah dann ``ffpfsc -> ffpfsc`` ohne Asset-Pack (Bisektion 18.11.2026; im Volllauf in
+        # alphabetischer Reihenfolge fiel es nie auf).
+        for name in ("zstd_level", "worker_count", "mkpfs_verify", "integrate_ampr", "integrate_playgo", "integrate_backport",
+                     "integrate_dlc", "integrate_ampr_methode", "integrate_ampr_version", "ampr_pack_verfahren"):
             self.addCleanup(app._save_setting, name, app._load_setting(name, None))
         # Der Faden, der das PlayGo-Merkmal eines Pakets im Archiv sucht, soll hier nichts starten.
         m = mock.patch.object(wz, "playgo_erklaert_archiv", return_value="")
@@ -1427,6 +1559,55 @@ class EinbauSeiteTests(_ForgeBasis):
         with self._attrappe():
             self._starten_und_warten()
         self.assertEqual(b"pkg", Path(vorhanden).read_bytes())
+
+    def test_extrahieren_leert_den_alten_ordner_erst_nach_der_frage_zum_loeschen(self) -> None:
+        """Mit "Vorhandenes ueberschreiben" wurde der alte Entpackordner geleert, bevor die Frage "Quelle nach Erfolg loeschen?" kam: Wer
+        dort "Abbrechen" waehlte, hatte den Ordner trotzdem verloren (Pruefung 18.11.2026)."""
+        info = self._paket()
+        self.f.aktion_var.set("extrahieren")
+        alt = os.path.join(self.ziel, fz.anzeigename(info))
+        os.makedirs(alt)
+        Path(alt, "alt.txt").write_bytes(b"alt")
+        self.f.ueberschreiben_var.set(True)
+        faeden: list = []
+        with mock.patch.object(fz.Ps5PkgFenster, "_werkzeug", return_value="ppt"), \
+                mock.patch.object(wz, "dotnet_ordner", return_value="dotnet"), \
+                mock.patch.object(fz.Ps5PkgFenster, "_lauf_extrahieren", side_effect=lambda *a: faeden.append(a)):
+            with mock.patch.object(fz.Ps5PkgFenster, "_loeschen_vorbereiten", return_value=(False, False)):
+                self.f._starten()
+            self.assertEqual(b"alt", Path(alt, "alt.txt").read_bytes(), "Abbrechen bei der Frage laesst den alten Ordner unberuehrt")
+            self.assertEqual([], faeden)
+            self.assertIsNone(self.f._job)
+            # Gegenprobe: Nach der Bestaetigung wird er geleert, und der Lauf beginnt.
+            with mock.patch.object(fz.Ps5PkgFenster, "_loeschen_vorbereiten", return_value=(True, False)):
+                self.f._starten()
+            self.assertTrue(basis._warten(lambda: bool(faeden), 5.0), "der Lauf hat begonnen")
+            self.assertFalse(os.path.exists(os.path.join(alt, "alt.txt")), "der alte Inhalt ist weg")
+        self.f._job = None
+
+    def test_der_rueckfall_des_formats_ist_die_vorgabe_ffpkg(self) -> None:
+        """Ein gespeichertes Format, das fuer die Quelle nicht geht, springt auf die Vorgabe - nicht auf .ffpfsc (Pruefung 18.11.2026)."""
+        self.assertEqual("ffpkg", opt.STANDARD_FORMAT)
+        self.f.format_schluessel = "pkg"           # fuer ein .pkg nicht moeglich (nur fuer Spielordner und Abbilder)
+        self._paket()
+        self.assertEqual(opt.STANDARD_FORMAT, self.f.format_schluessel)
+
+    def test_ohne_zielordner_kommt_der_fehler_vor_jeder_rueckfrage(self) -> None:
+        """Fehlt das Ziel, soll weder eine Rueckfrage (BACKPORT, "Entpacken und einbauen?") noch ein gesetzter Haken von Aufgabe 1 vorangehen."""
+        self._umwandeln_vorbereiten("ffpkg")
+        self.f.ziel_var.set(os.path.join(self.ordner, "gibt-es-nicht"))
+        with mock.patch.object(fz.Ps5PkgFenster, "_abbild_direkt_moeglich", side_effect=AssertionError("vor dem Ziel gefragt")) as frage:
+            self.f._starten()
+        frage.assert_not_called()                  # ein ``except Exception`` im Programm schluckte sonst den Fehler des Stubs
+        self.assertEqual([_de("ps5pkg.err_no_target")], [d[1] for d in self.dialoge["fehler"]])
+        # Pruefen braucht kein Ziel: Es laeuft weiter bis zum Auftrag.
+        self.f.aktion_var.set("pruefen")
+        with mock.patch.object(fz.Ps5PkgFenster, "_werkzeug", return_value="ppt"), \
+                mock.patch.object(wz, "dotnet_ordner", return_value="dotnet"), \
+                mock.patch.object(fz.Ps5PkgFenster, "_job_starten") as job:
+            self.f._starten()
+        job.assert_called_once()
+        self.assertEqual(1, len(self.dialoge["fehler"]), "kein zweiter Fehler")
 
     def test_ein_fehler_von_forge_beim_abbild_hinterlaesst_nichts(self) -> None:
         self._umwandeln_vorbereiten("exfat")

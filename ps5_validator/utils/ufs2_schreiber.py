@@ -1146,7 +1146,6 @@ class _Planer:
 
     def _gruppen_schreiben(self) -> int:
         g = self.g
-        zeit = self.zeit
         schwanz_je_gruppe: "dict[int, list[int]]" = {}
         for frag in self.schwanz_frei:
             schwanz_je_gruppe.setdefault(frag // g.fpg, []).append(frag)

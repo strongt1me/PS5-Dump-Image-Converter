@@ -59,6 +59,17 @@ class FfpfscAssetTests(unittest.TestCase):
         cls.AP = cls.haupt.AMPR_METHODE_ASSETPACK
         cls.NORMAL = cls.haupt.AMPR_METHODE_NORMAL
 
+    def setUp(self):
+        """``_selbstziel_erlaubt`` liest auch PlayGo, BACKPORT, DLC EMU und die Fake-Signatur - nicht nur AMPR EMU.
+
+        Diese Tests legten sie nie fest: Ein Haken, den eine andere Testdatei im selben Prozess hinterliess (die Rueckfragen speichern
+        ihre Haken dauerhaft, die naechste App-Instanz laedt sie), bot ``ffpfsc -> ffpfsc`` ohne Asset-Pack an (Bisektion 18.11.2026).
+        """
+        for name in ("ampr_playgo_var", "backport_integrate_var", "dlc_integrate_var", "fake_signieren_var"):
+            var = getattr(self.app, name)
+            self.addCleanup(var.set, var.get())
+            var.set(False)
+
     def _methode_setzen(self, wert):
         for text, w in self.app._ampr_methode_options.items():
             if w == wert:
@@ -175,10 +186,15 @@ class FfpfscAssetTests(unittest.TestCase):
         i = quelle.index("def _on_integration_changed(")
         block = quelle[i:i + 4000]
         self.assertIn("_refresh_target_format_options", block)
-        # Methodenwahl: der Bind ruft nach dem Wechsel den Refresh.
+        # Methodenwahl: der Bind ruft ``_ampr_methode_gewaehlt`` (seit 17.11.2026 eine Methode statt eines Lambdas, damit auch die
+        # Einbau-Karte der Seite 7 sie benutzt), und die ruft nach dem Wechsel den Refresh - nach ``_on_ampr_methode_changed``.
         j = quelle.index('self.ampr_methode_combo.bind(')
-        self.assertIn("_refresh_target_format_options",
-                      quelle[j:j + 400])
+        self.assertIn("self._ampr_methode_gewaehlt()", quelle[j:j + 400])
+        k = quelle.index("def _ampr_methode_gewaehlt(")
+        koerper = quelle[k:quelle.index("    def ", k + 10)]
+        self.assertIn("self._refresh_target_format_options()", koerper)
+        self.assertLess(koerper.index("self._on_ampr_methode_changed()"), koerper.index("self._refresh_target_format_options()"),
+                        "Der Refresh laeuft NACH der Pruefung der Methode, damit die Liste den Endzustand spiegelt.")
 
 
 if __name__ == "__main__":

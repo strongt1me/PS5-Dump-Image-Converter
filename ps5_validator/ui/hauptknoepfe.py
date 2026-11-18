@@ -9,7 +9,6 @@ die die beiden Bereiche von ihren Knoepfen kennen (``configure(state=..., text=.
 from __future__ import annotations
 
 import sys
-import tkinter as tk
 import tkinter.font as tkfont
 from typing import Any, Callable
 

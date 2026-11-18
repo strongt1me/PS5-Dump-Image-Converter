@@ -221,6 +221,28 @@ class PlatzhalterTests(unittest.TestCase):
                                                   sorted(rechts)))
         self.assertEqual([], schief, "Ungleiche Platzhalter: " + " | ".join(schief))
 
+    def test_alle_unterstuetzten_sprachen_tragen_dieselben_platzhalter(self):
+        """Der Test oben vergleicht nur de mit en: Fehlt ein Platzhalter in es, it oder fr, zeigt der Anwender dort die Klammern.
+
+        Am 18.11.2026 von Hand an allen Schluesseln gemessen (keiner schief) und als Waechter uebernommen.
+        """
+        schief = []
+        for schluessel, eintrag in self.STRINGS.items():
+            if not isinstance(eintrag, dict) or not isinstance(eintrag.get("de"), str):
+                continue
+            mengen = {s: frozenset(self.PLATZ.findall(eintrag[s]))
+                      for s in SUPPORTED_LANGUAGES if isinstance(eintrag.get(s), str)}
+            if len(set(mengen.values())) > 1:
+                schief.append("%s %s" % (schluessel, {s: sorted(m) for s, m in mengen.items()}))
+        self.assertEqual([], schief, "Ungleiche Platzhalter: " + " | ".join(schief))
+
+    def test_jeder_text_hat_alle_unterstuetzten_sprachen(self):
+        fehlt = ["%s (%s)" % (schluessel, sprache)
+                 for schluessel, eintrag in self.STRINGS.items() if isinstance(eintrag, dict)
+                 for sprache in SUPPORTED_LANGUAGES
+                 if not (isinstance(eintrag.get(sprache), str) and eintrag[sprache].strip())]
+        self.assertEqual([], fehlt, "Text fehlt: " + " | ".join(fehlt[:40]))
+
     def test_jede_aufrufstelle_liefert_ihre_platzhalter(self):
         fehlt = ["%s:%d %s ohne %s" % (datei, zeile, schluessel,
                                        sorted(gebraucht - gegeben))

@@ -803,13 +803,15 @@ class TexteTests(unittest.TestCase):
         # Leerraum zusammengefasst - ein neuer Zeilenumbruch im Fliesstext
         # soll die Pruefung nicht brechen.
         abschnitt = " ".join(handbuch[anfang:handbuch.index("<h4>", anfang + 4)].split())
+        # Ob ein geschuetztes Leerzeichen ("Aufgabe&nbsp;7") oder ein gewoehnliches dasteht, ist Satzbild, nicht Inhalt.
+        abschnitt = abschnitt.replace("&nbsp;", " ")
         for stelle in ("installierten Spiele", "per PKG", "PS4", "Rundruf",
-                       "FTP-Profile", "Aufgabe&nbsp;7", "nur Sicherungen",
+                       "FTP-Profile", "Aufgabe 7", "nur Sicherungen",
                        "PS4-Systemsoftware", "APP_VER", "neu gemastertes Paket",
                        "die Konsole selbst zu diesem Titel führt",
-                       STRINGS["library.art_installiert_ps4"]["de"].replace(" · ", "&nbsp;·&nbsp;")):
+                       STRINGS["library.art_installiert_ps4"]["de"]):
             with self.subTest(stelle=stelle):
-                self.assertIn(stelle, abschnitt)
+                self.assertIn(stelle.replace("&nbsp;", " "), abschnitt)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ NEU = [
     "assetpack_tool.ask_originale", "assetpack_tool.pack_ordner_wurzel", "assetpack_tool.pack_lib_nicht_ng",
     "assetpack_tool.pack_lib_fehlt", "assetpack_tool.pack_index_gebaut", "assetpack_tool.pack_ausgabe_da",
     "assetpack_tool.pack_platz", "assetpack_tool.pack_hinweis", "assetpack_tool.pack_ok",
-    "assetpack_tool.ask_lib_ueber_sm", "assetpack_tool.pack_lib_ueber_sm",
+    "assetpack_tool.ask_lib_ueber_sm", "assetpack_tool.pack_lib_ueber_sm", "assetpack_tool.pack_index_assets",
 ]
 
 NG_BIB = b"..ampr-emu-ng 0.4.1.."
@@ -79,11 +79,24 @@ class _Stub:
     _EIGENES_PROFIL_ENDUNG = APP.PS5ConverterGUI._EIGENES_PROFIL_ENDUNG
     _AMPR_ZSTD_REGELDATEI_SETTING = APP.PS5ConverterGUI._AMPR_ZSTD_REGELDATEI_SETTING
     _ampr_zstd_arbeiter = APP.PS5ConverterGUI._ampr_zstd_arbeiter
+    # Der Riegel aller Index-Baustellen (``test_ampr_assets.AlleBaustellenTests``): echt, nur die Rueckfrage ist ersetzt.
+    _AMPR_ASSET_DATEIEN = APP.PS5ConverterGUI._AMPR_ASSET_DATEIEN
+    _AMPR_ASSET_ENDUNG = APP.PS5ConverterGUI._AMPR_ASSET_ENDUNG
+    _ist_ampr_asset_datei = classmethod(APP.PS5ConverterGUI._ist_ampr_asset_datei.__func__)
+    _ampr_asset_pack_vorhanden = APP.PS5ConverterGUI._ampr_asset_pack_vorhanden
+    _ampr_index_neubau_erlaubt = APP.PS5ConverterGUI._ampr_index_neubau_erlaubt
+    _ampr_index_neubau_erlaubt_roh = APP.PS5ConverterGUI._ampr_index_neubau_erlaubt_roh
 
     def __init__(self) -> None:
         self.einstellungen: dict = {}
         self.voll = False
         self.hauptprotokoll: list[str] = []
+        self.fragen: list[str] = []
+        self.antwort = False                  # Antwort auf die Rueckfrage "Index trotz Asset-Schicht neu bauen?"
+
+    def _ask_yesno_threadsafe(self, titel: str, frage: str, default_yes: bool = True) -> bool:
+        self.fragen.append(frage)
+        return self.antwort
 
     def _t(self, schluessel: str, **kw) -> str:
         return "%s %s" % (schluessel, sorted(kw.items())) if kw else schluessel
@@ -103,8 +116,8 @@ class _Stub:
     def _append_to_log(self, text: str) -> None:       # nur der Indexbauer meldet hierhin (Sonderfaelle der Pfade)
         self.hauptprotokoll.append(str(text))
 
-    def _build_ampr_index_local(self, root: Path, output: Path):
-        return APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)._build_ampr_index_local(root, output)
+    def _build_ampr_index_local(self, root: Path, output: Path, abbruch=None):
+        return APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)._build_ampr_index_local(root, output, abbruch=abbruch)
 
 
 def _spiel(basis: str, mit_lib: bool = True) -> str:
@@ -178,6 +191,43 @@ class KernTests(unittest.TestCase):
         self.zeilen.clear()
         self.s._asset_pack_zstd_in_ordner(zweiter, melden=self.zeilen.append, abbruch=lambda: False)
         self.assertEqual(vorher, Path(zweiter, "ampr_emu.index").read_bytes())
+        self.assertNotIn("assetpack_tool.pack_index_gebaut", "\n".join(self.zeilen))
+
+    def test_ein_fehlender_index_neben_einer_gepackten_asset_schicht_wird_nur_nach_der_frage_gebaut(self) -> None:
+        """Der Riegel aller Index-Baustellen (``test_ampr_assets.AlleBaustellenTests``): Ein Neubau macht das Manifest eines vorhandenen
+        Packs unbrauchbar. Vorher baute der Knopf PACKEN den Index ohne Frage (Volllauf 18.11.2026)."""
+        Path(self.spiel, "ampr_assets-000.pak").write_bytes(b"PAK")        # eine Asset-Schicht, aber kein ampr_emu.index
+        index = os.path.join(self.spiel, "ampr_emu.index")
+        self.s.antwort = False
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            self._lauf()
+        self.assertIn("assetpack_tool.pack_index_assets", str(ctx.exception))
+        self.assertEqual(1, len(self.s.fragen), "gefragt wurde")
+        self.assertFalse(os.path.exists(index), "ohne Ja entsteht kein Index")
+        self.assertNotIn("assetpack_tool.pack_index_gebaut", "\n".join(self.zeilen))
+        # Gegenprobe: mit Ja wird gebaut (ob das Packen danach an der vorhandenen Schicht scheitert, ist hier nicht die Frage).
+        self.s.antwort = True
+        try:
+            self._lauf()
+        except z.ZstdPackFehler:
+            pass
+        self.assertTrue(os.path.isfile(index), "mit Ja wird der Index gebaut")
+
+    def test_ohne_asset_schicht_baut_der_index_ohne_frage(self) -> None:
+        self._lauf()
+        self.assertEqual([], self.s.fragen, "der Normalfall wird nicht behelligt")
+
+    def test_abbrechen_beendet_auch_den_index_bau_und_laesst_keinen_index_zurueck(self) -> None:
+        """Bei einem Ordner mit Zehntausenden Dateien wirkte ABBRECHEN sonst erst nach dem Index."""
+        viele = os.path.join(self.spiel, "Daten", "viele")
+        os.makedirs(viele)
+        for i in range(300):
+            Path(viele, "f%03d.bin" % i).write_bytes(b"x")
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            self.s._asset_pack_zstd_in_ordner(self.spiel, melden=self.zeilen.append, abbruch=lambda: True)
+        self.assertEqual("ampr_pack.abgebrochen", str(ctx.exception))
+        self.assertFalse(os.path.exists(os.path.join(self.spiel, "ampr_emu.index")))
+        self.assertFalse(os.path.exists(os.path.join(self.spiel, "ampr_emu.index.tmp")))
         self.assertNotIn("assetpack_tool.pack_index_gebaut", "\n".join(self.zeilen))
 
     def test_originale_entfernen_prueft_vorher_jedes_byte_und_entpacken_stellt_her(self) -> None:

@@ -30,10 +30,7 @@ import concurrent.futures
 import fnmatch
 import os
 import random
-import struct
 import sys
-import threading
-import zlib
 from array import array
 from collections import deque
 from dataclasses import dataclass, field

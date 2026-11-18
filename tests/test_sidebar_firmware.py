@@ -95,7 +95,12 @@ class FirmwareKurzTests(unittest.TestCase):
                 ([zp.bandname(0), zp.bandname(1)], True, "zstd"),
                 (["ampr_assets-000.pak", zp.bandname(0)], True, "zstd"),
                 (["eboot.bin", "data/ampr_zstd-000.pak"], False, ""),            # nur an der Wurzel
-                (["eboot.bin", "sce_sys/param.json"], False, "")):
+                (["eboot.bin", "sce_sys/param.json"], False, ""),
+                # Eine fremde .pak in der Wurzel (eigene Spieldaten) zaehlt wie bisher als Asset-Schicht, ist aber nicht "LZ4" (18.11.2026).
+                (["data.pak"], True, ""),
+                (["data.pak", "ampr_assets-000.pak"], True, "lz4"),
+                (["data.pak", zp.bandname(0)], True, "zstd"),
+                (["ampr_assets.index.runtime"], True, "lz4")):
             with self.subTest(dateien=dateien):
                 ergebnis = bib.einbauten_bewerten(dateien, assetpack_datei=ist_pack)
                 self.assertEqual((assetpack, verfahren), (ergebnis["assetpack"], ergebnis["packverfahren"]))

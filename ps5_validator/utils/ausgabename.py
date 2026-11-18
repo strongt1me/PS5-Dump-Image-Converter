@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 
 from ps5_validator.utils import bibliothek, vorabpruefung
 

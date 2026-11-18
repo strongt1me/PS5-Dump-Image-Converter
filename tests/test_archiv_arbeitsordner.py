@@ -264,6 +264,22 @@ class ArbeitsordnerTests(unittest.TestCase):
                 self.assertTrue(a._archiv_ordner_klaeren(zip_))
             dialog.assert_called_once()
 
+    def test_fehlt_7zip_kommt_keine_ordnerfrage_vor_der_meldung(self) -> None:
+        """Fehlt 7-Zip fuer ein .7z, sagt das ``_archiv_als_quelle`` gleich. Eine vorangestellte Ordnerfrage (samt gemerktem Ordner) fuehrte zu nichts.
+
+        Ein .zip braucht kein 7-Zip: dort bleibt die Frage wie bisher (Pruefung 18.11.2026).
+        """
+        a = self.app
+        with tempfile.TemporaryDirectory() as t, mock.patch.object(a, "_archiv_ordner_dialog", return_value="entpacken") as dialog, \
+                mock.patch.object(self.haupt.archiv_quelle, "siebenzip_suchen", return_value=""):
+            self.assertTrue(a._archiv_ordner_klaeren(self._siebenzip(t)), "weiter: ``_archiv_als_quelle`` meldet, dass 7-Zip fehlt")
+            dialog.assert_not_called()
+            self.assertEqual("", a._archiv_ordner_gefragt, "nichts als beantwortet gemerkt")
+            with mock.patch.object(type(a), "_archiv_strom_gewaehlt", return_value=False):
+                self.assertTrue(a._archiv_ordner_klaeren(_datei(t, "spiel.zip")))
+            dialog.assert_called_once()
+        a._archiv_ordner_gefragt = ""
+
     def test_kommandozeile_und_laufender_auftrag_werden_nicht_gefragt(self) -> None:
         a = self.app
         with tempfile.TemporaryDirectory() as t, mock.patch.object(a, "_archiv_ordner_dialog") as dialog:

@@ -90,6 +90,11 @@ class SeitenbildTests(unittest.TestCase):
         s = self.s
         label = s._hinweis                # ein Label der Seite selbst (eigene Beschriftung, nicht das Muster)
         self.assertTrue(getattr(label, "_sb_eigen", False) is False)
+        # Seit dem Umbau zeigt die Seite vor der ersten Quellenwahl nur QUELLE (``rest_zeigen``): Erst nach der Wahl stehen die Beschriftungen
+        # von ZIELFORMAT, KOMPRESSION, ZIELORDNER usw. da (gemessen 18.11.2026: 5 vorher, 14 nachher).
+        s._gewaehlt = True
+        s._rest_fertig(s._aktiv, s._aktiv.rest_zeigen(True))
+        _durchlauf(s)
         gefunden = []
         stapel = [s.inhalt]
         while stapel:

@@ -59,8 +59,21 @@ class FaktenTests(unittest.TestCase):
 
     def test_ein_schon_herabgesetztes_spiel_traegt_einen_backport(self) -> None:
         self.assertTrue(fc.quellfakten(_daten("7.00", "9.60", backport=5, backport_firmware="7.00")).backport_vorhanden)
-        self.assertTrue(fc.quellfakten(_daten("7.00", "9.60", backport_firmware="7.00")).backport_vorhanden, "das SDK allein")
         self.assertTrue(fc.quellfakten(_daten("7.00", "9.60", backport=3)).backport_vorhanden, "die Bibliotheken allein")
+
+    def test_backport_firmware_allein_ist_kein_backport(self) -> None:
+        """Forge setzt ``backport_firmware``, sobald irgendeine Datei in ``fakelib/`` liegt - auch bei einem Spiel nur mit AMPR EMU dort.
+
+        Gemessen 18.11.2026 an einem Ordner mit ``eboot.bin``, ``param.json`` und ``fakelib/libSceAmpr.sprx``: ``backport`` leer,
+        ``backport_firmware`` "2.00". Ein solches Spiel hat keinen Backport: Das Programm darf ihn weder als "bereits eingebaut"
+        melden noch das Angebot unterdruecken.
+        """
+        daten = _daten("10.00", "11.20", backport_firmware="10.00")
+        daten["emulators"] = [{"name": "AMPR", "path": "fakelib/libSceAmpr.sprx"}]
+        fakten = fc.quellfakten(daten)
+        self.assertFalse(fakten.backport_vorhanden)
+        self.assertTrue(fakten.backport_noetig("7.99"), "es verlangt mehr als die Konsole hat und ist nicht herabgesetzt")
+        self.assertFalse(fc.quellfakten(_daten("7.00", "9.60", backport_firmware="7.00")).backport_vorhanden, "das SDK allein")
 
     def test_wann_ein_backport_noetig_ist_an_gemessenen_spielen(self) -> None:
         """Verglichen wie in der Bibliothek: Haupt- UND Nebenversion; ``7.99`` = "irgendeine 7.xx"."""
@@ -212,7 +225,7 @@ class PlanTests(unittest.TestCase):
 
     def test_ein_spiel_ohne_angaben_loest_keine_frage_nach_der_firmware_aus(self) -> None:
         g = self._gui(None, antwort="7.99")
-        for fakten in (fc.QuellFakten(), _f("0.00", "0.00"), _f(backport_firmware="7.00")):
+        for fakten in (fc.QuellFakten(), _f("0.00", "0.00"), _f(backport=5, backport_firmware="7.00")):
             self.assertIsNone(g._backport_plan(fakten, erfragen=True))
         g._konsole_firmware_erfragen.assert_not_called()
 

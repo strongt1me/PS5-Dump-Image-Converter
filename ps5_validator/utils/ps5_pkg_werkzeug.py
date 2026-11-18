@@ -338,6 +338,10 @@ def pruefen(werkzeug: str, paket: str, *, passcode: str = "", zeile: _Zeile | No
         raise Fehler(_fehlertext(aus)) from None
 
 
+#: Eine Title-ID, wie sie in einen Dateinamen darf: vier Buchstaben und fuenf Ziffern (``PPSA01234``, ``CUSA12345``).
+TITLE_ID_NAME = re.compile(r"[A-Za-z]{4}\d{5}")
+
+
 @dataclass
 class PaketInfo:
     """Was das Fenster ueber ein Paket zeigt."""
@@ -361,6 +365,14 @@ class PaketInfo:
     patch: bool = False
     #: Nur bei einer von Dump Forge gelesenen Quelle: ``forge_cli.QuellFakten`` (AMPR, Packs, DLC, PlayGo), sonst ``None``.
     fakten: object = None
+
+    def __post_init__(self) -> None:
+        # Die Kennung geht in Datei- und Ordnernamen (``anzeigename``, ``forge_cli.dateiname_fuer``) und damit in Pfade, die das Fenster
+        # anlegt, ersetzt und bei Fehlern wieder loescht. Was keine Title-ID ist - etwa ein ``X\..\..\Y`` aus einer manipulierten
+        # param.json -, bleibt weg: Der Name entsteht dann ohne Kennung, und nie ausserhalb des Ziels (Pruefung 18.11.2026; die Pruefung
+        # ``TITLE_ID`` im frueheren Bau von LibProsperoPkg war mit diesem entfallen).
+        if not TITLE_ID_NAME.fullmatch(self.title_id or ""):
+            self.title_id = ""
 
     @property
     def ist_ordner(self) -> bool:

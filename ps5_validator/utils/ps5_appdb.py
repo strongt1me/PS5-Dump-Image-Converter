@@ -14,7 +14,6 @@ import sqlite3
 import tempfile
 import threading
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
