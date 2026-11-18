@@ -2585,6 +2585,7 @@ class Ps5PkgFenster:
                 self._z["gesamt"] = float(prozent)
                 self._z["schritt_text"] = self._forge_stufe_text(stufe)
 
+        paket = temp = ""            # ``paket``: erst gesetzt, wenn Dump Forge das Paket fertig geschrieben hat (siehe ``_paket_behalten``)
         try:
             temp = str(bau.get("temp") or "")
             abbild = str(bau.get("format") or "pkg")
@@ -2616,6 +2617,7 @@ class Ps5PkgFenster:
                     voll_pruefen=str(self.g._load_setting("mkpfs_verify", "schnell") or "") == "voll",
                     zeile=self._melden, fortschritt=fortschritt, abbruch=lambda: self._abbruch,
                     popen_extra=self._popen_extra())
+            paket = erg.pfad
             with self._sperre:
                 self._z["prozent"] = 100.0
                 self._z["gesamt"] = 100.0
@@ -2648,17 +2650,17 @@ class Ps5PkgFenster:
                         logger.warning("Rest der Kopie nicht entfernt: %s", zwischen, exc_info=True)
                     raise
         except wz.Fehler as exc:
-            return self._ende_bei_fehler(exc)
+            return self._paket_behalten(self._ende_bei_fehler(exc), paket, temp)
         except OSError as exc:
             logger.exception("Paket von Dump Forge ablegen")
             if self._abbruch:
                 return self._ende_bei_fehler(exc)
-            return {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
+            return self._paket_behalten({"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}, paket, temp)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Paket bauen mit Dump Forge")
             if self._abbruch:
                 return self._ende_bei_fehler(exc)
-            return {"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}
+            return self._paket_behalten({"ok": False, "text": "%s: %s" % (type(exc).__name__, exc)}, paket, temp)
         t = self.t
         if erg.modus == "full":
             pruefung = t("ps5pkg.forge_check_full", n=len(erg.pruefungen), gesamt=self._fmt(erg.gesamt_bytes))
@@ -2705,6 +2707,17 @@ class Ps5PkgFenster:
             self._protokoll(self.t("ps5pkg.log_bauer", name=self._werkzeug_name(art, info)))
         self._knoepfe_pruefen()
         threading.Thread(target=ziel_funktion, args=(info, ziel, art), daemon=True, name="ps5pkg-" + art).start()
+
+    def _paket_behalten(self, ende: dict, paket: str, temp: str) -> dict:
+        """Ein Fehlschlag, nachdem Dump Forge das Paket schon fertig geschrieben hatte (das Ablegen im Ziel scheiterte): Es bleibt liegen.
+
+        Ein Bau dauert lang und das Paket ist gross; es ist nach dem Fehler nicht wertlos. Der Arbeitsordner wird deshalb nicht
+        weggeraeumt (``_job_beendet`` nimmt ihn aus der Liste), und das Protokoll nennt den Pfad. Ein Abbruch durch den Anwender und ein
+        Fehler des Baus selbst (``paket`` leer) bleiben, wie sie waren: dort wird alles entfernt.
+        """
+        if ende.get("ok") or ende.get("abgebrochen") or not paket or not os.path.isfile(paket):
+            return ende
+        return dict(ende, text="%s %s" % (ende["text"], self.t("ps5pkg.paket_behalten", pfad=paket)), behalten=temp)
 
     def _ende_bei_fehler(self, exc: Exception) -> dict:
         """Das Ende eines Laufs, der mit ``exc`` endete: nach ABBRECHEN ein Abbruch, sonst ein Fehlschlag.
@@ -2985,6 +2998,9 @@ class Ps5PkgFenster:
             self.auftrag_var.set(self.t("ps5pkg.job_failed"))
             self._protokoll(self.t("ps5pkg.log_failed", grund=ende["text"]))
             self._anzeige_setzen(0, 0)
+            behalten = ende.get("behalten")
+            if behalten and behalten in self._staging:
+                self._staging.remove(behalten)       # dort liegt das fertige Paket (``_paket_behalten``): nicht mit wegraeumen
             self._lauf_reste_wegraeumen(job)
             self._knoepfe_pruefen()
             return

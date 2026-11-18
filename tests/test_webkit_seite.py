@@ -13,7 +13,6 @@ durch werfende Attrappen ersetzt, die die Aufraeumrunde von aussen prueft.
 from __future__ import annotations
 
 import gc
-import os
 import re
 import sys
 import tempfile

@@ -205,7 +205,7 @@ class ErkennenTests(unittest.TestCase):
 
     def test_ein_ordner_mit_abbildern_und_ps5_paketen_geht_komplett_in_den_ps5_bereich(self) -> None:
         a = self.p("ordner", "a.exfat")
-        b = fih_paket(self.p("ordner", "b.pkg"))
+        fih_paket(self.p("ordner", "b.pkg"))
         c = self.p("ordner", "unter", "c.ffpfsc")
         for pfad in (a, c):
             with open(pfad, "wb") as f:

@@ -6,7 +6,6 @@ PlayGo-Empfehlung, wenn das Spiel PlayGo-Dateien traegt. Nichts wird eingeschalt
 """
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 import tempfile

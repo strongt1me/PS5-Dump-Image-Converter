@@ -24,7 +24,6 @@ import ast
 import importlib
 import inspect
 import os
-import re
 import string
 import sys
 import tempfile
@@ -39,7 +38,6 @@ pruefumgebung.umlenken("durchsicht_runde18")
 
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 from ps5_validator.core import dispatcher, validator_base   # noqa: E402
-from ps5_validator.modules.dump_validator import DumpValidator  # noqa: E402
 from ps5_validator.utils import param_check                 # noqa: E402
 from ps5_validator.utils.i18n import translate              # noqa: E402
 

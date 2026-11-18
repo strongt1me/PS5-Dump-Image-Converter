@@ -20,7 +20,6 @@ import ast
 import contextlib
 import io
 import os
-import re
 import shutil
 import sys
 import tempfile

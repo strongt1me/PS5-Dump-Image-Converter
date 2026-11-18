@@ -12,7 +12,6 @@ Schnellauswahl, WebKit-Seite).
 from __future__ import annotations
 
 import ast
-import json
 import os
 import re
 import shutil
@@ -43,7 +42,7 @@ except Exception:                                      # pragma: no cover - ohne
 from ps5_validator.utils import werkzeug_updates as wu     # noqa: E402
 from ps5_validator.utils.i18n import STRINGS               # noqa: E402
 from test_werkzeug_updates import (AMPR, HELLOWORLD, RELEASES, WEBKIT, FakeNetz,   # noqa: E402
-                                   github_roh, inhalt)
+                                   inhalt)
 
 #: Eine neuere elfldr-Fassung und ein neues PKG Manager 1.6.0 - zwei ladbare Werkzeuge.
 NEUE_FREIGABEN = dict(RELEASES)

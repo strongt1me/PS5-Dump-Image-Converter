@@ -27,7 +27,6 @@ Bewacht wird:
 from __future__ import annotations
 
 import ast
-import io
 import os
 import shutil
 import sys

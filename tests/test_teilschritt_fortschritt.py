@@ -924,7 +924,6 @@ class VerschiebenUeberLaufwerkeTests(unittest.TestCase):
         Sie schrieb nur die Statuszeile; Balken und Größenfeld blieben leer,
         weil in dieser Phase keiner der Zweige des Anzeige-Takts greift.
         """
-        import ast
 
         quelle = HAUPTDATEI.read_text(encoding="utf-8")
         anfang = quelle.index("def _melde_kopie")

@@ -427,7 +427,6 @@ class TransaktionTests(_Abbild):
             a.hinzufuegen("h000.bin", self.quelle("h0", 0))                 # leer: kein Cluster
             a.hinzufuegen("h001.bin", self.quelle("h1", 0))
             frei = a.freie_cluster()
-            geplant = (len(a._plan.stellen), len(a._plan.daten))
             with self.assertRaises(eb.PlatzFehlt):
                 for i in range(2, 40):                                      # irgendwann ist der Ordner voll und er braucht den letzten Cluster
                     a.hinzufuegen("h%03d.bin" % i, self.quelle("h", 0))

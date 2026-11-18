@@ -18,7 +18,6 @@ import tempfile
 import time
 import tkinter as tk
 import unittest
-import warnings
 from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent.parent

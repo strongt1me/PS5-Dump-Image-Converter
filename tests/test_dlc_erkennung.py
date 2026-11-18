@@ -7,7 +7,6 @@ Dump-Ordner und bei einem Abbild, vor der eigentlichen Arbeit.
 from __future__ import annotations
 
 import json
-import os
 import sys
 import tempfile
 import unittest

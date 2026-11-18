@@ -340,7 +340,6 @@ class FehlercodeTests(EditorSchreibwegTests):
         super().setUp()
         # Dieselbe Gegenstelle, aber mit einer Antwort, die ueber die Datei
         # nichts aussagt.
-        lage = self.lage
         echtes = ftplib.FTP
 
         class _FTP502(echtes):

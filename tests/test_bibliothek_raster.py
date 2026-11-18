@@ -1541,7 +1541,7 @@ class SuchlaufAnzeigeTests(unittest.TestCase):
         self.assertEqual("determinate", str(anzeige._balken.cget("mode")), "Mit bekannter Zahl wieder ein echter Balken.")
 
     def test_vor_der_ersten_meldung_zeigt_das_fenster_die_erste_stufe(self) -> None:
-        anzeige = self._anzeige(0)
+        self._anzeige(0)
         self._laufen()
         self.assertEqual("Ordner durchsuchen", self._texte()["stufe"])
         self.assertEqual("…", self._texte()["prozent"])

@@ -18,7 +18,6 @@ import ast
 import sys
 import threading
 import tkinter as tk
-import types
 import unittest
 from pathlib import Path
 

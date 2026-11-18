@@ -70,6 +70,21 @@ class ArbeitsbereichAmPunktTests(unittest.TestCase):
         with mock.patch.object(plattform, "IST_WINDOWS", False):
             self.assertEqual((0, 0, 1280, 720), plattform.arbeitsbereich_am_punkt(5, 5, (1280, 720)))
 
+    def test_ausserhalb_von_windows_wird_auf_einem_zweiten_bildschirm_nicht_geklemmt(self) -> None:
+        """Ein Punkt links oder oberhalb des Hauptbildschirms (negative Koordinaten, macOS) liegt auf einem anderen Bildschirm: Dessen
+        Raender sind unbekannt, die Kurzinfo darf nicht an den Hauptbildschirm gedrueckt werden (Pruefung 18.11.2026)."""
+        with mock.patch.object(plattform, "IST_WINDOWS", False):
+            for x, y in ((-300, 200), (200, -300), (-300, -300), (1500, 200), (200, 900)):
+                with self.subTest(punkt=(x, y)):
+                    bereich = plattform.arbeitsbereich_am_punkt(x, y, (1280, 720))
+                    self.assertEqual((x, y), plattform.kurzinfo_ort(x, y, 431, 94, bereich, widget_oben=y - 20),
+                                     "die Kurzinfo bleibt dort, wo der Zeiger ist")
+            # Auf der Achse, auf der der Punkt im Hauptbildschirm liegt, gilt dessen Grenze weiter:
+            bereich = plattform.arbeitsbereich_am_punkt(-300, 700, (1280, 720))
+            self.assertEqual((0, 720), (bereich[1], bereich[3]), "oben und unten bleibt der Hauptbildschirm")
+            self.assertEqual((-300, 690 - 8 - 94), plattform.kurzinfo_ort(-300, 700, 431, 94, bereich, widget_oben=690),
+                             "unten ragt sie nicht hinaus: sie steht ueber dem Widget")
+
     @unittest.skipUnless(sys.platform == "win32", "nur unter Windows")
     def test_der_erste_bildschirm_ist_der_arbeitsbereich(self) -> None:
         """Der Punkt (1, 1) liegt immer auf dem ersten Bildschirm (Ursprung 0/0): Dort gilt dasselbe wie ``arbeitsbereich``."""

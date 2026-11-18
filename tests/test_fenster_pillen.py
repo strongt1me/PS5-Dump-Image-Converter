@@ -16,9 +16,7 @@ Drei Dinge werden hier gehalten:
 from __future__ import annotations
 
 import ast
-import os
 import sys
-import tempfile
 import tkinter as tk
 import unittest
 from pathlib import Path

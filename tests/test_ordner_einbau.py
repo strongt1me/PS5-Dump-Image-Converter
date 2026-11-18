@@ -51,7 +51,6 @@ HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
 
 try:
     import tkinter as tk
-    from tkinter import ttk
     _WURZEL = tk._default_root or tk.Tk()
     _WURZEL.withdraw()
     _TK_DA = True

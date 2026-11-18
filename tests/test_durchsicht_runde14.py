@@ -16,7 +16,6 @@ in der Titelleiste) und nachsehen, was dasteht.
 from __future__ import annotations
 
 import ast
-import os
 import sys
 import tempfile
 import types

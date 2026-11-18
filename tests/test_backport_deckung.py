@@ -179,7 +179,6 @@ class FwDateipfadTabelle(unittest.TestCase):
     def test_tabelle_enthaelt_bibliotheksnamen_und_pfad(self):
         with tempfile.TemporaryDirectory() as basis:
             stand = self._fw_stand(Path(basis), "libSceAgc.sprx")
-            datei = str(stand / "system" / "common" / "lib" / "libSceAgc.sprx")
 
             def _mock(pfad):
                 return {"importe": {}, "exporte": {"libSceAgc": {"AAAAAAAAAAA"}},

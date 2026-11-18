@@ -20,16 +20,12 @@ zunaechst aussieht:
 from __future__ import annotations
 
 import ast
-import importlib.util
 import os
-import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 PROJEKT = Path(__file__).resolve().parent.parent
 if str(PROJEKT) not in sys.path:

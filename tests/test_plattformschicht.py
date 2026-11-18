@@ -32,8 +32,6 @@ import ast
 import importlib.util
 import os
 import re
-import shutil
-import subprocess
 import sys
 import tempfile
 import unittest

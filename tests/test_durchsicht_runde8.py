@@ -16,7 +16,6 @@ Arbeit bleibt im Faden, die Fenster im Hauptfaden.
 from __future__ import annotations
 
 import ast
-import os
 import sys
 import tempfile
 import threading

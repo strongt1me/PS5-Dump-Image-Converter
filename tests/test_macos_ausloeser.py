@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import ast
 import fnmatch
-import sys
 import unittest
 from pathlib import Path
 

@@ -16,8 +16,6 @@ sieht, wie gross es ist und wie lange der Bau gedauert hat.
 """
 from __future__ import annotations
 
-import os
-import shutil
 import sys
 import time
 from pathlib import Path

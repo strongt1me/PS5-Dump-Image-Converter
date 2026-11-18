@@ -332,7 +332,6 @@ class HandgebauteAbbilderTests(unittest.TestCase):
 
     def test_verweise_und_geraete_werden_gemeldet(self) -> None:
         b = Abbildbauer()
-        e = Abbildbauer.eintrag
         b.inode(3, 0o120777, 5)                                                       # Symlink
         b.inode(4, 0o020666, 0)                                                       # Zeichengeraet
         self._wurzel(b, (3, "verweis"), (4, "geraet"))

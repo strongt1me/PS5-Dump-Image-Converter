@@ -35,7 +35,6 @@ import pruefumgebung                                        # noqa: E402
 pruefumgebung.umlenken("smp_konfig")
 
 from ps5_validator.utils.ini_config import (                # noqa: E402
-    MEHRFACH_TRENNER,
     WIEDERHOLBARE_SCHLUESSEL,
     fuer_anzeige,
     fuer_datei,

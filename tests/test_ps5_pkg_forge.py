@@ -155,6 +155,18 @@ class _ForgeBasis(unittest.TestCase):
                                modus=kw.get("voll_pruefen") and "full" or "fast", geprueft_bytes=1, gesamt_bytes=2, proben=1)
         return mock.patch.object(fc, "bauen", side_effect=bauen)
 
+    def _behalten(self, name: str) -> str:
+        """Der Pfad des fertigen Pakets, das nach einem gescheiterten Ablegen im Arbeitsordner liegen blieb ("" ohne ein solches)."""
+        for eintrag in os.listdir(self.ziel):
+            kandidat = os.path.join(self.ziel, eintrag, name)
+            if eintrag.startswith("ps5conv_forge_") and os.path.isfile(kandidat):
+                return kandidat
+        return ""
+
+    def _ohne_arbeitsordner(self) -> list:
+        """Was im Ziel liegt, ohne die Arbeitsordner von Dump Forge."""
+        return [e for e in os.listdir(self.ziel) if not e.startswith("ps5conv_forge_")]
+
     def _starten_und_warten(self, grenze: float = 20.0) -> None:
         self.f._starten()
         self.assertTrue(basis._warten(lambda: self.f._job is None, grenze), "der Auftrag ist nicht zu Ende gegangen")
@@ -323,7 +335,10 @@ class ForgeFensterTests(_ForgeBasis):
             self._starten_und_warten()
         self.assertEqual(b"alt", Path(self.ziel, name).read_bytes())
         self.assertEqual(_de("ps5pkg.job_failed"), self.f.auftrag_var.get())
-        self.assertEqual([name], os.listdir(self.ziel), "nichts Halbes: kein Zwischenstand und kein Arbeitsordner")
+        self.assertEqual([name], self._ohne_arbeitsordner(), "nichts Halbes: kein Zwischenstand")
+        behalten = self._behalten(name)
+        self.assertEqual(b"neu", Path(behalten).read_bytes() if behalten else b"", "das fertige Paket ist nicht verloren (18.11.2026)")
+        self.assertIn(_de("ps5pkg.paket_behalten", pfad=behalten), self.f.protokoll.get("1.0", "end"), "und das Protokoll nennt seinen Platz")
 
     def _ersetzen_ueber_kopie(self, kopie_scheitert: bool) -> str:
         """``os.replace`` von der Arbeitsdatei geht nicht (anderes Laufwerk); ersetzt wird ueber eine Kopie neben dem Ziel."""
@@ -353,7 +368,9 @@ class ForgeFensterTests(_ForgeBasis):
         """``shutil.move`` haette die alte Datei unter Windows schon mitten in der Kopie ueberschrieben (Pruefung 18.11.2026)."""
         name = self._ersetzen_ueber_kopie(kopie_scheitert=True)
         self.assertEqual(b"alt", Path(self.ziel, name).read_bytes())
-        self.assertEqual([name], os.listdir(self.ziel), "die halbe Kopie ist weg")
+        self.assertEqual([name], self._ohne_arbeitsordner(), "die halbe Kopie ist weg")
+        behalten = self._behalten(name)
+        self.assertEqual(b"neu", Path(behalten).read_bytes() if behalten else b"", "das fertige Paket liegt im Arbeitsordner weiter")
 
     def test_geht_os_replace_nicht_wird_ueber_eine_kopie_ersetzt(self) -> None:
         name = self._ersetzen_ueber_kopie(kopie_scheitert=False)
@@ -384,7 +401,11 @@ class ForgeFensterTests(_ForgeBasis):
         self.assertEqual(b"fremd", Path(self.ziel, name).read_bytes(), "die Datei, die inzwischen da war, ist unberuehrt")
         self.assertEqual(_de("ps5pkg.job_failed"), self.f.auftrag_var.get())
         self.assertIn(_de("ps5pkg.err_exists_pkg", pfad=os.path.join(self.ziel, name)), self.f.protokoll.get("1.0", "end"))
-        self.assertEqual([name], os.listdir(self.ziel), "und kein Arbeitsordner bleibt liegen")
+        self.assertEqual([name], self._ohne_arbeitsordner())
+        behalten = self._behalten(name)
+        self.assertEqual(b"neu", Path(behalten).read_bytes() if behalten else b"",
+                         "das fertige Paket ist nicht verloren: Ein Bau von Stunden geht nicht an einer gleichnamigen Datei zugrunde")
+        self.assertIn(_de("ps5pkg.paket_behalten", pfad=behalten), self.f.protokoll.get("1.0", "end"))
 
     def test_mit_dem_haken_wird_eine_waehrend_des_baus_entstandene_datei_ersetzt(self) -> None:
         name = "Neun Spiel [PPSA00009].pkg"
@@ -413,6 +434,15 @@ class ForgeFensterTests(_ForgeBasis):
             self._starten_und_warten()
         self.assertEqual(_de("ps4pkg.status_cancelled"), self.f.auftrag_var.get())
         self.assertNotEqual(_de("ps5pkg.job_failed"), self.f.auftrag_var.get())
+        self.assertEqual([], os.listdir(self.ziel), "nach ABBRECHEN bleibt nichts liegen, auch nicht das fertige Paket")
+
+    def test_ein_fehler_des_baus_selbst_hebt_nichts_auf(self) -> None:
+        """Nur ein fertiges Paket wird behalten; scheitert Forge selbst, bleibt kein Arbeitsordner und kein Hinweis darauf."""
+        self._laden(self._abbild())
+        with self._attrappe(fehler=wz.Fehler("Dump Forge sagt nein")):
+            self._starten_und_warten()
+        self.assertEqual([], os.listdir(self.ziel))
+        self.assertNotIn(_de("ps5pkg.paket_behalten", pfad=""), self.f.protokoll.get("1.0", "end"))
 
     def test_eine_manipulierte_kennung_fuehrt_nie_aus_dem_zielordner_heraus(self) -> None:
         """Die Kennung steht in Dateinamen. Eine param.json mit ``X\\..\\..\\Y`` darf kein Paket ausserhalb des Ziels ablegen (18.11.2026;

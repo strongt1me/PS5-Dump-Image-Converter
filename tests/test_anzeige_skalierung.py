@@ -21,7 +21,6 @@ Was hier gesichert wird:
 """
 import ast
 import json
-import math
 import os
 import subprocess
 import sys

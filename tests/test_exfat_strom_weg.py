@@ -16,7 +16,6 @@ import struct
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -337,8 +336,6 @@ class StromWegTests(_Grundlage):
 
     def test_abbruch_laesst_nichts_zurueck(self) -> None:
         g = _gui(self.tmp)
-        original = g._ampr_pack_fortschritt
-
         def abbrechen(prozent, phase):
             g.is_running = False
         g._ampr_pack_fortschritt = abbrechen

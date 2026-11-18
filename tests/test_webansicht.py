@@ -331,11 +331,71 @@ class EchteEinbettungTests(unittest.TestCase):
                 fenster.update()
                 time.sleep(0.02)
             titel = seite.titel
+            # Vor dem Schliessen lesen: schliessen() setzt den Zustand auf "zu" und
+            # verdeckt damit den Startfehler (so ging am 18.11.2026 die Meldung verloren).
+            zustand, fehler, navigation = seite.zustand, seite.fehler, seite.navigation
             seite.schliessen()
             fenster.update()
-        self.assertNotEqual("fehler", seite.zustand, seite.fehler)
-        self.assertEqual(True, (seite.navigation or (None,))[0], seite.navigation)
+        if zustand == "fehler" and _admin_auf_fremdem_desktop(
+                fehler, _ist_erhoeht(), _desktop_name()):
+            self.skipTest("erhoeht auf dem versteckten Test-Desktop haengt WebView2 sich nicht "
+                          "ans Tk-Fenster (%s); auf dem normalen Desktop geht es, gemessen "
+                          "18.11.2026" % fehler)
+        self.assertNotEqual("fehler", zustand, fehler)
+        self.assertEqual(True, (navigation or (None,))[0], navigation)
         self.assertEqual("Einbettungsprobe", titel)
+
+
+def _ist_erhoeht() -> bool:
+    from ps5_validator.utils import plattform
+    return plattform.ist_administrator()
+
+
+def _desktop_name() -> str:
+    """Name des Windows-Desktops dieses Fadens ("Default" = der normale, sonst z. B. der versteckte Testdesktop)."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    user32.GetThreadDesktop.restype = ctypes.c_void_p
+    user32.GetUserObjectInformationW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p,
+                                                 ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong)]
+    puffer = ctypes.create_unicode_buffer(256)
+    gebraucht = ctypes.c_ulong(0)
+    desktop = user32.GetThreadDesktop(ctypes.windll.kernel32.GetCurrentThreadId())
+    user32.GetUserObjectInformationW(desktop, 2, puffer, ctypes.sizeof(puffer), ctypes.byref(gebraucht))
+    return puffer.value
+
+
+def _admin_auf_fremdem_desktop(fehler: str, erhoeht: bool, desktop: str) -> bool:
+    """Die eine bekannte Grenze: Erhoehter Prozess auf einem anderen als dem Default-Desktop (dem
+    versteckten Testdesktop) bekommt von WebView2 0x80070578 "Ungueltiges Fensterhandle".
+
+    Eng gefasst: jeder andere Fehler, ein nicht erhoehter Lauf und der normale Desktop bleiben
+    ein echter Fehlschlag.
+    """
+    return bool(erhoeht and desktop and desktop.lower() != "default" and "0x80070578" in str(fehler))
+
+
+class AdminGrenzeTests(unittest.TestCase):
+    """Die Ausnahme im Einbettungstest bleibt eng - sonst verdeckte sie echte Fehler."""
+
+    FEHLER = "Mindestens ein Fehler ist aufgetreten. ---> COMException: (Ausnahme von HRESULT: 0x80070578)"
+
+    def test_erhoeht_auf_dem_versteckten_desktop_ist_die_bekannte_grenze(self):
+        self.assertTrue(_admin_auf_fremdem_desktop(self.FEHLER, True, "ps5conv_versteckt_123"))
+
+    def test_nicht_erhoeht_bleibt_ein_fehler(self):
+        self.assertFalse(_admin_auf_fremdem_desktop(self.FEHLER, False, "ps5conv_versteckt_123"))
+
+    def test_auf_dem_normalen_desktop_bleibt_es_ein_fehler(self):
+        self.assertFalse(_admin_auf_fremdem_desktop(self.FEHLER, True, "Default"))
+        self.assertFalse(_admin_auf_fremdem_desktop(self.FEHLER, True, "default"))
+
+    def test_ein_anderer_fehler_bleibt_ein_fehler(self):
+        self.assertFalse(_admin_auf_fremdem_desktop("Runtime fehlt", True, "ps5conv_versteckt_123"))
+        self.assertFalse(_admin_auf_fremdem_desktop("", True, "ps5conv_versteckt_123"))
+
+    def test_unbekannter_desktopname_gilt_nicht_als_fremd(self):
+        self.assertFalse(_admin_auf_fremdem_desktop(self.FEHLER, True, ""))
 
 
 class DoktorTests(unittest.TestCase):

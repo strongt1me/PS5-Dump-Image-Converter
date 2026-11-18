@@ -26,7 +26,6 @@ gesehen und hier nachgerechnet:
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 import io
 import os
 import sys

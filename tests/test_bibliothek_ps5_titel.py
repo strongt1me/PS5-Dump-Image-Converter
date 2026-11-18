@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import ast
 import ftplib
-import io
 import json
 import struct
 import sys

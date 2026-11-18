@@ -249,7 +249,8 @@ def arbeitsbereich_am_punkt(x: int, y: int, erkannt: tuple[int, int]) -> tuple[i
     Anders als :func:`arbeitsbereich` (nur der erste Bildschirm) fragt diese Funktion unter Windows den Bildschirm am Punkt
     (``MonitorFromPoint``, ``rcWork``) - eine Kurzinfo an einem zweiten Bildschirm soll an dessen Rand halten, nicht am ersten.
     Die Links-/Oben-Werte koennen dort negativ sein. Sonst, oder wenn die Frage scheitert, gilt der erste Bildschirm
-    (:func:`arbeitsbereich`); unter Linux und macOS der erkannte Bildschirm ab ``(0, 0)``.
+    (:func:`arbeitsbereich`); unter Linux und macOS der erkannte Bildschirm ab ``(0, 0)``, und liegt der Punkt ausserhalb davon
+    (ein zweiter Bildschirm, dessen Raender dort unbekannt sind), auf der betroffenen Achse ohne Grenze.
 
     Args:
         x, y: Ein Punkt in Bildschirmkoordinaten (Tk: ``winfo_rootx`` / ``winfo_rooty``).
@@ -280,7 +281,13 @@ def arbeitsbereich_am_punkt(x: int, y: int, erkannt: tuple[int, int]) -> tuple[i
         except Exception as exc:  # noqa: BLE001
             logger.debug("Arbeitsbereich am Punkt nicht lesbar: %s", exc)
         return arbeitsbereich(erkannt)
-    return 0, 0, breite, hoehe
+    # Ausserhalb von Windows ist nur der Hauptbildschirm bekannt (Tk nennt seine Groesse). Steht der Punkt ausserhalb von ihm, liegt er
+    # auf einem anderen Bildschirm (unter macOS links oder oberhalb des ersten, mit negativen Koordinaten), dessen Raender hier niemand
+    # kennt: Auf dieser Achse wird dann nicht geklemmt. Sonst sprang die Kurzinfo an den Rand des Hauptbildschirms (Pruefung 18.11.2026).
+    frei = 10 ** 6
+    links, bereich_breite = (0, breite) if 0 <= int(x) < breite else (-frei, 2 * frei)
+    oben, bereich_hoehe = (0, hoehe) if 0 <= int(y) < hoehe else (-frei, 2 * frei)
+    return links, oben, bereich_breite, bereich_hoehe
 
 
 def kurzinfo_ort(x: int, y: int, breite: int, hoehe: int, bereich: tuple[int, int, int, int],

@@ -205,7 +205,7 @@ class SeitenbildTests(unittest.TestCase):
     def test_teile_in_der_karte_bekommen_den_getoenten_ausschnitt_teile_davor_nicht(self) -> None:
         from unittest import mock
         s, app = self.s, self.app
-        karte = self._karte()
+        self._karte()
         innen = s._quellsaetze["fpkg"]["zeile"]
         self.assertTrue(s._in_karte(innen))
         self.assertFalse(s._in_karte(s._titel), "Der Titel steht auf dem Hauptbild, nicht in der Karte.")

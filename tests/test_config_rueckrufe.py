@@ -8,7 +8,6 @@ Protokoll auffaellt (19.10.2026, BACKPORT-Senden). Richtig ist ``lambda: knopf.c
 from __future__ import annotations
 
 import ast
-import sys
 import unittest
 from pathlib import Path
 

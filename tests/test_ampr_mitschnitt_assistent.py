@@ -22,7 +22,6 @@ from __future__ import annotations
 import re
 import sys
 import threading
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
