@@ -283,7 +283,8 @@ class FehlerVerstaendlichTests(unittest.TestCase):
 
     def test_jede_art_hat_einen_text_in_jeder_sprache(self) -> None:
         from ps5_validator.utils.i18n import STRINGS
-        schluessel = [*fc.SCAN_ARTEN.values(), "ps5pkg.forge_scan_kopf", "ps5pkg.forge_scan_mehr", "ps5pkg.forge_scan_zeile"]
+        schluessel = [*fc.SCAN_ARTEN.values(), "ps5pkg.forge_scan_kopf", "ps5pkg.forge_scan_mehr", "ps5pkg.forge_scan_mehr_eins",
+                      "ps5pkg.forge_scan_zeile"]
         self.assertEqual(6, len(fc.SCAN_ARTEN))
         for s in schluessel:
             for sprache in ("de", "en", "es", "it", "fr"):
@@ -304,6 +305,31 @@ class FehlerVerstaendlichTests(unittest.TestCase):
         self.assertEqual("  symbolische Verknüpfung, Junction oder Reparsepunkt (wird nicht verfolgt): … und 4 weitere",
                          fc.fehler_verstaendlich(text, self._t("de")).splitlines()[-1])
         self.assertTrue(fc.fehler_verstaendlich(text, self._t("en")).splitlines()[-1].endswith("… and 4 more"))
+
+    def test_bei_genau_einem_weiteren_eintrag_steht_die_einzahl(self) -> None:
+        """Gegenlese 19.11.2026: "und 1 weitere" und "e altri 1" waeren falsch. Ab zwei Eintraegen bleibt es bei der Mehrzahl."""
+        text = self.ECHT + "\n  symlink (not followed): ... and 1 more"
+        erwartet = {"de": "… und ein weiterer", "en": "… and one more", "es": "… y uno más", "it": "… e un altro", "fr": "… et un de plus"}
+        for sprache, ende in erwartet.items():
+            with self.subTest(sprache=sprache):
+                letzte = fc.fehler_verstaendlich(text, self._t(sprache)).splitlines()[-1]
+                self.assertTrue(letzte.endswith(ende), letzte)
+                self.assertNotIn("1 weitere", letzte)
+        zwei = fc.fehler_verstaendlich(self.ECHT + "\n  symlink (not followed): ... and 2 more", self._t("it")).splitlines()[-1]
+        self.assertTrue(zwei.endswith("… e altri 2"), zwei)
+
+    def test_die_deutschen_und_der_italienische_text_nach_der_gegenlese(self) -> None:
+        erwartet_de = {"symlink (not followed)": "symbolische Verknüpfung, Junction oder Reparsepunkt (wird nicht verfolgt)",
+                       "name is not valid UTF-8": "Name ist kein gültiges UTF-8",
+                       "name contains a backslash": "Name enthält einen umgekehrten Schrägstrich",
+                       "hard link (more than one name)": "Hardlink (mehr als ein Name)",
+                       "special file": "Spezialdatei", "unreadable": "nicht lesbar"}
+        t_de = self._t("de")
+        self.assertEqual(set(erwartet_de), set(fc.SCAN_ARTEN))
+        for art, text in erwartet_de.items():
+            with self.subTest(art=art):
+                self.assertEqual(text, t_de(fc.SCAN_ARTEN[art]))
+        self.assertEqual("il nome non è un UTF-8 valido", self._t("it")(fc.SCAN_ARTEN["name is not valid UTF-8"]))
 
     def test_franzoesisch_setzt_ein_leerzeichen_vor_den_doppelpunkt_die_anderen_nicht(self) -> None:
         """Gegenlese 19.11.2026: Die Zeile "<Art>: <Pfad>" kommt aus dem Text der Sprache (``ps5pkg.forge_scan_zeile``)."""

@@ -503,9 +503,12 @@ def fehler_verstaendlich(text: str, t: "Callable[..., str]") -> str:
             erg.append(zeile)                                  # eine unbekannte Art oder Folgezeile: so lassen, nichts verschlucken
             continue
         mehr = SCAN_MEHR.match(rest)
-        # Die Zeile baut der Text der Sprache (``forge_scan_zeile``): Franzoesisch setzt ein Leerzeichen vor den Doppelpunkt. Forge kuerzt die Liste je
-        # Art (``MAX_LISTED``), "... and N more" gehoert also zur Art davor.
-        erg.append(t("ps5pkg.forge_scan_zeile", art=t(schluessel), rest=t("ps5pkg.forge_scan_mehr", n=mehr.group("n")) if mehr else rest))
+        if mehr:
+            # Forge kuerzt die Liste je Art (``MAX_LISTED``), "... and N more" gehoert also zur Art davor. Bei genau einem weiteren Eintrag steht die
+            # Einzahl da ("und ein weiterer", "e un altro"): "und 1 weitere" und "e altri 1" waeren falsch.
+            rest = t("ps5pkg.forge_scan_mehr_eins") if mehr.group("n") == "1" else t("ps5pkg.forge_scan_mehr", n=mehr.group("n"))
+        # Die Zeile baut der Text der Sprache (``forge_scan_zeile``): Franzoesisch setzt ein Leerzeichen vor den Doppelpunkt.
+        erg.append(t("ps5pkg.forge_scan_zeile", art=t(schluessel), rest=rest))
     return "\n".join(erg)
 
 
