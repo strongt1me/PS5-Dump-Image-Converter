@@ -369,9 +369,12 @@ class PaketInfo:
     fakten: object = None
     #: Die Groesse eines Spielordners ist noch nicht gezaehlt (``ordner_lesen(groesse=False)``): ``groesse`` ist 0 und gilt nicht.
     groesse_offen: bool = False
-    #: Das Zaehlen scheiterte (Ordner oder Dateien nicht lesbar): ``groesse`` ist 0 und gilt nicht - die Anzeige sagt "unbekannt",
-    #: statt eine Teilsumme als echte Groesse zu zeigen.
+    #: Das Zaehlen scheiterte ganz (Ordner nicht lesbar, keine Datei gezaehlt): ``groesse`` ist 0 und gilt nicht - die Anzeige sagt
+    #: "unbekannt".
     groesse_unbekannt: bool = False
+    #: Das Zaehlen traf nicht lesbare Eintraege, einige Dateien waren aber zu zaehlen: ``groesse`` ist eine untere Schranke ("mind. ...").
+    #: Die Platzpruefung rechnet mit ihr (frueher, mit ``os.walk``, galt dieselbe Teilsumme still als echte Groesse).
+    groesse_unvollstaendig: bool = False
 
     def __post_init__(self) -> None:
         # Die Kennung geht in Datei- und Ordnernamen (``anzeigename``, ``forge_cli.dateiname_fuer``) und damit in Pfade, die das Fenster
@@ -470,6 +473,19 @@ class GroesseAbgebrochen(Exception):
     """:func:`ordner_groesse` wurde ueber ``abbruch`` beendet - es gibt keine Summe."""
 
 
+class GroesseUnvollstaendig(OSError):
+    """:func:`ordner_groesse` traf nicht lesbare Eintraege, zaehlte aber ``dateien`` Dateien: ``summe`` ist nur eine untere Schranke.
+
+    Eine ``OSError``, damit jeder Aufrufer, der "nicht lesbar" schon abfaengt, weiter funktioniert; wer die Teilsumme nutzen will
+    (Platzpruefung, Anzeige "mind. ..."), faengt diese Klasse vorher.
+    """
+
+    def __init__(self, text: str, summe: int, dateien: int) -> None:
+        super().__init__(text)
+        self.summe = int(summe)
+        self.dateien = int(dateien)
+
+
 def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Callable[[int], None] | None" = None,
                    abbruch: "Callable[[], bool] | None" = None) -> int:
     """Die Summe der Dateigroessen unter ``ordner``; ``melden`` bekommt am Ende eine Zeile (Dateizahl).
@@ -484,8 +500,11 @@ def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Call
     geschieht. ``abbruch`` wird je Verzeichnis gefragt; liefert es ``True``, endet das Zaehlen mit :class:`GroesseAbgebrochen`.
 
     Raises:
-        OSError: Verzeichnisse oder Dateien waren nicht lesbar (Laufwerk getrennt, Zugriff verweigert): Die Summe waere zu klein und
-            saehe doch wie eine echte Groesse aus. ``melden`` bekommt vorher eine Warnung mit der Zahl der Fehler.
+        GroesseUnvollstaendig: Verzeichnisse oder Dateien waren nicht lesbar (Zugriff verweigert, ``System Volume Information`` in der
+            Laufwerkswurzel), einige Dateien waren aber zu zaehlen: Die Summe waere zu klein und saehe doch wie eine echte Groesse aus -
+            sie steht deshalb nur in der Ausnahme (``summe``, untere Schranke). ``melden`` bekommt vorher eine Warnung mit der Zahl
+            der Fehler. Eine ``OSError``.
+        OSError: Es war nichts zu zaehlen und etwas nicht lesbar (Laufwerk getrennt, Ordner ohne Zugriff): keine Groesse.
         GroesseAbgebrochen: ``abbruch`` lieferte ``True``.
     """
     def beobachten(_summe: int, dateien: int) -> None:
@@ -496,10 +515,15 @@ def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Call
     if ergebnis.abgebrochen:
         raise GroesseAbgebrochen(ordner)
     if ergebnis.fehler:
+        text = "%d Eintraege unter %s nicht lesbar" % (ergebnis.fehler, ordner)
         if melden:
-            melden("[WARNUNG] %s: %d Eintraege nicht lesbar - die Groesse waere unvollstaendig"
-                   % (os.path.basename(ordner), ergebnis.fehler))
-        raise OSError("%d Eintraege unter %s nicht lesbar" % (ergebnis.fehler, ordner))
+            melden("[WARNUNG] %s: %d Eintraege nicht lesbar - die Groesse ist unvollstaendig%s"
+                   % (os.path.basename(ordner), ergebnis.fehler,
+                      " (mindestens %.2f GB in %d Dateien)" % (ergebnis.summe / 1024 ** 3, ergebnis.dateien)
+                      if ergebnis.dateien else ""))
+        if ergebnis.dateien:
+            raise GroesseUnvollstaendig(text, ergebnis.summe, ergebnis.dateien)
+        raise OSError(text)
     if melden:
         melden("[info] %s: %d Dateien, %.2f GB" % (os.path.basename(ordner), ergebnis.dateien, ergebnis.summe / 1024 ** 3))
     return ergebnis.summe
@@ -527,15 +551,18 @@ def ordner_lesen(ordner: str, arbeitsordner: str | None = None, melden: _Zeile |
         raise Fehler("param.json nicht lesbar: %s" % exc) from exc
     if not isinstance(param, dict):
         raise Fehler("param.json hat nicht die erwartete Form")
-    gezaehlt, unbekannt = 0, False
+    gezaehlt, unbekannt, teilweise = 0, False, False
     if groesse:
         try:
             gezaehlt = ordner_groesse(ordner, melden)
-        except OSError:                                       # nicht lesbar: keine Teilsumme als echte Groesse (``groesse_unbekannt``)
+        except GroesseUnvollstaendig as exc:                  # Teilsumme: nur als untere Schranke (``groesse_unvollstaendig``)
+            gezaehlt, teilweise = exc.summe, True
+        except OSError:                                       # nichts zu zaehlen: keine Groesse (``groesse_unbekannt``)
             unbekannt = True
     info = PaketInfo(pfad=ordner, groesse=gezaehlt, typ=TYP_ORDNER,
                      content_id=str(param.get("contentId", "") or ""), title_id=str(param.get("titleId", "") or ""),
-                     titel=titel_aus_param(param), param=param, groesse_offen=not groesse, groesse_unbekannt=unbekannt)
+                     titel=titel_aus_param(param), param=param, groesse_offen=not groesse, groesse_unbekannt=unbekannt,
+                     groesse_unvollstaendig=teilweise)
     icon = os.path.join(ordner, "sce_sys", "icon0.png")
     if os.path.isfile(icon):
         try:

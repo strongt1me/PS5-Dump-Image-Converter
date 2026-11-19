@@ -198,6 +198,17 @@ def firmware_text(wert) -> str:
 KATEGORIEN = {0: "Spiel", 1: "Anwendung", 2: "Zusatzinhalt"}
 
 
+def groesse_anzeige(info: "wz.PaketInfo", t: Callable[..., str], fmt: Callable[[int], str]) -> str:
+    """Die Groesse eines Spiels fuer die Anzeige: "wird berechnet", "unbekannt", "mind. X" (unvollstaendig gezaehlt) oder die Zahl."""
+    if getattr(info, "groesse_offen", False):
+        return t("ps5pkg.size_pending")
+    if getattr(info, "groesse_unbekannt", False):
+        return t("ps5pkg.size_unknown")
+    if getattr(info, "groesse_unvollstaendig", False):
+        return t("ps5pkg.size_partial", groesse=fmt(info.groesse))
+    return fmt(info.groesse)
+
+
 def uebersicht(info: "wz.PaketInfo", t: Callable[..., str], fmt: Callable[[int], str]) -> list[tuple[str, str]]:
     """Die Zeilen der technischen Uebersicht - (Eigenschaft, Wert)."""
     p = info.param if isinstance(info.param, dict) else {}
@@ -207,8 +218,7 @@ def uebersicht(info: "wz.PaketInfo", t: Callable[..., str], fmt: Callable[[int],
         ("source", t("ps5pkg.src_folder") if info.ist_ordner
          else t("ps5pkg.src_image", art=info.abbild) if info.ist_abbild
          else (t("ps5pkg.src_debug") if info.debug else (info.typ or "-"))),
-        ("size", t("ps5pkg.size_pending") if info.groesse_offen
-         else t("ps5pkg.size_unknown") if info.groesse_unbekannt else fmt(info.groesse)),
+        ("size", groesse_anzeige(info, t, fmt)),
         ("title_id", info.title_id or "-"),
         ("content_id", info.content_id or "-"),
         ("concept", str(p.get("conceptId", "") or "-")),
@@ -780,8 +790,8 @@ class Ps5PkgFenster:
         info = self.aktuell
         if info is not None and info.groesse_offen:
             return self.t("ps5pkg.size_pending")
-        if info is not None and info.groesse_unbekannt:
-            return self.t("ps5pkg.size_unknown")
+        if info is not None and (info.groesse_unbekannt or info.groesse_unvollstaendig):
+            return groesse_anzeige(info, self.t, self._fmt)
         if info is None or not info.groesse:
             return ""
         try:
@@ -1409,17 +1419,21 @@ class Ps5PkgFenster:
             # Zweiter Schritt: die Groesse der Spielordner zaehlen und nachtragen - mit Zwischenstand fuer die Anzeige. Das gewaehlte
             # Spiel zuerst: Bei einem Ordner mit mehreren Spielen wartete STARTEN sonst auf die Zaehlung aller vorigen.
             for info in sorted((i for i in fertig if getattr(i, "groesse_offen", False)), key=lambda i: i.pfad != waehlen):
-                self._groesse_zaehlen(info.pfad)
+                self._groesse_zaehlen(info.pfad, info)
 
         threading.Thread(target=lauf, daemon=True, name="ps5pkg-lesen").start()
 
-    def _groesse_zaehlen(self, pfad: str) -> None:
+    def _groesse_zaehlen(self, pfad: str, info: "wz.PaketInfo | None" = None) -> None:
         """Arbeitsfaden: zaehlt die Groesse eines Spielordners und legt sie fuer den Takt ab (``_groesse_nachtragen``).
 
         Je Pfad gilt ein Zaehler: Wird dasselbe Spiel noch einmal gelesen, waehrend gezaehlt wird, ersetzt der neue Zaehler den alten
         (seine ``Marke`` stimmt nicht mehr), und der alte endet beim naechsten Verzeichnis - es laufen nie zwei ``scandir`` ueber
         dasselbe Laufwerk. Auch ein Eintrag, der aus der Liste genommen wurde (``verworfen``), und das Schliessen des Fensters
-        beenden das Zaehlen; dann gibt es kein Ergebnis. Scheitert das Zaehlen (nicht lesbar), ist die Groesse unbekannt (``None``).
+        beenden das Zaehlen; dann gibt es kein Ergebnis. Scheitert das Zaehlen ganz (nichts lesbar), ist die Groesse unbekannt
+        (``None``); traf es nur einzelne nicht lesbare Eintraege, ist die Summe eine untere Schranke (``unvollstaendig``).
+
+        ``info`` ist das Paket, fuer das gezaehlt wird: Das Ergebnis traegt es mit - ein Ergebnis, das beim Takt schon bereitliegt, wenn
+        dasselbe Spiel neu gelesen wurde, gehoert zum alten Paket und wird dort nicht uebernommen (Gegenlese 19.11.2026).
         """
         marke = object()
         with self._sperre:
@@ -1439,11 +1453,14 @@ class Ps5PkgFenster:
                     self._z["groesse_zaehler"][pfad] = anzahl
 
         abgebrochen = False
+        unvollstaendig = False
         summe: "int | None" = None
         try:
             summe = wz.ordner_groesse(pfad, self._melden, stand, abbruch=abbrechen)
         except wz.GroesseAbgebrochen:
             abgebrochen = True
+        except wz.GroesseUnvollstaendig as exc:
+            summe, unvollstaendig = exc.summe, True
         except Exception:  # noqa: BLE001 - ohne Groesse bleibt das Spiel anzeigbar: Groesse "unbekannt"
             logger.exception("Groesse von %s zaehlen", pfad)
         with self._sperre:
@@ -1453,13 +1470,19 @@ class Ps5PkgFenster:
             if abgebrochen:
                 self._z["groesse_zaehler"].pop(pfad, None)
             else:
-                self._z["groesse"].append((pfad, summe))
+                self._z["groesse"].append((pfad, summe, info, unvollstaendig))
 
     def _gelesen_uebernehmen(self, fertig: list, waehlen: str) -> None:
         vorhanden = {i.pfad: i for i in self.pakete}
+        with self._sperre:
+            verworfen = set(self._z["verworfen"])
         for info in fertig:
             if info.arbeit:
                 self._cover_ordner.append(info.arbeit)       # nur der eigene Ordner mit der Kopie des Covers
+            if info.pfad in verworfen:
+                # In den Optionen entfernt, waehrend das Lesen noch lief: nicht wieder einblenden. Sein Zaehler endete schon (``verworfen``) -
+                # das Spiel stuende sonst fuer immer auf "Groesse wird berechnet", und STARTEN bliebe gesperrt (Gegenlese 19.11.2026).
+                continue
             alt = vorhanden.get(info.pfad)
             if alt is not None:
                 self.pakete[self.pakete.index(alt)] = info
@@ -1482,23 +1505,28 @@ class Ps5PkgFenster:
         self._status(self._lese_status())
 
     def _groesse_von(self, info: "wz.PaketInfo") -> str:
-        """Die Groesse fuer die Anzeige - solange sie gezaehlt wird, steht dort "Groesse wird berechnet ...", nach einem Fehler "unbekannt"."""
-        if getattr(info, "groesse_offen", False):
-            return self.t("ps5pkg.size_pending")
-        if getattr(info, "groesse_unbekannt", False):
-            return self.t("ps5pkg.size_unknown")
-        return self._fmt(info.groesse)
+        """Die Groesse fuer die Anzeige - solange sie gezaehlt wird, steht dort "Groesse wird berechnet ...", nach einem Fehler "unbekannt"
+        (nichts zu zaehlen) oder "mind. X" (Teilsumme, ``groesse_unvollstaendig``)."""
+        return groesse_anzeige(info, self.t, self._fmt)
 
-    def _groesse_nachtragen(self, pfad: str, summe: "int | None") -> None:
+    def _groesse_nachtragen(self, pfad: str, summe: "int | None", fuer: "wz.PaketInfo | None" = None,
+                            unvollstaendig: bool = False) -> None:
         """Die gezaehlte Groesse eines Spielordners eintragen und anzeigen, wo sie schon als "wird berechnet" stand.
 
-        ``summe`` ist ``None``, wenn das Zaehlen scheiterte (Ordner oder Dateien nicht lesbar): Das Spiel bleibt anzeigbar und startbar,
-        die Groesse ist "unbekannt" (``groesse_unbekannt``, 0 gilt nicht) und steht im Protokoll - eine Teilsumme wird nie als echte
-        Groesse gezeigt.
+        ``summe`` ist ``None``, wenn das Zaehlen ganz scheiterte (nichts lesbar): Das Spiel bleibt anzeigbar und startbar, die Groesse ist
+        "unbekannt" (``groesse_unbekannt``, 0 gilt nicht) und steht im Protokoll. Traf es nur einzelne nicht lesbare Eintraege
+        (``unvollstaendig``), ist ``summe`` eine untere Schranke: Sie geht in die Platzpruefung ein und steht als "mind. X" da - nie als
+        echte Groesse.
+
+        ``fuer`` ist das Paket, fuer das gezaehlt wurde. Steht inzwischen ein anderes Objekt desselben Pfads in der Liste (das Spiel
+        wurde neu gelesen), gehoert das Ergebnis zum alten Paket und wird verworfen: Das neue zaehlt selbst, und sein Zaehlerstand
+        bleibt unberuehrt.
         """
+        info = next((i for i in self.pakete if i.pfad == pfad), None)
+        if fuer is not None and info is not None and info is not fuer:
+            return
         with self._sperre:
             self._z["groesse_zaehler"].pop(pfad, None)
-        info = next((i for i in self.pakete if i.pfad == pfad), None)
         if info is not None:                              # sonst inzwischen aus der Liste genommen: nur die Statuszeile aufraeumen
             info.groesse_offen = False
             if summe is None:
@@ -1506,6 +1534,7 @@ class Ps5PkgFenster:
                 self._protokoll(self.t("ps5pkg.size_failed", name=os.path.basename(os.path.normpath(pfad)) or pfad))
             else:
                 info.groesse = int(summe)
+                info.groesse_unvollstaendig = bool(unvollstaendig)
             if self.liste.exists(info.pfad):
                 self.liste.item(info.pfad, values=self._listenwerte(info))
             if self.aktuell is info:
@@ -1883,7 +1912,8 @@ class Ps5PkgFenster:
             v["output"].set(self._ziel_name())
         v["title_id"].set(info.title_id)
         v["content"].set(info.content_id)
-        v["size"].set(self._groesse_von(info) if info.groesse_offen or info.groesse_unbekannt else "ca. " + self._fmt(info.groesse))
+        v["size"].set(self._groesse_von(info) if info.groesse_offen or info.groesse_unbekannt or info.groesse_unvollstaendig
+                      else "ca. " + self._fmt(info.groesse))
         ziel = self.ziel_var.get().strip()
         frei = ""
         try:
@@ -2583,7 +2613,26 @@ class Ps5PkgFenster:
             zeilen.append(t(einstufung))
         return "\n".join(zeilen)
 
-    def _bericht_aktualisieren(self) -> None:
+    def haken_nachziehen(self) -> None:
+        """Die Seite kommt (wieder) nach vorn: Die Haken PlayGo und DLC EMU gehoeren zum Spiel dieser Seite, nicht zu dem, was eine
+        andere Aufgabe zuletzt gesetzt hat (Gegenlese 19.11.2026).
+
+        Ohne gewaehltes Spiel gehen die vom Programm gesetzten Haken zurueck. Mit einem Spiel wird nur der Haken-Teil der Pruefung
+        wiederholt - ohne ``[Pruefung]``-Zeilen im Protokoll und ohne neues ``inspect`` von Dump Forge -, es sei denn, die Pruefung der
+        Karte liest noch: Sie setzt die Haken selbst, sobald sie fertig ist.
+        """
+        if self._job is not None or self._uebergabe is not None:
+            return                                   # waehrend eines Laufs wird nichts angefasst (``_haken_nach_quelle_setzen``)
+        info = self.aktuell
+        if info is None:
+            self.g._haken_auto_zuruecknehmen()
+            return
+        if self._pruefung_laeuft(info):
+            return
+        self._einbauten_gemeldet = None
+        self._bericht_aktualisieren(nur_haken=True)
+
+    def _bericht_aktualisieren(self, nur_haken: bool = False) -> None:
         """Wie in den Aufgaben 1 bis 6: Ist eine Quelle gewaehlt, steht im Protokoll, was in dem Spiel schon eingebaut ist
         (BACKPORT, AMPR EMU, Asset-Pack, PlayGo) - und, wenn nichts eingebaut ist, ob das Spiel PlayGo braeuchte.
 
@@ -2593,6 +2642,9 @@ class Ps5PkgFenster:
         zu einer inzwischen anderen Quelle gehoert, wird verworfen. Danach liest Dump Forge die Fakten fuer die Rueckfragen vor
         dem Lauf vor (``inspect``, meist unter einer Sekunde) - ein Bau, der waehrenddessen startet, wartet darauf
         (``_quellfakten``) und liest nicht ein zweites Mal.
+
+        ``nur_haken``: Die Seite kam wieder nach vorn (``haken_nachziehen``) - es werden nur die Haken nachgezogen, die Zeilen stehen
+        schon im Protokoll, und die Fakten sind gelesen oder werden es noch.
         """
         info = self.aktuell
         if info is None:
@@ -2616,7 +2668,9 @@ class Ps5PkgFenster:
             # Gemeldet wird im Takt des Fensters (``_takt_arbeiten``), wie alles, was ein Faden meldet: Ein Faden fasst
             # kein Widget an, und ``after`` aus einem Faden braucht die laufende Hauptschleife.
             with self._sperre:
-                self._z["bericht"].append((info, zeilen))
+                self._z["bericht"].append((info, None if nur_haken else zeilen))
+            if nur_haken:
+                return
             if info.fakten is None and exe and (info.ist_ordner or forge.ist_paket(info.pfad)):
                 fakten = forge.quellfakten_lesen(exe, info.pfad, popen_extra=popen_extra)
                 if fakten is not None:
@@ -3100,6 +3154,29 @@ class Ps5PkgFenster:
         except tk.TclError:
             self._takt_id = None
 
+    def _groessen_nachtragen(self, groessen: list, zaehler: dict) -> None:
+        """Im Takt: die fertigen Groessen eintragen (je Spiel einzeln abgesichert) und STARTEN neu beurteilen.
+
+        ``zaehler`` ist der Zwischenstand vom Anfang des Takts; was fertig ist, wird daraus gestrichen, damit er die Statuszeile nicht
+        mehr setzt. Ein Eintrag ist ``(pfad, summe[, paket[, unvollstaendig]])``.
+        """
+        for eintrag in groessen:
+            pfad = eintrag[0]
+            try:
+                self._groesse_nachtragen(*eintrag)
+            except tk.TclError:
+                pass
+            except Exception:  # noqa: BLE001 - ein Fehler bei einem Spiel darf die Groessen der uebrigen und den Rest des Takts nicht verlieren
+                logger.exception("Groesse von %s nachtragen", pfad)
+            zaehler.pop(pfad, None)                    # fertig: sein Zwischenstand (vor dem Nachtrag gemerkt) darf die Statuszeile nicht mehr setzen
+        if groessen:
+            try:
+                self._knoepfe_pruefen()                # auch wenn ein Nachtrag mitten drin scheiterte: ``groesse_offen`` ist dann schon False
+            except tk.TclError:
+                pass
+            except Exception:  # noqa: BLE001
+                logger.exception("Knoepfe nach der Groesse pruefen")
+
     def _takt_arbeiten(self) -> None:
         with self._sperre:
             zeilen, self._z["zeilen"] = self._z["zeilen"], []
@@ -3117,39 +3194,36 @@ class Ps5PkgFenster:
             # (sonst fehlt das Paket noch in der Liste, und die Groesse ginge verloren).
             groessen, self._z["groesse"] = self._z["groesse"], []
             zaehler = dict(self._z["groesse_zaehler"])
-        for quelle, einbauten in berichte:
-            if self.aktuell is quelle and einbauten:    # die Antwort einer inzwischen anderen Quelle zeigt niemand
-                for text in einbauten:
-                    self._protokoll(text.rstrip("\n"))
-        with self._sperre:
-            nachlauf, self._z["nachlauf"] = self._z["nachlauf"], []
-        for art, ergebnis in nachlauf:
-            self._nachlauf = False
-            self._nach_erfolg_weiter(art, ergebnis)
-        if self._job is not None:
-            # Etwas Neues kam: eine Zeile des Werkzeugs, ein anderer Prozentwert oder eine andere Dateizeile (Lebenszeichen).
-            zeichen = (prozent, datei)
-            if zeilen or zeichen != self._job.get("zeichen"):
-                self._job["letzte"] = time.monotonic()
-                self._job["zeichen"] = zeichen
-        for z in zeilen:
-            self._protokoll(z)
-        if scan:
-            self._scan_uebernehmen(scan)
-        for paket_liste, waehlen in gelesen:
-            self._gelesen_uebernehmen(paket_liste, waehlen)
-        if gelesen and liest and self._job is None:
-            self._status(self.t("ps5pkg.status_reading", count=liest))     # ein weiteres Lesen laeuft noch
-        # Die Groesse eines Spielordners wird nach dem Anzeigen gezaehlt (``_lesen_starten``): fertige Werte eintragen, der Zwischenstand
-        # steht in der Statuszeile - ein langer Vorgang ohne Anzeige gilt nicht (Dauerauftrag "keine stillen Aktionen").
-        for pfad, summe in groessen:
-            try:
-                self._groesse_nachtragen(pfad, summe)
-            except tk.TclError:
-                pass
-            except Exception:  # noqa: BLE001 - ein Fehler bei einem Spiel darf die Groessen der uebrigen und den Rest des Takts nicht verlieren
-                logger.exception("Groesse von %s nachtragen", pfad)
-            zaehler.pop(pfad, None)                    # fertig: sein Zwischenstand (vor dem Nachtrag gemerkt) darf die Statuszeile nicht mehr setzen
+        try:
+            for quelle, einbauten in berichte:
+                if self.aktuell is quelle and einbauten:    # die Antwort einer inzwischen anderen Quelle zeigt niemand
+                    for text in einbauten:
+                        self._protokoll(text.rstrip("\n"))
+            with self._sperre:
+                nachlauf, self._z["nachlauf"] = self._z["nachlauf"], []
+            for art, ergebnis in nachlauf:
+                self._nachlauf = False
+                self._nach_erfolg_weiter(art, ergebnis)
+            if self._job is not None:
+                # Etwas Neues kam: eine Zeile des Werkzeugs, ein anderer Prozentwert oder eine andere Dateizeile (Lebenszeichen).
+                zeichen = (prozent, datei)
+                if zeilen or zeichen != self._job.get("zeichen"):
+                    self._job["letzte"] = time.monotonic()
+                    self._job["zeichen"] = zeichen
+            for z in zeilen:
+                self._protokoll(z)
+            if scan:
+                self._scan_uebernehmen(scan)
+            for paket_liste, waehlen in gelesen:
+                self._gelesen_uebernehmen(paket_liste, waehlen)
+            if gelesen and liest and self._job is None:
+                self._status(self.t("ps5pkg.status_reading", count=liest))     # ein weiteres Lesen laeuft noch
+        finally:
+            # Die Groesse eines Spielordners wird nach dem Anzeigen gezaehlt (``_lesen_starten``): fertige Werte eintragen, der Zwischenstand
+            # steht in der Statuszeile - ein langer Vorgang ohne Anzeige gilt nicht (Dauerauftrag "keine stillen Aktionen"). Auch wenn
+            # ein Schritt davor scheitert: Die abgeholten Ergebnisse gingen sonst verloren, das Spiel stuende fuer immer auf "wird
+            # berechnet" und STARTEN bliebe gesperrt (Gegenlese 19.11.2026).
+            self._groessen_nachtragen(groessen, zaehler)
         if zaehler and self._job is None and self._uebergabe is None:
             aktuell = self.aktuell.pfad if self.aktuell is not None else ""
             pfad = aktuell if aktuell in zaehler else next(iter(zaehler))

@@ -9,6 +9,7 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -101,6 +102,84 @@ class AnstossTests(unittest.TestCase):
             gui._einbauten_geprueft_fuer = None
             gui._quelle_einbauten_anstossen(ordner, "pack_folder", 10)
         self.assertEqual(1, faden.call_count)
+
+
+class MarkeDerPruefungTests(unittest.TestCase):
+    """Die Pruefung der Einbauten gilt, solange ihre Marke die aktuelle ist - nicht, solange ``_calc_generation`` stimmt.
+
+    ``_on_source_path_changed`` laeuft beim Wechsel der Aufgabe zweimal (sofort und, entprellt, 180 ms spaeter) und zaehlt die Generation
+    jedes Mal hoch; der zweite Lauf findet denselben Schluessel und startet keine zweite Pruefung. Die erste galt dann als veraltet:
+    Bei einer Quelle, die laenger als 180 ms zu lesen war, gab es weder ``[Pruefung]``-Zeilen noch Haken (Gegenlese 19.11.2026)."""
+
+    def setUp(self) -> None:
+        self.ordner = tempfile.mkdtemp(prefix="einbau_marke_")
+        self.addCleanup(shutil.rmtree, self.ordner, True)
+        self.gui = _gui()
+        self.frei = threading.Event()
+        self.addCleanup(self.frei.set)
+
+        def zeilen(src, aktuell=None, haken_gilt=None):
+            self.frei.wait(10)
+            return ["[Prüfung] %s\n" % Path(src).name] if aktuell is None or aktuell() else None
+        self.gui._quelle_einbauten_zeilen = zeilen
+
+    def _faden(self):
+        return [t for t in threading.enumerate() if t.name == "quelle-einbauten"]
+
+    def _beenden(self) -> str:
+        self.frei.set()
+        for t in self._faden():
+            t.join(10)
+        return "".join(self.gui.zeilen)
+
+    def test_ein_zweiter_lauf_mit_derselben_quelle_macht_die_pruefung_nicht_veraltet(self) -> None:
+        self.gui._quelle_einbauten_anstossen(self.ordner, "pack_folder", 7)
+        self.gui._calc_generation += 1                       # der zweite Lauf von ``_on_source_path_changed`` (180 ms spaeter)
+        self.gui._quelle_einbauten_anstossen(self.ordner, "pack_folder", self.gui._calc_generation)   # gleicher Schluessel: nichts startet
+        self.assertEqual(1, len(self._faden()))
+        self.assertIn(Path(self.ordner).name, self._beenden(), "die erste Pruefung meldet trotzdem")
+
+    def test_eine_andere_quelle_macht_die_erste_pruefung_veraltet(self) -> None:
+        anderer = tempfile.mkdtemp(prefix="einbau_marke_b_")
+        self.addCleanup(shutil.rmtree, anderer, True)
+        self.gui._quelle_einbauten_anstossen(self.ordner, "pack_folder", 7)
+        self.gui._quelle_einbauten_anstossen(anderer, "pack_folder", 8)
+        text = self._beenden()
+        self.assertNotIn(Path(self.ordner).name, text)
+        self.assertIn(Path(anderer).name, text)
+
+    def test_zuruecknehmen_macht_die_laufende_pruefung_veraltet(self) -> None:
+        self.gui._quelle_einbauten_anstossen(self.ordner, "pack_folder", 7)
+        self.gui._haken_auto_zuruecknehmen()                 # leere Quelle oder eine Aufgabe ohne Einzelspiel
+        self.assertEqual("", self._beenden())
+
+    def test_ein_lauf_macht_sie_veraltet(self) -> None:
+        self.gui._quelle_einbauten_anstossen(self.ordner, "pack_folder", 7)
+        self.gui.is_running = True
+        self.assertEqual("", self._beenden())
+
+    def test_ohne_marke_gilt_wie_frueher_die_generation(self) -> None:
+        self.frei.set()
+        gui = self.gui
+        gui._calc_generation = 8
+        gui._quelle_einbauten_pruefen(self.ordner, 7)        # ohne Marke, veraltete Generation
+        self.assertEqual([], gui.zeilen)
+        gui._quelle_einbauten_pruefen(self.ordner, 8)
+        self.assertIn(Path(self.ordner).name, "".join(gui.zeilen))
+
+    def test_eine_vorhandene_aber_ungueltige_quelle_nimmt_die_haken_zurueck(self) -> None:
+        """Quelle da, aber fuer die Aufgabe nicht brauchbar (ein Ordner bei Aufgabe 2): Der Zweig "Kein gueltiger Quellpfad" von
+        ``_on_source_path_changed`` ruft ``_haken_auto_zuruecknehmen`` - fuer Aufgaben ausser Seite 7."""
+        import ast
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8-sig")
+        funktion = next(f for f in ast.walk(ast.parse(quelle))
+                        if isinstance(f, ast.FunctionDef) and f.name == "_on_source_path_changed")
+        else_zweig = next(n.orelse for n in ast.walk(funktion) if isinstance(n, ast.If) and n.orelse
+                          and any(isinstance(m, ast.AugAssign) and isinstance(m.target, ast.Attribute)
+                                  and m.target.attr == "_calc_generation" for m in n.orelse))
+        aufrufe = [c.func.attr for s in else_zweig for c in ast.walk(s)
+                   if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)]
+        self.assertIn("_haken_auto_zuruecknehmen", aufrufe)
 
 
 if __name__ == "__main__":

@@ -22590,10 +22590,16 @@ class PS5ConverterGUI:
         if schluessel == getattr(self, "_einbauten_geprueft_fuer", None):
             return
         self._einbauten_geprueft_fuer = schluessel
-        threading.Thread(target=self._quelle_einbauten_pruefen, args=(src, gen),
+        # Die Pruefung gilt, solange diese Marke die aktuelle ist - nicht, solange ``gen`` stimmt: ``_on_source_path_changed`` laeuft beim
+        # Wechsel der Aufgabe zweimal (sofort und, entprellt, 180 ms spaeter) und zaehlt ``_calc_generation`` jedes Mal hoch; der zweite
+        # Lauf findet denselben Schluessel und startet nichts - die erste Pruefung galt dann als veraltet, und bei einer Quelle, die
+        # laenger als 180 ms zu lesen war (Abbild, USB, NAS), gab es weder ``[Pruefung]``-Zeilen noch Haken (Gegenlese 19.11.2026).
+        # Eine andere Quelle, eine leere Quelle und ``_haken_auto_zuruecknehmen`` ersetzen die Marke.
+        marke = self._einbauten_pruefung = object()
+        threading.Thread(target=self._quelle_einbauten_pruefen, args=(src, gen, marke),
                          daemon=True, name="quelle-einbauten").start()
 
-    def _quelle_einbauten_pruefen(self, src: str, gen: int) -> None:
+    def _quelle_einbauten_pruefen(self, src: str, gen: int, marke: "object | None" = None) -> None:
         """Was ist in diesem Spiel schon eingebaut - und braucht es PlayGo? (Faden)
 
         Wunsch des Nutzers vom 06.10.2026: "Waehlt man ein Spiel aus (Quelle),
@@ -22605,8 +22611,14 @@ class PS5ConverterGUI:
         (:meth:`_playgo_merkmal_der_quelle`). Schaltet nichts ein - PlayGo
         kommt nie von selbst dazu; der Hinweis sagt, welcher Haken es waere.
         """
-        zeilen = self._quelle_einbauten_zeilen(
-            src, lambda: gen == self._calc_generation and not self.is_running)
+        def aktuell() -> bool:
+            if self.is_running:
+                return False
+            if marke is not None:
+                return getattr(self, "_einbauten_pruefung", None) is marke
+            return gen == self._calc_generation
+
+        zeilen = self._quelle_einbauten_zeilen(src, aktuell)
         if not zeilen:
             return
         for zeile in zeilen:
@@ -22816,6 +22828,7 @@ class PS5ConverterGUI:
         # (Seite 7 nahm in der Zwischenzeit die Haken zurueck - Quelle wieder waehlen, und der Schluessel war noch derselbe).
         self._calc_generation = getattr(self, "_calc_generation", 0) + 1
         self._einbauten_geprueft_fuer = None
+        self._einbauten_pruefung = None                    # eine laufende Pruefung (``_quelle_einbauten_anstossen``) ist veraltet
         auto = getattr(self, "_haken_auto", None)
         if not auto or not any(auto.values()):
             return
@@ -23416,6 +23429,10 @@ class PS5ConverterGUI:
             # weiter - die alte Messung schrieb ihre Werte danach in die eben
             # geleerte Anzeige (Durchsicht, H4-11).
             self._calc_generation += 1
+            # Auch die Haken: Eine Quelle, die es gibt, aber fuer diese Aufgabe nichts taugt (ein Ordner bei Aufgabe 2), laesst keine
+            # Pruefung mehr laufen - die Haken fuer das vorige Spiel gelten nicht mehr (Gegenlese 19.11.2026). Seite 7 pflegt ihre eigenen.
+            if mode != "pkg_fpkg":
+                self._haken_auto_zuruecknehmen()
             self._quellgroesse_merken("", 0)
             if hasattr(self, "info_toggle_btn"):
                 # Aufgabe 7 (PKG / FPKG) hat keine Quelle im Feld der Aufgaben 1 bis 6, liest ihr Spiel aber selbst
@@ -24064,7 +24081,9 @@ class PS5ConverterGUI:
         gross sein (Street Fighter 6: 329 MB, 6,1 s). Seit der Seitenleiste mit SDK-Rueckfall (18.11.2026) las das jedes Spiel
         ohne Firmware in der ``param.json`` doppelt (Volllauf 6 am 19.11.2026: ``test_die_infobox_wartet_nicht_und_merkt_sich_den_stand``).
         Ein Schloss je Datei (Pfad, Groesse, Aenderungszeit, Sprache) laesst den ersten lesen; der zweite findet das Ergebnis
-        danach vor. Gemerkt wird nur ein gefundener Stand: Ein leeres Ergebnis kann auch ein kurzer Lesefehler sein.
+        danach vor. Gemerkt wird hier nur ein gefundener Stand: Ein leeres Ergebnis kann auch ein kurzer Lesefehler sein. Die beiden
+        Anzeigen (Infobox, Seitenleiste) merken sich ihr Ergebnis zusaetzlich selbst je Schluessel - auch ein leeres: Sonst las jede
+        Auffrischung der Anzeige die Datei noch einmal (bis zu 6 s), und eine Datei ohne SDK-Stand bliebe ein Dauerleser.
         """
         eboot = os.path.join(str(ordner or ""), "eboot.bin")
         try:
@@ -24073,21 +24092,19 @@ class PS5ConverterGUI:
             return self._sdk_stand_lesen(ordner)          # keine Datei: nichts zu merken, die Antwort kennt der Leser selbst
         schluessel = (os.path.normcase(os.path.abspath(eboot)), datei.st_size, datei.st_mtime_ns,
                       getattr(self, "_current_language", ""))
+        # Die Schloesser werden nie weggeraeumt (je Datei und Stand eins, einige Dutzend Byte): Jedes Wegraeumen - auch nur der freien -
+        # hat ein Fenster zwischen "Schloss geholt" und "Schloss genommen", in dem ein dritter Faden mit einem neuen Schloss dieselbe
+        # Datei noch einmal liest (Gegenlese 19.11.2026). Begrenzt wird, was gross werden kann: die Ergebnisse.
         sperre = self.__dict__.setdefault("_sdk_gelesen_sperren", {}).setdefault(schluessel, threading.Lock())
         with sperre:
             gelesen = self.__dict__.setdefault("_sdk_gelesen", {})
-            if schluessel in gelesen:
-                return gelesen[schluessel]
+            vorhanden = gelesen.get(schluessel)             # ein Zugriff: ``in`` und ``[]`` liessen ein ``clear`` dazwischen zu
+            if vorhanden is not None:
+                return vorhanden
             ergebnis = self._sdk_stand_lesen(ordner)
             if ergebnis and ergebnis[0]:
                 if len(gelesen) >= self._SDK_GELESEN_MAX:
                     gelesen.clear()
-                    # Nur die Schloesser wegraeumen, die gerade niemand haelt: Ein gehaltenes zu verwerfen liesse einen dritten Faden
-                    # mit einem neuen Schloss dieselbe Datei gleichzeitig lesen.
-                    sperren = self.__dict__["_sdk_gelesen_sperren"]
-                    for alt_schluessel, alt_sperre in list(sperren.items()):
-                        if not alt_sperre.locked():
-                            sperren.pop(alt_schluessel, None)
                 gelesen[schluessel] = ergebnis
             return ergebnis
 

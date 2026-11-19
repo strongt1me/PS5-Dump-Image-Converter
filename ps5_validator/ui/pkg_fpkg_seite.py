@@ -695,6 +695,7 @@ class PkgFpkgSeite:
         self._umschalten(UNTERSEITE_FPKG, fenster.win)
         self._rest_fertig(fenster, geaendert)
         fenster.spielinfo_nachziehen()
+        fenster.haken_nachziehen()
         self._nachziehen_planen()
         self._vorbau_planen()
         return fenster

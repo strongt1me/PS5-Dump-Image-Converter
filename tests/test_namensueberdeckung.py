@@ -12,11 +12,20 @@ belegt, den dieselbe Klasse oder eine Basisklasse des Projekts als **Methode** d
 ``setter``, ``cached_property``) zaehlen nicht - dort ist die Zuweisung gewollt. Eine Eigenschaft **ohne** ``setter`` zaehlt
 dagegen: ``self.X = ...`` wirft dort ``AttributeError``. Basisklassen aus fremden Paketen (``tk.Canvas``) kennt die Suche nicht;
 ``Basis[str]`` (Generics) wird wie ``Basis`` gelesen.
+
+Massgebend ist die **naechste** Definition des Namens in der Reihenfolge Klasse, Basen: Eine Unterklasse, die eine Eigenschaft der
+Basis mit Setter neu definiert oder sie durch ein Klassenattribut ersetzt, entschaerft die Zuweisung; eine Unterklasse, die eine
+Eigenschaft ohne Setter definiert, wo die Basis ``self.X = ...`` setzt, ist ein Fund (Gegenlese 19.11.2026).
+
+Grenzen (nicht gesucht): ``setattr(self, "x", ...)``, ``for self.x in ...``, ein anderer Name als ``self``, eine Klasse, die in
+mehreren Modulen denselben Namen traegt (die Suche verschmilzt sie; ``ERLAUBT`` faengt einen daraus entstehenden Fehlalarm ab -
+Basen aus der Standardbibliothek wie ``tk.Text`` fallen allerdings heraus), Basen, die ein Aufruf liefert.
 """
 from __future__ import annotations
 
 import ast
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,10 +52,22 @@ def _dekorator(f: "ast.FunctionDef | ast.AsyncFunctionDef") -> str:
     return ""
 
 
-def _basenname(b: ast.expr) -> "str | None":
-    """Der einfache Name einer Basisklasse: ``Name``, ``modul.Name`` und ``Name[...]``."""
+def _wurzelname(b: ast.expr) -> "str | None":
+    """Der linke Name eines Ausdrucks: ``tk`` in ``tk.Canvas``, ``Wert`` in ``Wert[str]``."""
+    while isinstance(b, (ast.Attribute, ast.Subscript)):
+        b = b.value
+    return b.id if isinstance(b, ast.Name) else None
+
+
+def _basenname(b: ast.expr, fremd: "set[str] | None" = None) -> "str | None":
+    """Der einfache Name einer Basisklasse: ``Name``, ``modul.Name`` und ``Name[...]``.
+
+    ``fremd``: Namen, die diese Datei aus der Standardbibliothek eingefuehrt hat (``tk`` fuer ``import tkinter as tk``): Eine Basis
+    daraus (``tk.Text``) ist keine Klasse des Projekts, auch wenn dort eine Klasse ``Text`` heisst."""
+    if fremd and _wurzelname(b) in fremd:
+        return None
     if isinstance(b, ast.Subscript):
-        return _basenname(b.value)
+        return _basenname(b.value, fremd)
     if isinstance(b, ast.Name):
         return b.id
     if isinstance(b, ast.Attribute):
@@ -54,33 +75,74 @@ def _basenname(b: ast.expr) -> "str | None":
     return None
 
 
+def _fremde_namen(baum: ast.AST) -> "set[str]":
+    """Namen, die eine Datei per ``import`` oder ``from ... import`` aus der Standardbibliothek bindet."""
+    namen: "set[str]" = set()
+    for k in ast.walk(baum):
+        if isinstance(k, ast.Import):
+            for a in k.names:
+                if a.name.split(".")[0] in sys.stdlib_module_names:
+                    namen.add(a.asname or a.name.split(".")[0])
+        elif isinstance(k, ast.ImportFrom) and k.level == 0 and k.module and k.module.split(".")[0] in sys.stdlib_module_names:
+            namen.update(a.asname or a.name for a in k.names)
+    return namen
+
+
+def _stellen(koerper: "list[ast.stmt]"):
+    """Die Anweisungen eines Klassenkoerpers - auch die unter ``if``, ``try``, ``with`` und Schleifen, nicht die in Funktionen/Klassen."""
+    for s in koerper:
+        yield s
+        if isinstance(s, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith, ast.Try)):
+            teile = [s.body, getattr(s, "orelse", []), getattr(s, "finalbody", [])]
+            teile += [h.body for h in getattr(s, "handlers", [])]
+            for teil in teile:
+                yield from _stellen(teil)
+
+
+def _ohne_klassen(knoten: ast.AST):
+    """Alle Knoten unter ``knoten``, ohne in eine verschachtelte Klasse zu steigen: Deren ``self`` ist ein anderes."""
+    for kind in ast.iter_child_nodes(knoten):
+        if isinstance(kind, ast.ClassDef):
+            continue
+        yield kind
+        yield from _ohne_klassen(kind)
+
+
 def _klassen_lesen(dateien: "list[Path]") -> "dict[str, list[tuple]]":
-    """Name -> [(Datei, Basen, Methoden {Name: Zeile}, Attribute {Name: Zeile}, Zeile, Eigenschaften ohne Setter)] je Klasse."""
+    """Name -> [(Datei, Basen, Methoden {Name: Zeile}, Attribute {Name: Zeile}, Zeile, Eigenschaften ohne Setter, Eigenschaften
+    mit Setter und Klassenattribute)] je Klasse."""
     klassen: "dict[str, list[tuple]]" = {}
     for datei in dateien:
         baum = ast.parse(datei.read_text(encoding="utf-8-sig"))
+        fremd = _fremde_namen(baum)
         for knoten in ast.walk(baum):
             if not isinstance(knoten, ast.ClassDef):
                 continue
-            basen = [n for n in (_basenname(b) for b in knoten.bases) if n]
+            basen = [n for n in (_basenname(b, fremd) for b in knoten.bases) if n]
             methoden: dict = {}
             eigenschaften: set = set()
             setter: set = set()
-            for stelle in knoten.body:
-                if not isinstance(stelle, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    continue
-                art = _dekorator(stelle)
-                if art == "eigenschaft":
-                    eigenschaften.add(stelle.name)
-                elif art == "setter":
-                    setter.add(stelle.name)
-                elif art == "":
-                    methoden[stelle.name] = stelle.lineno
+            werte: set = set()                       # Klassenattribute und zwischengespeicherte Eigenschaften
+            for stelle in _stellen(knoten.body):
+                if isinstance(stelle, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    art = _dekorator(stelle)
+                    if art == "eigenschaft":
+                        eigenschaften.add(stelle.name)
+                    elif art == "setter":
+                        setter.add(stelle.name)
+                    elif art == "cached":
+                        werte.add(stelle.name)
+                    else:
+                        methoden[stelle.name] = stelle.lineno
+                elif isinstance(stelle, ast.Assign):
+                    werte.update(t.id for t in stelle.targets if isinstance(t, ast.Name))
+                elif isinstance(stelle, ast.AnnAssign) and isinstance(stelle.target, ast.Name):
+                    werte.add(stelle.target.id)
             attribute: dict = {}
-            for f in ast.walk(knoten):
+            for f in _ohne_klassen(knoten):
                 if not isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
-                for a in ast.walk(f):
+                for a in _ohne_klassen(f):
                     if isinstance(a, ast.Assign):
                         ziele = a.targets
                     elif isinstance(a, (ast.AnnAssign, ast.AugAssign)):
@@ -93,7 +155,7 @@ def _klassen_lesen(dateien: "list[Path]") -> "dict[str, list[tuple]]":
                                     and isinstance(t.ctx, ast.Store)):
                                 attribute.setdefault(t.attr, a.lineno)
             klassen.setdefault(knoten.name, []).append(
-                (datei, basen, methoden, attribute, knoten.lineno, eigenschaften - setter))
+                (datei, basen, methoden, attribute, knoten.lineno, eigenschaften - setter, setter | werte))
     return klassen
 
 
@@ -109,12 +171,36 @@ def _basen(name: str, klassen: dict, gesehen: "set | None" = None) -> "list[str]
     return ergebnis
 
 
+def _wirksam(attr: str, eigene: tuple, basen: "list[str]", klassen: dict) -> "tuple[str, str] | None":
+    """Wie ``attr`` fuer eine Instanz der Klasse gilt: ``("methode" | "ohne_setter" | "wert", Klasse)`` nach der naechsten Definition.
+
+    ``eigene`` = (Name, Methoden, Eigenschaften ohne Setter, Eigenschaften mit Setter und Klassenattribute) der Klasse selbst, danach die
+    Basen in ihrer Reihenfolge; ``None``, wenn kein Klassenteil den Namen definiert."""
+    def pruefen(klasse: str, methoden: dict, nur_lesbar: set, werte: set) -> "tuple[str, str] | None":
+        if attr in methoden:
+            return "methode", klasse
+        if attr in nur_lesbar:
+            return "ohne_setter", klasse
+        if attr in werte:
+            return "wert", klasse
+        return None
+    treffer = pruefen(*eigene)
+    if treffer:
+        return treffer
+    for b in basen:
+        for e in klassen.get(b, []):
+            treffer = pruefen(b, e[2], e[5], e[6])
+            if treffer:
+                return treffer
+    return None
+
+
 def ueberdeckungen(dateien: "list[Path]") -> "list[str]":
     """Eine Zeile je Fund: ``Datei:Zeile Klasse.Name ...``."""
     klassen = _klassen_lesen(dateien)
     funde: "list[str]" = []
     for name, eintraege in klassen.items():
-        for datei, basen, methoden, attribute, zeile, nur_lesbar in eintraege:
+        for datei, basen, methoden, attribute, zeile, nur_lesbar, werte in eintraege:
             alle: "list[str]" = []
             gesehen: set = set()
             for b in basen:
@@ -122,30 +208,26 @@ def ueberdeckungen(dateien: "list[Path]") -> "list[str]":
                     gesehen.add(b)
                     alle.append(b)
                     alle.extend(_basen(b, klassen, gesehen))
-            # Eine Instanz der Klasse traegt die Attribute der Klasse UND ihrer Basen und kennt die Methoden beider: der Fall vom
-            # 17.11. entstand, weil die Basis das Attribut setzte und erst die Unterklasse die Methode gleichen Namens hatte.
+            # Eine Instanz der Klasse traegt die Attribute der Klasse UND ihrer Basen: der Fall vom 17.11. entstand, weil die Basis das
+            # Attribut setzte und erst die Unterklasse die Methode gleichen Namens hatte. Ob die Zuweisung scheitert, entscheidet die
+            # naechste Definition des Namens (Klasse zuerst, dann die Basen).
             attribute_alle = {a: (name, z) for a, z in attribute.items()}
-            methoden_alle = {m: (name, z) for m, z in methoden.items()}
-            nur_lesbar_alle = {p: name for p in nur_lesbar}
             for b in alle:
                 for e in klassen.get(b, []):
                     for a, z in e[3].items():
                         attribute_alle.setdefault(a, (b, z))
-                    for m, z in e[2].items():
-                        methoden_alle.setdefault(m, (b, z))
-                    for p in e[5]:
-                        nur_lesbar_alle.setdefault(p, b)
-            for attr in sorted(set(attribute_alle) & set(methoden_alle)):
-                if "%s.%s" % (name, attr) in ERLAUBT:
+            for attr in sorted(attribute_alle):
+                wirkung = _wirksam(attr, (name, methoden, nur_lesbar, werte), alle, klassen)
+                if wirkung is None or wirkung[0] == "wert" or "%s.%s" % (name, attr) in ERLAUBT:
                     continue
-                (aklasse, azeile), (mklasse, _mzeile) = attribute_alle[attr], methoden_alle[attr]
-                funde.append("%s:%d  %s: self.%s = ... (%s, Zeile %d) ueberdeckt die Methode %s.%s"
-                             % (datei.name, zeile, name, attr, aklasse, azeile, mklasse, attr))
-            for attr in sorted(set(attribute) & set(nur_lesbar_alle)):
-                if "%s.%s" % (name, attr) in ERLAUBT:
-                    continue
-                funde.append("%s:%d  %s: self.%s = ... (Zeile %d) - %s.%s ist eine Eigenschaft ohne Setter (AttributeError)"
-                             % (datei.name, zeile, name, attr, attribute[attr], nur_lesbar_alle[attr], attr))
+                art, definiert_in = wirkung
+                aklasse, azeile = attribute_alle[attr]
+                if art == "methode":
+                    funde.append("%s:%d  %s: self.%s = ... (%s, Zeile %d) ueberdeckt die Methode %s.%s"
+                                 % (datei.name, zeile, name, attr, aklasse, azeile, definiert_in, attr))
+                else:
+                    funde.append("%s:%d  %s: self.%s = ... (%s, Zeile %d) - %s.%s ist eine Eigenschaft ohne Setter (AttributeError)"
+                                 % (datei.name, zeile, name, attr, aklasse, azeile, definiert_in, attr))
     return sorted(funde)
 
 
@@ -222,6 +304,59 @@ class ErkennungTests(unittest.TestCase):
         self.assertEqual(1, len(funde), funde)
         self.assertIn("C: self.zeichne = ... (C, Zeile", funde[0])
         self.assertIn("Methode A.zeichne", funde[0])
+
+
+    # ---- Gegenlese 19.11.2026: falscher Alarm und durchgelassene Faelle, mit konstruierten Quelltexten belegt ----
+    def test_eine_verschachtelte_klasse_hat_ihr_eigenes_self(self) -> None:
+        funde = self._suchen(a=(
+            "class Aussen:\n    def foo(self):\n        pass\n\n"
+            "    class Innen:\n        def __init__(self):\n            self.foo = 1\n"))
+        self.assertEqual([], funde, "``self.foo`` gehoert zu Innen, nicht zu Aussen")
+
+    def test_die_verschachtelte_klasse_wird_fuer_sich_geprueft(self) -> None:
+        funde = self._suchen(a=(
+            "class Aussen:\n    class Innen:\n        def foo(self):\n            pass\n\n"
+            "        def __init__(self):\n            self.foo = 1\n"))
+        self.assertEqual(1, len(funde), funde)
+        self.assertIn("Innen: self.foo", funde[0])
+
+    def test_die_basis_setzt_das_attribut_die_unterklasse_hat_eine_eigenschaft_ohne_setter(self) -> None:
+        funde = self._suchen(a=(
+            "class A:\n    def __init__(self):\n        self.wert = 1\n\n"
+            "class B(A):\n    @property\n    def wert(self):\n        return 2\n"))
+        self.assertEqual(1, len(funde), funde)
+        self.assertIn("B.wert ist eine Eigenschaft ohne Setter", funde[0])
+        self.assertIn("(A, Zeile 3)", funde[0], "die Zuweisung steht in der Basis")
+
+    def test_eine_unterklasse_die_die_eigenschaft_mit_setter_neu_definiert_ist_in_ordnung(self) -> None:
+        funde = self._suchen(a=(
+            "class A:\n    @property\n    def x(self):\n        return 1\n\n"
+            "class B(A):\n    def __init__(self):\n        self.x = 2\n\n"
+            "    @property\n    def x(self):\n        return self._x\n\n"
+            "    @x.setter\n    def x(self, v):\n        self._x = v\n"))
+        self.assertEqual([], funde)
+
+    def test_ein_klassenattribut_ersetzt_die_eigenschaft_der_basis(self) -> None:
+        funde = self._suchen(a=(
+            "class A:\n    @property\n    def x(self):\n        return 1\n\n"
+            "class B(A):\n    x = None\n\n    def f(self):\n        self.x = 2\n"))
+        self.assertEqual([], funde)
+
+    def test_eine_basis_aus_der_standardbibliothek_wird_nicht_mit_einer_klasse_gleichen_namens_verschmolzen(self) -> None:
+        """``fenster_pillen.Text(tk.Text)`` und ``zustand.Text(Wert[str])`` heissen gleich: ``tk.Text`` ist keine Klasse des Projekts."""
+        funde = self._suchen(
+            zustand="class Text:\n    def lesen(self):\n        return 1\n",
+            pillen="import tkinter as tk\n\nclass Text(tk.Text):\n    def __init__(self):\n        self.lesen = 2\n")
+        self.assertEqual([], funde)
+        funde = self._suchen(
+            zustand="class Text:\n    def lesen(self):\n        return 1\n",
+            pillen="from zustand import Text\n\nclass Feld(Text):\n    def __init__(self):\n        self.lesen = 2\n")
+        self.assertEqual(1, len(funde), "Gegenprobe: dieselbe Basis aus dem Projekt wird gefunden")
+
+    def test_methoden_unter_einer_bedingung_im_klassenkoerper_zaehlen(self) -> None:
+        funde = self._suchen(a=(
+            "class A:\n    if True:\n        def foo(self):\n            pass\n\n    def f(self):\n        self.foo = 1\n"))
+        self.assertEqual(1, len(funde), funde)
 
 
 class ProjektTests(unittest.TestCase):

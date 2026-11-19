@@ -29,18 +29,22 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+#: Die Breiten sind gemessen (19.11.2026, Pruefstand ``test_die_felder_sind_kompakt...``): Jeder Wert der Liste steht ohne "..." in der
+#: Pille - kleinste noetige Zeichenzahl: Kompression 16, Pruefung 10, Methode 9, Packstufe 14. Mit 8 (Methode) und 13 (Packstufe) zeigte
+#: die Pille "Asset-P..." und "12 · am...", sobald dieser Wert gewaehlt war. Kompression 17 -> 16 haelt die Gruppe bei 1287 px (Regel: 1295).
+#:
 #: Die Felder mit Auswahlliste: Name -> (Variable im Hauptfenster, Liste dort, Breite in Zeichen (die Pillen sind ``kompakt``:
 #: Rand und Pfeil eng - wie die Felder der Aufgaben 1 bis 6; ``None``: so breit wie der laengste Wert), Befehl dort nach der Wahl,
 #: Kurzinfo dort (oder ``""``), Schluessel der festen Kurzinfo hier (oder ``""``)).
 COMBOS = {
-    "kompression": ("compression_level_var", "compression_combo", 17, "_on_compression_level_changed",
+    "kompression": ("compression_level_var", "compression_combo", 16, "_on_compression_level_changed",
                     "_kompression_tooltip", "main.kompression_hint"),
     "pruefung": ("verify_var", "verify_combo", 10, "_on_verify_stufe_changed", "", "verify.hint"),
     "version": ("ampr_version_var", "ampr_version_combo", 9, "_ampr_version_gewaehlt", "", ""),
-    "methode": ("ampr_methode_var", "ampr_methode_combo", 8, "_ampr_methode_gewaehlt", "", "ampr_pack.methode_hint"),
+    "methode": ("ampr_methode_var", "ampr_methode_combo", 9, "_ampr_methode_gewaehlt", "", "ampr_pack.methode_hint"),
     "packverfahren": ("_ampr_pack_var", "ampr_pack_combo", 6, "_ampr_pack_gewaehlt", "_ampr_pack_tooltip",
                       "ampr_pack.verfahren_hint"),
-    "packstufe": ("_ampr_stufe_var", "ampr_stufe_combo", 13, "_ampr_stufe_gewaehlt", "_ampr_stufe_tooltip",
+    "packstufe": ("_ampr_stufe_var", "ampr_stufe_combo", 14, "_ampr_stufe_gewaehlt", "_ampr_stufe_tooltip",
                   "ampr_pack.stufe_hint"),
     "backport_fw": ("backport_fw_var", "backport_fw_combo", 2, "_backport_fw_gewaehlt", "", ""),
 }

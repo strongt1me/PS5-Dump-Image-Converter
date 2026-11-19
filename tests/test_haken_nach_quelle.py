@@ -206,6 +206,43 @@ class ZuruecknehmenTests(_Spiele):
         gui._haken_auto_zuruecknehmen()
         self.assertIsNone(gui._einbauten_geprueft_fuer)
 
+    def test_eine_quelle_die_nach_der_pruefung_weg_ist_wird_im_hauptfaden_nicht_angehakt(self) -> None:
+        """Die Pruefung laeuft im Faden durch, der Anwender wechselt oder leert die Quelle, bevor der Hauptfaden an der Reihe ist: Im
+        Hauptfaden fragt ``setzen`` noch einmal (``aktuell``) - ohne diese Frage hakte die Pruefung nach dem Leeren noch an
+        (Gegenlese 19.11.2026: der Mutant ohne ``_aktuell()`` ueberlebte alle Tests)."""
+        quelle = self.spiel("a", playgo=True)
+        for noch_aktuell in (True, False):
+            with self.subTest(noch_aktuell=noch_aktuell):
+                gui = _gui()
+                geplant: list = []
+                gui._hauptfaden_planen = lambda f, *a, _g=geplant, **k: _g.append(f)
+                stand = {"aktuell": True}
+                faden = threading.Thread(target=gui._quelle_einbauten_zeilen, args=(quelle, lambda: stand["aktuell"]))
+                faden.start()
+                faden.join(10)
+                self.assertEqual(1, len(geplant), "gesetzt wird im Hauptfaden, nicht im Faden")
+                self.assertFalse(gui.ampr_playgo_var.get())
+                stand["aktuell"] = noch_aktuell                     # inzwischen: dieselbe oder keine Quelle mehr
+                geplant[0]()
+                self.assertEqual(noch_aktuell, gui.ampr_playgo_var.get())
+
+    def test_die_frage_der_aufgabe_wird_im_hauptfaden_gestellt(self) -> None:
+        """Seite 7 reicht ``haken_gilt`` (nur die aktive Aufgabe 7 darf die gemeinsamen Haken setzen): Es zaehlt der Stand beim Eintreffen."""
+        quelle = self.spiel("b", playgo=True)
+        for gilt in (True, False):
+            with self.subTest(gilt=gilt):
+                gui = _gui()
+                geplant: list = []
+                gui._hauptfaden_planen = lambda f, *a, _g=geplant, **k: _g.append(f)
+                stand = {"gilt": True}
+                faden = threading.Thread(target=gui._quelle_einbauten_zeilen,
+                                         args=(quelle, lambda: True, lambda: stand["gilt"]))
+                faden.start()
+                faden.join(10)
+                stand["gilt"] = gilt
+                geplant[0]()
+                self.assertEqual(gilt, gui.ampr_playgo_var.get())
+
     def test_zuruecknehmen_macht_eine_laufende_pruefung_veraltet(self) -> None:
         """Ohne Quelle gibt es keine ``_calc_generation``-Zaehlung mehr: Eine Pruefung, die dann noch eintrifft, haette angehakt."""
         gui = _gui()

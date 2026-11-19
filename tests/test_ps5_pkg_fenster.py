@@ -1399,6 +1399,98 @@ class FensterTests(unittest.TestCase):
             self.f._takt_arbeiten()                                                # wirft nicht
         self.assertEqual([a, b], gerufen)
 
+    # ---------------- Gegenlese 19.11.2026: Teilsumme, Ergebnis des alten Pakets, entferntes Spiel, Takt ----------------
+    def test_ein_teilweise_gezaehltes_spiel_zeigt_mind_und_rechnet_mit_der_untergrenze(self) -> None:
+        """Ein nicht lesbarer Ordner (``System Volume Information`` in der Laufwerkswurzel) machte die ganze Groesse "unbekannt" - und
+        die Platzpruefung rechnete mit 0 (frueher, mit ``os.walk``, galt die Teilsumme still). Jetzt: untere Schranke, ehrlich angezeigt."""
+        ausnahme = wz.GroesseUnvollstaendig("2 Eintraege nicht lesbar", 5000, 3)
+        with mock.patch.object(wz, "ordner_groesse", side_effect=ausnahme):
+            ordner = self._spielordner()
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)
+            self.assertTrue(_warten(lambda: self.f.aktuell is not None and not self.f.aktuell.groesse_offen))
+        info = self.f.aktuell
+        self.assertEqual((5000, True, False), (info.groesse, info.groesse_unvollstaendig, info.groesse_unbekannt))
+        text = self.f.t("ps5pkg.size_partial", groesse=self.f._fmt(5000))
+        self.assertIn(text, self.f.paket_pfad.cget("text"))
+        self.assertEqual(text, self.f.liste.item(ordner, "values")[3])
+        self.assertEqual(text, self.f._groesse_text())
+        self.assertEqual(text, dict(self.f.tech.item(i, "values") for i in self.f.tech.get_children())[self.f.t("ps5pkg.prop_size")])
+        self.assertTrue(_warten(lambda: str(self.f.start_knopf.cget("state")) == "normal"), "das Spiel bleibt startbar")
+
+    def test_ein_nachtrag_ohne_unvollstaendig_nimmt_die_marke_zurueck(self) -> None:
+        ordner = self._spielordner_laden()
+        info = self.f.aktuell
+        info.groesse_unvollstaendig = True
+        self.f._groesse_nachtragen(ordner, 77, info, False)
+        self.assertEqual((77, False), (info.groesse, info.groesse_unvollstaendig))
+
+    def test_das_ergebnis_eines_alten_zaehlers_gilt_nicht_fuer_das_neu_gelesene_spiel(self) -> None:
+        """AKTUALISIEREN, kurz nachdem der erste Zaehler fertig wurde: Beide Antworten liegen im selben Takt bereit. Die Summe des alten
+        Pakets trug sonst am neuen ``groesse_offen`` ab - STARTEN frei, obwohl das neue noch zaehlt."""
+        import copy
+        ordner = self._spielordner_laden()
+        neu = self.f.aktuell
+        alt = copy.copy(neu)                                                       # dasselbe Spiel, ein anderes Objekt
+        neu.groesse_offen = True
+        with self.f._sperre:
+            self.f._z["groesse_zaehler"][ordner] = 3
+        self.f._groesse_nachtragen(ordner, 111, alt)
+        self.assertTrue(neu.groesse_offen, "das Ergebnis des alten Pakets trifft das neue nicht")
+        self.assertEqual({ordner: 3}, self.f._z["groesse_zaehler"], "der Zwischenstand des neuen Zaehlers bleibt")
+        self.f._groesse_nachtragen(ordner, 222, neu)
+        self.assertEqual((222, False), (neu.groesse, neu.groesse_offen))
+        self.assertEqual({}, self.f._z["groesse_zaehler"])
+
+    def test_der_zaehler_legt_sein_paket_und_die_marke_unvollstaendig_ins_ergebnis(self) -> None:
+        ordner = self._spielordner_laden()
+        info = self.f.aktuell
+        for ausnahme, erwartet in ((None, (ordner, 5, info, False)),
+                                   (wz.GroesseUnvollstaendig("x", 9, 2), (ordner, 9, info, True))):
+            with self.subTest(unvollstaendig=ausnahme is not None):
+                with self.f._sperre:
+                    self.f._z["groesse"].clear()
+                if ausnahme is None:
+                    ersatz = mock.patch.object(wz, "ordner_groesse", return_value=5)
+                else:
+                    ersatz = mock.patch.object(wz, "ordner_groesse", side_effect=ausnahme)
+                with ersatz:
+                    self.f._groesse_zaehlen(ordner, info)
+                self.assertEqual([erwartet], self.f._z["groesse"])
+
+    def test_ein_waehrend_des_lesens_entferntes_spiel_kommt_nicht_wieder_in_die_liste(self) -> None:
+        """Das Lesen lief schon, als der Anwender das Spiel in den Optionen entfernte: Es wurde danach doch eingetragen, sein Zaehler
+        endete sofort (``verworfen``), und es stand fuer immer auf "Groesse wird berechnet" - STARTEN gesperrt."""
+        ordner = self._spielordner()
+        info = wz.ordner_lesen(ordner, self.ordner, groesse=False)
+        with self.f._sperre:
+            self.f._z["verworfen"].add(ordner)
+        self.f._gelesen_uebernehmen([info], ordner)
+        self.assertEqual([], [i.pfad for i in self.f.pakete if i.pfad == ordner])
+        self.assertFalse(self.f.liste.exists(ordner))
+        self.assertIsNone(self.f.aktuell)
+        with self.f._sperre:                                                       # wieder hinzugefuegt: ``_lesen_starten`` raeumt es aus
+            self.f._z["verworfen"].difference_update([ordner])
+        self.f._gelesen_uebernehmen([info], ordner)
+        self.assertEqual([ordner], [i.pfad for i in self.f.pakete])
+
+    def test_ein_fehler_im_takt_vor_den_groessen_verliert_die_abgeholten_ergebnisse_nicht(self) -> None:
+        ordner = self._spielordner_laden()
+        info = self.f.aktuell
+        info.groesse_offen = True
+        with self.f._sperre:
+            self.f._z["groesse"].append((ordner, 5, info, False))
+            self.f._z["gelesen"].append(([], ""))
+        with mock.patch.object(self.f, "_gelesen_uebernehmen", side_effect=RuntimeError("kaputt")), self.assertRaises(RuntimeError):
+            self.f._takt_arbeiten()
+        self.assertEqual((5, False), (info.groesse, info.groesse_offen), "die Groesse wurde trotzdem eingetragen")
+
+    def test_nach_den_groessen_werden_die_knoepfe_auch_bei_einem_fehler_im_nachtrag_neu_beurteilt(self) -> None:
+        ordner = self._spielordner_laden()
+        with mock.patch.object(self.f, "_groesse_nachtragen", side_effect=RuntimeError("x")), \
+                mock.patch.object(self.f, "_knoepfe_pruefen") as pruefen:
+            self.f._groessen_nachtragen([(ordner, 1)], {})
+        pruefen.assert_called()
+
     def test_wird_das_gewaehlte_spiel_neu_gelesen_zeigt_aktuell_auf_das_neue_objekt(self) -> None:
         """AKTUALISIEREN und dasselbe Spiel noch einmal: Das neue Objekt ersetzt das alte in der Liste. Blieb ``aktuell`` das alte, behielt
         es "Groesse wird berechnet" fuer immer (der Nachtrag trifft nur das neue) - STARTEN dauerhaft grau."""

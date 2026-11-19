@@ -66,7 +66,8 @@ def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], No
 
     Fehler werden nicht geworfen, sondern gezaehlt (``fehler``): Der Aufrufer entscheidet, ob eine Teilsumme taugt. Ein Eintrag, der
     zwischen Auflisten und Abfragen verschwindet (``FileNotFoundError``: geloescht, oder ein Symlink ohne Ziel), ist kein Fehler -
-    ``os.walk`` und ``getsize`` liessen ihn ebenfalls aus. Der Wurzelordner selbst muss da sein.
+    ``os.walk`` und ``getsize`` liessen ihn ebenfalls aus. Der Wurzelordner selbst muss da sein. Eine Ausnahme aus ``beobachter`` oder
+    ``abbruch`` geht unveraendert an den Aufrufer (sie zaehlt nicht als Verzeichnisfehler).
     """
     summe = dateien = fehler = 0
     wurzel = str(ordner)
@@ -76,32 +77,49 @@ def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], No
             return Groesse(summe, dateien, fehler, True)
         pfad = stapel.pop()
         try:
-            with os.scandir(pfad) as eintraege:
-                for eintrag in eintraege:
-                    try:
-                        if eintrag.is_dir(follow_symlinks=False):
-                            pruefen = getattr(eintrag, "is_junction", None)   # DirEntry.is_junction gibt es ab Python 3.12
-                            if verbindungen_folgen or pruefen is None or not pruefen():
-                                stapel.append(eintrag.path)
-                            continue
-                        if eintrag.is_symlink() and eintrag.is_dir():
-                            continue                       # eine Verknuepfung auf einen Ordner: wie ``os.walk``, nicht gezaehlt
-                        summe += (os.stat(eintrag.path) if genau else eintrag.stat()).st_size
-                    except FileNotFoundError:
-                        continue                           # verschwunden oder Symlink ohne Ziel: nichts zu zaehlen, kein Fehler
-                    except OSError:
-                        fehler += 1
-                        continue
-                    dateien += 1
-                    if beobachter is not None:
-                        beobachter(summe, dateien)
-                    if abbruch is not None and dateien % 512 == 0 and abbruch():
-                        return Groesse(summe, dateien, fehler, True)      # auch in einem Ordner mit zehntausenden Dateien
+            verzeichnis = os.scandir(pfad)
         except FileNotFoundError:
             if pfad == wurzel:
                 fehler += 1                                # die Wurzel fehlt: das ist ein Fehler (nichts zu zaehlen waere eine falsche 0)
+            continue
         except OSError:
             fehler += 1
+            continue
+        # Nur das Lesen des Verzeichnisses und die Abfrage eines Eintrags stehen unter ``except OSError``: ``beobachter`` und ``abbruch``
+        # sind Rueckrufe des Aufrufers - ein ``OSError`` aus ihnen ist kein Verzeichnisfehler und darf nicht als einer gezaehlt werden
+        # (er liess sonst den Rest des Ordners still aus; Gegenlese 19.11.2026).
+        with verzeichnis as eintraege:
+            while True:
+                try:
+                    eintrag = next(eintraege)
+                except StopIteration:
+                    break
+                except FileNotFoundError:
+                    if pfad == wurzel:
+                        fehler += 1
+                    break
+                except OSError:
+                    fehler += 1                            # das Verzeichnis liess sich nicht zu Ende lesen: der Rest fehlt
+                    break
+                try:
+                    if eintrag.is_dir(follow_symlinks=False):
+                        pruefen = getattr(eintrag, "is_junction", None)   # DirEntry.is_junction gibt es ab Python 3.12
+                        if verbindungen_folgen or pruefen is None or not pruefen():
+                            stapel.append(eintrag.path)
+                        continue
+                    if eintrag.is_symlink() and eintrag.is_dir():
+                        continue                           # eine Verknuepfung auf einen Ordner: wie ``os.walk``, nicht gezaehlt
+                    summe += (os.stat(eintrag.path) if genau else eintrag.stat()).st_size
+                except FileNotFoundError:
+                    continue                               # verschwunden oder Symlink ohne Ziel: nichts zu zaehlen, kein Fehler
+                except OSError:
+                    fehler += 1
+                    continue
+                dateien += 1
+                if beobachter is not None:
+                    beobachter(summe, dateien)
+                if abbruch is not None and dateien % 512 == 0 and abbruch():
+                    return Groesse(summe, dateien, fehler, True)          # auch in einem Ordner mit zehntausenden Dateien
     return Groesse(summe, dateien, fehler, False)
 
 

@@ -49,6 +49,12 @@ class _ForgeBasis(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = APP.PS5ConverterGUI(basis._WURZEL)
         cls.app._current_language = "de"
+        # Der Einstellungsordner der Pruefung bleibt von Lauf zu Lauf stehen (``pruefumgebung.umlenken``): Hat ein Test die AMPR-Methode
+        # "Asset-Pack" gespeichert (``_ampr_fuer_lauf_einschalten``), beginnt jeder spaetere Lauf, der diesen Ordner nimmt, mit ihr - und
+        # ``test_die_felder_sind_kompakt...`` mass "Asset-Pack" (82 px) in einer Pille fuer "Normal" (74 px). Mit dem Stand von
+        # ``HEAD`` und der Dateiauswahl "Forge, dann test_sprachtexte" in 4 s zu wiederholen (Gegenlese 19.11.2026).
+        cls.app._save_setting("integrate_ampr_methode", APP.AMPR_METHODE_NORMAL)
+        cls.app.ampr_methode_var.set(cls.app._t("ampr_pack.methode_normal"))
 
     def setUp(self) -> None:
         if basis._WURZEL.state() == "iconic":
@@ -1052,16 +1058,21 @@ class EinbauSeiteTests(_ForgeBasis):
         self.assertTrue(self.f.format_box._kompakt)
         # Der laengste Wert, der in der Liste steht, ohne Auslassung: Breite - Rand (30 design px) reicht fuer die Schrift.
         z = self.f.format_box._z
+        # JEDER Wert der Liste, auch von Methode, Packverfahren und Packstufe: Bis zum 19.11.2026 pruefte der Test dort nur, was gerade
+        # gewaehlt war - "Asset-Pack" (82 px in einer Pille fuer 74 px) und "12 · am kleinsten" (128 px in 119 px) standen unbemerkt als
+        # "Asset-P..." und "12 · am..." in der Pille. Gemessen am echten Fenster (``knopf_zeichnen`` kuerzt zu langen Text mit "...").
         for name in ("kompression", "pruefung", "methode", "packverfahren", "packstufe", "backport_fw"):
             feld = karte.felder[name]
-            if name in ("packstufe", "methode", "packverfahren"):
-                werte = [feld.get()] if feld.get() else []        # was gerade gewaehlt ist: die Liste der Stufen ist lang
-            else:
-                werte = list(feld.values)
-            for wert in werte:
+            for wert in list(feld.values):
                 with self.subTest(feld=name, wert=wert):
                     self.assertLessEqual(z.messen("knopf", wert), int(feld.winfo_reqwidth()) - z.px(30),
                                          "der Text passt in die Pille")
+                    variable = getattr(self.app, einbau_ui.COMBOS[name][0])
+                    vorher = variable.get()
+                    self.addCleanup(variable.set, vorher)
+                    variable.set(wert)
+                    self.assertEqual(wert, feld.itemcget(feld._knopf.text, "text"), "die Pille zeigt den Wert ganz, ohne Auslassung")
+                    variable.set(vorher)
         self.assertLessEqual(karte.reihe.winfo_reqwidth() + einbau_ui.GRUPPE_LUFT + karte._gruppe_breiten()[0], 1295,
                              "die Gruppe passt in zwei Zeilen neben die Zeile (Karte 1295 px beim 1920er Fenster)")
 
@@ -1179,6 +1190,8 @@ class EinbauSeiteTests(_ForgeBasis):
             self._laden(ordner)
             self.assertTrue(basis._warten(lambda: "bereits eingebaut" in self._protokoll_text(), 8))
         self.assertEqual(ordner, m.call_args[0][0])
+        self.assertEqual(self.f._ist_aktive_aufgabe, m.call_args[0][2],
+                         "nur die aktive Aufgabe 7 darf die gemeinsamen Haken setzen (dritter Parameter ``haken_gilt``)")
         self.assertIn("[Prüfung] Alpha: bereits eingebaut – AMPR EMU.\n", self._protokoll_text())
         self.assertNotIn("AMPR EMU.\n\n", self._protokoll_text(), "das Zeilenende der Meldung kommt nicht doppelt")
 
@@ -1193,6 +1206,43 @@ class EinbauSeiteTests(_ForgeBasis):
             basis._pumpen(0.3)
         self.assertEqual(1, m.call_count)
         self.assertEqual(1, self._protokoll_text().count("[Prüfung] X"))
+
+    def test_kommt_die_seite_wieder_nach_vorn_werden_nur_die_haken_nachgezogen(self) -> None:
+        """Aufgabe 1 hakt PlayGo/DLC fuer ihr Spiel an, die Seite zeigt noch ihr eigenes: Beim erneuten Zeigen gehoeren die Haken wieder
+        zum Spiel der Seite (Gegenlese 19.11.2026). Ohne neue ``[Pruefung]``-Zeilen und ohne zweites ``inspect``."""
+        ordner = self._spielordner()
+        # ``None``: Die Fakten gelten als nicht gelesen (``info.fakten`` bleibt leer) - ein zweiter Lauf, der sie nicht ausdruecklich
+        # auslaesst, riefe ``inspect`` noch einmal.
+        with mock.patch.object(self.app, "_quelle_einbauten_zeilen", return_value=["[Prüfung] X\n"]) as m, \
+                mock.patch.object(fc, "quellfakten_lesen", return_value=None) as fakten:
+            self._laden(ordner)
+            self.assertTrue(basis._warten(lambda: "[Prüfung] X" in self._protokoll_text(), 8))
+            self.assertTrue(basis._warten(lambda: not self.f._pruefung_laeuft(self.f.aktuell), 8))
+            self.assertIsNone(self.f.aktuell.fakten)
+            self.f.haken_nachziehen()
+            self.assertTrue(basis._warten(lambda: m.call_count == 2, 8), "die Pruefung der Haken laeuft noch einmal")
+            self.assertTrue(basis._warten(lambda: not self.f._pruefung_laeuft(self.f.aktuell), 8))
+            basis._pumpen(0.3)
+        self.assertEqual(1, self._protokoll_text().count("[Prüfung] X"), "die Zeilen stehen nicht doppelt im Protokoll")
+        self.assertEqual(1, fakten.call_count, "kein zweites inspect")
+        self.assertEqual("normal", str(self.f.start_knopf.cget("state")))
+
+    def test_ohne_spiel_nimmt_die_seite_beim_zeigen_die_automatischen_haken_zurueck(self) -> None:
+        self.assertIsNone(self.f.aktuell)
+        with mock.patch.object(self.app, "_haken_auto_zuruecknehmen") as zurueck:
+            self.f.haken_nachziehen()
+        zurueck.assert_called_once_with()
+
+    def test_waehrend_eines_laufs_wird_nichts_nachgezogen(self) -> None:
+        self._laden(self._spielordner())
+        with mock.patch.object(self.app, "_quelle_einbauten_zeilen", return_value=["x\n"]) as m:
+            self.f._job = {"art": "bauen"}
+            try:
+                self.f.haken_nachziehen()
+            finally:
+                self.f._job = None
+            basis._pumpen(0.3)
+        self.assertEqual(0, m.call_count)
 
     def test_ein_spielordner_wird_im_hintergrund_geprueft_und_der_bau_liest_nicht_noch_einmal(self) -> None:
         def langsam(*a, **k):

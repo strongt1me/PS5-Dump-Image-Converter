@@ -555,6 +555,14 @@ class FensterTests(unittest.TestCase):
         rumpf = quelle.split("def pkg_zeigen", 1)[1].split("def fpkg_zeigen", 1)[0]
         self.assertIn("fenster.spielinfo_nachziehen()", rumpf)
 
+    def test_die_seite_fpkg_zieht_spiel_info_und_haken_nach(self) -> None:
+        """Beim Zeigen der Seite gehoeren PlayGo/DLC EMU wieder zu ihrem Spiel, nicht zu dem, was eine andere Aufgabe zuletzt gesetzt hat
+        (Gegenlese 19.11.2026)."""
+        quelle = (PROJEKT / "ps5_validator" / "ui" / "pkg_fpkg_seite.py").read_text(encoding="utf-8")
+        rumpf = quelle.split("def fpkg_zeigen", 1)[1].split("\ndef seite", 1)[0]
+        self.assertIn("fenster.spielinfo_nachziehen()", rumpf)
+        self.assertIn("fenster.haken_nachziehen()", rumpf)
+
     def test_ein_ordner_ohne_param_sfo_wird_gemeldet(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             f = self._fenster()

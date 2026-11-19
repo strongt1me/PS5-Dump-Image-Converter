@@ -125,6 +125,44 @@ class SummierenTests(_Baum):
             erg = file_io.groesse_summieren(self.wurzel)
         self.assertEqual((1, 4), (erg.fehler, erg.dateien))
 
+    def test_eine_ausnahme_der_rueckrufe_geht_an_den_aufrufer_und_zaehlt_nicht_als_verzeichnisfehler(self) -> None:
+        """Beobachter und Abbruch sind Rueckrufe des Aufrufers: Ein ``OSError`` daraus (etwa beim Schreiben der Protokolldatei) liess
+        sonst den Rest des Ordners still aus und kam nur als "ein Fehler" zurueck (Gegenlese 19.11.2026)."""
+        def beobachter(_summe: int, _dateien: int) -> None:
+            raise OSError("Protokoll nicht beschreibbar")
+
+        def abbruch() -> bool:
+            raise OSError("Abbruchabfrage kaputt")
+        for name, kw in (("beobachter", {"beobachter": beobachter}), ("abbruch", {"abbruch": abbruch})):
+            with self.subTest(rueckruf=name), self.assertRaises(OSError):
+                file_io.groesse_summieren(self.wurzel, **kw)
+
+    def test_ein_verzeichnis_das_mitten_im_lesen_scheitert_zaehlt_als_ein_fehler_und_behaelt_die_bisherige_summe(self) -> None:
+        echt = os.scandir
+
+        class _Bricht:
+            def __init__(self, pfad):
+                self._it = echt(pfad)
+
+            def __enter__(self):
+                def erzeugen():
+                    for i, e in enumerate(self._it):
+                        if i == 1:
+                            raise PermissionError("mitten im Lesen")
+                        yield e
+                return erzeugen()
+
+            def __exit__(self, *a):
+                return self._it.__exit__(*a)
+
+        def scandir(pfad):
+            return _Bricht(pfad) if os.path.basename(str(pfad)) == "u1" else echt(pfad)
+        with mock.patch.object(os, "scandir", side_effect=scandir):
+            erg = file_io.groesse_summieren(self.wurzel)
+        self.assertEqual(1, erg.fehler)
+        self.assertGreaterEqual(erg.summe, 10, "was vorher gezaehlt war, bleibt")
+        self.assertLess(erg.summe, 43210, "der Rest des Verzeichnisses fehlt - und der Fehler sagt es")
+
     def test_ein_verschwundener_eintrag_ist_kein_fehler_wie_bei_os_walk(self) -> None:
         """Gelesen, bevor die Datei verschwand (oder ein Symlink ohne Ziel): ``os.walk`` und ``getsize`` liessen sie still aus - das
         ganze Spiel darf deshalb nicht auf "Groesse unbekannt" stehen (Korrektur-Pruefung 19.11.2026; unter Linux/macOS fragt
@@ -268,6 +306,37 @@ class OrdnerGroesseTests(_Baum):
         self.assertIn("[WARNUNG]", zeilen[0])
         self.assertIn("1 Eintraege", zeilen[0])
 
+    def test_eine_teilsumme_steht_als_untergrenze_in_der_ausnahme(self) -> None:
+        """Einzelne nicht lesbare Eintraege (``System Volume Information``): Die Summe ist eine untere Schranke und geht in die
+        Platzpruefung ein - sie ist nur nicht die Groesse (Gegenlese 19.11.2026)."""
+        echt = os.scandir
+
+        def scandir(pfad):
+            if os.path.basename(str(pfad)) == "u2":
+                raise PermissionError("verweigert")
+            return echt(pfad)
+        zeilen: list = []
+        with mock.patch.object(os, "scandir", side_effect=scandir), self.assertRaises(wz.GroesseUnvollstaendig) as ctx:
+            wz.ordner_groesse(self.wurzel, zeilen.append)
+        self.assertIsInstance(ctx.exception, OSError, "wer \"nicht lesbar\" schon abfaengt, funktioniert weiter")
+        self.assertEqual((10 + 200, 3), (ctx.exception.summe, ctx.exception.dateien), "a.bin, b.bin und die leere Datei in leer/")
+        self.assertIn("mindestens", zeilen[0])
+
+    def test_ist_nichts_zu_zaehlen_gibt_es_keine_untergrenze(self) -> None:
+        with self.assertRaises(OSError) as ctx:
+            wz.ordner_groesse(os.path.join(self.wurzel, "gibt_es_nicht"))
+        self.assertNotIsInstance(ctx.exception, wz.GroesseUnvollstaendig, "eine Untergrenze von 0 waere keine Angabe")
+
+    def test_ordner_lesen_macht_aus_einer_teilsumme_eine_untergrenze_keine_unbekannte_groesse(self) -> None:
+        sce = Path(self.wurzel, "sce_sys")
+        sce.mkdir()
+        sce.joinpath("param.json").write_text('{"titleId": "PPSA00001", "contentId": "UP0000-PPSA00001_00-AAAAAAAAAAAAAAAA"}',
+                                              encoding="utf-8")
+        with mock.patch.object(wz, "ordner_groesse", side_effect=wz.GroesseUnvollstaendig("2 Eintraege", 123, 4)):
+            info = wz.ordner_lesen(self.wurzel, self.wurzel, groesse=True)
+        self.addCleanup(shutil.rmtree, info.arbeit or self.wurzel, True)
+        self.assertEqual((123, True, False, False), (info.groesse, info.groesse_unvollstaendig, info.groesse_unbekannt, info.groesse_offen))
+
     def test_der_fortschritt_kommt_im_meldeschritt(self) -> None:
         gross = os.path.join(self.wurzel, "gross")
         os.makedirs(gross)
@@ -291,6 +360,38 @@ class OrdnerGroesseTests(_Baum):
             info = wz.ordner_lesen(self.wurzel, self.wurzel, groesse=True)
         self.addCleanup(shutil.rmtree, info.arbeit or self.wurzel, True)
         self.assertEqual((0, True, False), (info.groesse, info.groesse_unbekannt, info.groesse_offen))
+
+
+class PfadGroesseDesHauptfensters(_Baum):
+    """``_get_path_size`` (Aufgaben 1-8): reicht ``genau`` und das Folgen von Verbindungen an die Zaehlung weiter (Gegenlese 19.11.2026:
+    die Pruefung ``_poll`` sah nur den Text, kein Test rief die Funktion selbst)."""
+
+    def _groesse(self, pfad: str, **kw) -> int:
+        import types
+        import PS5ImageConverter_Pro_FINAL_revised as app           # noqa: E402 - schwer, nur fuer diese Tests
+        attrappe = types.SimpleNamespace(_archiv_schatten_info=lambda _p: None)
+        return app.PS5ConverterGUI._get_path_size(attrappe, pfad, **kw)
+
+    def test_genau_zaehlt_eine_offene_datei_im_schreiben_mit_ihrer_echten_groesse(self) -> None:
+        pfad = os.path.join(self.wurzel, "wird_geschrieben.bin")
+        with open(pfad, "wb") as datei:
+            datei.write(b"\0" * (1024 * 1024))
+            datei.flush()
+            gemessen = self._groesse(self.wurzel, genau=True)
+        self.assertEqual(43210 + 1024 * 1024, gemessen, "``genau=True`` kommt bei der Zaehlung an (``os.stat`` je Datei)")
+
+    def test_genau_kommt_als_schluesselwort_an_die_zaehlung(self) -> None:
+        with mock.patch.object(file_io, "groesse_summieren", wraps=file_io.groesse_summieren) as zaehlen:
+            self._groesse(self.wurzel, genau=True)
+            self._groesse(self.wurzel)
+        self.assertEqual([True, False], [aufruf.kwargs.get("genau") for aufruf in zaehlen.call_args_list])
+        self.assertTrue(all(aufruf.kwargs.get("verbindungen_folgen") is True for aufruf in zaehlen.call_args_list),
+                        "das Hauptfenster folgt Verbindungen wie ``os.walk`` bisher")
+
+    def test_eine_verbindung_wird_im_hauptfenster_wie_frueher_verfolgt(self) -> None:
+        if self._verbindung(os.path.join(self.wurzel, "u1"), "verbindung_u1") is None:
+            self.skipTest("keine NTFS-Verbindung moeglich")
+        self.assertEqual(43210 + 40000 + 3000 + 200, self._groesse(self.wurzel))
 
 
 class AbfrageDesZielsTests(unittest.TestCase):

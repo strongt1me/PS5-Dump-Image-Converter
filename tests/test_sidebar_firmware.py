@@ -530,6 +530,38 @@ class SdkGemerktTests(unittest.TestCase):
         self.gui._sdk_stand_gemerkt(self.ordner)
         self.assertEqual(2, len(aufrufe))
 
+    def test_nur_die_aenderungszeit_aendert_den_schluessel(self):
+        """Gleiche Groesse, andere Zeit (ein Backport, der die Datei gleich lang ueberschreibt): neu lesen."""
+        aufrufe = self._lesen_zaehlen()
+        eboot = Path(self.ordner) / "eboot.bin"
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        stand = eboot.stat()
+        os.utime(eboot, ns=(stand.st_atime_ns, stand.st_mtime_ns + 5_000_000_000))
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        self.assertEqual(2, len(aufrufe))
+
+    def test_nur_die_groesse_aendert_den_schluessel(self):
+        """Gleiche Zeit, andere Groesse: neu lesen (die Zeit wird zurueckgesetzt, damit nicht der Zeittakt des Dateisystems entscheidet)."""
+        aufrufe = self._lesen_zaehlen()
+        eboot = Path(self.ordner) / "eboot.bin"
+        stand = eboot.stat()
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        eboot.write_bytes(b"y" * 32)
+        os.utime(eboot, ns=(stand.st_atime_ns, stand.st_mtime_ns))
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        self.assertEqual(2, len(aufrufe))
+
+    def test_der_merker_bleibt_begrenzt(self):
+        import shutil
+        self.gui._SDK_GELESEN_MAX = 2
+        self._lesen_zaehlen()
+        for i in range(6):
+            ordner = tempfile.mkdtemp(prefix="sdk_gemerkt_n%d_" % i)
+            self.addCleanup(shutil.rmtree, ordner, True)
+            (Path(ordner) / "eboot.bin").write_bytes(b"z" * (8 + i))
+            self.gui._sdk_stand_gemerkt(ordner)
+            self.assertLessEqual(len(self.gui._sdk_gelesen), 2)
+
     def test_ein_leeres_ergebnis_wird_nicht_gemerkt(self):
         """Ein Lesefehler (Virenscanner hat die Datei kurz offen) darf nicht bis zur naechsten Aenderung haengen bleiben."""
         aufrufe = self._lesen_zaehlen(ergebnis=("", ""))
