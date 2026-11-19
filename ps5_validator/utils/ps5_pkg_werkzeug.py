@@ -518,7 +518,7 @@ def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Call
     if ergebnis.verknuepfungen and melden:
         # Dump Forge lehnt einen Ordner mit Verknuepfung oder Junction ab (``symlink (not followed)``, gemessen 19.11.2026): Der Fehler kam
         # bisher erst nach STARTEN, englisch. Hier steht er vorher.
-        melden("[WARNUNG] %s: %d Verknuepfung(en), Junction(s) oder Reparsepunkt(e) (z. B. OneDrive-Platzhalter) im Ordner (%s%s) - "
+        melden("[WARNUNG] %s: %d symbolische Verknuepfung(en), Junction(s) oder Reparsepunkt(e) (z. B. OneDrive-Platzhalter) im Ordner (%s%s) - "
                "Dump Forge wandelt so einen Ordner nicht um; entferne sie vor dem Umwandeln"
                % (os.path.basename(ordner), ergebnis.verknuepfungen, ", ".join(ergebnis.beispiele),
                   ", ..." if ergebnis.verknuepfungen > len(ergebnis.beispiele) else ""))

@@ -438,7 +438,7 @@ class OrdnerGroesseTests(_Baum):
         self.assertEqual(43210, wz.ordner_groesse(self.wurzel, zeilen.append), "die Verbindung zaehlt nicht mit")
         warnungen = [z for z in zeilen if "Verknuepfung" in z]
         self.assertEqual(1, len(warnungen), zeilen)
-        for stueck in ("[WARNUNG]", "1 Verknuepfung", "verbindung_u1", "Dump Forge"):
+        for stueck in ("[WARNUNG]", "1 symbolische Verknuepfung", "verbindung_u1", "Dump Forge"):
             self.assertIn(stueck, warnungen[0])
         self.assertNotIn(", ...", warnungen[0], "alle genannt: kein Auslassungszeichen")
         self.assertTrue(any("5 Dateien" in z for z in zeilen), "die Zeile mit der Groesse bleibt")
@@ -450,7 +450,7 @@ class OrdnerGroesseTests(_Baum):
         zeilen: list = []
         wz.ordner_groesse(self.wurzel, zeilen.append)
         warnung = next(z for z in zeilen if "Verknuepfung" in z)
-        self.assertIn("%d Verknuepfung" % (file_io.VERKNUEPFUNG_BEISPIELE + 1), warnung)
+        self.assertIn("%d symbolische Verknuepfung" % (file_io.VERKNUEPFUNG_BEISPIELE + 1), warnung)
         self.assertIn(", ...", warnung)
 
     def test_ohne_verknuepfung_gibt_es_keine_warnung(self) -> None:

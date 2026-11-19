@@ -2387,7 +2387,7 @@ class NachErfolgTests(_ForgeBasis):
             f._job_beendet({"ok": False, "text": text})
         self.assertEqual(1, len(zeilen), zeilen)
         self.assertIn(f.t("ps5pkg.forge_scan_kopf", ordner="C:\\Spiele\\Spiel"), zeilen[0])
-        self.assertIn(f.t("ps5pkg.forge_scan_link") + ": Verbindung", zeilen[0])
+        self.assertIn(f.t("ps5pkg.forge_scan_zeile", art=f.t("ps5pkg.forge_scan_link"), rest="Verbindung"), zeilen[0])
         self.assertNotIn("C:\\Spiele\\Spiel holds entries", zeilen[0], "Forges Kopfzeile ist ersetzt (in jeder Sprache)")
 
     def test_ein_anderer_fehlschlag_bleibt_unveraendert_im_protokoll(self) -> None:

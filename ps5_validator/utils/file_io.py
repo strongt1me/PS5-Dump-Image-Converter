@@ -52,6 +52,9 @@ VERKNUEPFUNG_BEISPIELE = 3
 
 #: Das Windows-Merkmal "Reparsepunkt" (``st_file_attributes``): Verknuepfung, Junction, aber auch OneDrive-Platzhalter und Dateien der
 #: Datendeduplizierung. Dump Forge lehnt jeden Reparsepunkt im Spielordner ab (``scan.rs``: ``is_symlink() || is_reparse_point``).
+#: Gemessen 19.11.2026 an der echten Befehlszeile: Ein mit ``ln -s`` aus WSL auf NTFS angelegter Symlink (Tag ``LX_SYMLINK``) ist fuer ``is_symlink()``
+#: und ``is_junction()`` keiner, traegt aber dieses Merkmal - Forge lehnt ihn ab ("symlink (not followed)"), die Zaehlung vermerkt ihn (im Ordnerbaum
+#: des Projekts sind es fuenf, ``.venv-linux``). Eine mit ``compact /exe`` komprimierte Datei traegt das Merkmal nicht; Forge wandelt sie um.
 REPARSEPUNKT = stat.FILE_ATTRIBUTE_REPARSE_POINT
 
 

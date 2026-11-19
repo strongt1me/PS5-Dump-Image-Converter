@@ -278,12 +278,12 @@ class FehlerVerstaendlichTests(unittest.TestCase):
         self.assertEqual(2, len(zeilen), text)
         self.assertIn(self.ORDNER, zeilen[0])
         self.assertIn("wandelt", zeilen[0])
-        self.assertEqual("  Verknüpfung, Junction oder Reparsepunkt (wird nicht verfolgt): Verbindung", zeilen[1])
+        self.assertEqual("  symbolische Verknüpfung, Junction oder Reparsepunkt (wird nicht verfolgt): Verbindung", zeilen[1])
         self.assertNotIn("holds entries", text)
 
     def test_jede_art_hat_einen_text_in_jeder_sprache(self) -> None:
         from ps5_validator.utils.i18n import STRINGS
-        schluessel = [*fc.SCAN_ARTEN.values(), "ps5pkg.forge_scan_kopf", "ps5pkg.forge_scan_mehr"]
+        schluessel = [*fc.SCAN_ARTEN.values(), "ps5pkg.forge_scan_kopf", "ps5pkg.forge_scan_mehr", "ps5pkg.forge_scan_zeile"]
         self.assertEqual(6, len(fc.SCAN_ARTEN))
         for s in schluessel:
             for sprache in ("de", "en", "es", "it", "fr"):
@@ -301,9 +301,23 @@ class FehlerVerstaendlichTests(unittest.TestCase):
 
     def test_eine_gekuerzte_liste_sagt_wie_viele_es_noch_sind(self) -> None:
         text = self.ECHT + "\n  symlink (not followed): ... and 4 more"
-        self.assertEqual("  Verknüpfung, Junction oder Reparsepunkt (wird nicht verfolgt): … und 4 weitere",
+        self.assertEqual("  symbolische Verknüpfung, Junction oder Reparsepunkt (wird nicht verfolgt): … und 4 weitere",
                          fc.fehler_verstaendlich(text, self._t("de")).splitlines()[-1])
         self.assertTrue(fc.fehler_verstaendlich(text, self._t("en")).splitlines()[-1].endswith("… and 4 more"))
+
+    def test_franzoesisch_setzt_ein_leerzeichen_vor_den_doppelpunkt_die_anderen_nicht(self) -> None:
+        """Gegenlese 19.11.2026: Die Zeile "<Art>: <Pfad>" kommt aus dem Text der Sprache (``ps5pkg.forge_scan_zeile``)."""
+        fr = fc.fehler_verstaendlich(self.ECHT, self._t("fr")).splitlines()
+        self.assertEqual("  lien symbolique, jonction ou point d’analyse (non suivi) : Verbindung", fr[1])
+        self.assertIn("{ordner}".format(ordner=self.ORDNER) + " : ", fr[0], "auch die Kopfzeile hat das Leerzeichen")
+        for sprache in ("de", "en", "es", "it"):
+            with self.subTest(sprache=sprache):
+                zeile = fc.fehler_verstaendlich(self.ECHT, self._t(sprache)).splitlines()[1]
+                self.assertTrue(zeile.endswith("): Verbindung"), zeile)
+
+    def test_ein_dateiname_mit_geschweiften_klammern_bleibt_wie_er_ist(self) -> None:
+        text = self.ORDNER + " holds entries that cannot be converted:\n  symlink (not followed): {n} und {ordner}.bin"
+        self.assertTrue(fc.fehler_verstaendlich(text, self._t("de")).endswith(": {n} und {ordner}.bin"))
 
     def test_ein_praefix_der_ausnahme_stoert_nicht_und_gehoert_nicht_zum_ordnernamen(self) -> None:
         zeilen = fc.fehler_verstaendlich("OSError: " + self.ECHT, self._t("de")).splitlines()
