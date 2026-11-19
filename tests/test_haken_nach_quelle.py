@@ -10,7 +10,10 @@ Die Regeln, die hier gehalten werden:
 * Ein Haken, den das Programm gesetzt hat, wird wieder zurueckgenommen, wenn das naechste Spiel ihn nicht braucht oder es kein
   einzelnes Spiel mehr gibt (sonst bekaeme es stumm einen Stub, den es nicht braucht).
 * Ein Haken, den der Anwender selbst gesetzt hat, wird nie angefasst.
-* Nicht einsehbare Quelle (``None``) und laufender Auftrag: nichts aendert sich.
+* Nicht einsehbare Quelle (``None``): ein Haken des Anwenders bleibt, einen vom Programm gesetzten nimmt es zurueck (19.11.2026) -
+  sonst bekaeme die neue Quelle stumm den Stub der vorigen. Laufender Auftrag: nichts aendert sich.
+* PlayGo nur anhaken, wo das Kaestchen bedienbar ist (AMPR-Bestand da). Ein Ergebnis, das nicht mehr zur gewaehlten Quelle gehoert,
+  wird im Hauptfaden verworfen (``gilt``).
 * Klickt der Anwender irgendeinen Haken an, speichert ``_on_integration_changed`` alle - ein automatisch gesetzter darf dabei
   nicht festgeschrieben werden.
 """
@@ -65,6 +68,7 @@ def _gui(playgo: bool = False, dlc: bool = False) -> GUI:
     gui._on_integration_changed = lambda speichern=True: gui.nachgezogen.append(speichern)
     gui.gespeichert = []
     gui._save_setting = lambda schluessel, wert: gui.gespeichert.append((schluessel, wert))
+    gui._ampr_versionsauswahl = {"Fassung": object()}       # mit AMPR-Bestand ist das Kaestchen PlayGo bedienbar
     return gui
 
 
@@ -188,25 +192,88 @@ class ZuruecknehmenTests(_Spiele):
         self.assertIsNone(gui._einbauten_geprueft_fuer,
                           "dasselbe Spiel muss danach wieder geprueft werden, sonst bliebe es ohne Haken")
 
-    def test_zuruecknehmen_ohne_automatische_haken_tut_nichts(self) -> None:
+    def test_zuruecknehmen_ohne_automatische_haken_laesst_die_haken_des_anwenders_stehen(self) -> None:
         gui = _gui(playgo=True, dlc=True)
-        gui._einbauten_geprueft_fuer = ("etwas", 1)
         gui._haken_auto_zuruecknehmen()
         self.assertTrue(gui.ampr_playgo_var.get())
         self.assertTrue(gui.dlc_integrate_var.get())
-        self.assertEqual(("etwas", 1), gui._einbauten_geprueft_fuer)
+
+    def test_zuruecknehmen_gibt_die_pruefung_auch_ohne_automatische_haken_frei(self) -> None:
+        """Seite 7 kann die automatischen Haken schon zurueckgenommen haben; wird dieselbe Quelle bei Aufgabe 1 wieder gewaehlt, stand
+        der Schluessel noch - die Pruefung lief nicht, das Spiel blieb ohne Haken (Pruefung 19.11.2026)."""
+        gui = _gui()
+        gui._einbauten_geprueft_fuer = ("etwas", 1)
+        gui._haken_auto_zuruecknehmen()
+        self.assertIsNone(gui._einbauten_geprueft_fuer)
+
+    def test_zuruecknehmen_macht_eine_laufende_pruefung_veraltet(self) -> None:
+        """Ohne Quelle gibt es keine ``_calc_generation``-Zaehlung mehr: Eine Pruefung, die dann noch eintrifft, haette angehakt."""
+        gui = _gui()
+        vorher = gui._calc_generation
+        gui._haken_auto_zuruecknehmen()
+        self.assertGreater(gui._calc_generation, vorher)
 
 
 class GrenzenTests(_Spiele):
-    def test_nicht_einsehbar_laesst_die_haken_wie_sie_sind(self) -> None:
+    def test_nicht_einsehbar_nimmt_nur_den_haken_zurueck_den_das_programm_gesetzt_hat(self) -> None:
+        """Quelle B nicht einsehbar (Archiv, ``.ffpkg`` ohne Dump Forge): Ein Haken, den das Programm fuer Spiel A gesetzt hat, bliebe
+        sonst stehen, und ``_playgo_vor_dem_lauf_klaeren`` fragt bei einem gesetzten Haken nie - B bekaeme den Stub von A stumm."""
         gui = _gui()
-        self.waehlen(gui, self.spiel("a", playgo=True))
-        gui._haken_nach_quelle(None, None)                   # etwa ein .ffpkg ohne Dump Forge
+        self.waehlen(gui, self.spiel("a", playgo=True, dlc=True))
+        gui.zeilen.clear()
+        gui._haken_nach_quelle(None, None)
+        self.assertFalse(gui.ampr_playgo_var.get(), "der Haken galt nur fuer das vorige Spiel")
+        self.assertFalse(gui.dlc_integrate_var.get())
+        self.assertIn("Haken „PlayGo“ wieder entfernt", "".join(gui.zeilen))
+        self.assertEqual([], gui.gespeichert)
+
+    def test_nicht_einsehbar_laesst_den_haken_des_anwenders_stehen(self) -> None:
+        gui = _gui(playgo=True, dlc=True)                    # vom Anwender angehakt
+        gui._haken_nach_quelle(None, None)
         self.assertTrue(gui.ampr_playgo_var.get(), "unbekannt heisst nicht 'nicht noetig'")
+        self.assertTrue(gui.dlc_integrate_var.get())
         gui2 = _gui()
         gui2._haken_nach_quelle(PLAYGO, None)
         self.assertTrue(gui2.ampr_playgo_var.get())
         self.assertFalse(gui2.dlc_integrate_var.get())
+
+    def test_ohne_ampr_fassung_wird_playgo_nicht_angehakt_dlc_schon(self) -> None:
+        """Ohne Versionsspeicher ist das Kaestchen PlayGo gesperrt (``_on_integration_changed``): Ein Haken, den niemand abwaehlen
+        kann, liesse den Lauf an ``integrate_ampr_no_version`` scheitern."""
+        gui = _gui()
+        gui._ampr_versionsauswahl = {}
+        gui._haken_nach_quelle(PLAYGO, "addcont0/")
+        self.assertFalse(gui.ampr_playgo_var.get())
+        self.assertTrue(gui.dlc_integrate_var.get())
+        self.assertFalse(gui._haken_auto.get("ampr_playgo_var"), "ein nicht gesetzter Haken ist auch nicht als automatisch gemerkt")
+
+    def test_ein_ergebnis_von_seite_7_hakt_nichts_an_wenn_eine_andere_aufgabe_aktiv_ist(self) -> None:
+        """Die Haken gehoeren allen Aufgaben: Ein spaetes Ergebnis der Seite-7-Pruefung darf sie nicht umlegen, wenn der Anwender
+        inzwischen bei Aufgabe 1 ist (``haken_gilt``). Die [Pruefung]-Zeilen kommen trotzdem."""
+        gui = _gui()
+        quelle = self.spiel("a", playgo=True)
+        zeilen = gui._quelle_einbauten_zeilen(quelle, None, lambda: False)
+        self.assertTrue(zeilen, "die Pruefzeilen stehen weiter im Protokoll")
+        self.assertFalse(gui.ampr_playgo_var.get())
+        gui._quelle_einbauten_zeilen(quelle, None, lambda: True)
+        self.assertTrue(gui.ampr_playgo_var.get(), "Gegenprobe: gilt es, wird angehakt")
+
+    def test_ein_veraltetes_ergebnis_wird_im_hauptfaden_verworfen(self) -> None:
+        """Die Pruefung lief im Faden, die Quelle wurde inzwischen geleert: ``gilt`` wird im Hauptfaden noch einmal gefragt."""
+        gui = _gui()
+        geplant: list = []
+        gui._hauptfaden_planen = lambda rueckruf, *a, **k: geplant.append((rueckruf, a))
+        gueltig = [True]
+        faden = threading.Thread(target=lambda: gui._haken_nach_quelle(PLAYGO, "", lambda: gueltig[0]))
+        faden.start()
+        faden.join()
+        gueltig[0] = False                                   # der Anwender leert die Quelle, bevor der Hauptfaden dran ist
+        rueckruf, args = geplant[0]
+        rueckruf(*args)
+        self.assertFalse(gui.ampr_playgo_var.get(), "ein veraltetes Ergebnis hakt nichts an")
+        gueltig[0] = True
+        rueckruf(*args)
+        self.assertTrue(gui.ampr_playgo_var.get(), "Gegenprobe: gilt es noch, wird angehakt")
 
     def test_waehrend_eines_laufs_aendert_sich_nichts(self) -> None:
         gui = _gui()
@@ -295,6 +362,10 @@ class EchtesFensterTests(_Spiele):
         self.gespeichert: list = []
         app._append_to_log = lambda text, *a, **k: self.protokoll.append(text)
         app._save_setting = lambda schluessel, wert: self.gespeichert.append((schluessel, wert))
+        # PlayGo hakt nur an, wo das Kaestchen bedienbar ist (AMPR-Bestand da); die Testumgebung hat keinen.
+        alt_auswahl = getattr(app, "_ampr_versionsauswahl", {})
+        app._ampr_versionsauswahl = {"Fassung": object()}
+        self.addCleanup(setattr, app, "_ampr_versionsauswahl", alt_auswahl)
         self.addCleanup(self._zuruecksetzen)
         self._zuruecksetzen(erst=True)
 
@@ -383,6 +454,17 @@ class EchtesFensterTests(_Spiele):
                           "⚠ DLC-Inhalte gefunden (addcont0/) – DLC EMU beim Backup einbinden!"], zeilen)
         self.assertEqual(app._COLORS.get("fg_warning"), str(ansicht.tag_cget(app._LOG_HINWEIS_TAG, "foreground")))
         self.assertIn("gewöhnliche Zeile", ansicht.get("1.0", "end"))
+
+    def test_eine_geleerte_quelle_nimmt_die_haken_zurueck_und_dieselbe_quelle_wird_danach_neu_geprueft(self) -> None:
+        """Quelle leeren: Der Auto-Haken geht weg (vorher nur im Quelltext des Nachlaufs bewacht). Wird dasselbe Spiel danach wieder
+        gewaehlt, muss es neu geprueft werden - stand der Schluessel noch, blieb es ohne Haken (Pruefung 19.11.2026)."""
+        app = self.app
+        quelle = self.spiel("a", playgo=True)
+        self.assertTrue(self._waehlen(quelle, lambda: app.ampr_playgo_var.get()), "".join(self.protokoll))
+        self.assertTrue(self._laufen(lambda: app.source_path.set(""), lambda: not app.ampr_playgo_var.get()),
+                        "die leere Quelle nimmt den automatischen Haken zurueck")
+        self.assertTrue(self._waehlen(quelle, lambda: app.ampr_playgo_var.get()),
+                        "dieselbe Quelle noch einmal: neu geprueft und wieder angehakt - " + "".join(self.protokoll))
 
     def test_die_sammelkonvertierung_bekommt_keinen_haken_vom_vorigen_spiel(self) -> None:
         app = self.app

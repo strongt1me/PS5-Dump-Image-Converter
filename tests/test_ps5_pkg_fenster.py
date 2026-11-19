@@ -179,6 +179,9 @@ class FensterTests(unittest.TestCase):
         pfade = [p for p in self.pakete if os.path.basename(p) in namen] or list(self.pakete)
         self.f._pakete_hinzufuegen(pfade, waehlen=True)
         self.assertTrue(_warten(lambda: len(self.f.pakete) == len(pfade) and self.f.aktuell is not None))
+        # STARTEN ist gesperrt, solange die Pruefung der Karte im Hintergrund liest (``_pruefung_laeuft``, 19.11.2026): abwarten.
+        self.assertTrue(_warten(lambda: not self.f._pruefung_laeuft(self.f.aktuell) and not self.f._pruefung_war),
+                        "die Pruefung der Karte wurde nicht fertig (und der Takt hat STARTEN noch nicht freigegeben)")
 
     # ---------------- Aufbau ----------------
     def test_das_fenster_hat_alle_seiten_und_das_auswahlfeld_mit_formaten_und_aktionen(self) -> None:
@@ -1104,6 +1107,8 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(_warten(lambda: self.f.aktuell is not None and self.f.aktuell.pfad == ordner))
         # Das Spiel erscheint seit 18.11.2026 sofort; die Groesse wird danach gezaehlt und nachgetragen (``_groesse_nachtragen``).
         self.assertTrue(_warten(lambda: not self.f.aktuell.groesse_offen), "die Groesse wird nachgetragen")
+        self.assertTrue(_warten(lambda: not self.f._pruefung_laeuft(self.f.aktuell) and not self.f._pruefung_war),
+                        "die Pruefung der Karte wurde nicht fertig (und der Takt hat STARTEN noch nicht freigegeben)")
         return ordner
 
     def test_ein_spielordner_wird_gelesen_und_angezeigt(self) -> None:
@@ -1127,7 +1132,7 @@ class FensterTests(unittest.TestCase):
         frei = threading.Event()
         self.addCleanup(frei.set)
 
-        def groesse(ordner, melden=None, fortschritt=None):
+        def groesse(ordner, melden=None, fortschritt=None, abbruch=None):
             if zwischenstand and fortschritt:
                 fortschritt(zwischenstand)
             frei.wait(30)
@@ -1161,7 +1166,7 @@ class FensterTests(unittest.TestCase):
         size_text = f._fmt(info.groesse)
         self.assertIn(size_text, f.paket_pfad.cget("text"))
         self.assertEqual(size_text, f.liste.item(ordner, "values")[3])
-        self.assertEqual("normal", str(f.start_knopf.cget("state")))
+        self.assertTrue(_warten(lambda: str(f.start_knopf.cget("state")) == "normal"), "STARTEN ist danach frei")
         self.assertEqual(size_text, dict(f.tech.item(i, "values") for i in f.tech.get_children())[f.t("ps5pkg.prop_size")])
 
     def test_waehrend_die_groesse_gezaehlt_wird_steht_der_zwischenstand_in_der_statuszeile(self) -> None:
@@ -1190,14 +1195,221 @@ class FensterTests(unittest.TestCase):
         self.assertEqual((4242, False), (info.groesse, info.groesse_offen))
         self.assertEqual(f._fmt(4242), f.liste.item(ordner, "values")[3])
 
-    def test_scheitert_das_zaehlen_bleibt_das_spiel_anzeigbar_und_startbar(self) -> None:
+    def test_scheitert_das_zaehlen_bleibt_das_spiel_anzeigbar_und_startbar_die_groesse_ist_unbekannt(self) -> None:
         with mock.patch.object(wz, "ordner_groesse", side_effect=OSError("Laufwerk weg")):
             ordner = self._spielordner()
             self.f._pakete_hinzufuegen([ordner], waehlen=True)
             self.assertTrue(_warten(lambda: self.f.aktuell is not None and not self.f.aktuell.groesse_offen))
+        self.assertTrue(_warten(lambda: str(self.f.start_knopf.cget("state")) == "normal"), "das Spiel bleibt startbar")
         self.assertEqual(0, self.f.aktuell.groesse)
+        self.assertTrue(self.f.aktuell.groesse_unbekannt, "keine Teilsumme als echte Groesse")
+        unbekannt = self.f.t("ps5pkg.size_unknown")
+        self.assertIn(unbekannt, self.f.paket_pfad.cget("text"))
+        self.assertEqual(unbekannt, self.f.liste.item(ordner, "values")[3])
+        self.assertEqual(unbekannt, self.f._groesse_text())
         self.assertEqual("normal", str(self.f.start_knopf.cget("state")))
         self.assertIn(self.f.t("ps5pkg.size_failed", name=os.path.basename(ordner)), self.f.protokoll.get("1.0", "end"))
+
+    # ---------------- der Zaehler: ein Zaehler je Pfad, abbrechbar, das gewaehlte Spiel zuerst (Pruefung 19.11.2026) ----------------
+    def _zaehler_attrappe(self, summe: int = 777):
+        """Ersatz fuer ``wz.ordner_groesse``: zaehlt, bis ``frei`` gesetzt wird, und fragt dabei ``abbruch`` wie das Original."""
+        frei = threading.Event()
+        self.addCleanup(frei.set)
+        ereignisse: list = []
+
+        def groesse(ordner, melden=None, fortschritt=None, abbruch=None):
+            ereignisse.append(("start", ordner))
+            ende = time.monotonic() + 20
+            while not frei.is_set() and time.monotonic() < ende:
+                if abbruch is not None and abbruch():
+                    ereignisse.append(("abgebrochen", ordner))
+                    raise wz.GroesseAbgebrochen(ordner)
+                time.sleep(0.01)
+            ereignisse.append(("fertig", ordner))
+            return summe
+        return frei, ereignisse, mock.patch.object(wz, "ordner_groesse", side_effect=groesse)
+
+    def test_dasselbe_spiel_noch_einmal_waehrend_des_zaehlens_ersetzt_den_zaehler(self) -> None:
+        """Vorher zaehlte ein zweites Lesen dasselbe Spiel noch einmal, waehrend das erste noch lief: zwei ``scandir`` ueber dasselbe
+        Laufwerk, und die schon gezaehlte Groesse ging verloren."""
+        frei, ereignisse, ersatz = self._zaehler_attrappe(summe=4711)
+        with ersatz:
+            ordner = self._spielordner()
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)
+            self.assertTrue(_warten(lambda: ("start", ordner) in ereignisse))
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)                 # noch einmal gewaehlt
+            self.assertTrue(_warten(lambda: ("abgebrochen", ordner) in ereignisse), "der alte Zaehler endet von selbst")
+            self.assertTrue(_warten(lambda: [e[0] for e in ereignisse].count("start") == 2), "ein neuer Zaehler beginnt")
+            frei.set()
+            self.assertTrue(_warten(lambda: self.f.aktuell is not None and not self.f.aktuell.groesse_offen))
+            self.assertTrue(_warten(lambda: not self.f._pruefung_laeuft(self.f.aktuell)))
+        arten = [e[0] for e in ereignisse]
+        self.assertEqual((2, 1, 1), (arten.count("start"), arten.count("abgebrochen"), arten.count("fertig")), ereignisse)
+        self.assertEqual(4711, self.f.aktuell.groesse)
+        self.assertTrue(_warten(lambda: str(self.f.start_knopf.cget("state")) == "normal"), "STARTEN ist danach frei")
+
+    def test_starten_wird_frei_auch_wenn_die_pruefung_vor_dem_naechsten_takt_endet(self) -> None:
+        """Die meisten Spiele sind in unter einer Sekunde geprueft: Der Faden endet, bevor der Takt ihn je laufen sah. STARTEN wurde beim
+        Beginn der Pruefung gesperrt und muss dann trotzdem freigegeben werden (``_pruefung_war`` steht schon beim Start)."""
+        self._spielordner_laden()
+        f = self.f
+        f._einbauten_gemeldet = None                         # dieselbe Quelle noch einmal pruefen (ein neues Objekt gaebe dasselbe)
+        f._bericht_faden = None
+        gehalten = threading.Event()
+        self.addCleanup(gehalten.set)
+        with mock.patch.object(f.g, "_quelle_einbauten_zeilen", side_effect=lambda *a, **k: gehalten.wait(10) and None):
+            f._bericht_aktualisieren()                       # der Faden laeuft: STARTEN ist jetzt gesperrt
+            self.assertTrue(f._pruefung_laeuft(f.aktuell))
+            self.assertEqual("disabled", str(f.start_knopf.cget("state")))
+            gehalten.set()
+            f._bericht_faden[1].join(10)                     # der Faden endet, bevor ein Takt ihn je laufen sah
+        self.assertFalse(f._bericht_faden[1].is_alive())
+        f._takt_arbeiten()                                   # der erste Takt danach merkt das Ende und gibt STARTEN frei
+        self.assertEqual("normal", str(f.start_knopf.cget("state")), "STARTEN bleibt nach einer kurzen Pruefung nicht gesperrt")
+
+    def test_nur_aufgabe_7_darf_die_gemeinsamen_haken_setzen(self) -> None:
+        """Ein spaetes Ergebnis der Pruefung dieser Seite haette PlayGo/DLC EMU von Aufgabe 1 umgelegt, waehrend der Anwender dort ist."""
+        modus = self.app.current_mode.get()
+        self.addCleanup(self.app.current_mode.set, modus)
+        for aufgabe, erwartet in (("pack_folder", False), ("pkg_fpkg", True)):
+            with self.subTest(aufgabe=aufgabe):
+                self.app.current_mode.set(aufgabe)
+                self.assertEqual(erwartet, self.f._ist_aktive_aufgabe())
+
+    def test_ein_aus_der_liste_genommener_eintrag_beendet_das_zaehlen(self) -> None:
+        frei, ereignisse, ersatz = self._zaehler_attrappe()
+        with ersatz:
+            ordner = self._spielordner()
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)
+            self.assertTrue(_warten(lambda: ("start", ordner) in ereignisse))
+            werte = {opt.ORDNER: [], **opt.STANDARD}
+            self.f.optionen_anwenden(werte, dict(werte), [ordner], [])          # "Entfernen" in den Optionen
+            self.assertTrue(_warten(lambda: ("abgebrochen", ordner) in ereignisse), "Zaehlen fuer ein entferntes Spiel ist verschwendet")
+        self.assertNotIn(("fertig", ordner), ereignisse)
+        self.assertTrue(_warten(lambda: not self.f._z["groesse_zaehler"] and not self.f._z["zaehlt"]), "nichts bleibt haengen")
+
+    def test_das_schliessen_des_fensters_beendet_das_zaehlen(self) -> None:
+        frei, ereignisse, ersatz = self._zaehler_attrappe()
+        with ersatz:
+            ordner = self._spielordner()
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)
+            self.assertTrue(_warten(lambda: ("start", ordner) in ereignisse))
+            self.f._schliesst = True
+            self.assertTrue(_warten(lambda: ("abgebrochen", ordner) in ereignisse), "Schliessen beendet das Zaehlen")
+            self.f._schliesst = False                                              # das Fenster soll fuer den Abbau heil bleiben
+
+    def test_das_gewaehlte_spiel_wird_zuerst_gezaehlt(self) -> None:
+        """Bei einem Ordner mit mehreren Spielen wartete STARTEN sonst auf die Zaehlung aller voranstehenden."""
+        frei, ereignisse, ersatz = self._zaehler_attrappe()
+        with ersatz:
+            a = self._spielordner(name="a", titel="Eins", tid="PPSA00021", cid="UP0000-PPSA00021_00-AAAAAAAAAAAAAAAA")
+            b = self._spielordner(name="b", titel="Zwei", tid="PPSA00022", cid="UP0000-PPSA00022_00-BBBBBBBBBBBBBBBB")
+            self.f._lesen_starten([a, b], waehlen=b)
+            self.assertTrue(_warten(lambda: ("start", b) in ereignisse))
+            _pumpen(0.2)
+            self.assertEqual([("start", b)], ereignisse, "a wartet, bis b gezaehlt ist")
+            frei.set()
+            self.assertTrue(_warten(lambda: ("fertig", a) in ereignisse))
+        self.assertEqual([("start", b), ("fertig", b), ("start", a), ("fertig", a)], ereignisse)
+
+    def test_aktualisieren_zaehlt_das_gewaehlte_spiel_zuerst(self) -> None:
+        """AKTUALISIEREN las alle Spiele ohne ``waehlen``: STARTEN wartete auf die Zaehlung aller voranstehenden."""
+        a = self._spielordner(name="a", titel="Eins", tid="PPSA00041", cid="UP0000-PPSA00041_00-AAAAAAAAAAAAAAAA")
+        b = self._spielordner(name="b", titel="Zwei", tid="PPSA00042", cid="UP0000-PPSA00042_00-BBBBBBBBBBBBBBBB")
+        self.f._lesen_starten([a, b], waehlen=b)
+        self.assertTrue(_warten(lambda: self.f.aktuell is not None and self.f.aktuell.pfad == b and not self.f.aktuell.groesse_offen
+                                and all(not i.groesse_offen for i in self.f.pakete) and len(self.f.pakete) == 2))
+        frei, ereignisse, ersatz = self._zaehler_attrappe()
+        with ersatz:
+            self.f._bibliothek_aktualisieren()
+            self.assertTrue(_warten(lambda: ("start", b) in ereignisse))
+            _pumpen(0.2)
+            self.assertEqual([("start", b)], ereignisse, "das gewaehlte Spiel b zuerst, a wartet")
+            frei.set()
+            self.assertTrue(_warten(lambda: ("fertig", a) in ereignisse))
+
+    def test_ein_zaehler_ohne_nachtrag_laesst_den_zwischenstand_nicht_in_der_statuszeile_stehen(self) -> None:
+        """AKTUALISIEREN, waehrend gezaehlt wird, und der Ordner ist inzwischen weg: Es wird nichts neu gelesen, der Zaehler endet ohne
+        Ergebnis, und nichts setzte die Statuszeile zurueck (Korrektur-Pruefung 19.11.2026)."""
+        import shutil
+        frei, ereignisse, ersatz = self._zaehler_attrappe()
+        with ersatz:
+            ordner = self._spielordner()
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)
+            fortschritt = self.f.t("ps5pkg.size_progress", name=os.path.basename(ordner), count=0)
+            self.assertTrue(_warten(lambda: self.f.status_var.get() == fortschritt), self.f.status_var.get())
+            shutil.rmtree(ordner)                                                  # das Laufwerk ist weg
+            self.f._bibliothek_aktualisieren()                                     # pfade ist leer: nichts wird neu gelesen
+            self.assertTrue(_warten(lambda: ("abgebrochen", ordner) in ereignisse), "der Zaehler endet")
+            self.assertTrue(_warten(lambda: self.f.status_var.get() == self.f.t("ps5pkg.status_idle")),
+                            "der Zwischenstand bleibt nicht stehen: " + self.f.status_var.get())
+
+    def test_eine_andere_meldung_bleibt_waehrend_des_zaehlens_stehen(self) -> None:
+        """Der Zwischenstand ueberschrieb jede Meldung nach hoechstens 250 ms (Lesefehler, "Groesse wird noch berechnet")."""
+        frei, ereignisse, ersatz = self._zaehler_attrappe()
+        with ersatz:
+            ordner = self._spielordner()
+            self.f._pakete_hinzufuegen([ordner], waehlen=True)
+            fortschritt = self.f.t("ps5pkg.size_progress", name=os.path.basename(ordner), count=0)
+            self.assertTrue(_warten(lambda: self.f.status_var.get() == fortschritt), self.f.status_var.get())
+            self.f._status("Eine andere Meldung")
+            _pumpen(0.7)                                                          # mehrere Takte
+            self.assertEqual("Eine andere Meldung", self.f.status_var.get())
+            frei.set()
+            self.assertTrue(_warten(lambda: not self.f.aktuell.groesse_offen))
+        self.assertTrue(_warten(lambda: self.f.status_var.get() == self.f.t("ps5pkg.status_idle")), "danach steht der Ruhetext da")
+
+    def test_ein_nachtrag_fuer_ein_entferntes_spiel_raeumt_die_statuszeile_auf(self) -> None:
+        f = self.f
+        pfad = os.path.join(self.ordner, "weg")
+        with f._sperre:
+            f._z["groesse_zaehler"][pfad] = 5
+        f._status(f.t("ps5pkg.size_progress", name="weg", count=5))
+        f._groesse_nachtragen(pfad, 123)
+        self.assertEqual(f.t("ps5pkg.status_idle"), f.status_var.get(), "die Zeile bleibt nicht auf einem Spiel stehen, das es nicht mehr gibt")
+        self.assertEqual({}, f._z["groesse_zaehler"])
+
+    def test_der_nachtrag_fasst_die_seitenleiste_nur_an_wenn_die_seite_zu_sehen_ist(self) -> None:
+        """Das Zaehlen dauert; der Anwender kann inzwischen bei einer anderen Aufgabe sein, deren Quelle die Seitenleiste zeigt."""
+        ordner = self._spielordner_laden()
+        info = self.f.aktuell
+        for sichtbar in (False, True):
+            with self.subTest(sichtbar=sichtbar), mock.patch.object(self.f.win, "winfo_ismapped", return_value=sichtbar), \
+                    mock.patch.object(self.f, "_spielinfo_zeigen") as zeigen:
+                info.groesse_offen = True
+                with self.f._sperre:
+                    self.f._z["groesse_zaehler"][ordner] = 1
+                self.f._groesse_nachtragen(ordner, 9)
+                self.assertEqual(1 if sichtbar else 0, zeigen.call_count)
+
+    def test_ein_fehler_bei_einem_nachtrag_verliert_die_uebrigen_nicht(self) -> None:
+        a = self._spielordner_laden(name="a", titel="Eins", tid="PPSA00031", cid="UP0000-PPSA00031_00-AAAAAAAAAAAAAAAA")
+        b = self._spielordner_laden(name="b", titel="Zwei", tid="PPSA00032", cid="UP0000-PPSA00032_00-BBBBBBBBBBBBBBBB")
+        gerufen: list = []
+        echt = self.f._groesse_nachtragen
+
+        def nachtragen(pfad, summe):
+            gerufen.append(pfad)
+            if pfad == a:
+                raise RuntimeError("Fehler im Nachtrag")
+            echt(pfad, summe)
+        with self.f._sperre:
+            self.f._z["groesse"].extend([(a, 1), (b, 2)])
+        with mock.patch.object(self.f, "_groesse_nachtragen", side_effect=nachtragen):
+            self.f._takt_arbeiten()                                                # wirft nicht
+        self.assertEqual([a, b], gerufen)
+
+    def test_wird_das_gewaehlte_spiel_neu_gelesen_zeigt_aktuell_auf_das_neue_objekt(self) -> None:
+        """AKTUALISIEREN und dasselbe Spiel noch einmal: Das neue Objekt ersetzt das alte in der Liste. Blieb ``aktuell`` das alte, behielt
+        es "Groesse wird berechnet" fuer immer (der Nachtrag trifft nur das neue) - STARTEN dauerhaft grau."""
+        ordner = self._spielordner_laden()
+        alt = self.f.aktuell
+        self.f._pakete_hinzufuegen([ordner])                                      # ohne waehlen: die Liste meldet es so
+        self.assertTrue(_warten(lambda: self.f.aktuell is not alt), "das neue Objekt ist das gewaehlte")
+        self.assertIn(self.f.aktuell, self.f.pakete)
+        self.assertTrue(_warten(lambda: not self.f.aktuell.groesse_offen))
+        self.assertTrue(_warten(lambda: str(self.f.start_knopf.cget("state")) == "normal"), "STARTEN ist danach frei")
+        self.assertIs(self.f._bericht_faden[0], self.f.aktuell, "das neu gelesene Spiel wird neu geprueft")
 
     def test_ein_zweites_spiel_erscheint_auch_dann_sofort_wenn_das_erste_noch_zaehlt(self) -> None:
         """Der Fall des Nutzers: Ein Spiel mit langer Groessenberechnung blockiert nicht die Anzeige des naechsten."""

@@ -543,7 +543,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   El servidor FTP, el gestor de payloads, el Cooling &amp; System Center, PS4Mount, NeoEnabler, exFAT2AMPR, PatchDL, Home Hider y ShadowMount+ indican por sí mismos su versión en ejecución (ShadowMount+ solo si su interfaz es accesible desde este PC); si
   difiere, por ejemplo porque se inició desde otro lugar un payload más antiguo, la
   versión incluida aparece entre paréntesis a continuación. En ShadowMount+, el segundo puerto del ELF-Loader (9020) y DPI&nbsp;v2 figura la versión del archivo adjunto, aunque el programa no los inicia ahí. Los demás servicios no revelan su
-  versión. Los puertos y las interfaces web de los ocho servicios añadidos el 2 de octubre de 2026
+  versión. En ps5upload, el botón <em>Abrir interfaz web</em> abre la página <em>Minion</em> en el
+  puerto&nbsp;9180 (medido en la consola con ps5upload 12.6.8): de fábrica solo escucha en la propia consola
+  (para su propio navegador, mediante el icono de la pantalla de inicio); desde el PC solo es accesible cuando
+  en los ajustes de Minion está activada la opción que permite otros dispositivos de la red y ps5upload se ha
+  vuelto a cargar después. A partir de entonces la página no tiene contraseña y está abierta a todos los de la
+  misma red &ndash; desactive la opción después de usarla. Los puertos y las interfaces web de los ocho servicios añadidos el 2 de octubre de 2026
   (de CheatRunner a ps5debug-NG), de AnyPad PS5 y de DPI&nbsp;v2
   proceden de las descripciones de sus autores y todavía no se han
   medido en la consola. AnyPad PS5 (incluido: 0.9.1-beta) permite usar mandos Bluetooth

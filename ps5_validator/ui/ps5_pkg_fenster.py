@@ -207,7 +207,8 @@ def uebersicht(info: "wz.PaketInfo", t: Callable[..., str], fmt: Callable[[int],
         ("source", t("ps5pkg.src_folder") if info.ist_ordner
          else t("ps5pkg.src_image", art=info.abbild) if info.ist_abbild
          else (t("ps5pkg.src_debug") if info.debug else (info.typ or "-"))),
-        ("size", t("ps5pkg.size_pending") if info.groesse_offen else fmt(info.groesse)),
+        ("size", t("ps5pkg.size_pending") if info.groesse_offen
+         else t("ps5pkg.size_unknown") if info.groesse_unbekannt else fmt(info.groesse)),
         ("title_id", info.title_id or "-"),
         ("content_id", info.content_id or "-"),
         ("concept", str(p.get("conceptId", "") or "-")),
@@ -245,7 +246,9 @@ class Ps5PkgFenster:
         self._sperre = threading.Lock()
         self._z: dict = {"zeilen": [], "prozent": None, "schritt_text": None, "schritt": None, "fertig": None,
                          "gelesen": [], "lesen_laeuft": 0, "scan": [], "bericht": [], "nachlauf": [],
-                         "groesse": [], "groesse_zaehler": {}}
+                         "groesse": [], "groesse_zaehler": {},
+                         "zaehlt": {},                 # Pfad -> Marke des Zaehlers, der gerade gilt (ein neuer ersetzt den alten)
+                         "verworfen": set()}           # Pfade, die aus der Liste genommen wurden: ihr Zaehlen endet
         self._abbruch = False
         self._schliesst = False
         self._wandert = False                      # Schrittbalken im unbestimmten Modus (_balken_wandern)
@@ -262,6 +265,8 @@ class Ps5PkgFenster:
         self.einbau = None                         # die Einbau-Karte der Seite (``_seite_umwandeln``)
         self._bericht_faden: "tuple | None" = None  # (Quelle, Faden) der laufenden Pruefung - ein Bau wartet darauf
         self._bericht_start: float = 0.0            # ``time.monotonic()`` beim Start dieser Pruefung (Lebenszeichen, ``_pruefung_lebt``)
+        self._pruefung_war = False                  # lief die Pruefung beim letzten Takt? (STARTEN nachziehen, wenn sie endet)
+        self._groesse_status = ""                   # der Zwischenstand, den der Takt zuletzt in die Statuszeile schrieb
         self._einbauten_gemeldet: "tuple | None" = None   # (Pfad, Stand) der Quelle, deren [Pruefung]-Zeilen schon im Protokoll stehen
         self._nachlauf = False                     # die Quelle wird gerade nach einem Erfolg geloescht (``_nach_erfolg``)
         self._bauen(vorgabe)
@@ -775,6 +780,8 @@ class Ps5PkgFenster:
         info = self.aktuell
         if info is not None and info.groesse_offen:
             return self.t("ps5pkg.size_pending")
+        if info is not None and info.groesse_unbekannt:
+            return self.t("ps5pkg.size_unknown")
         if info is None or not info.groesse:
             return ""
         try:
@@ -1372,6 +1379,7 @@ class Ps5PkgFenster:
         arbeit = self._arbeitsordner()
         with self._sperre:
             self._z["lesen_laeuft"] += 1
+            self._z["verworfen"].difference_update(pfade)      # wieder in der Liste (AKTUALISIEREN, dasselbe Spiel noch einmal)
         self._status(self.t("ps5pkg.status_reading", count=len(pfade)))
 
         def lauf() -> None:
@@ -1398,27 +1406,54 @@ class Ps5PkgFenster:
             with self._sperre:
                 self._z["gelesen"].append((fertig, waehlen))
                 self._z["lesen_laeuft"] -= 1
-            # Zweiter Schritt: die Groesse der Spielordner zaehlen und nachtragen - mit Zwischenstand fuer die Anzeige.
-            for info in fertig:
-                if not getattr(info, "groesse_offen", False):
-                    continue
-                pfad = info.pfad
-
-                def _stand(anzahl: int, _pfad: str = pfad) -> None:
-                    with self._sperre:
-                        self._z["groesse_zaehler"][_pfad] = anzahl
-
-                with self._sperre:
-                    self._z["groesse_zaehler"][pfad] = 0
-                try:
-                    summe = wz.ordner_groesse(pfad, self._melden, _stand)
-                except Exception:  # noqa: BLE001 - ohne Groesse bleibt das Spiel anzeigbar, nur nicht startbar
-                    logger.exception("Groesse von %s zaehlen", pfad)
-                    summe = None
-                with self._sperre:
-                    self._z["groesse"].append((pfad, summe))
+            # Zweiter Schritt: die Groesse der Spielordner zaehlen und nachtragen - mit Zwischenstand fuer die Anzeige. Das gewaehlte
+            # Spiel zuerst: Bei einem Ordner mit mehreren Spielen wartete STARTEN sonst auf die Zaehlung aller vorigen.
+            for info in sorted((i for i in fertig if getattr(i, "groesse_offen", False)), key=lambda i: i.pfad != waehlen):
+                self._groesse_zaehlen(info.pfad)
 
         threading.Thread(target=lauf, daemon=True, name="ps5pkg-lesen").start()
+
+    def _groesse_zaehlen(self, pfad: str) -> None:
+        """Arbeitsfaden: zaehlt die Groesse eines Spielordners und legt sie fuer den Takt ab (``_groesse_nachtragen``).
+
+        Je Pfad gilt ein Zaehler: Wird dasselbe Spiel noch einmal gelesen, waehrend gezaehlt wird, ersetzt der neue Zaehler den alten
+        (seine ``Marke`` stimmt nicht mehr), und der alte endet beim naechsten Verzeichnis - es laufen nie zwei ``scandir`` ueber
+        dasselbe Laufwerk. Auch ein Eintrag, der aus der Liste genommen wurde (``verworfen``), und das Schliessen des Fensters
+        beenden das Zaehlen; dann gibt es kein Ergebnis. Scheitert das Zaehlen (nicht lesbar), ist die Groesse unbekannt (``None``).
+        """
+        marke = object()
+        with self._sperre:
+            self._z["zaehlt"][pfad] = marke
+            self._z["groesse_zaehler"][pfad] = 0
+
+        def gilt() -> bool:
+            return self._z["zaehlt"].get(pfad) is marke
+
+        def abbrechen() -> bool:
+            with self._sperre:
+                return self._schliesst or pfad in self._z["verworfen"] or not gilt()
+
+        def stand(anzahl: int) -> None:
+            with self._sperre:
+                if gilt():
+                    self._z["groesse_zaehler"][pfad] = anzahl
+
+        abgebrochen = False
+        summe: "int | None" = None
+        try:
+            summe = wz.ordner_groesse(pfad, self._melden, stand, abbruch=abbrechen)
+        except wz.GroesseAbgebrochen:
+            abgebrochen = True
+        except Exception:  # noqa: BLE001 - ohne Groesse bleibt das Spiel anzeigbar: Groesse "unbekannt"
+            logger.exception("Groesse von %s zaehlen", pfad)
+        with self._sperre:
+            if not gilt():
+                return                            # ein neuerer Zaehler hat uebernommen: er meldet das Ergebnis
+            del self._z["zaehlt"][pfad]
+            if abgebrochen:
+                self._z["groesse_zaehler"].pop(pfad, None)
+            else:
+                self._z["groesse"].append((pfad, summe))
 
     def _gelesen_uebernehmen(self, fertig: list, waehlen: str) -> None:
         vorhanden = {i.pfad: i for i in self.pakete}
@@ -1438,43 +1473,62 @@ class Ps5PkgFenster:
                 self._paket_waehlen(gewaehlen_info=gewaehlt)
         elif self.aktuell is None and self.pakete:
             self._paket_waehlen(gewaehlen_info=self.pakete[0])
+        elif self.aktuell is not None:
+            # Das gewaehlte Spiel wurde neu gelesen (AKTUALISIEREN, dasselbe Spiel noch einmal): Das neue Objekt ersetzt das alte in der
+            # Liste. Bliebe ``aktuell`` das alte, behielte es "Groesse wird berechnet" fuer immer - der Nachtrag trifft nur das neue.
+            neu = next((i for i in self.pakete if i.pfad == self.aktuell.pfad), None)
+            if neu is not None and neu is not self.aktuell:
+                self._paket_waehlen(gewaehlen_info=neu)
         self._status(self._lese_status())
 
     def _groesse_von(self, info: "wz.PaketInfo") -> str:
-        """Die Groesse fuer die Anzeige - solange sie gezaehlt wird, steht dort "Groesse wird berechnet ..."."""
-        return self.t("ps5pkg.size_pending") if getattr(info, "groesse_offen", False) else self._fmt(info.groesse)
+        """Die Groesse fuer die Anzeige - solange sie gezaehlt wird, steht dort "Groesse wird berechnet ...", nach einem Fehler "unbekannt"."""
+        if getattr(info, "groesse_offen", False):
+            return self.t("ps5pkg.size_pending")
+        if getattr(info, "groesse_unbekannt", False):
+            return self.t("ps5pkg.size_unknown")
+        return self._fmt(info.groesse)
 
     def _groesse_nachtragen(self, pfad: str, summe: "int | None") -> None:
         """Die gezaehlte Groesse eines Spielordners eintragen und anzeigen, wo sie schon als "wird berechnet" stand.
 
-        ``summe`` ist ``None``, wenn das Zaehlen scheiterte: Das Spiel bleibt anzeigbar und startbar, die Groesse bleibt unbekannt
-        (0) und steht im Protokoll.
+        ``summe`` ist ``None``, wenn das Zaehlen scheiterte (Ordner oder Dateien nicht lesbar): Das Spiel bleibt anzeigbar und startbar,
+        die Groesse ist "unbekannt" (``groesse_unbekannt``, 0 gilt nicht) und steht im Protokoll - eine Teilsumme wird nie als echte
+        Groesse gezeigt.
         """
         with self._sperre:
             self._z["groesse_zaehler"].pop(pfad, None)
         info = next((i for i in self.pakete if i.pfad == pfad), None)
-        if info is None:                                  # inzwischen aus der Liste genommen
-            return
-        info.groesse_offen = False
-        if summe is None:
-            self._protokoll(self.t("ps5pkg.size_failed", name=os.path.basename(os.path.normpath(pfad)) or pfad))
-        else:
-            info.groesse = int(summe)
-        if self.liste.exists(info.pfad):
-            self.liste.item(info.pfad, values=self._listenwerte(info))
-        if self.aktuell is info:
-            self.paket_pfad.configure(text="%s · %s" % (info.pfad, self._groesse_von(info)))
-            self._spielinfo_zeigen(info)
-            self.tech.delete(*self.tech.get_children())
-            for eig, wert in uebersicht(info, self.t, self._fmt):
-                self.tech.insert("", "end", values=(eig, wert))
-            self._ergebnis_fuellen()
-            self._knoepfe_pruefen()
+        if info is not None:                              # sonst inzwischen aus der Liste genommen: nur die Statuszeile aufraeumen
+            info.groesse_offen = False
+            if summe is None:
+                info.groesse_unbekannt = True
+                self._protokoll(self.t("ps5pkg.size_failed", name=os.path.basename(os.path.normpath(pfad)) or pfad))
+            else:
+                info.groesse = int(summe)
+            if self.liste.exists(info.pfad):
+                self.liste.item(info.pfad, values=self._listenwerte(info))
+            if self.aktuell is info:
+                self.paket_pfad.configure(text="%s · %s" % (info.pfad, self._groesse_von(info)))
+                # Seitenleiste und Info-Box des Hauptfensters nur, wenn die Seite zu sehen ist: Das Zaehlen dauert, der Anwender kann
+                # inzwischen bei einer anderen Aufgabe sein - dort gehoerten sie einer anderen Quelle (wie ``spielinfo_nachziehen``).
+                try:
+                    sichtbar = bool(self.win.winfo_ismapped())
+                except tk.TclError:
+                    sichtbar = False
+                if sichtbar:
+                    self._spielinfo_zeigen(info)
+                self.tech.delete(*self.tech.get_children())
+                for eig, wert in uebersicht(info, self.t, self._fmt):
+                    self.tech.insert("", "end", values=(eig, wert))
+                self._ergebnis_fuellen()
+                self._knoepfe_pruefen()
         if self._job is None and self._uebergabe is None:
             with self._sperre:
                 noch = bool(self._z["groesse_zaehler"])
             if not noch:
                 self._status(self._lese_status())
+                self._groesse_status = ""
 
     def _listenwerte(self, info: "wz.PaketInfo") -> tuple:
         """Die Spalten einer Zeile der Liste: Titel, Title-ID, Quelle, Groesse, Version."""
@@ -1564,6 +1618,8 @@ class Ps5PkgFenster:
         for schluessel in (opt.ORDNER, *opt.STANDARD):
             self._merken(schluessel, werte[schluessel])
         if entfernt:
+            with self._sperre:
+                self._z["verworfen"].update(entfernt)      # ihr Zaehlen der Groesse endet (``_groesse_zaehlen``)
             self.pakete = [i for i in self.pakete if i.pfad not in entfernt]
             self._bibliothek_speichern()
             if self.aktuell is not None and self.aktuell.pfad in entfernt:
@@ -1613,6 +1669,8 @@ class Ps5PkgFenster:
         """
         if self.pakete:
             pfade = [i.pfad for i in self.pakete if os.path.exists(i.pfad)]
+            with self._sperre:
+                self._z["verworfen"].update(i.pfad for i in self.pakete)   # was nicht neu gelesen wird, braucht keine Groesse mehr
             self.pakete = []
             self._liste_fuellen()
         else:
@@ -1620,7 +1678,9 @@ class Ps5PkgFenster:
             pfade = [p for p in gemerkt if isinstance(p, str) and os.path.exists(p)] \
                 if isinstance(gemerkt, list) else []
         if pfade and self._werkzeug():
-            self._lesen_starten(pfade)
+            # Das gewaehlte Spiel zuerst zaehlen (``_lesen_starten``): STARTEN wartet auf seine Groesse, nicht auf die der Liste davor.
+            gewaehlt = self.aktuell.pfad if self.aktuell is not None and self.aktuell.pfad in pfade else ""
+            self._lesen_starten(pfade, waehlen=gewaehlt)
 
     # ------------------------------------------------------------------
     # Anzeige
@@ -1823,7 +1883,7 @@ class Ps5PkgFenster:
             v["output"].set(self._ziel_name())
         v["title_id"].set(info.title_id)
         v["content"].set(info.content_id)
-        v["size"].set(self._groesse_von(info) if info.groesse_offen else "ca. " + self._fmt(info.groesse))
+        v["size"].set(self._groesse_von(info) if info.groesse_offen or info.groesse_unbekannt else "ca. " + self._fmt(info.groesse))
         ziel = self.ziel_var.get().strip()
         frei = ""
         try:
@@ -1876,8 +1936,9 @@ class Ps5PkgFenster:
         update_ok = (self.aktuell is not None and bool(self.aktuell.title_id)
                      and self.aktuell.title_id.upper().startswith(("PPSA", "PPSS")))
         try:
-            # Solange die Groesse eines Spielordners gezaehlt wird, ist STARTEN gesperrt: Die Platzpruefung braucht sie.
-            offen = self.aktuell is not None and self.aktuell.groesse_offen
+            # Solange die Groesse eines Spielordners gezaehlt wird, ist STARTEN gesperrt: Die Platzpruefung braucht sie. Ebenso, solange
+            # die Pruefung der Karte die Quelle liest (``_pruefung_laeuft``): Ein Bau wartete sonst im Hauptfaden darauf.
+            offen = self.aktuell is not None and (self.aktuell.groesse_offen or self._pruefung_laeuft(self.aktuell))
             self.start_knopf.configure(state="disabled" if (laeuft or self.aktuell is None or offen) else "normal")
             self.abbrechen_knopf.configure(state="normal" if laeuft else "disabled")
             self.cover_knopf.configure(state="normal" if self.aktuell is not None else "disabled")
@@ -2105,6 +2166,9 @@ class Ps5PkgFenster:
             return
         if info.groesse_offen:                    # die Platzpruefung braucht die Groesse; sie wird noch gezaehlt (Statuszeile)
             self._status(self.t("ps5pkg.size_wait"))
+            return
+        if self._pruefung_laeuft(info):           # Dump Forge liest die Quelle noch (Lebenszeichen): kein zweites Lesen im Hauptfaden
+            self._status(self.t("ps5pkg.pruefung_wait"))
             return
         aktion = self.aktion_var.get()
         # Zuerst das Ziel: Fehlt es, sollen keine Rueckfragen (BACKPORT, "Entpacken und einbauen?") und keine angehakten Kaestchen von
@@ -2537,8 +2601,8 @@ class Ps5PkgFenster:
             schluessel = (os.path.normcase(os.path.abspath(info.pfad)), int(os.path.getmtime(info.pfad)))
         except OSError:
             return
-        if schluessel == self._einbauten_gemeldet:
-            return                                   # die Liste meldet eine Wahl mehrfach
+        if schluessel == self._einbauten_gemeldet and self._bericht_faden is not None and self._bericht_faden[0] is info:
+            return                                   # die Liste meldet eine Wahl mehrfach (dasselbe Objekt); ein neu gelesenes wird neu geprueft
         self._einbauten_gemeldet = schluessel
         exe = self._werkzeug_forge()
         popen_extra = self._popen_extra()
@@ -2546,7 +2610,7 @@ class Ps5PkgFenster:
         def lauf() -> None:
             zeilen = None
             try:
-                zeilen = self.g._quelle_einbauten_zeilen(info.pfad, lambda: self.aktuell is info)
+                zeilen = self.g._quelle_einbauten_zeilen(info.pfad, lambda: self.aktuell is info, self._ist_aktive_aufgabe)
             except Exception as exc:  # noqa: BLE001 - eine Auskunft, kein Hindernis fuer den Lauf
                 logger.debug("Einbauten von %s nicht pruefbar: %s", info.pfad, exc)
             # Gemeldet wird im Takt des Fensters (``_takt_arbeiten``), wie alles, was ein Faden meldet: Ein Faden fasst
@@ -2562,6 +2626,10 @@ class Ps5PkgFenster:
         self._bericht_faden = (info, faden)
         self._bericht_start = time.monotonic()
         faden.start()
+        # Solange die Pruefung liest, ist STARTEN gesperrt (``_pruefung_laeuft``). ``_pruefung_war`` gleich mit: Endet der Faden vor dem
+        # naechsten Takt (die meisten Spiele: unter einer Sekunde), muss der Takt das Ende trotzdem bemerken und STARTEN freigeben.
+        self._pruefung_war = True
+        self._knoepfe_pruefen()
 
     @staticmethod
     def _dauer_text(sekunden: float) -> str:
@@ -2600,6 +2668,37 @@ class Ps5PkgFenster:
 
     #: Erst ab so vielen Sekunden zeigt die Seite, dass die Pruefung der Karte noch liest - die meisten Spiele sind nach weniger als einer Sekunde durch.
     PRUEFUNG_LEBT_AB = 3.0
+
+    def _ist_aktive_aufgabe(self) -> bool:
+        """Zeigt das Hauptfenster gerade Aufgabe 7? Nur dann darf die Pruefung die gemeinsamen Haken PlayGo und DLC EMU setzen."""
+        try:
+            return str(self.g.current_mode.get()) == "pkg_fpkg"
+        except (AttributeError, tk.TclError):
+            return True
+
+    #: So lange (Sekunden) sperrt eine Pruefung der Karte hoechstens STARTEN: Dump Forges ``inspect`` hat keine Zeitgrenze, und ein
+    #: haengendes darf den Knopf nicht fuer immer grau lassen.
+    PRUEFUNG_SPERRE_MAX = 900.0
+
+    def _pruefung_laeuft(self, info: "wz.PaketInfo | None") -> bool:
+        """Liest die Pruefung der Karte (Dump Forge ``inspect``, Hintergrundfaden) gerade genau diese Quelle?
+
+        Ein Bau, der waehrenddessen startet, wartet im Hauptfaden auf den Faden (``_quellfakten``, bis 60 s) und liest danach ein
+        zweites Mal - bei Ghost of Yotei (84.218 Dateien, ``inspect`` rund 216 s) stuende das Fenster Minuten ohne Rueckmeldung.
+        Seit die Groesse in rund 14 s gezaehlt ist (``file_io.groesse_summieren``), deckte die Groessensperre das nicht mehr zu.
+        Darum bleibt STARTEN gesperrt, bis die Pruefung fertig ist; das Lebenszeichen sagt, warum (``_pruefung_lebt``).
+        """
+        bericht = self._bericht_faden
+        if info is None or bericht is None or bericht[0] is not info or not bericht[1].is_alive():
+            return False
+        return (time.monotonic() - self._bericht_start) < self.PRUEFUNG_SPERRE_MAX
+
+    def _pruefsperre_nachziehen(self) -> None:
+        """Im Takt: Endet die Pruefung (oder beginnt sie), muss STARTEN neu bewertet werden."""
+        laeuft = self._pruefung_laeuft(self.aktuell)
+        if laeuft != self._pruefung_war:
+            self._pruefung_war = laeuft
+            self._knoepfe_pruefen()
 
     def _pruefung_lebt(self) -> str:
         """Das Lebenszeichen waehrend die Karte das gewaehlte Spiel im Hintergrund prueft, sonst ``""``.
@@ -3044,12 +3143,29 @@ class Ps5PkgFenster:
         # Die Groesse eines Spielordners wird nach dem Anzeigen gezaehlt (``_lesen_starten``): fertige Werte eintragen, der Zwischenstand
         # steht in der Statuszeile - ein langer Vorgang ohne Anzeige gilt nicht (Dauerauftrag "keine stillen Aktionen").
         for pfad, summe in groessen:
-            self._groesse_nachtragen(pfad, summe)
+            try:
+                self._groesse_nachtragen(pfad, summe)
+            except tk.TclError:
+                pass
+            except Exception:  # noqa: BLE001 - ein Fehler bei einem Spiel darf die Groessen der uebrigen und den Rest des Takts nicht verlieren
+                logger.exception("Groesse von %s nachtragen", pfad)
             zaehler.pop(pfad, None)                    # fertig: sein Zwischenstand (vor dem Nachtrag gemerkt) darf die Statuszeile nicht mehr setzen
         if zaehler and self._job is None and self._uebergabe is None:
             aktuell = self.aktuell.pfad if self.aktuell is not None else ""
             pfad = aktuell if aktuell in zaehler else next(iter(zaehler))
-            self._status(self.t("ps5pkg.size_progress", name=os.path.basename(os.path.normpath(pfad)) or pfad, count=zaehler[pfad]))
+            text = self.t("ps5pkg.size_progress", name=os.path.basename(os.path.normpath(pfad)) or pfad, count=zaehler[pfad])
+            # Eine andere Meldung (Lesefehler, "Groesse wird noch berechnet" nach einem Klick auf STARTEN, gespeicherte Optionen) bleibt
+            # stehen, bis das Zaehlen endet - nur "Bereit." und der vorige Zwischenstand werden ersetzt.
+            jetzt_text = str(self.status_var.get())
+            if jetzt_text in ("", self.t("ps5pkg.status_idle"), self._groesse_status):
+                self._status(text)
+                self._groesse_status = text
+        elif self._groesse_status and not zaehler:
+            # Es zaehlt nichts mehr (auch ohne Nachtrag: ein beendeter Zaehler, dessen Eintrag aus der Liste kam): Der Zwischenstand darf
+            # nicht stehen bleiben - nur was noch der eigene Text ist, wird zurueckgesetzt, eine andere Meldung nie.
+            if self._job is None and self._uebergabe is None and str(self.status_var.get()) == self._groesse_status:
+                self._status(self._lese_status())
+            self._groesse_status = ""
         if prozent is not None and self._job is not None:
             self._anzeige_setzen(prozent, gesamt if gesamt is not None
                                  else prozent if self._job["art"] != "umwandeln" else prozent / 2.0)
@@ -3068,6 +3184,7 @@ class Ps5PkgFenster:
         if self._uebergabe is not None:
             self._uebergabe_beobachten()
         self._einbau_abgleichen()
+        self._pruefsperre_nachziehen()
         self._lebenszeichen_zeigen()
         self._fortschritt_zeigen(self._job is not None)
         groesse = self._groesse_text()

@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, NamedTuple
 
 
 CACHE_FILENAME = ".ps5val_cache.json"
@@ -33,6 +33,76 @@ def get_all_files(root: str | Path) -> list[Path]:
         for fn in filenames:
             files.append(Path(dirpath) / fn)
     return sorted(files)
+
+
+class Groesse(NamedTuple):
+    """Ergebnis von :func:`groesse_summieren`."""
+
+    summe: int            #: Bytes aller gezaehlten Dateien
+    dateien: int          #: Zahl der gezaehlten Dateien
+    fehler: int           #: Eintraege und Ordner, die nicht lesbar waren (nicht in ``summe``)
+    abgebrochen: bool     #: ``abbruch`` lieferte ``True`` - ``summe`` ist, was bis dahin gezaehlt war
+
+
+def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], None] | None = None,
+                      abbruch: Callable[[], bool] | None = None, verbindungen_folgen: bool = False,
+                      genau: bool = False) -> Groesse:
+    """Die Summe der Dateigroessen unter ``ordner`` - mit ``os.scandir`` statt ``os.walk`` und ``getsize`` je Datei.
+
+    ``DirEntry.stat()`` liefert die Groesse unter Windows aus den Verzeichnisdaten, ohne einen weiteren Aufruf je Datei; die
+    fruehere Zaehlung (``os.walk`` und ``os.path.getsize`` fuer jede Datei) brauchte fuer Ghost of Yotei (84.218 Dateien,
+    150,75 GB) 348 s, ``scandir`` zaehlt dieselben Dateien und Bytes in rund 14 s (gemessen 19.11.2026). Am 12.09.2026 stand an
+    einer USB-exFAT-Platte mit 17.000 Dateien einmal eine halbe Stunde.
+
+    Args:
+        beobachter: bekommt nach jeder gezaehlten Datei ``(summe, dateien)`` - der Aufrufer drosselt selbst.
+        abbruch: wird je Verzeichnis gefragt; ``True`` beendet das Zaehlen sofort (``abgebrochen``).
+        verbindungen_folgen: ``True`` folgt NTFS-Verbindungen (Junctions) wie ``os.walk`` es tat, ``False`` zaehlt sie nicht.
+            Verknuepfungen (Symlinks) auf Ordner werden nie verfolgt.
+        genau: ``True`` fragt die Groesse je Datei mit ``os.stat`` ab (ein Aufruf je Datei, wie frueher). ``DirEntry.stat()`` gibt
+            unter Windows die Groesse aus dem Verzeichniseintrag, und der bleibt bei einer Datei, die gerade geschrieben wird, auf dem
+            alten Stand (gemessen 19.11.2026: 0 Bytes bei einem offenen Schreiber, ``os.stat`` 4 bis 400 MB). Wer ein Ziel waehrend
+            des Kopierens abfragt (Fortschritt), braucht ``genau``; fuer einen ruhenden Ordner (Quelle) genuegt die schnelle Zaehlung.
+
+    Fehler werden nicht geworfen, sondern gezaehlt (``fehler``): Der Aufrufer entscheidet, ob eine Teilsumme taugt. Ein Eintrag, der
+    zwischen Auflisten und Abfragen verschwindet (``FileNotFoundError``: geloescht, oder ein Symlink ohne Ziel), ist kein Fehler -
+    ``os.walk`` und ``getsize`` liessen ihn ebenfalls aus. Der Wurzelordner selbst muss da sein.
+    """
+    summe = dateien = fehler = 0
+    wurzel = str(ordner)
+    stapel = [wurzel]
+    while stapel:
+        if abbruch is not None and abbruch():
+            return Groesse(summe, dateien, fehler, True)
+        pfad = stapel.pop()
+        try:
+            with os.scandir(pfad) as eintraege:
+                for eintrag in eintraege:
+                    try:
+                        if eintrag.is_dir(follow_symlinks=False):
+                            pruefen = getattr(eintrag, "is_junction", None)   # DirEntry.is_junction gibt es ab Python 3.12
+                            if verbindungen_folgen or pruefen is None or not pruefen():
+                                stapel.append(eintrag.path)
+                            continue
+                        if eintrag.is_symlink() and eintrag.is_dir():
+                            continue                       # eine Verknuepfung auf einen Ordner: wie ``os.walk``, nicht gezaehlt
+                        summe += (os.stat(eintrag.path) if genau else eintrag.stat()).st_size
+                    except FileNotFoundError:
+                        continue                           # verschwunden oder Symlink ohne Ziel: nichts zu zaehlen, kein Fehler
+                    except OSError:
+                        fehler += 1
+                        continue
+                    dateien += 1
+                    if beobachter is not None:
+                        beobachter(summe, dateien)
+                    if abbruch is not None and dateien % 512 == 0 and abbruch():
+                        return Groesse(summe, dateien, fehler, True)      # auch in einem Ordner mit zehntausenden Dateien
+        except FileNotFoundError:
+            if pfad == wurzel:
+                fehler += 1                                # die Wurzel fehlt: das ist ein Fehler (nichts zu zaehlen waere eine falsche 0)
+        except OSError:
+            fehler += 1
+    return Groesse(summe, dateien, fehler, False)
 
 
 def fmt_bytes(n: int) -> str:

@@ -476,5 +476,136 @@ class FensterTests(unittest.TestCase):
             app._update_sidebar_preview(None, "")
 
 
+class SdkGemerktTests(unittest.TestCase):
+    """``_sdk_stand_gemerkt``: Infobox und Seitenleiste lesen dieselbe eboot.bin gleichzeitig, jede in ihrem Faden.
+
+    Seit der Seitenleiste mit SDK-Rueckfall (18.11.2026) las jedes Spiel ohne Firmware in der param.json die Datei doppelt
+    (Volllauf 6, 19.11.2026: ``test_die_infobox_wartet_nicht_und_merkt_sich_den_stand``)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.klasse = _lade().PS5ConverterGUI
+
+    def setUp(self) -> None:
+        import shutil
+        self.ordner = tempfile.mkdtemp(prefix="sdk_gemerkt_")
+        self.addCleanup(shutil.rmtree, self.ordner, True)
+        (Path(self.ordner) / "eboot.bin").write_bytes(b"x" * 16)
+        self.gui = self.klasse.__new__(self.klasse)
+        self.gui._current_language = "de"
+
+    def _lesen_zaehlen(self, ergebnis=("9.00", ""), dauer: float = 0.0):
+        import time
+        aufrufe: list = []
+
+        def lesen(ordner):
+            aufrufe.append(ordner)
+            time.sleep(dauer)
+            return ergebnis
+        self.gui._sdk_stand_lesen = lesen
+        return aufrufe
+
+    def test_zwei_faeden_lesen_dieselbe_datei_nur_einmal(self):
+        import threading
+        aufrufe = self._lesen_zaehlen(dauer=0.4)
+        antworten: list = []
+        faeden = [threading.Thread(target=lambda: antworten.append(self.gui._sdk_stand_gemerkt(self.ordner))) for _ in range(4)]
+        for f in faeden:
+            f.start()
+        for f in faeden:
+            f.join(10)
+        self.assertEqual(1, len(aufrufe), "die Datei wurde mehrfach gelesen")
+        self.assertEqual([("9.00", "")] * 4, antworten)
+
+    def test_danach_kommt_der_stand_aus_dem_merker(self):
+        aufrufe = self._lesen_zaehlen()
+        for _ in range(3):
+            self.assertEqual(("9.00", ""), self.gui._sdk_stand_gemerkt(self.ordner))
+        self.assertEqual(1, len(aufrufe))
+
+    def test_eine_geaenderte_datei_wird_neu_gelesen(self):
+        aufrufe = self._lesen_zaehlen()
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        (Path(self.ordner) / "eboot.bin").write_bytes(b"y" * 32)           # ein Backport aendert Groesse und Zeit
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        self.assertEqual(2, len(aufrufe))
+
+    def test_ein_leeres_ergebnis_wird_nicht_gemerkt(self):
+        """Ein Lesefehler (Virenscanner hat die Datei kurz offen) darf nicht bis zur naechsten Aenderung haengen bleiben."""
+        aufrufe = self._lesen_zaehlen(ergebnis=("", ""))
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        self.assertEqual(2, len(aufrufe))
+
+    def test_ohne_eboot_antwortet_der_leser_selbst(self):
+        aufrufe = self._lesen_zaehlen(ergebnis=("", ""))
+        (Path(self.ordner) / "eboot.bin").unlink()
+        self.assertEqual(("", ""), self.gui._sdk_stand_gemerkt(self.ordner))
+        self.assertEqual(1, len(aufrufe))
+
+    def test_das_leeren_des_merkers_verwirft_kein_gehaltenes_schloss(self):
+        """Ueber der Grenze (``_SDK_GELESEN_MAX``) wird geleert; ein Schloss, das gerade ein Faden haelt, muss bleiben - sonst liest ein
+        dritter Faden mit einem neuen Schloss dieselbe Datei gleichzeitig (Korrektur-Pruefung 19.11.2026)."""
+        import threading
+        import time
+        self.gui._SDK_GELESEN_MAX = 1
+        zweite = tempfile.mkdtemp(prefix="sdk_gemerkt_zwei_")
+        dritte = tempfile.mkdtemp(prefix="sdk_gemerkt_drei_")
+        for ordner in (zweite, dritte):
+            self.addCleanup(__import__("shutil").rmtree, ordner, True)
+            (Path(ordner) / "eboot.bin").write_bytes(b"z" * 8)
+        losgelassen = threading.Event()
+        beginn = threading.Event()
+        aufrufe: list = []
+
+        def lesen(ordner):
+            aufrufe.append(ordner)
+            if ordner == self.ordner:
+                beginn.set()
+                losgelassen.wait(10)
+            return ("9.00", "")
+        self.gui._sdk_stand_lesen = lesen
+        a = threading.Thread(target=lambda: self.gui._sdk_stand_gemerkt(self.ordner))
+        a.start()
+        self.assertTrue(beginn.wait(5), "Faden A haelt das Schloss der ersten Datei")
+        self.gui._sdk_stand_gemerkt(zweite)                       # speichert (Grenze 1 erreicht)
+        self.gui._sdk_stand_gemerkt(dritte)                       # speichert wieder -> der Merker wird geleert, auch die Schloesser
+        c_fertig: list = []
+        c = threading.Thread(target=lambda: c_fertig.append(self.gui._sdk_stand_gemerkt(self.ordner)))
+        c.start()
+        time.sleep(0.3)
+        self.assertEqual([], c_fertig, "Faden C wartet auf das Schloss von A")
+        self.assertEqual(1, aufrufe.count(self.ordner), "C liest nicht gleichzeitig mit A: sein Schloss wurde nicht weggeraeumt")
+        losgelassen.set()
+        a.join(10)
+        c.join(10)
+        self.assertEqual(1, aufrufe.count(self.ordner), "die erste Datei wurde nur einmal gelesen")
+
+    def test_die_sprache_gehoert_zum_schluessel(self):
+        """Der Hinweis in Klammern ist uebersetzt."""
+        aufrufe = self._lesen_zaehlen()
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        self.gui._current_language = "en"
+        self.gui._sdk_stand_gemerkt(self.ordner)
+        self.assertEqual(2, len(aufrufe))
+
+    def test_infobox_und_seitenleiste_gehen_beide_durch_den_gemeinsamen_leser(self):
+        quelle = HAUPT.read_text(encoding="utf-8-sig")
+        import ast
+        baum = ast.parse(quelle)
+        klasse = next(n for n in baum.body if isinstance(n, ast.ClassDef) and n.name == "PS5ConverterGUI")
+        aufrufer = {}
+        for funktion in ast.walk(klasse):
+            if not isinstance(funktion, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for a in ast.walk(funktion):
+                if isinstance(a, ast.Call) and isinstance(a.func, ast.Attribute) and a.func.attr == "_sdk_stand_lesen" \
+                        and isinstance(a.func.value, ast.Name) and a.func.value.id == "self":
+                    aufrufer.setdefault(funktion.name, 0)
+                    aufrufer[funktion.name] += 1
+        self.assertEqual({"_sdk_stand_gemerkt"}, set(aufrufer),
+                         "nur der gemeinsame Leser ruft _sdk_stand_lesen - sonst liest ein zweiter Faden dieselbe Datei noch einmal")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -119,6 +119,7 @@ from ps5_validator.utils.self_reader import (
 from ps5_validator.utils import ampr_updates
 from ps5_validator.utils import dlc_emu
 from ps5_validator.utils import fake_signieren
+from ps5_validator.utils import file_io
 from ps5_validator.utils import forge_cli
 from ps5_validator.utils import quellbericht
 from ps5_validator.utils import werkzeug_updates
@@ -22652,7 +22653,8 @@ class PS5ConverterGUI:
                             "playgo": "playgo" in fakten.emulatoren}
         return ergebnis
 
-    def _quelle_einbauten_zeilen(self, src: str, aktuell: "Callable[[], bool] | None" = None) -> "list[str] | None":
+    def _quelle_einbauten_zeilen(self, src: str, aktuell: "Callable[[], bool] | None" = None,
+                                 haken_gilt: "Callable[[], bool] | None" = None) -> "list[str] | None":
         """Die Zeilen der Pruefung einer Quelle (Faden): was schon eingebaut ist, und ob PlayGo noetig waere.
 
         Eine Stelle fuer die Aufgaben 1 bis 6 (``_quelle_einbauten_pruefen``) und fuer Seite 7 PKG / FPKG (Nutzerwunsch
@@ -22660,6 +22662,8 @@ class PS5ConverterGUI:
 
         Args:
             aktuell: liefert ``False``, sobald die Antwort nicht mehr gebraucht wird (andere Quelle gewaehlt, Lauf gestartet).
+            haken_gilt: zusaetzlich nur fuer die Haken PlayGo und DLC EMU: Sie gehoeren allen Aufgaben, ein spaetes Ergebnis von
+                Seite 7 darf sie nicht umlegen, wenn der Anwender inzwischen bei einer anderen Aufgabe ist (Pruefung 19.11.2026).
 
         Returns:
             Die Zeilen (mit Zeilenende); ``None``, wenn ``aktuell`` waehrenddessen ``False`` wurde.
@@ -22721,7 +22725,7 @@ class PS5ConverterGUI:
             return None
         if dlc_merkmal:
             zeilen.append(self._t("einbau_pruefung.dlc_gefunden", merkmal=dlc_merkmal))
-        self._haken_nach_quelle(playgo_merkmal, dlc_merkmal)
+        self._haken_nach_quelle(playgo_merkmal, dlc_merkmal, lambda: _aktuell() and (haken_gilt is None or bool(haken_gilt())))
         return zeilen
 
     #: Haken, die das Programm nach dem gewaehlten Spiel selbst setzt (Nutzerwunsch 18.11.2026): Tk-Variable -> Schluessel
@@ -22729,18 +22733,29 @@ class PS5ConverterGUI:
     _HAKEN_NACH_QUELLE = (("ampr_playgo_var", "main.integrate_playgo"),
                           ("dlc_integrate_var", "main.integrate_dlc"))
 
-    def _haken_nach_quelle(self, playgo: "str | None", dlc: "str | None") -> None:
+    def _haken_nach_quelle(self, playgo: "str | None", dlc: "str | None",
+                           gilt: "Callable[[], bool] | None" = None) -> None:
         """Zieht die Haken PlayGo und DLC EMU nach dem Spiel nach - aus jedem Faden, gesetzt wird im Hauptfaden.
 
         Args:
-            playgo: das gefundene PlayGo-Merkmal; ``""`` = nachgesehen, nichts noetig; ``None`` = nicht einsehbar.
+            playgo: das gefundene PlayGo-Merkmal; ``""`` = nachgesehen, nichts noetig; ``None`` = nicht einsehbar (ein Haken, den das
+                    Programm fuer das vorige Spiel gesetzt hat, gilt dann nicht mehr).
             dlc:    dasselbe fuer Zusatzinhalte (DLC EMU).
+            gilt:   liefert ``False``, wenn das Ergebnis nicht mehr zur gewaehlten Quelle gehoert. Im Hauptfaden noch einmal gefragt,
+                    denn zwischen der Pruefung im Faden und dem Eintreffen kann der Anwender die Quelle geleert oder gewechselt haben
+                    (Pruefung 19.11.2026: eine langsame Pruefung hakte nach dem Leeren der Quelle noch an).
         """
         merkmale = {"ampr_playgo_var": playgo, "dlc_integrate_var": dlc}
-        if threading.current_thread() is threading.main_thread():
+
+        def setzen() -> None:
+            if gilt is not None and not gilt():
+                return
             self._haken_nach_quelle_setzen(merkmale)
+
+        if threading.current_thread() is threading.main_thread():
+            setzen()
         else:
-            self._hauptfaden_planen(self._haken_nach_quelle_setzen, merkmale)
+            self._hauptfaden_planen(setzen)
 
     def _haken_nach_quelle_setzen(self, merkmale: "dict[str, str | None]") -> None:
         """Hauptfaden: hakt an, was das Spiel braucht, und nimmt zurueck, was das Programm fuer ein anderes Spiel angehakt hatte.
@@ -22752,7 +22767,9 @@ class PS5ConverterGUI:
         bleibt die Wahl des Anwenders. Waehrend eines Laufs wird nichts angefasst - er liest seinen Startstand.
 
         Args:
-            merkmale: Tk-Variable -> Merkmal (``""`` = nichts noetig, ``None`` = nicht einsehbar: der Haken bleibt, wie er ist).
+            merkmale: Tk-Variable -> Merkmal (``""`` = nichts noetig; ``None`` = nicht einsehbar: ein Haken des Anwenders bleibt, wie er
+                ist, einen Haken, den das Programm fuer das vorige Spiel gesetzt hat, nimmt es zurueck - sonst bekaeme dieses Spiel
+                stumm einen Stub, den es vielleicht nicht braucht; Pruefung 19.11.2026).
         """
         if getattr(self, "is_running", False):
             return
@@ -22763,11 +22780,15 @@ class PS5ConverterGUI:
         for name, schluessel in self._HAKEN_NACH_QUELLE:
             merkmal = merkmale.get(name)
             var = getattr(self, name, None)
-            if merkmal is None or var is None:
+            if var is None or (merkmal is None and not auto.get(name)):
                 continue
+            if merkmal is None:
+                merkmal = ""                       # nicht einsehbar: der Auto-Haken des vorigen Spiels geht zurueck
             try:
                 an = bool(var.get())
                 if merkmal and not an:
+                    if name == "ampr_playgo_var" and not getattr(self, "_ampr_versionsauswahl", None):
+                        continue                   # ohne AMPR-Fassung ist das Kaestchen gesperrt: ein Haken, den niemand abwaehlen koennte
                     var.set(True)
                     auto[name] = True
                     geaendert = True
@@ -22790,11 +22811,15 @@ class PS5ConverterGUI:
         Gilt fuer eine leere oder verschwundene Quelle und fuer Aufgaben ohne Einzelspiel (Sammelkonvertierung). Die
         Pruefung der Einbauten wird fuer die naechste Wahl freigegeben, damit dasselbe Spiel danach wieder angehakt wird.
         """
+        # Immer, auch ohne gesetzte Haken: Eine Pruefung, die fuer das vorige Spiel noch laeuft, ist veraltet (``_calc_generation``,
+        # sonst hakte sie nach dem Leeren der Quelle noch an), und dieselbe Quelle muss bei der naechsten Wahl neu geprueft werden
+        # (Seite 7 nahm in der Zwischenzeit die Haken zurueck - Quelle wieder waehlen, und der Schluessel war noch derselbe).
+        self._calc_generation = getattr(self, "_calc_generation", 0) + 1
+        self._einbauten_geprueft_fuer = None
         auto = getattr(self, "_haken_auto", None)
         if not auto or not any(auto.values()):
             return
         self._haken_nach_quelle_setzen({name: "" for name, _schluessel in self._HAKEN_NACH_QUELLE})
-        self._einbauten_geprueft_fuer = None
 
     def _haken_wert_zum_speichern(self, name: str) -> bool:
         """Der Wert, der als Einstellung gespeichert wird: bei einem vom Programm gesetzten Haken die Wahl des Anwenders (aus).
@@ -24029,6 +24054,43 @@ class PS5ConverterGUI:
             return echt, self._t("info_popup.sdk_backported", v0=laut_param)
         return echt, ""
 
+    #: So viele gelesene SDK-Staende merkt :meth:`_sdk_stand_gemerkt` hoechstens.
+    _SDK_GELESEN_MAX = 64
+
+    def _sdk_stand_gemerkt(self, ordner: str) -> tuple[str, str]:
+        """Wie :meth:`_sdk_stand_lesen`, aber je Datei hoechstens einmal gleichzeitig und danach aus dem Merker (Faden).
+
+        Infobox und Seitenleiste lesen dieselbe ``eboot.bin`` zur selben Zeit, jede in ihrem Faden - die Datei kann Hunderte MB
+        gross sein (Street Fighter 6: 329 MB, 6,1 s). Seit der Seitenleiste mit SDK-Rueckfall (18.11.2026) las das jedes Spiel
+        ohne Firmware in der ``param.json`` doppelt (Volllauf 6 am 19.11.2026: ``test_die_infobox_wartet_nicht_und_merkt_sich_den_stand``).
+        Ein Schloss je Datei (Pfad, Groesse, Aenderungszeit, Sprache) laesst den ersten lesen; der zweite findet das Ergebnis
+        danach vor. Gemerkt wird nur ein gefundener Stand: Ein leeres Ergebnis kann auch ein kurzer Lesefehler sein.
+        """
+        eboot = os.path.join(str(ordner or ""), "eboot.bin")
+        try:
+            datei = os.stat(eboot)
+        except OSError:
+            return self._sdk_stand_lesen(ordner)          # keine Datei: nichts zu merken, die Antwort kennt der Leser selbst
+        schluessel = (os.path.normcase(os.path.abspath(eboot)), datei.st_size, datei.st_mtime_ns,
+                      getattr(self, "_current_language", ""))
+        sperre = self.__dict__.setdefault("_sdk_gelesen_sperren", {}).setdefault(schluessel, threading.Lock())
+        with sperre:
+            gelesen = self.__dict__.setdefault("_sdk_gelesen", {})
+            if schluessel in gelesen:
+                return gelesen[schluessel]
+            ergebnis = self._sdk_stand_lesen(ordner)
+            if ergebnis and ergebnis[0]:
+                if len(gelesen) >= self._SDK_GELESEN_MAX:
+                    gelesen.clear()
+                    # Nur die Schloesser wegraeumen, die gerade niemand haelt: Ein gehaltenes zu verwerfen liesse einen dritten Faden
+                    # mit einem neuen Schloss dieselbe Datei gleichzeitig lesen.
+                    sperren = self.__dict__["_sdk_gelesen_sperren"]
+                    for alt_schluessel, alt_sperre in list(sperren.items()):
+                        if not alt_sperre.locked():
+                            sperren.pop(alt_schluessel, None)
+                gelesen[schluessel] = ergebnis
+            return ergebnis
+
     def _sdk_stand_anzeigen(self, ordner: str) -> None:
         """Setzt die Zeile SDK-Stand der Infobox - gelesen im Faden, gemerkt je Datei.
 
@@ -24082,7 +24144,7 @@ class PS5ConverterGUI:
         def _lesen() -> None:
             text = strich
             try:
-                wert, hinweis = self._sdk_stand_lesen(ordner)
+                wert, hinweis = self._sdk_stand_gemerkt(ordner)
                 if wert:
                     text = f"{wert} ({hinweis})" if hinweis else wert
             except Exception as exc:  # noqa: BLE001
@@ -25674,7 +25736,7 @@ class PS5ConverterGUI:
                     nummern = sorted({int(m) for n in marken for m in re.findall(r"\d+", n)})
                     fw = ""
                     if ordner:
-                        fw, _hinweis = self._sdk_stand_lesen(quelle)
+                        fw, _hinweis = self._sdk_stand_gemerkt(quelle)
                     fw = fw or ", ".join(str(n) for n in nummern) or "?"
                     teile.append(self._t("sidebar.fw_backport", fw=fw))
                     kacheln.append((self._t("sidebar.fw_chip_backport", fw=fw), "backport"))
@@ -25682,7 +25744,7 @@ class PS5ConverterGUI:
                     # Nennt die param.json keine Firmware (Nutzerwunsch 18.11.2026, gemessen an Arkanoid - Eternal Battle:
                     # weder requiredSystemSoftwareVersion noch sdkVersion), zeigt die Seitenleiste den SDK-Stand der eboot.bin.
                     # Bei einem Backport steht er schon in der zweiten Zeile - dort ist es seine Firmware, nicht die des Spiels.
-                    sdk, _hinweis = self._sdk_stand_lesen(quelle)
+                    sdk, _hinweis = self._sdk_stand_gemerkt(quelle)
                 # Ein gepacktes Spiel (LZ4 oder zstd) laeuft als FPKG nicht: Die Kennzeichnung steht in derselben zweiten
                 # Zeile wie der Backport (Nutzerwunsch 17.11.2026) - allein ausgeschrieben, neben dem Backport kurz - und
                 # als Kachel neben der Firmware.
@@ -29798,11 +29860,15 @@ class PS5ConverterGUI:
         path: str,
         progress_cb=None,
         cancel_check=None,
+        genau: bool = False,
     ) -> int:
         """Berechnet die Gesamtgröße eines Pfades in Bytes (iterativ).
 
         Args:
             path: Datei- oder Verzeichnispfad.
+            genau: ``True`` fragt jede Datei einzeln mit ``os.stat`` ab (langsamer). Noetig, wenn in ``path`` gerade geschrieben wird
+                (Fortschritt beim Kopieren): Die schnelle Zaehlung liest die Groesse aus dem Verzeichniseintrag, und der bleibt bei einer
+                Datei im Schreiben auf dem alten Stand (``file_io.groesse_summieren``).
 
         Returns:
             Größe in Bytes, oder 0 bei Fehler.
@@ -29815,28 +29881,25 @@ class PS5ConverterGUI:
         try:
             if os.path.isfile(path):
                 return os.path.getsize(path)
-            total = 0
-            scanned_files = 0
-            last_ping = time.monotonic()
-            for dirpath, _dirnames, filenames in os.walk(path):
-                if callable(cancel_check) and cancel_check():
-                    return total
-                for filename in filenames:
-                    if callable(cancel_check) and cancel_check():
-                        return total
-                    try:
-                        total += os.path.getsize(os.path.join(dirpath, filename))
-                        scanned_files += 1
-                    except OSError:
-                        pass
-                    if callable(progress_cb):
-                        now = time.monotonic()
-                        if now - last_ping >= 1.0:
-                            progress_cb(total, scanned_files)
-                            last_ping = now
+            # Gezaehlt mit os.scandir (``file_io.groesse_summieren``): DirEntry.stat() kostet unter Windows keinen Aufruf je Datei.
+            # Mit os.walk und getsize je Datei brauchte Ghost of Yotei (84.218 Dateien) 348 s, so rund 14 s (19.11.2026). Wie vorher
+            # werden Verbindungen (Junctions) verfolgt und nicht lesbare Eintraege uebersprungen.
+            letzte_meldung = [time.monotonic()]
+
+            def _beobachten(summe_bisher: int, dateien_bisher: int) -> None:
+                jetzt = time.monotonic()
+                if jetzt - letzte_meldung[0] >= 1.0:
+                    progress_cb(summe_bisher, dateien_bisher)
+                    letzte_meldung[0] = jetzt
+
+            ergebnis = file_io.groesse_summieren(
+                path, beobachter=_beobachten if callable(progress_cb) else None,
+                abbruch=cancel_check if callable(cancel_check) else None, verbindungen_folgen=True, genau=genau)
+            if ergebnis.abgebrochen:
+                return ergebnis.summe
             if callable(progress_cb):
-                progress_cb(total, scanned_files)
-            return total
+                progress_cb(ergebnis.summe, ergebnis.dateien)
+            return ergebnis.summe
         except Exception as exc:
             logger.warning("Pfadgröße konnte nicht ermittelt werden: %s", exc)
             return 0
@@ -44499,7 +44562,7 @@ class PS5ConverterGUI:
                 def _poll():
                     while run["on"]:
                         try:
-                            cur = self._get_path_size(dest_folder)
+                            cur = self._get_path_size(dest_folder, genau=True)       # das Ziel wird gerade geschrieben
                             el = max(0.001, _time.time() - poll_start)
                             rate = cur / el
                             self._copy_done_bytes = max(self._copy_done_bytes, int(cur))
@@ -45160,7 +45223,7 @@ class PS5ConverterGUI:
             def _poll() -> None:
                 while run["on"]:
                     try:
-                        _fortschritt_melden(self._get_path_size(dest_folder))
+                        _fortschritt_melden(self._get_path_size(dest_folder, genau=True))       # das Ziel wird gerade geschrieben
                     except Exception:
                         pass
                     _time.sleep(2)

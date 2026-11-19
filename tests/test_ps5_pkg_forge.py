@@ -127,13 +127,18 @@ class _ForgeBasis(unittest.TestCase):
             titel=titel, param={"contentVersion": "01.000.000"})
         return ordner
 
-    def _laden(self, pfad: str) -> None:
+    def _laden(self, pfad: str, warten: bool = True) -> None:
         # Einen Spielordner liest weiterhin ffpfsc-pkg-tool-seitig ``wz.ordner_lesen`` (hier ersetzt); das Fenster verlangt
         # dafuer wie bisher das Werkzeug. Ein Abbild braucht nur Forge.
+        # ``warten``: bis die Pruefung der Karte fertig ist - bis dahin ist STARTEN gesperrt (``_pruefung_laeuft``, 19.11.2026).
+        # Ein Test, der die Pruefung absichtlich haengen laesst (langsame Attrappe), uebergibt ``False``.
         werkzeug = "werkzeug" if os.path.isdir(pfad) else ""
         with mock.patch.object(fz.Ps5PkgFenster, "_werkzeug", return_value=werkzeug):
             self.f._pakete_hinzufuegen([pfad], waehlen=True)
         self.assertTrue(basis._warten(lambda: self.f.aktuell is not None and self.f.aktuell.pfad == pfad))
+        if warten:
+            self.assertTrue(basis._warten(lambda: not self.f._pruefung_laeuft(self.f.aktuell) and not self.f._pruefung_war, 20),
+                            "die Pruefung der Karte wurde nicht fertig (und der Takt hat STARTEN noch nicht freigegeben)")
 
     def _attrappe(self, schreibt: bytes = b"pkg", warten=None, fehler: "Exception | None" = None, nachher=None):
         """Ersetzt ``forge_cli.bauen``: schreibt die Datei (wie Forge nach bestandener Pruefung) und meldet Fortschritt.
@@ -524,6 +529,8 @@ class ForgeFensterTests(_ForgeBasis):
         self.assertTrue(basis._warten(lambda: f.aktuell is not None and f.aktuell.pfad == bild, 30), "Forge hat das Abbild gelesen")
         self.assertEqual(("PPSA99999", "Echtes Spiel", "ffpfsc"), (f.aktuell.title_id, f.aktuell.titel, f.aktuell.abbild))
         self.assertEqual("pkg", f.format_schluessel)
+        # STARTEN ist gesperrt, solange die Pruefung der Karte (echtes ``inspect``) liest (``_pruefung_laeuft``, 19.11.2026).
+        self.assertTrue(basis._warten(lambda: not f._pruefung_laeuft(f.aktuell), 60), "die Pruefung der Karte wurde nicht fertig")
         self._starten_und_warten(60)
         name = "Echtes Spiel [PPSA99999].pkg"
         self.assertEqual([name], os.listdir(self.ziel))
@@ -729,6 +736,9 @@ class EinbauSeiteTests(_ForgeBasis):
         self.infos[pfad] = info
         self.f.pakete.append(info)
         self.f._paket_waehlen(info, aus_liste=True)
+        # STARTEN ist gesperrt, solange die Pruefung der Karte im Hintergrund liest (``_pruefung_laeuft``, 19.11.2026): abwarten.
+        self.assertTrue(basis._warten(lambda: not self.f._pruefung_laeuft(info) and not self.f._pruefung_war, 20),
+                        "die Pruefung der Karte wurde nicht fertig (und der Takt hat STARTEN noch nicht freigegeben)")
         return info
 
     def _protokoll_text(self) -> str:
@@ -1190,7 +1200,7 @@ class EinbauSeiteTests(_ForgeBasis):
             return fc.QuellFakten(**self._DLC)
         ordner = self._spielordner()
         with mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam) as lesen:
-            self._laden(ordner)
+            self._laden(ordner, warten=False)
             info = self.f.aktuell
             self.assertIsNone(info.fakten)
             fakten = self.f._quellfakten(info)                       # ein Bau, der jetzt startet, wartet auf den Faden
@@ -1206,7 +1216,7 @@ class EinbauSeiteTests(_ForgeBasis):
         ordner = self._spielordner()
         zeitpunkte: list = []
         with mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam):
-            self._laden(ordner)
+            self._laden(ordner, warten=False)
             info = self.f.aktuell
             self.assertIsNone(info.fakten)
             faden = self.f._bericht_faden[1]
@@ -1227,7 +1237,7 @@ class EinbauSeiteTests(_ForgeBasis):
         ordner = self._spielordner()
         with mock.patch.object(fz.Ps5PkgFenster, "PRUEFUNG_LEBT_AB", 0.2), \
                 mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam):
-            self._laden(ordner)
+            self._laden(ordner, warten=False)
             self.assertTrue(basis._warten(lambda: "Dump Forge prüft das Spiel seit" in self.f.lebt_var.get(), 8), self.f.lebt_var.get())
             self.assertTrue(self.f.lebt_label.winfo_manager(), "das Lebenszeichen steht im Raster")
             self.assertRegex(self.f.lebt_var.get(), r"seit \d+:\d\d ")
@@ -1243,7 +1253,7 @@ class EinbauSeiteTests(_ForgeBasis):
         gesehen: list = []
         with mock.patch.object(fz.Ps5PkgFenster, "PRUEFUNG_LEBT_AB", 30.0), \
                 mock.patch.object(fc, "quellfakten_lesen", side_effect=kurz):
-            self._laden(ordner)
+            self._laden(ordner, warten=False)
             ende = time.monotonic() + 10.0
             while time.monotonic() < ende and self.f.aktuell.fakten is None:
                 basis._pumpen(0.05)
@@ -1280,7 +1290,7 @@ class EinbauSeiteTests(_ForgeBasis):
             return fc.QuellFakten(**self._DLC)
         with mock.patch.object(fz.Ps5PkgFenster, "PRUEFUNG_LEBT_AB", 0.2), \
                 mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam):
-            self._laden(a)
+            self._laden(a, warten=False)
             self.assertTrue(basis._warten(lambda: "Dump Forge prüft" in self.f.lebt_var.get(), 8))
             self._laden(b)
             self.assertTrue(basis._warten(lambda: self.f.aktuell is not None and self.f.aktuell.pfad == b, 8))
@@ -1290,6 +1300,42 @@ class EinbauSeiteTests(_ForgeBasis):
         for sprache in ("de", "en", "es", "it", "fr"):
             with self.subTest(sprache=sprache):
                 self.assertIn("{dauer}", STRINGS["ps5pkg.pruefung_lebt"][sprache])
+
+    def test_starten_ist_gesperrt_solange_dump_forge_das_spiel_prueft_und_danach_frei(self) -> None:
+        """Ein Bau, der waehrenddessen startete, wartete im Hauptfaden auf die Pruefung und las danach ein zweites Mal (``_quellfakten``):
+        bei Ghost of Yotei (``inspect`` rund 216 s) Minuten ohne Rueckmeldung. Seit die Groesse in 14 s gezaehlt ist, deckte die
+        Groessensperre das nicht mehr zu."""
+        frei = threading.Event()
+        self.addCleanup(frei.set)
+
+        def langsam(*a, **k):
+            frei.wait(20)
+            return fc.QuellFakten(**self._DLC)
+        ordner = self._spielordner()
+        with mock.patch.object(fc, "quellfakten_lesen", side_effect=langsam):
+            self._laden(ordner, warten=False)
+            self.assertTrue(basis._warten(lambda: not self.f.aktuell.groesse_offen), "die Groesse ist gezaehlt")
+            self.assertTrue(self.f._pruefung_laeuft(self.f.aktuell))
+            self.assertEqual("disabled", str(self.f.start_knopf.cget("state")))
+            self.f._starten()
+            self.assertEqual(self.f.t("ps5pkg.pruefung_wait"), self.f.status_var.get())
+            self.assertIsNone(self.f._job)
+            frei.set()
+            self.assertTrue(basis._warten(lambda: str(self.f.start_knopf.cget("state")) == "normal", 10),
+                            "nach der Pruefung ist STARTEN frei")
+
+    def test_eine_haengende_pruefung_sperrt_starten_nicht_fuer_immer(self) -> None:
+        """``inspect`` hat keine Zeitgrenze (``PRUEFUNG_SPERRE_MAX``): Nach ihr gibt der Knopf frei, auch wenn der Faden noch haengt."""
+        frei = threading.Event()
+        self.addCleanup(frei.set)
+        ordner = self._spielordner()
+        with mock.patch.object(fz.Ps5PkgFenster, "PRUEFUNG_SPERRE_MAX", 0.4), \
+                mock.patch.object(fc, "quellfakten_lesen", side_effect=lambda *a, **k: frei.wait(20)):
+            self._laden(ordner, warten=False)
+            self.assertTrue(basis._warten(lambda: not self.f.aktuell.groesse_offen))
+            self.assertTrue(basis._warten(lambda: str(self.f.start_knopf.cget("state")) == "normal", 10), "die Sperre endet nach der Grenze")
+            self.assertTrue(self.f._bericht_faden[1].is_alive(), "der Faden haengt noch")
+            self.assertFalse(self.f._pruefung_laeuft(self.f.aktuell))
 
     def test_die_pruefmeldung_nennt_die_dauer_bei_sehr_grossen_spielen(self) -> None:
         """Gemessen 230 s fuer einen Ordner mit 84.218 Dateien; die Meldung sagt es in jeder Sprache (Minuten)."""
@@ -1303,13 +1349,13 @@ class EinbauSeiteTests(_ForgeBasis):
 
         frei = threading.Event()                       # die Antwort der Quelle A kommt erst, wenn B schon gewaehlt ist
 
-        def zeilen(pfad, aktuell=None):
+        def zeilen(pfad, aktuell=None, haken_gilt=None):
             if pfad == a:
                 frei.wait(20)
             return ["[Prüfung] Quelle %s\n" % ("A" if pfad == a else "B")]
         with mock.patch.object(self.app, "_quelle_einbauten_zeilen", side_effect=zeilen), \
                 mock.patch.object(fc, "quellfakten_lesen", return_value=fc.QuellFakten()):
-            self._laden(a)
+            self._laden(a, warten=False)
             self._laden(b)
             frei.set()
             self.assertTrue(basis._warten(lambda: "Quelle B" in self._protokoll_text(), 8))

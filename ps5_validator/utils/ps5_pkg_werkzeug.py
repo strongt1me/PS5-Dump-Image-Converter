@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from . import file_io
+
 #: Ordner im Projekt (und im Bau), darin je Plattform ein Unterordner.
 ORDNER = "PS5-PKG-Tool"
 
@@ -367,6 +369,9 @@ class PaketInfo:
     fakten: object = None
     #: Die Groesse eines Spielordners ist noch nicht gezaehlt (``ordner_lesen(groesse=False)``): ``groesse`` ist 0 und gilt nicht.
     groesse_offen: bool = False
+    #: Das Zaehlen scheiterte (Ordner oder Dateien nicht lesbar): ``groesse`` ist 0 und gilt nicht - die Anzeige sagt "unbekannt",
+    #: statt eine Teilsumme als echte Groesse zu zeigen.
+    groesse_unbekannt: bool = False
 
     def __post_init__(self) -> None:
         # Die Kennung geht in Datei- und Ordnernamen (``anzeigename``, ``forge_cli.dateiname_fuer``) und damit in Pfade, die das Fenster
@@ -461,26 +466,43 @@ def ordner_ist_spiel(ordner: str) -> bool:
 GROESSE_MELDESCHRITT = 1000
 
 
-def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Callable[[int], None] | None" = None) -> int:
+class GroesseAbgebrochen(Exception):
+    """:func:`ordner_groesse` wurde ueber ``abbruch`` beendet - es gibt keine Summe."""
+
+
+def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Callable[[int], None] | None" = None,
+                   abbruch: "Callable[[], bool] | None" = None) -> int:
     """Die Summe der Dateigroessen unter ``ordner``; ``melden`` bekommt am Ende eine Zeile (Dateizahl).
 
-    Bei einem grossen Spiel dauert das lange (gemessen 18.11.2026: Ghost of Yotei, 84.218 Dateien, 150,75 GB, auf dem
-    Laufwerk des Nutzers 348 s) - ``fortschritt`` bekommt darum alle :data:`GROESSE_MELDESCHRITT` Dateien die bisherige Zahl,
-    damit die Anzeige zeigen kann, dass etwas geschieht.
+    Gezaehlt wird mit ``os.scandir``: ``DirEntry.stat()`` liefert die Groesse unter Windows aus den Verzeichnisdaten, ohne einen
+    weiteren Aufruf je Datei. Die fruehere Fassung (``os.walk`` und ``os.path.getsize`` je Datei) brauchte fuer Ghost of Yotei
+    (84.218 Dateien, 150,75 GB) 348 s; ``scandir`` zaehlt dieselben 84.218 Dateien und dieselben Bytes in rund 14 s (gemessen
+    19.11.2026, Verzeichnisdaten schon im Cache). Verknuepfungen und NTFS-Verbindungen zu Ordnern werden nicht verfolgt und nicht
+    gezaehlt (``os.walk`` folgte einer Verbindung, die auf einen Elternordner zeigt, bis zur Pfadgrenze).
+
+    ``fortschritt`` bekommt alle :data:`GROESSE_MELDESCHRITT` Dateien die bisherige Zahl, damit die Anzeige zeigen kann, dass etwas
+    geschieht. ``abbruch`` wird je Verzeichnis gefragt; liefert es ``True``, endet das Zaehlen mit :class:`GroesseAbgebrochen`.
+
+    Raises:
+        OSError: Verzeichnisse oder Dateien waren nicht lesbar (Laufwerk getrennt, Zugriff verweigert): Die Summe waere zu klein und
+            saehe doch wie eine echte Groesse aus. ``melden`` bekommt vorher eine Warnung mit der Zahl der Fehler.
+        GroesseAbgebrochen: ``abbruch`` lieferte ``True``.
     """
-    summe = anzahl = 0
-    for wurzel, _ordner, dateien in os.walk(ordner):
-        for name in dateien:
-            try:
-                summe += os.path.getsize(os.path.join(wurzel, name))
-                anzahl += 1
-            except OSError:
-                continue
-            if fortschritt is not None and anzahl % GROESSE_MELDESCHRITT == 0:
-                fortschritt(anzahl)
+    def beobachten(_summe: int, dateien: int) -> None:
+        if fortschritt is not None and dateien % GROESSE_MELDESCHRITT == 0:
+            fortschritt(dateien)
+
+    ergebnis = file_io.groesse_summieren(ordner, beobachter=beobachten, abbruch=abbruch)
+    if ergebnis.abgebrochen:
+        raise GroesseAbgebrochen(ordner)
+    if ergebnis.fehler:
+        if melden:
+            melden("[WARNUNG] %s: %d Eintraege nicht lesbar - die Groesse waere unvollstaendig"
+                   % (os.path.basename(ordner), ergebnis.fehler))
+        raise OSError("%d Eintraege unter %s nicht lesbar" % (ergebnis.fehler, ordner))
     if melden:
-        melden("[info] %s: %d Dateien, %.2f GB" % (os.path.basename(ordner), anzahl, summe / 1024 ** 3))
-    return summe
+        melden("[info] %s: %d Dateien, %.2f GB" % (os.path.basename(ordner), ergebnis.dateien, ergebnis.summe / 1024 ** 3))
+    return ergebnis.summe
 
 
 def ordner_lesen(ordner: str, arbeitsordner: str | None = None, melden: _Zeile | None = None,
@@ -505,9 +527,15 @@ def ordner_lesen(ordner: str, arbeitsordner: str | None = None, melden: _Zeile |
         raise Fehler("param.json nicht lesbar: %s" % exc) from exc
     if not isinstance(param, dict):
         raise Fehler("param.json hat nicht die erwartete Form")
-    info = PaketInfo(pfad=ordner, groesse=ordner_groesse(ordner, melden) if groesse else 0, typ=TYP_ORDNER,
+    gezaehlt, unbekannt = 0, False
+    if groesse:
+        try:
+            gezaehlt = ordner_groesse(ordner, melden)
+        except OSError:                                       # nicht lesbar: keine Teilsumme als echte Groesse (``groesse_unbekannt``)
+            unbekannt = True
+    info = PaketInfo(pfad=ordner, groesse=gezaehlt, typ=TYP_ORDNER,
                      content_id=str(param.get("contentId", "") or ""), title_id=str(param.get("titleId", "") or ""),
-                     titel=titel_aus_param(param), param=param, groesse_offen=not groesse)
+                     titel=titel_aus_param(param), param=param, groesse_offen=not groesse, groesse_unbekannt=unbekannt)
     icon = os.path.join(ordner, "sce_sys", "icon0.png")
     if os.path.isfile(icon):
         try:

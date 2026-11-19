@@ -9,14 +9,14 @@ dem Commit 7eb5741 ``_ausschnitt``), aber nichts haette ihn bemerkt, solange das
 
 Gesucht wird ueber den Syntaxbaum: Jede Klasse des Projekts, in der ``self.X = ...`` (auch ``+=`` und Typangabe) einen Namen
 belegt, den dieselbe Klasse oder eine Basisklasse des Projekts als **Methode** definiert. Eigenschaften (``@property`` mit
-``setter``, ``cached_property``) zaehlen nicht - dort ist die Zuweisung gewollt. Basisklassen aus fremden Paketen (``tk.Canvas``)
-kennt die Suche nicht.
+``setter``, ``cached_property``) zaehlen nicht - dort ist die Zuweisung gewollt. Eine Eigenschaft **ohne** ``setter`` zaehlt
+dagegen: ``self.X = ...`` wirft dort ``AttributeError``. Basisklassen aus fremden Paketen (``tk.Canvas``) kennt die Suche nicht;
+``Basis[str]`` (Generics) wird wie ``Basis`` gelesen.
 """
 from __future__ import annotations
 
 import ast
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,26 +28,53 @@ HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
 ERLAUBT: dict[str, str] = {}
 
 
-def _ist_eigenschaft(f: "ast.FunctionDef | ast.AsyncFunctionDef") -> bool:
+def _dekorator(f: "ast.FunctionDef | ast.AsyncFunctionDef") -> str:
+    """``eigenschaft`` / ``setter`` / ``cached`` / ``""`` - was der Dekorator einer Methode aus ihr macht."""
     for d in f.decorator_list:
         text = ast.unparse(d)
-        if text in ("property", "cached_property", "functools.cached_property") or text.endswith((".setter", ".getter", ".deleter")):
-            return True
-    return False
+        if text == "property":
+            return "eigenschaft"
+        if text in ("cached_property", "functools.cached_property"):
+            return "cached"
+        if text.endswith((".setter", ".deleter")):
+            return "setter"
+        if text.endswith(".getter"):
+            return "eigenschaft"
+    return ""
+
+
+def _basenname(b: ast.expr) -> "str | None":
+    """Der einfache Name einer Basisklasse: ``Name``, ``modul.Name`` und ``Name[...]``."""
+    if isinstance(b, ast.Subscript):
+        return _basenname(b.value)
+    if isinstance(b, ast.Name):
+        return b.id
+    if isinstance(b, ast.Attribute):
+        return b.attr
+    return None
 
 
 def _klassen_lesen(dateien: "list[Path]") -> "dict[str, list[tuple]]":
-    """Name -> [(Datei, Basen, Methoden {Name: Zeile}, Attribute {Name: Zeile}, Zeile)] fuer jede Klasse jeder Datei."""
+    """Name -> [(Datei, Basen, Methoden {Name: Zeile}, Attribute {Name: Zeile}, Zeile, Eigenschaften ohne Setter)] je Klasse."""
     klassen: "dict[str, list[tuple]]" = {}
     for datei in dateien:
         baum = ast.parse(datei.read_text(encoding="utf-8-sig"))
         for knoten in ast.walk(baum):
             if not isinstance(knoten, ast.ClassDef):
                 continue
-            basen = [b.id if isinstance(b, ast.Name) else b.attr for b in knoten.bases if isinstance(b, (ast.Name, ast.Attribute))]
+            basen = [n for n in (_basenname(b) for b in knoten.bases) if n]
             methoden: dict = {}
+            eigenschaften: set = set()
+            setter: set = set()
             for stelle in knoten.body:
-                if isinstance(stelle, (ast.FunctionDef, ast.AsyncFunctionDef)) and not _ist_eigenschaft(stelle):
+                if not isinstance(stelle, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                art = _dekorator(stelle)
+                if art == "eigenschaft":
+                    eigenschaften.add(stelle.name)
+                elif art == "setter":
+                    setter.add(stelle.name)
+                elif art == "":
                     methoden[stelle.name] = stelle.lineno
             attribute: dict = {}
             for f in ast.walk(knoten):
@@ -65,7 +92,8 @@ def _klassen_lesen(dateien: "list[Path]") -> "dict[str, list[tuple]]":
                             if (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == "self"
                                     and isinstance(t.ctx, ast.Store)):
                                 attribute.setdefault(t.attr, a.lineno)
-            klassen.setdefault(knoten.name, []).append((datei, basen, methoden, attribute, knoten.lineno))
+            klassen.setdefault(knoten.name, []).append(
+                (datei, basen, methoden, attribute, knoten.lineno, eigenschaften - setter))
     return klassen
 
 
@@ -86,7 +114,7 @@ def ueberdeckungen(dateien: "list[Path]") -> "list[str]":
     klassen = _klassen_lesen(dateien)
     funde: "list[str]" = []
     for name, eintraege in klassen.items():
-        for datei, basen, methoden, attribute, zeile in eintraege:
+        for datei, basen, methoden, attribute, zeile, nur_lesbar in eintraege:
             alle: "list[str]" = []
             gesehen: set = set()
             for b in basen:
@@ -98,18 +126,26 @@ def ueberdeckungen(dateien: "list[Path]") -> "list[str]":
             # 17.11. entstand, weil die Basis das Attribut setzte und erst die Unterklasse die Methode gleichen Namens hatte.
             attribute_alle = {a: (name, z) for a, z in attribute.items()}
             methoden_alle = {m: (name, z) for m, z in methoden.items()}
+            nur_lesbar_alle = {p: name for p in nur_lesbar}
             for b in alle:
                 for e in klassen.get(b, []):
                     for a, z in e[3].items():
                         attribute_alle.setdefault(a, (b, z))
                     for m, z in e[2].items():
                         methoden_alle.setdefault(m, (b, z))
+                    for p in e[5]:
+                        nur_lesbar_alle.setdefault(p, b)
             for attr in sorted(set(attribute_alle) & set(methoden_alle)):
                 if "%s.%s" % (name, attr) in ERLAUBT:
                     continue
                 (aklasse, azeile), (mklasse, _mzeile) = attribute_alle[attr], methoden_alle[attr]
                 funde.append("%s:%d  %s: self.%s = ... (%s, Zeile %d) ueberdeckt die Methode %s.%s"
                              % (datei.name, zeile, name, attr, aklasse, azeile, mklasse, attr))
+            for attr in sorted(set(attribute) & set(nur_lesbar_alle)):
+                if "%s.%s" % (name, attr) in ERLAUBT:
+                    continue
+                funde.append("%s:%d  %s: self.%s = ... (Zeile %d) - %s.%s ist eine Eigenschaft ohne Setter (AttributeError)"
+                             % (datei.name, zeile, name, attr, attribute[attr], nur_lesbar_alle[attr], attr))
     return sorted(funde)
 
 
@@ -153,6 +189,26 @@ class ErkennungTests(unittest.TestCase):
             "    @wert.setter\n    def wert(self, v):\n        self._w = v\n"))
         self.assertEqual([], funde)
 
+    def test_eine_eigenschaft_ohne_setter_wirft_beim_zuweisen_und_wird_gefunden(self) -> None:
+        funde = self._suchen(
+            a="class A:\n    @property\n    def wert(self):\n        return 1\n\nclass B(A):\n    def __init__(self):\n        self.wert = 2\n")
+        self.assertEqual(1, len(funde), funde)
+        self.assertIn("A.wert ist eine Eigenschaft ohne Setter", funde[0])
+
+    def test_eine_zwischengespeicherte_eigenschaft_darf_zugewiesen_werden(self) -> None:
+        funde = self._suchen(a=(
+            "from functools import cached_property\n\nclass A:\n    @cached_property\n    def wert(self):\n        return 1\n"
+            "    def setze(self):\n        self.wert = 2\n"))
+        self.assertEqual([], funde)
+
+    def test_basis_mit_typargument_wird_wie_die_basis_gelesen(self) -> None:
+        """``class Text(Wert[str])`` (ui/zustand.py) - ohne das fiele die Basis aus der Suche."""
+        funde = self._suchen(
+            a="class Wert:\n    def __init__(self):\n        self.lesen = 'x'\n",
+            b="from a import Wert\n\nclass Text(Wert[str]):\n    def lesen(self):\n        return 1\n")
+        self.assertEqual(1, len(funde), funde)
+        self.assertIn("Text: self.lesen = ... (Wert, Zeile 3)", funde[0])
+
     def test_verschiedene_namen_und_fremde_basis_sind_kein_fund(self) -> None:
         funde = self._suchen(a=(
             "import tkinter as tk\n\nclass A:\n    def __init__(self):\n        self._farbe = 'rot'\n"
@@ -181,6 +237,10 @@ class ProjektTests(unittest.TestCase):
         self.assertGreater(len(klassen), 200)
         self.assertIn("PS5ConverterGUI", klassen)
         self.assertIn("FortschrittsPille", klassen)
+        # Klassen mit Typargument in der Basis (ui/zustand.py: ``class Text(Wert[str])``): Es gibt mehrere Klassen namens "Text"
+        # (auch ``fenster_pillen`` hat eine) - die aus zustand.py muss mit der Basis "Wert" gelesen worden sein.
+        zustand = [e for e in klassen["Text"] if e[0].name == "zustand.py"]
+        self.assertTrue(zustand and zustand[0][1] == ["Wert"], zustand)
 
 
 if __name__ == "__main__":
