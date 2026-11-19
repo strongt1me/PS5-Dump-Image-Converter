@@ -411,7 +411,7 @@ class NennungTests(unittest.TestCase):
         "7-Zip-26.06": "7-Zip",
         "AMPR_PackTools-4.0": "AMPR PackTools",
         "Backport_Fakelibs": "Backport_Fakelibs",
-        # Seit v1.9.100: die Befehlszeile von Dump Forge (quer3q), der Paketersteller des Bereichs "PKG / FPKG". Fiel erst im Volllauf vom
+        # Seit v2.0.0: die Befehlszeile von Dump Forge (quer3q), der Paketersteller des Bereichs "PKG / FPKG". Fiel erst im Volllauf vom
         # 18.11.2026 auf - die Lizenzdatei nannte sie schon, der Wächter kannte den Ordner nicht.
         "Dump-Forge-CLI": "Dump-Forge-CLI/",
         "MkPFS-1.1.0": "MkPFS 1.1.0",

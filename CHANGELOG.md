@@ -2,11 +2,11 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.100):** Der Bereich PKG / FPKG sieht aus wie die Aufgaben 1 bis 6, baut Pakete mit Dump Forge und zeigt die Größe eines Spiels deutlich schneller.
+> **Kurz zum aktuellen Stand (v2.0.0):** Der Bereich PKG / FPKG sieht aus wie die Aufgaben 1 bis 6, baut Pakete mit Dump Forge und zeigt die Größe eines Spiels deutlich schneller.
 
 ---
 
-## v1.9.100 – 19.11.2026
+## v2.0.0 – 19.11.2026
 
 - **Neu:** PKG / FPKG sieht aus wie die Aufgaben 1 bis 6 (Einbau-Karte, Prüfung der Quelle, Fortschritt), und Pakete baut allein Dump Forge – aus Spielordnern und Abbildern, ohne Zwischenordner.
 - **Neu:** Aus einem Spiel mit LZ4- oder zstd-Packs entsteht ein FPKG, weil Dump Forge die Packs beim Bau entpackt; ein PS4-Paket aus einem gepackten Dump-Ordner lehnt das Programm ab.
