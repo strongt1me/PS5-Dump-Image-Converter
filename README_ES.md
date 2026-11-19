@@ -7,7 +7,7 @@
 **Convertir, extraer y comprobar dumps e imágenes de PS5, construir paquetes de PS4 y PS5
 y manejar la consola desde el mismo programa, en Windows, Linux y macOS.**
 
-![Versión](https://img.shields.io/badge/Versi%C3%B3n-v1.9.99-blue)
+![Versión](https://img.shields.io/badge/Versi%C3%B3n-v1.9.100-blue)
 ![Tests](https://img.shields.io/badge/Tests-9292%20verdes-brightgreen)
 ![Licencia](https://img.shields.io/badge/Licencia-GPL--3.0--or--later-blue)
 ![Plataforma](https://img.shields.io/badge/Plataforma-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)

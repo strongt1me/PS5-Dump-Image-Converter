@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – User Manual v1.9.99</title>
+<title>PS5 Dump &amp; Image Converter – User Manual v1.9.100</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">User Manual</span></h1>
     <p class="unter">An easy-to-follow step-by-step guide for your first safe conversions and checks – plus a complete overview of all eight tasks and every additional tool in the toolbar.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.99</span>
-      <span class="marke">As of November 16, 2026</span>
+      <span class="marke">Version v1.9.100</span>
+      <span class="marke">As of November 19, 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English / Español / Italiano / Français</span>
     </div>
@@ -2195,8 +2195,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <ol class="schritte">
     <li>Drag a package, a game folder (with <code>sce_sys/param.json</code>) or a folder containing
     packages and game folders onto the dashed area, or click
-    <em>Choose file</em> or <em>Choose folder</em>. Title, title ID, size and type
-    appear immediately.</li>
+    <em>Choose file</em> or <em>Choose folder</em>. Title, title ID and type
+    appear immediately, the size right after (for very large games the counting can take a while; <strong>START</strong> waits for it).
+    If a game folder contains links, junctions or other reparse points, the log warns right away: Dump Forge refuses such a
+    folder.</li>
     <li>Choose the <strong>Action</strong> (see below) and the <strong>Target folder</strong>.</li>
     <li>For <em>Create / Convert</em>, click a <strong>Target format</strong>: FFPKG, FFPFSC, FFPFS or
     exFAT – for a game folder also <strong>Package</strong> (see “Building a package”).</li>
@@ -3248,7 +3250,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>16.1 What belongs in a helpful error report?</h3>
-  <p>If you need support, note the program version (v1.9.99), the selected task, the source type, and the last visible log message – the easiest way is the <strong>DIAGNOSTICS</strong> button. Do not pass on private paths or personal data if they are not needed for troubleshooting.</p>
+  <p>If you need support, note the program version (v1.9.100), the selected task, the source type, and the last visible log message – the easiest way is the <strong>DIAGNOSTICS</strong> button. Do not pass on private paths or personal data if they are not needed for troubleshooting.</p>
   <div class="kasten tipp">
     <span class="titel">Please do not delete right away</span>
     <p>Keep the log and the unchanged source until you have understood the cause. This makes an error easier to trace.</p>
@@ -3449,8 +3451,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – User Manual <strong>v1.9.99</strong></span>
-    <span>As of November 16, 2026</span>
+    <span>PS5 Dump &amp; Image Converter – User Manual <strong>v1.9.100</strong></span>
+    <span>As of November 19, 2026</span>
   </div>
   <p>This manual describes the visible operation of the program. Additional version and feature information is in the <a href="README_EN.md">README.md</a> and <a href="CHANGELOG.md">CHANGELOG.md</a> shipped together with it.</p>
 </footer>

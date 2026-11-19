@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Domande frequenti (FAQ) v1.9.99</title>
+<title>PS5 Dump &amp; Image Converter – Domande frequenti (FAQ) v1.9.100</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Domande frequenti (FAQ)</span></h1>
     <p class="unter">Risposte brevi alle domande che si presentano più spesso durante l'uso del programma – dal primo avvio fino alla conversione per la PS5. Il manuale utente tratta tutto nei dettagli.</p>
     <div class="marken">
-      <span class="marke">Versione v1.9.99</span>
-      <span class="marke">Aggiornato al 16 novembre 2026</span>
+      <span class="marke">Versione v1.9.100</span>
+      <span class="marke">Aggiornato al 19 novembre 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -685,6 +685,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Dump Forge rifiuta la mia cartella di gioco (“contiene elementi che non possono essere convertiti”).</h3>
+    <p>Dump Forge non converte una cartella di gioco che contiene collegamenti simbolici, junction NTFS o altri reparse point (per esempio collegamenti simbolici creati con WSL), hard link, file speciali oppure nomi con una barra rovesciata o senza UTF-8 valido. Il registro indica ogni elemento con il suo percorso nella cartella di gioco; per collegamenti, junction e reparse point avvisa già alla scelta del gioco, prima di <strong>AVVIA</strong>. Rimuovere gli elementi indicati oppure copiare il gioco come cartella normale su un disco locale e scegliere la copia.</p>
+  </div>
+
+  <div class="frage">
     <h3>Come si ottiene rapidamente aiuto in caso di errore?</h3>
     <p>Premere <strong>DIAGNOSTICA</strong>. Il rapporto contiene versione, sistema, le ultime righe del registro e una valutazione della visualizzazione e, dalla v1.9.90, un controllo di funzionamento con un verdetto complessivo (errori nel registro, programmi mancanti, cartelle di lavoro residue e unità montate); le credenziali vengono oscurate automaticamente. Viene salvato come <code>Diagnosebericht_&lt;date&gt;.txt</code> nella cartella delle impostazioni. Indicare anche l'attività scelta, il tipo di origine e l'ultimo messaggio visibile – percorsi privati o dati personali solo se servono per la ricerca dell'errore.</p>
   </div>
@@ -729,8 +734,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Domande frequenti <strong>v1.9.99</strong></span>
-  <span>Aggiornato al 16 novembre 2026 · Solo per contenuti che si possiedono e che sono stati acquistati legalmente</span>
+  <span>PS5 Dump &amp; Image Converter – Domande frequenti <strong>v1.9.100</strong></span>
+  <span>Aggiornato al 19 novembre 2026 · Solo per contenuti che si possiedono e che sono stati acquistati legalmente</span>
 </footer>
 
 </body>

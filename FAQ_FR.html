@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Foire aux questions (FAQ) v1.9.99</title>
+<title>PS5 Dump &amp; Image Converter – Foire aux questions (FAQ) v1.9.100</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Foire aux questions (FAQ)</span></h1>
     <p class="unter">Réponses courtes aux questions les plus fréquentes lors de l’utilisation du programme – du premier démarrage jusqu’à la conversion pour la PS5. Le manuel utilisateur traite tout en détail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.99</span>
-      <span class="marke">État au 16 novembre 2026</span>
+      <span class="marke">Version v1.9.100</span>
+      <span class="marke">État au 19 novembre 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -685,6 +685,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Dump Forge refuse mon dossier de jeu (« contient des entrées qui ne peuvent pas être converties »).</h3>
+    <p>Dump Forge ne convertit pas un dossier de jeu qui contient des liens symboliques, des jonctions NTFS ou d'autres points d'analyse (par exemple des liens symboliques créés sous WSL), des liens physiques, des fichiers spéciaux ou des noms avec une barre oblique inverse ou sans UTF-8 valide. Le journal nomme chaque entrée avec son chemin dans le dossier de jeu ; pour les liens, les jonctions et les points d'analyse, il avertit déjà au choix du jeu, avant <strong>DÉMARRER</strong>. Supprimez les entrées indiquées ou copiez le jeu comme dossier ordinaire sur un disque local, puis choisissez la copie.</p>
+  </div>
+
+  <div class="frage">
     <h3>Comment obtenir rapidement de l’aide en cas d’erreur ?</h3>
     <p>Appuyez sur <strong>DIAGNOSTIC</strong>. Le rapport contient la version, le système, les dernières lignes du journal et une évaluation de l’affichage et, depuis v1.9.90, un contrôle de fonctionnement avec un verdict global (erreurs dans le journal, programmes manquants, dossiers de travail résiduels et lecteurs montés) ; les identifiants sont automatiquement masqués. Il est enregistré sous le nom <code>Diagnosebericht_&lt;date&gt;.txt</code> dans le dossier de paramètres. Mentionnez aussi la tâche choisie, le type de source et le dernier message visible – des chemins privés ou des données personnelles seulement s’ils sont nécessaires au dépannage.</p>
   </div>
@@ -729,8 +734,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Foire aux questions <strong>v1.9.99</strong></span>
-  <span>État au 16 novembre 2026 · Uniquement pour les contenus que vous possédez et avez acquis légalement</span>
+  <span>PS5 Dump &amp; Image Converter – Foire aux questions <strong>v1.9.100</strong></span>
+  <span>État au 19 novembre 2026 · Uniquement pour les contenus que vous possédez et avez acquis légalement</span>
 </footer>
 
 </body>
