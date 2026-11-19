@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -334,6 +335,98 @@ class SummierenTests(_Baum):
             self.skipTest("Verknuepfungen brauchen ein Recht (WinError 1314)")
         erg = file_io.groesse_summieren(self.wurzel)
         self.assertEqual((43210, 5, 0, 1, ("link_ins_leere",)), (erg.summe, erg.dateien, erg.fehler, erg.verknuepfungen, erg.beispiele))
+
+
+class _Eintrag:
+    """Ein ``os.DirEntry``, wie Windows ihn liefert: ``st_file_attributes`` traegt das Merkmal Reparsepunkt (0x400); ``attribute=None``
+    gibt es wie unter Linux und macOS gar nicht."""
+
+    FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+    def __init__(self, pfad: str, *, ordner: bool = False, groesse: int = 7, attribute: "int | None" = 0x20, junction: bool = False) -> None:
+        self.path, self.name = pfad, os.path.basename(pfad)
+        self._ordner, self._groesse, self._attribute, self._junction = ordner, groesse, attribute, junction
+
+    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
+        return self._ordner
+
+    def is_symlink(self) -> bool:
+        return False
+
+    def is_junction(self) -> bool:
+        return self._junction
+
+    def stat(self, *, follow_symlinks: bool = True) -> types.SimpleNamespace:
+        werte = {"st_size": self._groesse}
+        if self._attribute is not None:
+            werte["st_file_attributes"] = self._attribute
+        return types.SimpleNamespace(**werte)
+
+
+class _Verzeichnis:
+    def __init__(self, eintraege: list) -> None:
+        self._es = iter(eintraege)
+
+    def __enter__(self) -> "_Verzeichnis":
+        return self
+
+    def __exit__(self, *_args) -> bool:
+        return False
+
+    def __iter__(self) -> "_Verzeichnis":
+        return self
+
+    def __next__(self):
+        return next(self._es)
+
+
+class ReparsepunktTests(unittest.TestCase):
+    """Dump Forge lehnt jeden Reparsepunkt im Spielordner ab (``scan.rs``: ``is_symlink() || is_reparse_point``) - auch einen OneDrive-
+    Platzhalter, der keine Verknuepfung ist (19.11.2026). Die Zaehlung vermerkt sie ebenfalls; die Eintraege sind nachgebildet, damit der
+    Test auf jedem System laeuft."""
+
+    WURZEL = os.path.join(os.sep, "spiel")
+    REPARSE = 0x400
+
+    def _pfad(self, *teile: str) -> str:
+        return os.path.join(self.WURZEL, *teile)
+
+    def _zaehlen(self, baum: dict, **kw):
+        def scandir(pfad):
+            return _Verzeichnis(baum[os.path.normpath(str(pfad))])
+        with mock.patch.object(os, "scandir", side_effect=scandir):
+            return file_io.groesse_summieren(self.WURZEL, **kw)
+
+    def test_eine_datei_mit_dem_merkmal_zaehlt_mit_und_wird_vermerkt(self) -> None:
+        baum = {self.WURZEL: [_Eintrag(self._pfad("normal.bin")),
+                              _Eintrag(self._pfad("platzhalter.bin"), attribute=0x20 | self.REPARSE)]}
+        erg = self._zaehlen(baum)
+        self.assertEqual((14, 2), (erg.summe, erg.dateien), "ein Platzhalter hat eine Groesse und zaehlt")
+        self.assertEqual((1, ("platzhalter.bin",)), (erg.verknuepfungen, erg.beispiele))
+
+    def test_ein_gewoehnlicher_eintrag_wird_nicht_vermerkt(self) -> None:
+        baum = {self.WURZEL: [_Eintrag(self._pfad("a.bin"), attribute=0x20), _Eintrag(self._pfad("b.bin"), attribute=0x80)]}
+        self.assertEqual((0, ()), tuple(self._zaehlen(baum)[4:]))
+
+    def test_ohne_st_file_attributes_wie_unter_linux_wird_nichts_vermerkt(self) -> None:
+        baum = {self.WURZEL: [_Eintrag(self._pfad("a.bin"), attribute=None)]}
+        erg = self._zaehlen(baum)
+        self.assertEqual((7, 1, 0), (erg.summe, erg.dateien, erg.verknuepfungen))
+
+    def test_ein_ordner_mit_dem_merkmal_wird_vermerkt_und_wie_bisher_gelesen(self) -> None:
+        baum = {self.WURZEL: [_Eintrag(self._pfad("cloud"), ordner=True, attribute=0x10 | self.REPARSE)],
+                self._pfad("cloud"): [_Eintrag(self._pfad("cloud", "x.bin"))]}
+        erg = self._zaehlen(baum)
+        self.assertEqual((7, 1), (erg.summe, erg.dateien), "der Inhalt zaehlt wie vorher")
+        self.assertEqual((1, ("cloud",)), (erg.verknuepfungen, erg.beispiele))
+
+    def test_eine_verbindung_mit_dem_merkmal_wird_nur_einmal_gezaehlt(self) -> None:
+        baum = {self.WURZEL: [_Eintrag(self._pfad("verb"), ordner=True, junction=True, attribute=0x10 | self.REPARSE)],
+                self._pfad("verb"): [_Eintrag(self._pfad("verb", "x.bin"))]}
+        ohne = self._zaehlen(baum)
+        self.assertEqual((0, 0, 1), (ohne.summe, ohne.dateien, ohne.verknuepfungen), "nicht verfolgt, einmal vermerkt")
+        mit = self._zaehlen(baum, verbindungen_folgen=True)
+        self.assertEqual((7, 1, 1), (mit.summe, mit.dateien, mit.verknuepfungen), "verfolgt, weiter nur einmal vermerkt")
 
 
 class OrdnerGroesseTests(_Baum):

@@ -260,6 +260,70 @@ class DateinameTests(unittest.TestCase):
         self.assertNotIn("  [", name)
 
 
+class FehlerVerstaendlichTests(unittest.TestCase):
+    """Dump Forge lehnt einen Spielordner mit Verknuepfung, Junction oder Reparsepunkt englisch ab (gemessen 19.11.2026 an der echten
+    Befehlszeile); das Protokoll zeigte den Text bisher so. ``fehler_verstaendlich`` uebersetzt die bekannte Liste, alles andere bleibt."""
+
+    ORDNER = "C:\\Spiele\\Spiel"
+    ECHT = ORDNER + " holds entries that cannot be converted:\n  symlink (not followed): Verbindung"
+
+    @staticmethod
+    def _t(sprache: str):
+        from ps5_validator.utils.i18n import STRINGS
+        return lambda schluessel, **werte: STRINGS[schluessel][sprache].format(**werte)
+
+    def test_der_echte_text_wird_uebersetzt_und_nennt_ordner_und_eintrag(self) -> None:
+        text = fc.fehler_verstaendlich(self.ECHT, self._t("de"))
+        zeilen = text.splitlines()
+        self.assertEqual(2, len(zeilen), text)
+        self.assertIn(self.ORDNER, zeilen[0])
+        self.assertIn("wandelt", zeilen[0])
+        self.assertEqual("  Verknüpfung, Junction oder Reparsepunkt (wird nicht verfolgt): Verbindung", zeilen[1])
+        self.assertNotIn("holds entries", text)
+
+    def test_jede_art_hat_einen_text_in_jeder_sprache(self) -> None:
+        from ps5_validator.utils.i18n import STRINGS
+        schluessel = [*fc.SCAN_ARTEN.values(), "ps5pkg.forge_scan_kopf", "ps5pkg.forge_scan_mehr"]
+        self.assertEqual(6, len(fc.SCAN_ARTEN))
+        for s in schluessel:
+            for sprache in ("de", "en", "es", "it", "fr"):
+                with self.subTest(schluessel=s, sprache=sprache):
+                    self.assertTrue(STRINGS[s][sprache].strip())
+        text = "\n".join([self.ORDNER + " holds entries that cannot be converted:"]
+                         + ["  %s: eintrag_%d" % (art, n) for n, art in enumerate(fc.SCAN_ARTEN)])
+        for sprache in ("de", "en", "es", "it", "fr"):
+            with self.subTest(sprache=sprache):
+                uebersetzt = fc.fehler_verstaendlich(text, self._t(sprache))
+                self.assertEqual(7, len(uebersetzt.splitlines()))
+                self.assertNotIn(self.ORDNER + " holds entries", uebersetzt, "Forges Kopfzeile ist ersetzt")
+                if sprache == "de":
+                    self.assertNotIn("not followed", uebersetzt)
+
+    def test_eine_gekuerzte_liste_sagt_wie_viele_es_noch_sind(self) -> None:
+        text = self.ECHT + "\n  symlink (not followed): ... and 4 more"
+        self.assertEqual("  Verknüpfung, Junction oder Reparsepunkt (wird nicht verfolgt): … und 4 weitere",
+                         fc.fehler_verstaendlich(text, self._t("de")).splitlines()[-1])
+        self.assertTrue(fc.fehler_verstaendlich(text, self._t("en")).splitlines()[-1].endswith("… and 4 more"))
+
+    def test_ein_praefix_der_ausnahme_stoert_nicht_und_gehoert_nicht_zum_ordnernamen(self) -> None:
+        zeilen = fc.fehler_verstaendlich("OSError: " + self.ECHT, self._t("de")).splitlines()
+        self.assertEqual(2, len(zeilen))
+        self.assertIn(self.ORDNER, zeilen[0])
+        self.assertNotIn("OSError", zeilen[0], "der Ordnername beginnt mit dem Laufwerk, nicht mit dem Namen der Ausnahme")
+
+    def test_jeder_andere_text_bleibt_unveraendert(self) -> None:
+        for text in ("", "Dump Forge meldet einen Fehler ohne Text.", "Das Ziel gibt es schon: x.pkg",
+                     "ist ein Ordner und enthaelt keine param.json", "holds entries that cannot be converted:"):
+            with self.subTest(text=text):
+                self.assertEqual(text, fc.fehler_verstaendlich(text, self._t("de")))
+
+    def test_eine_neue_art_bleibt_wie_sie_ist(self) -> None:
+        text = self.ECHT + "\n  sparse file (new in Forge): grosse.bin\n  weitere Zeile ohne Doppelpunkt"
+        zeilen = fc.fehler_verstaendlich(text, self._t("de")).splitlines()
+        self.assertEqual("  sparse file (new in Forge): grosse.bin", zeilen[2])
+        self.assertEqual("  weitere Zeile ohne Doppelpunkt", zeilen[3])
+
+
 class ErkennungTests(unittest.TestCase):
     def test_abbildarten_nach_der_endung_gleich_gross_oder_klein(self) -> None:
         for name, art in (("a.ffpkg", "ffpkg"), ("a.FFPFSC", "ffpfsc"), ("a.ffpfs", "ffpfs"), ("a.ExFAT", "exfat")):
@@ -511,6 +575,28 @@ class EchteBefehlszeileTests(unittest.TestCase):
     def test_lesen_einer_fehlenden_quelle_ist_ein_fehler(self) -> None:
         with self.assertRaises(wz.Fehler):
             fc.lesen(_EXE, str(self.ordner / "gibt_es_nicht.exfat"), str(self.ordner))
+
+    def test_ein_spielordner_mit_junction_wird_abgelehnt_und_der_text_laesst_sich_uebersetzen(self) -> None:
+        """Gemessen 19.11.2026: Forge lehnt jeden Reparsepunkt ab. Hier an der echten Befehlszeile - samt der Uebersetzung des Texts."""
+        if sys.platform != "win32":
+            self.skipTest("NTFS-Verbindungen gibt es nur unter Windows")
+        import _winapi
+        spiel = self.ordner / "SpielMitVerbindung"
+        shutil.copytree(self.spiel, spiel)
+        ziel = self.ordner / "verbindungsziel"
+        ziel.mkdir()
+        verbindung = spiel / "Verbindung"
+        _winapi.CreateJunction(str(ziel), str(verbindung))
+        self.addCleanup(os.rmdir, str(verbindung))                                  # die Verbindung zuerst loesen
+        with self.assertRaises(wz.Fehler) as ctx:
+            fc.bauen(_EXE, str(spiel), str(self.aus / "mit_verbindung.pkg"))
+        text = str(ctx.exception)
+        self.assertIn("symlink (not followed): Verbindung", text, "Forge nennt eine Junction wie einen Symlink")
+        from ps5_validator.utils.i18n import STRINGS
+        auf_deutsch = fc.fehler_verstaendlich(text, lambda s, **w: STRINGS[s]["de"].format(**w))
+        self.assertIn("(wird nicht verfolgt): Verbindung", auf_deutsch)
+        self.assertNotIn("holds entries", auf_deutsch)
+        self.assertFalse(os.path.exists(self.aus / "mit_verbindung.pkg"))
 
 
 if __name__ == "__main__":

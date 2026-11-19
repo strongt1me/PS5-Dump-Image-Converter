@@ -941,14 +941,25 @@ class UrteilTests(unittest.TestCase):
             self.assertTrue(befund.seite.startswith("https://github.com/"), schluessel)
         self.assertEqual("", self.nach["appinst"].seite)
 
+    def test_ps5_ultrapack_wird_nie_als_neu_oder_neuer_gemeldet(self) -> None:
+        """Nutzer 19.11.2026: "streich die Frage, ob ps5-ultrapack aktualisiert werden soll". Das Programm nutzt vom PKG-Tool nur inspect,
+        validate, list-inner und extract-inner; die Neufassungen ab 2.6.0 aendern den Paketbau und bringen Quelltext, den die
+        Lizenzentscheidung vom 16.11.2026 ausschliesst. Der Eintrag hat keine Quelle und vergleicht nichts - auch dann nicht, wenn ihre
+        Freigaben (hier FakeNetz) neuer waeren als die feste Zahl."""
+        w = wu.werkzeug("ps5-ultrapack")
+        self.assertEqual((wu.ART_KEINE, "", "updates.hinweis_bleibt"), (w.art, w.quelle, w.hinweis))
+        self.assertTrue(w.lokal.startswith("fest:"), "die Zahl bleibt als Konstante des Werkzeugs stehen")
+        self.assertEqual(wu.STATUS_OHNE_QUELLE, self.nach["ps5-ultrapack"].status)
+        self.assertNotIn("knutwurst/ps5-ultrapack", wu.quellen(wu.WERKZEUGE), "es wird nicht einmal danach gefragt")
+
     def test_zusammenfassung_zaehlt_je_status(self) -> None:
         zaehler = wu.zusammenfassung(self.befunde)
         self.assertEqual(len(self.befunde), sum(zaehler.values()))
-        # Drei Fassungen, die ihr Autor (noch) nicht so veroeffentlicht hat, dazu LibProsperoPkg 2.6.0 (Eigenbau)
-        # und ps5-ultrapack 2.2.7 (echte Freigabe vom 17.10.2026 - neuer als der 15.10.2026-Stand in FakeNetz).
-        self.assertEqual(5, zaehler.get(wu.STATUS_NEUER))
+        # Drei Fassungen, die ihr Autor (noch) nicht so veroeffentlicht hat, dazu LibProsperoPkg 2.6.0 (Eigenbau).
+        self.assertEqual(4, zaehler.get(wu.STATUS_NEUER))
         self.assertEqual(1, zaehler.get(wu.STATUS_UNKLAR))                 # DPI v2: keine Freigabe
-        self.assertEqual(12, zaehler.get(wu.STATUS_OHNE_QUELLE))           # davon YT-Blocker (Sammlung, kein Einzel-ELF) + Byepervisor Reborn (kein Release)
+        # davon YT-Blocker (Sammlung, kein Einzel-ELF), Byepervisor Reborn (kein Release) und ps5-ultrapack (bleibt bewusst auf 2.5.1)
+        self.assertEqual(13, zaehler.get(wu.STATUS_OHNE_QUELLE))
         self.assertGreaterEqual(zaehler.get(wu.STATUS_NEU_HINWEIS, 0), 1)  # 7-Zip 26.04
         self.assertNotIn(wu.STATUS_FEHLER, zaehler)
         self.assertNotIn(wu.STATUS_NEU, zaehler)

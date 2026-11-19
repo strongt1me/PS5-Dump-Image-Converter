@@ -495,7 +495,7 @@ def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Call
     (84.218 Dateien, 150,75 GB) 348 s; ``scandir`` zaehlt dieselben 84.218 Dateien und dieselben Bytes in rund 14 s (gemessen
     19.11.2026, Verzeichnisdaten schon im Cache). Verknuepfungen und NTFS-Verbindungen zu Ordnern werden nicht verfolgt und nicht
     gezaehlt (``os.walk`` folgte einer Verbindung, die auf einen Elternordner zeigt, bis zur Pfadgrenze). ``melden`` bekommt eine
-    Warnung, wenn der Ordner Verknuepfungen oder Verbindungen enthaelt: Dump Forge lehnt ihn dann ab.
+    Warnung, wenn der Ordner Verknuepfungen, Verbindungen oder andere Reparsepunkte enthaelt: Dump Forge lehnt ihn dann ab.
 
     ``fortschritt`` bekommt alle :data:`GROESSE_MELDESCHRITT` Dateien die bisherige Zahl, damit die Anzeige zeigen kann, dass etwas
     geschieht. ``abbruch`` wird je Verzeichnis gefragt; liefert es ``True``, endet das Zaehlen mit :class:`GroesseAbgebrochen`.
@@ -518,8 +518,8 @@ def ordner_groesse(ordner: str, melden: _Zeile | None = None, fortschritt: "Call
     if ergebnis.verknuepfungen and melden:
         # Dump Forge lehnt einen Ordner mit Verknuepfung oder Junction ab (``symlink (not followed)``, gemessen 19.11.2026): Der Fehler kam
         # bisher erst nach STARTEN, englisch. Hier steht er vorher.
-        melden("[WARNUNG] %s: %d Verknuepfung(en) oder Junction(s) im Ordner (%s%s) - Dump Forge wandelt so einen Ordner nicht um; "
-               "entferne sie vor dem Umwandeln"
+        melden("[WARNUNG] %s: %d Verknuepfung(en), Junction(s) oder Reparsepunkt(e) (z. B. OneDrive-Platzhalter) im Ordner (%s%s) - "
+               "Dump Forge wandelt so einen Ordner nicht um; entferne sie vor dem Umwandeln"
                % (os.path.basename(ordner), ergebnis.verknuepfungen, ", ".join(ergebnis.beispiele),
                   ", ..." if ergebnis.verknuepfungen > len(ergebnis.beispiele) else ""))
     if ergebnis.fehler:

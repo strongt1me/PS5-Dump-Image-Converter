@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from pathlib import Path
 from typing import Any, Callable, NamedTuple
 
@@ -42,12 +43,27 @@ class Groesse(NamedTuple):
     dateien: int          #: Zahl der gezaehlten Dateien
     fehler: int           #: Eintraege und Ordner, die nicht lesbar waren (nicht in ``summe``)
     abgebrochen: bool     #: ``abbruch`` lieferte ``True`` - ``summe`` ist, was bis dahin gezaehlt war
-    verknuepfungen: int = 0                   #: gefundene Verknuepfungen (Symlinks) und NTFS-Verbindungen (Junctions) im Ordner
+    verknuepfungen: int = 0                   #: gefundene Verknuepfungen (Symlinks), NTFS-Verbindungen (Junctions) und andere Reparsepunkte
     beispiele: "tuple[str, ...]" = ()         #: die ersten davon (:data:`VERKNUEPFUNG_BEISPIELE`), Pfad unter dem Ordner mit ``/``
 
 
 #: So viele Verknuepfungen nennt :class:`Groesse` mit Namen; gezaehlt werden alle.
 VERKNUEPFUNG_BEISPIELE = 3
+
+#: Das Windows-Merkmal "Reparsepunkt" (``st_file_attributes``): Verknuepfung, Junction, aber auch OneDrive-Platzhalter und Dateien der
+#: Datendeduplizierung. Dump Forge lehnt jeden Reparsepunkt im Spielordner ab (``scan.rs``: ``is_symlink() || is_reparse_point``).
+REPARSEPUNKT = stat.FILE_ATTRIBUTE_REPARSE_POINT
+
+
+def _ist_reparsepunkt(eintrag: "os.DirEntry[str]") -> bool:
+    """Trägt der Eintrag selbst (nicht sein Ziel) das Merkmal Reparsepunkt? Nur unter Windows gibt es ``st_file_attributes``.
+
+    ``DirEntry.stat(follow_symlinks=False)`` kommt unter Windows aus den Verzeichnisdaten, ohne weiteren Aufruf je Eintrag.
+    """
+    try:
+        return bool(getattr(eintrag.stat(follow_symlinks=False), "st_file_attributes", 0) & REPARSEPUNKT)
+    except OSError:
+        return False
 
 
 def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], None] | None = None,
@@ -65,9 +81,10 @@ def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], No
         abbruch: wird je Verzeichnis gefragt; ``True`` beendet das Zaehlen sofort (``abgebrochen``).
         verbindungen_folgen: ``True`` folgt NTFS-Verbindungen (Junctions) wie ``os.walk`` es tat, ``False`` zaehlt sie nicht.
             Verknuepfungen (Symlinks) auf Ordner werden nie verfolgt. Beide stehen in ``Groesse.verknuepfungen`` (mit den ersten
-            Namen in ``beispiele``), auch wenn ihnen gefolgt wird: Dump Forge lehnt einen Ordner mit einer davon ab ("symlink (not
-            followed)", gemessen 19.11.2026), und Seite 7 sagt das, bevor der Anwender STARTEN waehlt. Eine Verknuepfung auf eine Datei
-            wird wie bisher mit der Groesse ihres Ziels gezaehlt und ebenfalls vermerkt.
+            Namen in ``beispiele``), auch wenn ihnen gefolgt wird, dazu jeder andere Reparsepunkt unter Windows (OneDrive-Platzhalter,
+            Datendeduplizierung): Dump Forge lehnt einen Ordner mit einem davon ab ("symlink (not followed)", gemessen 19.11.2026), und
+            Seite 7 sagt das, bevor der Anwender STARTEN waehlt. Eine Verknuepfung auf eine Datei wird wie bisher mit der Groesse ihres
+            Ziels gezaehlt und ebenfalls vermerkt; ein Reparsepunkt, der keine Verknuepfung ist, zaehlt mit seiner Groesse und wird vermerkt.
         genau: ``True`` fragt die Groesse je Datei mit ``os.stat`` ab (ein Aufruf je Datei, wie frueher). ``DirEntry.stat()`` gibt
             unter Windows die Groesse aus dem Verzeichniseintrag, und der bleibt bei einer Datei, die gerade geschrieben wird, auf dem
             alten Stand (gemessen 19.11.2026: 0 Bytes bei einem offenen Schreiber, ``os.stat`` 4 bis 400 MB). Wer ein Ziel waehrend
@@ -125,15 +142,17 @@ def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], No
                     if eintrag.is_dir(follow_symlinks=False):
                         pruefen = getattr(eintrag, "is_junction", None)   # DirEntry.is_junction gibt es ab Python 3.12
                         ist_verbindung = pruefen is not None and pruefen()
-                        if ist_verbindung:
+                        if ist_verbindung or _ist_reparsepunkt(eintrag):
                             vermerken(eintrag.path)
                         if verbindungen_folgen or not ist_verbindung:
-                            stapel.append(eintrag.path)
+                            stapel.append(eintrag.path)    # ein anderer Reparsepunkt (OneDrive-Ordner) wird wie bisher gelesen
                         continue
                     if eintrag.is_symlink():
                         vermerken(eintrag.path)
                         if eintrag.is_dir():
                             continue                       # eine Verknuepfung auf einen Ordner: wie ``os.walk``, nicht gezaehlt
+                    elif _ist_reparsepunkt(eintrag):
+                        vermerken(eintrag.path)            # z. B. ein OneDrive-Platzhalter: zaehlt mit, wird aber vermerkt
                     summe += (os.stat(eintrag.path) if genau else eintrag.stat()).st_size
                 except FileNotFoundError:
                     continue                               # verschwunden oder Symlink ohne Ziel: nichts zu zaehlen, kein Fehler

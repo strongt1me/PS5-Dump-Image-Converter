@@ -469,6 +469,44 @@ def _fehlertext(ausgabe: str) -> str:
     return " | ".join(zeilen[-3:]) or "Dump Forge meldet einen Fehler ohne Text."
 
 
+#: Wie Dump Forge einen Spielordner ablehnt, der Eintraege enthaelt, die sich nicht umwandeln lassen (``scan.rs``, gemessen 19.11.2026 an der
+#: echten Befehlszeile): erst "<Ordner> holds entries that cannot be converted:", dann je Eintrag eine Zeile "  <Art>: <Pfad>", bei vielen
+#: gekuerzt mit "  <Art>: ... and N more". Der Wortlaut ist englisch; :func:`fehler_verstaendlich` uebersetzt ihn.
+SCAN_KOPF = re.compile(r"^(?:\w+: )?(?P<ordner>.+?) holds entries that cannot be converted:\s*$")
+SCAN_MEHR = re.compile(r"^\.\.\. and (?P<n>\d+) more$")
+#: Forges Art -> Schluessel des Texts. Forge nennt auch einen Windows-Reparsepunkt (OneDrive-Platzhalter) "symlink (not followed)".
+SCAN_ARTEN = {
+    "symlink (not followed)": "ps5pkg.forge_scan_link",
+    "name is not valid UTF-8": "ps5pkg.forge_scan_utf8",
+    "name contains a backslash": "ps5pkg.forge_scan_backslash",
+    "hard link (more than one name)": "ps5pkg.forge_scan_hardlink",
+    "special file": "ps5pkg.forge_scan_special",
+    "unreadable": "ps5pkg.forge_scan_unreadable",
+}
+
+
+def fehler_verstaendlich(text: str, t: "Callable[..., str]") -> str:
+    """Forges Fehlertext in der Sprache des Fensters, wenn er die bekannte Liste "Eintraege, die sich nicht umwandeln lassen" ist.
+
+    Jeder andere Text kommt unveraendert zurueck, ebenso eine Zeile mit einer Art, die Forge neu eingefuehrt hat. ``t`` ist die
+    Uebersetzungsfunktion des Fensters (``t(schluessel, **werte)``).
+    """
+    zeilen = str(text).splitlines()
+    kopf = SCAN_KOPF.match(zeilen[0].strip()) if zeilen else None
+    if kopf is None:
+        return text
+    erg = [t("ps5pkg.forge_scan_kopf", ordner=kopf.group("ordner"))]
+    for zeile in zeilen[1:]:
+        art, trenner, rest = zeile.strip().partition(": ")
+        schluessel = SCAN_ARTEN.get(art)
+        if not trenner or schluessel is None:
+            erg.append(zeile)                                  # eine unbekannte Art oder Folgezeile: so lassen, nichts verschlucken
+            continue
+        mehr = SCAN_MEHR.match(rest)
+        erg.append("  %s: %s" % (t(schluessel), t("ps5pkg.forge_scan_mehr", n=mehr.group("n")) if mehr else rest))
+    return "\n".join(erg)
+
+
 class _Strom:
     """Liest Forges Zeilen: Ereignisse (JSON) nach dem Fenster, den Rest verwerfen oder als Fehlertext merken."""
 

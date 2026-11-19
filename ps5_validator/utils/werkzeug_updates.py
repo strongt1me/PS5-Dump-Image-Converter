@@ -573,8 +573,12 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
              art=ART_HINWEIS, hinweis="updates.hinweis_festgelegt", lokal="ordnername"),
     Werkzeug("ps5-pkg-tool", "PS5-PKG-Tool (ps5-fpkg-converter)", GRUPPE_WERKZEUG, "sub0x00001/ps5-fpkg-converter",
              ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:0.0.3"),
-    Werkzeug("ps5-ultrapack", "ps5-ultrapack (Engine im PS5-PKG-Tool)", GRUPPE_WERKZEUG, "knutwurst/ps5-ultrapack",
-             ordner="PS5-PKG-Tool", art=ART_HINWEIS, hinweis="updates.hinweis_angepasst", lokal="fest:2.5.1"),
+    # Ohne Quelle und ohne Vergleich (Nutzer 19.11.2026: "nicht mehr fragen, ob ps5-ultrapack aktualisiert werden soll"): Das Programm nutzt vom
+    # PKG-Tool nur inspect, validate, list-inner und extract-inner; die Neufassungen ab 2.6.0 aendern den Paketbau und bringen Quelltext, den die
+    # Lizenzentscheidung vom 16.11.2026 ausschliesst (nichts ab 2.4.2). Die Zahl bleibt als Konstante des Werkzeugs stehen
+    # (``AbdeckungTests.test_ps5_pkg_tool_stimmt_mit_der_tabelle``), die Ansicht "Updates" und der Tagescheck melden sie nie als neu.
+    Werkzeug("ps5-ultrapack", "ps5-ultrapack (Engine im PS5-PKG-Tool)", GRUPPE_WERKZEUG, "", ordner="PS5-PKG-Tool", art=ART_KEINE,
+             hinweis="updates.hinweis_bleibt", lokal="fest:2.5.1"),
     # Befehlszeile von Dump Forge (seit 16.11.2026): baut im Bereich "PKG / FPKG" Pakete aus Spielordnern und Abbildern.
     # Dieselbe Freigabe wie die ELF "dump-forge" oben (die Konsolenfassung); hier die Fassung der mitgelieferten Befehlszeile,
     # Dump-Forge-CLI/README.md haelt sie samt Pruefsummen fest.

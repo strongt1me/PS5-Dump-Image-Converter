@@ -3284,7 +3284,8 @@ class Ps5PkgFenster:
             return
         if not ende["ok"]:
             self.auftrag_var.set(self.t("ps5pkg.job_failed"))
-            self._protokoll(self.t("ps5pkg.log_failed", grund=ende["text"]))
+            # Dump Forge lehnt einen Ordner mit Verknuepfung, Junction oder Reparsepunkt englisch ab ("symlink (not followed)"): hier auf Deutsch.
+            self._protokoll(self.t("ps5pkg.log_failed", grund=forge.fehler_verstaendlich(ende["text"], self.t)))
             self._anzeige_setzen(0, 0)
             behalten = ende.get("behalten")
             if behalten and behalten in self._staging:

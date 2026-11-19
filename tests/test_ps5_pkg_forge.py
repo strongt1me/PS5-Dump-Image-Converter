@@ -2374,6 +2374,32 @@ class NachErfolgTests(_ForgeBasis):
         self.assertEqual(loeschen, f._uebergabe["loeschen"])
         self.assertEqual([(self.ordner, True)], aufrufe)
 
+    def test_ein_fehlschlag_wegen_einer_verbindung_im_spielordner_steht_in_der_sprache_des_fensters_im_protokoll(self) -> None:
+        """Dump Forge lehnt einen Spielordner mit Verknuepfung, Junction oder Reparsepunkt englisch ab ("symlink (not followed)", gemessen
+        19.11.2026); das Protokoll zeigte den Text bisher so. Jetzt steht er in der Sprache des Fensters da."""
+        f = self.f
+        info = wz.PaketInfo(pfad=os.path.join(self.ordner, "Q"), typ=wz.TYP_ORDNER)
+        f._job = {"art": "bauen", "info": info, "ziel": self.ordner, "start": time.monotonic(), "letzte": time.monotonic(),
+                  "zeichen": None, "loeschen": None}
+        zeilen: list = []
+        text = "C:\\Spiele\\Spiel holds entries that cannot be converted:\n  symlink (not followed): Verbindung"
+        with mock.patch.object(f, "_protokoll", side_effect=zeilen.append):
+            f._job_beendet({"ok": False, "text": text})
+        self.assertEqual(1, len(zeilen), zeilen)
+        self.assertIn(f.t("ps5pkg.forge_scan_kopf", ordner="C:\\Spiele\\Spiel"), zeilen[0])
+        self.assertIn(f.t("ps5pkg.forge_scan_link") + ": Verbindung", zeilen[0])
+        self.assertNotIn("C:\\Spiele\\Spiel holds entries", zeilen[0], "Forges Kopfzeile ist ersetzt (in jeder Sprache)")
+
+    def test_ein_anderer_fehlschlag_bleibt_unveraendert_im_protokoll(self) -> None:
+        f = self.f
+        info = wz.PaketInfo(pfad=os.path.join(self.ordner, "Q"), typ=wz.TYP_ORDNER)
+        f._job = {"art": "bauen", "info": info, "ziel": self.ordner, "start": time.monotonic(), "letzte": time.monotonic(),
+                  "zeichen": None, "loeschen": None}
+        zeilen: list = []
+        with mock.patch.object(f, "_protokoll", side_effect=zeilen.append):
+            f._job_beendet({"ok": False, "text": "Das Ziel gibt es schon: x.pkg"})
+        self.assertEqual([f.t("ps5pkg.log_failed", grund="Das Ziel gibt es schon: x.pkg")], zeilen)
+
 
 if __name__ == "__main__":
     unittest.main()
