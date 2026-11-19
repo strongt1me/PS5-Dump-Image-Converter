@@ -1457,6 +1457,27 @@ class FensterTests(unittest.TestCase):
                     self.f._groesse_zaehlen(ordner, info)
                 self.assertEqual([erwartet], self.f._z["groesse"])
 
+    def test_eine_verbindung_im_spielordner_steht_vor_dem_start_im_protokoll(self) -> None:
+        """Dump Forge lehnt einen Spielordner mit Verknuepfung oder Junction ab (``symlink (not followed)``, gemessen 19.11.2026), der Fehler
+        kam erst nach STARTEN und englisch. Der Zaehler meldet es beim Lesen: auf Deutsch, mit dem Namen der Verbindung."""
+        import subprocess
+        if sys.platform != "win32":
+            self.skipTest("NTFS-Verbindungen gibt es nur unter Windows")
+        ordner = self._spielordner()
+        ziel = os.path.join(self.ordner, "verbindungsziel")
+        os.makedirs(ziel)
+        pfad = os.path.join(ordner, "Verbindung")
+        lauf = subprocess.run(["cmd", "/c", "mklink", "/J", pfad, ziel], capture_output=True)
+        if lauf.returncode != 0:
+            self.skipTest("keine NTFS-Verbindung moeglich")
+        self.addCleanup(os.rmdir, pfad)                                            # die Verbindung zuerst loesen, nie das Ziel mitnehmen
+        info = wz.ordner_lesen(ordner, self.ordner, groesse=False)
+        zeilen: list = []
+        with mock.patch.object(self.f, "_melden", side_effect=zeilen.append):
+            self.f._groesse_zaehlen(ordner, info)
+        warnungen = [z for z in zeilen if "[WARNUNG]" in z and "Verbindung" in z and "Dump Forge" in z]
+        self.assertEqual(1, len(warnungen), zeilen)
+
     def test_ein_waehrend_des_lesens_entferntes_spiel_kommt_nicht_wieder_in_die_liste(self) -> None:
         """Das Lesen lief schon, als der Anwender das Spiel in den Optionen entfernte: Es wurde danach doch eingetragen, sein Zaehler
         endete sofort (``verworfen``), und es stand fuer immer auf "Groesse wird berechnet" - STARTEN gesperrt."""

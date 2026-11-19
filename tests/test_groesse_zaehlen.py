@@ -283,8 +283,88 @@ class SummierenTests(_Baum):
         erg = file_io.groesse_summieren(self.wurzel)
         self.assertEqual((43210, 5), (erg.summe, erg.dateien))
 
+    # ---- Verknuepfungen und Verbindungen werden vermerkt (19.11.2026) ---------------------------------------------------------------
+    # Gemessen mit der echten Befehlszeile: Dump Forge lehnt einen Spielordner mit Verknuepfung oder Junction ab (``inspect`` und
+    # ``convert`` enden mit "symlink (not followed): <Name>"). Die Zaehlung sagt vorher, wie viele es sind.
+    def test_ohne_verknuepfung_ist_nichts_vermerkt(self) -> None:
+        erg = file_io.groesse_summieren(self.wurzel)
+        self.assertEqual((0, ()), (erg.verknuepfungen, erg.beispiele))
+
+    def test_eine_verbindung_wird_vermerkt_ob_ihr_gefolgt_wird_oder_nicht(self) -> None:
+        if self._verbindung(os.path.join(self.wurzel, "u1"), "verbindung_u1") is None:
+            self.skipTest("keine NTFS-Verbindung moeglich")
+        for folgen in (False, True):
+            with self.subTest(verbindungen_folgen=folgen):
+                erg = file_io.groesse_summieren(self.wurzel, verbindungen_folgen=folgen)
+                self.assertEqual((1, ("verbindung_u1",)), (erg.verknuepfungen, erg.beispiele))
+
+    def test_der_name_steht_mit_dem_pfad_unter_dem_ordner_und_mit_schraegstrich(self) -> None:
+        if self._verbindung(self.wurzel, os.path.join("u1", "u2", "zurueck")) is None:
+            self.skipTest("keine NTFS-Verbindung moeglich")
+        erg = file_io.groesse_summieren(self.wurzel)
+        self.assertEqual(("u1/u2/zurueck",), erg.beispiele)
+
+    def test_gezaehlt_werden_alle_genannt_nur_die_ersten(self) -> None:
+        for n in range(file_io.VERKNUEPFUNG_BEISPIELE + 2):
+            if self._verbindung(os.path.join(self.wurzel, "u1"), "verbindung_%d" % n) is None:
+                self.skipTest("keine NTFS-Verbindung moeglich")
+        erg = file_io.groesse_summieren(self.wurzel)
+        self.assertEqual(file_io.VERKNUEPFUNG_BEISPIELE + 2, erg.verknuepfungen)
+        self.assertEqual(file_io.VERKNUEPFUNG_BEISPIELE, len(erg.beispiele))
+        self.assertTrue(all(b.startswith("verbindung_") for b in erg.beispiele), erg.beispiele)
+
+    def test_eine_verknuepfung_auf_einen_ordner_wird_vermerkt(self) -> None:
+        if self._verknuepfung(os.path.join(self.wurzel, "u1"), "link_u1") is None:
+            self.skipTest("Verknuepfungen brauchen ein Recht (WinError 1314)")
+        erg = file_io.groesse_summieren(self.wurzel)
+        self.assertEqual((1, ("link_u1",)), (erg.verknuepfungen, erg.beispiele))
+
+    def test_eine_verknuepfung_auf_eine_datei_wird_vermerkt_und_wie_bisher_mit_dem_ziel_gezaehlt(self) -> None:
+        try:
+            os.symlink(os.path.join(self.wurzel, "a.bin"), os.path.join(self.wurzel, "link_a"))
+        except (OSError, NotImplementedError):
+            self.skipTest("Verknuepfungen brauchen ein Recht (WinError 1314)")
+        erg = file_io.groesse_summieren(self.wurzel)
+        self.assertEqual((43210 + 10, 6, 1, ("link_a",)), (erg.summe, erg.dateien, erg.verknuepfungen, erg.beispiele))
+
+    def test_eine_verknuepfung_ohne_ziel_wird_vermerkt_aber_nicht_gezaehlt(self) -> None:
+        try:
+            os.symlink(os.path.join(self.wurzel, "gibt_es_nicht.bin"), os.path.join(self.wurzel, "link_ins_leere"))
+        except (OSError, NotImplementedError):
+            self.skipTest("Verknuepfungen brauchen ein Recht (WinError 1314)")
+        erg = file_io.groesse_summieren(self.wurzel)
+        self.assertEqual((43210, 5, 0, 1, ("link_ins_leere",)), (erg.summe, erg.dateien, erg.fehler, erg.verknuepfungen, erg.beispiele))
+
 
 class OrdnerGroesseTests(_Baum):
+    def test_eine_verbindung_im_ordner_steht_als_warnung_im_protokoll(self) -> None:
+        """Dump Forge lehnt so einen Ordner ab; der Fehler kam bisher erst nach STARTEN, englisch."""
+        if self._verbindung(os.path.join(self.wurzel, "u1"), "verbindung_u1") is None:
+            self.skipTest("keine NTFS-Verbindung moeglich")
+        zeilen: list = []
+        self.assertEqual(43210, wz.ordner_groesse(self.wurzel, zeilen.append), "die Verbindung zaehlt nicht mit")
+        warnungen = [z for z in zeilen if "Verknuepfung" in z]
+        self.assertEqual(1, len(warnungen), zeilen)
+        for stueck in ("[WARNUNG]", "1 Verknuepfung", "verbindung_u1", "Dump Forge"):
+            self.assertIn(stueck, warnungen[0])
+        self.assertNotIn(", ...", warnungen[0], "alle genannt: kein Auslassungszeichen")
+        self.assertTrue(any("5 Dateien" in z for z in zeilen), "die Zeile mit der Groesse bleibt")
+
+    def test_bei_mehr_verbindungen_als_beispielen_steht_ein_auslassungszeichen(self) -> None:
+        for n in range(file_io.VERKNUEPFUNG_BEISPIELE + 1):
+            if self._verbindung(os.path.join(self.wurzel, "u1"), "verbindung_%d" % n) is None:
+                self.skipTest("keine NTFS-Verbindung moeglich")
+        zeilen: list = []
+        wz.ordner_groesse(self.wurzel, zeilen.append)
+        warnung = next(z for z in zeilen if "Verknuepfung" in z)
+        self.assertIn("%d Verknuepfung" % (file_io.VERKNUEPFUNG_BEISPIELE + 1), warnung)
+        self.assertIn(", ...", warnung)
+
+    def test_ohne_verknuepfung_gibt_es_keine_warnung(self) -> None:
+        zeilen: list = []
+        wz.ordner_groesse(self.wurzel, zeilen.append)
+        self.assertFalse(any("Verknuepfung" in z for z in zeilen), zeilen)
+
     def test_die_summe(self) -> None:
         zeilen: list = []
         self.assertEqual(43210, wz.ordner_groesse(self.wurzel, zeilen.append))

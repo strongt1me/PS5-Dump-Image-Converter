@@ -11145,15 +11145,20 @@ class PS5ConverterGUI:
         self.ampr_methode_var = tk.StringVar(value=next(
             (self._t(s) for s, w in AMPR_METHODE_KEYS if w == _gemerkte_methode),
             self._t("ampr_pack.methode_normal")))
-        # width=9 und keinen Zeichenplatz mehr: Der laengste Wert ist
-        # "Asset-Pack" (76 px bei 125 % Skalierung), dazu rund 20 px fuer den
-        # Pfeil - 96 px von 101. Mit den urspruenglichen 11 Zeichen war die
-        # Einbauzeile 638 px breit und ragte bei Mindestfensterbreite ueber
-        # die Karte hinaus; die BACKPORT-Klappliste war dann abgeschnitten.
+        # width=10 und keinen Zeichenplatz mehr: Der laengste Wert ist
+        # "Asset-Pack", dazu rund 20 px fuer den Pfeil. Mit den urspruenglichen
+        # 11 Zeichen war die Einbauzeile 638 px breit und ragte bei
+        # Mindestfensterbreite ueber die Karte hinaus; die BACKPORT-Klappliste
+        # war dann abgeschnitten. Mit 9 Zeichen fehlte bei 100 % und 175 %
+        # Skalierung das "k" (``Entry.xview()`` zeigte 90 % des Textes, gemessen
+        # 19.11.2026; bei 125 % blieb 1 px Luft) - 10 Zeichen zeigen den Text bei
+        # jeder Windows-Skalierung ganz (``test_kartenzeilen``,
+        # ``test_jeder_listenwert_der_einbauzeile_steht_im_feld_ganz``); die
+        # 6 px kommen vom Firmware-Feld (siehe dort).
         self.ampr_methode_combo = ttk.Combobox(
             path_card, textvariable=self.ampr_methode_var, state="readonly",
             font=(UI_SCHRIFT, pt(9)),
-            values=list(self._ampr_methode_options.keys()), width=9,
+            values=list(self._ampr_methode_options.keys()), width=10,
         )
         # Nach dem Methodenwechsel die Zielformat-Liste neu bewerten: ffpfsc ->
         # ffpfsc (Aufgabe 2) erscheint nur bei Methode Asset-Pack. Der Refresh
@@ -11269,10 +11274,13 @@ class PS5ConverterGUI:
         self.backport_fw_var = tk.StringVar(
             value=str(self._load_setting("integrate_backport_fw", ps5_backport.FIRMWARE_STANDARD))
         )
+        # width=3: Die Werte sind Firmware-Staende (einstellig, bei einem eigenen Satz hoechstens zweistellig); gemessen 19.11.2026 blieben bei
+        # 4 Zeichen 18 px (100 %) bis 30 px (200 %) ungenutzt, bei 3 passen auch "10" bis "13". Die 6 px gehoeren dem Methode-Feld daneben:
+        # Die Einbauzeile ist bei Mindestfensterbreite voll (``test_kartenzeilen``).
         self.backport_fw_combo = ttk.Combobox(
             path_card, textvariable=self.backport_fw_var, state="readonly",
             font=(UI_SCHRIFT, pt(9)),
-            values=[str(f) for f in self._backport_firmwares()], width=4,
+            values=[str(f) for f in self._backport_firmwares()], width=3,
         )
         self.backport_fw_combo.bind("<<ComboboxSelected>>", lambda _e: self._backport_fw_gewaehlt())
 

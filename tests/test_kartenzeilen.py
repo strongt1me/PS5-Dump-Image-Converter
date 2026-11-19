@@ -579,6 +579,45 @@ class KartenzeilenTests(unittest.TestCase):
                 self._beruhigen(self.wurzel, 0.6)
             self.wurzel.withdraw()
 
+    def test_jeder_listenwert_der_einbauzeile_steht_im_feld_ganz(self):
+        """Gemessen 19.11.2026 mit ``Entry.xview()``: Das Methode-Feld war 9 Zeichen breit, "Asset-Pack" brauchte etwas mehr - bei 100 % und
+        175 % Skalierung fehlte das "k" (bei 125 % blieb 1 px Luft). Die Testreihe laeuft mit 125 % (``conftest``: DPI-bewusst), und ``tk
+        scaling`` laesst sich nach dem Bau nicht umstellen - deshalb gilt neben "ganz sichtbar" (``xview``) ein Mindestabstand: Bei 125 % muss
+        der Text ``LUFT`` px weniger breit sein als der Textbereich (bei 100 % fehlten 4 px; mit 9 Zeichen blieb 1 px, mit 10 sind es 9).
+        Jeder Wert der Listen zaehlt; bei der Firmware-Liste auch die zweistelligen Staende eines eigenen Satzes (10 bis 13)."""
+        import tkinter.font as tkfont
+        LUFT = 4
+        a = self.app
+        self._fenster_auf(self.haupt.WINDOW_MIN_WIDTH)
+        try:
+            for name, var_name, mehr in (("ampr_methode_combo", "ampr_methode_var", ()), ("ampr_pack_combo", "_ampr_pack_var", ()),
+                                         ("ampr_stufe_combo", "_ampr_stufe_var", ()),
+                                         ("backport_fw_combo", "backport_fw_var", ("10", "13"))):
+                feld, variable = getattr(a, name), getattr(a, var_name)
+                werte = [*self.wurzel.tk.splitlist(feld.cget("values")), *mehr]
+                if name != "ampr_stufe_combo":                  # die Stufen stehen nur mit Asset-Pack in der Liste
+                    self.assertTrue(werte, "%s hat Listenwerte" % name)
+                mitte = feld.winfo_height() // 2
+                bereich = sum(1 for x in range(feld.winfo_width()) if feld.identify(x, mitte) == "textarea")
+                schrift = tkfont.Font(font=str(feld.cget("font")))
+                vorher = variable.get()
+                try:
+                    for wert in werte:
+                        with self.subTest(feld=name, wert=wert):
+                            variable.set(wert)
+                            self._beruhigen(self.wurzel, 0.1)
+                            feld.xview_moveto(0)
+                            self.wurzel.update()
+                            self.assertGreaterEqual(feld.xview()[1], 0.999,
+                                                    "%s zeigt %r nur zu %d %%" % (name, wert, round(feld.xview()[1] * 100)))
+                            self.assertGreaterEqual(bereich - schrift.measure(wert), LUFT,
+                                                    "%s: %r hat nur %d px Luft im Textbereich (%d px)"
+                                                    % (name, wert, bereich - schrift.measure(wert), bereich))
+                finally:
+                    variable.set(vorher)
+        finally:
+            self.wurzel.withdraw()
+
     def test_die_hoehe_der_einbauzeile_haengt_an_der_zeile_des_kaestchens(self):
         with io.open(HAUPTDATEI, encoding="utf-8") as datei:
             text = datei.read()

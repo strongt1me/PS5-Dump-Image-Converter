@@ -42,6 +42,12 @@ class Groesse(NamedTuple):
     dateien: int          #: Zahl der gezaehlten Dateien
     fehler: int           #: Eintraege und Ordner, die nicht lesbar waren (nicht in ``summe``)
     abgebrochen: bool     #: ``abbruch`` lieferte ``True`` - ``summe`` ist, was bis dahin gezaehlt war
+    verknuepfungen: int = 0                   #: gefundene Verknuepfungen (Symlinks) und NTFS-Verbindungen (Junctions) im Ordner
+    beispiele: "tuple[str, ...]" = ()         #: die ersten davon (:data:`VERKNUEPFUNG_BEISPIELE`), Pfad unter dem Ordner mit ``/``
+
+
+#: So viele Verknuepfungen nennt :class:`Groesse` mit Namen; gezaehlt werden alle.
+VERKNUEPFUNG_BEISPIELE = 3
 
 
 def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], None] | None = None,
@@ -58,7 +64,10 @@ def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], No
         beobachter: bekommt nach jeder gezaehlten Datei ``(summe, dateien)`` - der Aufrufer drosselt selbst.
         abbruch: wird je Verzeichnis gefragt; ``True`` beendet das Zaehlen sofort (``abgebrochen``).
         verbindungen_folgen: ``True`` folgt NTFS-Verbindungen (Junctions) wie ``os.walk`` es tat, ``False`` zaehlt sie nicht.
-            Verknuepfungen (Symlinks) auf Ordner werden nie verfolgt.
+            Verknuepfungen (Symlinks) auf Ordner werden nie verfolgt. Beide stehen in ``Groesse.verknuepfungen`` (mit den ersten
+            Namen in ``beispiele``), auch wenn ihnen gefolgt wird: Dump Forge lehnt einen Ordner mit einer davon ab ("symlink (not
+            followed)", gemessen 19.11.2026), und Seite 7 sagt das, bevor der Anwender STARTEN waehlt. Eine Verknuepfung auf eine Datei
+            wird wie bisher mit der Groesse ihres Ziels gezaehlt und ebenfalls vermerkt.
         genau: ``True`` fragt die Groesse je Datei mit ``os.stat`` ab (ein Aufruf je Datei, wie frueher). ``DirEntry.stat()`` gibt
             unter Windows die Groesse aus dem Verzeichniseintrag, und der bleibt bei einer Datei, die gerade geschrieben wird, auf dem
             alten Stand (gemessen 19.11.2026: 0 Bytes bei einem offenen Schreiber, ``os.stat`` 4 bis 400 MB). Wer ein Ziel waehrend
@@ -69,12 +78,23 @@ def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], No
     ``os.walk`` und ``getsize`` liessen ihn ebenfalls aus. Der Wurzelordner selbst muss da sein. Eine Ausnahme aus ``beobachter`` oder
     ``abbruch`` geht unveraendert an den Aufrufer (sie zaehlt nicht als Verzeichnisfehler).
     """
-    summe = dateien = fehler = 0
+    summe = dateien = fehler = verknuepft = 0
+    beispiele: list[str] = []
     wurzel = str(ordner)
     stapel = [wurzel]
+
+    def vermerken(pfad_der_verknuepfung: str) -> None:
+        nonlocal verknuepft
+        verknuepft += 1
+        if len(beispiele) < VERKNUEPFUNG_BEISPIELE:
+            beispiele.append(os.path.relpath(pfad_der_verknuepfung, wurzel).replace(os.sep, "/"))
+
+    def ergebnis(abgebrochen: bool) -> Groesse:
+        return Groesse(summe, dateien, fehler, abgebrochen, verknuepft, tuple(beispiele))
+
     while stapel:
         if abbruch is not None and abbruch():
-            return Groesse(summe, dateien, fehler, True)
+            return ergebnis(True)
         pfad = stapel.pop()
         try:
             verzeichnis = os.scandir(pfad)
@@ -104,11 +124,16 @@ def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], No
                 try:
                     if eintrag.is_dir(follow_symlinks=False):
                         pruefen = getattr(eintrag, "is_junction", None)   # DirEntry.is_junction gibt es ab Python 3.12
-                        if verbindungen_folgen or pruefen is None or not pruefen():
+                        ist_verbindung = pruefen is not None and pruefen()
+                        if ist_verbindung:
+                            vermerken(eintrag.path)
+                        if verbindungen_folgen or not ist_verbindung:
                             stapel.append(eintrag.path)
                         continue
-                    if eintrag.is_symlink() and eintrag.is_dir():
-                        continue                           # eine Verknuepfung auf einen Ordner: wie ``os.walk``, nicht gezaehlt
+                    if eintrag.is_symlink():
+                        vermerken(eintrag.path)
+                        if eintrag.is_dir():
+                            continue                       # eine Verknuepfung auf einen Ordner: wie ``os.walk``, nicht gezaehlt
                     summe += (os.stat(eintrag.path) if genau else eintrag.stat()).st_size
                 except FileNotFoundError:
                     continue                               # verschwunden oder Symlink ohne Ziel: nichts zu zaehlen, kein Fehler
@@ -119,8 +144,8 @@ def groesse_summieren(ordner: str | Path, *, beobachter: Callable[[int, int], No
                 if beobachter is not None:
                     beobachter(summe, dateien)
                 if abbruch is not None and dateien % 512 == 0 and abbruch():
-                    return Groesse(summe, dateien, fehler, True)          # auch in einem Ordner mit zehntausenden Dateien
-    return Groesse(summe, dateien, fehler, False)
+                    return ergebnis(True)                  # auch in einem Ordner mit zehntausenden Dateien
+    return ergebnis(False)
 
 
 def fmt_bytes(n: int) -> str:
