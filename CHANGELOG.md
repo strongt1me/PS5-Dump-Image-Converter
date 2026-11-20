@@ -6,6 +6,16 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ---
 
+## v2.0.1 – in Arbeit
+
+- **Neu:** Das BACKPORT-Fenster hat das Feld „Firmware-Referenz (nur Prüfung)“: Du wählst einen entpackten Firmware-Ordner, und das Programm meldet, welche Funktionen dort fehlen – es kopiert nichts.
+- **Neu:** Die Korrekturen für fehlende Funktionen decken vier weitere Fälle ab, und ein zusätzlicher Haken bietet eine zweite Korrekturart an (Versuch, standardmäßig aus, an der Konsole noch nicht geprüft).
+- **Geändert:** Die Rückfrage „Backport nötig“ erkennt ein schon herabgesetztes Spiel an seinen Programmen statt an der param.json – bei Spielordnern, .ffpkg, .exfat, .ffpfs, .ffpfsc und .pkg, ohne zu entpacken.
+- **Geändert:** Das BACKPORT-Fenster öffnet etwas höher, damit alle Knöpfe sichtbar bleiben.
+- **Behoben:** Beim Umwandeln eines schon herabgesetzten Abbilds fragte das Programm manchmal trotzdem nach einem Backport für Firmware 12.
+
+---
+
 ## v2.0.0 – 19.11.2026
 
 - **Neu:** PKG / FPKG sieht aus wie die Aufgaben 1 bis 6 (Einbau-Karte, Prüfung der Quelle, Fortschritt), und Pakete baut allein Dump Forge – aus Spielordnern und Abbildern, ohne Zwischenordner.

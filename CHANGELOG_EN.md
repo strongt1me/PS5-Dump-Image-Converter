@@ -6,7 +6,13 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 
 ---
 
-## v2.0.0 – 2026-11-19
+## v2.0.1 – in progress
+
+- **New:** The BACKPORT window has a “Firmware reference (check only)” field: you pick an unpacked firmware folder, and the program reports which functions are missing there – it copies nothing.
+- **New:** The corrections for missing functions cover four more cases, and an extra checkbox offers a second kind of correction (experimental, off by default, not yet tested on the console).
+- **Changed:** The “Backport needed” question recognises an already lowered game by its programs, not the param.json – for game folders, .ffpkg, .exfat, .ffpfs, .ffpfsc and .pkg, without unpacking.
+- **Changed:** The BACKPORT window opens a little taller so that all buttons stay visible.
+- **Fixed:** When converting an already lowered image, the program sometimes still asked for a backport to firmware 12.
 
 - **New:** PKG / FPKG looks like tasks 1 to 6 (add-ons, source check, progress), and Dump Forge alone builds packages – from game folders and images, without an intermediate folder.
 - **New:** A game with LZ4 or zstd packs becomes an FPKG because Dump Forge unpacks the packs during the build; a PS4 package from a packed dump folder is refused.
