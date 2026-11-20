@@ -556,5 +556,158 @@ class AnnoOriginalTests(unittest.TestCase):
         self.assertEqual(neu[0x6DCEBA0:0x6DCEBA0 + 15], bk.STUB_AUSGABEN_MINUS1.bytes_)   # NH6xARDOVv8
 
 
+#: Mit objdump (intel) zerlegt, 20.11.2026 - die Bytes sind damit die beschriebenen Anweisungen und nichts anderes.
+_VERTRAEGE = (
+    # (Bibliothek, NID, Art-Konstante, Bytes, Kurzform oder None)
+    ("libScePad", "fCWdlnmB1Ks", "STUB_AUSGABE_BOOL0", "31c08806c3", None),                 # xor eax,eax; mov [rsi],al; ret
+    ("libSceNpEntitlementAccess", "y7JD1gfwyfA", "STUB_AUSGABE_INT0", "c7070000000031c0c3", None),
+    ("libSceSaveData", "2mfSRGdshtk", "STUB_FEHLER_809F0008", "b808009f80c3", None),        # mov eax,0x809f0008; ret
+    ("libSceSystemService", "gELp9ue2ccQ", "STUB_FEHLER_80A10001", "b80100a180c3", None),   # mov eax,0x80a10001; ret
+)
+
+
+class NeueVertraegeTests(unittest.TestCase):
+    """Vier Stub-Vertraege nach Fremdangabe (ps5-backport-toolkit, MIT) - an keiner Konsole bewiesen."""
+
+    def test_tabelle_und_bytes(self):
+        for bib, nid, konstante, hexa, _kurz in _VERTRAEGE:
+            art = getattr(bk, konstante)
+            self.assertEqual(art.bytes_, bytes.fromhex(hexa), konstante)
+            self.assertIs(bk.STUB_TABELLE[(bib, nid)], art)
+            self.assertIs(bk.STUB_ARTEN[art.kennung], art)
+            self.assertLessEqual(len(art.bytes_), bk.PLT_LAENGE)
+            self.assertNotEqual(art.bytes_, bk.STUB_STANDARD.bytes_)
+
+    def test_sceSaveDataConvert_auch_unter_dem_namen_native(self):
+        """Gemessen an Marsupilami 2 (PPSA34356): Die NID steht dort unter libSceSaveData_native."""
+        self.assertIs(bk.STUB_TABELLE[("libSceSaveData_native", "2mfSRGdshtk")], bk.STUB_FEHLER_809F0008)
+
+    def test_zwei_bedingte_vertraege_fehlen_mit_absicht(self):
+        schluessel = {nid for _b, nid in bk.STUB_TABELLE}
+        self.assertNotIn("gWT7X8H0bYs", schluessel, "braucht einen eigenen Puffer des Aufrufers")
+        self.assertNotIn("YFC3dBBipj8", schluessel, "braucht, dass der Aufrufer 0x80020003 vergleicht")
+
+    def test_gleiche_nid_in_anderer_bibliothek_bleibt_standard(self):
+        self.assertEqual(bk.stub_art("libSceFremd", "gELp9ue2ccQ"), bk.STUB_STANDARD)
+
+    def test_stub_wird_im_eintrag_gesetzt(self):
+        # Zwei unberuehrte Importe dazu: Die Nachsuche gesetzter Stubs richtet sich nach den noch erhaltenen Eintraegen.
+        importe = [(bib, nid, False) for bib, nid, *_ in _VERTRAEGE] + [("libSceFoo", "XXXXXXXXXXX", False),
+                                                                      ("libSceFoo", "YYYYYYYYYYY", False)]
+        elf, info = baue_elf(importe, CODE)
+        neu, erg = bk.stubs_setzen(elf, {(b, n): None for b, n, *_ in _VERTRAEGE})
+        self.assertEqual({e.status for e in erg}, {bk.STATUS_GESETZT})
+        for i, (_b, _n, konstante, hexa, _k) in enumerate(_VERTRAEGE):
+            va = info["plt"][i]
+            laenge = len(bytes.fromhex(hexa))
+            self.assertEqual(neu[va:va + laenge], bytes.fromhex(hexa), konstante)
+            self.assertEqual(neu[va + laenge:va + 16], elf[va + laenge:va + 16])
+        # alle sind im zweiten Lauf wiederzufinden, obwohl der Eintrag nicht mehr das Muster traegt
+        nochmal, erg2 = bk.stubs_setzen(neu, {(b, n): None for b, n, *_ in _VERTRAEGE})
+        self.assertIs(nochmal, neu)
+        self.assertEqual({e.status for e in erg2}, {bk.STATUS_BEREITS})
+
+
+class LandeplatzTests(unittest.TestCase):
+    """Versuch: der Stub ersetzt nur ``push idx; jmp Aufloeser`` hinter dem ersten Sprung (Bytes 6 bis 15)."""
+
+    ZIELE = {("libkernel", "NH6xARDOVv8"): None, ("libSceAcm", "BBBBBBBBBBB"): None, ("libkernel", "AAAAAAAAAAA"): None}
+
+    def test_kurzformen_passen_auf_den_landeplatz(self):
+        for art in bk.STUB_ARTEN.values():
+            self.assertLessEqual(len(art.landeplatz_bytes()), bk.LANDEPLATZ_MAX, art.kennung)
+        # NH6x: zwei Ausgaben auf -1, neun Byte statt fuenfzehn (objdump: or dword [rdi],-1; or dword [rsi],-1)
+        self.assertEqual(bk.STUB_AUSGABEN_MINUS1.landeplatz_bytes(), bytes.fromhex("830fff830eff31c0c3"))
+        self.assertEqual(len(bk.STUB_AUSGABEN_MINUS1.landeplatz_bytes()), 9)
+
+    def test_der_erste_sprung_bleibt_und_nur_der_aufloeser_wird_ersetzt(self):
+        elf, info = _elf()
+        neu, erg = bk.stubs_setzen(elf, self.ZIELE, landeplatz=True)
+        self.assertEqual({e.status for e in erg}, {bk.STATUS_GESETZT})
+        for i, kurz in ((0, "31c0c3"), (1, "830fff830eff31c0c3"), (2, "31c0c3")):
+            va = info["plt"][i]
+            self.assertEqual(neu[va:va + 6], elf[va:va + 6], "jmp [GOT] muss bleiben")
+            self.assertEqual(neu[va + 6:va + 6 + len(kurz) // 2], bytes.fromhex(kurz))
+            self.assertEqual(neu[va + 6 + len(kurz) // 2:va + 16], elf[va + 6 + len(kurz) // 2:va + 16])
+        # ausserhalb dieser drei Eintraege aendert sich nichts
+        geaendert = {i for i in range(len(elf)) if elf[i] != neu[i]}
+        erlaubt = set()
+        for i in (0, 1, 2):
+            erlaubt |= set(range(info["plt"][i] + 6, info["plt"][i] + 16))
+        self.assertTrue(geaendert <= erlaubt)
+
+    def test_zweiter_lauf_und_alle_eintraege_bleiben_auffindbar(self):
+        elf, info = _elf()
+        neu, _ = bk.stubs_setzen(elf, self.ZIELE, landeplatz=True)
+        namen = [(e.bibliothek, e.nid) for e in bk.plt_eintraege(neu)]
+        self.assertEqual(namen, [(l, n) for l, n, _s in IMPORTE], "gesetzte Eintraege muessen wiedererkannt werden")
+        nochmal, erg = bk.stubs_setzen(neu, self.ZIELE, landeplatz=True)
+        self.assertIs(nochmal, neu)
+        self.assertEqual({e.status for e in erg}, {bk.STATUS_BEREITS})
+
+    def test_festen_und_landeplatz_stub_nicht_mischen(self):
+        elf, _ = _elf()
+        fest, _ = bk.stubs_setzen(elf, self.ZIELE)
+        wieder, erg = bk.stubs_setzen(fest, self.ZIELE, landeplatz=True)
+        self.assertIs(wieder, fest)
+        self.assertEqual({e.status for e in erg}, {bk.STATUS_ABWEICHEND})
+        lande, _ = bk.stubs_setzen(elf, self.ZIELE, landeplatz=True)
+        wieder, erg = bk.stubs_setzen(lande, self.ZIELE)
+        self.assertIs(wieder, lande)
+        self.assertEqual({e.status for e in erg}, {bk.STATUS_ABWEICHEND})
+
+    def test_zu_langer_stub_wird_abgelehnt(self):
+        elf, _ = _elf()
+        lang = bk.StubArt("lang", bytes(12), "zu lang fuer den Landeplatz")
+        bk.STUB_ARTEN["lang"] = lang
+        try:
+            with self.assertRaises(ValueError):
+                bk.stubs_setzen(elf, {("libkernel", "AAAAAAAAAAA"): "lang"}, landeplatz=True)
+        finally:
+            del bk.STUB_ARTEN["lang"]
+
+    def test_luecken_neutralisieren_reicht_den_modus_durch(self):
+        elf, info = _elf()
+        neu, erg = bk.luecken_neutralisieren(elf, {"libSceAcm": ["BBBBBBBBBBB"]}, landeplatz=True)
+        va = info["plt"][2]
+        self.assertEqual(neu[va:va + 6], elf[va:va + 6])
+        self.assertEqual(neu[va + 6:va + 9], bytes.fromhex("31c0c3"))
+        self.assertEqual(erg[0].offset, va + 6)
+
+    def test_profil_im_landeplatz_modus_und_zweiter_lauf(self):
+        elf, info = _elf()
+        sha = hashlib.sha256(elf).hexdigest()
+        profil, stelle = _gueltiges_profil(elf, info)
+        pd = profil.dateien[0]
+        neu, erg = bk.profil_datei_anwenden(elf, sha, pd, landeplatz=True)
+        self.assertEqual((erg.status, erg.patches, erg.stubs), (bk.P_ANGEWENDET, 1, 2))
+        va_nh6, va_acm = info["plt"][1], info["plt"][2]
+        self.assertEqual(neu[va_nh6:va_nh6 + 6], elf[va_nh6:va_nh6 + 6])
+        self.assertEqual(neu[va_nh6 + 6:va_nh6 + 15], bk.STUB_AUSGABEN_MINUS1.landeplatz_bytes())
+        self.assertEqual(neu[va_acm + 6:va_acm + 9], bk.STUB_STANDARD.bytes_)
+        sha_neu = hashlib.sha256(neu).hexdigest()
+        nochmal, erg2 = bk.profil_datei_anwenden(neu, sha_neu, pd, landeplatz=True)
+        self.assertIs(nochmal, neu)
+        self.assertEqual(erg2.status, bk.P_BEREITS)
+        # der Modus gehoert zum Lauf: im festen Modus gilt dieselbe Datei nicht als "bereits angewendet"
+        _, erg3 = bk.profil_datei_anwenden(neu, sha_neu, pd)
+        self.assertEqual(erg3.status, bk.P_SHA)
+
+    def test_gesamtlauf_schreibt_signiert_und_laesst_sich_wiederholen(self):
+        with tempfile.TemporaryDirectory() as ordner:
+            elf, info = _elf()
+            pfad = os.path.join(ordner, "eboot.bin")
+            Path(pfad).write_bytes(elf)
+            bericht = bk.korrekturen_anwenden(ordner, [pfad], luecken={"libSceAcm": ["BBBBBBBBBBB"]}, landeplatz=True)
+            self.assertEqual((bericht.fehler, bericht.geaendert), ([], ["eboot.bin"]))
+            gelesen = bk.elf_aus_bytes(Path(pfad).read_bytes())
+            va = info["plt"][2]
+            self.assertEqual(gelesen[va + 6:va + 9], bytes.fromhex("31c0c3"))
+            vorher = Path(pfad).read_bytes()
+            bericht2 = bk.korrekturen_anwenden(ordner, [pfad], luecken={"libSceAcm": ["BBBBBBBBBBB"]}, landeplatz=True)
+            self.assertEqual(Path(pfad).read_bytes(), vorher)
+            self.assertEqual(bericht2.geaendert, [])
+
+
 if __name__ == "__main__":
     unittest.main()

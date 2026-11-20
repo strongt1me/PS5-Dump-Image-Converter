@@ -191,9 +191,9 @@ class FensterLayoutTests(unittest.TestCase):
             zu_klein = _gequetschte_knoepfe(fenster)
             self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
             knoepfe = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
-            self.assertEqual(len(knoepfe), 7,
+            self.assertEqual(len(knoepfe), 8,
                              "Erwartet: Starten, Nur prüfen, Backport-Ordner, Schließen, Erweiterte Einstellungen, "
-                             "Fakelib-Ordner wählen, Firmware-Analyse-Ordner wählen")
+                             "Fakelib-Ordner wählen, Firmware-Analyse-Ordner wählen, Firmware-Referenz wählen")
         finally:
             self._schliesse(fenster)
 

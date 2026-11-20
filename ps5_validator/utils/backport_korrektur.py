@@ -204,6 +204,7 @@ def _bereits_gesetzte_ergaenzen(elf: bytes, stubs: "dict[int, tuple[int, int]]",
     if haeufig * 10 < len(stubs) * 9:           # weniger als 90 % auf einer Linie: nichts raten
         return
     bekannt = tuple(a.bytes_ for a in STUB_ARTEN.values())
+    bekannt_landeplatz = tuple(a.landeplatz_bytes() for a in STUB_ARTEN.values())
     for idx, reloc in enumerate(relocs):
         if reloc is None or idx in stubs:
             continue
@@ -211,7 +212,11 @@ def _bereits_gesetzte_ergaenzen(elf: bytes, stubs: "dict[int, tuple[int, int]]",
         if pos < 0 or pos + PLT_LAENGE > len(elf):
             continue
         eintrag = elf[pos:pos + PLT_LAENGE]
-        if any(eintrag.startswith(b) for b in bekannt):
+        im_eintrag = any(eintrag.startswith(b) for b in bekannt)
+        # Landeplatz-Stub: der erste Sprung bleibt, dahinter steht unser Stub statt "push idx; jmp Aufloeser".
+        am_landeplatz = (eintrag[:2] == _SPRUNG
+                         and any(eintrag[LANDEPLATZ_OFFSET:].startswith(b) for b in bekannt_landeplatz))
+        if im_eintrag or am_landeplatz:
             stubs[idx] = (va0 + PLT_LAENGE * idx, pos)
 
 
@@ -219,23 +224,53 @@ def _bereits_gesetzte_ergaenzen(elf: bytes, stubs: "dict[int, tuple[int, int]]",
 # Stub-Tabelle
 # --------------------------------------------------------------------------
 
+#: Der Landeplatz eines Stubs im "Landeplatz"-Modus: hinter dem ``jmp [GOT]`` (6 Byte) des PLT-Eintrags, dort wo sonst
+#: ``push idx; jmp Aufloeser`` steht. Der lazy gebundene GOT-Eintrag zeigt anfangs genau dorthin - ein Stub dort laeuft
+#: nur, wenn der Lader die Funktion **nicht** aufgeloest hat; hat er sie gebunden, springt der erste ``jmp`` in die
+#: echte Funktion (ob der Lader der PS5 so bindet, ist nicht belegt - Versuch, siehe :func:`stubs_setzen`).
+LANDEPLATZ_OFFSET = 6
+LANDEPLATZ_MAX = PLT_LAENGE - LANDEPLATZ_OFFSET
+
+
 class StubArt(NamedTuple):
     kennung: str
+    #: Die Bytes im PLT-Eintrag selbst (bis 16).
     bytes_: bytes
     beschreibung: str
+    #: Gleichwertige Kurzform fuer den Landeplatz (bis 10 Byte); ``None`` = ``bytes_`` passt schon.
+    kurz: "bytes | None" = None
+
+    def landeplatz_bytes(self) -> bytes:
+        return self.kurz if self.kurz is not None else self.bytes_
 
 
 #: ``xor eax,eax; ret`` - die Funktion tut nichts und meldet Erfolg (0).
 STUB_STANDARD = StubArt("standard", bytes.fromhex("31c0c3"), "xor eax,eax; ret")
 
 #: ``mov dword [rdi],-1; mov dword [rsi],-1; xor eax,eax; ret`` - fuer Funktionen, deren Aufrufer zwei Ausgabeparameter
-#: liest. 15 Byte, passt in den 16-Byte-PLT-Eintrag.
+#: liest. 15 Byte, passt in den 16-Byte-PLT-Eintrag; die Kurzform (``or dword [rdi],-1; or dword [rsi],-1`` statt der
+#: Schreibzugriffe, gleiches Ergebnis -1) hat 9 Byte und passt auf den Landeplatz.
 STUB_AUSGABEN_MINUS1 = StubArt(
     "ausgaben_minus1", bytes.fromhex("c707ffffffffc706ffffffff31c0c3"),
-    "*rdi=*rsi=-1; xor eax,eax; ret")
+    "*rdi=*rsi=-1; xor eax,eax; ret", bytes.fromhex("830fff830eff31c0c3"))
+
+#: Vertraege nach der Beschreibung im fremden ps5-backport-toolkit (``stub_contracts.json``, MIT) - die Bytes sind hier
+#: aus der Beschreibung neu geschrieben. **An keiner Konsole bewiesen** (dort ``hw_proved: false``); sie ersetzen nur
+#: den Standard-Stub ``xor eax,eax; ret`` dort, wo dieser einen Ausgabewert ungeschrieben oder einen Fehlercode als
+#: Erfolg liesse.
+#: ``scePadIsRemoteController``: ``*(bool*)rsi = 0; return 0``.
+STUB_AUSGABE_BOOL0 = StubArt("ausgabe_bool0", bytes.fromhex("31c08806c3"), "*(bool*)rsi=0; eax=0; ret")
+#: ``sceNpEntitlementAccessGetGameTrialsFlag``: ``*(int*)rdi = 0`` (keine Testversion); ``return 0``.
+STUB_AUSGABE_INT0 = StubArt("ausgabe_int0", bytes.fromhex("c7070000000031c0c3"), "*(int*)rdi=0; eax=0; ret")
+#: ``sceSaveDataConvert``: ``return 0x809F0008`` (kein PS4-Spielstand zum Umwandeln).
+STUB_FEHLER_809F0008 = StubArt("fehler_809f0008", bytes.fromhex("b808009f80c3"), "eax=0x809F0008; ret")
+#: ``sceSystemServiceOpenTournamentOccurrence``: ``return 0x80A10001`` (ein vom Spiel behandelter Fehlerzweig).
+STUB_FEHLER_80A10001 = StubArt("fehler_80a10001", bytes.fromhex("b80100a180c3"), "eax=0x80A10001; ret")
 
 #: Arten, die ein Profil beim Namen nennen darf.
-STUB_ARTEN: dict[str, StubArt] = {a.kennung: a for a in (STUB_STANDARD, STUB_AUSGABEN_MINUS1)}
+STUB_ARTEN: dict[str, StubArt] = {a.kennung: a for a in (
+    STUB_STANDARD, STUB_AUSGABEN_MINUS1, STUB_AUSGABE_BOOL0, STUB_AUSGABE_INT0, STUB_FEHLER_809F0008,
+    STUB_FEHLER_80A10001)}
 
 #: Ausnahmen von der Standard-Art je (Bibliothek, NID). Gemessen an Anno 117 (04.11.2026): ``NH6xARDOVv8`` (libkernel,
 #: erst ab FW 11.00) hat drei Aufrufer, die danach ``cmp dword [rbp-0xe0],1`` auf einem AUSGABEPARAMETER ausfuehren;
@@ -244,7 +279,19 @@ STUB_ARTEN: dict[str, StubArt] = {a.kennung: a for a in (STUB_STANDARD, STUB_AUS
 #: Die allgemeine Neutralisierung kann das nicht - jede NID, die hier fehlt, bekommt den Standard-Stub.
 STUB_TABELLE: dict[tuple[str, str], StubArt] = {
     ("libkernel", "NH6xARDOVv8"): STUB_AUSGABEN_MINUS1,
+    # Die folgenden vier stammen aus Fremdangaben (siehe oben), nicht aus einer eigenen Messreihe:
+    ("libScePad", "fCWdlnmB1Ks"): STUB_AUSGABE_BOOL0,                    # erst ab FW 10.01
+    ("libSceNpEntitlementAccess", "y7JD1gfwyfA"): STUB_AUSGABE_INT0,    # erst ab FW 6.00
+    ("libSceSaveData", "2mfSRGdshtk"): STUB_FEHLER_809F0008,            # erst ab FW 8.00
+    # Marsupilami 2 (PPSA34356) fuehrt dieselbe NID unter dem Bibliotheksnamen "libSceSaveData_native" (gemessen 20.11.2026)
+    ("libSceSaveData_native", "2mfSRGdshtk"): STUB_FEHLER_809F0008,
+    ("libSceSystemService", "gELp9ue2ccQ"): STUB_FEHLER_80A10001,       # erste Fassung unbekannt
 }
+
+#: Zwei weitere Vertraege des Toolkits fehlen hier mit Absicht: ``gWT7X8H0bYs`` (VideoOut, 0x40 Byte nullen, nur wenn
+#: jeder Aufrufer einen eigenen, ueber 0x40 Byte beschriebenen Puffer uebergibt) und ``YFC3dBBipj8`` (libkernel,
+#: ``return 0x80020003``, nur wenn jeder Aufrufer danach genau damit vergleicht). Beides sind Bedingungen am Aufrufer,
+#: die die allgemeine Neutralisierung nicht pruefen kann.
 
 #: Importe, die die allgemeine Neutralisierung nie anfasst (leer: bisher nichts bekannt, das gefaehrlicher waere als
 #: ein Absturz). Eintraege hier haben Vorrang vor allem anderen.
@@ -271,13 +318,17 @@ class StubErgebnis(NamedTuple):
 
 
 def stubs_setzen(elf: bytes, ziele: "dict[tuple[str, str], str | None]", *,
-                 schwache_auslassen: bool = True) -> "tuple[bytes, list[StubErgebnis]]":
+                 schwache_auslassen: bool = True, landeplatz: bool = False) -> "tuple[bytes, list[StubErgebnis]]":
     """Ersetzt die PLT-Eintraege der genannten Importe durch Stubs.
 
     Args:
         elf: Das ELF (kein SELF).
         ziele: ``(Bibliothek, NID)`` -> Art-Kennung oder ``None`` (= :func:`stub_art`).
         schwache_auslassen: Schwach gebundene Importe nicht anfassen.
+        landeplatz: **Versuch, an keiner Konsole belegt.** Statt den ganzen PLT-Eintrag zu ueberschreiben, bleibt der
+            erste ``jmp [GOT]`` stehen und der Stub (Kurzform, bis 10 Byte) ersetzt nur das ``push idx; jmp Aufloeser``
+            dahinter. Bindet der Lader eine Funktion, die die Zielfirmware doch hat, bleibt sie dann erreichbar; der
+            feste Stub im Eintrag haette sie verdeckt. Ob der Lader der PS5 so bindet, ist die offene Frage.
 
     Returns:
         (Bytes, Ergebnisse). Ein Ziel, das in der Datei nicht vorkommt, taucht **nicht** auf - der Aufrufer prueft
@@ -294,21 +345,42 @@ def stubs_setzen(elf: bytes, ziele: "dict[tuple[str, str], str | None]", *,
         if schwache_auslassen and e.schwach:
             continue
         art = STUB_ARTEN[art_name] if art_name else stub_art(*ziel)
-        stelle = elf[e.plt_offset:e.plt_offset + len(art.bytes_)]
-        if stelle[:2] == _SPRUNG:
+        stelle_offset, neu = stub_stelle(e, art, landeplatz)
+        stelle = elf[stelle_offset:stelle_offset + len(neu)]
+        if _plt_eintrag_original(elf, e):
             if puffer is None:
                 puffer = bytearray(elf)
-            puffer[e.plt_offset:e.plt_offset + len(art.bytes_)] = art.bytes_
+            puffer[stelle_offset:stelle_offset + len(neu)] = neu
             status = STATUS_GESETZT
-        elif stelle == art.bytes_:
+        elif stelle == neu:
             status = STATUS_BEREITS
         else:
             status = STATUS_ABWEICHEND
-        ergebnisse.append(StubErgebnis(e.bibliothek, e.nid, art.kennung, e.plt_offset, status))
+        ergebnisse.append(StubErgebnis(e.bibliothek, e.nid, art.kennung, stelle_offset, status))
     return (bytes(puffer) if puffer is not None else elf), ergebnisse
 
 
-def luecken_neutralisieren(elf: bytes, luecken: "dict[str, Iterable[str]]") -> "tuple[bytes, list[StubErgebnis]]":
+_PUSH = 0x68
+
+
+def stub_stelle(e: "PltEintrag", art: StubArt, landeplatz: bool) -> "tuple[int, bytes]":
+    """Wohin ein Stub kommt und welche Bytes: im Eintrag selbst, oder auf den Landeplatz (dann die Kurzform)."""
+    if not landeplatz:
+        return e.plt_offset, art.bytes_
+    kurz = art.landeplatz_bytes()
+    if len(kurz) > LANDEPLATZ_MAX:
+        raise ValueError("Stub %s ist mit %d Byte zu lang fuer den Landeplatz (%d)" % (art.kennung, len(kurz), LANDEPLATZ_MAX))
+    return e.plt_offset + LANDEPLATZ_OFFSET, kurz
+
+
+def _plt_eintrag_original(elf: bytes, e: "PltEintrag") -> bool:
+    """Steht im PLT-Eintrag noch ``jmp [GOT]; push idx`` - also weder ein fester noch ein Landeplatz-Stub von uns?"""
+    return (elf[e.plt_offset:e.plt_offset + 2] == _SPRUNG
+            and elf[e.plt_offset + LANDEPLATZ_OFFSET:e.plt_offset + LANDEPLATZ_OFFSET + 1] == bytes((_PUSH,)))
+
+
+def luecken_neutralisieren(elf: bytes, luecken: "dict[str, Iterable[str]]", *,
+                           landeplatz: bool = False) -> "tuple[bytes, list[StubErgebnis]]":
     """Stubs fuer alle Luecken (Bibliothek -> NIDs), die diese Datei importiert.
 
     Die Luecken gelten fuer den ganzen Dump; was die Datei nicht importiert, wird uebergangen. Bibliotheken ohne
@@ -317,7 +389,7 @@ def luecken_neutralisieren(elf: bytes, luecken: "dict[str, Iterable[str]]") -> "
     """
     ziele = {(lib, nid): None for lib, nids in luecken.items() if lib.startswith("lib") for nid in nids
              if (lib, nid) not in STUB_NIE}
-    return stubs_setzen(elf, ziele)
+    return stubs_setzen(elf, ziele, landeplatz=landeplatz)
 
 
 # --------------------------------------------------------------------------
@@ -554,7 +626,8 @@ class ProfilErgebnis(NamedTuple):
     stelle: str          # bei Abweichungen: "0x175607" bzw. "<Bibliothek> <NID>"
 
 
-def profil_datei_anwenden(elf: bytes, sha_original: str, pd: ProfilDatei) -> "tuple[bytes, ProfilErgebnis]":
+def profil_datei_anwenden(elf: bytes, sha_original: str, pd: ProfilDatei, *,
+                          landeplatz: bool = False) -> "tuple[bytes, ProfilErgebnis]":
     """Wendet die Aenderungen einer Profil-Datei an - ganz oder gar nicht.
 
     Reihenfolge der Pruefung: Adressen und Stubs auffindbar, dann Bytes. Stimmt die SHA-256 der Originaldatei
@@ -572,14 +645,19 @@ def profil_datei_anwenden(elf: bytes, sha_original: str, pd: ProfilDatei) -> "tu
         e = eintraege.get((s.bibliothek, s.nid))
         if e is None:
             return elf, ProfilErgebnis(pd.pfad, P_STUB, 0, 0, "%s %s" % (s.bibliothek, s.nid))
-        art = STUB_ARTEN[s.art]
-        stellen.append((e.plt_offset, None, art.bytes_, "%s %s" % (s.bibliothek, s.nid)))
+        stub_offset, stub_bytes = stub_stelle(e, STUB_ARTEN[s.art], landeplatz)
+        stellen.append((stub_offset, None, stub_bytes, "%s %s" % (s.bibliothek, s.nid)))
 
     def ist_neu(offset: int, neu: bytes) -> bool:
         return elf[offset:offset + len(neu)] == neu
 
     def ist_alt(offset: int, alt: "bytes | None") -> bool:
-        return elf[offset:offset + 2] == _SPRUNG if alt is None else elf[offset:offset + len(alt)] == alt
+        # ``None`` = ein Stub-Platz: noch der urspruengliche PLT-Eintrag, im Landeplatz-Modus mit ``push`` an Stelle 6.
+        if alt is not None:
+            return elf[offset:offset + len(alt)] == alt
+        anfang = offset - (LANDEPLATZ_OFFSET if landeplatz else 0)
+        return (elf[anfang:anfang + 2] == _SPRUNG
+                and elf[anfang + LANDEPLATZ_OFFSET:anfang + LANDEPLATZ_OFFSET + 1] == bytes((_PUSH,)))
 
     alle_neu = all(ist_neu(o, n) for o, _a, n, _t in stellen)
     if sha_original != pd.sha256_elf:
@@ -629,10 +707,12 @@ def korrekturen_anwenden(ordner: str, dateien: "Iterable[str]", *,
                          aktive: "Iterable[AktivesProfil]" = (),
                          luecken: "dict[str, Iterable[str]] | None" = None,
                          schreiben: "Callable[[str, bytes], None] | None" = None,
-                         laeuft: "Callable[[], bool] | None" = None) -> Bericht:
+                         laeuft: "Callable[[], bool] | None" = None,
+                         landeplatz: bool = False) -> Bericht:
     """Wendet Profile und Luecken-Stubs auf die Programmdateien eines Dumps an.
 
     Args:
+        landeplatz: Alle Stubs (Profile und Luecken) im Landeplatz-Modus setzen (:func:`stubs_setzen`, Versuch).
         ordner: Wurzel des Dumps.
         dateien: Absolute Pfade der Kandidaten (:func:`ps5_backport.kandidaten`).
         aktive: Ergebnis von :func:`profile_vorbereiten`; leer = keine Profile.
@@ -675,11 +755,12 @@ def korrekturen_anwenden(ordner: str, dateien: "Iterable[str]", *,
         neu = elf
         profil_ergebnisse = []          # (Profil, Ergebnis, Profil-Datei)
         for a, pd in profile_hier:
-            neu, ergebnis = profil_datei_anwenden(neu, a.sha.get(pfad_schluessel(pd.pfad), ""), pd)
+            neu, ergebnis = profil_datei_anwenden(neu, a.sha.get(pfad_schluessel(pd.pfad), ""), pd,
+                                                  landeplatz=landeplatz)
             profil_ergebnisse.append((a.profil, ergebnis, pd))
         stub_ergebnisse = []
         if luecken:
-            neu, stub_ergebnisse = luecken_neutralisieren(neu, luecken)
+            neu, stub_ergebnisse = luecken_neutralisieren(neu, luecken, landeplatz=landeplatz)
         if neu is not elf:
             try:
                 schreiben(pfad, bp.elf_signieren(neu))

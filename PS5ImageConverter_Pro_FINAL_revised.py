@@ -59980,6 +59980,15 @@ class PS5ConverterGUI:
         """Ob ein vorhandenes Korrekturprofil des Titels angewendet wird (Haken im BACKPORT-Fenster). Vorgabe Nein."""
         return bool(self._load_setting("backport_profile", False))
 
+    def _backport_landeplatz_an(self) -> bool:
+        """Ob Stubs im Landeplatz-Modus gesetzt werden (Haken unter "Erweiterte Einstellungen"). Vorgabe Nein.
+
+        Versuch: Der Stub ersetzt nur den Aufloeser hinter dem ersten ``jmp [GOT]`` des PLT-Eintrags, statt den ganzen
+        Eintrag - eine Funktion, die die Zielfirmware doch hat, bleibt so erreichbar, falls der Lader sie bindet
+        (``backport_korrektur.stubs_setzen``). An keiner Konsole belegt.
+        """
+        return bool(self._load_setting("backport_stubs_landeplatz", False))
+
     def _backport_profil_ordner(self) -> list[str]:
         """Ordner mit Korrekturprofilen: ``Korrekturprofile`` neben einem eigenen Bibliothekssatz zuerst, dann der mitgelieferte."""
         ordner = []
@@ -60071,10 +60080,13 @@ class PS5ConverterGUI:
                     pass
                 raise
 
+        landeplatz = self._backport_landeplatz_an()
+        if landeplatz:
+            self._append_to_log(self._t("backport.korr_landeplatz"))
         try:
             bericht = backport_korrektur.korrekturen_anwenden(
                 ordner, ps5_backport.kandidaten(ordner), aktive=aktive, luecken=luecken,
-                schreiben=schreiben, laeuft=laeuft)
+                schreiben=schreiben, laeuft=laeuft, landeplatz=landeplatz)
         except Exception as exc:  # noqa: BLE001 - die Zusaetze duerfen den fertigen Backport nicht kippen
             logger.exception("Backport-Korrekturen fehlgeschlagen")
             self._append_to_log(self._t("backport.korr_fehler", datei="-", fehler=exc))
@@ -64505,7 +64517,7 @@ class PS5ConverterGUI:
 
         win = self._build_modern_toplevel(
             self._t("backport.window_title", name=os.path.basename(ordner)),
-            980, 700, min_width=840, min_height=560)
+            980, 760, min_width=840, min_height=560)
         self._build_modern_header(
             win, self._t("titlebar.backport"),
             self._t("backport.subtitle", path=ordner))
@@ -64666,9 +64678,11 @@ class PS5ConverterGUI:
         # aktive, abweichende Einstellung wortlos verschwinden (Nutzerwunsch).
         _basis_wert_vorab = str(self._load_setting("backport_fakelib_ordner", "")).strip()
         _fw_analyse_wert_vorab = str(self._load_setting("backport_fw_analyse_ordner", "")).strip()
+        _fw_referenz_wert_vorab = str(self._load_setting("backport_firmware_referenz", "") or "").strip()
         _eigene_vorab = self._backport_eigene()
         erweitert_offen = tk.BooleanVar(value=bool(
-            _basis_wert_vorab or _fw_analyse_wert_vorab or any(_eigene_vorab)))
+            _basis_wert_vorab or _fw_analyse_wert_vorab or _fw_referenz_wert_vorab or any(_eigene_vorab)
+            or self._backport_landeplatz_an()))
         erweitert_rahmen = tk.Frame(win, bg=c["bg_main"])
 
         def _erweitert_umschalten() -> None:
@@ -64766,6 +64780,59 @@ class PS5ConverterGUI:
         self._pw.Button(fw_analyse_zeile, text=self._t("backport.fw_analyse_choose"),
                         command=_fw_analyse_waehlen).pack(side="left")
         tk.Label(fw_analyse_zeile, text=self._t("backport.fw_analyse_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
+
+        # ---- Firmware-Referenz (nur Pruefung, kopiert nichts) ----
+        fw_referenz_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
+        fw_referenz_zeile.pack(fill="x", padx=16, pady=(4, 0))
+        tk.Label(fw_referenz_zeile, text=self._t("backport.fw_referenz_label"),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        fw_referenz_var = tk.StringVar(value=_fw_referenz_wert_vorab)
+        fw_referenz_feld = self._pw.Entry(
+            fw_referenz_zeile, textvariable=fw_referenz_var,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+            insertbackground=c["fg_primary"], relief="flat", width=50)
+        fw_referenz_feld.pack(side="left", padx=(8, 6), ipady=2)
+
+        def _fw_referenz_speichern(*_: object) -> None:
+            wert = fw_referenz_var.get().strip()
+            self._save_setting("backport_firmware_referenz", wert)
+            if wert and not os.path.isdir(wert):
+                stand_var.set(self._t("backport.fw_analyse_not_found", pfad=wert))
+            else:
+                stand_var.set(self._t("backport.state_idle"))
+
+        bibliothek_raster.spur_bis_zerstoert(win, fw_referenz_var, _fw_referenz_speichern)
+
+        def _fw_referenz_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                parent=win, title=self._t("backport.fw_referenz_label"),
+                initialdir=fw_referenz_var.get() or None)
+            if gewaehlt:
+                fw_referenz_var.set(os.path.normpath(gewaehlt))
+
+        self._pw.Button(fw_referenz_zeile, text=self._t("backport.fw_analyse_choose"),
+                        command=_fw_referenz_waehlen).pack(side="left")
+        tk.Label(fw_referenz_zeile, text=self._t("backport.fw_referenz_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
+
+        # ---- Stubs im Landeplatz-Modus (Versuch) ----
+        landeplatz_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
+        landeplatz_zeile.pack(fill="x", padx=16, pady=(4, 0))
+        landeplatz_var = tk.BooleanVar(value=self._backport_landeplatz_an())
+        win._landeplatz_var = landeplatz_var                 # Tk haelt nur den Namen, nicht die Variable
+        landeplatz_haken = self._pw.Checkbutton(
+            landeplatz_zeile, text=self._t("backport.option_landeplatz"), variable=landeplatz_var,
+            command=lambda: self._save_setting("backport_stubs_landeplatz", landeplatz_var.get()),
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
+            selectcolor=c["bg_card"], activebackground=c["bg_main"],
+            activeforeground=c["fg_accent"], anchor="w")
+        landeplatz_haken.pack(side="left")
+        self._tooltip(landeplatz_haken, "backport.option_landeplatz_hint", delay_ms=900, wraplength=430)
+        tk.Label(landeplatz_zeile, text=self._t("backport.option_landeplatz_kurz"),
                  font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
 
