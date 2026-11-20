@@ -35,7 +35,7 @@ El programa convierte entre sí carpetas de dump, `.ffpfsc`, `.exfat` y archivos
 lee y construye paquetes de PS4 y PS5, integra AMPR EMU y BACKPORT e incorpora herramientas para la consola:
 enviar payloads, abrir interfaces web dentro del programa y gestionar la biblioteca de juegos
 de la PS5. Todo funciona mediante una interfaz gráfica con dos áreas, **CONVERTIR** y
-**CONSOLA**; cada tarea también está disponible sin ventana, mediante la línea de comandos.
+**CONSOLA**; las tareas 1 a 6 y 8 también están disponibles sin ventana, mediante la línea de comandos.
 
 > [!IMPORTANT]
 > Solo para contenidos **propios y adquiridos legalmente**. La piratería y la elusión de protecciones contra copia
@@ -100,7 +100,7 @@ automáticamente al iniciar el programa.
 <td valign="top">
 
 🌐 **Interfaces web y Autoloader**<br>
-Abrir las interfaces web de la consola directamente en el programa; WebKit Autoloader de itsPLK con selección de versión.
+Abrir las interfaces web de la consola en el programa (en Windows) o en el navegador; WebKit Autoloader de itsPLK con selección de versión.
 
 </td>
 <td valign="top">
@@ -125,7 +125,7 @@ y equipos de la red y fija un recurso compartido de Windows como origen o destin
 <td valign="top">
 
 ⌨ **Línea de comandos**<br>
-Cada tarea también sin ventana (`--cli`), además de comprobación del entorno (`--doktor`) y mantenimiento de herramientas.
+Las tareas 1 a 6 y 8 también sin ventana (`--cli`), además de comprobación del entorno (`--doktor`) y mantenimiento de herramientas.
 
 </td>
 <td valign="top">
@@ -176,9 +176,9 @@ En macOS, `Erste Installation.command` coloca la app en su sitio y elimina la ma
 
 - **Windows 10/11**, una distribución de Linux actual o **macOS** (probado en macOS 15; las versiones anteriores no se han probado)
 - Espacio libre suficiente para el origen, el estado intermedio y la salida
-- **Windows:** el EXE terminado pide derechos de administrador al iniciarse (UAC). Al ejecutar desde el código
-  fuente, solo se necesitan para la vía con UFS2Tool y para el montaje con OSFMount; un `.ffpkg` sin carpeta
-  intermedia se crea sin ellos
+- **Windows:** el EXE terminado pide derechos de administrador al iniciarse (UAC). También al iniciar la ventana desde el código
+  fuente, el programa los pide (no con `--doktor` ni `--werkzeuge-pruefen`); pero solo se necesitan para la vía con UFS2Tool
+  y para el montaje con OSFMount – un `.ffpkg` sin carpeta intermedia se crea sin ellos
 - **No hace falta OSFMount:** las imágenes `.exFAT` las lee el programa con su lector exFAT integrado, sin
   montar nada, en cualquier sistema. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   es solo la alternativa para imágenes poco habituales en Windows; si hace falta, el programa lo indica
@@ -286,7 +286,7 @@ Más en la **[Guía de LZ4 y Asset Packs](Anleitungen/AMPR_Asset_Packs_Mitschnit
 ## Para usuarios avanzados
 
 <details>
-<summary><b>Línea de comandos</b> – cada tarea sin ventana</summary>
+<summary><b>Línea de comandos</b> – las tareas 1 a 6 y 8 sin ventana</summary>
 
 <br>
 
@@ -300,7 +300,7 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | Opción | Significado |
 | --- | --- |
 | `--cli` | activa el modo de línea de comandos (obligatorio) |
-| `--task N` | tarea 1–8 |
+| `--task N` | tarea 1–6 u 8 (la tarea 7, PKG / FPKG, no tiene línea de comandos) |
 | `--source PFAD` | ruta de origen; varias solo en la tarea 5 |
 | `--dest PFAD` | carpeta de destino (no se aplica en la tarea 8) |
 | `--format …` | `folder`, `ffpfsc`, `ffpfs`, `exfat`, `ffpkg` |
@@ -417,7 +417,7 @@ Las pruebas están en la carpeta [`tests/`](tests) y las notas de versión en [`
 
 ## Diferencias entre plataformas
 
-La interfaz, las ocho tareas, la línea de comandos y la transferencia a la PS5 funcionan igual en todas partes.
+La interfaz, las tareas 1–6 y 8, la línea de comandos y la transferencia a la PS5 funcionan igual en todas partes.
 Las diferencias son estas:
 
 | Ámbito | Linux y macOS |
@@ -428,6 +428,7 @@ Las diferencias son estas:
 | Derechos elevados | No necesarios. |
 | Configuración | `~/.config/PS5ImageConverterPro/` o `~/Library/Application Support/PS5ImageConverterPro/` |
 | Instalación automática de herramientas de terceros | Solo Windows; en caso contrario, FileZilla se busca en el `PATH`. |
+| Interfaces web de la consola | Se abren en el navegador; la vista dentro del programa (WebView2) solo existe en Windows. |
 
 ## Aviso legal
 

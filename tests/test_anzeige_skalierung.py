@@ -749,8 +749,8 @@ class QuelltextTests(unittest.TestCase):
                 grenze = ask.skalierung_obergrenze(breite, mod.WINDOW_MIN_WIDTH)
                 self.assertIn("bei %d Pixeln Breite bis %d %%" % (breite, grenze)
                               if breite == 1920 else "bei %d Pixeln bis %d %%" % (breite, grenze), html)
-        self.assertIn("Abschnitt 14.3", html)
-        self.assertIn('<h3>14.3 Skalierung und Auflösung von Hand einstellen</h3>', html)
+        self.assertIn("Abschnitt 15.3", html)           # Kapitel 15 "Design und Hintergrundbild" (bis 20.11.2026 fälschlich "14.3" nummeriert)
+        self.assertIn('<h3>15.3 Skalierung und Auflösung von Hand einstellen</h3>', html)
 
     def test_alle_texte_haben_deutsch_und_englisch(self):
         from ps5_validator.utils import i18n

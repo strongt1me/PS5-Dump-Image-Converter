@@ -35,7 +35,7 @@ Il programma converte tra loro cartelle dump, `.ffpfsc`, `.exfat` e veri file `.
 legge e crea pacchetti PS4 e PS5, integra AMPR EMU e BACKPORT e include strumenti per la console: invio
 di payload, apertura delle interfacce web direttamente nel programma, gestione della libreria giochi
 della PS5. Tutto avviene tramite un'interfaccia grafica con due aree – **CONVERTI** e
-**CONSOLE**; ogni attività è disponibile anche senza finestra, da riga di comando.
+**CONSOLE**; le attività da 1 a 6 e 8 sono disponibili anche senza finestra, da riga di comando.
 
 > [!IMPORTANT]
 > Solo per contenuti **propri e acquistati legittimamente**. La pirateria e l'elusione della protezione
@@ -100,7 +100,7 @@ automaticamente all'avvio del programma.
 <td valign="top">
 
 🌐 **Interfacce web e Autoloader**<br>
-Aprire le interfacce web della console direttamente nel programma; WebKit Autoloader di itsPLK con scelta della versione.
+Aprire le interfacce web della console nel programma (su Windows) o nel browser; WebKit Autoloader di itsPLK con scelta della versione.
 
 </td>
 <td valign="top">
@@ -125,7 +125,7 @@ computer in rete e imposta una condivisione Windows come origine o destinazione.
 <td valign="top">
 
 ⌨ **Riga di comando**<br>
-Ogni attività anche senza finestra (`--cli`), inoltre controllo dell'ambiente (`--doktor`) e manutenzione degli strumenti.
+Le attività da 1 a 6 e 8 anche senza finestra (`--cli`), inoltre controllo dell'ambiente (`--doktor`) e manutenzione degli strumenti.
 
 </td>
 <td valign="top">
@@ -176,9 +176,9 @@ Su macOS, `Erste Installation.command` copia l'app nella posizione prevista e ri
 
 - **Windows 10/11**, una distribuzione Linux recente oppure **macOS** (testato su macOS 15; le versioni precedenti non sono state testate)
 - Spazio libero sufficiente per origine, stato intermedio e output
-- **Windows:** l'EXE pronto chiede privilegi di amministratore all'avvio (UAC). Eseguendo dal codice sorgente
-  servono solo per il percorso tramite UFS2Tool e per il montaggio con OSFMount; un `.ffpkg` senza cartella
-  intermedia viene creato senza di essi
+- **Windows:** l'EXE pronto chiede privilegi di amministratore all'avvio (UAC). Anche avviando la finestra dal codice sorgente
+  il programma li chiede (non con `--doktor` e `--werkzeuge-pruefen`); servono però solo per il percorso tramite UFS2Tool
+  e per il montaggio con OSFMount – un `.ffpkg` senza cartella intermedia viene creato senza di essi
 - **OSFMount non necessario:** le immagini `.exFAT` vengono lette dal programma con il proprio lettore exFAT
   integrato, senza montare nulla – su qualsiasi sistema. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   è solo la soluzione di ripiego per immagini insolite su Windows; se serve, il programma lo segnala
@@ -285,7 +285,7 @@ Altro nella **[Guida a LZ4 e Asset Pack](Anleitungen/AMPR_Asset_Packs_Mitschnitt
 ## Per utenti avanzati
 
 <details>
-<summary><b>Riga di comando</b> – ogni attività senza finestra</summary>
+<summary><b>Riga di comando</b> – le attività da 1 a 6 e 8 senza finestra</summary>
 
 <br>
 
@@ -299,7 +299,7 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | Opzione | Significato |
 | --- | --- |
 | `--cli` | attiva la modalità a riga di comando (obbligatoria) |
-| `--task N` | attività 1–8 |
+| `--task N` | attività 1–6 oppure 8 (l'attività 7, PKG / FPKG, non ha una riga di comando) |
 | `--source PFAD` | percorso di origine; più percorsi solo per l'attività 5 |
 | `--dest PFAD` | cartella di destinazione (non prevista per l'attività 8) |
 | `--format …` | `folder`, `ffpfsc`, `ffpfs`, `exfat`, `ffpkg` |
@@ -416,7 +416,7 @@ I test si trovano nella cartella [`tests/`](tests), le Release Notes in [`releas
 
 ## Differenze tra le piattaforme
 
-Interfaccia, tutte e otto le attività, riga di comando e trasferimento alla PS5 funzionano ovunque allo stesso modo.
+Interfaccia, attività 1–6 e 8, riga di comando e trasferimento alla PS5 funzionano ovunque allo stesso modo.
 Le differenze sono queste:
 
 | Ambito | Linux e macOS |
@@ -427,6 +427,7 @@ Le differenze sono queste:
 | Privilegi elevati | Non necessari. |
 | Impostazioni | `~/.config/PS5ImageConverterPro/` ovvero `~/Library/Application Support/PS5ImageConverterPro/` |
 | Installazione automatica di strumenti di terze parti | Solo Windows; altrimenti FileZilla viene cercato nel `PATH`. |
+| Interfacce web della console | Si aprono nel browser; la visualizzazione nel programma (WebView2) esiste solo su Windows. |
 
 ## Note legali
 

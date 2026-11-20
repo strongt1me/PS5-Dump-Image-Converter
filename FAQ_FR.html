@@ -145,7 +145,7 @@ footer{
     <p class="unter">Réponses courtes aux questions les plus fréquentes lors de l’utilisation du programme – du premier démarrage jusqu’à la conversion pour la PS5. Le manuel utilisateur traite tout en détail.</p>
     <div class="marken">
       <span class="marke">Version v2.0.0</span>
-      <span class="marke">État au 19 novembre 2026</span>
+      <span class="marke">État au 20 novembre 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -185,7 +185,7 @@ footer{
         <tr><td><code>.ffpfsc</code></td><td>Conteneur compact et compressé – un seul fichier.</td></tr>
         <tr><td><code>.ffpfs</code></td><td>Comme <code>.ffpfsc</code>, mais non compressé : plus volumineux, mais plus rapide à créer.</td></tr>
         <tr><td><code>.exFAT</code></td><td>Une véritable image de système de fichiers au format exFAT.</td></tr>
-        <tr><td><code>.ffpkg</code></td><td>Conteneur avec un système de fichiers UFS2 ; vérifié automatiquement après l’écriture. Windows uniquement.</td></tr>
+        <tr><td><code>.ffpkg</code></td><td>Conteneur avec un système de fichiers UFS2 ; vérifié automatiquement après l’écriture. La lecture et la création fonctionnent sous Windows, Linux et macOS ; seul le montage comme lecteur est réservé à Windows.</td></tr>
       </tbody>
     </table>
     </div>
@@ -212,7 +212,8 @@ footer{
         <tr><td>Un <code>.ffpkg</code></td><td>4</td><td>Extraire, convertir ou reconstruire en <code>.ffpkg</code> vérifié.</td></tr>
         <tr><td>Plusieurs conteneurs</td><td>5</td><td>Tous, l’un après l’autre, dans le même format de destination.</td></tr>
         <tr><td>Vous ne savez pas de quoi il s’agit</td><td>6</td><td>La source est détectée automatiquement et exportée.</td></tr>
-        <tr><td>Configurer ou changer AMPR EMU</td><td>7</td><td>Appliquer une version, sauvegarder l’original, créer l’index – également directement sur la PS5.</td></tr>
+        <tr><td>Un paquet PS4 ou PS5 (<code>.pkg</code>, <code>.fpkg</code>)</td><td>7</td><td>Décompresser, convertir, construire, envoyer à la console.</td></tr>
+        <tr><td>Configurer ou changer AMPR EMU</td><td>–</td><td>Pas une tâche, mais <strong>9. AMPR EMU Manager</strong> dans la vue CONSOLE : appliquer une version, sauvegarder l’original, créer l’index – également directement sur la PS5.</td></tr>
         <tr><td>Vérifier uniquement</td><td>8</td><td>Contrôler l’intégrité sans rien modifier.</td></tr>
       </tbody>
     </table>
@@ -343,7 +344,7 @@ footer{
   <div class="frage">
     <h3>Que signifient WORKERS et VÉRIFICATION ?</h3>
     <p><strong>WORKERS</strong> définit combien d’opérations s’exécutent en même temps. Un cœur de processeur reste toujours libre, et les très grandes images sont limitées davantage. Vous le réglez avec le bouton rotatif – tournez-le avec la souris, utilisez la molette de la souris ou les touches fléchées ; un double-clic le réinitialise.</p>
-    <p><strong>VÉRIFICATION</strong> détermine si l’image terminée est contrôlée après l’empaquetage : « Rapide » vérifie la structure, « Complète » relit en plus l’ensemble et prend beaucoup plus de temps.</p>
+    <p><strong>VÉRIFICATION</strong> détermine si et comment l’image terminée est contrôlée après l’empaquetage : « Désactivé » ne vérifie que la structure, « Rapide » y ajoute un échantillon de blocs (environ 1&nbsp;%), « Complète » relit tout et prend beaucoup plus de temps.</p>
   </div>
 
   <div class="frage">
@@ -383,7 +384,7 @@ footer{
 
   <div class="frage">
     <h3>Cela fonctionne-t-il aussi sans l’interface, en ligne de commande ?</h3>
-    <p>Oui, chaque tâche s’exécute également sans fenêtre – avec la même logique de flux de travail que l’interface (<code>X.Y.Z</code> représente votre version) :</p>
+    <p>Oui, les tâches&nbsp;1 à 6 et&nbsp;8 s’exécutent également sans fenêtre – avec la même logique de flux de travail que l’interface ; la tâche&nbsp;7 (PKG / FPKG) n’a pas de ligne de commande (<code>X.Y.Z</code> représente votre version) :</p>
     <pre><code>PS5_Dump_Image_Converter_vX.Y.Z.exe --cli --task 1 --source "D:\Dumps\Game" --dest "D:\Output" --format ffpfsc --yes</code></pre>
     <p><code>--format</code> connaît <code>folder</code>, <code>ffpfsc</code>, <code>ffpfs</code>, <code>exfat</code> et <code>ffpkg</code> ; <code>--yes</code> confirme les questions, <code>--shutdown-on-success</code> éteint ensuite l’ordinateur. Sous Windows, ouvrez l’invite de commandes ou PowerShell <strong>en tant qu’administrateur</strong> – sinon l’appel s’arrête avec le code de retour&nbsp;3.</p>
   </div>
@@ -446,13 +447,13 @@ footer{
   <div class="frage">
     <h3>Qu’est-ce qu’AMPR EMU, et quand en ai-je besoin ?</h3>
     <p>Au démarrage d’un jeu, la PS5 demande à son résolveur de fichiers APR où se trouvent les fichiers du jeu. Si le jeu s’exécute depuis une image montée, le résolveur ne reçoit aucune réponse exploitable – et le jeu ne démarre pas. AMPR EMU est une bibliothèque de remplacement qui répond à cette question à sa place. Vous en avez besoin pour les jeux destinés à s’exécuter depuis une image.</p>
-    <p>Vous pouvez l’intégrer lors de la création (case <strong>AMPR EMU</strong> dans les tâches 1 à 6) ou via le <strong>bouton&nbsp;7</strong> : il ouvre une sélection avec la <em>nouvelle méthode</em> (ShadowMount+ à partir de 1.7 alpha8), l’<em>ancienne méthode</em> (jusqu’à alpha6) et <em>Intégrer AMPR EMU dans la sauvegarde</em>. Le programme vérifie lui-même quelle version de ShadowMount+ tourne sur la console et, si nécessaire, vous conseille d’utiliser l’autre bouton.</p>
+    <p>Vous pouvez l’intégrer lors de la création (case <strong>AMPR EMU</strong> dans les tâches 1 à 6) ou via le <strong>9. AMPR EMU Manager</strong> de la vue CONSOLE : vous y choisissez l’emplacement (<em>Par jeu</em>, <em>Global</em>, <em>Émulateurs</em>) et la méthode, <em>AMPR EMU – nouvelle méthode</em> (ShadowMount+ à partir de 1.7 alpha8) ou <em>AMPR EMU – ancienne méthode</em> (jusqu’à alpha6). Le programme vérifie lui-même quelle version de ShadowMount+ tourne sur la console et, si nécessaire, vous conseille d’utiliser l’autre bouton.</p>
     <p>Si AMPR EMU n’a aucun effet, vérifiez le fichier <code>config.ini</code> de ShadowMount+ : si l’ID de titre du jeu figure sous <code>fakelib_exclude</code> (à partir de la version 1.7beta4) ou est désactivé par <code>fakelib_mode=&lt;ID&gt;:disabled</code> ou par <code>fakelib_default_mode=disabled</code> (à partir de 1.7beta5), ShadowMount+ ne monte aucun <code>fakelib</code> pour ce titre. L’AMPR EMU Manager (bouton&nbsp;9 de la vue CONSOLE) et l’assistant d’enregistrement AMPR posent alors la question et nomment l’entrée avant de placer quoi que ce soit ; modifiez-la sous <strong>AUTRES OUTILS</strong> → <strong>SHADOWMOUNT+</strong>.</p>
   </div>
 
   <div class="frage">
     <h3>Que sont les asset packs ?</h3>
-    <p>Avec la méthode <strong>Asset pack</strong>, les fichiers du jeu sont en plus regroupés dans des volumes empaquetés (<code>ampr_assets-*.pak</code>) qu’AMPR EMU lit bloc par bloc à partir de la version 0.4.2.1. Cela économise de l’espace et des descripteurs de fichiers sur la console. Pour cela, <strong>les deux</strong> listes déroulantes doivent être correctes : version AMPR <code>test-pack</code> (ou <code>test-debug-pack</code> pour le dépannage) et méthode <em>Asset pack</em> – la version <code>test-nopack</code> présélectionnée en haut n’en est pas capable.</p>
+    <p>Avec la méthode <strong>Asset pack</strong>, les fichiers du jeu sont en plus regroupés dans des volumes empaquetés (<code>ampr_assets-*.pak</code>) qu’AMPR EMU lit bloc par bloc à partir de la version 0.4.2.1. Cela économise de l’espace et des descripteurs de fichiers sur la console. Pour cela, la version AMPR doit pouvoir lire des volumes empaquetés : ampr-emu-ng (NG) ou les builds de pack <code>test-pack</code> (pour le dépannage <code>test-debug-pack</code>) de drakmor ; en outre, la méthode <em>Asset pack</em> doit être réglée. La liste des versions ne montre alors plus que de telles versions ; les versions ordinaires de drakmor (dans la liste, par exemple <code>0.4.2.1</code>) n’en sont pas capables.</p>
     <p>Chaque bloc empaqueté est comparé octet par octet au fichier d’origine. Vos fichiers d’origine restent en place, sauf si vous en décidez autrement ; ne les omettez qu’après un test réussi sur la console. Avec ampr-emu-ng (NG), le programme omet les originaux empaquetés du résultat sans poser de question ; avec le runtime drakmor, ils restent toujours dans l’image. Le guide détaillé s’ouvre avec le bouton <strong>Guide LZ4 et Asset Packs</strong>.</p>
     <p>Pour <em>ASTRO BOT</em>, <em>EA Sports UFC 6</em> et les jeux construits sur le moteur <em>Unity</em> ou <em>Insomniac</em>, le programme configure automatiquement un profil de pack testé (depuis v1.9.78). Un profil personnel placé à côté du dossier dump (<code>&lt;folder name&gt;_ampr_pack.toml</code>) est toujours prioritaire.</p>
   </div>
@@ -462,7 +463,7 @@ footer{
     <p><strong>L’intensité</strong> se règle sous <strong>PARAMÈTRES</strong> dans la section <em>ASSET PACK (LZ4)</em> (depuis v1.9.80). La valeur par défaut est le niveau <strong>9</strong> : mesuré sur des données de jeux réelles, le niveau 12 ne gagne que 0,0 à 0,6 point de pourcentage supplémentaire mais prend 1,2 à 3,6 fois plus de temps. Les images, textures, archives, fichiers audio, vidéo et de configuration restent en vrac dans le profil général, car ils sont déjà compressés.</p>
     <p><strong>LZ4 ou zstd :</strong> sous <strong>PARAMÈTRES</strong>, dans la même section, choisissez la <em>méthode de pack</em>. LZ4 (par défaut) crée <code>ampr_assets-*.pak</code>. zstd crée <code>ampr_zstd.index</code> et <code>ampr_zstd-NNN.pak</code>, empaquette tous les fichiers sauf les fichiers système et compresse généralement davantage, mais n’est lu <em>que</em> par ampr-emu-ng (NG), pas par le runtime drakmor. Avec zstd, la liste des versions ne propose que NG ; le niveau zstd va de 1 à 22 (par défaut 5). Les règles personnalisées (quels fichiers restent en vrac) sont lues dans un fichier <code>&lt;folder name&gt;_ampr_pack.toml</code> placé à côté du dossier dump ou, une fois pour tous les jeux, dans le fichier que vous choisissez dans les paramètres sous « Règles de packaging pour zstd » ; les fichiers système restent toujours en vrac. Sur la console, deux jeux avec des packs zstd de ce programme ont fonctionné sans erreur (FW 12.00, ShadowMount+) ; si un jeu précis fonctionne, seul un test sur la console le montre. Les originaux empaquetés manquent dans le résultat, conservez le dump source (il reste inchangé).</p>
     <p><strong>LZ4 sans dossier intermédiaire, niveau d’empaquetage et vérification :</strong> Les packs LZ4 sont eux aussi créés sans que le jeu soit extrait ; la source est lue deux fois (une fois pour mesurer, une fois pour écrire dans l’image). Avec NG, le profil par défaut empaquette tout sauf les fichiers système (<code>eboot.bin</code>, modules, <code>sce_sys</code>, <code>sce_module</code>, <code>fakelib</code>, <code>.ini</code>, fichiers PlayGo, <code>global-metadata.dat</code>) ; les originaux empaquetés manquent dans le résultat. Cela a été vérifié sur la console avec deux jeux Unity ; sans l’émulateur, la même image n’affiche qu’un écran noir. À droite de la méthode de pack se trouvent le <em>niveau d’empaquetage</em> et l’interrupteur <em>Vérification complète</em> (pour zstd et LZ4) : désactivée (par défaut) signifie que la structure, les en-têtes et la position de chaque bloc sont vérifiés en entier, et du contenu un échantillon ; activée : chaque octet.</p>
-    <p><strong>La vérification et l’extraction</strong> se trouvent sous <strong>AUTRES OUTILS</strong> → <strong>VÉRIFIER / EXTRAIRE L’ASSET PACK</strong> (depuis v1.9.80). Choisissez le dossier du jeu qui contient <code>ampr_assets.index</code> : <em>VÉRIFIER</em> relit chaque bloc par rapport aux sommes de contrôle et vous indique si la bibliothèque présente dans le dossier peut lire des volumes ; <em>EXTRAIRE</em> remet les fichiers empaquetés en vrac – dans un nouveau dossier (le dossier du jeu est conservé) ou dans le dossier du jeu lui-même (les volumes sont ensuite supprimés). Une image ne peut pas être ouverte de cette manière ; extrayez-la d’abord avec la tâche 2.</p>
+    <p><strong>La vérification et l’extraction</strong> se font dans la vue CONSOLE avec le bouton <strong>11. Asset Pack</strong> (depuis v1.9.80 ; depuis le 18.10.2026 à cet endroit plutôt que sous AUTRES OUTILS). Choisissez le dossier du jeu qui contient <code>ampr_assets.index</code> ou <code>ampr_zstd.index</code> : <em>VÉRIFIER</em> relit chaque bloc par rapport aux sommes de contrôle et vous indique si la bibliothèque présente dans le dossier peut lire des volumes ; <em>EXTRAIRE</em> remet les fichiers empaquetés en vrac – dans un nouveau dossier (le dossier du jeu est conservé) ou dans le dossier du jeu lui-même (les volumes sont ensuite supprimés). <em>EMPAQUETER</em> crée des packs zstd dans le dossier du jeu ; seul ampr-emu-ng (NG) les lit. Une image ne peut pas être ouverte de cette manière ; extrayez-la d’abord avec la tâche 2.</p>
   </div>
 
   <div class="frage">
@@ -482,8 +483,8 @@ footer{
   </div>
 
   <div class="frage">
-    <h3>Puis-je créer le backport sous forme de dossier séparé pour ShadowMount+ ?</h3>
-    <p>Oui. Dans la fenêtre BACKPORT, <strong>Créer uniquement le dossier backport …</strong> crée le dossier <code>backports/&lt;title ID&gt;</code> – avec les fichiers abaissés, le <code>param.json</code> et le dossier <code>fakelib</code>. Le jeu lui-même reste intact. Placez le dossier sur la console dans <code>/data/homebrew/backports/&lt;title ID&gt;/</code> ; ShadowMount+ le superpose au jeu au lancement. Le programme peut aussi l’y envoyer directement par FTP. Le firmware cible est présélectionné en fonction de la console.</p>
+    <h3>Puis-je créer le backport sous forme de dossier séparé ?</h3>
+    <p>Oui. Dans la fenêtre BACKPORT, <strong>Créer uniquement le dossier backport …</strong> crée un dossier <code>&lt;title ID&gt; Backport FW&lt;n&gt;</code> – avec les fichiers abaissés, le <code>param.json</code> et le dossier <code>fakelib</code>. Le jeu lui-même reste intact. Copiez le contenu du dossier dans le dossier du jeu et confirmez « Remplacer les fichiers » ; le résultat est le même que pour le backport dans le dossier du jeu. Si vous voulez conserver les originaux (<code>eboot.bin</code>, <code>sce_sys/param.json</code>), sauvegardez-les au préalable. Le firmware cible est présélectionné en fonction de la console.</p>
   </div>
 
   <div class="frage">
@@ -542,8 +543,8 @@ footer{
   </div>
 
   <div class="frage">
-    <h3>Que font Fast, Balanced, Maximum et Low RAM ?</h3>
-    <p>Les quatre boutons sous <strong>PRESET</strong> (dans la vue CONVERT, à côté des cases en bas de la carte) règlent d’un seul coup le niveau de compression et le nombre de cœurs : <em>Fast</em> niveau 3 avec tous les cœurs, <em>Balanced</em> niveau 6 et <em>Maximum</em> niveau 9 avec la moitié des cœurs, <em>Low RAM</em> niveau 3 avec un seul cœur. La taille de bloc reste à 65536. Mesurés sur un dump de 664 Mo, les niveaux 1 et 9 ne diffèrent que d’environ 5&nbsp;% en taille d’image (les données des jeux PS5 se compressent à peine) ; davantage de cœurs raccourcissent la durée mais exigent plus de mémoire. La quantité de mémoire libre pendant une exécution est indiquée par l’affichage en direct sous le journal.</p>
+    <h3>Comment régler la compression et le nombre de cœurs ?</h3>
+    <p>Vous réglez la compression et le nombre de cœurs dans leurs champs : <strong>COMPRESSION (PFS)</strong> (1 = le plus rapide, 9 = le fichier le plus petit ; elle ne s’applique qu’à <code>.ffpfsc</code>) et <strong>WORKERS</strong> (le bouton rotatif, voir « Que signifient WORKERS et VÉRIFICATION ? »). Mesurés sur un dump de 664 Mo, les niveaux 1 et 9 ne diffèrent que d’environ 5&nbsp;% en taille d’image (les données des jeux PS5 se compressent à peine) ; davantage de cœurs raccourcissent la durée mais exigent plus de mémoire. La quantité de mémoire libre pendant une exécution est indiquée par l’affichage en direct sous le journal.</p>
   </div>
 
   <div class="frage">
@@ -558,7 +559,7 @@ footer{
 
   <div class="frage">
     <h3>Que montre la vue CONSOLE ?</h3>
-    <p>Sous le logo, <strong>CONSOLE ›</strong> bascule vers une seconde vue comportant dix outils : <em>Console et payloads</em>, <em>WebKit Autoloader</em>, <em>Bibliothèque</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em>, <em>BFpilot</em>, <em>AMPR EMU Manager</em> et <em>Enregistrement AMPR</em>. <strong>‹ CONVERTIR</strong> ramène en arrière ; la source, les paramètres et un travail en cours sont conservés.</p>
+    <p>Sous le logo, <strong>CONSOLE ›</strong> bascule vers une seconde vue comportant douze outils : <em>Console et payloads</em>, <em>WebKit Autoloader</em>, <em>Bibliothèque</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em>, <em>BFpilot</em>, <em>AMPR EMU Manager</em>, <em>Enregistrement AMPR</em>, <em>Asset Pack</em> et <em>Y2JB Updater</em>. <strong>‹ CONVERTIR</strong> ramène en arrière ; la source, les paramètres et un travail en cours sont conservés.</p>
     <p><strong>Console et payloads</strong> trouve déjà la PS5 de lui-même au démarrage du programme – vous n’avez pas à saisir d’adresse. La page interroge tous les ports connus, affiche pour chaque service l’état, la version et l’usage, démarre les services manquants depuis le dossier <code>helloworld</code> fourni et ouvre les interfaces web. Sous Windows, celles-ci s’affichent directement dans le programme, sinon dans le navigateur.</p>
     <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (le PS5 Cooling &amp; System Center, port 8086), <strong>ShadowMount+</strong>, <strong>SMPlusGui</strong> et <strong>BFpilot</strong> (un second gestionnaire de fichiers, port 5905) n’ont pas de page propre : une pression vérifie si le payload tourne déjà sur la console, l’envoie lui-même si nécessaire – avec l’ELF loader si le port 9021 est encore fermé – puis ouvre son interface web.</p>
   </div>
@@ -605,7 +606,7 @@ footer{
     <h3>À quoi sert le WebKit Autoloader, et quelle version dois-je utiliser ?</h3>
     <p>Il crée la vignette <strong>WebKit Autoload</strong> sur la console (écran d’accueil, sous <em>Médias</em>) afin que l’entrée puisse être répétée d’une simple pression. Il se compose d’un <strong>host</strong> sur votre ordinateur – sous forme de programme Windows ou de script Python – et d’un <strong>installateur</strong> qui s’exécute une fois sur la console. Les deux se trouvent sous <strong>CONSOLE › WebKit Autoloader</strong>.</p>
     <ul>
-      <li><strong>Version :</strong> plusieurs sont fournies, de v0.4.0 à v0.6.1. La plus récente est présélectionnée ; le programme retient votre choix, qui s’applique aux trois voies (host en programme Windows, host en script Python, envoi de l’installateur). Si la plus récente ne fonctionne pas chez vous, essayez une version plus ancienne.</li>
+      <li><strong>Version :</strong> plusieurs sont fournies, de v0.4.0 à v0.7.1. La plus récente est présélectionnée ; le programme retient votre choix, qui s’applique aux trois voies (host en programme Windows, host en script Python, envoi de l’installateur). Si la plus récente ne fonctionne pas chez vous, essayez une version plus ancienne.</li>
       <li><strong>Host :</strong> il occupe DNS (UDP 53) et HTTPS (TCP 443) et nécessite donc les droits d’administrateur.</li>
       <li><strong>Installateur :</strong> il arrive sur la console via le port 9021. Si le port est fermé, il passe par FTP à la racine d’une clé USB ; vous l’y récupérez avec le Payload Manager.</li>
     </ul>
@@ -614,7 +615,7 @@ footer{
 
   <div class="frage">
     <h3>Comment obtenir des versions plus récentes des outils fournis ?</h3>
-    <p>Avec le bouton <strong>Mises à jour</strong> en haut à droite de la page <em>Console et payloads</em>, à côté de <em>Vérifier la console</em>. Il ouvre une fenêtre et demande aussitôt à l’auteur de chaque outil la dernière version publiée – les payloads du dossier <code>helloworld</code>, le WebKit Autoloader, AMPR EMU et les moteurs (MkPFS, UFS2Tool, LibProsperoPkg, OrbisPkgTool, PS5-PKG-Tool, PS5 Wee Tools, 7-Zip). C’est le seul accès réseau, à part la recherche automatique de nouvelles versions de NG au démarrage (activée par défaut, désactivable sous PARAMÈTRES) ; sans ce bouton, le programme ne demande jamais rien nulle part ailleurs.</p>
+    <p>Avec le bouton <strong>Mises à jour</strong> en haut à droite de la page <em>Console et payloads</em>, à côté de <em>Vérifier la console</em>. Il ouvre une fenêtre et demande aussitôt à l’auteur de chaque outil la dernière version publiée – les payloads du dossier <code>helloworld</code>, le WebKit Autoloader, AMPR EMU et les moteurs (MkPFS, UFS2Tool, LibProsperoPkg, OrbisPkgTool, PS5-PKG-Tool, PS5 Wee Tools, 7-Zip). C’est le seul accès réseau pour les outils, à part la recherche automatique de nouvelles versions de NG au démarrage (activée par défaut, désactivable sous PARAMÈTRES) ; sans ce bouton, le programme ne demande jamais rien nulle part ailleurs au sujet de nouvelles versions.</p>
     <ul>
       <li><strong>Nouvelle version</strong> peut être cochée dans la première colonne (clic ou barre d’espace) ; <strong>Télécharger</strong> récupère la sélection. Chaque fichier est vérifié par rapport à la taille et au SHA-256 de la version publiée avant d’être mis en place ; un outil composé de plusieurs fichiers arrive complètement ou pas du tout.</li>
       <li>Les fichiers vont dans <code>Werkzeug-Updates</code> dans le dossier de paramètres du programme – <strong>jamais</strong> dans les dossiers fournis. Le programme prend la version la plus élevée qui s’y trouve ; les fichiers fournis restent intacts, et vous pouvez supprimer à tout moment ceux qui ont été téléchargés.</li>
@@ -631,12 +632,12 @@ footer{
 
   <div class="frage">
     <h3>Qu’est-ce qui change dans config.ini à partir de ShadowMount+ 1.7beta12 ?</h3>
-    <p>ShadowMount+ 1.7beta12 enregistre <code>config.ini</code> en sections (<code>[api]</code>, <code>[fakelib]</code>, <code>[emulators]</code> …) et range les réglages par jeu et par image dans un fichier <code>profiles.ini</code> distinct. Beaucoup de clés changent de nom : <code>api_bind_address</code> devient <code>[api] bind_address</code> et <code>update_emulators</code> devient <code>[emulators] update_enabled</code>. Le programme demande donc une fois si la console utilise la version précédente ou 1.7beta12 et suivantes, et retient la réponse ; vous pouvez la changer sous <strong>PARAMÈTRES</strong>, section <em>ShadowMount+ – config.ini</em>. Si la console contient visiblement l’autre format, le fichier de la console l’emporte et le programme vous le signale. L’éditeur ShadowMount+, le <strong>bouton&nbsp;7</strong>, l’assistant d’enregistrement AMPR et l’avis NG lisent et écrivent les deux formats ; les commentaires et vos propres sections sont conservés. Ne copiez pas un ancien <code>config.ini</code> sur les nouveaux fichiers : ShadowMount+ le convertit lui-même au premier démarrage et garde une copie dans <code>config-v1-backup/</code>.</p>
+    <p>ShadowMount+ 1.7beta12 enregistre <code>config.ini</code> en sections (<code>[api]</code>, <code>[fakelib]</code>, <code>[emulators]</code> …) et range les réglages par jeu et par image dans un fichier <code>profiles.ini</code> distinct. Beaucoup de clés changent de nom : <code>api_bind_address</code> devient <code>[api] bind_address</code> et <code>update_emulators</code> devient <code>[emulators] update_enabled</code>. Le programme demande donc une fois si la console utilise la version précédente ou 1.7beta12 et suivantes, et retient la réponse ; vous pouvez la changer sous <strong>PARAMÈTRES</strong>, section <em>ShadowMount+ – config.ini</em>. Si la console contient visiblement l’autre format, le fichier de la console l’emporte et le programme vous le signale. L’éditeur ShadowMount+, l’AMPR EMU Manager (<strong>bouton&nbsp;9</strong>), l’assistant d’enregistrement AMPR et l’avis NG lisent et écrivent les deux formats ; les commentaires et vos propres sections sont conservés. Ne copiez pas un ancien <code>config.ini</code> sur les nouveaux fichiers : ShadowMount+ le convertit lui-même au premier démarrage et garde une copie dans <code>config-v1-backup/</code>.</p>
   </div>
 
   <div class="frage">
     <h3>Comment utiliser d’autres manettes sur la PS5 (AnyPad PS5) ?</h3>
-    <p>Depuis v1.9.60, le payload <strong>AnyPad PS5</strong> est fourni (désormais en version 0.9.1-beta). Il rend utilisables les manettes Bluetooth sur la PS5 ; les jeux les voient comme une DualSense. Selon son auteur, la DualShock&nbsp;4&nbsp;v2, la 8BitDo SF30 Pro (mode Switch) et la GameSir G7 SE sont vérifiées ; les manettes Xbox et Switch Pro, entre autres, sont prises en charge mais pas encore vérifiées. Dans <em>Console et payloads</em>, vous le démarrez avec <strong>Démarrer la sélection</strong> et ouvrez sa page d’appairage (port 8095) avec <strong>Ouvrir l’interface web</strong>.</p>
+    <p>Depuis v1.9.60, le payload <strong>AnyPad PS5</strong> est fourni (désormais en version 0.9.5-beta). Il rend utilisables les manettes Bluetooth sur la PS5 ; les jeux les voient comme une DualSense. Selon son auteur, la DualShock&nbsp;4&nbsp;v2, la 8BitDo SF30 Pro (mode Switch) et la GameSir G7 SE sont vérifiées ; les manettes Xbox et Switch Pro, entre autres, sont prises en charge mais pas encore vérifiées. Dans <em>Console et payloads</em>, vous le démarrez avec <strong>Démarrer la sélection</strong> et ouvrez sa page d’appairage (port 8095) avec <strong>Ouvrir l’interface web</strong>.</p>
     <ul>
       <li>Lorsque la console demande qui utilise la manette, l’auteur conseille de choisir <strong>Quick play / Guest</strong> (un utilisateur temporaire).</li>
       <li>Une DualShock&nbsp;4 doit être appairée à nouveau à chaque mise en marche ; les autres manettes se reconnectent d’elles-mêmes.</li>
@@ -648,7 +649,7 @@ footer{
 
   <div class="frage">
     <h3>Que dois-je faire lors de la mise à jour de CheatRunner ?</h3>
-    <p>L’auteur exige trois choses <strong>avant</strong> que vous n’envoyiez une nouvelle version (fournie : 0.18, port&nbsp;9999) :</p>
+    <p>L’auteur exige trois choses <strong>avant</strong> que vous n’envoyiez une nouvelle version (fournie : 0.18.1, port&nbsp;9999) :</p>
     <ul>
       <li>Sur la console, supprimez tout dans <code>/data/cheatrunner</code> sauf les dossiers <code>cheats</code> et <code>patches</code> – avant le premier démarrage de la nouvelle version, pas après.</li>
       <li>Supprimez de la PS5 l’ancien PKG de CheatRunner (la vignette de l’écran d’accueil).</li>
@@ -717,13 +718,13 @@ footer{
 
   <div class="frage">
     <h3>Le programme envoie-t-il des données sur Internet ?</h3>
-    <p>De lui-même, uniquement une recherche de métadonnées manquantes : si le titre, l’éditeur ou la catégorie manquent, l’<strong>ID de titre</strong> du jeu est envoyé à store.playstation.com ainsi qu’à prosperopatches.com (PS5) ou orbispatches.com (PS4). Les détails récupérés sont conservés 30 jours. Par défaut, cette option est activée sous Windows et Linux et désactivée sur Mac ; vous pouvez la modifier dans les paramètres sous <em>Métadonnées en ligne</em>. Au démarrage, le programme recherche aussi la PS5 dans votre propre réseau – cela ne quitte pas votre réseau domestique. Les téléchargements et mises à jour ne s’exécutent que lorsque vous appuyez sur le bouton.</p>
+    <p>De lui-même, le programme n’interroge le réseau que deux fois. Premièrement pour des métadonnées manquantes : si le titre, l’éditeur ou la catégorie manquent, l’<strong>ID de titre</strong> du jeu est envoyé à store.playstation.com ainsi qu’à prosperopatches.com (PS5) ou orbispatches.com (PS4). Les détails récupérés sont conservés 30 jours. Par défaut, cette option est activée sous Windows et Linux et désactivée sur Mac ; vous pouvez la modifier dans les paramètres sous <em>Métadonnées en ligne</em>. Au démarrage, le programme recherche aussi la PS5 dans votre propre réseau – cela ne quitte pas votre réseau domestique. Deuxièmement, il cherche au démarrage, une fois par jour, sur GitHub une nouvelle version d’ampr-emu-ng (NG) et la télécharge aussitôt ; activé par défaut, désactivable sous <strong>PARAMÈTRES</strong> dans la section <em>AMPR EMU NG : NOUVELLES VERSIONS</em>. Tous les autres téléchargements et mises à jour ne s’exécutent que lorsque vous appuyez sur le bouton.</p>
   </div>
 
   <div class="frage">
     <h3>Où trouver davantage d’aide ?</h3>
     <ul>
-      <li>Cette <strong>FAQ</strong> s’ouvre avec le bouton <strong>FAQ</strong> en haut, à gauche de <strong>MANUEL UTILISATEUR</strong> – dans la langue de l’interface du programme (de, en, es, it, fr).</li>
+      <li>Cette <strong>FAQ</strong> s’ouvre avec le bouton <strong>FAQ</strong> dans la barre d’outils en haut à droite, à gauche de <strong>MANUEL UTILISATEUR</strong> – dans la langue de l’interface du programme (de, en, es, it, fr).</li>
       <li>Le <strong>manuel utilisateur</strong> s’ouvre avec le bouton du même nom – il est fourni avec le programme, aucune connexion Internet n’est nécessaire. Le manuel existe dans les cinq langues et s’ouvre dans la langue de l’interface. Le manuel et la FAQ sont aussi fournis au format PDF à côté du fichier du programme.</li>
       <li>Les guides sur les asset packs et sur ShadowMount+ (ancienne et nouvelle méthode) s’ouvrent avec les boutons <strong>Guide</strong> et <strong>Guide LZ4 et Asset Packs</strong>.</li>
       <li>Ce qui a changé dans chaque version est répertorié dans <code>CHANGELOG.md</code>.</li>
@@ -735,7 +736,7 @@ footer{
 
 <footer>
   <span>PS5 Dump &amp; Image Converter – Foire aux questions <strong>v2.0.0</strong></span>
-  <span>État au 19 novembre 2026 · Uniquement pour les contenus que vous possédez et avez acquis légalement</span>
+  <span>État au 20 novembre 2026 · Uniquement pour les contenus que vous possédez et avez acquis légalement</span>
 </footer>
 
 </body>

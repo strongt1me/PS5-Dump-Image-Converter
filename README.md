@@ -35,7 +35,7 @@ The program converts dump folders, `.ffpfsc`, `.exfat` and genuine UFS2-based `.
 another, reads and builds PS4 and PS5 packages, integrates AMPR EMU and BACKPORT, and comes with tools
 for the console: sending payloads, opening web interfaces inside the program, and managing the PS5's game
 library. Everything runs through a graphical interface with two areas – **CONVERT** and
-**CONSOLE**; every task is also available without a window via the command line.
+**CONSOLE**; tasks 1 to 6 and 8 are also available without a window via the command line.
 
 > [!IMPORTANT]
 > For **your own, lawfully acquired** content only. Piracy and the circumvention of copy protection are
@@ -100,7 +100,7 @@ at program start if you want.
 <td valign="top">
 
 🌐 **Web interfaces & autoloader**<br>
-Open the console's web interfaces directly in the program; WebKit Autoloader by itsPLK with version selection.
+Open the console's web interfaces in the program (on Windows) or in the browser; WebKit Autoloader by itsPLK with version selection.
 
 </td>
 <td valign="top">
@@ -125,7 +125,7 @@ on the network and sets a Windows share as source or destination.
 <td valign="top">
 
 ⌨ **Command line**<br>
-Every task also without a window (`--cli`), plus environment check (`--doktor`) and tool upkeep.
+Tasks 1 to 6 and 8 also without a window (`--cli`), plus environment check (`--doktor`) and tool upkeep.
 
 </td>
 <td valign="top">
@@ -176,8 +176,8 @@ On macOS, `Erste Installation.command` places the app and removes the quarantine
 
 - **Windows 10/11**, a current Linux distribution, or **macOS** (tested on macOS 15; older versions are untested)
 - Enough free disk space for source, intermediate state and output
-- **Windows:** the finished EXE asks for administrator rights at start (UAC). When running from source, they are
-  only needed for the path via UFS2Tool and for mounting with OSFMount; a `.ffpkg` without an intermediate
+- **Windows:** the finished EXE asks for administrator rights at start (UAC). When the window is started from source, the program asks for them too (not with `--doktor` and `--werkzeuge-pruefen`); they are
+  only needed, however, for the path via UFS2Tool and for mounting with OSFMount – a `.ffpkg` without an intermediate
   folder is created without them
 - **OSFMount not required:** the program reads `.exFAT` images with its embedded exFAT reader, without
   mounting anything – on every system. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
@@ -285,7 +285,7 @@ More in the **[LZ4 & Asset Pack Guide](Anleitungen/AMPR_Asset_Packs_Mitschnitt_A
 ## Advanced
 
 <details>
-<summary><b>Command line</b> – every task without a window</summary>
+<summary><b>Command line</b> – tasks 1 to 6 and 8 without a window</summary>
 
 <br>
 
@@ -299,7 +299,7 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | Option | Meaning |
 | --- | --- |
 | `--cli` | enables command-line mode (required) |
-| `--task N` | task 1–8 |
+| `--task N` | task 1–6 or 8 (task 7, PKG / FPKG, has no command line) |
 | `--source PATH` | source path; multiple only for task 5 |
 | `--dest PATH` | destination folder (not used for task 8) |
 | `--format …` | `folder`, `ffpfsc`, `ffpfs`, `exfat`, `ffpkg` |
@@ -416,7 +416,7 @@ The tests are in the [`tests/`](tests) folder, the release notes in [`release_no
 
 ## Platform differences
 
-The interface, all eight tasks, the command line and the transfer to the PS5 work the same everywhere.
+The interface, tasks 1–6 and 8, the command line and the transfer to the PS5 work the same everywhere.
 Differences are here:
 
 | Area | Linux and macOS |
@@ -427,6 +427,7 @@ Differences are here:
 | Elevated rights | Not required. |
 | Settings | `~/.config/PS5ImageConverterPro/` or `~/Library/Application Support/PS5ImageConverterPro/` |
 | Automatic installation of third-party tools | Windows only; otherwise FileZilla is found on the `PATH`. |
+| Web interfaces of the console | They open in the browser; the display inside the program (WebView2) exists only on Windows. |
 
 ## Legal
 

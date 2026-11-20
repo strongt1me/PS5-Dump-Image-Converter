@@ -33,7 +33,7 @@ Das Programm wandelt Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-basierte `.
 ineinander um, liest und baut PS4- und PS5-Pakete, baut AMPR EMU und BACKPORT ein und bringt
 Werkzeuge für die Konsole mit: Payloads senden, Weboberflächen im Programm öffnen, die Spielbibliothek
 der PS5 verwalten. Alles läuft über eine grafische Oberfläche mit zwei Bereichen – **UMWANDELN** und
-**KONSOLE**; jede Aufgabe gibt es auch ohne Fenster per Kommandozeile.
+**KONSOLE**; die Aufgaben 1 bis 6 und 8 gibt es auch ohne Fenster per Kommandozeile.
 
 > [!IMPORTANT]
 > Nur für **eigene, rechtmäßig erworbene** Inhalte. Piraterie und das Umgehen von Kopierschutz sind
@@ -98,7 +98,7 @@ automatisch hinaus.
 <td valign="top">
 
 🌐 **Weboberflächen & Autoloader**<br>
-Weboberflächen der Konsole direkt im Programm öffnen; WebKit Autoloader von itsPLK mit Versionswahl.
+Weboberflächen der Konsole im Programm (unter Windows) oder im Browser öffnen; WebKit Autoloader von itsPLK mit Versionswahl.
 
 </td>
 <td valign="top">
@@ -123,7 +123,7 @@ Rechner im Netz und setzt eine Windows-Freigabe als Quelle oder Ziel.
 <td valign="top">
 
 ⌨ **Kommandozeile**<br>
-Jede Aufgabe auch ohne Fenster (`--cli`), dazu Umgebungsprüfung (`--doktor`) und Werkzeugpflege.
+Die Aufgaben 1 bis 6 und 8 auch ohne Fenster (`--cli`), dazu Umgebungsprüfung (`--doktor`) und Werkzeugpflege.
 
 </td>
 <td valign="top">
@@ -174,9 +174,9 @@ Unter macOS legt `Erste Installation.command` die App ab und entfernt die Quaran
 
 - **Windows 10/11**, eine aktuelle Linux-Distribution oder **macOS** (getestet unter macOS 15; ältere Versionen sind ungetestet)
 - Genug freier Speicherplatz für Quelle, Zwischenstand und Ausgabe
-- **Windows:** Die fertige EXE fragt beim Start nach Administratorrechten (UAC). Wer aus dem Quelltext arbeitet,
-  braucht sie nur für den Weg über UFS2Tool und für das Einhängen mit OSFMount; ein `.ffpkg` ohne
-  Zwischenordner entsteht auch ohne sie
+- **Windows:** Die fertige EXE fragt beim Start nach Administratorrechten (UAC). Auch beim Start des Fensters aus dem Quelltext
+  fragt das Programm danach (nicht bei `--doktor` und `--werkzeuge-pruefen`); gebraucht werden sie aber nur für den Weg über UFS2Tool
+  und für das Einhängen mit OSFMount – ein `.ffpkg` ohne Zwischenordner entsteht auch ohne sie
 - **Kein OSFMount nötig:** `.exFAT`-Abbilder liest das Programm mit seinem eingebetteten exFAT-Leser, ohne
   etwas einzuhängen – auf jedem System. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
   ist nur der Rückfall für ungewöhnliche Abbilder unter Windows; wird er gebraucht, sagt das Programm es
@@ -287,7 +287,7 @@ Mehr dazu in der **[LZ4 & Asset Pack Anleitung](Anleitungen/AMPR_Asset_Packs_Mit
 ## Für Fortgeschrittene
 
 <details>
-<summary><b>Kommandozeile</b> – jede Aufgabe ohne Fenster</summary>
+<summary><b>Kommandozeile</b> – die Aufgaben 1 bis 6 und 8 ohne Fenster</summary>
 
 <br>
 
@@ -301,7 +301,7 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | Option | Bedeutung |
 | --- | --- |
 | `--cli` | aktiviert den Kommandozeilenmodus (erforderlich) |
-| `--task N` | Aufgabe 1–8 |
+| `--task N` | Aufgabe 1–6 oder 8 (Aufgabe 7, PKG / FPKG, hat keine Kommandozeile) |
 | `--source PFAD` | Quellpfad; mehrere nur bei Aufgabe 5 |
 | `--dest PFAD` | Zielordner (entfällt bei Aufgabe 8) |
 | `--format …` | `folder`, `ffpfsc`, `ffpfs`, `exfat`, `ffpkg` |
@@ -418,7 +418,7 @@ Die Tests liegen im Ordner [`tests/`](tests), die Release Notes in [`release_not
 
 ## Plattformunterschiede
 
-Oberfläche, alle acht Aufgaben, Kommandozeile und die Übertragung zur PS5 arbeiten überall gleich.
+Oberfläche, die Aufgaben 1–6 und 8, Kommandozeile und die Übertragung zur PS5 arbeiten überall gleich.
 Unterschiede gibt es hier:
 
 | Bereich | Linux und macOS |
@@ -429,6 +429,7 @@ Unterschiede gibt es hier:
 | Erhöhte Rechte | Nicht nötig. |
 | Einstellungen | `~/.config/PS5ImageConverterPro/` bzw. `~/Library/Application Support/PS5ImageConverterPro/` |
 | Automatische Installation von Fremdwerkzeugen | Nur Windows; FileZilla wird sonst im `PATH` gefunden. |
+| Weboberflächen der Konsole | Öffnen sich im Browser; die Anzeige im Programm (WebView2) gibt es nur unter Windows. |
 
 ## Rechtliches
 

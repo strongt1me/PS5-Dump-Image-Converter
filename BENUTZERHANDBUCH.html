@@ -313,9 +313,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
       <span class="marke">Version v2.0.0</span>
-      <span class="marke">Stand 19. November 2026</span>
+      <span class="marke">Stand 20. November 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
-      <span class="marke grau">Deutsch / English</span>
+      <span class="marke grau">Deutsch / English / Español / Italiano / Français</span>
     </div>
   </div>
 </header>
@@ -383,7 +383,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <div class="kasten">
     <span class="titel">Das Wichtigste in einem Satz</span>
-    <p>Wählen Sie links die passende Aufgabe, bestimmen Sie Quelle, Zielformat, Zielordner und Temp-Ordner – und starten Sie erst dann die Verarbeitung.</p>
+    <p>Wählen Sie links die passende Aufgabe, bestimmen Sie Quelle, Zielformat und Zielordner (und, wo das Feld erscheint, den Temp-Ordner) – und starten Sie erst dann die Verarbeitung.</p>
   </div>
 
   <h3>1.1 Was Sie vor dem Start benötigen</h3>
@@ -417,19 +417,18 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <tbody>
       <tr><td><strong>QUELLE</strong></td><td>Die Datei oder der Ordner, der verarbeitet werden soll. Sie können ihn auch <strong>aus dem Explorer in das Feld ziehen</strong> (Drag &amp; Drop) – das geht ebenso bei ZIELORDNER und TEMP-ORDNER, auch wenn das Programm als Administrator läuft. Solange ein Feld leer ist, steht dort ein grauer Hinweis, was hineingehört (je nach Aufgabe ein Dump-Ordner oder eine bestimmte Datei).</td></tr>
       <tr><td><strong>ZIELFORMAT</strong></td><td>Legt fest, ob ein Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code> entstehen soll. Erscheint nur, wenn es gebraucht wird.</td></tr>
-      <tr><td><strong>KOMPRESSION (PFS)</strong></td><td>Wie stark gepackt wird – 1 am schnellsten, 9 am kleinsten. Für den Einstieg reicht „6 – Ausgewogen“.</td></tr>
+      <tr><td><strong>KOMPRESSION (PFS)</strong></td><td>Wie stark gepackt wird – 1 am schnellsten, 9 am kleinsten. Für den Einstieg reicht „6 – Ausgewogen“. Das Feld ist nur bedienbar, wenn als Zielformat <code>.ffpfsc</code> gewählt ist; die anderen Formate werden nicht komprimiert.</td></tr>
       <tr><td><strong>WORKER</strong></td><td>Wie viele Arbeitsvorgänge gleichzeitig laufen. Ein Kern bleibt immer frei; sehr große Abbilder werden zusätzlich gedrosselt. Eingestellt wird der Wert seit v1.8.92 an einem <strong>Drehknopf</strong>: mit gedrückter Maustaste drehen, mit dem <strong>Mausrad</strong> oder den <strong>Pfeiltasten</strong> um eins ändern, per <strong>Doppelklick</strong> zurück auf die Voreinstellung. Die eingestellte Zahl steht in der Mitte des Knopfes. Fahren Sie mit der Maus darüber, dann steht dort, was Ihre Einstellung konkret bewirkt.</td></tr>
-      <tr><td><strong>VOREINSTELLUNG</strong></td><td>Vier Knöpfe rechts neben den Ankreuzfeldern am Fuß der Pfad-Karte setzen <strong>Kompressionsstufe und Kernzahl</strong> mit einem Klick: <em>Schnell</em> (Stufe&nbsp;3, alle Kerne), <em>Ausgewogen</em> (Stufe&nbsp;6, halbe Kernzahl), <em>Maximal</em> (Stufe&nbsp;9, halbe Kernzahl) und <em>Wenig RAM</em> (Stufe&nbsp;3, ein Kern &ndash; nur ein Arbeiter belegt Arbeitsspeicher, dafür dauert es länger). Der Knopf, dessen Werte gerade eingestellt sind, ist hervorgehoben; ändern Sie Stufe oder Worker von Hand, erlischt die Hervorhebung. Die <strong>Blockgröße bleibt bei 65536</strong>: kleinere Blöcke brachten in der Messung 0,1&nbsp;% und 64&nbsp;KB ist die Einheit, mit der ShadowMount+ das Abbild einhängt. Bei sehr schmalem Fenster entfallen die Knöpfe, statt über ein Ankreuzfeld zu ragen. Die Idee stammt aus PS5-FFPFSC-PRO&nbsp;1.3.0.</td></tr>
       <tr><td><strong>PRÜFUNG</strong></td><td>Ob das fertige Abbild nach dem Packen geprüft wird. „Schnell“ prüft die Struktur und eine Stichprobe der Blöcke (etwa 1 %, höchstens 1 GiB), „Vollständig“ liest zusätzlich alles zurück und dauert deutlich länger, „Aus“ prüft nur die Struktur. <a href="#k12">Aufgabe 8</a> prüft auch nachträglich jederzeit.</td></tr>
       <tr><td><strong>ZIELORDNER</strong></td><td>Hierhin schreibt das Programm das fertige Ergebnis. Verwenden Sie am besten einen anderen Ordner als die Quelle. Das Feld startet leer; der Auswahldialog öffnet im zuletzt benutzten Zielordner.</td></tr>
-      <tr><td><strong>TEMP-ORDNER</strong></td><td>Seit v1.9.98 erscheint das Feld nur noch, wo noch ein Zwischenordner angelegt wird (wenn die Umwandlung ohne Zwischenordner ausgeschaltet ist, oder bei AMPR EMU mit LZ4-Asset-Pack, wo der Lauf ausnahmsweise doch einen Zwischenordner braucht, <a href="#k3">Abschnitt 3.3</a>); sonst bleibt es verborgen, und ein früher gewählter Ordner gilt weiter. Das Feld startet leer; <strong>leer heißt: der Temp-Ordner von Windows</strong>, ohne dass er im Feld erscheint. Ablage für vorübergehende Arbeitsdateien. Am besten ein eigener Ordner auf einem großen Laufwerk (z.&nbsp;B. <code>D:\PS5-Temp</code>): Im Windows-Temp-Ordner darf die Windows-Speicheroptimierung bei knappem Platz Dateien löschen &ndash; auch eine Arbeitskopie mitten im Lauf. Liegt der Temp-Ordner dort und ist das Löschen eingeschaltet, warnt das Protokoll beim Start eines Laufs.</td></tr>
-      <tr><td><strong>Dump-Ordner im Arbeitsordner</strong></td><td>Ankreuzfeld in der Pfad-Karte. Beim Umpacken (etwa <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>) entpackt das Programm die Quelle zuerst in einen vor&uuml;bergehenden Dump-Ordner. Ab Werk liegt der beim <em>Ziel</em>; ist das Feld gesetzt, wandert er in den Arbeitsordner &ndash; auf dem Ziel-Laufwerk entsteht dann nur das fertige Ergebnis. Der Arbeitsordner muss daf&uuml;r den vollst&auml;ndigen Dump fassen. Reine Entpack-Aufgaben sind nicht betroffen: Dort <em>ist</em> der Dump-Ordner das Ergebnis.</td></tr>
+      <tr><td><strong>TEMP-ORDNER</strong></td><td>Seit v1.9.98 erscheint das Feld nur noch, wo noch ein Zwischenordner angelegt wird (wenn die Umwandlung ohne Zwischenordner ausgeschaltet ist, bei AMPR EMU mit LZ4-Asset-Pack, wo der Lauf ausnahmsweise doch einen Zwischenordner braucht, <a href="#k3">Abschnitt 3.3</a>, oder wenn die Quelle ein Archiv ist, das zuerst entpackt wird); sonst bleibt es verborgen, und ein früher gewählter Ordner gilt weiter. Das Feld startet leer; <strong>leer heißt: der Standard-Arbeitsordner</strong> &ndash; unter Windows <code>Temp - Dump-Image Converter</code> im Wurzelverzeichnis des Systemlaufwerks (meist <code>C:\</code>), unter Linux und macOS der Temp-Ordner des Systems. Beim Start einer Aufgabe trägt das Programm ihn ins Feld ein. Ablage für vorübergehende Arbeitsdateien. Am besten ein eigener Ordner auf einem großen Laufwerk (z.&nbsp;B. <code>D:\PS5-Temp</code>): Im Windows-Temp-Ordner darf die Windows-Speicheroptimierung bei knappem Platz Dateien löschen &ndash; auch eine Arbeitskopie mitten im Lauf. Liegt der Temp-Ordner dort und ist das Löschen eingeschaltet, warnt das Protokoll beim Start eines Laufs.</td></tr>
+      <tr><td><strong>Dump-Ordner im Arbeitsordner</strong></td><td>Ankreuzfeld in der Pfad-Karte; es erscheint nur zusammen mit dem Feld <em>TEMP-ORDNER</em>, also nur dort, wo das Programm einen Zwischenordner anlegt. Entpackt das Programm beim Umpacken (etwa <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>) die Quelle zuerst in einen vor&uuml;bergehenden Dump-Ordner, liegt der ab Werk beim <em>Ziel</em>; ist das Feld gesetzt, wandert er in den Arbeitsordner &ndash; auf dem Ziel-Laufwerk entsteht dann nur das fertige Ergebnis. Der Arbeitsordner muss daf&uuml;r den vollst&auml;ndigen Dump fassen. Reine Entpack-Aufgaben sind nicht betroffen: Dort <em>ist</em> der Dump-Ordner das Ergebnis.</td></tr>
       <tr><td><strong>Dump-Ordner: Arbeitskopie vorher anlegen</strong></td><td>Ankreuzfeld darunter. Muss in einem vorhandenen Dump-Ordner etwas eingebaut werden (BACKPORT, AMPR EMU, Asset-Pack, PlayGo), legt das Programm ohne Rückfrage eine Arbeitskopie an (bei Aufgabe&nbsp;1 eine Sicherung im Zielordner) und arbeitet darin &ndash; das Original bleibt unverändert, und ein Lauf muss nicht auf Ihr „Ja“ warten. Ohne Haken wird wie bisher gefragt.</td></tr>
       <tr><td><strong>Rechner herunterfahren</strong></td><td>Ankreuzfeld in der Pfad-Karte. Ist es gesetzt, fährt der Rechner nach einem <em>erfolgreichen</em> Lauf von allein herunter – siehe <a href="#k3">Abschnitt 3.2</a>.</td></tr>
       <tr><td><strong>STARTEN</strong></td><td>Beginnt die gewählte Aufgabe, sobald alle erforderlichen Angaben vorliegen.</td></tr>
       <tr><td><strong>ABBRECHEN</strong></td><td>Fordert einen kontrollierten Abbruch an. Warten Sie danach, bis das Programm den Abbruch bestätigt.</td></tr>
-      <tr><td><strong>Live-Anzeige</strong></td><td>Rechts unter dem Protokoll steht während eines Laufs einmal pro Sekunde die Auslastung: „CPU: 42% | RAM: 9.00 GB frei (15.00 GB / 24.00 GB) | Temp: …“. Vorn steht der <strong>freie Arbeitsspeicher</strong>, dahinter belegt und gesamt. Fällt er unter 1&nbsp;GB, heißt es „RAM: nur noch … frei“ &ndash; bei 0,8&nbsp;GB brach am 20.09.2026 ein Bau mit <code>MemoryError</code> ab. Dann hilft die Voreinstellung <em>Wenig RAM</em> oder das Schließen anderer Programme.</td></tr>
-      <tr><td><strong>Protokollbereich</strong></td><td>Zeigt verständliche Statusmeldungen, Warnungen und den Abschluss der Aufgabe. Jeder Arbeitsschritt steht dort mit „[…]“; lange Schritte (Prüfen, Prüfsummen, Übertragen, Arbeitskopie) melden alle 10&nbsp;% ihren Stand mit Restzeit und am Ende ihre Dauer. Die Statuszeile darunter zeigt dasselbe laufend („… – 42&nbsp;% · noch ca. 3:10“ bzw. „… – läuft seit 1:23“, wenn sich kein Anteil messen lässt). Beim Wählen einer Quelle steht hier außerdem, was in dem Spiel schon eingebaut ist (BACKPORT, AMPR EMU, Asset-Pack, PlayGo) und ob PlayGo nötig wäre &ndash; eingeschaltet wird dabei nichts.</td></tr>
+      <tr><td><strong>Live-Anzeige</strong></td><td>Rechts unter dem Protokoll steht während eines Laufs einmal pro Sekunde die Auslastung: „CPU: 42% | RAM: 9.00 GB frei (15.00 GB / 24.00 GB) | Temp: …“. Vorn steht der <strong>freie Arbeitsspeicher</strong>, dahinter belegt und gesamt. Fällt er unter 1&nbsp;GB, heißt es „RAM: nur noch … frei“ &ndash; bei 0,8&nbsp;GB brach am 20.09.2026 ein Bau mit <code>MemoryError</code> ab. Dann hilft es, die Zahl der Worker zu senken oder andere Programme zu schließen; geht der Arbeitsspeicher beim Packen aus, startet das Programm den Lauf selbst mit weniger Kernen neu.</td></tr>
+      <tr><td><strong>Protokollbereich</strong></td><td>Zeigt verständliche Statusmeldungen, Warnungen und den Abschluss der Aufgabe. Jeder Arbeitsschritt steht dort mit „[…]“; lange Schritte (Prüfen, Prüfsummen, Übertragen, Arbeitskopie) melden alle 10&nbsp;% ihren Stand mit Restzeit und am Ende ihre Dauer. Die Statuszeile darunter zeigt dasselbe laufend („… – 42&nbsp;% · noch ca. 3:10“ bzw. „… – läuft seit 1:23“, wenn sich kein Anteil messen lässt). Beim Wählen einer Quelle steht hier außerdem, was in dem Spiel schon eingebaut ist (BACKPORT, AMPR EMU, Asset-Pack, PlayGo) und ob PlayGo nötig wäre. Hat das Spiel PlayGo- oder DLC-Inhalte, hakt das Programm <em>PlayGo</em> bzw. <em>DLC EMU</em> selbst an; das gilt nur für diese Sitzung (gespeichert wird es nicht), und ein von Hand gesetzter Haken bleibt unberührt.</td></tr>
     </tbody>
   </table>
   </div>
@@ -439,13 +438,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Oben rechts liegt die Werkzeugleiste mit weiteren Funktionen (FILEZILLA, JS LOADER, CREDITS, DESIGN und mehr). Für eine normale Konvertierung brauchen Sie diese Schaltflächen nicht – sie sind in <a href="#k14">Kapitel 14</a> erklärt.</p>
   <h3>2.1 Die zweite Ansicht: KONSOLE</h3>
   <p>Unter dem Logo in der Seitenleiste schaltet <strong>KONSOLE&nbsp;›</strong>
-  auf eine zweite Ansicht um. Dort stehen links zehn Werkzeuge für die Arbeit
+  auf eine zweite Ansicht um. Dort stehen links zwölf Werkzeuge für die Arbeit
   mit der Konsole: <em>1.&nbsp;Konsole &amp; Payloads</em>,
   <em>2.&nbsp;WebKit Autoloader</em>, <em>3.&nbsp;Bibliothek</em>,
   <em>4.&nbsp;Prospero Manager</em>, <em>5.&nbsp;CoolSysCent-Pro</em>,
   <em>6.&nbsp;ShadowMount+</em>, <em>7.&nbsp;SMPlusGui</em>,
-  <em>8.&nbsp;BFpilot</em>, <em>9.&nbsp;AMPR EMU Manager</em> und
-  <em>10.&nbsp;AMPR-Mitschnitt</em>. Titelbild,
+  <em>8.&nbsp;BFpilot</em>, <em>9.&nbsp;AMPR EMU Manager</em>,
+  <em>10.&nbsp;AMPR-Mitschnitt</em>, <em>11.&nbsp;Asset-Pack</em> und
+  <em>12.&nbsp;Y2JB Updater</em>. Titelbild,
   „Spiel Info“ und „Was man sonst ev. noch braucht“ gibt es dort nicht. Rechts
   steht die Seite <strong>Konsole &amp; Payloads</strong> (siehe unten);
   <em>2.&nbsp;WebKit Autoloader</em> und <em>3.&nbsp;Bibliothek</em> zeigen an
@@ -542,7 +542,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   PS5 Cooling &amp; System Center (Port&nbsp;8086), PS4Mount (Port&nbsp;8770), NeoEnabler (Port&nbsp;8765), exFAT2AMPR (Port&nbsp;6972), PatchDL (Port&nbsp;12880), Home Hider (Port&nbsp;8090) und Kraken Mount (Port&nbsp;8097) &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
   mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Die
   Version ist die der mitgelieferten Datei, die das Programm startet.
-  FTP-Server, Payload-Manager, das Cooling &amp; System Center, PS4Mount, NeoEnabler, exFAT2AMPR, PatchDL, Home Hider und ShadowMount+ nennen ihre laufende Version selbst (ShadowMount+ nur, wenn seine Schnittstelle von diesem PC aus erreichbar ist); weicht
+  FTP-Server, Payload-Manager, das Cooling &amp; System Center, PS4Mount, NeoEnabler, exFAT2AMPR, PatchDL, Home Hider, App Dumper und ShadowMount+ nennen ihre laufende Version selbst (ShadowMount+ nur, wenn seine Schnittstelle von diesem PC aus erreichbar ist); weicht
   sie ab, etwa weil ein älteres Payload von anderswo gestartet wurde, steht
   die mitgelieferte in Klammern dahinter. Bei ShadowMount+, dem zweiten ELF-Loader-Port (9020) und DPI&nbsp;v2 steht die Version der beiliegenden Datei, obwohl das Programm sie dort nicht startet. Alle übrigen Dienste verraten ihre
   Version nicht. Bei ps5upload öffnet der Knopf <em>Weboberfläche öffnen</em> die Seite
@@ -554,7 +554,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Netz offen &ndash; schalten Sie die Einstellung nach der Benutzung wieder aus. Ports und Weboberflächen der acht am 2. Oktober 2026
   hinzugekommenen Dienste (CheatRunner bis ps5debug-NG), von AnyPad PS5 und von DPI&nbsp;v2
   stammen aus den Beschreibungen ihrer Autoren und sind an der Konsole noch
-  nicht nachgemessen. AnyPad PS5 (mitgeliefert: 0.9.1-beta) macht Bluetooth-Controller
+  nicht nachgemessen (Ausnahme: zftpd, dessen Ports am 29.10.2026 an der Konsole gemessen wurden). AnyPad PS5 (mitgeliefert: 0.9.5-beta) macht Bluetooth-Controller
   an der PS5 nutzbar; Spiele sehen sie als DualSense. Laut Autor an einer echten
   PS5 bestätigt sind DualShock&nbsp;4&nbsp;v2, 8BitDo SF30 Pro (Switch-Modus) und
   GameSir G7 SE; Xbox-, Switch-Pro- und weitere Controller werden unterstützt,
@@ -570,10 +570,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   liegt auf der Konsole im Ordner <code>/data/OnionHEN/plugins</code> und wird von
   OnionHEN gestartet &ndash; <em>Ausgewähltes starten</em> schickt es deshalb
   nicht.
-  PS4Mount (gasb07, mitgeliefert: 0.5.1) spielt PS4-Fake-PKGs direkt von einem USB-Laufwerk, ohne sie auf der
+  PS4Mount (gasb07, mitgeliefert: 0.8.0) spielt PS4-Fake-PKGs direkt von einem USB-Laufwerk, ohne sie auf der
   Konsole zu installieren: Die PKG-Dateien (Spiel, Update, Add-ons) gehören in den Hauptordner eines
-  exFAT-Laufwerks; beim ersten Lauf legt PS4Mount sie je Spiel unter <code>/ps4/CUSAxxxxx</code> auf dem
-  Laufwerk ab. Nach dem Senden (an den ELF-Loader) erscheinen die Spiele auf dem Startbildschirm. Seine
+  exFAT-Laufwerks; PS4Mount verschiebt sie nicht, sondern sucht sie im Hauptordner und in den Ordnern, die in den Einstellungen
+  seiner Weboberfläche stehen (der Ordner <code>ps4</code> wird immer durchsucht). Nach dem Senden (an den ELF-Loader) erscheinen die Spiele auf dem Startbildschirm. Seine
   Weboberfläche (Port&nbsp;8770, ohne Anmeldung, also nicht im fremden Netz; auf der Konsole auch in der Reihe
   <em>Medien</em>) zeigt sie und nimmt sie aus der Bibliothek, ohne das PKG zu löschen. PS4Mount liest das
   Kernel-Protokoll: Entweder läuft klogsrv (Port&nbsp;3232), oder kein anderes Payload liest <code>/dev/klog</code> &ndash;
@@ -581,15 +581,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   unter 6.00 trägt es jedes Spiel einzeln ein); mehrere gleichzeitig
   angeschlossene Laufwerke können die Oberfläche der Konsole verlangsamen. Port und Weboberfläche stammen aus der
   Beschreibung des Autors und sind an der Konsole noch nicht nachgemessen.
-  NeoEnabler (gasb07, mitgeliefert: 0.3.0) startet PS4-Spiele auf der PS5 im PS4-Pro-Modus, laut Autor bis zu
+  NeoEnabler (gasb07, mitgeliefert: 0.7.0) startet PS4-Spiele auf der PS5 im PS4-Pro-Modus, laut Autor bis zu
   nativem 4K, aber nur für die Spiele, für die er Patches mitbringt. Er setzt <strong>ps-patch-system</strong>
   voraus: Laden Sie es nach jedem Start der Konsole zuerst und senden Sie danach NeoEnabler (an den
   ELF-Loader). Beim Start lädt NeoEnabler seine Spielpatches aus dem Projekt des Autors auf GitHub und trägt sie in
   die Dateien von ps-patch-system ein; vorher sichert er diese unter <code>/data/neo-enabler/xml-backup</code>. Auf
   seiner Weboberfläche (Port&nbsp;8765, ohne Anmeldung, also nicht im fremden Netz; auf der Konsole auch in der
-  Reihe <em>Medien</em>) wählen Sie je Spiel den Patch. Der 8-GiB-Speicher, den manche Patches brauchen, geht laut
-  Autor nur auf Firmware 13.20 (13.60 ist noch ungetestet) und mit freigeschaltetem Hypervisor; der Reiter
-  <em>GPU clock</em> erscheint nur auf Firmware 13.20 und ist ab Werk aus. Port und Weboberfläche stammen aus der
+  Reihe <em>Medien</em>) wählen Sie je Spiel den Patch. Der 8-GiB-Modus (<em>8GB Mode</em>), den manche Patches brauchen, ist nach den Meldungen von NeoEnabler 0.7.0
+  nur auf Firmware 13.20 und 13.60 vorgesehen (10.01, 12.20 und 12.70 experimentell) und setzt einen geprüften
+  Launch-Hook für den Speicher voraus; ab Werk ist er aus. Port und Weboberfläche stammen aus der
   Beschreibung des Autors und sind an der Konsole noch nicht nachgemessen.
   CheatRunner (Port&nbsp;9999) aktualisieren Sie laut Autor in dieser
   Reihenfolge, <strong>bevor</strong> Sie die neue Fassung senden: Erstens
@@ -673,8 +673,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   mitgelieferte Werkzeug bei seinem Autor nach der neuesten Freigabe &ndash;
   die Payloads im Ordner <code>helloworld</code>, den WebKit Autoloader,
   AMPR&nbsp;EMU und die Engines (MkPFS, UFS2Tool, LibProsperoPkg, OrbisPkgTool,
-  PS5-PKG-Tool, PS5 Wee Tools, 7-Zip). Das ist der einzige Netzzugriff – bis auf die automatische Suche nach neuen NG-Fassungen beim Start (ab Werk an, unter EINSTELLUNGEN abschaltbar, siehe Abschnitt 11.1); ohne den
-  Knopf fragt das Programm sonst nirgends nach. Die Liste zeigt je Werkzeug die
+  PS5-PKG-Tool, Dump Forge (Befehlszeile), PS5 Wee Tools, 7-Zip). Das ist die einzige Abfrage nach neuen Fassungen der Werkzeuge – bis auf die automatische Suche nach neuen NG-Fassungen beim Start (ab Werk an, unter EINSTELLUNGEN abschaltbar, siehe Abschnitt 11.1); ohne den
+  Knopf fragt das Programm sonst nirgends nach neuen Werkzeugen. Davon getrennt ist der Online-Nachschlag fehlender Spieldaten (<em>Fehlende Metadaten online nachschlagen</em> unter EINSTELLUNGEN; unter Windows und Linux ab Werk an). Die Liste zeigt je Werkzeug die
   mitgelieferte und die neueste Fassung und ein Urteil: <em>Neue Fassung</em>
   (zum Ankreuzen), <em>Aktuell</em>, <em>Mitgeliefert ist neuer</em> (etwa ein
   Vorabbau, den der Autor noch nicht so veröffentlicht hat), <em>Neu &ndash; von
@@ -768,8 +768,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   bei Paketen gesperrt: Ein Paket wird auf der Konsole installiert, nicht
   eingehängt, und die Ablagen, in die <em>Kopieren</em> sendet, sind für
   Abbilder und Dump-Ordner da. <em>Konvertieren</em> geht nur bei einer
-  <code>.pkg</code> eines PS4-Titels: Es öffnet das Fenster <em>PS4 PKG Dump &amp;
-  Image Converter</em> mit der Datei schon eingetragen. Eine <code>.fpkg</code> und ein
+  <code>.pkg</code> eines PS4-Titels: Es öffnet die Seite <em>Aufgabe 7 &ndash; PKG / FPKG</em> (PKG) mit der Datei schon eingetragen. Eine <code>.fpkg</code> und ein
   PS5-Paket wandelt das Programm nicht um. Einbauten trägt ein Paket nicht;
   auf seiner Karte stehen deshalb weder Marken noch eine Zeile dazu.</p>
   <p>Die Kopfkarte fasst zusammen, was gerade zu sehen ist. Quelle und Ansicht
@@ -782,7 +781,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Filter <em>Alle</em>, <em>PS5</em>, <em>PS4</em> und
   <em>Backport&nbsp;·&nbsp;AMPR&nbsp;·&nbsp;PlayGo</em> und die
   <em>Sortierung</em>: Sie ordnet beide Ansichten nach Titel, Title-ID,
-  Version, Format oder Pfad, auf Wunsch absteigend. Die gewählte Karte
+  Version, Firmware, Format, Einbauten oder Pfad, auf Wunsch absteigend. Die gewählte Karte
   erkennen Sie am farbigen Rahmen, ein Titel ohne Titelbild zeigt ein
   durchgestrichenes Bild. Auch die Liste zeigt zu jedem Titel ein kleines
   Titelbild. Der Punkt vor der Statuszeile leuchtet während eines Suchlaufs in
@@ -832,26 +831,24 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   ihr beginnt), dann das Spiel selbst &ndash; jeweils zuerst
   <code>fakelib2</code>, dann <code>fakelib</code>. Liegen beide im Spiel,
   steht der Hinweis „fakelib2 verdeckt fakelib“: ShadowMount+ liest dann nur
-  <code>fakelib2</code>. In ein <code>.ffpkg</code>, in ein Abbild auf der PS5
+  <code>fakelib2</code>. In ein Abbild auf der PS5 (auch in ein <code>.ffpkg</code>)
   und in ein installiertes Paket (ohne <code>backports</code>-Ordner) kann das
   Programm nicht hineinsehen &ndash; dort steht „nicht ermittelbar“, nie
   „keine“.</p>
   <p><strong>Backport als eigener Ordner.</strong> Im BACKPORT-Fenster legt
   <em>Nur Backport-Ordner erstellen …</em> den Backport neben das Spiel statt
-  hinein: Sie wählen einen Ausgabeordner, darin entsteht
-  <code>backports/&lt;Title-ID&gt;</code> mit den herabgesetzten Dateien (gleiche
-  Pfade wie im Spiel), der herabgesetzten <code>param.json</code> und dem Ordner
-  <code>fakelib</code>. Das Spiel selbst bleibt unverändert. So verlangt es
-  ShadowMount+ (ab 1.7beta2): Legen Sie den Ordner
-  <code>&lt;Title-ID&gt;</code> auf die Konsole nach
-  <code>/data/homebrew/backports/&lt;Title-ID&gt;/</code> (oder in den Ordner
-  <code>backports</code> eines anderen Suchpfads). ShadowMount+ blendet ihn beim
-  Start über das Spiel; der Ordner <code>backports</code> wird beim normalen Scan
-  übergangen. Eine <code>fakelib</code> des Spiels (etwa AMPR EMU) geht in den
-  Backport-Ordner mit, weil ShadowMount+ nur einen Ordner wählt. Nach dem Bauen
-  fragt das Programm, ob es den Ordner gleich per FTP an diese Stelle der Konsole
-  legen soll. Die Zielfirmware ist passend zur Konsole vorgewählt: die höchste
-  Stufe, die nicht über der Firmware der Konsole liegt.</p>
+  hinein: Sie wählen einen Ausgabeordner, darin entsteht der Ordner
+  <code>&lt;Title-ID&gt; Backport FW&lt;n&gt;</code> mit denselben Dateien wie beim
+  Backport im Spielordner: den herabgesetzten Dateien (gleiche Pfade wie im Spiel),
+  der herabgesetzten <code>param.json</code> und dem Bibliotheksordner
+  <code>fakelib</code> bzw. <code>fakelib2</code>. Das Spiel selbst bleibt
+  unverändert. Kopieren Sie den <em>Inhalt</em> dieses Ordners in den Spielordner
+  und bestätigen Sie „Dateien ersetzen“. Eine <code>fakelib</code> des Spiels
+  (etwa AMPR EMU) geht in den Ordner mit. Den Weg über
+  <code>backports/&lt;Title-ID&gt;</code> (ShadowMount+ ab 1.7beta2) legt das Programm
+  nicht mehr an: ShadowMount+ 1.7beta10 konnte ihn an einer Konsole mit Firmware
+  12.00 nicht einhängen. Die Zielfirmware ist passend zur Konsole vorgewählt: die
+  höchste Stufe, die nicht über der Firmware der Konsole liegt.</p>
   <p><strong>Firmware auf der Karte.</strong> Links über dem Titelbild steht,
   welche Firmware das Spiel laut seiner <code>param.json</code> verlangt
   (<em>Benötigt FW 10.01</em>). Trägt das Spiel einen BACKPORT, folgt dahinter die
@@ -944,7 +941,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <div class="kasten">
     <span class="titel">Wem dieses Programm zu verdanken ist</span>
     <p>Hinter <strong>CREDITS</strong> steht die vollständige Danksagung. Fast alles, was dieses Programm tut, beruht auf Arbeit anderer: Die PFS-Verarbeitung leistet <strong>MkPFS</strong> von PSBrew und Renan Barreto, die UFS2-Struktur erledigt <strong>UFS2Tool</strong> (hier für Dateien über 2&nbsp;GB gepatcht), PS5-Pakete liest <strong>LibProsperoPkg</strong> von SvenGDK, PS4-Pakete wandelt <strong>PS4 FFPFSC</strong> um. Dazu kommen Dutzende Payloads und Werkzeuge aus der Homebrew-Gemeinschaft. Das Fenster zeigt die Entwicklerinnen und Entwickler als Karten mit GitHub-Profilbild, Namen, ihren Werken als anklickbaren Links und einem Dank &ndash; in drei Gruppen: das Programm, die Werkzeuge und Arbeiten darin, und bekannte Köpfe der Community. Die Bilder liegen dem Programm bei (Ordner <code>credits</code>), geladen wird dafür nichts aus dem Netz.</p>
-    <p>Zwei Minuten nach dem Start blendet das Programm oben rechts unter der Werkzeugleiste für fünf Minuten ein Banner der Community <strong>psxtools.de</strong> ein, danach alle 30 Minuten wieder. Ein Klick darauf öffnet die Seite im Browser, ein Rechtsklick schließt das Banner nur. Es nimmt keinen Fokus, folgt dem Fenster, wenn es verschoben wird, und erscheint nicht, solange das Programm minimiert ist.</p>
+    <p>Zwei Minuten nach dem Start blendet das Programm oben rechts unter der Werkzeugleiste für fünf Minuten ein Banner der Community <strong>psxtools.de</strong> ein, danach alle 30 Minuten wieder. Ein Klick darauf öffnet die Seite im Browser, ein Rechtsklick schließt das Banner nur. Es nimmt keinen Fokus, folgt dem Fenster, wenn es verschoben wird, und erscheint nicht, solange das Programm minimiert ist. Das Banner gibt es nur unter Windows. Das ✕ im Banner schließt es endgültig (die Wahl wird gespeichert); es erscheint auch nicht, wo es etwas Sichtbares zudecken würde.</p>
     <p>Das Programm selbst steht seit dem 07.10.2026 unter der GNU General Public License, Version 3 oder neuer (GPL-3.0-or-later, Datei <code>LICENSE</code>); Fassungen bis einschließlich v1.9.64 wurden unter der MIT-Lizenz veröffentlicht. Für die mitgelieferten Fremdkomponenten gelten deren eigene Lizenzen. Deren Lizenzen stehen in <code>THIRD_PARTY_LICENSES.md</code> und sind aus dem CREDITS-Fenster aufrufbar. Wer das Programm weitergibt, sollte dort hineinsehen – einige Bestandteile haben eigene Bedingungen.</p>
   </div>
 </section>
@@ -982,7 +979,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <ol class="schritte">
     <li>Ein Fenster erscheint und zählt 60 Sekunden herunter. Solange können Sie mit <strong>Abbrechen – Rechner anlassen</strong> oder der ESC-Taste widersprechen.</li>
     <li>Danach löst das Programm alle eingebundenen Abbilder, entfernt die temporären Arbeitsdateien und schreibt das Protokoll auf die Festplatte.</li>
-    <li>Erst dann fährt Windows herunter – ohne weitere Rückfragen.</li>
+    <li>Erst dann fährt der Rechner herunter – unter Windows ohne weitere Rückfragen.</li>
   </ol>
 
   <div class="kasten achtung">
@@ -1040,7 +1037,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   die das Abbild nicht fasst. Das Protokoll nennt den Grund
   ("&hellip; wird wie bisher &uuml;ber einen Zwischenordner gepackt") und
   warnt, wenn der Arbeitsordner dafür zu klein ist. Das Feld
-  <em>TEMP-ORDNER</em> in der Hauptansicht erscheint nur noch, wo die Umwandlung ohne Zwischenordner ausgeschaltet ist oder AMPR EMU mit einem LZ4-Asset-Pack eingebaut wird (dort braucht der Lauf ausnahmsweise doch einen Zwischenordner); ein dort einmal gew&auml;hlter Ordner
+  <em>TEMP-ORDNER</em> in der Hauptansicht erscheint nur noch, wo die Umwandlung ohne Zwischenordner ausgeschaltet ist, AMPR EMU mit einem LZ4-Asset-Pack eingebaut wird oder ein Archiv als Quelle gewählt ist (dort braucht der Lauf ausnahmsweise doch einen Zwischenordner); ein dort einmal gew&auml;hlter Ordner
   gilt weiter, und &uuml;ber das Fenster &bdquo;Wenn der Platz nicht
   reicht&ldquo; l&auml;sst sich ein anderer Arbeitsordner w&auml;hlen.</p>
   <p>Auf der Kommandozeile gibt es kein Fenster: Dort wird der Befund
@@ -1083,9 +1080,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   gibt es diese Frage nicht.</p>
 
   <h3>3.5 Vor dem Start, nach einem Fehler und beim Benennen</h3>
-  <p><strong>Vorabprüfung.</strong> Vor dem Start sieht das Programm den Spielordner einmal durch und nennt <em>alle</em> Befunde zugleich; die betroffenen Pfade stehen im Protokoll. Bei einem exFAT-Abbild sind Namen außerhalb von ASCII, Verknüpfungen, unzulässige Zeichen und Namen, die sich nur in der Groß- und Kleinschreibung unterscheiden, <em>Fehler</em> – der Schreiber würde sie erst nach dem Kopieren ablehnen. Bei <code>.ffpkg</code>, <code>.ffpfs</code> und <code>.ffpfsc</code> sind sie eine Warnung, dort ist es nicht belegt. Warnungen gibt es außerdem für Pfade tiefer als 32 Ordnerebenen und für einen Ausgabenamen über 63 Bytes (bei <code>.ffpfsc</code> 58), der nach dem Einhängepfad von ShadowMount+ nicht mehr passen könnte; das ist an der Konsole nicht gemessen. Ein Fehler ist auch ein FAT32-Ziel, wenn eine Datei über 4&nbsp;GiB hat. Die Sammelkonvertierung prüft nur die Ausgabenamen, die Namensprobe liest höchstens 20 Sekunden. Eine Probe, die selbst scheitert, verhindert den Start nie.</p>
+  <p><strong>Vorabprüfung.</strong> Vor dem Start sieht das Programm den Spielordner einmal durch und nennt <em>alle</em> Befunde zugleich; die betroffenen Pfade stehen im Protokoll. Bei einem exFAT-Abbild sind Namen außerhalb von ASCII, Verknüpfungen, unzulässige Zeichen und Namen, die sich nur in der Groß- und Kleinschreibung unterscheiden, <em>Fehler</em> – der Schreiber würde sie erst nach dem Kopieren ablehnen. Bei <code>.ffpkg</code>, <code>.ffpfs</code> und <code>.ffpfsc</code> sind Namen außerhalb von ASCII und Namen, die sich nur in der Groß- und Kleinschreibung unterscheiden, eine Warnung, dort ist es nicht belegt. Warnungen gibt es außerdem für Pfade tiefer als 32 Ordnerebenen und für einen Ausgabenamen über 63 Bytes (bei <code>.ffpfsc</code> 58), der nach dem Einhängepfad von ShadowMount+ nicht mehr passen könnte; das ist an der Konsole nicht gemessen. Ein Fehler ist auch ein FAT32-Ziel, wenn eine Datei über 4&nbsp;GiB hat. Die Sammelkonvertierung prüft nur die Ausgabenamen, die Namensprobe liest höchstens 5 Sekunden; was danach ungelesen bleibt, nennt das Protokoll. Eine Probe, die selbst scheitert, verhindert den Start nie.</p>
   <p><strong>Ausgabename per Vorlage.</strong> Standardmäßig heißt das Ergebnis wie die Quelle. Unter <strong>EINSTELLUNGEN</strong>, Abschnitt <em>AUSGABENAME</em>, bilden Sie den Namen aus den Angaben des Spiels, etwa <code>{title} [{title_id}] v{version}</code> (<em>Astro Bot [PPSA01234] v1.0.0</em>). Teile sind <code>{name}</code> (Name der Quelle), <code>{title}</code>, <code>{title_id}</code>, <code>{version}</code>, <code>{region}</code>, <code>{fw}</code> (Mindest-Firmware) und <code>{pack}</code> (zstd oder lz4, bei einem Spiel ohne Asset-Pack leer); jeder höchstens einmal, und mindestens <code>{name}</code>, <code>{title}</code> oder <code>{title_id}</code> muss vorkommen. Die Beispielliste und die Vorschau zeigen den Namen eines Beispielspiels je Format mit den Bytes gegen die Längengrenze; <em>Vorgabe</em> setzt <code>{name}</code> zurück. Eine taugliche Vorlage wird sofort gespeichert, bei einer untauglichen steht der Grund da und die zuletzt gespeicherte gilt weiter. Ein erzeugter Name wird auf die Höchstlänge des Formats gekürzt (zuerst fällt <code>{version}</code> weg, wenn schon der Rest ohne Titel zu lang ist, dann wird der Titel gekürzt, zuletzt das Ganze; bliebe weder Titel noch Title-ID erkennbar, gilt der Name der Quelle) und für Windows tauglich gemacht (kein Punkt oder Leerzeichen am Ende; ein reservierter Gerätename wie <code>AUX</code> bekommt einen Unterstrich). Trifft der Name eine vorhandene Datei, fragt das Programm wie sonst, ob sie ersetzt werden soll; in der Sammelkonvertierung wird ein namensgleiches Ergebnis desselben Laufs übersprungen. Die Vorlage gilt für jedes Zielformat, auch für <code>.ffpkg</code>. Fehlen die Angaben zum Spiel, bleibt der Name der Quelle. Auf der Kommandozeile hat <code>--ausgabename VORLAGE</code> Vorrang vor der Einstellung.</p>
-  <p><strong>Reste nach einem Fehler.</strong> Ist ein Einzellauf gescheitert oder abgebrochen, zeigt eine Karte, was liegen geblieben ist: das unfertige Ergebnis und daneben <code>.teil</code>-, <code>.neu</code>-, <code>.part</code>- und <code>.partial</code>-Dateien, mit Größen. Entfernt wird nur auf Ihren Wunsch. Die Quelle selbst, ein Ordner um sie und ein Ordner in ihr sind doppelt geschützt (beim Anbieten und beim Entfernen). Bei der Sammelkonvertierung und auf der Kommandozeile bleibt es beim Protokoll. Beim Verschieben eines Spielordners (Aufgabe 4) kommen <code>sce_sys</code> und ganz am Ende <code>eboot.bin</code> an die Reihe, damit ein abgebrochener halber Ordner nicht wie ein Spiel aussieht.</p>
+  <p><strong>Reste nach einem Fehler.</strong> Ist ein Einzellauf gescheitert oder abgebrochen, zeigt eine Karte, was liegen geblieben ist: das unfertige Ergebnis und daneben <code>.teil</code>-, <code>.neu</code>-, <code>.part</code>- und <code>.partial</code>-Dateien, mit Größen. Entfernt wird nur auf Ihren Wunsch. Die Quelle selbst, ein Ordner um sie und ein Ordner in ihr sind doppelt geschützt (beim Anbieten und beim Entfernen). Auf der Kommandozeile bleibt es beim Protokoll; bei der Sammelkonvertierung gibt es diese Prüfung nicht. Beim Verschieben des entpackten Spielordners ins Ziel (zum Beispiel bei Aufgabe 2 nach Dump-Ordner) kommen <code>sce_sys</code> und ganz am Ende <code>eboot.bin</code> an die Reihe, damit ein abgebrochener halber Ordner nicht wie ein Spiel aussieht.</p>
   <p><strong>Quelle nach Erfolg löschen.</strong> Mit dem Haken <em>Quelle nach Erfolg löschen</em> in der Karte (auf der Kommandozeile <code>--quelle-loeschen</code>) löscht das Programm die Quelle, sobald das Ergebnis fertig und geprüft ist – <strong>endgültig, nicht in den Papierkorb</strong>. Vor dem Start fragt es noch einmal: <em>Ja</em> löscht nach dem Erfolg, <em>Nein</em> wandelt um und lässt die Quelle liegen, <em>Abbrechen</em> startet nicht. Der Haken gilt nur bis zum nächsten Programmstart. Die Quelle bleibt liegen, wenn das Ergebnis fehlt oder leer ist, wenn sich die Quelle seit dem Start verändert hat, wenn Ergebnis und Quelle derselbe Pfad sind oder das eine im anderen liegt, und wenn die Quelle ein Laufwerk, ein Benutzer- oder Systemordner oder eine Verknüpfung ist; der Lauf gilt dann trotzdem als erfolgreich, und der Grund steht im Protokoll. In der Sammelkonvertierung gilt das für jede Quelle einzeln. Kam die Quelle aus einem Archiv, wird das Archiv gelöscht.</p>
   <p><strong>Sprache beim Start.</strong> Ohne gespeicherte Wahl folgt das Programm der Anzeigesprache des Systems; kennt es sie nicht, gilt Englisch. Eine mit dem Sprachknopf gewählte Sprache gilt immer.</p>
 </section>
@@ -1110,7 +1107,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <div class="kasten">
     <span class="titel">AMPR-EMU-Version einrichten oder wechseln?</span>
     <p>Das ist keine der acht Aufgaben links, sondern der <strong>AMPR EMU Manager</strong> in der Ansicht
-    <strong>KONSOLE</strong> (letzter Knopf) – siehe <a href="#k11">Kapitel 11</a>.</p>
+    <strong>KONSOLE</strong> (Knopf <em>9. AMPR EMU Manager</em>) – siehe <a href="#k11">Kapitel 11</a>.</p>
   </div>
 </section>
 
@@ -1121,7 +1118,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <p>Aus einem Dump-Ordner wird <strong>eine einzige Datei</strong>. Das brauchen Sie, wenn ein Spiel auf einen USB-Stick soll: Die Konsole liest dort kein loses Verzeichnis, sondern einen Container, den ShadowMount+ einhängt.</p><p>Der Ordner selbst bleibt unangetastet – es entsteht eine Kopie im gewählten Format. Einzige Ausnahme: Beim <em>Dump-Ordner (mit Einbau)</em> wählen Sie ausdrücklich „Im Original“ (siehe unten). Wollen Sie umgekehrt aus einer vorhandenen Datei wieder einen Ordner machen, nehmen Sie Aufgabe 2, 3 oder 4.</p>
   </div>
   <p>Nutzen Sie Aufgabe 1, wenn Ihre Daten bereits als normaler Dump-Ordner vorliegen. Als Ergebnis können Sie <code>.ffpfsc</code> (komprimiert), <code>.ffpfs</code> (unkomprimiert), ein echtes <code>.exFAT</code>-Image oder ein UFS2-basiertes <code>.ffpkg</code> wählen.</p>
-  <p>Ist <strong>AMPR EMU</strong> (auch mit Asset-Pack), <strong>PlayGo</strong> oder <strong>BACKPORT</strong> angehakt (Kapitel 11), steht in der Liste zusätzlich <strong>Dump-Ordner (mit Einbau)</strong>. Dann entsteht kein Abbild, sondern ein Dump-Ordner mit genau diesen Einbauten – zum Beispiel, um ihn danach selbst weiterzuverwenden. Beim Start fragt das Programm, wo eingebaut wird:</p>
+  <p>Ist <strong>AMPR EMU</strong> (auch mit Asset-Pack), <strong>PlayGo</strong>, <strong>BACKPORT</strong> oder <strong>DLC EMU</strong> angehakt (Kapitel 11) oder ist unter <strong>EINSTELLUNGEN</strong> (Abschnitt <em>Unsignierte Programme</em>) das Fake-Signieren eingeschaltet, steht in der Liste zusätzlich <strong>Dump-Ordner (mit Einbau)</strong>. Dann entsteht kein Abbild, sondern ein Dump-Ordner mit genau diesen Einbauten – zum Beispiel, um ihn danach selbst weiterzuverwenden. Beim Start fragt das Programm, wo eingebaut wird:</p>
   <ul>
     <li><strong>In Sicherung (empfohlen)</strong> – der Dump wird in den Zielordner kopiert, und nur die Kopie wird verändert. Ihr Original bleibt unberührt; die Kopie braucht einmal denselben Platz.</li>
     <li><strong>Im Original</strong> – eingebaut wird direkt in Ihrem gewählten Ordner. Davor warnt das Programm ausdrücklich: Die Dateien sind danach <strong>nicht mehr original</strong>. BACKPORT ersetzt <code>eboot.bin</code> und die Bibliotheken ohne Sicherung; AMPR EMU, Asset-Pack und PlayGo legen Dateien dazu. Das lässt sich nicht rückgängig machen.</li>
@@ -1131,7 +1128,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Klicken Sie auf <strong>Dump Ordner</strong> und wählen Sie den gewünschten Ordner.</li>
     <li>Öffnen Sie die Liste ZIELFORMAT und wählen Sie das benötigte Format.</li>
     <li>Passen Sie bei Bedarf Kompressionsstufe und Worker-Threads an.</li>
-    <li>Wählen Sie Ziel- und Temp-Ordner.</li>
+    <li>Wählen Sie den Zielordner. Einen Temp-Ordner brauchen Sie nur, wenn das Feld TEMP-ORDNER erscheint (Abschnitt 3.3).</li>
     <li>Klicken Sie auf STARTEN und warten Sie auf die Erfolgsmeldung.</li>
   </ol>
   <p><strong>Der Ordner muss das Spiel in seiner Wurzel tragen:</strong>
@@ -1141,12 +1138,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Programm vor dem Bau mit einer Meldung ab (bei <code>.ffpfsc</code>,
   <code>.ffpfs</code>, <code>.exFAT</code> und <code>.ffpkg</code> gleichermaßen),
   statt dass es erst an der Konsole auffällt.</p>
-  <p><strong>Archiv als Quelle.</strong> Bei Aufgabe 1 steht links neben <strong>Dump Ordner</strong> der Knopf <strong>Archiv&hellip;</strong>: Er w&auml;hlt ein Archiv (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>), <strong>Dump Ordner</strong> w&auml;hlt wie gewohnt den Ordner; ein Archiv l&auml;sst sich auch auf das Quellfeld ziehen. Das Programm entpackt es in den Arbeitsordner (<code>ps5conv_archiv_&hellip;</code>, dort muss mindestens so viel Platz frei sein, wie das Archiv gro&szlig; ist) und nimmt den Spielordner darin &ndash; mit <code>sce_sys/param.json</code> &ndash; als Quelle. Fortschritt und Ergebnis stehen im Protokoll. <code>.zip</code> entpackt das Programm selbst, <code>.7z</code> und <code>.rar</code> entpackt das beiliegende <strong>7-Zip</strong> (Ordner <code>7-Zip-26.06</code>; fehlt es, sucht das Programm ein installiertes). <strong>Wohin entpackt wird</strong>, bestimmen Sie: Wird ein Archiv wirklich entpackt (<code>.7z</code>, <code>.rar</code>, ein ZIP nur ohne die Umwandlung im Strom), fragt das Programm einmal nach dem Ordner &ndash; <em>Hier entpacken</em> oder <em>Anderen Ordner w&auml;hlen&hellip;</em>, mit Archivgr&ouml;&szlig;e, entpackter Gr&ouml;&szlig;e und freiem Platz (reicht der Platz nicht, sagt der Dialog es, und es wird nichts entpackt) &ndash; und tr&auml;gt ihn ins Feld <strong>TEMP-ORDNER</strong> ein. Bei einem Archiv als Quelle ist dieses Feld zu sehen; dieselbe Einstellung gibt es unter <strong>EINSTELLUNGEN</strong> &rarr; <em>ARBEITSORDNER (TEMP)</em>. Der Entpackordner wird beim n&auml;chsten Archiv ersetzt, ein Rest nach zw&ouml;lf Stunden wie jeder andere Arbeitsordner abger&auml;umt.</p>
+  <p><strong>Archiv als Quelle.</strong> Bei Aufgabe 1 steht links neben <strong>Dump Ordner</strong> der Knopf <strong>Archiv&hellip;</strong>: Er w&auml;hlt ein Archiv (<code>.zip</code>, <code>.7z</code>, <code>.rar</code>), <strong>Dump Ordner</strong> w&auml;hlt wie gewohnt den Ordner; ein Archiv l&auml;sst sich auch auf das Quellfeld ziehen. Das Programm entpackt es in den Arbeitsordner (<code>ps5conv_archiv_&hellip;</code>, dort muss so viel Platz frei sein, wie das Archiv entpackt braucht, plus 1&nbsp;GiB Reserve, mindestens aber die Gr&ouml;&szlig;e des Archivs) und nimmt den Spielordner darin &ndash; mit <code>sce_sys/param.json</code> &ndash; als Quelle. Fortschritt und Ergebnis stehen im Protokoll. <code>.zip</code> entpackt das Programm selbst, <code>.7z</code> und <code>.rar</code> entpackt das beiliegende <strong>7-Zip</strong> (Ordner <code>7-Zip-26.06</code>; fehlt es, sucht das Programm ein installiertes). <strong>Wohin entpackt wird</strong>, bestimmen Sie: Wird ein Archiv wirklich entpackt (<code>.7z</code>, <code>.rar</code>, ein ZIP nur ohne die Umwandlung im Strom), fragt das Programm einmal nach dem Ordner &ndash; <em>Hier entpacken</em> oder <em>Anderen Ordner w&auml;hlen&hellip;</em>, mit Archivgr&ouml;&szlig;e, entpackter Gr&ouml;&szlig;e und freiem Platz (reicht der Platz nicht, sagt der Dialog es, und es wird nichts entpackt) &ndash; und tr&auml;gt ihn ins Feld <strong>TEMP-ORDNER</strong> ein. Bei einem Archiv als Quelle ist dieses Feld zu sehen; dieselbe Einstellung gibt es unter <strong>EINSTELLUNGEN</strong> &rarr; <em>ARBEITSORDNER (TEMP)</em>. Der Entpackordner wird beim n&auml;chsten Archiv ersetzt, ein Rest nach zw&ouml;lf Stunden wie jeder andere Arbeitsordner abger&auml;umt.</p>
   <p><strong>ZIP ohne Entpackordner.</strong> Ist das Ergebnis ein Abbild (<code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code>) und die Umwandlung ohne Zwischenordner eingeschaltet, entpackt das Programm ein <code>.zip</code> nicht mehr: Im Arbeitsordner entsteht nur ein kleiner <em>Schattenordner</em> mit <code>sce_sys</code> und <code>eboot.bin</code> &ndash; genug f&uuml;r Cover, Titel, Pr&uuml;fung und Namen &ndash;, und das Spiel selbst liest der Lauf direkt aus dem Archiv. Das spart den Platz und die Zeit des Entpackens; das Protokoll nennt den Schattenordner. Braucht der gew&auml;hlte Weg das Spiel doch als Ordner (Zielformat Dump-Ordner, ein Weg &uuml;ber einen Zwischenordner), entpackt das Programm den Rest vor dem Lauf &ndash; mit Platzpr&uuml;fung, und nur, wenn sich das Archiv seit dem Anlegen nicht ver&auml;ndert hat. <code>.7z</code> und <code>.rar</code> werden immer entpackt (sie sind meist solide gepackt und lassen sich nicht an beliebiger Stelle lesen), ebenso ein AES-verschl&uuml;sseltes ZIP.</p>
   <p>Enth&auml;lt ein entpacktes Archiv schon AMPR EMU oder PlayGo aus einem fr&uuml;heren Einbau (<code>fakelib/libSceAmpr.sprx</code>, <code>fakelib/libScePlayGo.sprx</code>), die K&auml;stchen daf&uuml;r aber nicht angehakt sind, fragt das Programm vor dem Start, ob es diese Teile aus der <strong>entpackten Kopie</strong> entfernen soll &ndash; die K&auml;stchen legen sonst nur etwas dazu, die Teile k&auml;men also mit ins Ergebnis. <em>Ja</em> entfernt sie (das Archiv selbst bleibt unver&auml;ndert), <em>Nein</em> l&auml;sst sie stehen &ndash; richtig, wenn das Archiv absichtlich schon vorbereitet ist. Ein Ordner von Ihnen wird nie angefasst; bei Dateien mit <code>.orig</code>-Sicherung, bei BACKPORT-Markierungen und bei Asset-Packs fragt das Programm nicht, dort bleibt es bei der Warnung vor dem Start.</p>
   <p><strong>Ist das Archiv mit einem Passwort gesch&uuml;tzt,</strong> probiert das Programm zuerst ohne Passwort, dann die verbreiteten Passw&ouml;rter <code>pippo</code> und <code>DLPSGAME.COM</code> und danach Ihre eigene Liste: Unter <strong>EINSTELLUNGEN</strong>, Abschnitt <em>ARCHIV-PASSW&Ouml;RTER</em>, tragen Sie weitere Passw&ouml;rter durch Kommas getrennt ein; gespeichert wird beim Tippen. Passt keines, fragt das Fenster nach dem Passwort (das Eingabefeld zeigt Sternchen, das Passwort steht nicht im Protokoll) und fragt bei einem falschen noch einmal.</p>
   <p><strong>Aufgabe 5 (Sammelkonvertierung)</strong> nimmt Archive ebenfalls an: Sie lassen sich im Dateidialog (Filter <em>Archive</em>) oder per Ziehen und Ablegen zu den Quellen legen und kommen der Reihe nach dran &ndash; jedes wird erst vorbereitet, wenn es gebraucht wird (ein ZIP als Schattenordner wie oben, sonst entpackt), und danach gleich wieder entfernt, es liegt also immer nur ein Arbeitsordner da. Ein Ordner voller Archive steht dort nicht f&uuml;r die Archive darin; sie werden einzeln gew&auml;hlt. Ist ein Archiv verschl&uuml;sselt und kein Passwort der Liste passt, z&auml;hlt es als Fehlschlag dieser Quelle, die &uuml;brigen laufen weiter. Auf der Kommandozeile gilt dasselbe: <code>--source Spiel.zip</code> bei Aufgabe 1, mehrere Archive bei Aufgabe 5, und <code>--archiv-passwort</code> nennt ein Passwort, das dann allein gilt.</p>
-  <p><strong>Geht der Arbeitsspeicher aus,</strong> startet das Programm den Lauf selbst neu &ndash; mit halb so vielen Kernen, bis zu dreimal &ndash; und schreibt es ins Protokoll. Erkannt wird das nur, wenn die Engine selbst <code>MemoryError</code> meldet. Hilft auch ein Kern nicht, bleibt der Hinweis auf zu wenig Arbeitsspeicher.</p>
+  <p><strong>Geht der Arbeitsspeicher aus,</strong> startet das Programm den Lauf selbst neu &ndash; mit halb so vielen Kernen, bis zu dreimal &ndash; und schreibt es ins Protokoll. Erkannt wird das nur, wenn die Engine selbst <code>MemoryError</code> meldet oder ein Arbeitsprozess vom System beendet wurde. Hilft auch ein Kern nicht, bleibt der Hinweis auf zu wenig Arbeitsspeicher.</p>
   <div class="kasten">
     <span class="titel">Wenn Sie unsicher sind</span>
     <p>Bewahren Sie den ursprünglichen Dump-Ordner auf. <code>.ffpfsc</code> und <code>.ffpfs</code> sind kompakte Zusammenfassungen; <code>.exFAT</code> und <code>.ffpkg</code> sind Image- beziehungsweise Containerformate für passende weitere Abläufe.</p>
@@ -1159,11 +1156,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <span class="titel">Wof&uuml;r ist das gut?</span>
     <p>Der Rückweg zu Aufgabe 1 und zugleich der Umbau zwischen den Formaten. Aus einer <code>.ffpfsc</code> wird wieder ein Dump-Ordner – zum Hineinsehen, zum Ändern einzelner Dateien oder als Zwischenschritt.</p><p>Auch der Wechsel in ein anderes Containerformat läuft hierüber. Das Programm packt dabei nicht einfach um, sondern entpackt und baut neu – sonst entstünde eine Verschachtelung mehr statt eines neuen Containers.</p>
   </div>
-  <p>Nutzen Sie Aufgabe 2, wenn die Quelle eine <code>.ffpfsc</code>-Datei ist. Daraus lässt sich ein Dump-Ordner, eine <code>.exFAT</code>- oder eine <code>.ffpkg</code>-Datei erzeugen.</p>
+  <p>Nutzen Sie Aufgabe 2, wenn die Quelle eine <code>.ffpfsc</code>- oder <code>.ffpfs</code>-Datei ist. Daraus lässt sich ein Dump-Ordner, eine <code>.exFAT</code>- oder eine <code>.ffpkg</code>-Datei erzeugen; der Container lässt sich auch zwischen <code>.ffpfsc</code> (komprimiert) und <code>.ffpfs</code> (unkomprimiert) umpacken.</p>
   <ol class="schritte">
-    <li>Klicken Sie auf <strong>Datei wählen</strong> und wählen Sie genau eine <code>.ffpfsc</code>-Datei.</li>
+    <li>Klicken Sie auf <strong>Datei wählen</strong> und wählen Sie genau eine <code>.ffpfsc</code>- oder <code>.ffpfs</code>-Datei.</li>
     <li>Wählen Sie das gewünschte Zielformat.</li>
-    <li>Legen Sie Ziel- und Temp-Ordner fest.</li>
+    <li>Legen Sie den Zielordner fest. Einen Temp-Ordner brauchen Sie nur, wenn das Feld TEMP-ORDNER erscheint (Abschnitt 3.3).</li>
     <li>Starten Sie die Verarbeitung und prüfen Sie anschließend das Protokoll.</li>
   </ol>
   <div class="kasten tipp">
@@ -1182,7 +1179,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <ol class="schritte">
     <li>Wählen Sie die <code>.exFAT</code>-Datei als Quelle.</li>
     <li>Entscheiden Sie sich für das gewünschte Zielformat.</li>
-    <li>Wählen Sie Ziel- und Temp-Ordner.</li>
+    <li>Wählen Sie den Zielordner. Einen Temp-Ordner brauchen Sie nur, wenn das Feld TEMP-ORDNER erscheint (Abschnitt 3.3).</li>
     <li>Klicken Sie auf STARTEN und lassen Sie die Verarbeitung vollständig abschließen.</li>
   </ol>
   <div class="kasten achtung">
@@ -1201,7 +1198,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <ol class="schritte">
     <li>Wählen Sie die <code>.ffpkg</code>-Datei als Quelle.</li>
     <li>Wählen Sie das gewünschte Ergebnisformat.</li>
-    <li>Legen Sie Ziel- und Temp-Ordner fest.</li>
+    <li>Legen Sie den Zielordner fest. Einen Temp-Ordner brauchen Sie nur, wenn das Feld TEMP-ORDNER erscheint (Abschnitt 3.3).</li>
     <li>Starten Sie und achten Sie auf die Meldungen zur Prüfung des Images.</li>
   </ol>
   <div class="kasten">
@@ -1221,7 +1218,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Klicken Sie auf <strong>Quellen wählen</strong>. Das Programm fragt, ob Sie <strong>Dump-Ordner</strong> oder <strong>Abbilddateien</strong> wählen möchten; die zuletzt gewählte Art ist vorgewählt.</li>
     <li>Bei <strong>Dump-Ordnern</strong> öffnet sich der Ordnerdialog von Windows: Markieren Sie mit Strg oder Umschalt <em>mehrere</em> Ordner und klicken Sie auf <strong>Ordner auswählen</strong>. Bei <strong>Abbilddateien</strong> markieren Sie wie gewohnt alle gewünschten Dateien.</li>
     <li>Wählen Sie ein gemeinsames Zielformat.</li>
-    <li>Legen Sie Ziel- und Temp-Ordner fest.</li>
+    <li>Legen Sie den Zielordner fest. Einen Temp-Ordner brauchen Sie nur, wenn das Feld TEMP-ORDNER erscheint (Abschnitt 3.3).</li>
     <li>Starten Sie den Stapel und lassen Sie das Programm alle Quellen nacheinander abarbeiten.</li>
   </ol>
   <div class="kasten">
@@ -1245,7 +1242,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <ol class="schritte">
     <li>Wählen Sie über <strong>Quelle wählen</strong> die Eingabe.</li>
     <li>Wählen Sie Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code> als Ziel.</li>
-    <li>Legen Sie Ziel- und Temp-Ordner fest.</li>
+    <li>Legen Sie den Zielordner fest. Einen Temp-Ordner brauchen Sie nur, wenn das Feld TEMP-ORDNER erscheint (Abschnitt 3.3).</li>
     <li>Starten Sie und kontrollieren Sie die erkannte Quelle im Protokoll.</li>
   </ol>
   <div class="kasten">
@@ -1257,8 +1254,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <span class="titel">Dasselbe Format noch einmal bauen &ndash; mit Einbau
     (seit v1.9.35)</span>
     <p>Sie haben ein fertiges Abbild und m&ouml;chten nachtr&auml;glich ein
-    <strong>AMPR-EMU-Asset-Pack</strong>, den <strong>PlayGo-Stub</strong>
-    oder <strong>BACKPORT</strong> hineinbekommen? W&auml;hlen Sie dieselbe
+    <strong>AMPR-EMU-Asset-Pack</strong>, den <strong>PlayGo-Stub</strong>,
+    <strong>BACKPORT</strong>, <strong>DLC EMU</strong> oder die <strong>Fake-Signatur</strong> hineinbekommen? W&auml;hlen Sie dieselbe
     Datei als Quelle und <strong>dasselbe Format auch als Ziel</strong>,
     haken Sie an, was hinein soll, und starten Sie.</p>
     <p>Das geht in den <strong>Aufgaben 2 bis 6</strong> und f&uuml;r
@@ -1271,7 +1268,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <thead><tr><th>Format</th><th>Quelle und Ziel gleich?</th></tr></thead>
       <tbody>
       <tr><td><code>.ffpfsc</code> / <code>.ffpfs</code></td>
-        <td>mit Asset-Pack, PlayGo oder BACKPORT</td></tr>
+        <td>mit Asset-Pack, PlayGo, BACKPORT, DLC EMU oder Fake-Signatur</td></tr>
       <tr><td><code>.exFAT</code></td>
         <td><strong>immer</strong> &ndash; in der Liste als
         &bdquo;.exFAT (neu bauen)&ldquo;</td></tr>
@@ -1280,13 +1277,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
         &bdquo;.ffpkg (neu validieren)&ldquo;</td></tr>
       </tbody>
     </table>
-    <p><strong>Was dabei passiert:</strong> Das Abbild wird in einen
-    vor&uuml;bergehenden Ordner entpackt, dort wird eingebaut, und daraus
-    entsteht das neue Abbild; der Ordner verschwindet danach wieder. Sie
-    brauchen also einmal die Spielgr&ouml;&szlig;e an freiem Platz im
-    Arbeitsordner. Eine R&uuml;ckfrage gibt es nicht &ndash; ein Abbild in
-    ein Abbild desselben Formats zu h&uuml;llen w&auml;re Unsinn, der Neubau
-    ist der einzig sinnvolle Weg.</p>
+    <p><strong>Was dabei passiert:</strong> Das Abbild wird in der Regel nicht
+    entpackt: Das Programm liest es direkt und schreibt das neue Abbild in
+    einem Zug. Im Arbeitsordner liegen nur die wenigen Dateien, die der Einbau
+    &auml;ndert (Abschnitt 3.3); Platz braucht vor allem das Ziel. Nur wo dieser
+    Weg nicht geht, wird wie fr&uuml;her in einen vor&uuml;bergehenden Ordner entpackt und
+    dort eingebaut; dann braucht der Arbeitsordner einmal die Spielgr&ouml;&szlig;e. Eine
+    R&uuml;ckfrage gibt es nicht &ndash; ein Abbild in ein Abbild desselben Formats zu
+    h&uuml;llen w&auml;re Unsinn, der Neubau ist der einzig sinnvolle Weg.</p>
     <p><strong>Warum nicht direkt hineinschreiben?</strong> Ein fertiges
     exFAT-Abbild dieses Programms enth&auml;lt <em>keinen</em> freien Platz
     &ndash; nachgemessen an einem echten Abbild: 95 Zuordnungseinheiten,
@@ -1306,15 +1304,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h2><span class="nr">11</span> AMPR EMU Manager</h2>
   <div class="kasten hinweis">
     <span class="titel">Seit 12.10.2026 in der Ansicht KONSOLE</span>
-    <p>Der AMPR EMU Manager ist keine nummerierte Aufgabe der Seitenleiste UMWANDELN mehr, sondern der letzte Knopf
+    <p>Der AMPR EMU Manager ist keine nummerierte Aufgabe der Seitenleiste UMWANDELN mehr, sondern Knopf 9
     der Seitenleiste in der Ansicht <strong>KONSOLE</strong> ("9. AMPR EMU Manager"). Ein Klick darauf zeigt die Seite
     direkt rechts in der Ansicht KONSOLE, zusammen mit "Konsole &amp; Payloads", dem WebKit Autoloader und der
-    Bibliothek – die Ansicht UMWANDELN wird dabei nicht mehr angezeigt. Alles Weitere in diesem Kapitel
-    (Ablageweg, Methoden, Ablauf) gilt unver&auml;ndert, nur der Ort, an dem die Seite erscheint, hat sich ge&auml;ndert.</p>
+    Bibliothek – die Ansicht UMWANDELN wird dabei nicht mehr angezeigt. Die Seite selbst beschreibt der folgende Kasten. Die Abschnitte 11.1 und 11.3 betreffen vor allem den Einbau beim Erstellen, die Abschnitte 11.2 und 11.4 das Fenster <strong>11. Asset-Pack</strong> der Ansicht KONSOLE, Abschnitt 11.5 Kraken Mount und Dump Forge.</p>
   </div>
   <div class="kasten">
     <span class="titel">Wof&uuml;r ist das gut?</span>
-    <p><strong>Was ist ein AMPR EMU?</strong> Die PS5 fragt beim Start eines Spiels ihren APR-Dateiresolver, wo die Spieldateien liegen. Läuft das Spiel aus einem eingehängten Abbild statt von der internen Platte, bekommt er darauf keine brauchbare Antwort – und das Spiel startet nicht. Der AMPR EMU ist eine Ersatzbibliothek, die diese Frage stellvertretend beantwortet.</p><p>Der AMPR EMU Manager legt diese Bibliothek in den Spielordner, sichert die mitgelieferte Fassung als <code>.orig</code> und baut den Index neu, über den ShadowMount+ die Dateien findet. Sie brauchen das für jedes Spiel, das von einem Abbild laufen soll – und nur dafür.</p>
+    <p><strong>Was ist ein AMPR EMU?</strong> Die PS5 fragt beim Start eines Spiels ihren APR-Dateiresolver, wo die Spieldateien liegen. Läuft das Spiel aus einem eingehängten Abbild statt von der internen Platte, bekommt er darauf keine brauchbare Antwort – und das Spiel startet nicht. Der AMPR EMU ist eine Ersatzbibliothek, die diese Frage stellvertretend beantwortet.</p><p>Der AMPR EMU Manager (Knopf 9) legt diese Bibliothek auf Ihrer PS5 an der Stelle ab, an der ShadowMount+ sie liest, und gleicht die <code>config.ini</code> ab. Beim Einbau während des Erstellens (Aufgaben 1 bis 6) sichert das Programm außerdem die mitgelieferte Fassung als <code>.orig</code> und baut den Index neu, über den ShadowMount+ die Dateien findet. Sie brauchen das für jedes Spiel, das von einem Abbild laufen soll – und nur dafür.</p>
   </div>
 
   <div class="kasten tipp">
@@ -1336,16 +1333,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     eine andere Seite der Ansicht KONSOLE, ist diese Seite weg. Kurze R&uuml;ckfragen (Ja/Nein, Fassungswahl, Spielordner)
     kommen weiter als Dialog &uuml;ber dem Hauptfenster.</p>
   </div>
-  <p>Der AMPR EMU Manager ist keine normale Formatkonvertierung. Er bereitet die Quelle vor und öffnet anschließend einen Manager. Dort können Sie einen <code>fakelib</code>-Ordner sowie Dateien oder Ordner im Stammverzeichnis hinzufügen oder entfernen.</p>
+  <p>Der AMPR EMU Manager ist keine normale Formatkonvertierung und hat keine Felder f&uuml;r Quelle, Zielordner und Temp-Ordner. Er legt die gew&auml;hlte AMPR-EMU-Bibliothek auf Ihrer PS5 ab; der Lauf beginnt von selbst, sobald Sie eine Methode gew&auml;hlt haben.</p>
   <ol class="schritte">
-    <li>Erstellen Sie zuerst eine separate Arbeitskopie Ihrer Quelle.</li>
-    <li>Wählen Sie Quelle, Zielordner und Temp-Ordner.</li>
-    <li>Klicken Sie auf STARTEN und warten Sie auf den Manager-Dialog.</li>
-    <li>Wählen Sie dort genau eine Aktion und lesen Sie jede Bestätigungsfrage sorgfältig.</li>
+    <li>W&auml;hlen Sie oben die Ablage nach ShadowMount+: <em>Pro Spiel</em>, <em>Global</em> oder <em>Emulatoren</em>.</li>
+    <li>W&auml;hlen Sie <em>AMPR EMU &ndash; neue Methode</em> oder <em>AMPR EMU &ndash; alte Methode</em>, je nachdem, welche ShadowMount+-Fassung auf der Konsole l&auml;uft.</li>
+    <li>Lassen Sie das Programm arbeiten: Es verbindet sich mit Ihrer PS5 (die Adresse sucht es bei Bedarf im Netz), pr&uuml;ft die ShadowMount+-Fassung, sucht bei der Ablage <em>Pro Spiel</em> die Spiele, fragt bei Bedarf nach Spiel und Fassungen und gleicht die <code>config.ini</code> ab.</li>
+    <li>Beantworten Sie die R&uuml;ckfragen; jede bringt ihre Erkl&auml;rung mit, und das Protokoll zeigt jeden Schritt. Ist die PS5 nicht erreichbar, bietet das Programm bei der Ablage <em>Pro Spiel</em> an, stattdessen einen Spielordner auf diesem Rechner zu bearbeiten.</li>
   </ol>
   <div class="kasten warnung">
-    <span class="titel">Löschen ist endgültig</span>
-    <p>Der Manager kann ausgewählte Inhalte entfernen. Verwenden Sie diese Aufgabe deshalb niemals an Ihrer einzigen Originalkopie. Wenn Sie unsicher sind, brechen Sie den Dialog ab.</p>
+    <span class="titel">Befehlszeile: L&ouml;schen ist endg&uuml;ltig</span>
+    <p>Die Seite von Knopf 9 l&ouml;scht nichts. Auf der Befehlszeile gibt es zus&auml;tzlich den fr&uuml;heren Manager (<code>--mode ampr_manager</code> mit <code>--ampr-action</code>): Er arbeitet an einem Dump-Ordner, einer <code>.ffpfsc</code>, <code>.exFAT</code> oder <code>.ffpkg</code> und kann Bibliotheken einsetzen (<code>ampr_apply</code>), aus der Sicherung wiederherstellen (<code>ampr_restore</code>), entfernen (<code>ampr_remove</code>), den Index neu bauen (<code>ampr_index</code>, bei einem Spielordner auf der PS5 <code>ampr_ftp_index</code>) und Asset-Pack-B&auml;nder bauen (<code>ampr_assetpack</code>). Entfernen ist endg&uuml;ltig: Verwenden Sie diese Aktionen deshalb niemals an Ihrer einzigen Originalkopie.</p>
   </div>
 
   <h3>11.1 Assetpakete &ndash; die Spieldateien gepackt ablegen</h3>
@@ -1353,14 +1350,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <div class="kasten warnung">
     <span class="titel">Die B&auml;nder entstehen beim <em>Erstellen</em> &ndash; oder auf Knopfdruck</span>
     <p>Beide Klapplisten geh&ouml;ren zum Einbau beim Erstellen eines Abbilds
-    (Aufgaben 1 bis 6). Der AMPR EMU Manager baut von sich aus <strong>keine</strong>
-    B&auml;nder: Sie tauscht die Bibliothek, sichert sie, entfernt sie oder
-    baut den Index &ndash; ein vorhandenes Asset-Pack bleibt dabei
+    (Aufgaben 1 bis 6). Der AMPR EMU Manager (Knopf 9) baut von sich aus <strong>keine</strong>
+    B&auml;nder: Er legt nur die Bibliothek ab, und ein vorhandenes Asset-Pack bleibt dabei
     unangetastet.</p>
-    <p>Seit v1.9.36 gibt es daf&uuml;r einen eigenen Knopf
-    <strong>Asset-Pack bauen</strong> (Abschnitt 11.2). Er l&auml;uft
-    ausschlie&szlig;lich auf ausdr&uuml;cklichen Knopfdruck, nie nebenbei nach
-    einer anderen Aktion des Managers.</p>
+    <p>Nachtr&auml;glich baut das Fenster <strong>11. Asset-Pack</strong> der Ansicht KONSOLE zstd-Packs: Der Knopf
+    <strong>PACKEN &hellip;</strong> (Abschnitt 11.2) l&auml;uft
+    ausschlie&szlig;lich auf ausdr&uuml;cklichen Knopfdruck. Auf der Befehlszeile gibt es daf&uuml;r
+    <code>--ampr-action ampr_assetpack</code>.</p>
     <p>Ein Knopf <em>Asset-Pack entfernen</em> ist entfallen und kommt nicht
     zur&uuml;ck: Er l&ouml;schte Manifest und B&auml;nder in der Annahme, die
     Originaldateien l&auml;gen daneben, und das trifft seit der
@@ -1374,21 +1370,21 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   F&auml;llen gleich in den Ordner.</p>
 
   <div class="kasten warnung">
-    <span class="titel">Beide Klapplisten m&uuml;ssen stimmen</span>
+    <span class="titel">Methode und Fassung m&uuml;ssen zusammenpassen</span>
     <table>
       <thead><tr><th>Liste</th><th>Was zu w&auml;hlen ist</th></tr></thead>
       <tbody>
-      <tr><td><strong>AMPR-Fassung</strong></td>
-        <td><code>0.4.2.1 test-pack</code> oder
-        <code>0.4.2.1 test-debug-pack</code></td></tr>
       <tr><td><strong>Methode</strong></td>
         <td><strong>Asset-Pack</strong></td></tr>
+      <tr><td><strong>AMPR-Fassung</strong></td>
+        <td>Die Liste zeigt dann von selbst nur Fassungen, die B&auml;nder lesen:
+        <code>0.4.2.1 test-pack</code>, <code>0.4.2.1 test-debug-pack</code>
+        und die NG-Fassungen (bei <em>zstd</em> nur diese)</td></tr>
       </tbody>
     </table>
-    <p>Die dritte Fassung, <code>0.4.2.1 test-nopack</code>, kann es
-    <strong>nicht</strong> &ndash; und genau die steht als neueste ohne
-    Debug-Ausgabe von selbst oben in der Liste. Sie m&uuml;ssen also aktiv
-    umstellen. Nehmen Sie <code>test-pack</code> f&uuml;r den normalen
+    <p>Die normale Fassung <code>0.4.2.1</code> (fr&uuml;her mit dem Zusatz <code>test-nopack</code>) kann
+    B&auml;nder <strong>nicht</strong> lesen und steht deshalb nur bei der Methode
+    <strong>Normal</strong> in der Liste. Nehmen Sie <code>test-pack</code> f&uuml;r den normalen
     Gebrauch; <code>test-debug-pack</code> schreibt zus&auml;tzlich Protokoll
     und ist nur zur Fehlersuche gedacht.</p>
   </div>
@@ -1564,11 +1560,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Knopf <em>W&auml;hlen&nbsp;&hellip;</em>); sie gilt f&uuml;r jedes Spiel, bei dem
     keine Datei neben dem Dump-Ordner liegt, und nur bei zstd. Systemdateien bleiben immer lose; Blockgr&ouml;&szlig;e,
     <code>hot</code> und <code>layout</code> gelten nur f&uuml;r LZ4. Eine fehlerhafte
-    Datei bricht den Lauf ab, bevor etwas geschrieben wird. Das Werkzeug <em>Asset-Pack pr&uuml;fen / entpacken</em> (WEITERE
-    TOOLS) &ouml;ffnet auch zstd-Ordner. <strong>An der Konsole gemessen (FW 12.00, ShadowMount+):</strong>
+    Datei bricht den Lauf ab, bevor etwas geschrieben wird. Das Fenster <em>Asset-Pack packen, pr&uuml;fen und entpacken</em> (KONSOLE, <strong>11. Asset-Pack</strong>; Abschnitt 11.4) &ouml;ffnet auch zstd-Ordner. <strong>An der Konsole gemessen (FW 12.00, ShadowMount+):</strong>
     Zwei Spiele mit zstd-Packs aus diesem Programm liefen ohne Fehler, eines mit NG 0.3.5, eines mit NG 0.4.0-beta.
     Ob ein bestimmtes Spiel läuft, zeigt nur ein Test dort &ndash; die gepackten Originale fehlen im Ergebnis; bewahren Sie den Quell-Dump auf (er bleibt unverändert).</p>
-    <p><strong>Neue NG-Fassungen.</strong> Der Knopf <em>Nach Aktualisierungen suchen</em> im <em>9. AMPR EMU Manager</em> und, ohne Umweg, <em>Jetzt nach neuen NG-Fassungen suchen</em> unter <strong>EINSTELLUNGEN</strong> holen die neueste Freigabe von ampr-emu-ng von GitHub, prüfen die Datei gegen die Prüfsumme von GitHub und legen sie im Ordner <em>AMPR EMU updates</em> neben dem Programm ab; Vorabfassungen („beta“) holt das Programm nie. Unter <strong>EINSTELLUNGEN</strong>, Abschnitt <em>AMPR EMU NG: NEUE FASSUNGEN</em>, steht die <strong>automatische Suche</strong>, <strong>ab Werk an</strong>: Das Programm fragt beim Start höchstens einmal am Tag nach und schreibt ins Protokoll, sobald GitHub geantwortet hat (ohne Internetverbindung bleibt es still: keine Meldung, kein Download); wer das nicht möchte, nimmt den Haken heraus. <strong>Achtung:</strong> Eine neu geholte Fassung wird sofort zur Vorgabe für zstd-Asset-Packs, ohne dass sie an der Konsole geprüft ist.</p>
+    <p><strong>Neue NG-Fassungen.</strong> Der Knopf <em>Jetzt nach neuen NG-Fassungen suchen</em> unter <strong>EINSTELLUNGEN</strong> holt die neueste Freigabe von ampr-emu-ng von GitHub, prüft die Datei gegen die Prüfsumme von GitHub und legt sie im Ordner <em>AMPR EMU updates</em> neben dem Programm ab; Vorabfassungen („beta“) holt das Programm nie. Unter <strong>EINSTELLUNGEN</strong>, Abschnitt <em>AMPR EMU NG: NEUE FASSUNGEN</em>, steht die <strong>automatische Suche</strong>, <strong>ab Werk an</strong>: Das Programm fragt beim Start höchstens einmal am Tag nach und schreibt ins Protokoll, sobald GitHub geantwortet hat (ohne Internetverbindung bleibt es still: keine Meldung, kein Download); wer das nicht möchte, nimmt den Haken heraus. <strong>Achtung:</strong> Eine neu geholte Fassung wird sofort zur Vorgabe für zstd-Asset-Packs, ohne dass sie an der Konsole geprüft ist.</p>
     <p><strong>Kraken Mount statt ShadowMount+.</strong> Das Payload Kraken Mount (nicht zu verwechseln mit dem gleichnamigen Kompressionsverfahren) liest laut Anleitung (Fassung 0.3.0) und Quelltext (Fassung 0.2.0) nur Spielordner &ndash; unverändert oder mit zstd- bzw. LZ4-Packs &ndash; und Debug-FPKG-<code>.pkg</code> im Klartext-Profil, wie sie ps5-dump-forge baut: unverdichtet oder Kraken-verdichtet in jeder Stufe, auch mit Lücken (sparse). Verkaufspakete, verschlüsselte Pakete und PS4-Pakete weist es ab; ob es Pakete aus diesem Programm liest, ist nicht geprüft. Die Pakete hängt es ein, ohne sie zu installieren &ndash; nach Berichten auch auf Firmware 13.60, für die es noch keine öffentliche FPKG-Installation gibt. Es startet erst, wenn kstuff geladen und ShadowMount+ beendet ist. Die Abbilder dieses Programms (<code>.exfat</code>, <code>.ffpkg</code>, <code>.ffpfs</code>, <code>.ffpfsc</code>) liest es nicht; wählen Sie für Kraken Mount als Ziel den Dump-Ordner. Kraken Mount bringt außerdem ein eigenes ampr-emu-ng mit (<code>/data/krakenmount/ampr/</code>) und legt es über die fakelib des Spiels: Die hier gewählte NG-Fassung gilt dort nur, wenn ihre <code>libSceAmpr.sprx</code> in diesem Ordner liegt. Wie Sie Kraken Mount und Dump Forge laden und benutzen, steht in Abschnitt&nbsp;11.5.</p>
 <p><strong>Unsignierte Programme werden fake-signiert (seit v1.9.92).</strong> Liegen <code>eboot.bin</code> und die Module eines Spiels als einfache ELF-Dateien vor, startet es an der PS5 nie – der Lader lehnt sie ab. Findet das Programm beim Start einer Aufgabe in einem Ordner solche Programme, fragt es, ob sie beim Erstellen als fake-signierte SELF geschrieben werden sollen (wie bei ps5-dump-forge). Unter <strong>EINSTELLUNGEN</strong> im Abschnitt <em>Unsignierte Programme</em> lässt sich das ohne Rückfrage immer einschalten; dann prüft das Programm auch Abbilder, die es dafür entpackt. Geschrieben wird in der Arbeitskopie bzw. im entpackten Ordner; im Originalordner bleibt von jeder Datei eine <code>.orig</code> daneben. Bereits signierte Programme bleiben unberührt, und das Protokoll nennt jede geänderte Datei.</p>
     <p><strong>Schon verdichtete Dateien bleiben lose (seit v1.9.80).</strong>
@@ -1606,14 +1601,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Vorher pr&uuml;ft er, ob ShadowMount+ die Aufnahme-Bibliothek wirklich
     l&auml;dt, stellt auf Wunsch vor&uuml;bergehend um und am Ende alles
     wieder zur&uuml;ck &ndash; das Spiel darf dabei nicht laufen. Steht der
-    Titel in der <code>config.ini</code> unter <code>fakelib_exclude</code>,
+    Titel in der <code>config.ini</code> (ab ShadowMount+ 1.7beta12 in der <code>profiles.ini</code>) unter <code>fakelib_exclude</code>,
     fragt er vor der Aufnahme nach; diesen Eintrag stellt er nicht selbst um. Schlie&szlig;en
     Sie das Programm, w&auml;hrend er l&auml;uft, wartet es auf das
     Zur&uuml;ckstellen und schlie&szlig;t danach von selbst.
     Eine ausf&uuml;hrliche, bebilderte Anleitung zum ganzen Ablauf (Mitschnitt,
     Profil pr&uuml;fen, Bauen, Originale weglassen) &ouml;ffnet der Knopf
     <strong>LZ4 &amp; Asset Pack Anleitung</strong> oben in der Titelleiste, links
-    neben <strong>BENUTZERHANDBUCH</strong> &ndash; genauso bedient wie
+    von <strong>FAQ</strong> und <strong>BENUTZERHANDBUCH</strong> &ndash; genauso bedient wie
     dieses Handbuch hier. Die Datei liegt auch im Ordner
     <code>Anleitungen</code> neben dem Programm:
     <code>AMPR_Asset_Packs_Mitschnitt_Assistent.html</code> bzw.
@@ -1626,11 +1621,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <thead><tr><th>Was fehlen kann</th><th>Was dann geschieht</th></tr></thead>
       <tbody>
       <tr><td><strong>Eine pack-f&auml;hige AMPR-Fassung</strong> &ndash;
-        n&ouml;tig ist <code>test-pack</code> oder
-        <code>test-debug-pack</code></td>
+        n&ouml;tig ist <code>test-pack</code>, <code>test-debug-pack</code>
+        oder eine NG-Fassung</td>
         <td>Eine <code>test-nopack</code>-Fassung findet die B&auml;nder nicht.
-        Das Programm sagt es im Protokoll, h&auml;lt Sie aber nicht auf &ndash;
-        wer die Fassung gleich noch wechselt, soll nicht gebremst werden.</td></tr>
+        Bei der Methode Asset-Pack bietet die Liste sie deshalb nicht an; kommt sie
+        doch zustande, sagt das Programm es im Protokoll und packt nichts.</td></tr>
       <tr><td><strong>Das Packwerkzeug oder das LZ4-Modul</strong></td>
         <td>Die Auswahl f&auml;llt <strong>sofort bei der Wahl</strong>
         sichtbar auf <em>Normal</em> zur&uuml;ck &ndash; nicht erst nach einer
@@ -1710,6 +1705,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
         Programm fragt vor dem Lauf danach und sagt es im Protokoll.</td></tr>
       </tbody>
     </table>
+    <p>Ab ShadowMount+ 1.7beta12 (beiliegend) hat die <code>config.ini</code> Abschnitte, und die Schl&uuml;ssel hei&szlig;en dort anders: <code>backport_fakelib</code> wird zu <code>enabled</code> im Abschnitt <code>[fakelib]</code>, <code>global_fakelib_priority</code> zu <code>global_priority</code>, <code>fakelib_default_mode</code> zu <code>default_mode</code>. Einstellungen je Spiel (<code>fakelib_exclude</code>, <code>fakelib_mode</code>, <code>global_fakelib_exclude</code>) stehen dort in der <code>profiles.ini</code>. Das Programm &uuml;bersetzt die Namen selbst.</p>
   </div>
 
   <div class="kasten warnung">
@@ -1725,11 +1721,19 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>11.2 Ein Asset-Pack nachtr&auml;glich bauen</h3>
-  <p>Haben Sie ein fertiges Backup und m&ouml;chten die Spieldateien
+  <p>Haben Sie ein fertiges Backup als Spielordner und m&ouml;chten die Spieldateien
   nachtr&auml;glich in B&auml;nder legen, brauchen Sie es nicht noch einmal
-  umzuwandeln. Der Knopf <strong>Asset-Pack bauen</strong> auf der Manager-Seite
-  erledigt das an Ort und Stelle &ndash; f&uuml;r alle vier Quellen, die
-  der AMPR EMU Manager ohnehin annimmt.</p>
+  umzuwandeln. Das Fenster <strong>11. Asset-Pack</strong> der Ansicht KONSOLE (Abschnitt 11.4)
+  erledigt das mit dem Knopf <strong>PACKEN &hellip;</strong> an Ort und Stelle &ndash; als zstd-Packs,
+  die nur AMPR EMU NG liest.</p>
+  <ol class="schritte">
+    <li>In der Ansicht KONSOLE auf <strong>11. Asset-Pack</strong> klicken und den Spielordner w&auml;hlen &ndash; den Ordner, in dem <code>eboot.bin</code> liegt.</li>
+    <li>Auf <strong>PACKEN &hellip;</strong> klicken.</li>
+    <li>Die R&uuml;ckfragen beantworten (siehe unten) und warten, bis die Statuszeile <em>Fertig.</em> zeigt.</li>
+  </ol>
+  <p>Das Fenster packt zuerst in einen Nachbarordner, vergleicht mit den Dateien des Spiels und legt erst danach
+  <code>ampr_zstd.index</code> und die <code>.pak</code>-B&auml;nder in den Spielordner. Ein Abbild m&uuml;ssen Sie vorher in einen Dump-Ordner auspacken.</p>
+  <p>Auf der Befehlszeile baut <code>--mode ampr_manager --ampr-action ampr_assetpack</code> B&auml;nder in ein fertiges Backup. Es braucht eine Fassung, die B&auml;nder liest (<code>--ampr-variant test-pack</code> oder <code>test-debug-pack</code>), und nimmt vier Quellen an:</p>
   <table>
     <thead><tr><th>Quelle</th><th>Was das Programm tut</th></tr></thead>
     <tbody>
@@ -1739,36 +1743,25 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><code>.ffpkg</code></td><td>entpackt, packt, packt zur&uuml;ck</td></tr>
     </tbody>
   </table>
-  <ol class="schritte">
-    <li>Quelle, Zielordner und Temp-Ordner w&auml;hlen, auf STARTEN klicken.</li>
-    <li>Auf der Manager-Seite oben die <strong>AMPR-Fassung</strong> ausw&auml;hlen,
-    mit der gepackt werden soll.</li>
-    <li>Auf <strong>Asset-Pack bauen</strong> klicken.</li>
-  </ol>
 
   <div class="kasten achtung">
-    <span class="titel">Die Fassung muss B&auml;nder lesen k&ouml;nnen</span>
-    <p>Gepackt wird mit der Fassung, die im Auswahlfeld steht &ndash; gesucht
-    wird nichts automatisch. B&auml;nder lesen kann nur eine Fassung der Bauart
-    <strong>test-pack</strong> oder <strong>test-debug-pack</strong>. Steht die
-    Auswahl auf einer anderen, sagt das Fenster es sofort. Ohne diese
-    R&uuml;ckmeldung l&auml;gen die B&auml;nder am Ende im Abbild, und die
-    Bibliothek w&uuml;rde sie nicht anr&uuml;hren.</p>
+    <span class="titel">Es muss AMPR EMU NG sein</span>
+    <p>zstd-Packs liest nur AMPR EMU NG. Liegt im Spielordner unter <code>fakelib/libSceAmpr.sprx</code> eine andere Fassung, packt das Fenster nichts. Fehlt die Datei, fragt es, ob trotzdem gepackt werden soll, weil NG dann &uuml;ber ShadowMount+ kommt (Vorgabe <em>Nein</em>). Das geht nur, wenn dort das automatische Aktualisieren abgeschaltet ist (<code>update_emulators=0</code> und <code>auto_update_ampr=0</code> in der <code>config.ini</code>; ab ShadowMount+ 1.7beta12 <code>update_enabled</code> und <code>auto_update_ampr</code> im Abschnitt <code>[emulators]</code>), sonst ersetzt ShadowMount+ NG wieder durch die AMPR-Fassung von drakmor.</p>
   </div>
 
   <div class="kasten achtung">
     <span class="titel">Erst der Index, dann das Pack</span>
-    <p>Das Packwerkzeug liest <code>ampr_emu.index</code>, um die fileIds zu
-    vergeben. Fehlt die Datei im Spielordner, bricht der Lauf ab, bevor etwas
-    entsteht. Klicken Sie in diesem Fall zuerst auf
-    <strong>Nur Index neu bauen</strong> und danach auf
-    <strong>Asset-Pack bauen</strong>. Umgekehrt w&uuml;rde ein sp&auml;ter neu
-    gebauter Index die fertigen B&auml;nder unbrauchbar machen.</p>
+    <p>Das Fenster braucht die <code>ampr_emu.index</code> des Spiels, um die Dateien abzugleichen. Fehlt sie, legt das Fenster sie selbst an &ndash; es sei denn, neben dem Spiel liegt schon eine gepackte Asset-Schicht oder das l&auml;sst sich nicht pr&uuml;fen: Dann bricht der Lauf ab, ohne etwas zu ver&auml;ndern, denn ein neuer Index w&uuml;rde deren Manifest unbrauchbar machen.</p>
   </div>
 
   <div class="kasten warnung">
-    <span class="titel">Der Inhalt w&auml;chst &ndash; die Datei nicht unbedingt</span>
-    <p>Der AMPR EMU Manager fragt <strong>nicht</strong>, ob gepackte Originaldateien
+    <span class="titel">Die Originale bleiben, wenn Sie nichts anderes sagen</span>
+    <p>Das Fenster arbeitet in Ihrem Spielordner selbst, nicht in einer Kopie. Vor dem Packen fragt es, ob die gepackten Originale danach aus dem Ordner entfernt werden sollen; die Vorgabe ist <em>Nein</em>. Bei <em>Ja</em> wird vorher jedes Byte gepr&uuml;ft, nicht nur eine Stichprobe, und das Spiel l&auml;uft danach nur mit AMPR EMU NG; <strong>ENTPACKEN &hellip;</strong> stellt die Dateien wieder her (Abschnitt 11.4). Am sichersten ist es, zuerst mit den Originalen an der Konsole zu testen.</p>
+  </div>
+
+  <div class="kasten warnung">
+    <span class="titel">Befehlszeile: Der Inhalt w&auml;chst &ndash; die Datei nicht unbedingt</span>
+    <p>Auf der Befehlszeile (<code>--ampr-action ampr_assetpack</code>) fragt der AMPR EMU Manager <strong>nicht</strong>, ob gepackte Originaldateien
     entfernt werden sollen &ndash; sie bleiben immer liegen. Der
     <strong>Inhalt</strong> w&auml;chst dadurch: Das Ergebnis enth&auml;lt
     Originale <em>und</em> B&auml;nder.</p>
@@ -1803,8 +1796,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Bei einem Dump-Ordner und bei <code>.exFAT</code>, <code>.ffpfsc</code>
   und <code>.ffpfs</code> sieht das Programm daf&uuml;r ins Verzeichnis des
   Abbilds &ndash; in Sekundenbruchteilen, ohne es auszupacken. In ein
-  <code>.ffpkg</code> l&auml;sst sich so nicht hineinsehen; dort kommt die
-  Frage, sobald die Dateien ausgepackt daliegen, und immer noch vor dem Bau
+  <code>.ffpkg</code> l&auml;sst sich so nicht hineinsehen; dort liest Dump Forge die
+  Dateiliste, und die Frage kommt ebenfalls vor dem Lauf. Kann Dump Forge sie nicht lesen, kommt die
+  Frage erst, sobald die Dateien ausgepackt daliegen, und immer noch vor dem Bau
   des Ergebnisses. Auf der Kommandozeile wird nicht gefragt: Dort steht ein
   Hinweis im Protokoll, und es gilt die gespeicherte Einstellung.</p>
 
@@ -1819,7 +1813,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Spiels selbst) und weist im Protokoll darauf hin, dass die Eintr&auml;ge zu
   pr&uuml;fen sind. Ohne passende Datei melden die Bibliotheken keine
   Zusatzinhalte. Ein Spielori&shy;ginal einer dieser Bibliotheken wird einmalig als
-  <code>.orig</code> gesichert. Hat das Spiel Zusatzinhalte &ndash; eine <code>dlcmap.json</code> des Spiels mit Eintr&auml;gen, ein DLC-Ordner des PS5-App-Dumpers (<code>&hellip;_00-&hellip;-ac</code>) neben dem Spielordner, eine <code>dlc_emu.ini</code> oder einen gef&uuml;llten Ordner <code>addcont&hellip;</code> &ndash; und ist DLC EMU nicht angehakt, fragt das Programm wie bei PlayGo vor der Arbeit, ob es eingeschaltet werden soll. Das gilt f&uuml;r Dump-Ordner und Abbilder (bei Abbildern z&auml;hlen die Namen <code>dlcmap.json</code>, <code>dlc_emu.ini</code> und <code>addcont&hellip;</code>); bei einem <code>.ffpkg</code> l&auml;sst sich nicht hineinsehen, dort steht nur ein Hinweis im Protokoll. Solche DLC-Ordner kopiert das Programm als <code>addcont0</code>, <code>addcont1</code> &hellip; ins Spiel und tr&auml;gt sie mit Einh&auml;ngepunkt in die <code>dlc_emu.ini</code> ein; alle anderen Zusatzinhalte, die nur etwas freischalten, stehen als reine Berechtigung darin. Wie AMPR EMU und BACKPORT arbeitet der Einbau auf
+  <code>.orig</code> gesichert. Hat das Spiel Zusatzinhalte &ndash; eine <code>dlcmap.json</code> des Spiels mit Eintr&auml;gen, ein DLC-Ordner des PS5-App-Dumpers (<code>&hellip;_00-&hellip;-ac</code>) neben dem Spielordner, eine <code>dlc_emu.ini</code> oder einen gef&uuml;llten Ordner <code>addcont&hellip;</code> &ndash; und ist DLC EMU nicht angehakt, fragt das Programm wie bei PlayGo vor der Arbeit, ob es eingeschaltet werden soll. Das gilt f&uuml;r Dump-Ordner und Abbilder (bei Abbildern z&auml;hlen die Namen <code>dlcmap.json</code>, <code>dlc_emu.ini</code> und <code>addcont&hellip;</code>); bei einem <code>.ffpkg</code> liest Dump Forge die Liste der Zusatzinhalte; kann es sie nicht lesen, steht nur ein Hinweis im Protokoll. Solche DLC-Ordner kopiert das Programm als <code>addcont0</code>, <code>addcont1</code> &hellip; ins Spiel und tr&auml;gt sie mit Einh&auml;ngepunkt in die <code>dlc_emu.ini</code> ein; alle anderen Zusatzinhalte, die nur etwas freischalten, stehen als reine Berechtigung darin. Wie AMPR EMU und BACKPORT arbeitet der Einbau auf
   dem Dump-Ordner und gilt damit f&uuml;r alle Zielformate; er kommt vor dem AMPR EMU,
   damit dessen Index die neuen Dateien kennt.</p>
 
@@ -1833,26 +1827,27 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <p><strong>Paket bauen (PKG / FPKG):</strong> Das Programm sucht in der Quelle selbst nach AMPR EMU, Asset-Packs (LZ4, zstd), PlayGo, DLC und BACKPORT und schreibt das Ergebnis ins Protokoll &ndash; auch wenn nichts fehlt. Fehlt etwas, das das Spiel braucht, fragt es vor dem Bau: Ein Paket nimmt den Einbau nicht auf, Dump Forge übernimmt den Ordner <code>fakelib</code> der Quelle unverändert. Bei einem Spielordner bietet die Frage <em>Als Abbild (.ffpkg) erstellen</em> an: Das Programm hakt dann das Fehlende in den Kästchen der Aufgabe 1 an und startet den Lauf als Abbild (Ihre gemerkte Formatwahl bleibt). <em>Trotzdem als Paket bauen</em> baut ohne das Fehlende. Bei einem Abbild als Quelle bleibt nur &bdquo;trotzdem bauen&ldquo;. AMPR EMU legt Dump Forge für ein Spiel, das <code>libSceAmpr</code> lädt, selbst dazu.</p>
 
-  <p><strong>Aufgabe 7 hat dieselbe Karte wie die Aufgaben 1 bis 6:</strong> ZIELFORMAT, KOMPRESSION (PFS), WORKER-THREADS und PRÜFUNG stehen in einer Zeile (mit Pfeilen dazwischen), darunter ein Hinweis zum Zielformat und rechts daneben BEIM ERSTELLEN EINBAUEN (AMPR EMU mit Methode und Fassung, Packverfahren, Packstufe und vollständiger Prüfung, PlayGo, DLC EMU, BACKPORT mit Firmware). Die Felder sind dieselben wie in den Aufgaben 1 bis 6 (eine Wahl hier gilt dort und umgekehrt) und wirken beim Umwandeln in ein Abbild; ein Paket nimmt den Einbau nicht auf, dann sind sie gesperrt. Beim Zielformat .ffpfsc steht unter dem Hinweis außerdem BAUFORM (Container) wie in den Aufgaben 1 bis 6 (exFAT oder PFS im Container; eine Wahl hier gilt dort und umgekehrt). Dump Forge baut ein Paket im Strom nur als exFAT im Container; bei „PFS im Container“ entpackt das Programm das Paket und baut über Aufgabe 1, damit die gewählte Form auch herauskommt. <em>Sobald du die Quelle gewählt hast, sucht das Programm wie in den Aufgaben 1 bis 6 von selbst, was im Spiel schon eingebaut ist</em> (BACKPORT, AMPR EMU, Asset-Pack, PlayGo) und ob PlayGo nötig wäre; die [Prüfung]-Zeilen stehen im Protokoll. Vor dem Lauf sieht es außerdem nach AMPR EMU (auch LZ4 und zstd), PlayGo, DLC und BACKPORT und fragt, wenn etwas fehlt. Darunter stehen wie dort STARTEN und ABBRECHEN; während eines Laufs erscheinen neben ihnen der Fortschrittsbalken mit der Prozentzahl und rechts der Text dazu, darunter das Protokoll. Ganz unten rechts steht die Statuszeile, darunter zeigt eine kleine Zeile, wie lange der Lauf schon geht und mit welchem Werkzeug; kommt länger als 20 Sekunden nichts Neues, steht dort, seit wann &ndash; bei sehr großen Dateien ist das normal. Unter dem Zielordner stehen wie dort die Haken „Rechner nach erfolgreichem Abschluss herunterfahren“, „Ergebnis nach erfolgreichem Abschluss an PS5 senden“, „Quelle nach Erfolg löschen“ und „Dump-Ordner: Arbeitskopie vorher anlegen“ (eine Wahl hier gilt dort und umgekehrt). Die Quelle wird nie still gelöscht: Vor dem Start kommt eine Rückfrage, und gelöscht wird sie erst nach einem geprüften Erfolg und nur, wenn sie sich während des Laufs nicht geändert hat. Bei einem Befund der Prüfung bleibt sie, wird nichts gesendet, und der Rechner bleibt an. Nach einem erfolgreich erstellten Ergebnis (Paket, Abbild oder entpackter Ordner) meldet die Seite wie die Aufgaben 1 bis 6 „Vorgang erfolgreich abgeschlossen!“ &ndash; erst danach kommt die Frage zum Senden an die PS5; beim Herunterfahren und nach einem Befund bleibt die Meldung aus. „Updates Online“, „Dateien anzeigen“, „Details“ und „Optionen“ stehen im Rechtsklick-Menü des Protokolls.</p>
+  <p><strong>Aufgabe 7 hat dieselbe Karte wie die Aufgaben 1 bis 6:</strong> ZIELFORMAT, KOMPRESSION (PFS), WORKER und PRÜFUNG stehen in einer Zeile (mit Pfeilen dazwischen), darunter ein Hinweis zum Zielformat und rechts daneben BEIM ERSTELLEN EINBAUEN (AMPR EMU mit Methode und Fassung, Packverfahren, Packstufe und vollständiger Prüfung, PlayGo, DLC EMU, BACKPORT mit Firmware). Die Felder sind dieselben wie in den Aufgaben 1 bis 6 (eine Wahl hier gilt dort und umgekehrt) und wirken beim Umwandeln in ein Abbild; ein Paket nimmt den Einbau nicht auf, dann sind sie gesperrt. Beim Zielformat .ffpfsc steht unter dem Hinweis außerdem BAUFORM (Container) wie in den Aufgaben 1 bis 6 (exFAT oder PFS im Container; eine Wahl hier gilt dort und umgekehrt). Dump Forge baut ein Paket im Strom nur als exFAT im Container; bei „PFS im Container“ entpackt das Programm das Paket und baut über Aufgabe 1, damit die gewählte Form auch herauskommt. <em>Sobald du die Quelle gewählt hast, sucht das Programm wie in den Aufgaben 1 bis 6 von selbst, was im Spiel schon eingebaut ist</em> (BACKPORT, AMPR EMU, Asset-Pack, PlayGo) und ob PlayGo nötig wäre; die [Prüfung]-Zeilen stehen im Protokoll. Vor dem Lauf sieht es außerdem nach AMPR EMU (auch LZ4 und zstd), PlayGo, DLC und BACKPORT und fragt, wenn etwas fehlt. Darunter stehen wie dort STARTEN und ABBRECHEN; während eines Laufs erscheinen neben ihnen der Fortschrittsbalken mit der Prozentzahl und rechts der Text dazu, darunter das Protokoll. Ganz unten rechts steht die Statuszeile, darunter zeigt eine kleine Zeile, wie lange der Lauf schon geht und mit welchem Werkzeug; kommt länger als 20 Sekunden nichts Neues, steht dort, seit wann &ndash; bei sehr großen Dateien ist das normal. Unter dem Zielordner stehen wie dort die Haken „Rechner nach erfolgreichem Abschluss herunterfahren“, „Ergebnis nach erfolgreichem Abschluss an PS5 senden“, „Quelle nach Erfolg löschen“ und „Dump-Ordner: Arbeitskopie vorher anlegen“ (eine Wahl hier gilt dort und umgekehrt). Die Quelle wird nie still gelöscht: Vor dem Start kommt eine Rückfrage, und gelöscht wird sie erst nach einem geprüften Erfolg und nur, wenn sie sich während des Laufs nicht geändert hat. Bei einem Befund der Prüfung bleibt sie, wird nichts gesendet, und der Rechner bleibt an. Nach einem erfolgreich erstellten Ergebnis (Paket, Abbild oder entpackter Ordner) meldet die Seite wie die Aufgaben 1 bis 6 „Vorgang erfolgreich abgeschlossen!“ &ndash; erst danach kommt die Frage zum Senden an die PS5; beim Herunterfahren und nach einem Befund bleibt die Meldung aus. „Updates Online“, „Dateien anzeigen“, „Details“ und „Optionen“ stehen im Rechtsklick-Menü des Protokolls.</p>
 
   <p><strong>Ohne Zwischenordner:</strong> Ein <code>.pkg</code> schreibt Dump Forge im Strom in ein Abbild (<code>.ffpkg</code>, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code>), ohne es zu entpacken. Nur wenn etwas eingebaut werden soll, wird zuerst in den Arbeitsordner entpackt, und Aufgabe 1 baut das Abbild mit dem Einbau. Ein Spielordner wird im Strom zum Paket gebaut.</p>
 
-  <p><strong>Gepackte Spiele (LZ4, zstd):</strong> Ein Spiel mit Asset-Packs läuft als FPKG an der PS5 nicht gepackt. Beim Bau eines FPKG entpackt Dump Forge die Packs deshalb und baut das Paket aus den entpackten Dateien; es ersetzt dabei die Laufzeit der Packs durch seine eigene und schreibt die <code>ampr_emu.index</code> neu. Das Protokoll nennt das Verfahren. Aus einem Backup mit gepackten Assets baut das Programm dagegen kein PS4-PKG: Entpacken Sie die Packs zuerst (unter <strong>WEITERE TOOLS</strong> → <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong>) oder wählen Sie ein Abbild als Format.</p>
+  <p><strong>Gepackte Spiele (LZ4, zstd):</strong> Ein Spiel mit Asset-Packs läuft als FPKG an der PS5 nicht gepackt. Beim Bau eines FPKG entpackt Dump Forge die Packs deshalb und baut das Paket aus den entpackten Dateien; es ersetzt dabei die Laufzeit der Packs durch seine eigene und schreibt die <code>ampr_emu.index</code> neu. Das Protokoll nennt das Verfahren. Aus einem Backup mit gepackten Assets baut das Programm dagegen kein PS4-PKG: Entpacken Sie die Packs zuerst (unter <strong>KONSOLE</strong> → <strong>11. Asset-Pack</strong>) oder wählen Sie ein Abbild als Format.</p>
 
   <p><strong>Wenn das Ablegen scheitert:</strong> Ist das Paket fertig gebaut, lässt sich aber im Zielordner nicht ablegen (die Datei ist gesperrt, oder es ist während des langen Baus eine gleichnamige Datei entstanden und <em>Vorhandenes überschreiben</em> ist nicht gesetzt), löscht das Programm es nicht. Es bleibt im Arbeitsordner (<code>ps5conv_forge_…</code>, unter dem Zielordner) liegen, und das Protokoll nennt den Pfad. Brechen Sie selbst ab, räumt das Programm alles weg.</p>
 
   <p><strong>BACKPORT:</strong> Das Programm kennt die Firmware Ihrer Konsole, wenn die Ansicht KONSOLE sie gemessen hat; sonst fragt es <em>einmal</em> (Auswahl von 1.xx bis 13.xx oder neuer, oder &bdquo;Nicht angeben&ldquo;) und merkt sich die Antwort. Die Angabe lässt sich unter EINSTELLUNGEN ändern. Verlangt ein Spiel &ndash; nach dem SDK der <code>eboot.bin</code> oder der verlangten Firmware &ndash; mehr, als die Konsole hat, und ist es noch nicht herabgesetzt, fragt das Programm vor der Arbeit, ob BACKPORT eingeschaltet werden soll. Als herabgesetzt gilt ein Spiel mit Ersatzbibliotheken in <code>fakelib/</code> oder mit einem SDK der <code>eboot.bin</code>, das unter dem der <code>param.json</code> liegt; verlangt wird dann, was die <code>eboot.bin</code> trägt (die Angaben der <code>param.json</code> lassen viele Backports unverändert). Das SDK liest das Programm aus einem Spielordner, aus einem Abbild (<code>.ffpkg</code>, <code>.exfat</code>, <code>.ffpfs</code>, <code>.ffpfsc</code>) und aus einem <code>.pkg</code> (Debug-Paket, wie Dump Forge es baut), ohne es zu entpacken; bei einer Verkaufsfassung, einem Paket mit fremdem Passcode oder einem anderen Verdichtungsverfahren kann es das nicht (dort gelten die Angaben der <code>param.json</code>). Ziel ist die höchste Stufe mit Ersatzbibliotheken, die nicht über der Konsole liegt (wie im BACKPORT-Fenster). Vorbelegt ist <em>Ja</em>; das Kästchen und die Firmware bleiben danach gesetzt. In der Sammelkonvertierung steht BACKPORT in der gesammelten Frage, im Bereich PKG / FPKG als Hinweis vor dem Bau eines Pakets (ein Paket nimmt BACKPORT nicht auf).</p>
 
   <h3>11.4 Ein fertiges Asset-Pack pr&uuml;fen und entpacken</h3>
-  <p>Seit v1.9.80 gibt es dazu ein eigenes Fenster: <strong>WEITERE TOOLS
-  &rarr; ASSET-PACK PR&Uuml;FEN / ENTPACKEN</strong>. Es ist das Gegenst&uuml;ck
+  <p>Seit v1.9.80 gibt es dazu ein eigenes Fenster: In der Ansicht KONSOLE &ouml;ffnet der Knopf
+  <strong>11. Asset-Pack</strong> das Fenster <em>Asset-Pack packen, pr&uuml;fen und entpacken</em>
+  (es lag fr&uuml;her unter WEITERE TOOLS; seit dem 18.10.2026 &ouml;ffnet es dieser Knopf). Es ist das Gegenst&uuml;ck
   am PC zu <em>Verify LZ4 Packs</em> und <em>Uncompress LZ4</em> der
   Konsolen-App <em>LZ4 Compression</em> und benutzt dasselbe Werkzeug wie der
   Bau (<code>ampr_pack.py</code>, <code>verify</code> und
   <code>unpack</code>). W&auml;hlen Sie den <strong>Spielordner selbst</strong>
   &ndash; den, in dem <code>eboot.bin</code> und <code>ampr_assets.index</code>
-  liegen. Ein Abbild (<code>.ffpfsc</code>, <code>.exFAT</code>) l&auml;sst sich
-  nicht einh&auml;ngen; packen Sie es vorher mit Aufgabe 2 aus.</p>
+  (bei zstd-Packs <code>ampr_zstd.index</code>) liegen. Ein Abbild (<code>.ffpfsc</code>, <code>.exFAT</code>) l&auml;sst sich
+  nicht einh&auml;ngen; packen Sie es vorher in einen Dump-Ordner aus (<code>.ffpfsc</code> mit Aufgabe 2, <code>.exFAT</code> mit Aufgabe 3).</p>
   <ul>
     <li><strong>Nach dem Ausw&auml;hlen</strong> liest das Fenster nur das
     Manifest und nennt, wie viele Dateien gepackt und wie viele lose sind, wie
@@ -1862,10 +1857,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <code>ampr_assets.index.crc</code>. Das geht auch, wenn die Originale
     l&auml;ngst weg sind. Dazu sagt das Fenster, ob
     <code>fakelib/libSceAmpr.sprx</code> eine Fassung ist, die B&auml;nder lesen
-    kann (<code>test-pack</code> oder <code>test-debug-pack</code>), ob lose
+    kann (<code>test-pack</code>, <code>test-debug-pack</code> oder eine NG-Fassung), ob lose
     gef&uuml;hrte Dateien im Ordner fehlen und ob Systemdateien
     (<code>playgo.pgm</code>, <code>*.packman</code> &hellip;) im Band stehen.
     Das sind Hinweise, keine Fehler der B&auml;nder.</li>
+    <li><strong>PACKEN &hellip;</strong> baut zstd-Packs in den gew&auml;hlten Spielordner (Abschnitt 11.2). Das Fenster fragt vorher nach
+    und l&auml;sst die Originale liegen, wenn Sie nichts anderes sagen.</li>
     <li><strong>ENTPACKEN &hellip;</strong> legt die gepackten Dateien wieder
     lose hin. Sie w&auml;hlen: <em>in einen neuen Ordner</em> &ndash; der
     Spielordner bleibt unver&auml;ndert, das Ergebnis ist ein loses Spiel ohne
@@ -1901,7 +1898,6 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Aufgabe 8 prüft einen Dump-Ordner oder eine unterstützte Containerdatei auf erkennbare Probleme. Sie erstellt kein Konvertierungsergebnis; das Resultat erscheint im Protokoll.</p>
   <ol class="schritte">
     <li>Wählen Sie den Ordner oder die Datei, die geprüft werden soll.</li>
-    <li>Wählen Sie einen Temp-Ordner mit genügend freiem Platz.</li>
     <li>Klicken Sie auf STARTEN.</li>
     <li>Lesen Sie die Abschlussmeldung und beachten Sie mögliche Warnungen.</li>
   </ol>
@@ -1911,16 +1907,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>12.1 Was bei .ffpfsc und .ffpfs zusätzlich geprüft wird</h3>
-  <p>Diese Container sind zweistufig aufgebaut: außen der Container, darin genau ein Abbild mit den Spieldateien. Ist beim Erzeugen etwas schiefgelaufen, kann dazwischen versehentlich eine weitere Ebene liegen – von außen sieht die Datei dann völlig normal aus, auf der Konsole ist sie aber unbrauchbar.</p>
+  <p>Eine <code>.ffpfsc</code> ist zweistufig aufgebaut: außen der Container, darin genau ein Abbild mit den Spieldateien. Eine <code>.ffpfs</code> ist dagegen selbst das Abbild: Die Spieldateien liegen flach in der Abbildwurzel. Ist beim Erzeugen einer <code>.ffpfsc</code> etwas schiefgelaufen, kann dazwischen versehentlich eine weitere Ebene liegen – von außen sieht die Datei dann völlig normal aus, auf der Konsole ist sie aber unbrauchbar.</p>
   <p>Aufgabe 8 schaut deshalb eine Ebene tiefer und meldet im Protokoll:</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Zeile</th><th>Bedeutung</th></tr></thead>
     <tbody>
-      <tr><td><span class="punkt p-gruen"></span><code>nesting: in Ordnung</code></td><td>Auf der innersten Ebene liegen die Spieldateien – so soll es sein.</td></tr>
-      <tr><td><span class="punkt p-rot"></span><code>nesting: falsch verschachtelt</code></td><td>Dort liegt ein weiteres Abbild statt der Dateien. Die Datei muss neu erzeugt werden.</td></tr>
+      <tr><td><span class="punkt p-gruen"></span><code>nesting: in Ordnung</code></td><td>Auf der innersten Ebene liegen die Spieldateien – so soll es sein. Eine <code>.ffpfsc</code>, die aus einer <code>.exFAT</code> oder einer <code>.ffpkg</code> gebaut wurde, enthält dagegen mit Absicht dieses Abbild; die Zeile lautet dann <code>in Ordnung (exFAT-Abbild im Container)</code> beziehungsweise <code>in Ordnung (UFS2-Abbild im Container)</code>.</td></tr>
+      <tr><td><span class="punkt p-rot"></span><code>nesting: falsch verschachtelt</code></td><td>Dort liegt ein weiteres Abbild statt der Dateien. Die Datei muss neu erzeugt werden. Bei einer <code>.ffpfs</code> lautet die Zeile <code>nesting: geschachtelt</code>.</td></tr>
       <tr><td><code>inner_files</code> / <code>inner_dirs</code></td><td>Anzahl der Dateien und Ordner auf der innersten Ebene.</td></tr>
-      <tr><td><span class="punkt p-gelb"></span><code>nesting: flach aufgebaut</code></td><td>Die Dateien liegen direkt im Container, das innere Abbild fehlt. Erscheint zum Beispiel beim Prüfen eines Zwischenergebnisses.</td></tr>
+      <tr><td><span class="punkt p-gruen"></span><code>nesting: flach aufgebaut</code></td><td>Bei einer <code>.ffpfs</code> die vorgeschriebene Form: Die Spieldateien liegen flach in der Abbildwurzel.</td></tr>
+      <tr><td><span class="punkt p-gelb"></span><code>nesting: flach aufgebaut</code></td><td>Bei einer <code>.ffpfsc</code>: Die Dateien liegen direkt im Container, das innere Abbild fehlt (das Protokoll meldet einen ungewöhnlichen Aufbau). Erscheint zum Beispiel beim Prüfen eines Zwischenergebnisses.</td></tr>
     </tbody>
   </table>
   </div>
@@ -1963,31 +1960,33 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <div class="kasten hinweis">
     <span class="titel">Zwei Oberflächen hinter einem Knopf</span>
-    <p>Aufgabe 7 ist keine Formatkonvertierung wie Aufgabe 1 bis 6. Sie zeigt rechts eine eigene Seite mit zwei
-    Knöpfen oben: <strong>PKG</strong> und <strong>FPKG</strong>. Ein Klick wählt die jeweilige Oberfläche; der
-    gewählte Knopf trägt einen Haken, und die zuletzt gewählte bleibt stehen – auch wenn Sie zwischendurch eine
-    andere Aufgabe anklicken und zu „7.“ zurückkehren.</p>
+    <p>Aufgabe 7 ist keine Formatkonvertierung wie Aufgabe 1 bis 6. Sie zeigt rechts eine eigene Seite mit dem Feld
+    <strong>QUELLE</strong> (<em>Datei wählen</em>, <em>Ordner wählen</em> oder Ablegen). Das Programm erkennt am Paket
+    oder Ordner selbst, ob es ein PS4- oder ein PS5-Titel ist, und zeigt darunter den passenden Bereich:
+    <strong>PS4 PKG</strong> oder <strong>PS5 PKG</strong>; der Untertitel der Seite nennt ihn, sobald Sie eine Quelle gewählt
+    haben. Einen Umschalter gibt es nicht. Vor der ersten Wahl steht der zuletzt benutzte Bereich da (Vorgabe: PS5), und er
+    bleibt stehen – auch wenn Sie zwischendurch eine andere Aufgabe anklicken und zu „7.“ zurückkehren.</p>
     <p>Bis zum 12.10.2026 abends waren das zwei eigene Fenster unter <strong>WEITERE TOOLS</strong>
     (<em>PS4 PKG Dump &amp; Image Converter</em> und <em>PS5 PKG Dump &amp; Image Converter</em>) – dieselben
     Oberflächen, nur jetzt eingebettet statt als eigenes Fenster. Die Bibliothek öffnet ein PS4-Paket zum
-    Umwandeln weiterhin über denselben Weg (<em>Konvertieren</em>) und wählt dabei von selbst „PKG“.</p>
+    Umwandeln weiterhin über denselben Weg (<em>Konvertieren</em>) und zeigt dabei von selbst den Bereich <strong>PS4 PKG</strong>.</p>
   </div>
 
-  <h3 id="k7pkg">7.1 PKG – PS4-Pakete entpacken, umwandeln und bauen</h3>
+  <h3 id="k7pkg">13.1 PKG – PS4-Pakete entpacken, umwandeln und bauen</h3>
   <p>Diese Seite macht aus PS4-Spielen alles, was Sie für die PS5 brauchen: einen
   <strong>Dump-Ordner</strong> (entpacktes Spiel), ein <strong>ffpfsc-</strong> oder
   <strong>exFAT-Abbild</strong> für ShadowMount+ oder ein einziges <strong>Paket</strong> aus Basis und
-  Update. Quelle wählen, <strong>EINLESEN</strong>, Spiel markieren, Zielordner und Format wählen,
+  Update. Quelle wählen (sie wird sofort eingelesen; <strong>EINLESEN</strong> liest sie bei Bedarf neu), Spiel markieren, Zielordner und Format wählen,
   <strong>ERSTELLEN</strong>. Dazu kommen <strong>UPDATES ONLINE</strong> und
   <strong>AN KONSOLE SENDEN</strong> (siehe unten).</p>
-  <p><strong>Zu finden unter:</strong> Aufgabe 7 – PKG / FPKG → <strong>PKG</strong>. In der
-  Bibliothek öffnet <em>Konvertieren</em> bei einem PS4-Paket dieselbe Seite mit der Datei. Ein zweiter Druck
-  auf „PKG“ ändert nichts.</p>
+  <p><strong>Zu finden unter:</strong> Aufgabe 7 – PKG / FPKG; im Feld <strong>QUELLE</strong> ein PS4-Paket (oder einen
+  Ordner mit PS4-Paketen) wählen – die Seite zeigt dann den Bereich <strong>PS4 PKG</strong>. In der
+  Bibliothek öffnet <em>Konvertieren</em> bei einem PS4-Paket dieselbe Seite mit der Datei.</p>
   <p><strong>Spiel Info.</strong> Wie bei den Aufgaben 1 bis 6 steht das Cover des markierten Spiels
   (<code>icon0.png</code> aus dem Paket bzw. aus <code>sce_sys</code>) samt Titel in der Seitenleiste, und
   <em>Spiel Info – Updates &amp; Patches</em> zeigt Titel, Title-ID, Content-ID, Version, Firmware, Region,
   Kategorie und Plattform aus der <code>param.sfo</code>. Updates und Patches sucht das Fenster bei PS4-Titeln auf
-  orbispatches.com; fehlende Angaben wie Hersteller oder Cover holt das Programm von dort nach, wenn das
+  orbispatches.com (außerdem bei Sonys Update-Server); fehlende Angaben wie Hersteller oder Cover holt das Programm von dort nach, wenn das
   Nachschlagen von Metadaten in den Einstellungen erlaubt ist.</p>
   <p><strong>So arbeitet es.</strong> Die Pakete werden mit <strong>OrbisPkgTool</strong> (MIT-Lizenz,
   Ordner <code>OrbisPkgTool-1.0.0</code>) entpackt; Basis und Updates werden in der Reihenfolge der
@@ -2003,7 +2002,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <thead><tr><th>Format</th><th>Ergebnis</th></tr></thead>
     <tbody>
       <tr><td><strong>Dump-Ordner</strong></td><td>Ein gewöhnlicher Spielordner mit <code>eboot.bin</code>
-      und <code>sce_sys</code>, Updates schon eingespielt; mit dem Haken <em>DLC</em> auch Zusatzinhalte im
+      und <code>sce_sys</code>, Updates schon eingespielt; mit dem Haken <em>DLC einbetten (experimentell)</em> auch Zusatzinhalte im
       Dumper-Aufbau (<code>app/</code> und <code>addcont/…</code>). Benötigt OrbisPkgTool.</td></tr>
       <tr><td><strong>ffpfsc-Abbild</strong></td><td>Komprimiertes Abbild für ShadowMount+
       (<em>Stufe</em> und <em>Worker</em> bestimmen Kompression und Tempo).</td></tr>
@@ -2022,7 +2021,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   die doppelte Zeit und den doppelten Platz; Ihr eigener Dump-Ordner bleibt dabei unberührt.</p>
 
   <p>Sie können nacheinander beliebig viele Quellen einlesen: einfach eine
-  andere wählen und erneut auf <strong>EINLESEN</strong> drücken. Bis
+  andere wählen; sie wird sofort eingelesen, und <strong>EINLESEN</strong> liest die gewählte Quelle erneut. Bis
   v1.8.92 zeigte der zweite Durchgang noch die Spiele des ersten und blockierte
   danach jedes weitere Einlesen; seit v1.8.93 wird die Quelle jedes Mal
   geprüft. Dieselbe Quelle erneut einzulesen geht dabei so schnell wie
@@ -2044,8 +2043,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
   <p>Das ist mehr als eine Auskunft: Diese Seite baut Abbilder aus
   <strong>PS4</strong>-Paketen. Legen Sie versehentlich ein PS5-Spiel hinein,
-  wird die Zeile farbig hervorgehoben und im Protokoll steht der Hinweis auf die
-  Aufgaben 1 bis 6, die für PS5-Titel zuständig sind.</p>
+  wird die Zeile farbig hervorgehoben, und beim Druck auf <strong>ERSTELLEN</strong> weist ein Warnfenster auf die
+  Aufgaben 1 bis 6 hin, die für PS5-Titel zuständig sind.</p>
 
   <div class="kasten warnung">
     <span class="titel">Trophäen: PS4-Titel registrieren aus einem Abbild nicht</span>
@@ -2098,12 +2097,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   „PKG entpacken“) macht aus einer PS4-Paketdatei
   (<code>.pkg</code>, Fake-PKG: Spiel, Patch oder DLC) einen gewöhnlichen
   Spielordner mit <code>eboot.bin</code> und <code>sce_sys</code>. Entpackt
-  wird mit demselben Entpacker, den „PKG“ oben mitbringt.</p>
-  <p><strong>Zu finden unter:</strong> Aufgabe 7 – PKG / FPKG → <strong>PKG</strong>, Format
+  wird mit demselben Entpacker, den der Bereich PS4 PKG oben mitbringt.</p>
+  <p><strong>Zu finden unter:</strong> Aufgabe 7 – PKG / FPKG, Bereich <strong>PS4 PKG</strong>, Format
   <strong>Dump-Ordner</strong>. Unter Windows entpackt dort seit
   Oktober 2026 das Werkzeug OrbisPkgTool, mit denselben Schutzregeln wie unten
   beschrieben; dieser Abschnitt gilt für den bisherigen, eigenständigen Entpacker, der unter Linux
-  und macOS über <em>Mehr → Entpacken mit dem bisherigen Entpacker</em> aufgeht. Einen eigenen Menüeintrag hat er
+  und macOS über <em>MEHR → Entpacken mit dem bisherigen Entpacker …</em> aufgeht. Einen eigenen Menüeintrag hat er
   nicht mehr.</p>
   <p>Wählen Sie die <code>.pkg</code> und einen Zielordner und drücken
   Sie <strong>Entpacken</strong>. Im Zielordner entsteht ein Unterordner mit
@@ -2135,11 +2134,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </ul>
   <div class="kasten achtung">
     <span class="titel">PS5-Pakete entpackt eine andere Seite</span>
-    <p>Ein PS5-Paket erkennt „PKG“ an seiner Kennung und weist es ab: Der
-    Entpacker dieser Seite kann sie nicht lesen. PS5-Pakete entpackt und
-    wandelt <a href="#k7fpkg"><strong>FPKG</strong></a> um; ihren
-    Aufbau (Typ, Content-ID, Einträge) zeigt auch <em>Mehr → Paketkopf
-    lesen</em> auf „PKG“. Retail-PS4-Pakete ohne Fake-Signatur lehnt der Entpacker ebenfalls ab.</p>
+    <p>Ein PS5-Paket erkennt die Seite an seiner Kennung und zeigt dafür den Bereich
+    <a href="#k7fpkg"><strong>PS5 PKG</strong></a>; der Entpacker des Bereichs PS4 PKG kann es nicht lesen (bei gemischter
+    Auswahl nennt das Protokoll die PS5-Pakete, die dort unberücksichtigt bleiben). PS5-Pakete entpackt und
+    wandelt <a href="#k7fpkg"><strong>PS5 PKG</strong></a> um; ihren
+    Aufbau (Typ, Content-ID, Einträge) zeigt auch <em>MEHR → Paketkopf lesen …</em> im Bereich PS4 PKG. Retail-PS4-Pakete ohne Fake-Signatur lehnt der Entpacker ebenfalls ab.</p>
   </div>
 
   <h4>Updates online, Senden an die Konsole und Paketwerkzeuge</h4>
@@ -2148,14 +2147,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <em>Interna</em> ist mit der Zusammenlegung entfallen, ebenso <em>Neu packen</em>, <em>PKG aus Ordner
   bauen</em>, die Tiefenprüfung und die Verwaltung installierter Pakete.</p>
 
-  <p><strong>UPDATES ONLINE.</strong> Fragt bei Sonys Update-Server nach, ob es zum markierten
-  offiziellen PS4-Titel (Title-ID <code>CUSA…</code>) ein neueres Update gibt, und lädt es auf
-  Wunsch (jedes Teil mit Prüfsumme). Gesendet wird nur die Title-ID; Eigenbauten und Homebrew haben dort
-  kein Update. Das geladene Update wird in die Liste aufgenommen und beim nächsten Bauen
-  mit eingespielt. <strong>PS5-Titel</strong> (<code>PPSA…</code>) fragt das Programm
-  <em>nicht</em>: Sonys Adresse antwortete für 16 geprüfte PS5-Titel mit 404 (ein
-  PS4-Titel zur Gegenprobe mit 200), und ein Verfahren für die PS5 ist öffentlich nicht
-  belegt. Statt zu raten, erscheint ein Hinweis.</p>
+  <p><strong>UPDATES ONLINE.</strong> Öffnet das Fenster <em>Spiel Info – Updates &amp; Patches</em> für den markierten Titel
+  und sucht dort nach Updates und Patches. Bei PS4-Titeln (Title-ID <code>CUSA…</code>) fragt es orbispatches.com und
+  Sonys Update-Server, bei PS5-Titeln (<code>PPSA…</code>) prosperopatches.com und – wenn die <code>param.json</code> des
+  Spiels Sonys Adresse nennt – Sonys eigene Liste. Die Suche läuft nur, wenn das Nachschlagen von Metadaten in den
+  Einstellungen erlaubt ist.</p>
 
   <p><strong>AN KONSOLE SENDEN.</strong> Der Dialog kennt zwei Wege:</p>
   <ul>
@@ -2176,9 +2172,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   entpacktes Spiel oder ein Abbild lässt sich so nicht schicken. Pakete werden unverändert
   übertragen.</p>
 
-  <p><strong>MEHR.</strong> <em>Pakete prüfen (Prüfsummen)</em> prüft die gewählten Pakete;
+  <p><strong>MEHR.</strong> <em>Basispaket wählen …</em> lässt bei einem Titel mit mehreren Basispaketen die gültige Fassung
+  bestimmen (sonst ausgegraut); <em>Pakete prüfen (Prüfsummen)</em> prüft die gewählten Pakete;
   <em>Paketkopf lesen …</em> öffnet das Fenster <em>PS4 &amp; PS5 PKG lesen</em> (auch für
-  PS5-Pakete); <em>Entpacken mit dem bisherigen Entpacker</em> erscheint nur dort, wo OrbisPkgTool fehlt
+  PS5-Pakete); <em>Entpacken mit dem bisherigen Entpacker …</em> erscheint nur dort, wo OrbisPkgTool fehlt
   (Linux, macOS; siehe oben).</p>
 
   <div class="kasten warnung">
@@ -2193,49 +2190,56 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <li><strong>Nur Windows für Dump-Ordner und Paket.</strong> OrbisPkgTool gibt es nur als
       Windows-Programm. Unter Linux und macOS bleiben ffpfsc- und exFAT-Abbild (PS4 FFPFSC liest dort die Pakete
       selbst), das Einlesen, die Update-Abfrage und das Senden.</li>
-      <li><strong>PS5-Pakete</strong> entpackt „PKG“ nicht – dafür gibt es
-      <a href="#k7fpkg"><strong>FPKG</strong></a>; ihren äußeren Aufbau zeigt auch
-      <em>Mehr → Paketkopf lesen</em>.</li>
+      <li><strong>PS5-Pakete</strong> entpackt der Bereich PS4 PKG nicht – dafür gibt es
+      <a href="#k7fpkg"><strong>PS5 PKG</strong></a>; ihren äußeren Aufbau zeigt auch
+      <em>MEHR → Paketkopf lesen …</em>.</li>
       <li>Dateinamen mit Umlauten werden im Paket zu <code>?</code> – das Werkzeug legt sie so
       ab.</li>
     </ul>
   </div>
 
-  <h3 id="k7fpkg">7.2 FPKG – PS5-Pakete entpacken, umwandeln und bauen</h3>
-  <p><strong>Zu finden unter:</strong> Aufgabe 7 – PKG / FPKG → <strong>FPKG</strong>. Diese Seite
+  <h3 id="k7fpkg">13.2 FPKG – PS5-Pakete entpacken, umwandeln und bauen</h3>
+  <p><strong>Zu finden unter:</strong> Aufgabe 7 – PKG / FPKG; im Feld <strong>QUELLE</strong> ein PS5-Paket, einen Spielordner oder ein Abbild wählen – die Seite
+  zeigt dann den Bereich <strong>PS5 PKG</strong>. Diese Seite
   öffnet PS5-Pakete (<code>.pkg</code>) und macht daraus einen Dump-Ordner oder ein Abbild; aus einem
   Spielordner baut sie ein Debug-Paket. Sie ist mit
-  <strong>Debug-Paketen (FPKG)</strong> getestet – so nennt es auch das Abzeichen neben dem Paket.
+  <strong>Debug-Paketen (FPKG)</strong> getestet – so nennt es auch die Zeile <em>FORMAT</em> in <em>Spiel Info</em>.
   Retail-Pakete sind an die Konsole gebunden; ihren Typ zeigt die Seite an, ein Entpacken ist dafür nicht
   belegt.</p>
-  <p>Links stehen zwei Seiten (<strong>Umwandeln</strong> und <strong>Bibliothek</strong>) sowie der Knopf
-  <strong>Optionen</strong> für die Einstellungen.</p>
+  <p>Der Bereich besteht wie die Aufgaben 1 bis 6 aus einer Spalte: dem Feld <strong>QUELLE</strong>, <strong>ZIELFORMAT</strong>
+  mit der Einbau-Karte und <strong>ZIELORDNER</strong>, darunter <strong>STARTEN</strong> und <strong>ABBRECHEN</strong> mit
+  dem Fortschritt und dem Protokoll. <em>Details</em>, <em>Dateien anzeigen</em>, <em>Updates Online</em> und
+  <em>Optionen</em> stehen im Menü, das ein Rechtsklick ins Protokoll öffnet.</p>
 
   <h4>Umwandeln</h4>
   <ol class="schritte">
-    <li>Ziehen Sie ein Paket, einen Spielordner (mit <code>sce_sys/param.json</code>) oder einen Ordner mit
-    Paketen und Spielordnern auf die gestrichelte Fläche oder klicken Sie
-    auf <em>Datei wählen</em> bzw. <em>Ordner wählen</em>. Titel, Titel-ID und Typ
-    erscheinen sofort, die Größe gleich danach (bei sehr großen Spielen kann das Zählen dauern; <strong>STARTEN</strong> wartet darauf).
+    <li>Ziehen Sie ein Paket, einen Spielordner (mit <code>sce_sys/param.json</code>), ein Abbild oder einen Ordner mit
+    Paketen und Spielordnern auf das Feld <strong>QUELLE</strong> oder klicken Sie
+    auf <em>Datei wählen</em> bzw. <em>Ordner wählen</em>. Titel und Cover erscheinen sofort in der Seitenleiste, die Größe
+    gleich danach in der Zeile mit <strong>STARTEN</strong> (bei sehr großen Spielen kann das Zählen dauern; <strong>STARTEN</strong> wartet darauf).
     Enthält ein Spielordner Verknüpfungen, Junctions oder andere Reparsepunkte, warnt das Protokoll schon jetzt: Dump Forge lehnt einen
     solchen Ordner ab.</li>
-    <li>Wählen Sie die <strong>Aktion</strong> (siehe unten) und den <strong>Zielordner</strong>.</li>
-    <li>Bei <em>Erstellen / Umwandeln</em> klicken Sie ein <strong>Zielformat</strong> an: FFPKG, FFPFSC, FFPFS oder
-    exFAT – bei einem Spielordner auch <strong>Paket</strong> (siehe „Ein Paket bauen“).</li>
-    <li><em>Umwandlung starten</em>. Fortschritt und Meldungen stehen in der Karte <em>Auftrag</em>, rechts in
-    <em>Ergebnis</em> der Name der Ausgabe, die Title-ID, die Content-ID, die geschätzte Größe und
-    der freie Platz im Zielordner.</li>
+    <li>Wählen Sie im Feld <strong>ZIELFORMAT</strong> das Zielformat: <em>.ffpkg</em>, <em>.ffpfsc</em>, <em>.ffpfs</em> oder
+    <em>.exFAT</em> – bei einem Spielordner oder Abbild auch <em>.pkg</em> (siehe „Ein Paket bauen“). Dasselbe Feld bietet
+    die Aktionen <em>Extrahieren</em>, <em>Prüfen</em> und <em>Auf die PS5 entpacken</em> an (siehe unten); sie gelten nur für
+    ein Paket.</li>
+    <li>Wählen Sie den <strong>Zielordner</strong>.</li>
+    <li>Klicken Sie auf <strong>STARTEN</strong>. Während des Laufs zeigt in derselben Zeile ein Balken mit Prozentzahl den
+    Fortschritt; die Meldungen stehen im Protokoll darunter.</li>
   </ol>
   <div class="tabelle">
   <table>
     <thead><tr><th>Aktion</th><th>Was sie tut</th></tr></thead>
     <tbody>
-      <tr><td><strong>Erstellen / Umwandeln</strong></td><td>Bei einem <strong>Spielordner</strong> mit der Kachel
-      <em>Paket</em> baut sie ein Debug-Paket (unten); mit einer anderen Kachel übergibt sie den Ordner
-      gleich an Aufgabe 1. Bei einem <strong>Paket</strong>: Entpackt das Spiel in einen Arbeitsordner (<code>ps5conv_ps5pkg_…</code>)
+      <tr><td><strong>Umwandeln</strong> (ein Zielformat wählen)</td><td>Bei einem <strong>Spielordner</strong> mit dem Format <em>.pkg</em>
+      baut sie ein Debug-Paket (unten); mit einem anderen Format übergibt sie den Ordner
+      gleich an Aufgabe 1. Bei einem <strong>Paket</strong> schreibt Dump Forge das Abbild im Strom aus dem Paket, ohne
+      Entpacken und ohne Zwischenordner. Ist ein Einbau (AMPR EMU, PlayGo, DLC EMU, BACKPORT) oder beim Format <em>.ffpfsc</em>
+      die Bauform „PFS im Container“ gewählt, entpackt das Programm das Spiel stattdessen zuerst in einen Arbeitsordner
+      (<code>ps5conv_ps5pkg_…</code>)
       und übergibt ihn an <strong>Aufgabe 1</strong> des Hauptfensters mit dem gewählten Zielformat. Damit gelten
       dort dieselben Prüfungen und Rückfragen wie bei jedem Dump-Ordner – zum Beispiel die Frage, ob eine
-      beanstandete <code>param.json</code> repariert werden soll – und dieselben Häkchen (AMPR EMU, BACKPORT).
+      beanstandete <code>param.json</code> repariert werden soll – und dieselben Häkchen (AMPR EMU, PlayGo, DLC EMU, BACKPORT).
       Der Arbeitsordner wird danach aufgeräumt. Währenddessen darf im Hauptfenster keine andere Aufgabe laufen.</td></tr>
       <tr><td><strong>Extrahieren</strong></td><td>Schreibt den Dump-Ordner <code>Titel [PPSA…]</code> direkt in den
       Zielordner. Existiert er schon und ist nicht leer, ersetzt ihn das Programm nur, wenn
@@ -2268,7 +2272,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h4>Ein Paket bauen</h4>
   <p>Wählen Sie einen <strong>Spielordner</strong> (<code>eboot.bin</code> und <code>sce_sys/param.json</code>
-  liegen darin) oder ein <strong>Abbild</strong>, den Zielordner und die Kachel <strong>Paket</strong>. Das Programm baut daraus ein
+  liegen darin) oder ein <strong>Abbild</strong>, den Zielordner und im Feld <strong>ZIELFORMAT</strong> den Eintrag <em>.pkg</em>. Das Programm baut daraus ein
   <strong>Debug-Paket (FPKG)</strong>. Seit dem 17.11.2026 wird <strong>ausschließlich mit Dump Forge</strong> gebaut (siehe
   <a href="#k7forge">Ein Paket mit Dump Forge bauen</a>); das Paket heißt <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.
   Einen zweiten Paketersteller gibt es nicht mehr: LibProsperoPkg (<code>ffpfsc-pkg-tool</code>) liest, prüft und entpackt nur noch Pakete,
@@ -2288,7 +2292,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Fassung von Dump Forge macht. Quellen sind ein <strong>Spielordner</strong> und die Abbilder <code>.ffpkg</code>,
   <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.exFAT</code>: Ziehen Sie sie auf das Quellfeld, wählen Sie sie mit
   <em>Datei wählen</em> oder legen Sie einen Ordner mit solchen Dateien ab. Aus einem Abbild geht hier nur das <strong>Paket</strong> –
-  die Formate FFPKG, FFPFSC, FFPFS und exFAT bauen die Aufgaben 1 bis 6; die Kachel springt von selbst darauf.</p>
+  die Formate .ffpkg, .ffpfsc, .ffpfs und .exFAT bauen die Aufgaben 1 bis 6; das Feld <strong>ZIELFORMAT</strong> springt von selbst auf <em>.pkg</em>.</p>
   <ul>
     <li><strong>Ohne Zwischenordner:</strong> Dump Forge liest das Abbild selbst (auch das Abbild in einer <code>.ffpfsc</code>) und
     entpackt nichts auf die Platte. Das Paket entsteht in einem Arbeitsordner im Zielordner und kommt erst nach der Prüfung an seinen
@@ -2296,12 +2300,18 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     unversehrt – es wird nur mit dem Haken <em>Vorhandenes überschreiben</em> und erst nach dem Erfolg ersetzt.</li>
     <li><strong>Prüfung:</strong> Dump Forge prüft die Quelle selbst (Kennungen, Signaturen, Namenslängen, <code>param.json</code>) und
     meldet seine Befunde im Protokoll; das Programm repariert dabei keine <code>param.json</code> und legt keine eigene Prüfliste davor
-    oder danach. Nach dem Bau liest Forge das Paket zurück und prüft Aufbau und Prüfsummen; den Inhalt prüft es in der Vorgabe an einer
+    oder danach. Es sieht aber vor dem Bau in der Quelle nach AMPR EMU, Asset-Packs, PlayGo, DLC und BACKPORT, schreibt den
+    Bericht ins Protokoll und fragt in einem Fenster <em>In der Quelle fehlt etwas</em> nach, wenn dem Spiel etwas fehlt, das es
+    braucht – ein Paket nimmt nichts nachträglich auf. Bei einem Spielordner lässt sich stattdessen ein <em>.ffpkg</em>-Abbild
+    mit den Haken der Aufgabe 1 bauen. Ob ein Spiel BACKPORT braucht, beurteilt das Programm nach dem SDK der
+    <code>eboot.bin</code>; bei einem <code>.pkg</code> liest es dieses SDK selbst aus dem Paket, ohne es zu entpacken
+    (gelesen wird ein Debug-Paket mit dem Standard-Passcode; lässt sich ein Paket so nicht lesen, gilt die Angabe der
+    <code>param.json</code>). Nach dem Bau liest Forge das Paket zurück und prüft Aufbau und Prüfsummen; den Inhalt prüft es in der Vorgabe an einer
     Stichprobe, mit <em>Vollständig prüfen</em> in den Optionen Byte für Byte.</li>
     <li><strong>Optionen</strong> (Register <em>Bau</em>): die <strong>Kompressionsstufe</strong> (<em>Schnell</em>,
     <em>Ausgewogen</em>, <em>Kleinstes Paket</em>, <em>Unkomprimiert</em> – die beiden mittleren machen das Paket etwa 2,6&nbsp;% kleiner
     und brauchen etwa 6- bzw. 9-mal so lange), <strong>Vollständig prüfen</strong> und <strong>Backport-Bibliotheken weglassen</strong>
-    (<code>fakelib/</code>; Dump Forge lehnt das ab, wenn das SDK in der <code>eboot.bin</code> gesenkt wurde). Die Zahl der Worker-Kerne steht im selben Register (0 = alle). Mindest-Firmware, Update-PKG (Patch-Modus), Backport vor dem Bau, PlayGo-Chunks und einen reproduzierbaren Bau bietet Dump Forge nicht an; es übernimmt die Programmdateien und <code>fakelib</code> der Quelle unverändert.</li>
+    (<code>fakelib/</code>; Dump Forge lehnt das ab, wenn das SDK in der <code>eboot.bin</code> gesenkt wurde). Die Zahl der Worker-Kerne steht im selben Register (0 = alle). Mindest-Firmware, Update-PKG (Patch-Modus), Backport vor dem Bau, PlayGo-Chunks und einen reproduzierbaren Bau bietet Dump Forge nicht an; es übernimmt die Programmdateien und <code>fakelib</code> der Quelle unverändert – außer bei einem mit LZ4 oder zstd gepackten Spiel: Das entpackt Dump Forge beim Bauen und ersetzt dabei die Laufzeit der Packs durch seine eigene.</li>
     <li><strong>Name und Platz:</strong> Das Paket heißt <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>; der Name ohne Endung bleibt in
     63 Bytes (der Titel wird gekürzt, die Kennung bleibt). Der Platz im Zielordner wird vorher geprüft.</li>
     <li><strong>Plattformen:</strong> Die Befehlszeile liegt für Windows (x64 und arm64), Linux (x64 und arm64) und macOS bei; die beiden arm64-Fassungen sind noch an keinem arm64-Rechner ausprobiert. Fehlt sie auf Ihrer Plattform, baut das Programm kein Paket und sagt es.</li>
@@ -2312,15 +2322,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </ul>
 
   <h4>Optionen</h4>
-  <p>Der Knopf <strong>Optionen</strong> links öffnet die Einstellungen in fünf Reitern, erst mit
-  <em>Speichern</em> übernommen:</p>
+  <p><em>Optionen</em> öffnen Sie im Menü, das ein Rechtsklick ins Protokoll zeigt. Der Dialog hat zwei Register, die erst mit
+  <em>Speichern</em> übernommen werden:</p>
   <ul>
-    <li><strong>Bibliothek:</strong> Bibliotheksordner, die beim Speichern (und wahlweise bei jedem Start) nach
-    Paketen und Spielordnern durchsucht werden – <em>Unterordner durchsuchen</em> geht dabei beliebig tief,
-    anders als beim Ablegen eines einzelnen Ordners. Einzelne Quellen lassen sich aus der Bibliothek entfernen
-    (nur aus der Liste, die Datei bleibt).</li>
-    <li><strong>Darstellung:</strong> Cover anzeigen oder nicht, Sortierung der Bibliothek (Titel, Titel-ID,
-    Größe).</li>
     <li><strong>Ausgabe &amp; Vorgaben:</strong> Standard-Zielordner; ein eigener <strong>Temp-Ordner</strong> für
     Entpacken, Bauen und Extrahieren dieses Bereichs – leer lässt den bisherigen Arbeitsordner des Programms
     gelten (nur bei Bedarf setzen, etwa wenn das Systemlaufwerk für große Pakete zu wenig Platz hat);
@@ -2329,22 +2333,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <strong>Debug-Passcode</strong> – leer verwendet den Standard des Werkzeugs (32 Nullen), andernfalls genau
     32 druckbare ASCII-Zeichen. Er gilt fürs Lesen, Prüfen und Entpacken; ein Paket, das mit einem anderen Passcode gebaut wurde, lässt sich ohne ihn nicht öffnen. Dump Forge baut immer mit dem Standard-Passcode.</li>
     <li><strong>Bau</strong> (nur für „Paket bauen“; die Einstellungen für Dump Forge): Kompressionsstufe, vollständige Prüfung, Backport-Bibliotheken weglassen und die Zahl der Worker-Kerne.</li>
-    <li><strong>Wartung:</strong> Optionen als Datei exportieren oder importieren (eine Vorschau der Änderungen
-    fragt vor dem Einspielen nach) sowie auf die Vorgaben zurücksetzen – die Bibliothek und ihre Ordner
-    bleiben dabei erhalten.</li>
   </ul>
 
   <h4>Bibliothek</h4>
-  <p>Sammelt Ihre Pakete und Spielordner (das Programm merkt sie sich). <em>+ Datei</em> und <em>+ Ordner</em> fügen hinzu,
-  <em>Aktualisieren</em> liest alles neu. Die Suche versteht Wörter (alle müssen passen),
-  <code>-wort</code> zum Ausschließen, <code>titel:</code>, <code>id:</code> und <code>größe:&gt;50GB</code>
-  (auch <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code>). Rechts stehen das Cover (<code>icon0.png</code> aus dem Paket)
-  und die <em>Technische Übersicht</em> aus der <code>param.json</code> – Titel, Content-ID, Versionen,
-  erforderliche Systemsoftware, SDK, Kategorie, DRM-Typ –, die <em>Alles kopieren</em> in die Zwischenablage legt.
+  <p>Die frühere Seite <em>Bibliothek</em> dieses Bereichs (mit <em>+ Datei</em>, <em>+ Ordner</em>, Suche und
+  <em>Technischer Übersicht</em>) ist ausgeblendet; Pakete und Spielordner wählen Sie im Feld <strong>QUELLE</strong>.
   Wie bei den Aufgaben 1 bis 6 steht das Cover des gewählten Pakets samt Titel in der Seitenleiste, und
   <em>Spiel Info – Updates &amp; Patches</em> zeigt seine Angaben (Titel, Title-ID, Content-ID, Version, Größe) und sucht
-  Updates und Patches. Doppelklick oder <em>Umwandeln</em> nimmt das Paket auf die
-  Seite <em>Umwandeln</em> mit; dort steht das Protokoll rechts unter dem Ergebnis.</p>
+  Updates und Patches.</p>
 
   <div class="kasten">
     <span class="titel">Gemessen und Grenzen</span>
@@ -2358,7 +2354,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       ist es geprüft, unter Linux und macOS nur gebaut.</li>
       <li><strong>Platz:</strong> Ein entpacktes Spiel ist größer als das Paket (gemessen: 939&nbsp;MB →
       1,55&nbsp;GB). <em>Umwandeln</em> braucht den Platz für den Arbeitsordner und das Abbild.</li>
-      <li>Es wird nichts aus dem Netz geladen.</li>
+      <li>Beim Umwandeln, Extrahieren und Prüfen wird nichts aus dem Netz geladen; nur <em>Updates Online</em> (Menü des Protokolls) fragt im Netz nach.</li>
     </ul>
   </div>
 
@@ -2375,18 +2371,16 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <tbody>
       <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, sichtbar hochgerechnete Hintergrundbilder (gemessen an dem, was die Hochrechnung an Feinzeichnung kostet, nicht an der Dateigröße allein), Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit. Seit v1.9.90 gibt es zusätzlich eine <em>Betriebsprüfung</em> mit einem <em>Gesamt</em>-Urteil: Sie meldet Fehler im Protokoll, fehlende Programme und .NET, liegen gebliebene Arbeitsordner, Teildateien und eingehängte Laufwerke (OSFMount/UFS2) samt Befehl zum Aushängen, verwaiste Werkzeugprozesse und Abweichungen bei den Python-Paketen. Hinweise zählen nicht als Mangel, Warnungen und Fehler schon.</td></tr>
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
-      <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
-      <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-Index-Builder</strong>, <strong>ASSET-PACK PRÜFEN / ENTPACKEN</strong> (11.4), <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>ABBILD BEARBEITEN</strong> (14.14), <strong>Geräte im Netz</strong> (14.15), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE.</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>AMPR-INDEX</strong> (Fenster <em>AMPR-Index-Builder</em>), <strong>PKG-MERGER</strong> (führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen; ein laufender Satz lässt sich abbrechen, die angefangene Datei wird dabei entfernt), <strong>PARAM/MANIFEST</strong> (Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>), <strong>SELF-Inspektor</strong> (14.1), <strong>ELF &rarr; EBOOT.BIN</strong> (14.13), <strong>ABBILD BEARBEITEN</strong> (14.14), <strong>Geräte im Netz</strong> (14.15), <strong>Dump umbenennen</strong> (14.2), <strong>App direkt installieren</strong> (14.4), <strong>DOWNLOADS</strong> (14.5), <strong>BACKPORT</strong> (14.6), <strong>ps5_autoloader</strong> (14.8) und <strong>unjail senden</strong> (14.11). PS4- und PS5-Pakete (einlesen, entpacken, bauen, Updates laden, an die Konsole senden) stehen seit dem 12.10.2026 nicht mehr hier, sondern unter <a href="#k7pkg">Aufgabe 7 &ndash; PKG / FPKG</a>, der AMPR-Mitschnitt-Assistent seit dem 14.10.2026 als Knopf <em>10.&nbsp;AMPR-Mitschnitt</em> in der Ansicht KONSOLE. Das Werkzeug <em>Asset-Pack prüfen / entpacken</em> (11.4) öffnet der Knopf <em>11. Asset-Pack</em> in der Ansicht KONSOLE.</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k14">Abschnitt 14.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
-      <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
+      <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server (Port 9099). Die mitgelieferten ELF-Dateien stehen zum Schnellsenden in einer Klappliste bereit.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
       <tr><td><strong>DESIGN</strong></td><td>Öffnet die Farbschema-Auswahl – siehe <a href="#k15">Kapitel 15</a>.</td></tr>
-      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Ganz oben die Anzeige: Skalierung (Schieberegler) und Bildschirmauflösung (Klappliste) lassen sich von Hand einstellen und mit einem Knopf auf automatisch zurücksetzen (Abschnitt 14.3). Darunter das Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads, – im Abschnitt <em>Asset-Pack (LZ4)</em> – die LZ4-Stufe für Asset-Packs (Abschnitt 11.1), die Vorlage für den Ausgabenamen (Abschnitt 3.5) und die eigene Passwortliste für Archive (<em>ARCHIV-PASSWÖRTER</em>, Kapitel 5) sowie die automatische Suche nach neuen NG-Fassungen (<em>AMPR EMU NG: NEUE FASSUNGEN</em>, Abschnitt 11.1).</td></tr>
+      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Ganz oben die Anzeige: Skalierung (Schieberegler) und Bildschirmauflösung (Klappliste) lassen sich von Hand einstellen und mit einem Knopf auf automatisch zurücksetzen (Abschnitt 15.3). Darunter das Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads, – im Abschnitt <em>ASSET-PACK (LZ4)</em> – die LZ4-Stufe, das Packverfahren (LZ4 oder zstd), die zstd-Stufe und die Packregeln für zstd (Abschnitt 11.1), die Vorlage für den Ausgabenamen (Abschnitt 3.5) und die eigene Passwortliste für Archive (<em>ARCHIV-PASSWÖRTER</em>, Kapitel 5) sowie die automatische Suche nach neuen NG-Fassungen (<em>AMPR EMU NG: NEUE FASSUNGEN</em>, Abschnitt 11.1).</td></tr>
       <tr><td><strong>DE / EN / ES / IT / FR</strong></td><td>Der Sprachknopf zeigt die aktive Sprache; jeder Klick schaltet die komplette Oberfläche zur nächsten um (Deutsch, Englisch, Spanisch, Italienisch, Französisch) – Hauptfenster, alle Dialoge und sämtliche Protokollmeldungen. Dieses Handbuch gibt es in allen fünf Sprachen; der Knopf <strong>BENUTZERHANDBUCH</strong> öffnet es in der Sprache der Oberfläche.</td></tr>
       <tr><td><strong>FAQ</strong></td><td>Links neben BENUTZERHANDBUCH: Öffnet die häufigen Fragen mit kurzen Antworten in Ihrem Browser – in der Sprache der Oberfläche (Deutsch, Englisch, Spanisch, Italienisch oder Französisch). Sie liegen dem Programm bei; eine Internetverbindung ist nicht nötig. Als PDF liegen sie neben der Programmdatei.</td></tr>
       <tr><td><strong>BENUTZERHANDBUCH</strong></td><td>Öffnet dieses Handbuch in Ihrem Browser. Es liegt dem Programm bei; eine Internetverbindung ist nicht nötig.</td></tr>
-      <tr><td><strong>LZ4 &amp; Asset Pack Anleitung</strong></td><td>Öffnet, genauso wie der Knopf daneben, die ausführliche Anleitung zu AMPR-Assetpaketen und dem Mitschnitt-Assistenten (siehe Abschnitt 11.1) – ebenfalls im Programm enthalten, keine Internetverbindung nötig.</td></tr>
+      <tr><td><strong>LZ4 &amp; Asset Pack Anleitung</strong></td><td>Öffnet die ausführliche Anleitung zu AMPR-Assetpaketen und dem Mitschnitt-Assistenten (siehe Abschnitt 11.1) – ebenfalls im Programm enthalten, keine Internetverbindung nötig.</td></tr>
     </tbody>
   </table>
   </div>
@@ -2460,9 +2454,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   entfielen der zweite Bauweg über das Sony SDK und die Vorabprüfung eines
   Dump-Ordners.</p>
   <p><strong>Neu seit v1.9.71:</strong> Debug-Pakete baut
-  <a href="#k7fpkg"><strong>FPKG</strong></a> (Aufgabe 7) &ndash; mit einem
-  anderen Werkzeug (<code>ffpfsc-pkg-tool</code>), dessen Autor den Start an
-  Konsolen bis Firmware 11.60 belegt hat. Der alte Weg kehrt nicht zur&uuml;ck.</p>
+  <a href="#k7fpkg"><strong>FPKG</strong></a> (Aufgabe 7); seit v2.0.0 baut sie
+  allein <strong>Dump Forge</strong> (die Befehlszeile liegt im Ordner <code>Dump-Forge-CLI</code>). Der alte Weg kehrt nicht zur&uuml;ck.</p>
   <p>Für Spiel-Backups ist der Weg über <code>/data/homebrew</code> und
   ShadowMount+ der richtige, für eigene Homebrew
   <strong>App direkt installieren</strong> (14.4). Die Eckdaten eines
@@ -2490,7 +2483,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h3>14.4 App direkt installieren</h3>
   <p>Legt eine Kachel unmittelbar auf der PS5 an – ohne den Umweg über eine Paketdatei.</p>
-  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → APP DIREKT INSTALLIEREN.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → App direkt installieren.</p>
   <p>Selbst gebaute Pakete weist die Konsole mit <code>CE-100096-6</code> zurück. Dieses Werkzeug umgeht das: Es überträgt die Dateien per FTP und meldet die Kachel mit einem kleinen Payload an. Zur Wahl stehen zwei Bauformen – eine Kachel, die beim Antippen eine Adresse öffnet, und der Weg mit eigenem Programm.</p>
   <p><strong>Kachel unter Medien oder Spiele.</strong> Wo die Kachel auf dem Startbildschirm erscheint, wählen Sie im Fenster unter <em>Kachel unter</em>: <strong>Medien</strong> (vorgegeben – dort liegen die üblichen Kacheln wie Payload Manager oder WebKit Autoload) oder <strong>Spiele</strong>. Die Konsole liest das beim Anmelden aus der <code>param.json</code> (<code>applicationCategoryType</code>: Medien 65536, Spiele 0); umstellen lässt es sich nur mit einer neuen Installation. Erprobt sind die Kachel für eine Weboberfläche unter Medien und die Anwendung mit eigenem Programm unter Spiele; die beiden anderen Kombinationen sind auf der Konsole noch nicht ausprobiert – erscheint eine Kachel nicht oder startet sie nicht, wählen Sie die erprobte Seite.</p>
   <p><strong>Vorausgesetzt wird</strong>, dass auf der Konsole <code>ftpsrv</code> (Port 2121) und der Payload-Loader (Port 9021) laufen. Ist 9021 zu, nimmt das Programm von selbst den Umweg über den Payload Manager. Dieser Weg meldet nichts zurück; das Programm holt sich das Protokoll des Payloads dann über FTP aus <code>/data/appinst.log</code> und wartet dafür bis zu 20 Sekunden. Im Protokollfeld sehen Sie diesen Schritt als eigene Zeile.</p>
@@ -2501,7 +2494,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h3>14.5 DOWNLOADS – Updates und Patches holen</h3>
   <p>Lädt Spiel-Updates und ältere Patches herunter, sortiert sie in getrennte Ordner und zeigt jederzeit, was läuft und was schon da ist.</p>
-  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → DOWNLOADS. Der Knopf <strong>Download</strong> im Fenster <em>Spiel-Info – Updates &amp; Patches</em> führt ebenfalls hierher.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → DOWNLOADS. Der Link <strong>► Prospero DL</strong> (bei PS4-Spielen <strong>► Orbis DL</strong>) in der Spalte <em>Link</em> des Fensters <em>Spiel-Info – Updates &amp; Patches</em> führt ebenfalls hierher.</p>
 
   <h4>Speicherort festlegen</h4>
   <p>Beim ersten Download fragt das Programm, auf welchem Datenträger die Pakete abgelegt werden sollen. Darunter entstehen automatisch zwei Ordner:</p>
@@ -2513,7 +2506,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>Der Ablauf</h4>
   <p>Ein Schritt lässt sich nicht automatisieren: Die eigentliche Download-Adresse entsteht erst beim Klick auf <strong>DETAILS</strong> auf der Patch-Seite, und dieser Klick ist dort durch eine Sicherheitsabfrage geschützt. Dieses Programm umgeht solche Schutzmaßnahmen nicht. Der Weg ist deshalb:</p>
   <ol class="schritte">
-    <li>Im Fenster <strong>Spiel-Info</strong> auf <strong>Download</strong> klicken. Die Patch-Seite öffnet sich im Browser, das Download-Fenster kommt nach vorn.</li>
+    <li>Im Fenster <strong>Spiel-Info</strong> auf <strong>► Prospero DL</strong> klicken. Die Patch-Seite öffnet sich im Browser, das Download-Fenster kommt nach vorn.</li>
     <li>Auf der Seite die Sicherheitsabfrage bestätigen und auf <strong>DETAILS</strong> klicken.</li>
     <li>Mit der <strong>rechten Maustaste</strong> auf <strong>Download Piece PKG</strong> klicken und <em>Link kopieren</em> wählen.</li>
     <li>Zurück im Download-Fenster auf <strong>Aus Zwischenablage</strong> klicken.</li>
@@ -2521,8 +2514,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Danach läuft alles von allein: Die Adresse wird geprüft, die Datei eingeordnet, der Zielordner angelegt und der Download gestartet. Mehrere Adressen dürfen auf einmal eingefügt werden – über <strong>Adresse(n) einfügen</strong> untereinander in ein Textfeld.</p>
 
   <h4>Sonys offizielle Liste – ohne Umweg (seit v1.9.81)</h4>
-  <p>Nennt die <code>sce_sys\param.json</code> des gewählten PS5-Spiels die Adresse der Updateliste (<code>versionFileUri</code>), zeigt <em>Spiel-Info</em> zusätzlich Zeilen <strong>PS5 · Sony</strong>: Sonys eigene Fassungen mit Größe und nötiger Firmware, die neueste mit Stern. Diese Adresse enthält eine Kennung je Titel und lässt sich aus der Title-ID nicht errechnen – sie steht deshalb nur im Spiel selbst. Die Abfrage läuft, wie die anderen, nur bei erlaubtem Online-Abruf.</p>
-  <p>Ein Klick auf <strong>Download</strong> in einer solchen Zeile öffnet ein eigenes Fenster und lädt das Paket <em>direkt</em> – ohne Browser, ohne Sicherheitsabfrage, ohne Adresse einfügen. Das Programm holt das Verzeichnis der Teile, lädt sie (drei gleichzeitig) in eine Datei <code>.teil</code> und hält <strong>jeden Teil gegen die SHA-256 von Sony</strong>; stimmt einer nicht, wird er einmal neu geladen, danach bricht der Lauf ab. Erst wenn alles stimmt, bekommt die Datei ihren Namen (<code>&lt;Content-ID&gt;_v&lt;Fassung&gt;.pkg</code>) im Ordner <em>PS5 Spiele Updates</em> (neueste) oder <em>Patches</em>. <strong>Abbrechen</strong> ist unkritisch: Der Stand bleibt liegen, der nächste Klick setzt fort. Vorher prüft das Programm, ob auf dem Laufwerk genug Platz frei ist.</p>
+  <p>Nennt die <code>sce_sys\param.json</code> des gewählten PS5-Spiels die Adresse der Updateliste (<code>versionFileUri</code>) – oder lässt sie sich aus einer Abbilddatei (mit der Title-ID im Namen) im Quellordner oder aus der Datenbank der Konsole (per FTP) lesen –, zeigt <em>Spiel-Info</em> zusätzlich Sonys eigene Fassungen mit Größe und nötiger Firmware, die neueste mit Stern – unter der Zwischenüberschrift <em>DIREKT DL</em> und mit dem Link <strong>► Direkt DL</strong>. Diese Adresse enthält eine Kennung je Titel und lässt sich aus der Title-ID nicht errechnen – sie steht deshalb nur in den Daten des Spiels oder der Konsole. Die Abfrage läuft, wie die anderen, nur bei erlaubtem Online-Abruf.</p>
+  <p>Ein Klick auf <strong>► Direkt DL</strong> in einer solchen Zeile öffnet ein eigenes Fenster und lädt das Paket <em>direkt</em> – ohne Browser, ohne Sicherheitsabfrage, ohne Adresse einfügen. Das Programm holt das Verzeichnis der Teile, lädt sie (drei gleichzeitig) in eine Datei <code>.teil</code> und hält <strong>jeden Teil gegen die SHA-256 von Sony</strong>; stimmt einer nicht, wird er einmal neu geladen, danach bricht der Lauf ab. Erst wenn alles stimmt, bekommt die Datei ihren Namen (<code>&lt;Content-ID&gt;_v&lt;Fassung&gt;.pkg</code>) im Ordner <em>PS5 Spiele Updates</em> (neueste) oder <em>Patches</em>. <strong>Abbrechen</strong> ist unkritisch: Der Stand bleibt liegen, der nächste Klick setzt fort. Vorher prüft das Programm, ob auf dem Laufwerk genug Platz frei ist.</p>
   <p>Gesprochen wird nur mit Sonys Auslieferungsnetz (<code>sgst</code>/<code>gst</code>/<code>gs2.ww.prod.dl.playstation.net</code>), mit einem privaten Wurzelzertifikat von Sony, das das Programm mitbringt. Geladen wird auf den Rechner, <strong>nicht</strong> auf die Konsole und nichts wird installiert; ob die zusammengesetzte Datei an Ihrer Konsole installierbar ist, ist nicht geprüft.</p>
   <div class="kasten warnung">
     <span class="titel">Läuft nanoDNS auf der Konsole?</span>
@@ -2530,7 +2523,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h4>Update oder Patch?</h4>
-  <p>Die Einordnung folgt der Markierung im Spiel-Info-Fenster: Die dort mit einem Stern als neueste gekennzeichnete Version gilt als <strong>Update</strong>, jede ältere als <strong>Patch</strong>. Lässt sich das nicht feststellen, wird als Update behandelt. Liegt eine Datei danach im falschen Ordner, verschiebt der Knopf <strong>Als Update/Patch umsortieren</strong> sie mit einem Klick.</p>
+  <p>Die Einordnung folgt der Markierung im Spiel-Info-Fenster: Die dort mit einem Stern als neueste gekennzeichnete Version gilt als <strong>Update</strong>, jede ältere als <strong>Patch</strong>. Lässt sich das nicht feststellen, wird als Update behandelt. Liegt eine Datei danach im falschen Ordner, verschiebt der Knopf <strong>Umsortieren</strong> sie mit einem Klick in den jeweils anderen Ordner.</p>
 
   <h4>Anhalten und fortsetzen</h4>
   <p><strong>Abbrechen</strong> hält den markierten Download an. <strong>Erneut versuchen</strong> nimmt ihn genau dort wieder auf, wo er stehen geblieben ist, statt von vorn zu beginnen – das gilt auch nach einem Programmneustart.</p>
@@ -2582,7 +2575,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Alles Weitere stellen Sie nicht ein, es läuft von selbst mit: Die zur Zielfirmware passenden Ersatzbibliotheken kommen in einen Ordner <code>fakelib</code> neben das Spiel (ohne sie erwartet das Spiel Funktionen, die es auf der älteren Firmware nicht gibt), die libc-Anpassung folgt der Zielfirmware, und die Deckungsprüfung steht anschließend im Protokoll.</p>
 
   <h4>Was in der Liste steht</h4>
-  <p>Bearbeitet werden <code>eboot.bin</code> sowie alle <code>.prx</code>- und <code>.sprx</code>-Dateien. Der Ordner <code>fakelib</code> bleibt außen vor – die Bibliotheken darin passen bereits.</p>
+  <p>Aufgelistet werden <code>eboot.bin</code>, alle <code>.prx</code>- und <code>.sprx</code>-Dateien sowie jede andere Datei, die mit der Kennung eines ELF oder SELF beginnt (etwa <code>.elf</code>- oder <code>.self</code>-Dateien). Sicherungen mit der Endung <code>.bak</code> oder <code>.esbak</code> und die Ordner <code>fakelib</code> und <code>fakelib2</code> bleiben außen vor – die Bibliotheken darin passen bereits.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Status</th><th>Bedeutung</th></tr></thead>
@@ -2591,6 +2584,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>bereits niedrig genug</td><td>Nichts zu tun, die Datei bleibt unverändert.</td></tr>
       <tr><td>keine SDK-Angabe</td><td>Die Datei trägt keinen Modulkopf, sie bleibt unverändert.</td></tr>
       <tr><td>nicht ausführbar</td><td>Weder ELF noch SELF, wird übergangen.</td></tr>
+      <tr><td>verschlüsselt – nicht backportierbar</td><td>Das SELF ist verschlüsselt oder komprimiert; nur entschlüsselte Dumps lassen sich backportieren. Die Datei bleibt unverändert.</td></tr>
       <tr><td>fertig – 9.00 → 4.00</td><td>Erfolgreich herabgesetzt und neu signiert.</td></tr>
       <tr><td>Fehler: …</td><td>Der Grund steht dahinter; die Datei bleibt unverändert.</td></tr>
     </tbody>
@@ -2619,17 +2613,18 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <p>Das Ergebnis wird neu signiert, aber nicht <em>echt</em> signiert – es läuft nur auf einer bereits gejailbreakten Konsole. Und ob ein bestimmtes Spiel nach dem Backport tatsächlich startet, lässt sich vorher nicht sagen: Manche Spiele verlangen Funktionen, die es auf der älteren Firmware schlicht nicht gibt. Arbeiten Sie deshalb immer mit eingeschalteter Sicherung und behalten Sie den Sicherungsordner, bis Sie das Spiel auf der Konsole erfolgreich gestartet haben.</p>
   </div>
   <h3>14.7 Wie FileZilla gefunden wird</h3>
-  <p>Der Knopf <strong>FILEZILLA</strong> startet Ihre eigene FileZilla-Installation. Weil jeder sie woanders und unter unterschiedlichen Ordnernamen installiert, sucht das Programm der Reihe nach:</p>
+  <p>Der Knopf <strong>FILEZILLA</strong> startet Ihre eigene FileZilla-Installation. Weil jeder sie woanders und unter unterschiedlichen Ordnernamen installiert, sucht das Programm unter Windows der Reihe nach (unter Linux und macOS prüft es die üblichen Installationsorte und die <code>PATH</code>-Variable):</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Schritt</th><th>Wo gesucht wird</th></tr></thead>
     <tbody>
       <tr><td>1</td><td>Der zuletzt verwendete Pfad aus den Einstellungen.</td></tr>
       <tr><td>2</td><td>Die Windows-Registrierung (Eintrag der FileZilla-Installation).</td></tr>
-      <tr><td>3</td><td>Die üblichen Programmpfade, etwa <code>C:\Program Files\FileZilla FTP Client</code>.</td></tr>
+      <tr><td>3</td><td>Die üblichen Programmpfade, etwa <code>C:\Program Files\FileZilla FTP Client</code>, und der Ordner des Programms selbst (portable Kopie daneben).</td></tr>
       <tr><td>4</td><td><strong>Jeder Ordner, dessen Name „FileZilla“ enthält</strong> – in den Programmordnern, unter <code>AppData</code> und direkt auf jedem festen Laufwerk. Damit werden auch <code>C:\FileZilla</code>, <code>FileZilla3_x64</code> oder eine portable Ablage gefunden.</td></tr>
-      <tr><td>5</td><td>Der Ordner des Programms selbst (portable Kopie daneben) und die <code>PATH</code>-Variable.</td></tr>
-      <tr><td>6</td><td>Als letzter Ausweg ein zeitlich begrenzter Durchlauf der Laufwerke.</td></tr>
+      <tr><td>5</td><td>Die <code>PATH</code>-Variable.</td></tr>
+      <tr><td>6</td><td>Die Deinstallationseinträge der Windows-Registrierung.</td></tr>
+      <tr><td>7</td><td>Als letzter Ausweg ein zeitlich begrenzter Durchlauf der Laufwerke. Einen Fund daraus startet das Programm erst nach Rückfrage.</td></tr>
     </tbody>
   </table>
   </div>
@@ -2698,7 +2693,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <tbody>
       <tr><td><strong>Wo gesucht wird</strong></td><td><code>app0/fakelib2</code>, sonst <code>app0/fakelib</code></td><td>feste Reihenfolge: <code>backports/&lt;ID&gt;/fakelib2</code> &rarr; <code>backports/&lt;ID&gt;/fakelib</code> &rarr; <code>&lt;Spiel&gt;/fakelib2</code> &rarr; <code>&lt;Spiel&gt;/fakelib</code></td></tr>
       <tr><td><strong><code>fakelib2</code> im Spielordner</strong></td><td>wirkt</td><td>1.7 alpha8 bis alpha13fix1: <strong>wird ignoriert</strong>; ab 1.7beta1 (beiliegend: 1.7beta12) wirkt es wieder und verdeckt ein <code>fakelib</code> daneben</td></tr>
-      <tr><td><strong>Ordnername in <code>backports</code></strong></td><td>gibt es nicht</td><td><code>&lt;ID&gt;</code>; ab 1.7beta6 auch <code>&lt;ID&gt; Zusatz</code> (genauer Name gewinnt, sonst der erste in Byte-Reihenfolge)</td></tr>
+      <tr><td><strong>Ordnername in <code>backports</code></strong></td><td><code>&lt;ID&gt;</code>, ohne Zusatz hinter der ID</td><td><code>&lt;ID&gt;</code>; ab 1.7beta6 auch <code>&lt;ID&gt; Zusatz</code> (genauer Name gewinnt, sonst der erste in Byte-Reihenfolge)</td></tr>
       <tr><td><strong>global + spieleigen</strong></td><td>zwei Schichten &uuml;bereinander</td><td>vorher in einen Cache zusammenkopiert</td></tr>
       <tr><td><strong>Emulator-Dateien</strong></td><td>gibt es nicht</td><td>aus <code>/data/shadowmount/emus/</code></td></tr>
     </tbody>
@@ -2708,7 +2703,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p><strong>Warum trotzdem immer <code>fakelib</code>?</strong> Seit 1.7beta1
   liest ShadowMount+ ein <code>fakelib2</code> im Spielordner wieder &ndash;
   und dann nur dieses. Den Namen <code>fakelib</code> liest aber jede
-  Fassung, deshalb legen BACKPORT und AMPR EMU dort ab. Liegt im Spiel schon
+  Fassung, deshalb legen BACKPORT und der Einbau von AMPR EMU beim Erstellen dort ab. Den Ablageort des <em>9. AMPR EMU Manager</em> nennt dessen Protokoll in der Zeile <em>Ziel</em>. Liegt im Spiel schon
   ein <code>fakelib2</code>, steht vor dem Einbau ein Hinweis im Protokoll.
   Stehen danach beide Ordner da, nennt die Warnung den Schritt, der in jeder
   Fassung eindeutig ist: fehlende Dateien aus <code>fakelib2</code> nach
@@ -2769,7 +2764,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>1</td><td>Sucht die PS5: erst die Adresse aus den Einstellungen, dann die gespeicherten FTP-Profile, sonst das eigene Netz. Ein offener Port gen&uuml;gt nicht &ndash; es muss sich ein Verzeichnis &ouml;ffnen lassen, das es nur auf einer Konsole gibt.</td></tr>
       <tr><td>2</td><td>Stellt fest, welche ShadowMount+-Fassung dort l&auml;uft, und nennt die Belege.</td></tr>
       <tr><td>3</td><td>Sucht die Spiele &ndash; sowohl entpackte Ordner als auch Titel aus eingeh&auml;ngten Abbildern.</td></tr>
-      <tr><td>4</td><td>Bestimmt den Ablageort. Bei <em>Pro Spiel</em> entscheidet das die Fassung; haben Sie <em>Global</em> oder <em>Emulatoren</em> gew&auml;hlt, gilt Ihr Weg &ndash; und die Schritte davor entfallen, weil kein einzelnes Spiel gemeint ist.</td></tr>
+      <tr><td>4</td><td>Bestimmt den Ablageort. Bei <em>Pro Spiel</em> entscheidet das die Fassung; haben Sie <em>Global</em> oder <em>Emulatoren</em> gew&auml;hlt, gilt Ihr Weg &ndash; und die Spielsuche (Schritt 3) entfällt, weil kein einzelnes Spiel gemeint ist.</td></tr>
       <tr><td>5</td><td>Zeigt die Fassungen zur Auswahl: <code>libSceAmpr.sprx</code> (AMPR EMU) und &ndash; nur auf Ihren Haken &ndash; <code>libScePlayGo.sprx</code>. In jeder Liste steht die <strong>neueste Fassung oben</strong> und ist vorgew&auml;hlt; wer nichts &auml;ndert, bekommt die neueste AMPR-EMU-Fassung ohne PlayGo. Unter der Liste steht, was die gew&auml;hlte Variante kann (etwa &bdquo;Debug-Fassung &ndash; schreibt Protokolle&ldquo;) und woher sie stammt. Der Vorrat ist der ganze Bestand: mitgeliefert, nachgeladen und aus eigenen Ordnern &ndash; <strong>ohne die Pack-Bauten</strong> (<code>test-pack</code>, <code>test-debug-pack</code>): Sie geh&ouml;ren zum Asset-Pack beim Erstellen und stehen hier nicht zur Wahl.</td></tr>
       <tr><td>6</td><td>Gleicht die <code>config.ini</code> ab und legt die Bibliotheken ab &ndash; danach wird zur&uuml;ckgelesen und gepr&uuml;ft.</td></tr>
     </tbody>
@@ -2780,7 +2775,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <span class="titel">Gefragt wird nur, wo es etwas zu entscheiden gibt</span>
     <p>Und dann nicht mit &bdquo;Ja/Nein&ldquo;, sondern mit einer Erkl&auml;rung:
     Unter jeder Antwortm&ouml;glichkeit steht ein Satz, was sie bedeutet, und
-    die empfohlene ist gekennzeichnet. Vorkommen k&ouml;nnen sechs Fragen:
+    die empfohlene ist gekennzeichnet. Vorkommen k&ouml;nnen mehrere Fragen:
     welche Konsole (wenn mehrere antworten), ob die gefundene Adresse
     gespeichert werden soll, welches Spiel (wenn mehrere da sind), ob
     trotzdem abgelegt werden soll, wenn das Spiel in der
@@ -2793,7 +2788,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <em>WEITERE TOOLS</em> &rarr; <strong>SHADOWMOUNT+</strong>), welche
     Fassungen von AMPR EMU und &ndash; auf Wunsch &ndash;
     <code>libScePlayGo.sprx</code> abgelegt werden (ein eigenes Fenster mit
-    zwei Listen; Enter nimmt die Vorgabe), und ob abweichende
+    zwei Listen; Enter nimmt die Vorgabe), ob trotzdem abgelegt werden soll, wenn im
+    Spielordner ein zstd-Asset-Pack liegt und die gewählte Fassung keine NG-Fassung ist
+    (nur ampr-emu-ng liest zstd-Packs), und ob abweichende
     Schl&uuml;ssel in der <code>config.ini</code> angepasst werden sollen.</p>
     <p>Ein Abbruch steigt an jeder Stelle sofort aus, ohne etwas zu
     ver&auml;ndern.</p>
@@ -2835,10 +2832,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Installer gebraucht), die Wahl der Fassung, die drei Wege und ein Protokoll
   mit Statuszeile. Das Zeigen der Seite schickt nichts ins Netz.</p>
   <p>Bei <strong>Fassung</strong> w&auml;hlen Sie, mit welcher Fassung die drei
-  Wege arbeiten. Es liegen mehrere bei &ndash; von v0.4.0 bis v0.6.1 &ndash;,
+  Wege arbeiten. Es liegen mehrere bei &ndash; von v0.4.0 bis v0.7.1 &ndash;,
   vorgegeben ist die neueste, bezeichnet als <em>(neueste)</em>. Ihre Wahl merkt
   sich das Programm. Darunter steht, was von der gew&auml;hlten Fassung
-  vorliegt: Windows-Programm, Python-Skript und Installer, oder was fehlt. Die
+  vorliegt: Der Installer liegt bei, die beiden Hosts (Windows-Programm, Python-Skript) werden beim ersten Start
+  nachgeladen. Sind sie geladen, steht dort, dass alles vorhanden ist; fehlt der Installer, nennt die Zeile ihn. Die
   Fassung stammt aus dem Namen der Dateien im Ordner &ndash; es ist also genau
   die, die gestartet beziehungsweise gesendet wird.</p>
 
@@ -2853,7 +2851,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <thead><tr><th>Weg</th><th>Was er tut</th></tr></thead>
     <tbody>
       <tr><td><strong>Host starten (Windows-Programm)</strong></td>
-      <td>Startet den mitgelieferten Host in einem eigenen Fenster. Er
+      <td>Startet den Host der gew&auml;hlten Fassung in einem eigenen Fenster (beim ersten Klick wird er zuerst geladen, siehe unten). Er
       t&auml;uscht der Konsole <code>manuals.playstation.net</code> vor und
       liefert ihr den Autoloader aus.</td></tr>
       <tr><td><strong>Host starten (Python-Skript)</strong></td>
@@ -2861,7 +2859,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       macOS.</td></tr>
       <tr><td><strong>Installer an die PS5 senden</strong></td>
       <td>Bringt die <code>.elf</code> auf die Konsole. Welchen Weg das
-      Programm nimmt, entscheidet es selbst &ndash; siehe unten. Das große Feld
+      Programm nimmt, richtet sich nach der Konsole &ndash; siehe unten. Das große Feld
       der Seite zeigt jeden Schritt: Datei, Fassung und Größe, ob Port&nbsp;9021
       offen ist, das Senden, „Angekommen“ mit Dauer, „Geladen“ und die Antwort
       der Konsole (meldet sie nichts, zeigt die Kachel <em>WebKit Autoload</em>
@@ -2883,15 +2881,19 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h4>Wie der Installer auf die Konsole kommt</h4>
   <p>Zuerst wird der kurze Weg versucht: Lauscht auf der Konsole ein
-  Payload-Loader auf <strong>Port 9021</strong>, geht die Datei direkt
+  Payload-Loader auf <strong>Port 9021</strong>, geht die Datei nach einer R&uuml;ckfrage direkt
   dorthin.</p>
-  <p>Schweigt dieser Port, nimmt das Programm den anderen Weg und sagt das
-  auch. Die Datei wandert dann per <strong>FTP</strong> ins
-  <strong>Wurzelverzeichnis</strong> eines USB-Datentr&auml;gers der Konsole.
-  Als Port wird <strong>2121</strong> und danach <strong>2021</strong>
-  probiert &ndash; genommen wird der erste, der antwortet. Stecken mehrere
-  Datentr&auml;ger, fragt das Programm, welcher es sein soll.</p>
-  <p>Von dort holen Sie die Datei auf der Konsole mit dem <strong>Payload
+  <p>Schweigt dieser Port, sucht das Programm den Payload Manager der Konsole
+  (Port&nbsp;8084). Antwortet er, haben Sie die Wahl: Er nimmt die Datei &uuml;ber
+  seine Weboberfl&auml;che entgegen und startet sie (das Programm l&auml;dt dazu
+  zuerst elfldr nach, danach ist Port&nbsp;9021 wieder offen) &ndash; oder die Datei
+  wandert per <strong>FTP</strong> ins <strong>Wurzelverzeichnis</strong> eines
+  USB-Datentr&auml;gers der Konsole. Antwortet auch der Payload Manager nicht, bleibt
+  nur der USB-Weg; das Programm sagt das und fragt vorher nach. Als FTP-Port wird
+  <strong>2121</strong> und danach <strong>2021</strong> probiert &ndash; genommen
+  wird der erste, der antwortet. Stecken mehrere Datentr&auml;ger, fragt das
+  Programm, welcher es sein soll.</p>
+  <p>Beim USB-Weg holen Sie die Datei auf der Konsole mit dem <strong>Payload
   Manager</strong> ab und senden beziehungsweise installieren sie.</p>
   <div class="kasten tipp">
     <span class="titel">Danach</span>
@@ -2930,8 +2932,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Konsole.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; unjail senden.
   Adresse der Konsole eintragen, auf <strong>An PS5 senden</strong> klicken
-  &ndash; Fortschritt und die Antwort der Konsole stehen w&auml;hrenddessen im
-  Fenster.</p>
+  &ndash; Status und Ergebnis stehen w&auml;hrenddessen im
+  Fenster; schreibt die Konsole eine Antwort, steht sie im Protokoll des Hauptfensters.</p>
   <p>Sinnvoll ist das <em>vor</em> dem Start einer Homebrew, die erweiterten
   Schreibzugriff braucht. F&uuml;r gew&ouml;hnliche Konvertierungen mit diesem
   Programm wird unjail nicht ben&ouml;tigt.</p>
@@ -2965,7 +2967,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   (<code>uart_*.txt</code>) legt es im Ordner <strong>PS5 Wee Tools</strong>
   neben dem Programm ab (unter macOS im Einstellungsordner); dort merkt es
   sich auch Sprache, Ton und Anschl&uuml;sse. Die Sprache &uuml;bernimmt es
-  beim ersten Start vom Programm.</p>
+  beim ersten Start vom Programm, sofern es sie kennt.</p>
   <div class="kasten warnung">
     <span class="titel">Ein falsch beschriebener NOR macht die Konsole unbrauchbar</span>
     <p>Lesen ist unbedenklich. Das <em>Beschreiben</em> des NOR und das
@@ -3123,7 +3125,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     gr&ouml;&szlig;er. Auf einem 4K-Schirm mit 200&nbsp;% wird aus einem 44
     Pixel hohen Knopf einer mit 70 Pixeln.</p>
     <p>Wer die Skalierung selbst bestimmen m&ouml;chte, stellt sie unter
-    <strong>EINSTELLUNGEN</strong> ein (Abschnitt 14.3); automatisch bleibt
+    <strong>EINSTELLUNGEN</strong> ein (Abschnitt 15.3); automatisch bleibt
     die Vorgabe.</p>
     <p>Sollte doch einmal eine Beschriftung an ihren Rand sto&szlig;en, meldet
     der Knopf <strong>DIAGNOSE</strong> das im Abschnitt
@@ -3131,7 +3133,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     der fehlenden Pixelzahl.</p>
   </div>
 
-  <h3>14.1 Hintergrundbilder wählen</h3>
+  <h3>15.1 Hintergrundbilder wählen</h3>
   <p>Unter <strong>EINSTELLUNGEN</strong> gibt es zwei getrennte Bereiche, jeder mit einer eigenen Klappliste der mitgelieferten Bilder:</p>
   <div class="tabelle">
   <table>
@@ -3144,8 +3146,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
   <p>Wie groß ein Bild <em>sein sollte</em>, hängt an Ihrem Bildschirm und steht deshalb direkt im Einstellungsfenster unter jedem der beiden Bereiche. Der Hauptbereich liegt rechts neben der Seitenleiste und braucht deshalb die Breite des maximierten Fensters abzüglich der Seitenleiste; die Seitenleiste braucht ihre tatsächliche Breite, und beide sind so hoch wie das Fenster. Auf einem Bildschirm mit 1920 × 1200 Pixeln bei 125 % Anzeigeskalierung ist das Fenster maximiert 1920 × 1111 Pixel groß, die Seitenleiste 493 Pixel breit: Das Hauptbild hat <strong>1427 × 1111</strong>, das Sidebar-Bild <strong>493 × 1111</strong> Pixel (so sind die mitgelieferten Bilder angelegt). Beide Bilder liegen getrennt nebeneinander, keines unter dem anderen. Ein Bild in genau diesen Maßen wird weder hochgerechnet noch beschnitten; wer es in einem Zeichenprogramm auf diese Maße bringt, streckt es am besten ohne Beibehaltung des Seitenverhältnisses. Ein kleineres Bild wird angenommen, wirkt dann aber weich gezogen; ein größeres wird mittig beschnitten.</p>
   <p>Die Dateinamen tragen eine Nummer und einen Namen, etwa <code>bg_01_navy-curves</code> für den Hauptbereich und <code>sidebar_01_navy-curves</code> für die Seitenleiste. <strong>Gleiche Nummer und gleicher Name</strong> heißt: Die beiden gehören zusammen und sind farblich aufeinander abgestimmt – das gibt es fünfzehnmal (01 bis 15). Fünf Hauptbilder und fünf Seitenleisten (16 bis 20) haben kein Gegenstück. Nötig ist die Abstimmung nirgends, jede Kombination ist möglich.</p>
-  <p>Bild auswählen, auf <strong>Ausgewähltes übernehmen</strong> klicken – fertig, ohne Neustart. Über <strong>Bild wählen …</strong> lässt sich stattdessen ein eigenes Bild verwenden, <strong>Zurücksetzen</strong> stellt den Ausgangszustand her. Der Knopf <strong>Speichern</strong> unten sichert den Stand und schließt das Fenster; nötig ist er nicht, denn jede Änderung wirkt bereits beim Klick.</p>
-  <p>Die Bilder erscheinen so, wie sie in der Datei stehen; Helligkeit und Kontrast lassen sich unter <strong>Darstellung</strong> verstellen (Abschnitt 14.2). Die Beschriftungen stehen direkt auf dem Bild – deshalb kommt es darauf an, wie hell es ist:</p>
+  <p>Bild auswählen, auf <strong>Ausgewähltes übernehmen</strong> klicken – fertig, ohne Neustart. Über <strong>Bild wählen …</strong> lässt sich stattdessen ein eigenes Bild verwenden, <strong>Zurücksetzen</strong> nimmt das gewählte Bild weg: Der Hauptbereich zeigt dann das eingebaute Standardbild, die Seitenleiste bleibt einfarbig. Die Vorgabe eines frischen Programms (<code>bg_01_navy-curves</code> und <code>sidebar_01_navy-curves</code>) wählen Sie wieder aus der Klappliste. Der Knopf <strong>Speichern</strong> unten sichert den Stand und schließt das Fenster; nötig ist er nicht, denn jede Änderung wirkt bereits beim Klick.</p>
+  <p>Die Bilder erscheinen so, wie sie in der Datei stehen; Helligkeit und Kontrast lassen sich unter <strong>Darstellung</strong> verstellen (Abschnitt 15.2). Die Beschriftungen stehen direkt auf dem Bild – deshalb kommt es darauf an, wie hell es ist:</p>
   <div class="kasten achtung">
     <span class="titel">Helle Bilder gehören zum Design Hell</span>
     <p>Die Designs Futuristisch, Dunkel, Metallisch, Ruhig Graphit und Mitternachtsblau schreiben <em>hell</em>. Auf einem hellen Bild verschwindet diese Schrift: <code>bg_07_porcelain</code>, <code>bg_12_ice-light</code> und <code>bg_19_frost-waves</code> sowie <code>sidebar_07_porcelain</code>, <code>sidebar_12_ice-light</code> und <code>sidebar_16_sand-dunes</code> sind darum für die Designs <strong>Hell</strong> und <strong>Hell und klar</strong> gedacht, die dunkel schreiben. Grenzwertig sind <code>bg_04_mist-blue</code>, <code>bg_14_sunset-silk</code> und <code>sidebar_04_mist-blue</code>.</p>
@@ -3180,7 +3182,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     die Verbindung dort einmal dauerhaft statt nur einmalig, bleibt es danach
     still.</p>
   </div>
-  <h3>14.2 Durchsicht, Helligkeit und Kontrast</h3>
+  <h3>15.2 Durchsicht, Helligkeit und Kontrast</h3>
   <p>Im Einstellungsfenster steht unter <strong>Darstellung</strong> eine
   Reihe Schieberegler. Sie bestimmen, wie stark das Hintergrundbild durch die
   einzelnen Fl&auml;chen scheint und wie das Bild selbst aussieht.
@@ -3231,7 +3233,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   zeigt das Bild bereits mit Helligkeit und Kontrast, so wie es im Fenster
   ankommt.</p>
 
-  <h3>14.3 Skalierung und Auflösung von Hand einstellen</h3>
+  <h3>15.3 Skalierung und Auflösung von Hand einstellen</h3>
   <p>Das Programm passt sich dem Bildschirm von selbst an: Die Skalierung übernimmt es vom System, die Fenstergrößen richten sich nach der erkannten Bildschirmgröße. Wer von Hand eingreifen will – etwa weil ein anderer Bildschirm angeschlossen ist oder die Oberfläche zu klein oder zu groß wirkt –, findet unter <strong>EINSTELLUNGEN</strong> ganz oben den Abschnitt <strong>Anzeige: Skalierung und Auflösung</strong>.</p>
   <div class="tabelle">
   <table>
@@ -3260,10 +3262,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <thead><tr><th>Problem</th><th>Was Sie tun können</th></tr></thead>
     <tbody>
       <tr><td>Virenschutz meldet oder entfernt die EXE</td><td>Programme, die mit PyInstaller gebaut sind, werden gelegentlich fälschlich gemeldet. Das Programm trägt selbst keine Ausnahmen in Ihren Virenschutz ein und installiert keine Zertifikate. Laden Sie die EXE nur von der Release-Seite des Projekts; stimmt die Quelle, können Sie die EXE in Ihrem Virenschutz selbst als Ausnahme eintragen.</td></tr>
-      <tr><td>STARTEN bleibt deaktiviert</td><td>Prüfen Sie, ob Quelle und Zielordner vollständig gewählt wurden; der Temp-Ordner darf leer bleiben. Bei Aufgabe 8 wird kein Zielordner benötigt.</td></tr>
+      <tr><td>STARTEN startet nicht, sondern zeigt eine Meldung (etwa „Bitte einen Quellpfad angeben.“ oder „Bitte ein Zielverzeichnis angeben.“)</td><td>Wählen Sie Quelle und Zielordner; der Temp-Ordner darf leer bleiben. Bei Aufgabe 8 wird kein Zielordner benötigt. Gesperrt ist STARTEN nur, solange ein Vorgang läuft – und bei Aufgabe 7 (PKG / FPKG), bis ein Spiel gewählt ist und die Größenberechnung und die Prüfung abgeschlossen sind.</td></tr>
       <tr><td>Quelle wird abgelehnt</td><td>Kontrollieren Sie, ob die gewählte Aufgabe zum Dateityp passt. Nutzen Sie bei Bedarf Aufgabe 6 oder prüfen Sie die Quelle mit Aufgabe 8.</td></tr>
-      <tr><td>„sce_sys/param.json fehlt“ mit Ja/Nein-Abfrage</td><td>Das Spiel ist unvollständig. Bei <strong>Ja</strong> legt das Programm eine gültige <code>param.json</code> an und der Bau läuft weiter; die Title-ID kommt aus <code>sce_sys/nptitle.dat</code>, ersatzweise aus dem Ordnernamen. Ist in den Einstellungen <em>Fehlende Metadaten online nachschlagen</em> gesetzt (unter Windows und Linux ab Werk), werden Titel und Content-ID dabei gleich nachgeschlagen. Bei <strong>Nein</strong> bricht der Bau ab – erstellen Sie dann am besten ein neues Backup vom Original.</td></tr>
-      <tr><td>Content-ID in der <code>param.json</code> („param.json has no Content ID“)</td><td>Titel und Content-ID stehen in <strong>keiner</strong> Datei eines Backups – auch nicht in der <code>eboot.bin</code>. Nur die Title-ID ist lokal zu finden. Mit dem Haken <em>Fehlende Metadaten online nachschlagen</em> in den Einstellungen schlägt das Programm beides nach; dabei wird ausschließlich die Title-ID an prosperopatches.com gesendet. Ohne Haken, ohne Internet oder wenn die Seite nicht antwortet, bekommt die Datei einen <strong>Platzhalter</strong> als Content-ID (<code>UP0000-&lt;Title-ID&gt;_00-…</code>) – ohne Content-ID brechen Werkzeuge ab, die daraus ein PKG bauen. Fehlt sie in einer vorhandenen <code>param.json</code>, bietet das Programm an, den Platzhalter einzutragen; die alte Datei bleibt als <code>param.json.alt</code> erhalten. Für Updates und DLC muss die echte Content-ID eingetragen werden.</td></tr>
+      <tr><td>„sce_sys/param.json fehlt“ mit Ja/Nein-Abfrage</td><td>Das Spiel ist unvollständig. Bei <strong>Ja</strong> legt das Programm eine gültige <code>param.json</code> an und der Bau läuft weiter; die Title-ID kommt aus <code>sce_sys/nptitle.dat</code>, ersatzweise aus der <code>eboot.bin</code> oder dem Ordnernamen. Ist in den Einstellungen <em>Fehlende Metadaten online nachschlagen</em> gesetzt (unter Windows und Linux ab Werk), werden Titel und Content-ID dabei gleich nachgeschlagen. Bei <strong>Nein</strong> bricht der Bau ab – erstellen Sie dann am besten ein neues Backup vom Original.</td></tr>
+      <tr><td>Content-ID in der <code>param.json</code> („param.json has no Content ID“)</td><td>Die Content-ID steht in <strong>keiner</strong> Datei eines Backups – auch nicht in der <code>eboot.bin</code>. Lokal zu finden sind die Title-ID und der Titel (im Trophäen-Container). Mit dem Haken <em>Fehlende Metadaten online nachschlagen</em> in den Einstellungen schlägt das Programm die Content-ID nach – und den Titel, falls er lokal fehlt; dabei wird ausschließlich die Title-ID an prosperopatches.com gesendet. Ohne Haken, ohne Internet oder wenn die Seite nicht antwortet, bekommt die Datei einen <strong>Platzhalter</strong> als Content-ID (<code>UP0000-&lt;Title-ID&gt;_00-…</code>) – ohne Content-ID brechen Werkzeuge ab, die daraus ein PKG bauen. Fehlt sie in einer vorhandenen <code>param.json</code>, bietet das Programm an, den Platzhalter einzutragen; die alte Datei bleibt als <code>param.json.alt</code> erhalten. Für Updates und DLC muss die echte Content-ID eingetragen werden.</td></tr>
       <tr><td>Zu wenig Speicherplatz</td><td>Schaffen Sie Platz oder wählen Sie einen anderen Ziel- beziehungsweise Temp-Ordner. Wiederholen Sie den Vorgang erst danach.</td></tr>
       <tr><td>Der Vorgang dauert lange</td><td>Beobachten Sie Fortschrittsbalken, Statuszeile und Protokoll. Große Dateien brauchen längere Schreib- und Prüfphasen.</td></tr>
       <tr><td>Der Vorgang wurde abgebrochen</td><td>Warten Sie auf die Abbruchbestätigung. Löschen Sie unvollständige Ergebnisse und starten Sie mit geprüften Pfaden erneut.</td></tr>
@@ -3284,7 +3286,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h3>16.2 Die Umgebungsprüfung („Doktor“)</h3>
   <p>Läuft etwas nicht, obwohl es bei anderen läuft, beantwortet die Umgebungsprüfung die häufigsten Ursachen in wenigen Sekunden. Sie wird in der Eingabeaufforderung oder in PowerShell aufgerufen, im Ordner des Programms:</p>
-  <pre><code>PS5_Dump_Image_Converter.exe --doktor "E:\PS5_Temp" "E:\Ziel"</code></pre>
+  <pre><code>PS5_Dump_Image_Converter_vX.Y.Z.exe --doktor "E:\PS5_Temp" "E:\Ziel"</code></pre>
   <p>Beide Ordnerangaben sind freiwillig. Ohne sie wird der Temp-Ordner des Systems geprüft.</p>
   <div class="kasten achtung">
     <span class="titel">Als Administrator öffnen</span>
@@ -3339,7 +3341,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>4</td><td>ffpkg konvertieren</td><td><code>.ffpkg</code> prüfen, entpacken oder umwandeln.</td></tr>
       <tr><td>5</td><td>Sammelkonvertierung</td><td>Mehrere Dump-Ordner und Container in einem Stapel verarbeiten.</td></tr>
       <tr><td>6</td><td>AIO Konvertierung</td><td>Unterstützte Quelle automatisch erkennen und exportieren.</td></tr>
-      <tr><td>7</td><td>PKG / FPKG</td><td>Noch ohne Funktion.</td></tr>
+      <tr><td>7</td><td>PKG / FPKG</td><td>PS4- und PS5-Pakete lesen, entpacken, zu Abbildern umwandeln, mit Dump Forge bauen, Updates laden und an die Konsole senden (siehe <a href="#k13">Kapitel 13</a>).</td></tr>
       <tr><td>8</td><td>Validator</td><td>Quelle prüfen, ohne ein Konvertierungsergebnis anzulegen.</td></tr>
       <tr><td>–</td><td>AMPR EMU Manager (Ansicht KONSOLE)</td><td>AMPR-/PlayGo-Version wählen, übernehmen oder zurücksetzen; Index erzeugen – auch direkt auf der PS5.</td></tr>
     </tbody>
@@ -3353,10 +3355,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k19">
   <h2><span class="nr">19</span> Die Anwendung unter Linux</h2>
-  <p>Das Programm läuft nicht nur unter Windows, sondern auch unter Linux. Die Oberfläche, alle acht Aufgaben und die Zusatzwerkzeuge sehen dort genauso aus und werden genauso bedient wie in diesem Handbuch beschrieben. Dieses Kapitel nennt nur die Unterschiede.</p>
+  <p>Das Programm läuft nicht nur unter Windows, sondern auch unter Linux. Die Oberfläche, alle acht Aufgaben und die Zusatzwerkzeuge sehen dort im Wesentlichen genauso aus und werden genauso bedient wie in diesem Handbuch beschrieben. Dieses Kapitel nennt die Unterschiede.</p>
 
   <h3>19.1 Programmdatei erstellen</h3>
-  <p>Anders als unter Windows gibt es keine fertige Datei zum Herunterladen: Ein Linux-Programm ist an die Architektur und die Systembibliotheken des Rechners gebunden, auf dem es entstanden ist. Es wird deshalb auf dem eigenen System erstellt. Das dauert wenige Minuten und geschieht mit zwei Befehlen im Projektordner:</p>
+  <p>Für Linux (x86_64) liegt auf der Release-Seite des Projekts eine fertige Datei: <code>PS5_Dump_Image_Converter_vX.Y.Z_linux_x86_64</code>. Sie wird einmal mit <code>chmod +x</code> ausführbar gemacht und dann gestartet. Ein Linux-Programm ist jedoch an die Architektur und die Systembibliotheken des Rechners gebunden, auf dem es entstanden ist. Wer eine andere Architektur hat oder die Datei lieber selbst erstellt, baut sie auf dem eigenen System. Das dauert wenige Minuten und geschieht mit zwei Befehlen im Projektordner:</p>
   <pre><code>chmod +x Build_Linux.sh
 ./Build_Linux.sh</code></pre>
   <p>Das Skript prüft die Voraussetzungen, holt die benötigten Pakete und legt die fertige Datei unter <code>dist/</code> ab. Fehlt Tcl/Tk – die Grundlage der Oberfläche –, nennt es den passenden Installationsbefehl für Ihr System.</p>
@@ -3367,17 +3369,19 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>19.2 Starten und ins Menü legen</h3>
-  <p>Die erstellte Datei lässt sich direkt starten. Bequemer ist ein Eintrag im Anwendungsmenü:</p>
+  <p>Die Datei lässt sich direkt starten. Bequemer ist ein Eintrag im Anwendungsmenü; dafür sucht <code>Install_Linux.sh</code> die selbst erstellte Datei im Ordner <code>dist/</code> des Projektordners:</p>
   <pre><code>chmod +x Install_Linux.sh
 ./Install_Linux.sh</code></pre>
   <p>Danach steht „PS5 Dump &amp; Image Converter“ mit eigenem Symbol im Menü und lässt sich im Terminal mit <code>ps5-dump-image-converter</code> aufrufen. Alles wird unterhalb von <code>~/.local</code> abgelegt – ohne <code>sudo</code> und ohne Eingriff ins System. Rückgängig machen Sie das mit <code>./Install_Linux.sh --entfernen</code>.</p>
 
   <h3>19.3 Was unter Linux nicht zur Verfügung steht</h3>
-  <p>Zwei Dinge hängen an Programmen, die es nur für Windows gibt.</p>
+  <p>Einige Dinge hängen an Programmen oder Bausteinen, die es nur für Windows gibt.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Betroffen</th><th>Grund</th></tr></thead>
     <tbody>
+      <tr><td>PS4-Pakete zu Dump-Ordner oder Paket umwandeln (Aufgabe 7, <strong>PKG</strong>)</td><td>Dafür braucht das Programm OrbisPkgTool, das es nur als Windows-Programm gibt. Ein <code>.ffpfsc</code>- oder <code>.exFAT</code>-Abbild aus einem PS4-Paket lässt sich auch hier bauen.</td></tr>
+      <tr><td>Weboberflächen der Konsole rechts im Programm</td><td>Die Anzeige im Programm (WebView2) gibt es nur unter Windows. Hier öffnet sich die Weboberfläche im Browser.</td></tr>
       <tr><td>Das Einhängen einer <code>.ffpkg</code> als Laufwerk</td><td>Dafür braucht UFS2Tool den Dokan-Treiber, den es ausschließlich für Windows gibt. <code>.ffpkg</code> lesen und erstellen – also <strong>Aufgabe 4</strong> und jedes <code>.ffpkg</code> als Zielformat – geht auch hier: Ohne Zwischenordner liest und schreibt das Programm sie selbst, sonst nimmt es das mitgelieferte UFS2Tool.</td></tr>
       <tr><td>Die Ersatzwege über OSFMount</td><td>OSFMount gibt es nur für Windows. Diese Wege greifen ohnehin nur dann, wenn der normale Weg an einem ungewöhnlichen Abbild scheitert.</td></tr>
     </tbody>
@@ -3409,13 +3413,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k20">
   <h2><span class="nr">20</span> Die Anwendung auf dem Mac</h2>
-  <p>Das Programm läuft auch auf einem Mac mit macOS 11 (Big Sur) oder neuer – auf Apple Silicon ebenso wie auf Intel-Modellen. Die Oberfläche, alle acht Aufgaben und die Zusatzwerkzeuge sehen dort genauso aus und werden genauso bedient wie in diesem Handbuch beschrieben. Dieses Kapitel nennt nur die Unterschiede.</p>
+  <p>Das Programm läuft auch auf einem Mac mit macOS 11 (Big Sur) oder neuer – auf Apple Silicon ebenso wie auf Intel-Modellen. Die Oberfläche, alle acht Aufgaben und die Zusatzwerkzeuge sehen dort im Wesentlichen genauso aus und werden genauso bedient wie in diesem Handbuch beschrieben. Dieses Kapitel nennt die Unterschiede.</p>
 
   <h3>20.1 Was Sie vorher brauchen</h3>
   <p>Ein Mac bringt zwar ein Python mit, dieses ist zum Erstellen des Programms aber unbrauchbar: Ihm fehlt die Grundlage für die Fenster. Installieren Sie deshalb vorher ein vollständiges Python – entweder den Installer von <code>python.org</code> oder über Homebrew mit <code>brew install python-tk</code>. Das Erstellungsskript prüft das und sagt Ihnen genau, was fehlt, bevor es beginnt.</p>
 
   <h3>20.2 Das Programm erstellen</h3>
-  <p>Wie unter Linux gibt es keine fertige Datei zum Herunterladen: Das Programm ist an die Bauart Ihres Macs gebunden. Eine auf Apple Silicon erstellte Fassung läuft nicht auf einem Intel-Mac und umgekehrt. Zwei Befehle im Projektordner genügen:</p>
+  <p>Für Apple Silicon und für Intel-Macs liegt auf der Release-Seite des Projekts je ein Abbild: <code>PS5_Dump_Image_Converter_vX.Y.Z_macos_arm64.dmg</code> (Apple Silicon) und <code>PS5_Dump_Image_Converter_vX.Y.Z_macos_x86_64.dmg</code> (Intel). Öffnen Sie das zu Ihrem Mac passende und starten Sie darin <code>Erste Installation.command</code>: Es legt die App im Programme-Ordner ab und entfernt die Quarantäne-Markierung. Das Programm ist an die Bauart Ihres Macs gebunden: Eine auf Apple Silicon erstellte Fassung läuft nicht auf einem Intel-Mac und umgekehrt. Wer es selbst erstellen möchte, braucht zwei Befehle im Projektordner:</p>
   <pre><code>chmod +x Build_macOS.sh
 ./Build_macOS.sh</code></pre>
   <p>Das dauert wenige Minuten. Am Ende liegt unter <code>dist/</code> das fertige Programm <code>PS5 Dump &amp; Image Converter.app</code> – ein Programmbündel, wie Sie es von jedem Mac-Programm kennen. Ein Doppelklick startet es.</p>
@@ -3426,7 +3430,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>20.3 In den Programme-Ordner legen</h3>
-  <p>Damit das Programm im Launchpad und im Finder an seinem gewohnten Platz steht:</p>
+  <p>Damit das selbst erstellte Programm im Launchpad und im Finder an seinem gewohnten Platz steht (aus dem Abbild erledigt das <code>Erste Installation.command</code>):</p>
   <pre><code>chmod +x Install_macOS.sh
 ./Install_macOS.sh</code></pre>
   <p>Ist der Ordner <code>Programme</code> gesperrt, legt das Skript das Programm in Ihren persönlichen Programme-Ordner. Das braucht kein Passwort und erscheint genauso im Launchpad. Rückgängig machen Sie das mit <code>./Install_macOS.sh --entfernen</code>; Ihre Einstellungen bleiben dabei erhalten.</p>
@@ -3438,11 +3442,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>20.4 Was auf dem Mac nicht zur Verfügung steht</h3>
-  <p>Es sind dieselben beiden Dinge wie unter Linux, und aus demselben Grund.</p>
+  <p>Es sind dieselben Dinge wie unter Linux, und aus demselben Grund.</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Betroffen</th><th>Grund</th></tr></thead>
     <tbody>
+      <tr><td>PS4-Pakete zu Dump-Ordner oder Paket umwandeln (Aufgabe 7, <strong>PKG</strong>)</td><td>Dafür braucht das Programm OrbisPkgTool, das es nur als Windows-Programm gibt. Ein <code>.ffpfsc</code>- oder <code>.exFAT</code>-Abbild aus einem PS4-Paket lässt sich auch hier bauen.</td></tr>
+      <tr><td>Weboberflächen der Konsole rechts im Programm</td><td>Die Anzeige im Programm (WebView2) gibt es nur unter Windows. Hier öffnet sich die Weboberfläche im Browser.</td></tr>
       <tr><td>Das Einhängen einer <code>.ffpkg</code> als Laufwerk</td><td>Dafür braucht UFS2Tool den Dokan-Treiber, den es ausschließlich für Windows gibt. <code>.ffpkg</code> lesen und erstellen – also <strong>Aufgabe 4</strong> und jedes <code>.ffpkg</code> als Zielformat – geht auch hier: Ohne Zwischenordner liest und schreibt das Programm sie selbst, sonst nimmt es das mitgelieferte UFS2Tool.</td></tr>
       <tr><td>Die Ersatzwege über OSFMount</td><td>OSFMount gibt es nur für Windows. Diese Wege greifen ohnehin nur dann, wenn der normale Weg an einem ungewöhnlichen Abbild scheitert.</td></tr>
     </tbody>
@@ -3478,7 +3484,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 <footer>
   <div class="zeile">
     <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v2.0.0</strong></span>
-    <span>Stand 19. November 2026</span>
+    <span>Stand 20. November 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README_DE.md">README_DE.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>
