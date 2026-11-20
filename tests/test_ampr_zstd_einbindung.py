@@ -199,6 +199,58 @@ class BauenTests(unittest.TestCase):
         self.assertIn("ampr_ng.indexspeicher_ohne_pack", s.text())
         self.assertTrue(z.ist_gepackt(self.spiel), "gepackt wird trotzdem")
 
+    def test_zu_kleiner_speicher_empfiehlt_die_neueste_ng_fassung(self) -> None:
+        """Reicht der Speicher der gewaehlten Fassung nicht, die neueste (``NEUESTE_FASSUNG``) aber doch, nennt die Zeile sie beim Namen."""
+        from ps5_validator.utils import ng_indexspeicher as ngi
+        neueste = ngi.NEUESTE_FASSUNG
+
+        def pruefen(fassung, idx, art="", pack=None, ordner=None):
+            if fassung == neueste:
+                return ngi.Befund(ngi.modell_fuer(fassung), True, "", 0, 0)
+            return ngi.Befund(ngi.modell_fuer(fassung), False, "x", 62 * ngi.MIB, 55 * ngi.MIB)
+
+        pack = ngi.Kopf(0, 5, 10, 2)
+        s = _Stub()
+        with mock.patch.object(ngi, "pruefen", pruefen):
+            befund = s._ng_indexspeicher_warnen(self.index, {"variant": "ng", "version": "0.3.5"}, "zstd", pack)
+        self.assertFalse(befund.passt)
+        self.assertIn("ampr_ng.indexspeicher_neuere_fassung [('version', '%s')]" % neueste, s.text())
+        self.assertNotIn("ampr_ng.indexspeicher_ohne_pack", s.text())
+
+    def test_die_neueste_fassung_empfiehlt_sich_nicht_selbst(self) -> None:
+        """Gegenprobe: Ist schon die neueste gewaehlt und reicht es nicht, steht keine Empfehlung da."""
+        from ps5_validator.utils import ng_indexspeicher as ngi
+        neueste = ngi.NEUESTE_FASSUNG
+
+        def pruefen(fassung, idx, art="", pack=None, ordner=None):
+            return ngi.Befund(ngi.modell_fuer(fassung), False, "x", 90 * ngi.MIB, 80 * ngi.MIB)
+
+        s = _Stub()
+        with mock.patch.object(ngi, "pruefen", pruefen):
+            befund = s._ng_indexspeicher_warnen(self.index, {"variant": "ng", "version": neueste}, "zstd", ngi.Kopf(0, 5, 10, 2))
+        self.assertFalse(befund.passt)
+        self.assertIn("ampr_ng.indexspeicher_zu_klein", s.text())
+        self.assertNotIn("ampr_ng.indexspeicher_neuere_fassung", s.text())
+
+    def test_gleiches_modell_wie_die_neueste_empfiehlt_nichts(self) -> None:
+        """Eine Fassung mit demselben Modell wie die neueste (z. B. 0.5.3 neben 0.5.0) bekommt die Empfehlung nie - auch nicht,
+        wenn die Rechnung der neuesten (hier gestellt) durchgehen wuerde; sie wuerde nichts aendern."""
+        from ps5_validator.utils import ng_indexspeicher as ngi
+        neueste = ngi.NEUESTE_FASSUNG
+        gleiche = "%s.3" % ".".join(neueste.split(".")[:2])     # 0.5.3 bei neuester 0.5.0
+        self.assertEqual(ngi.modell_fuer(gleiche), ngi.modell_fuer(neueste), "Voraussetzung: gleiches Modell")
+
+        def pruefen(fassung, idx, art="", pack=None, ordner=None):
+            if fassung == neueste:
+                return ngi.Befund(ngi.modell_fuer(fassung), True, "", 0, 0)
+            return ngi.Befund(ngi.modell_fuer(fassung), False, "x", 90 * ngi.MIB, 80 * ngi.MIB)
+
+        s = _Stub()
+        with mock.patch.object(ngi, "pruefen", pruefen):
+            befund = s._ng_indexspeicher_warnen(self.index, {"variant": "ng", "version": gleiche}, "zstd", ngi.Kopf(0, 5, 10, 2))
+        self.assertFalse(befund.passt)
+        self.assertNotIn("ampr_ng.indexspeicher_neuere_fassung", s.text())
+
     def test_indexspeicher_wird_nur_fuer_ng_gerechnet(self) -> None:
         s = _Stub()
         self.assertIsNone(s._ng_indexspeicher_warnen(self.index, {"variant": "test-pack", "version": "0.4.2.1"}))

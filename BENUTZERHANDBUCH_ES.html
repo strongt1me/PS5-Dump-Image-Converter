@@ -1861,7 +1861,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   el programa limpia entonces; al descomprimir en la carpeta del juego permanece
   el conjunto completo y la ejecución puede repetirse.</p>
   <h3>11.5 Usar Kraken Mount y Dump Forge</h3>
-    <p><strong>Usar Kraken Mount.</strong> El archivo <code>kraken-mount_v0.3.0.elf</code> está en la carpeta <code>helloworld</code> y aparece en <em>CONSOLA</em>, en la tabla de <em>Consola y payloads</em> (fila <em>Kraken Mount</em>, puerto&nbsp;8097, interfaz web). Los pasos proceden de las instrucciones de los autores; este camino no está probado en la consola.</p>
+    <p><strong>Usar Kraken Mount.</strong> El archivo <code>kraken-mount_v0.3.1.elf</code> está en la carpeta <code>helloworld</code> y aparece en <em>CONSOLA</em>, en la tabla de <em>Consola y payloads</em> (fila <em>Kraken Mount</em>, puerto&nbsp;8097, interfaz web). Los pasos proceden de las instrucciones de los autores; este camino no está probado en la consola.</p>
 <ol>
 <li>Cargue kstuff y detenga ShadowMount+: Kraken Mount espera hasta que ambas cosas se cumplan.</li>
 <li>Seleccione la fila <em>Kraken Mount</em> y pulse <em>Iniciar selección</em>: el programa envía el archivo al ELF-Loader (puerto&nbsp;9021). A mano: <code>nc -w 3 &lt;PS5-Adresse&gt; 9021 &lt; kraken-mount.elf</code>.</li>

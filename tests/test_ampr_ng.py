@@ -62,6 +62,12 @@ NG_DATEIEN = {
     # 48-MiB-Grenze (kompilierte Ansicht, 80-MiB-Block); innen "ampr-emu-ng 0.4.1". Digest = SHA256SUMS des Autors.
     "0.4.1 ng": "9c7c41b3216bc4f877d67e3c2e5c9c8f9ffabdd5065f4f3fe0dd98fa7228386f",
     "0.4.1 ng-debug": "f82e26aa9306f142a4120eb1ab70c52403a840b8441f136ec88ce19f2c7f97a2",
+    # v0.5.0 (20.11.2026 09:58 UTC, Marke auf d20210e): bis zu 20 % schnellere Lesezugriffe, 150,89 statt 184,44 MiB Modul (Cache ab 32 MiB,
+    # waechst in den freien Indexspeicher), Index 30-40 % schneller geladen, Zeilen der Ansicht je 32 B, mehrere Spielfehler (FF XVI, GTA V,
+    # Marvel's Avengers, Demon Slayer, Spielstaende auf FW 4.xx); innen "ampr-emu-ng 0.5.0". Digest = GitHub-Digest = SHA256SUMS des Autors;
+    # dieselbe libSceAmpr.sprx steckt byte-gleich in Kraken Mount 0.3.1.
+    "0.5.0 ng": "7379e49953d8f14f26b45ff06a863ecea56aa90a60ba3d5a375f61c52618a174",
+    "0.5.0 ng-debug": "3b8c5c6fc6c168d75298231fb8a0a5ff7c26d582ba9f80e1e45bdab0d9f3306c",
 }
 
 
@@ -98,21 +104,22 @@ class BestandTests(unittest.TestCase):
         gui = G.__new__(G)
         eintraege = [e for e in gui._ampr_scan_einen_speicher(str(BESTAND)) if e["lib"] == "libSceAmpr.sprx"]
         paare = [(e["version"], e["variant"]) for e in eintraege]
-        for fassung in ("0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.4.0-beta", "0.4.1"):
+        for fassung in ("0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.4.0-beta", "0.4.1", "0.5.0"):
             self.assertIn((fassung, "ng"), paare)
             self.assertIn((fassung, "ng-debug"), paare)
         self.assertEqual(("0.4.2.1", "test-nopack"), paare[0], "die oberste (= Vorgabe) bleibt drakmor")
         # Nutzerwunsch 05.11.2026: die NG-Fassungen stehen unterhalb von 0.4.2.1 (mit seinen drei Bauarten),
         # neueste zuerst, und vor den aelteren Fassungen von drakmor.
         self.assertEqual({"0.4.2.1"}, {v for v, _ in paare[:3]})
-        self.assertEqual([("0.4.1", "ng"), ("0.4.1", "ng-debug"), ("0.4.0-beta", "ng"), ("0.4.0-beta", "ng-debug"),
+        self.assertEqual([("0.5.0", "ng"), ("0.5.0", "ng-debug"), ("0.4.1", "ng"), ("0.4.1", "ng-debug"),
+                          ("0.4.0-beta", "ng"), ("0.4.0-beta", "ng-debug"),
                           ("0.3.5", "ng"), ("0.3.5", "ng-debug"), ("0.3.4", "ng"), ("0.3.4", "ng-debug"),
                           ("0.3.3", "ng"), ("0.3.3", "ng-debug"),
                           ("0.3.2", "ng"), ("0.3.2", "ng-debug"),
                           ("0.3.1", "ng"), ("0.3.1", "ng-debug"), ("0.3.0", "ng"), ("0.3.0", "ng-debug"),
-                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:21])
-        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[21:]), "danach nur noch Fassungen von drakmor")
-        self.assertEqual("0.3.6.6", paare[21][0])
+                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:23])
+        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[23:]), "danach nur noch Fassungen von drakmor")
+        self.assertEqual("0.3.6.6", paare[23][0])
 
 
 class BetaTests(unittest.TestCase):
@@ -145,12 +152,13 @@ class BetaTests(unittest.TestCase):
         self.assertEqual(["0.4.1"], [a.fassung for a in neu])
 
     def test_zstd_waehlt_die_neueste_normale_ng_fassung(self) -> None:
-        """Seit 15.11.2026 ist das 0.4.1 (hat den Spielstand-Fix der beta); die beta liegt darunter und bleibt waehlbar."""
+        """Seit 20.11.2026 ist das 0.5.0 (0.4.1 hatte den Spielstand-Fix der beta); 0.4.1 und die beta liegen darunter und bleiben waehlbar."""
         gui = G.__new__(G)
         eintraege = [e for e in gui._ampr_scan_einen_speicher(str(BESTAND))
                      if e["lib"] == "libSceAmpr.sprx" and e["variant"] == "ng"]
-        self.assertEqual("0.4.1", eintraege[0]["version"], "die neueste normale NG-Fassung = die zstd-Vorgabe")
-        self.assertEqual("0.4.0-beta", eintraege[1]["version"], "die beta steht direkt darunter, nicht mehr oben")
+        self.assertEqual("0.5.0", eintraege[0]["version"], "die neueste normale NG-Fassung = die zstd-Vorgabe")
+        self.assertEqual("0.4.1", eintraege[1]["version"], "die vorige Freigabe steht direkt darunter")
+        self.assertEqual("0.4.0-beta", eintraege[2]["version"], "die beta steht darunter, nicht mehr oben")
 
 
 class BeschriftungTests(unittest.TestCase):

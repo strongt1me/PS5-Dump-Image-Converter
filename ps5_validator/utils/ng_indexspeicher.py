@@ -43,6 +43,15 @@ ohne Seitenspeicher plus die abgelehnte Anforderung, gegen den Block ohne Seiten
   der Entwickler (Kommentar in ``index_memory.rs``: 12,6 / 14,9 / 16,0 MiB Ansicht bei 300.000 Dateien ohne Pack / zstd / LZ4;
   21,74 MiB Ansicht plus Tabellen bei 242.409 zstd-Dateien; 27,5 MiB LZ4-Manifest bei 223.180 Dateien; ``tests/test_ng_indexspeicher.py``).
   Gemessen an der Konsole hat das niemand (die Entwickler: "no console run has measured it").
+* **0.5.0 und neuer** (Freigabe vom 20.11.2026, Marke auf d20210e; gelesen im Vergleich v0.4.1...v0.5.0 an ``rt/index_memory.rs``,
+  ``rt/index_view.rs``, ``ampr-format/src/view.rs``): Der Block bleibt 80 MiB (``INDEX_MEMORY_MAX``), die Ladefolge dieselbe. Neu ist die
+  Ansicht: je Datei **eine 32-Byte-Zeile** (``view::Row``: Hash, Groesse, Zeit, ``path_at``, ``next``; auf 32 ausgerichtet, damit sie in
+  einer Cache-Zeile liegt) statt vier Spalten. Das kostet **4 B je Datei ohne Pack** (vorher 28 B) und nichts mit Pack (``next`` war
+  dort schon eine eigene Spalte: 24 + 4 + 4); die zstd-Spalte ``chunk`` (4 B) bleibt eine eigene. Die Ordnerzahl wird beim Aufbau nicht
+  mehr verdoppelt, sondern nach dem fehlgeschlagenen Versuch genau uebernommen (``view::build_sized``). Die Zahlen der Entwickler
+  (``index_view.rs view_bytes_at_300k_files``: 14.055 / 15.227 / 16.399 KiB Spitze ohne Pack / zstd / LZ4 bei 300.000 Dateien) trifft die
+  Rechnung (``tests/test_ng_indexspeicher.py``). Der Cache waechst nach dem Laden in den freien Indexspeicher - er nimmt dem Index nichts
+  weg, was er braucht (``INDEX_KEPT_ROOM`` 2 MiB), darum aendert das die Pruefung nicht. An der Konsole nicht gemessen.
 
 Gegengeprueft an den gemeldeten Faellen (Issues #53, #61, #67 von ampr-emu-ng; Zahlen aus den Kommentaren): Demon's Souls (LZ4,
 223.180 Dateien, 0.4.0: "need 62MiB, over the 48 MiB") und Final Fantasy XVI (zstd, 0.4.0: "49 MiB against 48"; 0.3.5:
@@ -87,18 +96,24 @@ MODELL_035 = "0.3.5"
 MODELL_040 = "0.4.0"
 #: 0.4.0 mit dem Vorbehalt fuer das Manifest (die beta ab 54d6ac2).
 MODELL_BETA = "0.4.0-beta"
-#: Freigabe 0.4.1 und neuer: die kompilierte Ansicht im 80-MiB-Block.
+#: Freigabe 0.4.1: die kompilierte Ansicht im 80-MiB-Block.
 MODELL_041 = "0.4.1"
+#: Freigabe 0.5.0 und neuer: wie 0.4.1, die Ansicht aber mit einer 32-Byte-Zeile je Datei.
+MODELL_050 = "0.5.0"
+#: Die neueste NG-Fassung, fuer die eine Rechnung steht (Empfehlung "mit dieser Fassung reicht der Speicher").
+NEUESTE_FASSUNG = "0.5.0"
 
 
 def modell_fuer(fassung: str) -> str:
-    """Welches Modell fuer eine NG-Fassung gilt: ``"0.4.1"`` ab 0.4.1, ``"0.4.0-beta"`` fuer die beta (der Stand im Bestand ist
-    54d6ac2), ``"0.4.0"`` fuer die Freigabe 0.4.0, ``"0.3.5"`` fuer 0.3.5, sonst ``""`` (vor 0.3.5: kein Modell)."""
+    """Welches Modell fuer eine NG-Fassung gilt: ``"0.5.0"`` ab 0.5.0, ``"0.4.1"`` fuer 0.4.1 bis 0.4.x, ``"0.4.0-beta"`` fuer die beta
+    (der Stand im Bestand ist 54d6ac2), ``"0.4.0"`` fuer die Freigabe 0.4.0, ``"0.3.5"`` fuer 0.3.5, sonst ``""`` (vor 0.3.5: kein Modell)."""
     text = str(fassung or "")
     treffer = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
     if not treffer:
         return ""
     teile = tuple(int(t) for t in treffer.groups())
+    if teile >= (0, 5, 0):
+        return MODELL_050
     if teile >= (0, 4, 1):
         return MODELL_041
     if teile >= (0, 4, 0) and "beta" in text.lower():
@@ -298,6 +313,24 @@ def ansicht_041(dateien: int, art: str = "", ordner: int | None = None) -> "tupl
     return haupt, zwischen
 
 
+def ansicht_050(dateien: int, art: str = "", ordner: int | None = None) -> "tuple[int, int]":
+    """Groesse der kompilierten Ansicht von NG ab 0.5.0 in Bytes, ungerundet: ``(Hauptblock, Zwischenblock)``.
+
+    Nach ``index_view::layout`` von 0.5.0: Hauptblock = eine 32-Byte-Zeile je Datei (``view::Row``: Hash, Groesse, Zeit, ``path_at``,
+    ``next``), bei zstd dazu die Spalte ``chunk`` (4 B je Datei), die Hash-Plaetze der Dateien (4 B je Platz), je Ordner 32 B samt
+    Ordner-Hashplaetzen und 1 KiB ``collide``. Der Zwischenblock ist wie bei 0.4.1 (``dir_of`` 4 B je Datei, LZ4 dazu ``lz4_hash`` 8 B).
+    Gegenueber 0.4.1: ohne Pack 4 B je Datei mehr, mit Pack gleich viel.
+
+    Args: wie :func:`ansicht_041`.
+    """
+    n = max(int(dateien), 1)
+    kappe = int(ordner) if ordner else n // 8 + 1024
+    haupt = (32 * n + 32 * kappe + (4 * n if art == "zstd" else 0)
+             + 4 * _slots_041(n) + 4 * _slots_041(kappe) + 4 * 256)
+    zwischen = 4 * n + (8 * n if art == "lz4" else 0)
+    return haupt, zwischen
+
+
 class _Buch041:
     """Die Buchfuehrung von 0.4.1: ein Block (80 MiB) fuer alles; jede Belegung wird auf Seiten gerundet, die Spitze gemerkt."""
 
@@ -321,11 +354,14 @@ class _Buch041:
         return GRENZE_041 - self.benutzt
 
 
-def _pruefen_041(ampridx: Kopf, art: str, pack: Kopf | None, ordner: int | None = None) -> Befund:
-    """Die Ladefolge von NG ab 0.4.1 (``rt/index.rs load_file``, ``rt/pack/zstd.rs zstd_mount_join``, ``rt/pack/manifest.rs``)."""
+def _pruefen_041(ampridx: Kopf, art: str, pack: Kopf | None, ordner: int | None = None, modell: str = MODELL_041,
+                 ansicht=ansicht_041) -> Befund:
+    """Die Ladefolge von NG ab 0.4.1 (``rt/index.rs load_file``, ``rt/pack/zstd.rs zstd_mount_join``, ``rt/pack/manifest.rs``).
+
+    Gilt unveraendert auch ab 0.5.0; ``modell`` und ``ansicht`` (:func:`ansicht_041` oder :func:`ansicht_050`) nennen die Fassung."""
     buch = _Buch041()
     mit_pack = bool(art) and pack is not None
-    haupt, zwischen = ansicht_041(ampridx.dateien, art if mit_pack else "", ordner)
+    haupt, zwischen = ansicht(ampridx.dateien, art if mit_pack else "", ordner)
     fenster = 2 * FENSTER_041
 
     def belegt() -> dict:
@@ -333,7 +369,7 @@ def _pruefen_041(ampridx: Kopf, art: str, pack: Kopf | None, ordner: int | None 
 
     def kaputt(engpass: str, anforderung: int) -> Befund:
         # Wie die Meldung an der Konsole ("index needs X MiB, over the 80 MiB cap"): belegter Block plus die abgelehnte Anforderung.
-        return Befund(MODELL_041, False, engpass, buch.benutzt + anforderung, GRENZE_041, belegt())
+        return Befund(modell, False, engpass, buch.benutzt + anforderung, GRENZE_041, belegt())
 
     # 1. ampr_emu.index (rt/index.rs load_file): zwei Fenster, dann Hauptblock und Zwischenblock der Ansicht; danach die Fenster frei.
     for teil, bytes_ in (("Fenster", fenster), ("Ansicht", haupt), ("Aufbau", zwischen)):
@@ -342,9 +378,9 @@ def _pruefen_041(ampridx: Kopf, art: str, pack: Kopf | None, ordner: int | None 
     buch.geben(fenster)
     if not mit_pack:
         buch.geben(zwischen)   # ohne Pack wird die Ansicht gleich fertig (Compact::finish gibt den Zwischenblock zurueck)
-        return Befund(MODELL_041, True, "", 0, 0, belegt())
+        return Befund(modell, True, "", 0, 0, belegt())
     if pack.laenge > PACKINDEX_MAX_040:
-        return Befund(MODELL_041, False, "Pack-Index ueber 512 MiB", pack.laenge, PACKINDEX_MAX_040, belegt())
+        return Befund(modell, False, "Pack-Index ueber 512 MiB", pack.laenge, PACKINDEX_MAX_040, belegt())
 
     # 2. Pack-Manifest einhaengen und mit der Ansicht verbinden; der Zwischenblock ist dabei noch belegt.
     if art == "zstd":
@@ -369,7 +405,7 @@ def _pruefen_041(ampridx: Kopf, art: str, pack: Kopf | None, ordner: int | None 
         buch.weg["tabellen"] = ablage + bitmap
     buch.geben(zwischen)                                # Compact::finish nach dem Verbinden
     buch.weg["dauerhaft"] = buch.benutzt
-    return Befund(MODELL_041, True, "", 0, 0, belegt())
+    return Befund(modell, True, "", 0, 0, belegt())
 
 
 def _pruefen_035(ampridx: Kopf, art: str, pack: Kopf | None) -> Befund:
@@ -394,16 +430,18 @@ def pruefen(fassung: str, ampridx: Kopf, art: str = "", pack: Kopf | None = None
     """Rechnet die Ladefolge von NG ``fassung`` nach.
 
     Args:
-        fassung: Die gewaehlte NG-Fassung (``"0.4.1"``, ``"0.4.0-beta"``, ``"0.3.5"`` ...).
+        fassung: Die gewaehlte NG-Fassung (``"0.5.0"``, ``"0.4.1"``, ``"0.4.0-beta"``, ``"0.3.5"`` ...).
         ampridx: Kopf des ``ampr_emu.index`` (:func:`ampridx3_kopf`).
         art: ``"zstd"``, ``"lz4"`` oder ``""`` (kein Asset-Pack).
         pack: Kopf des Pack-Manifests (:func:`zstd_kopf` / :func:`lz4_kopf`).
-        ordner: Ordnerzahl des Spiels, falls bekannt; nur 0.4.1 und neuer braucht sie (:func:`ansicht_041`).
+        ordner: Ordnerzahl des Spiels, falls bekannt; nur 0.4.1 und neuer braucht sie (:func:`ansicht_041`, :func:`ansicht_050`).
 
     Returns:
         Den Befund, oder ``None`` fuer eine Fassung ohne bekanntes Modell (vor 0.3.5).
     """
     modell = modell_fuer(fassung)
+    if modell == MODELL_050:
+        return _pruefen_041(ampridx, art, pack, ordner, MODELL_050, ansicht_050)
     if modell == MODELL_041:
         return _pruefen_041(ampridx, art, pack, ordner)
     if modell in (MODELL_040, MODELL_BETA):

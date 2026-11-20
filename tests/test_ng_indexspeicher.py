@@ -45,7 +45,8 @@ def _lz4(dateien: int, gb: float) -> n.Kopf:
 class ModellTests(unittest.TestCase):
     def test_modell_je_fassung(self) -> None:
         for fassung, soll in (("0.4.0-beta", "0.4.0-beta"), ("0.4.0", "0.4.0"), ("NG 0.4.1", "0.4.1"), ("0.4.2", "0.4.1"),
-                              ("0.5.0", "0.4.1"), ("0.3.5", "0.3.5"), ("0.3.4", ""), ("0.2.0", ""), ("", ""),
+                              ("0.5.0", "0.5.0"), ("NG 0.5.0", "0.5.0"), ("0.5.3", "0.5.0"), ("0.6.0", "0.5.0"),
+                              ("0.3.5", "0.3.5"), ("0.3.4", ""), ("0.2.0", ""), ("", ""),
                               ("0.4.0-Beta", "0.4.0-beta")):
             with self.subTest(fassung):
                 self.assertEqual(soll, n.modell_fuer(fassung))
@@ -250,7 +251,81 @@ class Modell041Tests(unittest.TestCase):
         zst = n.Kopf(32 * n.MIB, 242_436, 1_339_356, 72)
         self.assertEqual(n.MODELL_BETA, n.pruefen("0.4.0-beta", idx, "zstd", zst).modell)
         self.assertEqual(n.MODELL_041, n.pruefen("0.4.1", idx, "zstd", zst).modell)
-        self.assertEqual(n.MODELL_041, n.pruefen("0.5.0", idx, "zstd", zst).modell, "neuere Fassungen: so angenommen")
+        self.assertEqual(n.MODELL_041, n.pruefen("0.4.2", idx, "zstd", zst).modell, "zwischen 0.4.1 und 0.5.0: so angenommen")
+        self.assertEqual(n.MODELL_050, n.pruefen("0.5.0", idx, "zstd", zst).modell)
+
+
+class Modell050Tests(unittest.TestCase):
+    """Ab 0.5.0 (20.11.2026): die Ansicht hat je Datei eine 32-Byte-Zeile (``view::Row``) statt vier Spalten; der Block (80 MiB) und die
+    Ladefolge sind dieselben. Zahlen aus ``rt/index_view.rs`` (``view_bytes_at_300k_files``) und ``ampr-format/src/view.rs`` von
+    ampr-emu-ng v0.5.0."""
+
+    def test_ansicht_von_hand_gerechnet(self) -> None:
+        """1000 Dateien, Ordnerzahl vorab 1149, Hash-Plaetze je 2048: 32 B Zeile je Datei; zstd dazu die Spalte chunk."""
+        gemeinsam = 32_000 + 32 * 1149 + 4 * 2048 + 4 * 2048 + 4 * 256
+        self.assertEqual((gemeinsam, 4_000), n.ansicht_050(1000))
+        self.assertEqual((gemeinsam, 4_000 + 8_000), n.ansicht_050(1000, "lz4"), "LZ4: die Zeile traegt next schon, lz4_hash im Zwischenblock")
+        self.assertEqual((gemeinsam + 4_000, 4_000), n.ansicht_050(1000, "zstd"), "zstd: dazu die Spalte chunk")
+
+    def test_die_zahlen_der_entwickler(self) -> None:
+        """``view_bytes_at_300k_files``: Spitze (beide Bloecke) und Hauptblock allein in KiB bei 300.000 Dateien und der ersten Ordnerzahl.
+        Die Rechnung enthaelt zusaetzlich das 1 KiB ``collide``, das NG dort nicht zaehlt - darum eine Toleranz von 1 KiB."""
+        for art, spitze, haupt_soll in (("", 14_055, 12_883), ("zstd", 15_227, 14_055), ("lz4", 16_399, 12_883)):
+            with self.subTest(art=art):
+                haupt, zwischen = n.ansicht_050(300_000, art)
+                self.assertAlmostEqual(spitze, (haupt + zwischen) / 1024, delta=1.0)
+                self.assertAlmostEqual(haupt_soll, haupt / 1024, delta=1.0)
+
+    def test_gegenueber_0_4_1_vier_byte_mehr_je_datei_nur_ohne_pack(self) -> None:
+        """Die Zeile kostet 4 B je Datei ohne Pack (vorher 28 B Spalten) und nichts mit Pack, wo ``next`` schon eine Spalte war."""
+        for dateien in (1, 1000, 300_000, 1_234_567):
+            with self.subTest(dateien=dateien):
+                self.assertEqual(4 * dateien, n.ansicht_050(dateien)[0] - n.ansicht_041(dateien)[0])
+                for art in ("zstd", "lz4"):
+                    self.assertEqual(n.ansicht_041(dateien, art), n.ansicht_050(dateien, art), art)
+
+    def test_die_gemeldeten_faelle_passen_auch_mit_0_5_0(self) -> None:
+        """Mit Pack rechnet 0.5.0 wie 0.4.1: Demon's Souls (LZ4) und Final Fantasy XVI (zstd) passen weiter, gleich viel dauerhaft belegt."""
+        faelle = (("lz4", n.Kopf(34_358_192, 223_180), n.Kopf(0, 223_180, 1_513_210, 18)),
+                  ("zstd", n.Kopf(int(29.54 * n.MIB), 242_436), n.Kopf(32 * n.MIB, 242_436, 1_339_356, 72)))
+        for art, idx, pack in faelle:
+            with self.subTest(art=art):
+                neu, alt = n.pruefen("0.5.0", idx, art, pack), n.pruefen("0.4.1", idx, art, pack)
+                self.assertTrue(neu.passt, neu)
+                self.assertEqual(n.MODELL_050, neu.modell)
+                self.assertEqual(alt.belegt["dauerhaft"], neu.belegt["dauerhaft"])
+                self.assertEqual(alt.belegt["gesamt"], neu.belegt["gesamt"])
+
+    def test_ohne_pack_reicht_der_block_etwas_frueher_nicht_mehr(self) -> None:
+        """Gegenprobe zum vorigen: ohne Pack fehlen 4 B je Datei - es gibt eine Dateizahl, die mit 0.4.1 passt und mit 0.5.0 nicht."""
+        grenze_alt = next(d for d in range(1_000_000, 4_000_000, 1000) if not n.pruefen("0.4.1", n.Kopf(0, d)).passt)
+        grenze_neu = next(d for d in range(1_000_000, 4_000_000, 1000) if not n.pruefen("0.5.0", n.Kopf(0, d)).passt)
+        self.assertLess(grenze_neu, grenze_alt)
+        mitte = grenze_neu
+        self.assertTrue(n.pruefen("0.4.1", n.Kopf(0, mitte)).passt)
+        self.assertFalse(n.pruefen("0.5.0", n.Kopf(0, mitte)).passt)
+        self.assertEqual(80 * n.MIB, n.pruefen("0.5.0", n.Kopf(0, mitte)).grenze)
+        self.assertEqual(n.MODELL_050, n.pruefen("0.5.0", n.Kopf(0, mitte)).modell, "auch der Fehlbefund nennt das Modell von 0.5.0")
+        self.assertEqual(n.MODELL_041, n.pruefen("0.4.1", n.Kopf(0, grenze_alt)).modell)
+
+    def test_die_ordnerzahl_wirkt_wie_bei_0_4_1_nur_auf_die_ansicht(self) -> None:
+        normal, viele = n.ansicht_050(1000, "zstd"), n.ansicht_050(1000, "zstd", ordner=5000)
+        self.assertGreater(viele[0], normal[0])
+        self.assertEqual(normal[1], viele[1])
+        self.assertEqual(viele[0], n.pruefen("0.5.0", n.Kopf(0, 1000), "zstd", n.Kopf(0, 1000, 10, 1), ordner=5000).belegt["ansicht"])
+
+    def test_die_neueste_fassung_ist_die_neueste_im_bestand(self) -> None:
+        """Wer eine neuere NG-Fassung einlegt, muss ``NEUESTE_FASSUNG`` (Empfehlung bei zu kleinem Speicher) und das Modell nachziehen."""
+        import re
+        from pathlib import Path
+        ordner = Path(__file__).resolve().parent.parent / "PlayGo & AMPR_EMU" / "AMPR_EMU"
+        normal = []
+        for p in ordner.iterdir():
+            m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+) ng", p.name)          # ohne beta, ohne "no debug"/"debug", ohne vierte Stelle
+            if m:
+                normal.append(tuple(int(t) for t in m.groups()))
+        self.assertEqual(n.NEUESTE_FASSUNG, "%d.%d.%d" % max(normal))
+        self.assertEqual(n.MODELL_050, n.modell_fuer(n.NEUESTE_FASSUNG))
 
 
 if __name__ == "__main__":

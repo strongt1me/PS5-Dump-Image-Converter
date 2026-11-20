@@ -40929,9 +40929,10 @@ class PS5ConverterGUI:
         self._append_to_log(self._t("ampr_ng.indexspeicher_zu_klein", version=fassung, need=mib(befund.benoetigt),
                                     cap=mib(befund.grenze)))
         try:
-            neuer = ng_indexspeicher.pruefen("0.4.1", idx, art, pack)
-            if befund.modell != ng_indexspeicher.MODELL_041 and neuer is not None and neuer.passt:
-                self._append_to_log(self._t("ampr_ng.indexspeicher_neuere_fassung"))
+            neueste = ng_indexspeicher.NEUESTE_FASSUNG
+            neuer = ng_indexspeicher.pruefen(neueste, idx, art, pack)
+            if befund.modell != ng_indexspeicher.modell_fuer(neueste) and neuer is not None and neuer.passt:
+                self._append_to_log(self._t("ampr_ng.indexspeicher_neuere_fassung", version=neueste))
             elif art and ng_indexspeicher.pruefen(fassung, idx).passt:
                 self._append_to_log(self._t("ampr_ng.indexspeicher_ohne_pack"))
         except ValueError as exc:
