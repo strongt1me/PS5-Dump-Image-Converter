@@ -92,7 +92,7 @@ def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr
 
     # BACKPORT: verlangt das Spiel mehr, als die Konsole hat?
     verlangt = fakten.verlangt_text
-    if fakten.backport_vorhanden:
+    if fakten.backport_schon_da(konsole):
         liste.append(Zeile("backport", STUFE_OK, t("bericht.backport_da")))
     elif not verlangt:
         liste.append(Zeile("backport", STUFE_HINWEIS, t("bericht.backport_unbekannt")))

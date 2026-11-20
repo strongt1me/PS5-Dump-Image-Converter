@@ -118,6 +118,19 @@ class Ufs2Leser:
             erzeuger.close()
         return b"".join(teile)[:wunsch]
 
+    def datei_bereich(self, pfad: str, ab: int, laenge: int) -> bytes:
+        """Die Bytes ``[ab, ab + laenge)`` einer Datei, am Dateiende gekuerzt - auch tief in einer grossen Datei, ohne sie zu laden.
+
+        Liest nur die Bloecke dazu (:meth:`ufs2_dateisystem.Ufs2Leser.lesen_bereich`); nie mehr als :data:`MAX_DATEI` je Aufruf.
+
+        Raises:
+            FileNotFoundError: Pfad gibt es nicht. Ufs2Fehler: keine Datei oder beschaedigt.
+        """
+        inode = self._suchen(pfad)
+        if not inode.ist_datei:
+            raise Ufs2Fehler("%s ist keine Datei" % pfad)
+        return self._fs.lesen_bereich(inode, ab, min(max(0, int(laenge)), MAX_DATEI))
+
 
 def ist_ufs2(pfad: str) -> bool:
     """Trägt die Datei einen UFS2-Superblock an der ueblichen Stelle? (Liest 4 Byte.)"""

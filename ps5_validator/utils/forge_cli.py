@@ -30,6 +30,7 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Callable
 
+from . import programm_sdk
 from . import ps5_pkg_werkzeug as wz
 #: Die Abbildformate, die Forge als Quelle liest, nach Endung (klein) - der Wert ist Forges eigener Formatname.
 from .pkg_plattform import ENDUNGEN_ABBILD
@@ -238,11 +239,51 @@ class QuellFakten:
     #: setzt es, sobald irgendeine Datei in ``fakelib/`` liegt, auch bei einem Spiel nur mit AMPR EMU, PlayGo oder DLC EMU dort
     #: (gemessen 18.11.2026: ``backport`` leer, ``backport_firmware`` "2.00"; Forges eigene Ausgabe wertet nur ``backport``).
     backport_vorhanden: bool = False
+    #: Forges ``backport_firmware``: das hoechste SDK der Programme (``eboot.bin``, ``.prx``/``.sprx``), ``"7.00"`` - nur bei einem Spiel mit
+    #: ``fakelib/``-Ordner, sonst ``""``. Ohne diesen Ordner nennt Forge es nicht.
+    backport_firmware: str = ""
+    #: Das SDK der ``eboot.bin``, vom Programm selbst gelesen (``programm_sdk``, aus Ordner oder ``.ffpkg``); ``""``: nicht zu lesen
+    #: (ein anderes Abbild, ein Paket, ein Archiv).
+    eboot_sdk: str = ""
+
+    @property
+    def programme_sdk(self) -> str:
+        """Das hoechste SDK der Programme, soweit bekannt: ``eboot_sdk`` und Forges ``backport_firmware``; ``""``, wenn keins bekannt ist.
+
+        Das prueft die Konsole beim Start - nicht die Angaben der ``param.json``.
+        """
+        bekannt = [(t, text) for text in (self.eboot_sdk, self.backport_firmware) for t in (_teile(text),) if t and t[0] > 0]
+        return max(bekannt)[1] if bekannt else ""
+
+    @property
+    def herabgesetzt(self) -> bool:
+        """Die Programme tragen ein niedrigeres SDK, als die ``param.json`` angibt: Ein Backport hat sie herabgesetzt.
+
+        Gemessen an echten Spielen (20.11.2026): Backports aus der Szene (Fallout 4, Trackmania, Big Helmet Heroes) senken das SDK der
+        Programme und legen Ersatzbibliotheken in ``fakelib/``, die ``param.json`` bleibt aber auf den Werten des Originals; ein anderes
+        (Ghost of Yotei, SDK 8.00 bei ``sdkVersion`` 11.00) hat in ``fakelib/`` nur AMPR EMU. Beides sind keine Spiele, die noch einen
+        Backport brauchen - ihre ``param.json`` sagt nur nicht mehr, was die Programme verlangen.
+        """
+        programme, angabe = _teile(self.programme_sdk), _teile(self.sdk)
+        return bool(programme and angabe and programme[0] > 0 and angabe[0] > 0 and programme < angabe)
+
+    def backport_schon_da(self, konsole: str) -> bool:
+        """Das Spiel traegt einen Backport, der fuer ``konsole`` reicht: Ersatzbibliotheken in ``fakelib/``, oder seine Programme sind
+        herabgesetzt (:attr:`herabgesetzt`) und verlangen nicht mehr, als die Konsole hat."""
+        return self.backport_vorhanden or (self.herabgesetzt and not self.backport_noetig(konsole))
 
     @property
     def verlangt_teile(self) -> "tuple[int, int] | None":
-        """Das Meiste, was das Spiel verlangt, als (Haupt-, Nebenversion): SDK der ``eboot.bin`` oder verlangte Firmware."""
-        teile = [t for t in (_teile(self.sdk), _teile(self.firmware)) if t and t[0] > 0]
+        """Das Meiste, was das Spiel verlangt, als (Haupt-, Nebenversion).
+
+        Ein schon herabgesetztes Spiel (:attr:`herabgesetzt`) verlangt, was seine Programme tragen: Die Angaben der ``param.json`` sind dort
+        Reste des Originals. Sonst zaehlt das Meiste aus SDK und Firmware der ``param.json`` und dem SDK der Programme.
+        """
+        programme = _teile(self.programme_sdk)
+        programme = programme if programme and programme[0] > 0 else None
+        if self.herabgesetzt:
+            return programme
+        teile = [t for t in (_teile(self.sdk), _teile(self.firmware), programme) if t and t[0] > 0]
         return max(teile) if teile else None
 
     @property
@@ -294,8 +335,13 @@ def _playgo_merkmal_in(pfade) -> str:
     return ""
 
 
-def quellfakten(daten: dict) -> QuellFakten:
-    """Die Fakten aus Forges ``inspect``-Antwort (rein, ohne Start)."""
+def quellfakten(daten: dict, pfad: "str | None" = None) -> QuellFakten:
+    """Die Fakten aus Forges ``inspect``-Antwort.
+
+    Mit ``pfad`` (Spielordner oder ``.ffpkg``) liest das Programm zusaetzlich das SDK der ``eboot.bin`` selbst
+    (:func:`programm_sdk.eboot_sdk`, einige KiB, nie mehr): Forge nennt es nur bei einem Spiel mit ``fakelib/``. Ohne ``pfad`` - und
+    bei jeder Quelle, die sich so nicht lesen laesst - bleibt ``eboot_sdk`` leer. Sonst rein, ohne Start.
+    """
     if not isinstance(daten, dict):
         return QuellFakten()
     lz4 = daten.get("lz4") if isinstance(daten.get("lz4"), dict) else {}
@@ -318,6 +364,8 @@ def quellfakten(daten: dict) -> QuellFakten:
         sdk=str(daten.get("sdk") or ""),
         firmware=str(daten.get("firmware") or ""),
         backport_vorhanden=bool(daten.get("backport")),
+        backport_firmware=str(daten.get("backport_firmware") or ""),
+        eboot_sdk=programm_sdk.eboot_sdk(str(pfad)) if pfad else "",
     )
 
 
@@ -328,7 +376,7 @@ def quellfakten_lesen(werkzeug: str, pfad: str, *, abbruch: "_Abbruch | None" = 
     Kein Fehler dringt nach aussen: Es ist eine Hilfe vor dem Lauf, kein Hindernis (auch ein Abbruch ergibt ``None``).
     """
     try:
-        return quellfakten(inspect_daten(werkzeug, pfad, abbruch=abbruch, popen_extra=popen_extra, vorspann=vorspann))
+        return quellfakten(inspect_daten(werkzeug, pfad, abbruch=abbruch, popen_extra=popen_extra, vorspann=vorspann), pfad)
     except wz.Fehler:
         return None
 
@@ -379,7 +427,7 @@ def lesen(werkzeug: str, pfad: str, arbeitsordner: "str | None" = None, *, abbru
         befunde=[str(z) for z in (daten.get("findings") or [])],
         zusatzinhalt=bool(daten.get("additional_content")),
         patch=bool(daten.get("patch")),
-        fakten=quellfakten(daten),
+        fakten=quellfakten(daten, pfad),
     )
     try:
         ordner = tempfile.mkdtemp(prefix="ps5conv_pkgcover_", dir=arbeitsordner or None)

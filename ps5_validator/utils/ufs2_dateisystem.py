@@ -245,6 +245,34 @@ class Ufs2Leser:
         if geliefert != groesse:
             raise Ufs2Fehler("Inode %d: %d von %d Bytes gelesen" % (inode.nummer, geliefert, groesse))
 
+    def lesen_bereich(self, inode: Ufs2Inode, ab: int, laenge: int) -> bytes:
+        """Die Bytes ``[ab, ab + laenge)`` einer Datei, am Dateiende gekuerzt; Loecher kommen als Nullen.
+
+        Liest nur die Bloecke, die den Bereich tragen (die Blockzeiger davor werden durchgezaehlt, ihre Daten nicht gelesen) - so
+        genuegt ein Blick in den Kopf einer 300-MB-``eboot.bin``, ohne sie zu laden. Gedacht fuer kleine Bereiche.
+
+        Raises:
+            Ufs2Fehler: der Inode ist keine Datei, oder das Abbild ist an der Stelle beschaedigt.
+        """
+        if not inode.ist_datei:
+            raise Ufs2Fehler("Inode %d ist keine Datei" % inode.nummer)
+        anfang = max(0, int(ab))
+        ende = min(inode.groesse, anfang + max(0, int(laenge)))
+        if ende <= anfang:
+            return b""
+        erster, letzter = anfang // self.bsize, (ende - 1) // self.bsize
+        teile: list[bytes] = []
+        for nummer, zeiger in enumerate(self._bloecke(inode)):
+            if nummer < erster:
+                continue
+            if nummer > letzter:
+                break
+            blocklaenge = min(self.bsize, inode.groesse - nummer * self.bsize)
+            teile.append(bytes(blocklaenge) if zeiger == 0 else self._lesen(zeiger * self.fsize, blocklaenge))
+        daten = b"".join(teile)
+        rel = anfang - erster * self.bsize
+        return daten[rel:rel + (ende - anfang)]
+
     # -- Verzeichnisse --------------------------------------------------------------------------------------------------------
 
     def verzeichnis(self, inode: Ufs2Inode, *, nachsichtig: bool = False) -> list[tuple[str, int, int]]:
