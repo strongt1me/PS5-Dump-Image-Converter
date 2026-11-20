@@ -9,7 +9,7 @@ laesst die ``param.json`` oft unberuehrt - gemessen an echten Spielen: Fallout 4
 AMPR EMU - und Forge nennt das SDK der Programme nur bei einem Spiel mit ``fakelib/`` (``backport_firmware``).
 
 Geprueft wird hier: der Leser fuer das SDK der ``eboot.bin`` (Ordner, ``.ffpkg``, ``.exfat``, ``.ffpfs``, ``.ffpfsc`` in jeder Bauform; nur
-einige KiB gelesen, nichts entpackt; ein ``.pkg`` bleibt unlesbar), die Bewertung in
+einige KiB gelesen, nichts entpackt; ein ``.pkg`` liest ``pkg_eboot``, geprueft in ``test_pkg_eboot.py``), die Bewertung in
 ``forge_cli.QuellFakten``, der Plan der Rueckfrage und der Bericht - jeweils mit Gegenprobe (ein nicht herabgesetztes Spiel wird
 weiter beanstandet). Der Durchlauf mit der echten Forge-Befehlszeile stellt die Meldung nach.
 """
@@ -216,7 +216,7 @@ class SdkLeserTests(_Grundlage):
 
 
 class OrdnerUndAbbildTests(_Grundlage):
-    """``eboot_sdk``: Spielordner und ``.ffpkg``, sonst nichts."""
+    """``eboot_sdk``: Spielordner und ``.ffpkg``; ein ``.pkg`` prueft ``test_pkg_eboot.py``."""
 
     def test_spielordner(self) -> None:
         original, tief = baue_elf(0x10000038), baue_elf(0x10000038, davor=0x180000)
@@ -387,7 +387,7 @@ class AbbilderTests(unittest.TestCase):
                 self.assertEqual("", ps.eboot_sdk(pfad))
 
     def test_nur_die_bekannten_endungen_werden_gelesen(self) -> None:
-        """Ein ``.pkg`` (Forge entschluesselt und entpackt es) und Archive liest das Programm nicht - auch wenn der Inhalt ein Abbild waere."""
+        """Archive liest das Programm nicht, und ein ``.pkg`` nur als Paket (``\\x7fFIH``) - ein Abbild unter dieser Endung ist keins."""
         for endung in (".pkg", ".zip", ".7z", ".rar", ".txt", ".bin"):
             with self.subTest(endung=endung):
                 ziel = os.path.join(self.tmp, "fremd" + endung)

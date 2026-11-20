@@ -243,7 +243,7 @@ class QuellFakten:
     #: ``fakelib/``-Ordner, sonst ``""``. Ohne diesen Ordner nennt Forge es nicht.
     backport_firmware: str = ""
     #: Das SDK der ``eboot.bin``, vom Programm selbst gelesen (``programm_sdk``: Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs``,
-    #: ``.ffpfsc``); ``""``: nicht zu lesen (ein ``.pkg``: Forge entschluesselt es und entpackt seine Kraken-Bloecke).
+    #: ``.ffpfsc``, ``.pkg``); ``""``: nicht zu lesen (ein ``.pkg`` als Verkaufsfassung, mit fremdem Passcode oder einem anderen Verfahren).
     eboot_sdk: str = ""
 
     @property
@@ -338,9 +338,10 @@ def _playgo_merkmal_in(pfade) -> str:
 def quellfakten(daten: dict, pfad: "str | None" = None) -> QuellFakten:
     """Die Fakten aus Forges ``inspect``-Antwort.
 
-    Mit ``pfad`` (Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs`` oder ``.ffpfsc``) liest das Programm zusaetzlich das SDK der
+    Mit ``pfad`` (Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs``, ``.ffpfsc`` oder ``.pkg``) liest das Programm zusaetzlich das SDK der
     ``eboot.bin`` selbst (:func:`programm_sdk.eboot_sdk`, einige KiB, nie mehr): Forge nennt es nur bei einem Spiel mit ``fakelib/``.
-    Ohne ``pfad`` - und bei jeder Quelle, die sich so nicht lesen laesst (ein ``.pkg``) - bleibt ``eboot_sdk`` leer. Sonst rein, ohne Start.
+    Ohne ``pfad`` - und bei jeder Quelle, die sich so nicht lesen laesst (ein ``.pkg`` als Verkaufsfassung oder mit fremdem Passcode,
+    ein Archiv) - bleibt ``eboot_sdk`` leer. Sonst rein, ohne Start.
     """
     if not isinstance(daten, dict):
         return QuellFakten()

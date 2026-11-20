@@ -16,8 +16,8 @@ einige KiB werden nie gelesen, auch bei einer ``eboot.bin`` von 300 MB. Verschlu
 nicht lesen - das Ergebnis ist dann "nicht zu sagen", nie geraten.
 
 Abbilder erkennt es am Inhalt: exFAT, UFS2 und PFS (``.ffpfs``/``.ffpfsc``, flach oder um ein inneres Abbild gelegt, auch ein ``.ffpkg``
-in einer ``.ffpfsc``, wie Dump Forge es baut). Ein ``.pkg`` liest das Programm so nicht (Forge entschluesselt es mit AES-XTS und entpackt
-seine Kraken-Bloecke): dort bleibt es bei "nicht zu sagen".
+in einer ``.ffpfsc``, wie Dump Forge es baut). Ein ``.pkg`` (Debug-Paket mit Kraken-Bloecken, auch AES-XTS) liest :mod:`pkg_eboot`; was sich
+dort nicht lesen laesst (Verkaufsfassung, fremder Passcode, Update-Paket, anderes Verdichtungsverfahren), bleibt "nicht zu sagen".
 
 Das Modul kennt keine Oberflaeche. Nichts wird veraendert.
 """
@@ -363,10 +363,11 @@ _ABBILD_ENDUNGEN = (".ffpkg", ".exfat", ".ffpfs", ".ffpfsc")
 
 
 def eboot_sdk(quelle: str, mkpfs_ordner: str = "") -> str:
-    """Das SDK der ``eboot.bin`` einer Quelle als Text (``"10.00"``): Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs`` oder ``.ffpfsc``.
+    """Das SDK der ``eboot.bin`` einer Quelle als Text (``"10.00"``): Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs``, ``.ffpfsc`` oder ``.pkg``.
 
-    Ein ``.pkg`` liest das Programm so nicht: Forge entschluesselt es (AES-XTS) und entpackt seine Kraken-Bloecke; fuer beides gibt es
-    hier keinen Leser. Archive kommen bei der Rueckfrage nicht vor. Beides ergibt ``""`` ("nicht zu sagen"), nie eine Vermutung. Wirft nie.
+    Ein ``.pkg`` liest :mod:`pkg_eboot` (AES-XTS und Kraken-Bloecke wie Forge, nur der Weg zur ``eboot.bin``); ein Paket, das sich so
+    nicht lesen laesst (Verkaufsfassung, fremder Passcode, Update-Paket, anderes Verdichtungsverfahren), ergibt ``""``. Archive kommen bei
+    der Rueckfrage nicht vor und ergeben ebenfalls ``""`` ("nicht zu sagen"), nie eine Vermutung. Wirft nie.
     """
     try:
         if os.path.isdir(quelle):
@@ -376,6 +377,9 @@ def eboot_sdk(quelle: str, mkpfs_ordner: str = "") -> str:
                 return eboot_sdk_in_ffpkg(quelle)
             if quelle.lower().endswith(_ABBILD_ENDUNGEN):
                 return eboot_sdk_in_abbild(quelle, mkpfs_ordner)
+            if quelle.lower().endswith(".pkg"):
+                from . import pkg_eboot                    # spaet: pkg_eboot nutzt selbst dieses Modul
+                return pkg_eboot.eboot_sdk(quelle)
     except (OSError, ValueError):
         pass
     return ""
