@@ -677,7 +677,7 @@ footer{
   <div class="frage">
     <h3>Mensaje «Falta sce_sys/param.json» o «param.json has no Content ID».</h3>
     <p><strong>Falta param.json:</strong> el juego está incompleto. Con <em>Sí</em> el programa crea un <code>param.json</code> válido y continúa la construcción; con <em>No</em> se detiene; en ese caso es mejor crear una copia de seguridad nueva a partir del original.</p>
-    <p><strong>Falta el Content ID:</strong> el título y el content ID no figuran en ningún archivo de una copia de seguridad, solo el Title ID. Con <em>Buscar metadatos faltantes en línea</em> (configuración) el programa obtiene ambos. De lo contrario introduce un marcador de posición (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); el archivo antiguo se conserva como <code>param.json.alt</code>. Para actualizaciones y DLC hay que introducir el content ID real.</p>
+    <p><strong>Falta el Content ID:</strong> el content ID no figura en ningún archivo de una copia de seguridad, solo el Title ID; el programa lee el título de los datos de trofeos de la copia. Con <em>Buscar metadatos faltantes en línea</em> (configuración) el programa obtiene el content ID (y el título, si la copia no lo contiene). De lo contrario introduce un marcador de posición (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); el archivo antiguo se conserva como <code>param.json.alt</code>. Para actualizaciones y DLC hay que introducir el content ID real.</p>
   </div>
 
   <div class="frage">

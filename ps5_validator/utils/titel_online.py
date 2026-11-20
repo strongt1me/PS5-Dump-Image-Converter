@@ -5,8 +5,9 @@ damit sie fuer sich pruefbar bleibt. Das Laden selbst liegt in der Oberflaeche,
 wo auch die Rueckfrage an den Nutzer sitzt.
 
 Wozu: Fehlt ``sce_sys/param.json`` oder ist sie beschaedigt, legt das Programm
-eine Ersatzdatei an. Die Title-ID kommt dabei aus ``sce_sys/nptitle.dat``, Titel
-und Content-ID stehen aber in keiner lokalen Datei des Dumps - weder in der
+eine Ersatzdatei an. Die Title-ID kommt dabei aus ``sce_sys/nptitle.dat``, der
+Titel (sofern das Backup Trophaeendaten hat) aus ``sce_sys/trophy2``. Die
+Content-ID steht dagegen in keiner lokalen Datei des Dumps - weder in der
 ``eboot.bin`` (33 MB vollstaendig durchsucht) noch in ``npbind.dat``. Bleibt der
 Nachschlag auf der Patch-Seite, die dieselbe Adresse nutzt wie die Update-Liste
 im Spiel-Info-Fenster.

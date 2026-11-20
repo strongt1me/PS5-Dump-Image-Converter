@@ -495,8 +495,10 @@ MELDUNGEN: dict[str, str] = {
         "zuerst abgeräumt; scheitert das, bekommt das neue Spiel keine "
         "fakelib.",
     "falle_config_nicht_aendern":
-        "Die config.ini nicht während des Spiels ändern - jede Änderung an "
-        "einem fakelib-Schlüssel entfernt sofort alle Overlays.",
+        "Die config.ini nicht während des Spiels ändern - bis ShadowMount+ 1.7 "
+        "alpha13fix1 entfernt jede Änderung an einem fakelib-Schlüssel sofort "
+        "alle Overlays; ab 1.7beta1 greifen die neuen Werte erst beim nächsten "
+        "Spielstart.",
     "falle_common_lib":
         "Ohne common/lib in der Sandbox passiert nichts - stiller Abbruch "
         "ohne Meldung.",

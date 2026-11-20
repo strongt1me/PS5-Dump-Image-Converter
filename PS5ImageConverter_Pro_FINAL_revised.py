@@ -46937,8 +46937,9 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.manual.param_json_create_declined'))
             return False
 
-        # Titel und Content-ID stehen in keiner lokalen Datei des Dumps; sie
-        # lassen sich nur zur Title-ID online nachschlagen. Bis v1.8.52 stand
+        # Die Content-ID steht in keiner lokalen Datei des Dumps; sie laesst
+        # sich nur zur Title-ID online nachschlagen (der Titel nur, wenn ihn
+        # das Backup nicht selbst traegt, siehe unten). Bis v1.8.52 stand
         # dafuer eine zweite Rueckfrage - drei Bestaetigungen fuer einen
         # Vorgang, den man ohnehin will. Der Nachschlag laeuft jetzt
         # unmittelbar mit; dass dabei die Title-ID an prosperopatches.com

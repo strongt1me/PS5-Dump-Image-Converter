@@ -677,7 +677,7 @@ footer{
   <div class="frage">
     <h3>Messaggio “sce_sys/param.json mancante” o “param.json non contiene alcun Content ID”.</h3>
     <p><strong>param.json mancante:</strong> il gioco è incompleto. Con <em>Sì</em> il programma crea un <code>param.json</code> valido e prosegue la creazione; con <em>No</em> si ferma – in tal caso è meglio creare un nuovo backup dall'originale.</p>
-    <p><strong>Content ID mancante:</strong> titolo e Content ID non si trovano in nessun file di un backup, solo il title ID. Con <em>Cercare online i metadati mancanti</em> (impostazioni) il programma recupera entrambi. Altrimenti inserisce un segnaposto (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); il vecchio file viene conservato come <code>param.json.alt</code>. Per aggiornamenti e DLC va inserito il vero Content ID.</p>
+    <p><strong>Content ID mancante:</strong> il Content ID non si trova in nessun file di un backup, solo il title ID; il programma legge il titolo dai dati dei trofei del backup. Con <em>Cercare online i metadati mancanti</em> (impostazioni) il programma recupera il Content ID (e il titolo, se il backup non lo contiene). Altrimenti inserisce un segnaposto (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); il vecchio file viene conservato come <code>param.json.alt</code>. Per aggiornamenti e DLC va inserito il vero Content ID.</p>
   </div>
 
   <div class="frage">

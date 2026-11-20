@@ -677,7 +677,7 @@ footer{
   <div class="frage">
     <h3>Message « sce_sys/param.json manquant » ou « param.json n’a pas de Content ID ».</h3>
     <p><strong>param.json manquant :</strong> le jeu est incomplet. Avec <em>Oui</em>, le programme crée un <code>param.json</code> valide et poursuit la construction ; avec <em>Non</em>, il s’arrête – dans ce cas, il vaut mieux créer une nouvelle sauvegarde à partir de l’original.</p>
-    <p><strong>Content ID manquant :</strong> le titre et le content ID ne figurent dans aucun fichier d’une sauvegarde, seulement l’ID de titre. Avec <em>Rechercher les métadonnées manquantes en ligne</em> (paramètres), le programme récupère les deux. Sinon, il inscrit un espace réservé (<code>UP0000-&lt;Title-ID&gt;_00-…</code>) ; l’ancien fichier est conservé sous le nom <code>param.json.alt</code>. Pour les mises à jour et les DLC, le véritable content ID doit être saisi.</p>
+    <p><strong>Content ID manquant :</strong> le content ID ne figure dans aucun fichier d’une sauvegarde, seulement l’ID de titre ; le programme lit le titre dans les données de trophées de la sauvegarde. Avec <em>Rechercher les métadonnées manquantes en ligne</em> (paramètres), le programme récupère le content ID (et le titre, si la sauvegarde ne le contient pas). Sinon, il inscrit un espace réservé (<code>UP0000-&lt;Title-ID&gt;_00-…</code>) ; l’ancien fichier est conservé sous le nom <code>param.json.alt</code>. Pour les mises à jour et les DLC, le véritable content ID doit être saisi.</p>
   </div>
 
   <div class="frage">

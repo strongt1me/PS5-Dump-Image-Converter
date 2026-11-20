@@ -677,7 +677,7 @@ footer{
   <div class="frage">
     <h3>Message “sce_sys/param.json missing” or “param.json has no Content ID”.</h3>
     <p><strong>param.json missing:</strong> the game is incomplete. With <em>Yes</em> the program creates a valid <code>param.json</code> and carries on building; with <em>No</em> it stops – in that case it is better to create a new backup from the original.</p>
-    <p><strong>Content ID missing:</strong> title and content ID are not in any file of a backup, only the title ID. With <em>Look up missing metadata online</em> (settings) the program fetches both. Otherwise it enters a placeholder (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); the old file is kept as <code>param.json.alt</code>. For updates and DLC the real content ID has to be entered.</p>
+    <p><strong>Content ID missing:</strong> the content ID is not in any file of a backup, only the title ID; the program reads the title from the trophy data of the backup. With <em>Look up missing metadata online</em> (settings) the program fetches the content ID (and the title, if the backup does not contain it). Otherwise it enters a placeholder (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); the old file is kept as <code>param.json.alt</code>. For updates and DLC the real content ID has to be entered.</p>
   </div>
 
   <div class="frage">

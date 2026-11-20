@@ -441,7 +441,7 @@ Ebenfalls nur Ideen, kein Code (der Code dazu ist hier neu geschrieben):
 | Person / Projekt | Idee |
 | --- | --- |
 | **kvaps – fpkg2ftp** (GPL-3.0-or-later) | Ein PS5-Paket lesen und die Dateien gleich per FTP an die Konsole schicken, eine angefangene Datei dort fortsetzen, wo die Konsole sie hat, und nach einem Abriss neu verbinden (`pkg_direkt`, `konsole_ftp`, Befehl `stream-inner` des PKG-Werkzeugs) |
-| **KINGDKAK – PS5-FFPFSC-PRO** | Voreinstellungen Schnell, Ausgewogen, Maximal und Wenig RAM für Kompressionsstufe und Kernzahl (die Werte sind hier eigene; die Blockgröße gehört nicht dazu) |
+| **KINGDKAK – PS5-FFPFSC-PRO** | Idee der Voreinstellungen Schnell, Ausgewogen, Maximal und Wenig RAM für Kompressionsstufe und Kernzahl (die Werte waren hier eigene; die Blockgröße gehörte nicht dazu). Die Knöpfe gibt es seit dem 11.10.2026 nicht mehr; die Namensnennung bleibt, weil frühere Fassungen die Idee enthielten |
 
 ---
 
