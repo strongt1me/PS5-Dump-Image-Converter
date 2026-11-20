@@ -27,9 +27,9 @@ y manejar la consola desde el mismo programa, en Windows, Linux y macOS.**
 
 </div>
 
-**Deutsch: [README.md](README.md) · English: [README_EN.md](README_EN.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
+**English: [README.md](README.md) · Deutsch: [README_DE.md](README_DE.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
 
-Esta versión es una traducción del README.md alemán; en caso de duda prevalece la versión alemana (incluidos los aspectos legales y la exención de responsabilidad).
+Esta versión es una traducción del README_DE.md alemán; en caso de duda prevalece la versión alemana (incluidos los aspectos legales y la exención de responsabilidad).
 
 El programa convierte entre sí carpetas de dump, `.ffpfsc`, `.exfat` y archivos `.ffpkg` genuinos basados en UFS2,
 lee y construye paquetes de PS4 y PS5, integra AMPR EMU y BACKPORT e incorpora herramientas para la consola:
@@ -276,7 +276,7 @@ Más en la **[Guía de LZ4 y Asset Packs](Anleitungen/AMPR_Asset_Packs_Mitschnit
 | **Manual de usuario** | Manejo en lenguaje sencillo: todas las tareas, la barra de herramientas, errores típicos, particularidades en Linux y macOS | [HTML](BENUTZERHANDBUCH_ES.html) · [PDF](BENUTZERHANDBUCH_ES.pdf) |
 | **FAQ (Deutsch)** | las preguntas más frecuentes, con respuestas breves | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
 | **FAQ (English)** | the most common questions, answered briefly | [HTML](FAQ_EN.html) · [PDF](FAQ_EN.pdf) |
-| **README (EN · ES · IT · FR)** | esta página en otros cuatro idiomas | [English](README_EN.md) · [Español](README_ES.md) · [Italiano](README_IT.md) · [Français](README_FR.md) |
+| **README (EN · ES · IT · FR)** | esta página en otros cuatro idiomas | [English](README.md) · [Español](README_ES.md) · [Italiano](README_IT.md) · [Français](README_FR.md) |
 | **FAQ (Español)** | las preguntas más frecuentes, con respuestas breves | [HTML](FAQ_ES.html) · [PDF](FAQ_ES.pdf) |
 | **FAQ (Italiano)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_IT.html) · [PDF](FAQ_IT.pdf) |
 | **FAQ (Français)** | les questions les plus fréquentes, avec des réponses brèves | [HTML](FAQ_FR.html) · [PDF](FAQ_FR.pdf) |

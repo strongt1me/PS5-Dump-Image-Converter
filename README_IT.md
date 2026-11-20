@@ -27,9 +27,9 @@ e usare la console direttamente dal programma – su Windows, Linux e macOS.**
 
 </div>
 
-**Deutsch: [README.md](README.md) · English: [README_EN.md](README_EN.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
+**English: [README.md](README.md) · Deutsch: [README_DE.md](README_DE.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
 
-Questa versione è una traduzione del file README.md tedesco; in caso di dubbio fa fede la versione tedesca (note legali ed esclusione di responsabilità incluse).
+Questa versione è una traduzione del file README_DE.md tedesco; in caso di dubbio fa fede la versione tedesca (note legali ed esclusione di responsabilità incluse).
 
 Il programma converte tra loro cartelle dump, `.ffpfsc`, `.exfat` e veri file `.ffpkg` basati su UFS2,
 legge e crea pacchetti PS4 e PS5, integra AMPR EMU e BACKPORT e include strumenti per la console: invio

@@ -348,7 +348,7 @@ if (Test-Path $exePath) {
     $mitnehmen  = @(Join-Path $ORDNER_WINDOWS $EXE_NAME)
     $mitnehmen += Join-Path $ORDNER_LINUX $linuxName
     $mitnehmen += $macosNamen | ForEach-Object { Join-Path $ORDNER_MACOS $_ }
-    $mitnehmen += @("README.md", "README_EN.md", "README_ES.md", "README_IT.md", "README_FR.md", "CHANGELOG.md",
+    $mitnehmen += @("README.md", "README_DE.md", "README_ES.md", "README_IT.md", "README_FR.md", "CHANGELOG.md",
                     "BENUTZERHANDBUCH.pdf", "BENUTZERHANDBUCH_EN.pdf", "BENUTZERHANDBUCH_ES.pdf",
                     "BENUTZERHANDBUCH_IT.pdf", "BENUTZERHANDBUCH_FR.pdf",
                     "FAQ.pdf", "FAQ_EN.pdf", "FAQ_ES.pdf", "FAQ_IT.pdf", "FAQ_FR.pdf",

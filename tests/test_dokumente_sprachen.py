@@ -41,6 +41,12 @@ def _fassung(name: str, sprache: str) -> str:
     return "%s_%s.%s" % (stamm, sprache.upper(), endung)
 
 
+def _readme(sprache: str) -> str:
+    """Name der README einer Sprache. Seit 20.11.2026 (Nutzerwunsch: GitHub Englisch, Deutsch als Option) ist ``README.md`` die englische - die
+    Startseite des Repos -, die deutsche heisst ``README_DE.md``; ``README_EN.md`` gibt es nicht mehr."""
+    return "README.md" if sprache == "en" else "README_%s.md" % sprache.upper()
+
+
 def _tags(text: str) -> Counter:
     return Counter(re.findall(r"<\s*/?\s*([a-zA-Z][a-zA-Z0-9]*)", text))
 
@@ -71,9 +77,25 @@ class VollstaendigkeitTests(unittest.TestCase):
 
     def test_faq_und_readme_in_allen_sprachen(self) -> None:
         for datei in ("FAQ.html", "FAQ_EN.html", "FAQ_ES.html", "FAQ_IT.html", "FAQ_FR.html",
-                      "README.md", "README_EN.md", "README_ES.md", "README_IT.md", "README_FR.md"):
+                      "README.md", "README_DE.md", "README_ES.md", "README_IT.md", "README_FR.md"):
             with self.subTest(datei=datei):
                 self.assertTrue((PROJEKT / datei).is_file())
+        self.assertFalse((PROJEKT / "README_EN.md").exists(), "die englische README ist README.md - eine zweite Kopie wuerde auseinanderlaufen")
+
+    def test_readme_md_ist_die_englische_und_readme_de_die_deutsche(self) -> None:
+        """Nutzerwunsch 20.11.2026: Auf GitHub steht alles Englisch, Deutsch ist eine Option - die Sprachleiste fuehrt in jeder README dorthin."""
+        englisch = (PROJEKT / "README.md").read_text(encoding="utf-8")
+        deutsch = (PROJEKT / "README_DE.md").read_text(encoding="utf-8")
+        self.assertIn("**Convert, unpack and verify PS5 dumps", englisch)
+        self.assertIn("**PS5-Dumps und Abbilder umwandeln", deutsch)
+        leiste = ("**English: [README.md](README.md) · Deutsch: [README_DE.md](README_DE.md) · Español: [README_ES.md](README_ES.md) · "
+                  "Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**")
+        for datei in ("README.md", "README_DE.md", "README_ES.md", "README_IT.md", "README_FR.md"):
+            with self.subTest(datei=datei):
+                self.assertIn(leiste, (PROJEKT / datei).read_text(encoding="utf-8"), "die Sprachleiste fehlt oder ist alt")
+        for datei in ("README.md", "README_ES.md", "README_IT.md", "README_FR.md"):
+            with self.subTest(maßgeblich=datei):
+                self.assertIn("README_DE.md", (PROJEKT / datei).read_text(encoding="utf-8"), "die deutsche Fassung bleibt die maßgebliche")
 
 
 class StrukturTests(unittest.TestCase):
@@ -88,7 +110,7 @@ class StrukturTests(unittest.TestCase):
                     self.assertEqual(_tags(de), _tags(text), "Tags weichen vom Deutschen ab")
                     for a in ("id", "class", "src"):
                         self.assertEqual(_attr(de, a), _attr(text, a), a)
-                    erwartet = Counter(h.replace("README.md", "README_%s.md" % sprache.upper())
+                    erwartet = Counter(h.replace("README_DE.md", _readme(sprache))
                                        for h in _attr(de, "href").elements())
                     self.assertEqual(erwartet, _attr(text, "href"), "href")
                     # <code>/<pre>: nur die deutschen Randbemerkungen in <pre>-Diagrammen duerfen abweichen
@@ -101,18 +123,25 @@ class StrukturTests(unittest.TestCase):
         for sprache in FREMDE:
             with self.subTest(sprache=sprache):
                 text = (PROJEKT / ("BENUTZERHANDBUCH_%s.html" % sprache.upper())).read_text(encoding="utf-8")
-                self.assertIn('href="README_%s.md"' % sprache.upper(), text)
-                self.assertNotIn('href="README.md"', text)
+                self.assertIn('href="%s"' % _readme(sprache), text)
+                self.assertNotIn('href="README_DE.md"', text, "kein Handbuch einer anderen Sprache verweist auf die deutsche README")
+                if sprache != "en":
+                    self.assertNotIn('href="README.md"', text, "README.md ist die englische")
+
+    def test_das_deutsche_handbuch_verweist_auf_die_deutsche_readme(self) -> None:
+        text = (PROJEKT / "BENUTZERHANDBUCH.html").read_text(encoding="utf-8")
+        self.assertIn('href="README_DE.md"', text)
+        self.assertNotIn('href="README.md"', text, "README.md ist seit 20.11.2026 die englische")
 
     def test_readme_fassungen_verweisen_auf_ihr_handbuch(self) -> None:
         for sprache in FREMDE:
             with self.subTest(sprache=sprache):
-                text = (PROJEKT / ("README_%s.md" % sprache.upper())).read_text(encoding="utf-8")
+                text = (PROJEKT / _readme(sprache)).read_text(encoding="utf-8")
                 self.assertIn("BENUTZERHANDBUCH_%s.html" % sprache.upper(), text)
                 self.assertNotIn("(BENUTZERHANDBUCH.html)", text)
 
     def test_kein_dokument_behauptet_das_handbuch_gebe_es_nur_deutsch(self) -> None:
-        for datei in ("FAQ_EN.html", "FAQ_ES.html", "FAQ_IT.html", "FAQ_FR.html", "README_EN.md", "README_ES.md",
+        for datei in ("FAQ_EN.html", "FAQ_ES.html", "FAQ_IT.html", "FAQ_FR.html", "README.md", "README_ES.md",
                       "README_IT.md", "README_FR.md"):
             with self.subTest(datei=datei):
                 text = (PROJEKT / datei).read_text(encoding="utf-8").lower()
@@ -188,23 +217,30 @@ class EinbettungTests(unittest.TestCase):
         for spec in ("PS5ImageConverter_Pro.spec", "PS5ImageConverter_Pro_linux.spec", "PS5ImageConverter_Pro_macos.spec"):
             text = (PROJEKT / spec).read_text(encoding="utf-8")
             for sprache in FREMDE:
-                for datei in ("BENUTZERHANDBUCH_%s.html", "README_%s.md", "FAQ_%s.html"):
-                    with self.subTest(spec=spec, datei=datei % sprache.upper()):
-                        self.assertIn("'%s'" % (datei % sprache.upper()), text)
+                for datei in ("BENUTZERHANDBUCH_%s.html" % sprache.upper(), _readme(sprache), "FAQ_%s.html" % sprache.upper()):
+                    with self.subTest(spec=spec, datei=datei):
+                        self.assertIn("'%s'" % datei, text)
+            with self.subTest(spec=spec, datei="README_DE.md"):
+                self.assertIn("'README_DE.md'", text)
+                self.assertNotIn("README_EN.md", text)
 
     def test_bauskript_nimmt_die_pdfs_mit(self) -> None:
         text = (PROJEKT / "Build_EXE.ps1").read_text(encoding="utf-8-sig")
         for sprache in FREMDE:
-            for datei in ("BENUTZERHANDBUCH_%s.pdf", "FAQ_%s.pdf", "README_%s.md"):
-                with self.subTest(datei=datei % sprache.upper()):
-                    self.assertIn('"%s"' % (datei % sprache.upper()), text)
+            for datei in ("BENUTZERHANDBUCH_%s.pdf" % sprache.upper(), "FAQ_%s.pdf" % sprache.upper(), _readme(sprache)):
+                with self.subTest(datei=datei):
+                    self.assertIn('"%s"' % datei, text)
+        self.assertIn('"README_DE.md"', text)
+        self.assertNotIn("README_EN.md", text)
 
     def test_macos_workflow_beobachtet_die_fassungen(self) -> None:
         text = (PROJEKT / ".github" / "workflows" / "macos-buendel.yml").read_text(encoding="utf-8")
         for sprache in FREMDE:
-            for datei in ("BENUTZERHANDBUCH_%s.html", "FAQ_%s.html", "README_%s.md"):
-                with self.subTest(datei=datei % sprache.upper()):
-                    self.assertIn("'%s'" % (datei % sprache.upper()), text)
+            for datei in ("BENUTZERHANDBUCH_%s.html" % sprache.upper(), "FAQ_%s.html" % sprache.upper(), _readme(sprache)):
+                with self.subTest(datei=datei):
+                    self.assertIn("'%s'" % datei, text)
+        self.assertIn("'README_DE.md'", text)
+        self.assertNotIn("README_EN.md", text)
 
 
 if __name__ == "__main__":

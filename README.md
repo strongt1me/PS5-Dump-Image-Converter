@@ -4,65 +4,67 @@
 
 # PS5 Dump & Image Converter
 
-**PS5-Dumps und Abbilder umwandeln, entpacken und prüfen, PS4- und PS5-Pakete bauen
-und die Konsole gleich mit bedienen – unter Windows, Linux und macOS.**
+**Convert, unpack and verify PS5 dumps and images, build PS4 and PS5 packages,
+and operate the console right alongside – on Windows, Linux and macOS.**
 
 ![Version](https://img.shields.io/badge/Version-v2.0.0-blue)
-![Tests](https://img.shields.io/badge/Tests-10094%20gr%C3%BCn-brightgreen)
-![Lizenz](https://img.shields.io/badge/Lizenz-GPL--3.0--or--later-blue)
-![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
+![Tests](https://img.shields.io/badge/Tests-10094%20green-brightgreen)
+![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)
-![Sprachen](https://img.shields.io/badge/Sprachen-DE%20%C2%B7%20EN%20%C2%B7%20ES%20%C2%B7%20IT%20%C2%B7%20FR-lightgrey)
+![Languages](https://img.shields.io/badge/Languages-DE%20%C2%B7%20EN%20%C2%B7%20ES%20%C2%B7%20IT%20%C2%B7%20FR-lightgrey)
 
-[Funktionen](#funktionen) ·
-[Ansichten](#ansichten) ·
+[Features](#features) ·
+[Views](#views) ·
 [Download](#download) ·
-[Voraussetzungen](#voraussetzungen) ·
-[Bedienung](#bedienung) ·
-[Dokumentation](#dokumentation) ·
-[Rechtliches](#rechtliches) ·
+[Requirements](#requirements) ·
+[Usage](#usage) ·
+[Documentation](#documentation) ·
+[Legal](#legal) ·
 [Credits](#credits)
 
-<img src="docs/bilder/umwandeln.png" alt="Die Aufgabe „Dump-Ordner konvertieren“" width="860">
+<img src="docs/bilder/umwandeln.png" alt="The “Convert dump folder” task" width="860">
 
 </div>
 
-**Deutsch: [README.md](README.md) · English: [README_EN.md](README_EN.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
+**English: [README.md](README.md) · Deutsch: [README_DE.md](README_DE.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
 
-Das Programm wandelt Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-basierte `.ffpkg`-Dateien
-ineinander um, liest und baut PS4- und PS5-Pakete, baut AMPR EMU und BACKPORT ein und bringt
-Werkzeuge für die Konsole mit: Payloads senden, Weboberflächen im Programm öffnen, die Spielbibliothek
-der PS5 verwalten. Alles läuft über eine grafische Oberfläche mit zwei Bereichen – **UMWANDELN** und
-**KONSOLE**; jede Aufgabe gibt es auch ohne Fenster per Kommandozeile.
+This version is a translation of the German README_DE.md; in case of doubt, the German version prevails (legal notices and the disclaimer included).
+
+The program converts dump folders, `.ffpfsc`, `.exfat` and genuine UFS2-based `.ffpkg` files into one
+another, reads and builds PS4 and PS5 packages, integrates AMPR EMU and BACKPORT, and comes with tools
+for the console: sending payloads, opening web interfaces inside the program, and managing the PS5's game
+library. Everything runs through a graphical interface with two areas – **CONVERT** and
+**CONSOLE**; every task is also available without a window via the command line.
 
 > [!IMPORTANT]
-> Nur für **eigene, rechtmäßig erworbene** Inhalte. Piraterie und das Umgehen von Kopierschutz sind
-> ausdrücklich nicht Zweck dieses Projekts – siehe [Haftungsausschluss](#haftungsausschluss).
+> For **your own, lawfully acquired** content only. Piracy and the circumvention of copy protection are
+> expressly not the purpose of this project – see the [Disclaimer](#disclaimer).
 
-## Funktionen
+## Features
 
 <table>
 <tr>
 <td width="33%" valign="top">
 
-🔄 **Umwandeln**<br>
-Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-`.ffpkg` in jede Richtung, auch direkt aus
-`.zip`, `.7z` und `.rar`. Die Umwandlung läuft in der Regel in einem Zug ohne Zwischenordner – auch mit
-AMPR EMU und BACKPORT –, ein `.ffpkg` entsteht ohne UFS2Tool. Angeboten werden nur Zielformate, die zur
-erkannten Quelle passen; auf Wunsch wird die Quelle nach einem geprüften Lauf gelöscht.
+🔄 **Convert**<br>
+Dump folders, `.ffpfsc`, `.exfat` and genuine UFS2 `.ffpkg` in any direction, including directly from
+`.zip`, `.7z` and `.rar`. Conversion normally runs in a single pass without an intermediate folder –
+also with AMPR EMU and BACKPORT – and a `.ffpkg` is created without UFS2Tool. Only target formats that
+match the detected source are offered; on request, the source is deleted after a verified run.
 
 </td>
 <td width="33%" valign="top">
 
-🗃 **Sammeln & Exportieren**<br>
-Sammelkonvertierung mehrerer Container und AIO-Konvertierung für Ordner oder Container in ein
-passendes Zielformat.
+🗃 **Batch & Export**<br>
+Batch conversion of multiple containers and AIO conversion for folders or containers into a
+suitable target format.
 
 </td>
 <td width="33%" valign="top">
 
 ✅ **Validator**<br>
-Integritätsbericht für Dump-Ordner und Container – bevor etwas auf die Konsole wandert.
+Integrity report for dump folders and containers – before anything goes onto the console.
 
 </td>
 </tr>
@@ -70,318 +72,314 @@ Integritätsbericht für Dump-Ordner und Container – bevor etwas auf die Konso
 <td valign="top">
 
 📦 **PKG / FPKG**<br>
-PS4- und PS5-Pakete lesen, entpacken, zu Abbildern bauen, Updates laden und an die Konsole senden.
+Read and unpack PS4 and PS5 packages, build them into images, download updates and send them to the console.
 
 </td>
 <td valign="top">
 
 🧩 **AMPR EMU & BACKPORT**<br>
-Beim Erstellen einbauen, mit [Asset-Packs](#asset-packs-lz4-oder-zstd) (LZ4, für AMPR EMU NG auch zstd mit eigenen TOML-Regeln). Für ASTRO BOT, EA Sports UFC 6 sowie Unity- und
-Insomniac-Spiele liegen getestete Packprofile bei.
+Integrate while creating, with [asset packs](#asset-packs-lz4-or-zstd) (LZ4, and for AMPR EMU NG also zstd with custom TOML rules). Tested pack profiles are included for ASTRO BOT, EA Sports UFC 6, and Unity and
+Insomniac games.
 
 </td>
 <td valign="top">
 
-🎯 **AMPR-Mitschnitt**<br>
-Der Assistent erzeugt aus echten Spieldurchläufen auf der PS5 ein maßgeschneidertes Packprofil.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-🎮 **Konsole & Payloads**<br>
-PS5 im Netz finden, Dienste prüfen, Payloads senden; Favoriten gehen auf Wunsch beim Programmstart
-automatisch hinaus.
-
-</td>
-<td valign="top">
-
-🌐 **Weboberflächen & Autoloader**<br>
-Weboberflächen der Konsole direkt im Programm öffnen; WebKit Autoloader von itsPLK mit Versionswahl.
-
-</td>
-<td valign="top">
-
-📚 **Bibliothek & Spiel-Info**<br>
-Spielbibliothek von Rechner und PS5 mit Cover; Spiel-Info mit Updates & Patches zu jedem Titel.
+🎯 **AMPR trace**<br>
+The wizard creates a tailored pack profile from real play sessions on the PS5.
 
 </td>
 </tr>
 <tr>
 <td valign="top">
 
-🛠 **Werkzeuge**<br>
-ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset-Pack (prüfen und entpacken)
-und der Y2JB Updater erreichen Sie aus der
-Seitenleiste. Unter WEITERE TOOLS ändert ABBILD BEARBEITEN einzelne Dateien eines Abbilds
-(entpacken, ersetzen, umbenennen, löschen, neu packen); „Direkt ändern“ schreibt in `.exfat`, `.ffpkg` und
-`.ffpfs` ohne Entpacken, und ein Journal macht einen Abbruch rückgängig. „Geräte im Netz“ findet NAS und
-Rechner im Netz und setzt eine Windows-Freigabe als Quelle oder Ziel.
+🎮 **Console & payloads**<br>
+Find the PS5 on the network, check services, send payloads; favorites can be sent automatically
+at program start if you want.
 
 </td>
 <td valign="top">
 
-⌨ **Kommandozeile**<br>
-Jede Aufgabe auch ohne Fenster (`--cli`), dazu Umgebungsprüfung (`--doktor`) und Werkzeugpflege.
+🌐 **Web interfaces & autoloader**<br>
+Open the console's web interfaces directly in the program; WebKit Autoloader by itsPLK with version selection.
+
+</td>
+<td valign="top">
+
+📚 **Library & Game Info**<br>
+Game library of the computer and the PS5 with covers; Game Info with updates & patches for every title.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+🛠 **Tools**<br>
+ShadowMount+, SMPlusGui, Prospero Manager, CoolSysCent-Pro, BFpilot, Asset Pack (check and unpack)
+and the Y2JB Updater are reachable from the
+sidebar. Under MORE TOOLS, EDIT IMAGE changes individual files of an image
+(unpack, replace, rename, delete, repack); “Edit in place” writes into `.exfat`, `.ffpkg` and `.ffpfs`
+without unpacking, and a journal undoes an aborted run. “Devices on the network” finds NAS and computers
+on the network and sets a Windows share as source or destination.
+
+</td>
+<td valign="top">
+
+⌨ **Command line**<br>
+Every task also without a window (`--cli`), plus environment check (`--doktor`) and tool upkeep.
 
 </td>
 <td valign="top">
 
 🖥 **Windows, Linux, macOS**<br>
-Dieselbe Oberfläche und dieselben Aufgaben auf allen drei Systemen; Deutsch, Englisch, Spanisch, Italienisch und Französisch.
+The same interface and the same tasks on all three systems; German, English, Spanish, Italian and French.
 
 </td>
 </tr>
 </table>
 
-## Ansichten
+## Views
 
 <table>
 <tr>
-<td width="50%"><img src="docs/bilder/konsole.png" alt="Konsole und Payloads"></td>
+<td width="50%"><img src="docs/bilder/konsole.png" alt="Console and payloads"></td>
 <td width="50%"><img src="docs/bilder/webkit.png" alt="WebKit Autoloader"></td>
 </tr>
 <tr>
-<td align="center">Konsole & Payloads: Dienste prüfen, Payloads und Favoriten senden</td>
-<td align="center">WebKit Autoloader: Installer senden, Host starten</td>
+<td align="center">Console & payloads: check services, send payloads and favorites</td>
+<td align="center">WebKit Autoloader: send installer, start host</td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/bilder/pkg.png" alt="PKG und FPKG"></td>
-<td width="50%"><img src="docs/bilder/mitschnitt.png" alt="AMPR-Mitschnitt-Assistent"></td>
+<td width="50%"><img src="docs/bilder/pkg.png" alt="PKG and FPKG"></td>
+<td width="50%"><img src="docs/bilder/mitschnitt.png" alt="AMPR trace wizard"></td>
 </tr>
 <tr>
-<td align="center">PKG / FPKG: Pakete lesen, bauen, Updates laden</td>
-<td align="center">AMPR-Mitschnitt: Packprofil aus echten Spieldurchläufen</td>
+<td align="center">PKG / FPKG: read and build packages, download updates</td>
+<td align="center">AMPR trace: pack profile from real play sessions</td>
 </tr>
 </table>
 
 ## Download
 
-Die fertigen Programme liegen unter
+The ready-to-use programs are available under
 **[Releases](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/latest)**:
 
-| System | Datei | Start |
+| System | File | Start |
 | --- | --- | --- |
-| 🪟 Windows 10/11 | `PS5_Dump_Image_Converter_vX.Y.Z.exe` | Doppelklick |
-| 🐧 Linux | `PS5_Dump_Image_Converter_vX.Y.Z_linux_x86_64` | einmal `chmod +x`, dann starten |
-| 🍎 macOS (Apple Silicon) | `…_macos_arm64.dmg` | `Erste Installation.command` im Abbild |
-| 🍎 macOS (Intel) | `…_macos_x86_64.dmg` | `Erste Installation.command` im Abbild |
+| 🪟 Windows 10/11 | `PS5_Dump_Image_Converter_vX.Y.Z.exe` | double-click |
+| 🐧 Linux | `PS5_Dump_Image_Converter_vX.Y.Z_linux_x86_64` | run `chmod +x` once, then start |
+| 🍎 macOS (Apple Silicon) | `…_macos_arm64.dmg` | `Erste Installation.command` in the image |
+| 🍎 macOS (Intel) | `…_macos_x86_64.dmg` | `Erste Installation.command` in the image |
 
-Unter macOS legt `Erste Installation.command` die App ab und entfernt die Quarantäne-Markierung.
+On macOS, `Erste Installation.command` places the app and removes the quarantine flag.
 
-## Voraussetzungen
+## Requirements
 
-- **Windows 10/11**, eine aktuelle Linux-Distribution oder **macOS** (getestet unter macOS 15; ältere Versionen sind ungetestet)
-- Genug freier Speicherplatz für Quelle, Zwischenstand und Ausgabe
-- **Windows:** Die fertige EXE fragt beim Start nach Administratorrechten (UAC). Wer aus dem Quelltext arbeitet,
-  braucht sie nur für den Weg über UFS2Tool und für das Einhängen mit OSFMount; ein `.ffpkg` ohne
-  Zwischenordner entsteht auch ohne sie
-- **Kein OSFMount nötig:** `.exFAT`-Abbilder liest das Programm mit seinem eingebetteten exFAT-Leser, ohne
-  etwas einzuhängen – auf jedem System. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
-  ist nur der Rückfall für ungewöhnliche Abbilder unter Windows; wird er gebraucht, sagt das Programm es
-  und kann ihn selbst installieren
-- **Aus dem Quelltext:** Python 3.11+ und `pip`
+- **Windows 10/11**, a current Linux distribution, or **macOS** (tested on macOS 15; older versions are untested)
+- Enough free disk space for source, intermediate state and output
+- **Windows:** the finished EXE asks for administrator rights at start (UAC). When running from source, they are
+  only needed for the path via UFS2Tool and for mounting with OSFMount; a `.ffpkg` without an intermediate
+  folder is created without them
+- **OSFMount not required:** the program reads `.exFAT` images with its embedded exFAT reader, without
+  mounting anything – on every system. [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html)
+  is only the fallback for unusual images on Windows; if it is needed, the program says so
+  and can install it itself
+- **From source:** Python 3.11+ and `pip`
 
-## Bedienung
+## Usage
 
-Die Seitenleiste hat zwei Bereiche, zwischen denen der Knopf **BEREICH WECHSELN** umschaltet.
+The sidebar has two areas, which the **SWITCH AREA** button toggles between.
 
 <table>
 <tr>
-<th width="50%">UMWANDELN</th>
-<th width="50%">KONSOLE</th>
+<th width="50%">CONVERT</th>
+<th width="50%">CONSOLE</th>
 </tr>
 <tr>
 <td valign="top">
 
-| Nr. | Aufgabe |
+| No. | Task |
 | ---: | --- |
-| 1 | Dump-Ordner konvertieren |
-| 2 | ffpfsc konvertieren |
-| 3 | exFAT konvertieren |
-| 4 | ffpkg konvertieren |
-| 5 | Sammelkonvertierung |
-| 6 | AIO Konvertierung |
+| 1 | Convert dump folder |
+| 2 | Convert ffpfsc |
+| 3 | Convert exFAT |
+| 4 | Convert ffpkg |
+| 5 | Batch conversion |
+| 6 | AIO conversion |
 | 7 | PKG / FPKG |
 | 8 | Validator |
 
 </td>
 <td valign="top">
 
-| Nr. | Werkzeug |
+| No. | Tool |
 | ---: | --- |
-| 1 | Konsole & Payloads |
+| 1 | Console & payloads |
 | 2 | WebKit Autoloader |
-| 3 | Bibliothek |
+| 3 | Library |
 | 4 | Prospero Manager |
 | 5 | CoolSysCent-Pro |
 | 6 | ShadowMount+ |
 | 7 | SMPlusGui |
 | 8 | BFpilot |
 | 9 | AMPR EMU Manager |
-| 10 | AMPR-Mitschnitt |
-| 11 | Asset-Pack |
+| 10 | AMPR trace |
+| 11 | Asset Pack |
 | 12 | Y2JB Updater |
 
 </td>
 </tr>
 </table>
 
-Was jeder Knopf genau macht, erklärt das **[Benutzerhandbuch](BENUTZERHANDBUCH.html)**; kurze Antworten
-stehen in der **[FAQ](FAQ.html)**. Im Programm öffnen beides die Knöpfe **BENUTZERHANDBUCH** und **FAQ**
-oben in der Titelleiste, in der Sprache der Oberfläche.
+What each button does exactly is explained in the **[User manual](BENUTZERHANDBUCH_EN.html)**; short answers
+are in the **[FAQ](FAQ_EN.html)**. Inside the program, the **USER MANUAL** and **FAQ** buttons
+at the top of the title bar open both, in the language of the interface.
 
-## Asset-Packs: LZ4 oder zstd
+## Asset packs: LZ4 or zstd
 
-Ein **Asset-Pack** legt die Dateien eines Spiels in wenige große Bänder (`.pak`) und teilt sie in Blöcke, die einzeln
-verdichtet werden. Ein Verzeichnis (`.index`) sagt dem AMPR EMU auf der Konsole, welche Datei in welchem Block liegt; beim Spielen
-liest und entpackt er nur die Blöcke, die gerade gebraucht werden. Das spart Platz auf dem Datenträger und Dateideskriptoren auf
-der Konsole. Das Programm baut die Bänder beim Erstellen des Abbilds und prüft sie gegen die Quelle (Aufbau ganz, Inhalt als Stichprobe; mit „Vollständige Prüfung“ jedes Byte); die Quelle selbst
-bleibt unverändert.
+An **asset pack** puts a game's files into a few large volumes (`.pak`) and splits them into blocks that are compressed
+one by one. A directory (`.index`) tells AMPR EMU on the console which file sits in which block; while playing, it reads and unpacks
+only the blocks it needs right now. That saves space on the drive and file descriptors on the console. The program builds the
+volumes when it creates the image and checks them against the source (structure completely, content by sampling; with “Full verification” every byte); the source itself stays unchanged.
 
-Zur Wahl stehen zwei Packverfahren:
+Two pack methods are available:
 
-| | **LZ4** (Vorgabe) | **zstd** |
+| | **LZ4** (default) | **zstd** |
 | --- | --- | --- |
-| Ergebnis | `ampr_assets-*.pak` + `ampr_assets.index` | `ampr_zstd-NNN.pak` + `ampr_zstd.index` |
-| Gelesen von | jeder AMPR-EMU-Fassung, die Packs liest (drakmor ab 0.4.2.1 und NG) | nur **AMPR EMU NG** (ampr-emu-ng) |
-| Platzbedarf | kleiner als lose Dateien | meist noch kleiner |
-| Stufen | 1–12, Vorgabe 9 | 1–22, Vorgabe 5 |
-| Was gepackt wird | nach Packprofil (Standard, mitgeliefert oder eigenes) | alles außer den Systemdateien; eigene Regeln als TOML-Datei |
+| Result | `ampr_assets-*.pak` + `ampr_assets.index` | `ampr_zstd-NNN.pak` + `ampr_zstd.index` |
+| Read by | every AMPR EMU version that reads packs (drakmor from 0.4.2.1, and NG) | only **AMPR EMU NG** (ampr-emu-ng) |
+| Space | smaller than loose files | usually smaller still |
+| Levels | 1–12, default 9 | 1–22, default 5 |
+| What is packed | by pack profile (standard, bundled or your own) | everything except the system files; own rules as a TOML file |
 
-**So geht's** (Aufgaben 1–6; Aufgabe 7 beim Umwandeln in ein Abbild):
+**How to use it** (tasks 1–6; task 7 when converting to an image):
 
-1. Quelle wählen (je nach Aufgabe ein Dump-Ordner, ein Abbild oder ein Archiv).
-2. In der Gruppe **BEIM ERSTELLEN EINBAUEN** **AMPR EMU** anhaken und als Methode **Asset-Pack** wählen. Bei „Normal“ wird nichts gepackt.
-3. In der zweiten Zeile das **Packverfahren** (LZ4 oder zstd) und rechts daneben die **Packstufe** wählen. Bei zstd zeigt die Versionsliste nur NG.
-4. Erstellen. Das Protokoll nennt, wie viele Dateien gepackt werden und wie viele lose bleiben.
+1. Choose the source (depending on the task a dump folder, an image or an archive).
+2. In the group **INTEGRATE WHEN BUILDING**, tick **AMPR EMU** and choose **Asset pack** as the method. With “Normal” nothing is packed.
+3. In the second row, choose the **pack method** (LZ4 or zstd) and, to its right, the **pack level**. With zstd the version list shows only NG.
+4. Create. The log says how many files are packed and how many stay loose.
 
-Dieselbe Wahl gibt es unter **EINSTELLUNGEN** und auf der Kommandozeile (`--ampr-pack-verfahren zstd --ampr-zstd-stufe 9`).
+The same choice exists under **SETTINGS** and on the command line (`--ampr-pack-verfahren zstd --ampr-zstd-stufe 9`).
 
-Gut zu wissen:
+Good to know:
 
-- Mit NG fehlen die gepackten Originale im Ergebnis (bei zstd immer, bei LZ4, solange ohne Zwischenordner gepackt wird) – den Quell-Dump aufheben, bis das Spiel an der Konsole läuft.
-- Das Pack entsteht nicht nur aus einem Dump-Ordner: Wird ein Abbild umgewandelt (zum Beispiel ein `.ffpfsc` zu einem Dump-Ordner), entpackt das Programm es zuerst in einen Arbeitsordner und packt dort; die gepackten Originale fallen nur in dieser Arbeitskopie weg, die Quelle bleibt unverändert.
-- Ein fertiger Dump-Ordner lässt sich auch direkt packen, ohne Abbild: KONSOLE → **11. Asset-Pack** → **PACKEN …** baut zstd-Packs in den gewählten Spielordner (der mit `eboot.bin`; nur für AMPR EMU NG – deren `libSceAmpr.sprx` gehört in `fakelib/` des Ordners; fehlt sie, packt das Programm nur nach Rückfrage, weil NG auch über ShadowMount+ laufen kann – dort muss dann das automatische Aktualisieren aus sein – bis 1.7beta11 `update_emulators=0` und `auto_update_ampr=0`, ab 1.7beta12 `[emulators] update_enabled` und `auto_update_ampr` –, sonst ersetzt ShadowMount+ NG wieder durch drakmors AMPR). Gepackt wird erst in einen Nachbarordner, geprüft, dann übernommen; fehlt der `ampr_emu.index`, wird er angelegt. Die Originale bleiben liegen, außer du bestätigst das Entfernen – dann wird jedes Byte geprüft, und **ENTPACKEN …** stellt die Dateien wieder her.
-- Ob ein bestimmtes Spiel mit zstd läuft, zeigt nur ein Test an der Konsole. Zwei Spiele mit zstd-Packs aus diesem Programm liefen bisher ohne Fehler (FW 12.00).
-- Systemdateien (`eboot.bin`, Module, `sce_sys`) bleiben immer lose.
+- With NG the packed originals are missing from the result (always with zstd; with LZ4 as long as packing runs without an intermediate folder) – keep the source dump until the game runs on the console.
+- The pack is not only built from a dump folder: when an image is converted (for example a `.ffpfsc` into a dump folder), the program first unpacks it into a working folder and packs there; the packed originals disappear only in this working copy, the source stays unchanged.
+- Only a test on the console shows whether a particular game runs with zstd. Two games with zstd packs from this program have run without errors so far (FW 12.00).
+- System files (`eboot.bin`, modules, `sce_sys`) always stay loose.
 
-Mehr dazu in der **[LZ4 & Asset Pack Anleitung](Anleitungen/AMPR_Asset_Packs_Mitschnitt_Assistent.html)** (im Programm: Knopf **LZ4 & Asset Pack Anleitung** oben in der Titelleiste) und im [Benutzerhandbuch](BENUTZERHANDBUCH.html).
+More in the **[LZ4 & Asset Pack Guide](Anleitungen/AMPR_Asset_Packs_Mitschnitt_Assistent_EN.html)** (in the program: the **LZ4 & Asset Pack Guide** button at the top of the title bar) and in the [user manual](BENUTZERHANDBUCH_EN.html).
 
-## Dokumentation
+## Documentation
 
-| Dokument | Inhalt | Formate |
+| Document | Contents | Formats |
 | --- | --- | --- |
-| **Benutzerhandbuch** | Bedienung in einfacher Sprache: alle Aufgaben, die Werkzeugleiste, typische Fehler, Besonderheiten unter Linux und macOS | [HTML](BENUTZERHANDBUCH.html) · [PDF](BENUTZERHANDBUCH.pdf) |
-| **FAQ** | die häufigsten Fragen kurz beantwortet | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
+| **User manual** | Operation in plain language: all tasks, the toolbar, typical errors, peculiarities on Linux and macOS | [HTML](BENUTZERHANDBUCH_EN.html) · [PDF](BENUTZERHANDBUCH_EN.pdf) |
+| **FAQ (German)** | the most common questions, answered briefly | [HTML](FAQ.html) · [PDF](FAQ.pdf) |
 | **FAQ (English)** | the most common questions, answered briefly | [HTML](FAQ_EN.html) · [PDF](FAQ_EN.pdf) |
-| **Benutzerhandbuch (EN · ES · IT · FR)** | das Handbuch in vier weiteren Sprachen | [English](BENUTZERHANDBUCH_EN.html) · [Español](BENUTZERHANDBUCH_ES.html) · [Italiano](BENUTZERHANDBUCH_IT.html) · [Français](BENUTZERHANDBUCH_FR.html) |
-| **README (EN · ES · IT · FR)** | diese Seite in vier weiteren Sprachen | [English](README_EN.md) · [Español](README_ES.md) · [Italiano](README_IT.md) · [Français](README_FR.md) |
-| **FAQ (Español)** | las preguntas más frecuentes, con respuestas breves | [HTML](FAQ_ES.html) · [PDF](FAQ_ES.pdf) |
-| **FAQ (Italiano)** | le domande più frequenti, con risposte brevi | [HTML](FAQ_IT.html) · [PDF](FAQ_IT.pdf) |
-| **FAQ (Français)** | les questions les plus fréquentes, avec des réponses brèves | [HTML](FAQ_FR.html) · [PDF](FAQ_FR.pdf) |
-| **Changelog** | was sich je Version geändert hat | [CHANGELOG.md](CHANGELOG.md) |
-| **Anleitungen** | AMPR Asset Packs mit Mitschnitt-Assistent (auch LZ4 und zstd), ShadowMount+ `fakelib` | [Anleitungen/](Anleitungen) |
+| **FAQ (Spanish)** | the most common questions, answered briefly | [HTML](FAQ_ES.html) · [PDF](FAQ_ES.pdf) |
+| **FAQ (Italian)** | the most common questions, answered briefly | [HTML](FAQ_IT.html) · [PDF](FAQ_IT.pdf) |
+| **FAQ (French)** | the most common questions, answered briefly | [HTML](FAQ_FR.html) · [PDF](FAQ_FR.pdf) |
+| **Changelog** | what changed in each version | [CHANGELOG.md](CHANGELOG.md) |
+| **Guides** | AMPR asset packs with the trace wizard (also LZ4 and zstd), ShadowMount+ `fakelib` | [Anleitungen/](Anleitungen) |
 
-## Für Fortgeschrittene
+## Advanced
 
 <details>
-<summary><b>Kommandozeile</b> – jede Aufgabe ohne Fenster</summary>
+<summary><b>Command line</b> – every task without a window</summary>
 
 <br>
 
-Über dieselbe geprüfte Ablauflogik wie die Oberfläche:
+Uses the same verified workflow logic as the interface:
 
 ```bash
 python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
   --source "D:\Dumps\Spiel" --dest "D:\Ausgabe" --format ffpkg --yes
 ```
 
-| Option | Bedeutung |
+| Option | Meaning |
 | --- | --- |
-| `--cli` | aktiviert den Kommandozeilenmodus (erforderlich) |
-| `--task N` | Aufgabe 1–8 |
-| `--source PFAD` | Quellpfad; mehrere nur bei Aufgabe 5 |
-| `--dest PFAD` | Zielordner (entfällt bei Aufgabe 8) |
+| `--cli` | enables command-line mode (required) |
+| `--task N` | task 1–8 |
+| `--source PATH` | source path; multiple only for task 5 |
+| `--dest PATH` | destination folder (not used for task 8) |
 | `--format …` | `folder`, `ffpfsc`, `ffpfs`, `exfat`, `ffpkg` |
-| `--temp PFAD` | Arbeitsordner überschreiben |
-| `--yes` | Rückfragen automatisch bestätigen |
-| `--quiet` | Protokoll nicht auf stdout spiegeln |
-| `--shutdown-on-success` | nach Erfolg herunterfahren |
-| `--archiv-passwort PASSWORT` | Passwort für ein verschlüsseltes Archiv als Quelle (Aufgabe 1 und 5); ohne Angabe probiert das Programm die üblichen Passwörter |
-| `--ampr-pack-verfahren` | Packverfahren des Asset-Packs: `lz4` (Vorgabe) oder `zstd` (nur für AMPR EMU NG) |
-| `--ampr-lz4-stufe N` | LZ4-Stufe des Asset-Packs, 1–12 (Vorgabe 9) |
-| `--ampr-zstd-stufe N` | zstd-Stufe des Asset-Packs, 1–22 (Vorgabe 5) |
-| `--dump-im-arbeitsordner` | den vorübergehenden Dump-Ordner der Umpack-Wege im Arbeitsordner statt beim Ziel anlegen |
-| `--ausgabename VORLAGE` | Vorlage für den Namen des Ergebnisses, z. B. `"{title} [{title_id}]"`; Teile: `{name}` `{title}` `{title_id}` `{version}` `{region}` `{fw}` `{pack}`, Vorgabe `{name}` |
-| `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` mit AMPR EMU/BACKPORT: entpacken, einbauen, wieder zu `.ffpfsc` packen |
-| `--umhuellt-als-ordner` | auf demselben Weg stattdessen nur den Dump-Ordner bauen |
-| `--ampr-index-trotz-assets` | `ampr_emu.index` auch bei vorhandenem Asset-Pack neu bauen |
-| `--ampr-originale-weglassen` | beim Asset-Pack die gepackten Originale aus der Arbeitskopie entfernen (nur nach bestandenem Konsolentest sinnvoll; bei AMPR EMU NG mit zstd immer, ohne Rückfrage; ebenso mit LZ4, solange ohne Zwischenordner gepackt wird) |
-| `--param-json-reparieren` | fehlerhafte `param.json` ohne Rückfrage reparieren |
-| `--param-json-online` | Titel und Content-ID dafür im Netz nachschlagen |
-| `--quelle-loeschen` | die Quelle nach einem erfolgreich geprüften Lauf endgültig löschen (kein Papierkorb, keine Rückfrage); sie bleibt, wenn das Ergebnis fehlt, die Quelle sich während des Laufs geändert hat oder das Ergebnis sie ersetzt hat |
+| `--temp PATH` | override the working folder |
+| `--yes` | confirm prompts automatically |
+| `--quiet` | do not mirror the log to stdout |
+| `--shutdown-on-success` | shut down after success |
+| `--archiv-passwort PASSWORD` | password for an encrypted archive as source (tasks 1 and 5); without it the program tries the usual passwords |
+| `--ampr-pack-verfahren` | pack method of the asset pack: `lz4` (default) or `zstd` (AMPR EMU NG only) |
+| `--ampr-lz4-stufe N` | LZ4 level of the asset pack, 1–12 (default 9) |
+| `--ampr-zstd-stufe N` | zstd level of the asset pack, 1–22 (default 5) |
+| `--dump-im-arbeitsordner` | create the temporary dump folder of the repack paths in the working folder instead of at the destination |
+| `--ausgabename VORLAGE` | template for the name of the result, e.g. `"{title} [{title_id}]"`; parts: `{name}` `{title}` `{title_id}` `{version}` `{region}` `{fw}` `{pack}`, default `{name}` |
+| `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` with AMPR EMU/BACKPORT: unpack, integrate, repack to `.ffpfsc` |
+| `--umhuellt-als-ordner` | build only the dump folder along the same path instead |
+| `--ampr-index-trotz-assets` | rebuild `ampr_emu.index` even if an asset pack is present |
+| `--ampr-originale-weglassen` | for the asset pack, remove the packed originals from the working copy (only sensible after a passed console test; with AMPR EMU NG and zstd always, without asking; likewise with LZ4 as long as packing runs without an intermediate folder) |
+| `--param-json-reparieren` | repair a faulty `param.json` without prompting |
+| `--param-json-online` | look up title and content ID online for that purpose |
+| `--quelle-loeschen` | delete the source permanently after a successfully verified run (no recycle bin, no prompt); it stays if the result is missing, the source changed during the run, or the result replaced it |
 
-Die letzten sieben entscheiden Rückfragen, die `--yes` bewusst **nicht** beantwortet: Ein Schalter für
-Überschreib-Rückfragen soll nicht nebenbei den Weg wechseln, ein Asset-Pack unbrauchbar machen,
-Spieldateien entfernen, die Quelle löschen oder Daten ins Netz schicken.
+The last seven decide prompts that `--yes` deliberately does **not** answer: a switch for
+overwrite prompts should not incidentally change the path, render an asset pack unusable,
+remove game files, delete the source or send data over the network.
 
-Rückgabewerte: `0` Erfolg · `1` Fehler oder Abbruch · `2` ungültige Argumente · `3` fehlende
-Administratorrechte · `4` nicht geprüft (Aufgabe 8 ohne die nötigen Rechte – kein Urteil über die Datei).
+Exit codes: `0` success · `1` error or abort · `2` invalid arguments · `3` missing
+administrator rights · `4` not checked (task 8 without the required rights – no verdict on the file).
 
-> Unter Windows fordert `--cli` **keine** Rechte an – ein neu gestarteter Prozess wäre abgekoppelt, seine
-> Ausgabe erreichte den Aufrufer nie. Starten Sie die Eingabeaufforderung deshalb selbst als Administrator.
+> On Windows, `--cli` does **not** request elevated rights – a newly started process would be detached, and its
+> output would never reach the caller. Therefore start the Command Prompt as administrator yourself.
 
 </details>
 
 <details>
-<summary><b>Umgebungsprüfung</b> – <code>--doktor</code></summary>
+<summary><b>Environment check</b> – <code>--doktor</code></summary>
 
 <br>
 
-Läuft etwas nicht, obwohl es anderswo läuft, klappert `--doktor` die häufigen Ursachen ab und liefert ein
-Ergebnis, das sich in eine Fehlermeldung kopieren lässt – ohne Netzzugriff und ohne Zugangsdaten:
+If something does not work although it works elsewhere, `--doktor` goes through the common causes and delivers a
+result that can be copied into an error report – without network access and without credentials:
 
 ```bash
 python PS5ImageConverter_Pro_FINAL_revised.py --doktor "E:\Temp" "E:\Ziel"
 ```
 
-Beide Ordnerangaben sind freiwillig. Geprüft werden unter anderem abgeschaltete lange Pfade, das
-Dateisystem der Ordner (auf FAT32 endet jede Datei bei 4 GB), Schreibrecht und freier Platz,
-widersprüchliche Paketstände, ob sich die mitgelieferten Programme überhaupt starten lassen, und ob die
-Einstellungsdatei lesbar ist.
+Both folder arguments are optional. Among other things, it checks for disabled long paths, the
+file system of the folders (on FAT32 every file ends at 4 GB), write permission and free space,
+conflicting package versions, whether the bundled programs can actually be started, and whether the
+settings file is readable.
 
-Rückgabewerte: `0` nichts zu beanstanden · `1` mindestens ein echter Fehler. Dieselben Angaben stehen im
-Fenster **DIAGNOSE** im Abschnitt *Doktor*.
+Exit codes: `0` nothing to complain about · `1` at least one real error. The same information is in the
+**DIAGNOSTICS** window in the *Doctor* section.
 
-> Die **fertige EXE** verlangt grundsätzlich Administratorrechte – das steht in ihrem Manifest und gilt für
-> jeden Aufruf, auch für `--doktor`. Öffnen Sie die Eingabeaufforderung deshalb selbst als Administrator.
-> Aus dem Quelltext heraus (`python …`) läuft die Prüfung ohne erhöhte Rechte.
+> The **finished EXE** always requires administrator rights – this is in its manifest and applies to
+> every invocation, including `--doktor`. Therefore open the Command Prompt as administrator yourself.
+> When run from source (`python …`), the check runs without elevated rights.
 
 </details>
 
 <details>
-<summary><b>Werkzeugpflege</b> – <code>--werkzeuge-pruefen</code></summary>
+<summary><b>Tool upkeep</b> – <code>--werkzeuge-pruefen</code></summary>
 
 <br>
 
-`--werkzeuge-pruefen` hält die mitgelieferten Payloads gegen ihre Veröffentlichungen:
+`--werkzeuge-pruefen` checks the bundled payloads against their releases:
 
 ```bash
 python PS5ImageConverter_Pro_FINAL_revised.py --werkzeuge-pruefen
 ```
 
-Der erste Teil läuft **ohne Netz** und vergleicht nur den Ordner `helloworld/` mit der Tabelle in
-`THIRD_PARTY_LICENSES.md`; er steckt auch im Diagnosebericht im Abschnitt *Werkzeugpflege*. Der zweite Teil
-liest eine öffentliche Fassungsliste – das ist der **einzige** Netzzugriff dieses Laufs, und er geschieht
-nur, weil Sie den Befehl gegeben haben. Mit `--offline` bleibt er weg. Rückgabewerte: `0` nichts zu tun ·
-`1` Abweichung, Rückstand oder Liste nicht erreichbar.
+The first part runs **without a network** and only compares the `helloworld/` folder with the table in
+`THIRD_PARTY_LICENSES.md`; it is also part of the diagnostics report in the *Tool upkeep* section. The second part
+reads a public version list – this is the **only** network access of this run, and it happens
+only because you issued the command. With `--offline` it is skipped. Exit codes: `0` nothing to do ·
+`1` deviation, backlog or list unreachable.
 
 </details>
 
 <details>
-<summary><b>Selbst bauen und testen</b></summary>
+<summary><b>Building and testing yourself</b></summary>
 
 <br>
 
@@ -394,12 +392,12 @@ nur, weil Sie den Befehl gegeben haben. Mit `--offline` bleibt er weg. Rückgabe
 # Linux
 chmod +x Build_Linux.sh && ./Build_Linux.sh
 
-# macOS (--dmg erzeugt zusätzlich das Abbild)
+# macOS (--dmg additionally creates the image)
 chmod +x Build_macOS.sh && ./Build_macOS.sh --dmg
 ```
 
-Die Testreihe läuft mit einem **eigenen Einstellungsordner** – viele Tests drücken echte Knöpfe und
-speichern dabei, und ohne Umlenkung landen diese Änderungen in den Einstellungen des Programms:
+The test suite runs with a **separate settings folder** – many tests press real buttons and
+save in the process, and without redirection these changes would end up in the program's settings:
 
 ```powershell
 # Windows (PowerShell)
@@ -408,55 +406,55 @@ python -m pytest -q
 ```
 
 ```bash
-# Linux und macOS
+# Linux and macOS
 PS5CONV_KONFIGORDNER="${TMPDIR:-/tmp}/ps5conv_pruefung/konfig" python -m pytest -q
 ```
 
-Die Tests liegen im Ordner [`tests/`](tests), die Release Notes in [`release_notes/`](release_notes).
+The tests are in the [`tests/`](tests) folder, the release notes in [`release_notes/`](release_notes).
 
 </details>
 
-## Plattformunterschiede
+## Platform differences
 
-Oberfläche, alle acht Aufgaben, Kommandozeile und die Übertragung zur PS5 arbeiten überall gleich.
-Unterschiede gibt es hier:
+The interface, all eight tasks, the command line and the transfer to the PS5 work the same everywhere.
+Differences are here:
 
-| Bereich | Linux und macOS |
+| Area | Linux and macOS |
 | --- | --- |
-| `.ffpkg` lesen und bauen | Verfügbar – das Programm liest und schreibt `.ffpkg` mit eigenem UFS2-Leser und -Schreiber, ohne UFS2Tool. Wo die Umwandlung ohne Zwischenordner nicht greift, geht es über UFS2Tool: Es liegt für Windows, Linux und macOS (Intel und Apple Silicon) bei; gelesen wird über `UFS2Tool extract`, gebaut über `newfs`/`makefs`. Nur das Einhängen über den Dokan-Treiber gibt es ausschließlich unter Windows. |
-| PS4 PKG Dump & Image Converter | OrbisPkgTool gibt es nur als Windows-Programm. Dort entpackt es PS4-Pakete zum Dump-Ordner und führt Basis, Update und DLC zusammen; ohne das Werkzeug bleiben ffpfsc und exFAT, die über PS4 FFPFSC direkt aus den Paketen gebaut werden. Sammlung, Einzelheiten, Update-Abfrage und Senden gehen überall. |
-| OSFMount-Ersatzwege | Nicht verfügbar; die nativen MkPFS-/exFAT-Wege sind vollständig vorhanden. |
-| Erhöhte Rechte | Nicht nötig. |
-| Einstellungen | `~/.config/PS5ImageConverterPro/` bzw. `~/Library/Application Support/PS5ImageConverterPro/` |
-| Automatische Installation von Fremdwerkzeugen | Nur Windows; FileZilla wird sonst im `PATH` gefunden. |
+| Reading and building `.ffpkg` | Available – the program reads and writes `.ffpkg` with its own UFS2 reader and writer, without UFS2Tool. Where conversion without an intermediate folder does not apply, UFS2Tool is used: it is bundled for Windows, Linux and macOS (Intel and Apple Silicon); reading is done via `UFS2Tool extract`, building via `newfs`/`makefs`. Only mounting via the Dokan driver exists exclusively on Windows. |
+| PS4 PKG Dump & Image Converter | OrbisPkgTool exists only as a Windows program. There it unpacks PS4 packages into the dump folder and merges base, update and DLC; without that tool, ffpfsc and exFAT remain available, built directly from the packages via PS4 FFPFSC. Collection, details, update lookup and sending work everywhere. |
+| OSFMount substitute paths | Not available; the native MkPFS/exFAT paths are fully present. |
+| Elevated rights | Not required. |
+| Settings | `~/.config/PS5ImageConverterPro/` or `~/Library/Application Support/PS5ImageConverterPro/` |
+| Automatic installation of third-party tools | Windows only; otherwise FileZilla is found on the `PATH`. |
 
-## Rechtliches
+## Legal
 
-### Haftungsausschluss
+### Disclaimer
 
-Dieses Projekt dient dem **Sichern und Verwalten von Inhalten, die Sie rechtmäßig erworben haben**, sowie
-Bildungs- und Forschungszwecken.
+This project serves the **backup and management of content that you have lawfully acquired**, as well as
+educational and research purposes.
 
-- Verwenden Sie es **ausschließlich** mit Software, die Ihnen gehört.
-- Das Umgehen technischer Schutzmaßnahmen, das Beschaffen, Verbreiten oder Öffentlich-Zugänglichmachen
-  urheberrechtlich geschützter Inhalte ist **nicht** Zweck dieses Projekts und wird nicht unterstützt.
-- In vielen Ländern ist bereits das Umgehen eines Kopierschutzes verboten – auch bei eigenen Datenträgern.
-  **Prüfen Sie die Rechtslage in Ihrem Land.**
-- Die Nutzung erfolgt auf **eigene Verantwortung und eigenes Risiko**. Die Autoren übernehmen keine Haftung
-  für Schäden, Datenverlust, defekte Geräte oder rechtliche Folgen.
-- Veränderungen an einer Spielkonsole können deren Garantie erlöschen lassen und sie unbrauchbar machen.
+- Use it **exclusively** with software that you own.
+- Circumventing technical protection measures, and obtaining, distributing or making publicly available
+  copyrighted content, is **not** the purpose of this project and is not supported.
+- In many countries, even circumventing copy protection is prohibited – including on your own media.
+  **Check the legal situation in your country.**
+- Use is at **your own responsibility and risk**. The authors accept no liability
+  for damage, data loss, defective devices or legal consequences.
+- Modifications to a game console may void its warranty and render it unusable.
 
-Dieses Projekt steht in **keiner Verbindung zu Sony Interactive Entertainment** und wird von dort weder
-unterstützt noch geprüft. Alle Marken gehören ihren jeweiligen Inhabern.
+This project has **no affiliation with Sony Interactive Entertainment** and is neither
+supported nor reviewed by them. All trademarks belong to their respective owners.
 
-Sichern Sie Originaldateien vor jeder Bearbeitung separat.
+Back up original files separately before any processing.
 
-### Lizenz
+### License
 
-Das Programm selbst steht seit dem 07.10.2026 unter der
-[GNU General Public License, Version 3 oder neuer (GPL-3.0-or-later)](LICENSE).
-Fassungen bis einschließlich v1.9.64 wurden unter der MIT-Lizenz veröffentlicht und bleiben für ihre
-Empfänger unter MIT.
+The program itself has been licensed since 07.10.2026 under the
+[GNU General Public License, version 3 or later (GPL-3.0-or-later)](LICENSE).
+Versions up to and including v1.9.64 were released under the MIT License and remain under MIT
+for their recipients.
 
 ```
 PS5 Dump & Image Converter
@@ -473,29 +471,29 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 ```
 
-Für die mitgelieferten Fremdkomponenten gelten deren eigene Lizenzen, manche mit eigenen Bedingungen. Sie
-stehen in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) und sind im Fenster **CREDITS** direkt
-aufrufbar – vor einer Weiterverteilung bitte prüfen.
+The bundled third-party components are subject to their own licenses, some with their own terms. They
+are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) and can be opened directly in the **CREDITS**
+window – please review them before redistribution.
 
 ## Credits
 
-- **PSBrew / Renan Barreto** ([@RenanGBarreto](https://github.com/RenanGBarreto)) – [MkPFS](https://github.com/PSBrew/MkPFS), die PFS-Engine dieses Programms
-- **SvenGDK und Mitwirkende** – [UFS2Tool](https://github.com/SvenGDK/UFS2Tool) und **LibProsperoPkg**, das Werkzeug hinter „Paketkopf lesen“ in „PS4 PKG Dump & Image Converter“
-- **pearlxcore** – [OrbisPkgTool](https://github.com/pearlxcore/OrbisPkgTool) (MIT), die Engine hinter „PS4 PKG Dump & Image Converter“; die Anregung zum Fenster gab das PS4 PKG Tool, aus dessen Code nichts übernommen ist
-- **PS4 FFPFSC** – PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later)
-- **andy-man** – [PS5 Wee Tools](https://github.com/andy-man/ps5-wee-tools), Werkzeug für den NOR-Flash der Konsole (GPL-3.0), unter WEITERE TOOLS
-- **kerrdec97** – [ps5-exfat-builder](https://github.com/kerrdec97/ps5-exfat-builder), Vorarbeit und Orientierung
-- **drakmor / Roman Tarasov** – [AMPR EMU](https://github.com/drakmor/ampr_emu) und die **AMPR PackTools** (GPL-3.0), Grundlage der Asset-Packs
-- **danthespal** – [MkPFS.CSharp](https://github.com/danthespal/MkPFS.CSharp) (GPL-3.0), die getesteten Packprofile für ASTRO BOT, EA Sports UFC 6, Unity- und Insomniac-Spiele
-- **libScePlayGo-Stub** – PS5-Homebrew-Community, meldet PlayGo-Inhalte als installiert
-- **John Törnblom** – [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk); `appinst.elf` hinter „App direkt installieren“ ist von dessen Beispiel abgeleitet (GPL-3.0)
-- **PS5 BackPork Kitchen**, **BestPig**, **idlesauce**, **John Törnblom**, **CyB1K** – Verfahren und Vorlagen für BACKPORT
+- **PSBrew / Renan Barreto** ([@RenanGBarreto](https://github.com/RenanGBarreto)) – [MkPFS](https://github.com/PSBrew/MkPFS), the PFS engine of this program
+- **SvenGDK and contributors** – [UFS2Tool](https://github.com/SvenGDK/UFS2Tool) and **LibProsperoPkg**, the tool behind “Read package header” in “PS4 PKG Dump & Image Converter”
+- **pearlxcore** – [OrbisPkgTool](https://github.com/pearlxcore/OrbisPkgTool) (MIT), the engine behind “PS4 PKG Dump & Image Converter”; the idea for the window came from the PS4 PKG Tool, from whose code nothing was taken
+- **PS4 FFPFSC** – PS4 packages to `.ffpfsc` (GPL-3.0-or-later)
+- **andy-man** – [PS5 Wee Tools](https://github.com/andy-man/ps5-wee-tools), a tool for the console's NOR flash (GPL-3.0), under MORE TOOLS
+- **kerrdec97** – [ps5-exfat-builder](https://github.com/kerrdec97/ps5-exfat-builder), groundwork and guidance
+- **drakmor / Roman Tarasov** – [AMPR EMU](https://github.com/drakmor/ampr_emu) and the **AMPR PackTools** (GPL-3.0), the basis of the asset packs
+- **danthespal** – [MkPFS.CSharp](https://github.com/danthespal/MkPFS.CSharp) (GPL-3.0), the tested pack profiles for ASTRO BOT, EA Sports UFC 6, and Unity and Insomniac games
+- **libScePlayGo stub** – PS5 homebrew community, reports PlayGo content as installed
+- **John Törnblom** – [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk); `appinst.elf` behind “Install app directly” is derived from its example (GPL-3.0)
+- **PS5 BackPork Kitchen**, **BestPig**, **idlesauce**, **John Törnblom**, **CyB1K** – methods and templates for BACKPORT
 - **PassMark Software** – OSFMount
-- **Dokan-Projekt** – Windows-Dateisystemtreiber
-- **PyInstaller-Projekt** – Programmbündelung
+- **Dokan project** – Windows file system driver
+- **PyInstaller project** – program bundling
 
-Die vollständige Danksagung – mit Bild, Werken und GitHub-Links der Entwicklerinnen und Entwickler, auch der
-mitgelieferten Payloads und vieler bekannter Köpfe der Community – steht im Fenster **CREDITS** und in
+The complete acknowledgments – with picture, works and GitHub links of the developers, including those of the
+bundled payloads and many well-known figures of the community – are in the **CREDITS** window and in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
-Die Funktion **BACKPORT** setzt auf Verfahren auf, die in der Szene entwickelt und veröffentlicht wurden.
+The **BACKPORT** feature builds on methods that were developed and published in the scene.

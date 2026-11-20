@@ -1923,13 +1923,13 @@ class DokuStandTests(unittest.TestCase):
     """Was README und Pruefskript behaupten, muss stimmen."""
 
     def test_readme_ffpkg_ist_ueberall_verfuegbar(self) -> None:
-        text = (PROJEKT / "README.md").read_text(encoding="utf-8")
+        text = (PROJEKT / "README_DE.md").read_text(encoding="utf-8")
         zeile = next(z for z in text.splitlines() if z.startswith("| `.ffpkg` lesen und bauen"))
         self.assertNotIn("Nicht verfügbar", zeile,
                          "Seit v1.8.72 liegt UFS2Tool fuer alle Plattformen bei.")
 
     def test_readme_testbefehl_lenkt_die_einstellungen_um(self) -> None:
-        text = (PROJEKT / "README.md").read_text(encoding="utf-8")
+        text = (PROJEKT / "README_DE.md").read_text(encoding="utf-8")
         abschnitt = text[text.index("Die Testreihe"):text.index("## Plattformunterschiede")]
         self.assertIn("PS5CONV_KONFIGORDNER", abschnitt)
 
@@ -3230,7 +3230,7 @@ class KommandozeileZielordnerTests(_TempTest):
         self.assertEqual(self._lauf(dest=os.path.join(self.basis, "gibts_nicht")), 2)
 
     def test_der_rueckgabewert_4_ist_dokumentiert(self) -> None:
-        readme = (PROJEKT / "README.md").read_text(encoding="utf-8")
+        readme = (PROJEKT / "README_DE.md").read_text(encoding="utf-8")
         zeile = readme[readme.index("Rückgabewerte: `0` Erfolg"):][:300]
         self.assertIn("`4`", zeile)
 

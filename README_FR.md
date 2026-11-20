@@ -27,9 +27,9 @@ et piloter la console en même temps – sous Windows, Linux et macOS.**
 
 </div>
 
-**Deutsch: [README.md](README.md) · English: [README_EN.md](README_EN.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
+**English: [README.md](README.md) · Deutsch: [README_DE.md](README_DE.md) · Español: [README_ES.md](README_ES.md) · Italiano: [README_IT.md](README_IT.md) · Français: [README_FR.md](README_FR.md)**
 
-Cette version est une traduction de la [README.md](README.md) allemande ; en cas de doute, la version allemande fait foi (mentions légales et clause de non-responsabilité comprises).
+Cette version est une traduction de la [README_DE.md](README_DE.md) allemande ; en cas de doute, la version allemande fait foi (mentions légales et clause de non-responsabilité comprises).
 
 Le programme convertit les uns vers les autres les dossiers de dump, les fichiers `.ffpfsc`, `.exfat` et les
 véritables fichiers `.ffpkg` basés sur UFS2, lit et crée des paquets PS4 et PS5, intègre AMPR EMU et BACKPORT
