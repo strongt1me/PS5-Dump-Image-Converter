@@ -242,8 +242,8 @@ class QuellFakten:
     #: Forges ``backport_firmware``: das hoechste SDK der Programme (``eboot.bin``, ``.prx``/``.sprx``), ``"7.00"`` - nur bei einem Spiel mit
     #: ``fakelib/``-Ordner, sonst ``""``. Ohne diesen Ordner nennt Forge es nicht.
     backport_firmware: str = ""
-    #: Das SDK der ``eboot.bin``, vom Programm selbst gelesen (``programm_sdk``, aus Ordner oder ``.ffpkg``); ``""``: nicht zu lesen
-    #: (ein anderes Abbild, ein Paket, ein Archiv).
+    #: Das SDK der ``eboot.bin``, vom Programm selbst gelesen (``programm_sdk``: Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs``,
+    #: ``.ffpfsc``); ``""``: nicht zu lesen (ein ``.pkg``: Forge entschluesselt es und entpackt seine Kraken-Bloecke).
     eboot_sdk: str = ""
 
     @property
@@ -338,9 +338,9 @@ def _playgo_merkmal_in(pfade) -> str:
 def quellfakten(daten: dict, pfad: "str | None" = None) -> QuellFakten:
     """Die Fakten aus Forges ``inspect``-Antwort.
 
-    Mit ``pfad`` (Spielordner oder ``.ffpkg``) liest das Programm zusaetzlich das SDK der ``eboot.bin`` selbst
-    (:func:`programm_sdk.eboot_sdk`, einige KiB, nie mehr): Forge nennt es nur bei einem Spiel mit ``fakelib/``. Ohne ``pfad`` - und
-    bei jeder Quelle, die sich so nicht lesen laesst - bleibt ``eboot_sdk`` leer. Sonst rein, ohne Start.
+    Mit ``pfad`` (Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs`` oder ``.ffpfsc``) liest das Programm zusaetzlich das SDK der
+    ``eboot.bin`` selbst (:func:`programm_sdk.eboot_sdk`, einige KiB, nie mehr): Forge nennt es nur bei einem Spiel mit ``fakelib/``.
+    Ohne ``pfad`` - und bei jeder Quelle, die sich so nicht lesen laesst (ein ``.pkg``) - bleibt ``eboot_sdk`` leer. Sonst rein, ohne Start.
     """
     if not isinstance(daten, dict):
         return QuellFakten()

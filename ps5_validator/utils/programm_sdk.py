@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Das SDK der ``eboot.bin`` eines Spiels - gelesen aus einem Ordner oder einer ``.ffpkg``, ohne die Datei zu laden.
+"""Das SDK der ``eboot.bin`` eines Spiels - gelesen aus einem Ordner oder einem Abbild (``.ffpkg``, ``.exfat``, ``.ffpfs``,
+``.ffpfsc``), ohne die Datei zu laden oder zu entpacken.
 
 Warum das Programm das selbst liest: Die Konsole prueft beim Start das **SDK in den Programmen** (``eboot.bin``, ``.prx``/``.sprx``)
 gegen ihre Firmware. Ein Backport setzt genau dieses SDK herab - die Angaben in ``sce_sys/param.json`` (``sdkVersion``,
@@ -14,16 +15,23 @@ Datei (fSELF) ueber deren Segmenttabelle auf die gespeicherte Stelle umrechnen u
 einige KiB werden nie gelesen, auch bei einer ``eboot.bin`` von 300 MB. Verschluesselte oder komprimierte Segmente lassen sich so
 nicht lesen - das Ergebnis ist dann "nicht zu sagen", nie geraten.
 
+Abbilder erkennt es am Inhalt: exFAT, UFS2 und PFS (``.ffpfs``/``.ffpfsc``, flach oder um ein inneres Abbild gelegt, auch ein ``.ffpkg``
+in einer ``.ffpfsc``, wie Dump Forge es baut). Ein ``.pkg`` liest das Programm so nicht (Forge entschluesselt es mit AES-XTS und entpackt
+seine Kraken-Bloecke): dort bleibt es bei "nicht zu sagen".
+
 Das Modul kennt keine Oberflaeche. Nichts wird veraendert.
 """
 from __future__ import annotations
 
 import os
 import struct
-from typing import Callable
+import sys
+from typing import Any, Callable
 
 from . import ps5_backport as _bp
+from . import ufs2_dateisystem as _ufs2_dateisystem
 from . import ufs2_leser as _ufs2
+from . import werkzeuge_bereitstellen as _werkzeuge_bereitstellen
 
 #: ``(Offset, Laenge) -> Bytes``; am Dateiende liefert sie weniger.
 LeseFunktion = Callable[[int, int], bytes]
@@ -157,26 +165,217 @@ def eboot_sdk_im_ordner(ordner: str) -> str:
         return ""
 
 
+# ------------------------------------------------------------------------------------------------------------------ Abbilder
+#: Der Ordner mit dem Paket ``mkpfs`` (die Engine, die das Hauptprogramm bereitstellt); gemerkt von :func:`mkpfs_ordner_merken`.
+_mkpfs_ordner = ""
+#: Wie tief ein PFS-Abbild in einem anderen liegen darf (wie ``spielbaum.PfsBaum.MAX_EBENEN``).
+_MAX_EBENEN = 4
+_EXFAT_KENNUNG = b"EXFAT   "
+
+
+def mkpfs_ordner_merken(ordner: str) -> None:
+    """Merkt den Ordner, der das Paket ``mkpfs`` enthaelt: ``.exfat``, ``.ffpfs`` und ``.ffpfsc`` liest das Programm mit dessen Lesern."""
+    global _mkpfs_ordner
+    _mkpfs_ordner = str(ordner or "")
+
+
+class _Mkpfs:
+    """Die Teile von MkPFS, die der Abbild-Leser braucht (erst beim Gebrauch geladen: ohne MkPFS gibt es das Programm nicht, einen
+    Test oder ein Werkzeug schon)."""
+
+    def __init__(self, ordner: str = "") -> None:
+        """Sucht ``mkpfs``: im angegebenen Ordner, im gemerkten (:func:`mkpfs_ordner_merken`), im Suchpfad - und zuletzt im mitgelieferten
+        (``werkzeuge_bereitstellen.mkpfs_ordner_vorhanden``: ohne Entpacken, nicht von einem Vorwaermen des Hauptfensters abhaengig).
+
+        Raises:
+            ImportError: ``mkpfs`` ist nirgends zu finden.
+        """
+        for wo in (ordner, _mkpfs_ordner, None, ""):
+            if wo is None:
+                wo = _werkzeuge_bereitstellen.mkpfs_ordner_vorhanden()
+            if wo and wo not in sys.path:
+                sys.path.insert(0, wo)
+            try:
+                from mkpfs import consts, exfat, pfs                        # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+                from mkpfs.compression import CompressionError              # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+            except ImportError:
+                continue
+            break
+        else:
+            raise ImportError("mkpfs nicht gefunden")
+        self.consts, self.exfat, self.pfs = consts, exfat, pfs
+        #: Was beim Lesen eines beschaedigten oder fremden Abbilds fliegen kann (``CompressionError`` ist kein ``ValueError``).
+        self.fehler = (OSError, ValueError, struct.error, KeyError, IndexError, CompressionError)
+
+
+def _ist_exfat(fh: Any) -> bool:
+    fh.seek(3)
+    return fh.read(8) == _EXFAT_KENNUNG
+
+
+def _ist_ufs2(fh: Any) -> bool:
+    fh.seek(_ufs2_dateisystem.SUPERBLOCK_OFFSET + _ufs2_dateisystem.MAGIC_OFFSET)
+    kennung = fh.read(4)
+    return len(kennung) == 4 and struct.unpack("<I", kennung)[0] == _ufs2_dateisystem.UFS2_MAGIC
+
+
+def _sdk_in_ufs2(fh: Any) -> str:
+    """Das SDK der ``eboot.bin`` an der Wurzel eines UFS2-Abbilds (Datei oder Ansicht); ``""``, wenn keine da ist."""
+    with _ufs2.Ufs2Leser(fh) as leser:                       # ein fremder Griff: der Leser schliesst ihn nicht
+        name = next((n for n, ordner, _g in leser.auflisten("") if not ordner and n.lower() == "eboot.bin"), "")
+        if not name:
+            return ""
+        return sdk_text(sdk_wort_lesen(lambda ab, laenge: leser.datei_bereich(name, ab, laenge)))
+
+
+def _sdk_in_exfat(fh: Any, mk: _Mkpfs) -> str:
+    """Das SDK der ``eboot.bin`` an der Wurzel eines exFAT-Abbilds (Datei oder Ansicht).
+
+    Gelesen wird nur das Wurzelverzeichnis, nicht der Baum: Der ganze Baum dauerte gemessen (18.09.2026, HDD, kalter Zwischenspeicher) bei
+    einem Spiel mit 67.226 Dateien 137 s (``_abbild_eintraege`` im Hauptmodul bricht den Abstieg aus demselben Grund ab). Von der
+    ``eboot.bin`` kommen nur die Cluster, die den Kopf und den Modulkopf tragen; ihre Lage ergibt sich aus der Clusterkette.
+    """
+    class _Wurzel(mk.exfat.ExfatReader):
+        def _walk_directory(self, first_cluster, no_fat_chain, length, rel_dir):          # noqa: ANN001, ANN202
+            return [] if rel_dir else super()._walk_directory(first_cluster, no_fat_chain, length, rel_dir)
+
+    fh.seek(0)
+    leser = _Wurzel(fh)
+    eintrag = next((e for e in leser.root_entries() if not e.is_dir and e.name.lower() == "eboot.bin"), None)
+    if eintrag is None or eintrag.length <= 0:
+        return ""
+    groesse = leser.geometry.cluster_size
+
+    def lesen(ab: int, laenge: int) -> bytes:
+        anfang = max(0, ab)
+        ende = min(eintrag.length, anfang + max(0, laenge))
+        if ende <= anfang:
+            return b""
+        erster, letzter = anfang // groesse, (ende - 1) // groesse
+        teile: list[bytes] = []
+        for nummer, cluster in enumerate(leser._iter_clusters(eintrag.first_cluster, eintrag.no_fat_chain, eintrag.length)):
+            if nummer < erster:
+                continue
+            if nummer > letzter:
+                break
+            fh.seek(leser._cluster_byte_offset(cluster))
+            teile.append(fh.read(groesse))
+        return b"".join(teile)[anfang - erster * groesse:][:ende - anfang]
+
+    return sdk_text(sdk_wort_lesen(lesen))
+
+
+def _abbild_art(fh: Any, mk: "_Mkpfs | None") -> str:
+    """``"exfat"``, ``"ufs2"`` oder ``"pfs"`` nach dem Inhalt (nicht nach der Endung); ``""``, wenn es keines davon ist."""
+    if _ist_exfat(fh):
+        return "exfat"
+    if _ist_ufs2(fh):
+        return "ufs2"
+    if mk is not None:
+        fh.seek(8)
+        kennung = fh.read(8)
+        if len(kennung) == 8 and int.from_bytes(kennung, "little", signed=True) == mk.consts.PFS_MAGIC:
+            return "pfs"
+    return ""
+
+
+def _sdk_im_abbild(fh: Any, mk: "_Mkpfs | None", ebene: int = 0) -> str:
+    """Das SDK der ``eboot.bin`` in einem Abbild - ``exFAT``, ``UFS2`` oder ``PFS`` (flach oder um ein inneres Abbild gelegt) -,
+    ``fh`` eine Datei oder die Ansicht auf ein inneres Abbild. ``""``, wenn die Art unbekannt ist oder MkPFS fehlt."""
+    art = _abbild_art(fh, mk)
+    if art == "ufs2":
+        return _sdk_in_ufs2(fh)
+    if mk is None:
+        return ""
+    if art == "exfat":
+        return _sdk_in_exfat(fh, mk)
+    if art != "pfs":
+        return ""
+    return _sdk_in_pfs(fh, mk, ebene)
+
+
+def _sdk_in_pfs(fh: Any, mk: _Mkpfs, ebene: int) -> str:
+    """Wie :class:`spielbaum.PfsBaum`: Hat das PFS genau eine Datei und ist diese ein Abbild (exFAT, UFS2, PFS), liegt das Spiel darin
+    - die PFSC-Bloecke werden erst beim Lesen entpackt; sonst liegen die Spieldateien im PFS selbst."""
+    pfs = mk.pfs
+    kopf = pfs.parse_image_header(fh)
+    if kopf.magic != mk.consts.PFS_MAGIC or kopf.block_size <= 0 or kopf.block_size & (kopf.block_size - 1):
+        return ""
+    inodes = pfs.parse_image_inodes(fh, kopf)
+    fehler: list[str] = []
+    wurzel, _fpt, _koll, _bes = pfs.parse_superroot_and_indexes(fh, kopf, inodes, fehler)
+    if wurzel < 0:
+        return ""
+    dateien, _ordner, _eintraege = pfs.build_tree_from_uroot(fh, kopf, inodes, wurzel, fehler)
+    if fehler or not dateien:
+        return ""
+    if len(dateien) == 1 and ebene < _MAX_EBENEN:
+        inode = inodes[next(iter(dateien.values()))]
+        if not (inode.db_sig or inode.ib_sig) and inode.blocks > 0 and inode.logical_size >= 16:
+            sicht = pfs._LogicalFileView(fh, kopf, inode)
+            if _abbild_art(sicht, mk):
+                return _sdk_im_abbild(sicht, mk, ebene + 1)
+    nummer = next((n for rel, n in dateien.items() if str(rel).replace("\\", "/").lower() == "eboot.bin"), None)
+    if nummer is None:
+        return ""
+    inode = inodes[nummer]
+    if inode.db_sig or inode.ib_sig or inode.blocks <= 0 or inode.logical_size <= 0:
+        return ""                                          # signiert oder verstreut gespeichert: so nicht in Teilen zu lesen
+    sicht = pfs._LogicalFileView(fh, kopf, inode)
+
+    def lesen(ab: int, laenge: int) -> bytes:
+        sicht.seek(ab)
+        return sicht.read(laenge)
+
+    return sdk_text(sdk_wort_lesen(lesen))
+
+
+def eboot_sdk_in_abbild(pfad: str, mkpfs_ordner: str = "") -> str:
+    """Das SDK der ``eboot.bin`` in einem Abbild (``.ffpkg``, ``.exfat``, ``.ffpfs``, ``.ffpfsc``) als Text; ``""``, wenn nichts zu lesen ist.
+
+    Die Art erkennt es am Inhalt, auch bei einem ``.ffpfsc``, das ein ``.ffpkg``, ein ``.exfat`` oder ein ``.ffpfs`` umhuellt. Entpackt
+    nichts und liest nur Koepfe, Verzeichnisse und die wenigen Cluster oder Bloecke mit der ``eboot.bin``-Kopfzeile.
+    """
+    mk: "_Mkpfs | None"
+    try:
+        mk = _Mkpfs(mkpfs_ordner)
+    except ImportError:
+        mk = None                                          # ohne MkPFS bleibt das ``.ffpkg`` in einer ``.ffpfsc`` zu, ein ``.ffpkg`` selbst nicht
+    fehler = mk.fehler if mk is not None else (OSError, ValueError, struct.error, KeyError, IndexError)   # Ufs2Fehler, ExfatError: ValueError
+    try:
+        with open(pfad, "rb") as fh:
+            return _sdk_im_abbild(fh, mk)
+    except fehler:
+        return ""
+
+
 def eboot_sdk_in_ffpkg(abbild: str) -> str:
     """Das SDK der ``eboot.bin`` in einer ``.ffpkg`` (UFS2) als Text; ``""``, wenn nichts zu lesen ist. Entpackt nichts."""
     try:
-        with _ufs2.Ufs2Leser(abbild) as leser:
-            name = next((n for n, ordner, _g in leser.auflisten("") if not ordner and n.lower() == "eboot.bin"), "")
-            if not name:
-                return ""
-            return sdk_text(sdk_wort_lesen(lambda ab, laenge: leser.datei_bereich(name, ab, laenge)))
+        with open(abbild, "rb") as fh:
+            return _sdk_in_ufs2(fh) if _ist_ufs2(fh) else ""
     except (OSError, ValueError):                  # Ufs2Fehler ist ein ValueError
         return ""
 
 
-def eboot_sdk(quelle: str) -> str:
-    """Das SDK der ``eboot.bin`` einer Quelle: Spielordner oder ``.ffpkg``. Alles andere (``.ffpfsc``, ``.exfat``, ``.pkg``, Archive)
-    kann das Programm so nicht lesen: ``""``. Wirft nie."""
+#: Die Endungen der Abbilder, die :func:`eboot_sdk` liest (wie ``pkg_plattform.ENDUNGEN_ABBILD``).
+_ABBILD_ENDUNGEN = (".ffpkg", ".exfat", ".ffpfs", ".ffpfsc")
+
+
+def eboot_sdk(quelle: str, mkpfs_ordner: str = "") -> str:
+    """Das SDK der ``eboot.bin`` einer Quelle als Text (``"10.00"``): Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs`` oder ``.ffpfsc``.
+
+    Ein ``.pkg`` liest das Programm so nicht: Forge entschluesselt es (AES-XTS) und entpackt seine Kraken-Bloecke; fuer beides gibt es
+    hier keinen Leser. Archive kommen bei der Rueckfrage nicht vor. Beides ergibt ``""`` ("nicht zu sagen"), nie eine Vermutung. Wirft nie.
+    """
     try:
         if os.path.isdir(quelle):
             return eboot_sdk_im_ordner(quelle)
-        if os.path.isfile(quelle) and quelle.lower().endswith(".ffpkg"):
-            return eboot_sdk_in_ffpkg(quelle)
+        if os.path.isfile(quelle):
+            if quelle.lower().endswith(".ffpkg"):
+                return eboot_sdk_in_ffpkg(quelle)
+            if quelle.lower().endswith(_ABBILD_ENDUNGEN):
+                return eboot_sdk_in_abbild(quelle, mkpfs_ordner)
     except (OSError, ValueError):
         pass
     return ""

@@ -401,6 +401,20 @@ def _zip_finden(fassung: str) -> str | None:
     return None
 
 
+def mkpfs_ordner_vorhanden(fassung: str = MKPFS_ERFORDERLICHE_FASSUNG) -> str:
+    """Der ``sys.path``-Eintrag fuer ``mkpfs``, wenn die Engine **ohne Entpacken** da ist - sonst ``""``.
+
+    Dasselbe wie Schritt 1 von :func:`mkpfs_bereitstellen` (ein mitgelieferter, schon entpackter Ordner: im Projekt, im Buendel, neben der
+    Programmdatei), aber ohne ein ZIP in den Arbeitsordner zu entpacken und ohne Protokollzeile. Fuer Leser, die nur einmal kurz
+    in ein Abbild sehen (``programm_sdk``) und nicht auf das Vorwaermen des Hauptfensters warten sollen.
+    """
+    quelle = _quellordner_finden(fassung)
+    if not quelle:
+        return ""
+    eltern = _mkpfs_eltern_finden(quelle)
+    return eltern if os.path.isdir(os.path.join(eltern, "mkpfs")) else ""
+
+
 def mkpfs_bereitstellen(temp_ordner: str,
                         fassung: str = MKPFS_ERFORDERLICHE_FASSUNG,
                         melden: Melder | None = None,

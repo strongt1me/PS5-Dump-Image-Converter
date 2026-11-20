@@ -121,6 +121,7 @@ from ps5_validator.utils import dlc_emu
 from ps5_validator.utils import fake_signieren
 from ps5_validator.utils import file_io
 from ps5_validator.utils import forge_cli
+from ps5_validator.utils import programm_sdk
 from ps5_validator.utils import quellbericht
 from ps5_validator.utils import werkzeug_updates
 from ps5_validator.utils.tk_masse import cget_pixel
@@ -10030,9 +10031,12 @@ class PS5ConverterGUI:
             anlegen: Siehe ``_get_runtime_temp_dir``. Das Vorwaermen beim Start sagt ``False``: Der Standard-Arbeitsordner
                 im Wurzelverzeichnis des Systemlaufwerks soll erst mit der ersten Aufgabe entstehen.
         """
-        return werkzeuge_bereitstellen.mkpfs_bereitstellen(
+        ordner = werkzeuge_bereitstellen.mkpfs_bereitstellen(
             self._get_runtime_temp_dir(anlegen), MKPFS_REQUIRED_VERSION,
             melden=self._append_to_log, text=self._t)
+        # Die Leser fuer das SDK der eboot.bin (BACKPORT-Rueckfrage, ``programm_sdk``) brauchen MkPFS fuer .exfat und PFS-Abbilder.
+        programm_sdk.mkpfs_ordner_merken(ordner)
+        return ordner
 
     # ------------------------------------------------------------------
     # GUI-Aufbau

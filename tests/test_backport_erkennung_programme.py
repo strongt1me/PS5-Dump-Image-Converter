@@ -8,7 +8,8 @@ laesst die ``param.json`` oft unberuehrt - gemessen an echten Spielen: Fallout 4
 (4.00 gegen 6.00), Big Helmet Heroes (4.00 gegen 9.00) tragen Ersatzbibliotheken, Ghost of Yotei (8.00 gegen 11.00) in ``fakelib/`` nur
 AMPR EMU - und Forge nennt das SDK der Programme nur bei einem Spiel mit ``fakelib/`` (``backport_firmware``).
 
-Geprueft wird hier: der Leser fuer das SDK der ``eboot.bin`` (Ordner, ``.ffpkg``; nur einige KiB gelesen), die Bewertung in
+Geprueft wird hier: der Leser fuer das SDK der ``eboot.bin`` (Ordner, ``.ffpkg``, ``.exfat``, ``.ffpfs``, ``.ffpfsc`` in jeder Bauform; nur
+einige KiB gelesen, nichts entpackt; ein ``.pkg`` bleibt unlesbar), die Bewertung in
 ``forge_cli.QuellFakten``, der Plan der Rueckfrage und der Bericht - jeweils mit Gegenprobe (ein nicht herabgesetztes Spiel wird
 weiter beanstandet). Der Durchlauf mit der echten Forge-Befehlszeile stellt die Meldung nach.
 """
@@ -26,8 +27,13 @@ from unittest import mock
 PROJEKT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJEKT))
 sys.path.insert(0, str(PROJEKT / "tests"))
+sys.path.insert(0, str(PROJEKT / "MkPFS-1.1.0"))
 
 import pruefumgebung                                        # noqa: E402,F401
+from mkpfs import consts                                     # noqa: E402
+from mkpfs.exfat import ExfatReader                          # noqa: E402
+from mkpfs.exfat_writer import iter_exfat_image              # noqa: E402
+from mkpfs.pfs import build_pfs, build_pfs_stream_single_file   # noqa: E402
 from ps5_validator.utils import forge_cli as fc              # noqa: E402
 from ps5_validator.utils import programm_sdk as ps           # noqa: E402
 from ps5_validator.utils import ps5_backport as bp           # noqa: E402
@@ -244,6 +250,279 @@ class OrdnerUndAbbildTests(_Grundlage):
         Path(kaputt).write_bytes(os.urandom(200_000))
         self.assertEqual("", ps.eboot_sdk(kaputt))
         self.assertEqual("", ps.eboot_sdk(self.pfad("fehlt.ffpkg")))
+
+
+def _flach(ordner: str, ziel: str, *, komprimiert: bool) -> None:
+    build_pfs(source_root=Path(ordner), output_path=Path(ziel), block_size=65536, pfs_version=consts.PFS_VERSION_PS5,
+              inode_bits=32, case_insensitive=True, signed=False, compress=komprimiert, threshold_gain=0, cpu_count=1,
+              zlib_level=6, dry_run=False, verbose=False)
+
+
+def _huelle(innen: str, ziel: str, *, komprimiert: bool) -> None:
+    build_pfs_stream_single_file(
+        source_file=Path(innen), output_path=Path(ziel), block_size=65536, pfs_version=consts.PFS_VERSION_PS5,
+        case_insensitive=True, zlib_level=6, threshold_gain=0, min_file_gain=0, min_compress_size=0, cpu_count=1,
+        compress=komprimiert)
+
+
+class AbbilderTests(unittest.TestCase):
+    """``.exfat``, ``.ffpfs`` und ``.ffpfsc`` in jeder Bauform, gebaut mit den Schreibern, die das Programm und Dump Forge benutzen.
+
+    Der Modulkopf der ``eboot.bin`` liegt weit hinter den ersten 64 KiB. Gelesen wird ohne Entpacken: nur Kopf, Verzeichnisse und die
+    wenigen Cluster oder Bloecke dort. An echten Abbildern (30 Dateien bis 223 GB, ``.exfat`` und ``.ffpfsc``, dazu Forge-Bauten in allen
+    Formaten) gemessen: das SDK stimmt mit dem des Spielordners ueberein."""
+
+    #: Bauform -> (Dateiendung, Huelle um ein inneres Abbild?)
+    FORMEN = ("exfat", "ffpkg", "flach_roh", "flach_pfsc", "huelle_exfat_roh", "huelle_exfat_pfsc", "huelle_ffpkg_pfsc", "pfs_in_pfs", "doppelt")
+    ENDUNG = {"exfat": ".exfat", "ffpkg": ".ffpkg", "flach_roh": ".ffpfs", "huelle_exfat_roh": ".ffpfs"}
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = tempfile.mkdtemp(prefix="progsdk_abbild_")
+        cls.abbilder: "dict[tuple[str, str], str]" = {}
+        cls.ordner: "dict[str, str]" = {}
+        cls.erwartet = {"B": "7.00", "O": "10.00"}
+        profil = w.Ufs2Profil(65536, 65536, 4096, 0, 262144)
+        for kennung, eboot in (("B", herabgesetzt(baue_elf(0x10000038, davor=0x180000), 7)),
+                               ("O", als_self(baue_elf(0x10000038, davor=0x180000)))):
+            ordner = cls.ordner[kennung] = os.path.join(cls.tmp, "spiel_" + kennung)
+            inhalt = {"eboot.bin": eboot, "sce_sys/param.json": PARAM_JSON, "data/a/x.bin": bytes(70_000), "data/b/y.bin": bytes(40_000),
+                      "data/c/z.bin": bytes(10_000), "Media/m.bin": bytes(30_000)}
+            for rel, daten in inhalt.items():
+                voll = os.path.join(ordner, *rel.split("/"))
+                os.makedirs(os.path.dirname(voll), exist_ok=True)
+                Path(voll).write_bytes(daten)
+
+            def pfad(form: str, endung: "str | None" = None) -> str:
+                return os.path.join(cls.tmp, "%s_%s%s" % (kennung, form, endung or cls.ENDUNG.get(form, ".ffpfsc")))
+
+            a = {}
+            a["exfat"] = pfad("exfat")
+            with open(a["exfat"], "wb") as fh:
+                for stueck in iter_exfat_image(Path(ordner)):
+                    fh.write(stueck)
+            a["ffpkg"] = pfad("ffpkg")
+            eintraege = [(rel, len(d), (lambda d=d: iter([d[i:i + 70_000] for i in range(0, len(d), 70_000)]))) for rel, d in inhalt.items()]
+            w.planen(eintraege, (), profil=profil).schreiben(a["ffpkg"])
+            a["flach_roh"] = pfad("flach_roh")
+            _flach(ordner, a["flach_roh"], komprimiert=False)
+            a["flach_pfsc"] = pfad("flach_pfsc")
+            _flach(ordner, a["flach_pfsc"], komprimiert=True)
+            a["huelle_exfat_roh"] = pfad("huelle_exfat_roh")
+            _huelle(a["exfat"], a["huelle_exfat_roh"], komprimiert=False)
+            a["huelle_exfat_pfsc"] = pfad("huelle_exfat_pfsc")
+            _huelle(a["exfat"], a["huelle_exfat_pfsc"], komprimiert=True)
+            a["huelle_ffpkg_pfsc"] = pfad("huelle_ffpkg_pfsc")                      # so baut Dump Forge ein ``.ffpfsc`` (inneres ``.ffpkg``)
+            _huelle(a["ffpkg"], a["huelle_ffpkg_pfsc"], komprimiert=True)
+            a["pfs_in_pfs"] = pfad("pfs_in_pfs")
+            _huelle(a["flach_pfsc"], a["pfs_in_pfs"], komprimiert=True)
+            a["doppelt"] = pfad("doppelt")
+            _huelle(a["huelle_exfat_pfsc"], a["doppelt"], komprimiert=True)
+            for form, ziel in a.items():
+                cls.abbilder[(kennung, form)] = ziel
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_jede_bauform_liefert_das_sdk_der_eboot(self) -> None:
+        for (kennung, form), pfad in self.abbilder.items():
+            with self.subTest(spiel=kennung, bauform=form):
+                self.assertEqual(self.erwartet[kennung], ps.eboot_sdk(pfad))
+
+    def test_die_art_zaehlt_nicht_die_endung(self) -> None:
+        """Dump Forge nennt ein ``.ffpfsc`` mit innerem ``.ffpkg`` so, ein umbenanntes Abbild bleibt lesbar."""
+        for form, endung in (("exfat", ".ffpfsc"), ("flach_pfsc", ".ffpfs"), ("huelle_ffpkg_pfsc", ".exfat")):
+            with self.subTest(bauform=form, endung=endung):
+                kopie = os.path.join(self.tmp, "umbenannt_%s%s" % (form, endung))
+                shutil.copyfile(self.abbilder[("B", form)], kopie)
+                self.addCleanup(os.remove, kopie)
+                self.assertEqual("7.00", ps.eboot_sdk(kopie))
+
+    def test_der_ordner_mit_mkpfs_laesst_sich_angeben_und_merken(self) -> None:
+        """Im gebauten Programm liegt MkPFS in einem Arbeitsordner (``_extract_embedded_mkpfs``), nicht im Suchpfad: ohne die Angabe bliebe
+        jedes ``.exfat`` und ``.ffpfsc`` ungelesen."""
+        pfad = self.abbilder[("B", "huelle_exfat_pfsc")]
+        mkpfs = str(PROJEKT / "MkPFS-1.1.0")
+        alt = ps._mkpfs_ordner
+        self.addCleanup(ps.mkpfs_ordner_merken, alt)
+        ohne_mkpfs = [p for p in sys.path if os.path.normcase(os.path.abspath(p)) != os.path.normcase(mkpfs)]
+
+        def vergessen() -> None:
+            for name in [n for n in sys.modules if n == "mkpfs" or n.startswith("mkpfs.")]:
+                del sys.modules[name]
+            sys.path[:] = ohne_mkpfs
+
+        with mock.patch.object(sys, "path", list(ohne_mkpfs)), mock.patch.dict(sys.modules), \
+                mock.patch.object(ps._werkzeuge_bereitstellen, "mkpfs_ordner_vorhanden", return_value=""):
+            vergessen()
+            ps.mkpfs_ordner_merken("")
+            self.assertEqual("", ps.eboot_sdk(pfad), "MkPFS ist nicht zu finden")
+            self.assertEqual("7.00", ps.eboot_sdk(pfad, mkpfs), "der Ordner als Angabe")
+            vergessen()
+            ps.mkpfs_ordner_merken(mkpfs)
+            self.assertEqual("7.00", ps.eboot_sdk(pfad), "der gemerkte Ordner")
+
+    def test_das_mitgelieferte_mkpfs_wird_auch_ohne_angabe_gefunden(self) -> None:
+        """Wer ein Abbild waehlt, bevor das Hauptfenster MkPFS vorgewaermt hat, bekommt trotzdem das SDK (und die Antwort wird nicht als
+        "nicht zu sagen" gemerkt)."""
+        pfad = self.abbilder[("B", "huelle_exfat_pfsc")]
+        mkpfs = str(PROJEKT / "MkPFS-1.1.0")
+        self.assertEqual(os.path.normcase(mkpfs), os.path.normcase(ps._werkzeuge_bereitstellen.mkpfs_ordner_vorhanden()))
+        alt = ps._mkpfs_ordner
+        self.addCleanup(ps.mkpfs_ordner_merken, alt)
+        ohne_mkpfs = [p for p in sys.path if os.path.normcase(os.path.abspath(p)) != os.path.normcase(mkpfs)]
+        with mock.patch.object(sys, "path", list(ohne_mkpfs)), mock.patch.dict(sys.modules):
+            for name in [n for n in sys.modules if n == "mkpfs" or n.startswith("mkpfs.")]:
+                del sys.modules[name]
+            ps.mkpfs_ordner_merken("")
+            self.assertEqual("7.00", ps.eboot_sdk(pfad))
+
+    def test_jede_fehlerart_beim_lesen_ergibt_leer(self) -> None:
+        """MkPFS wirft beim Lesen eines beschaedigten Abbilds nicht nur ``ValueError`` (``CompressionError`` ist keiner): ``eboot_sdk`` wirft nie."""
+        from mkpfs.compression import CompressionError
+        pfad = self.abbilder[("B", "huelle_exfat_pfsc")]
+        for fehler in (OSError("x"), ValueError("x"), struct.error("x"), KeyError("x"), IndexError("x"), CompressionError("x")):
+            with self.subTest(fehler=type(fehler).__name__), mock.patch.object(ps, "_sdk_im_abbild", side_effect=fehler):
+                self.assertEqual("", ps.eboot_sdk(pfad))
+
+    def test_nur_die_bekannten_endungen_werden_gelesen(self) -> None:
+        """Ein ``.pkg`` (Forge entschluesselt und entpackt es) und Archive liest das Programm nicht - auch wenn der Inhalt ein Abbild waere."""
+        for endung in (".pkg", ".zip", ".7z", ".rar", ".txt", ".bin"):
+            with self.subTest(endung=endung):
+                ziel = os.path.join(self.tmp, "fremd" + endung)
+                shutil.copyfile(self.abbilder[("B", "exfat")], ziel)
+                self.addCleanup(os.remove, ziel)
+                self.assertEqual("", ps.eboot_sdk(ziel))
+
+    def test_von_exfat_wird_nur_die_wurzel_gelesen(self) -> None:
+        """Der ganze Baum dauerte an einem Spiel mit 67.226 Dateien 137 s (HDD, kalt): Es gibt hier drei Unterordner und doch nur einen Zugriff."""
+        original = ExfatReader._read_directory_entries
+        aufrufe: list[int] = []
+
+        def zaehlend(selbst, *args, **kwargs):
+            aufrufe.append(1)
+            return original(selbst, *args, **kwargs)
+
+        for form in ("exfat", "huelle_exfat_pfsc"):
+            aufrufe.clear()
+            with self.subTest(bauform=form), mock.patch.object(ExfatReader, "_read_directory_entries", zaehlend):
+                self.assertEqual("7.00", ps.eboot_sdk(self.abbilder[("B", form)]))
+                self.assertEqual(1, len(aufrufe), "nur das Wurzelverzeichnis")
+
+    def test_von_der_eboot_kommen_nur_wenige_bytes(self) -> None:
+        """Die ``eboot.bin`` ist hier 1,5 MB gross; aus dem Abbild werden Kopf, Verzeichnisse und ein paar Cluster gelesen."""
+        for form in ("exfat", "ffpkg", "huelle_ffpkg_pfsc"):
+            pfad = self.abbilder[("B", form)]
+            gelesen = []
+            echt = open
+
+            class Zaehler:
+                def __init__(self, fh):
+                    self._fh = fh
+
+                def read(self, n=-1):
+                    daten = self._fh.read(n)
+                    gelesen.append(len(daten))
+                    return daten
+
+                def __getattr__(self, name):
+                    return getattr(self._fh, name)
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    self._fh.close()
+
+            def oeffnen(datei, modus="r", *a, **k):
+                fh = echt(datei, modus, *a, **k)
+                return Zaehler(fh) if str(datei) == pfad and "b" in modus else fh
+
+            with self.subTest(bauform=form), mock.patch("builtins.open", oeffnen):
+                self.assertEqual("7.00", ps.eboot_sdk(pfad))
+            self.assertGreater(sum(gelesen), 0, "der Zaehler muss den Zugriff sehen, sonst misst der Test nichts")
+            self.assertLess(sum(gelesen), 600_000, "gelesen: %d Bytes (die eboot.bin allein hat %d)" % (sum(gelesen), 0x180000))
+
+    def test_eine_flache_pfs_nur_mit_der_eboot_ist_keine_huelle(self) -> None:
+        """Genau eine Datei im PFS ist nur dann ein umhuelltes Abbild, wenn sie selbst eines ist."""
+        ordner = os.path.join(self.tmp, "nur_eboot")
+        os.makedirs(ordner)
+        Path(ordner, "eboot.bin").write_bytes(herabgesetzt(baue_elf(0x10000038, davor=0x180000), 7))
+        for komprimiert in (False, True):
+            with self.subTest(komprimiert=komprimiert):
+                ziel = os.path.join(self.tmp, "nur_eboot_%s.ffpfsc" % komprimiert)
+                _flach(ordner, ziel, komprimiert=komprimiert)
+                self.assertEqual("7.00", ps.eboot_sdk(ziel))
+
+    def test_ohne_mkpfs_bleiben_nur_ffpkg_und_ordner(self) -> None:
+        with mock.patch.object(ps, "_Mkpfs", side_effect=ImportError("kein mkpfs")):
+            self.assertEqual("7.00", ps.eboot_sdk(self.abbilder[("B", "ffpkg")]))
+            self.assertEqual("7.00", ps.eboot_sdk(self.ordner["B"]))
+            for form in ("exfat", "flach_pfsc", "huelle_ffpkg_pfsc"):
+                with self.subTest(bauform=form):
+                    self.assertEqual("", ps.eboot_sdk(self.abbilder[("B", form)]))
+
+    def test_kein_abbild_ist_leer_und_wirft_nicht(self) -> None:
+        pfad = self.abbilder[("B", "huelle_exfat_pfsc")]
+        daten = Path(pfad).read_bytes()
+        faelle = {"Zufall.exfat": os.urandom(100_000), "Zufall.ffpfsc": os.urandom(100_000), "Zufall.ffpfs": os.urandom(100_000),
+                  "leer.ffpfsc": b"", "abgeschnitten.ffpfsc": daten[:3000], "halb.ffpfsc": daten[:len(daten) // 2],
+                  "Nullen.exfat": bytes(100_000), "paket.pkg": b"\x7fCNT" + bytes(9000), "archiv.zip": b"PK\x03\x04" + bytes(100),
+                  "notiz.txt": b"keine eboot"}
+        for name, inhalt in faelle.items():
+            with self.subTest(datei=name):
+                ziel = os.path.join(self.tmp, name)
+                Path(ziel).write_bytes(inhalt)
+                self.addCleanup(os.remove, ziel)
+                self.assertEqual("", ps.eboot_sdk(ziel))
+
+    def test_exfat_ohne_eboot_im_stamm_ist_leer(self) -> None:
+        """Eine ``eboot.bin`` in einem Unterordner ist keine."""
+        ordner = os.path.join(self.tmp, "unterordner")
+        os.makedirs(os.path.join(ordner, "data"))
+        Path(ordner, "data", "eboot.bin").write_bytes(als_self(baue_elf(0x10000038)))
+        Path(ordner, "sce_sys").mkdir()
+        Path(ordner, "sce_sys", "param.json").write_bytes(PARAM_JSON)
+        ziel = os.path.join(self.tmp, "unterordner.exfat")
+        with open(ziel, "wb") as fh:
+            for stueck in iter_exfat_image(Path(ordner)):
+                fh.write(stueck)
+        self.assertEqual("", ps.eboot_sdk(ziel))
+
+
+class Ufs2GriffTests(unittest.TestCase):
+    """``ufs2_leser.Ufs2Leser`` nimmt auch einen schon geoeffneten Griff (die Ansicht auf das innere Abbild einer ``.ffpfsc``)."""
+
+    def setUp(self) -> None:
+        import test_ufs2_leser as t
+        self.tmp = tempfile.mkdtemp(prefix="ufs2griff_")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.abbild = os.path.join(self.tmp, "a.ffpkg")
+        self.inhalte = t.baue_abbild(self.abbild)
+
+    def test_ein_fremder_griff_bleibt_offen(self) -> None:
+        with open(self.abbild, "rb") as fh:
+            with ul.Ufs2Leser(fh) as leser:
+                self.assertEqual(self.inhalte["sce_sys/param.json"], leser.datei_lesen("sce_sys/param.json"))
+            self.assertFalse(fh.closed, "der Leser darf einen Griff, der ihm nicht gehoert, nicht schliessen")
+            self.assertEqual(b"", fh.read(0))
+
+    def test_ein_pfad_wird_wie_bisher_geoeffnet_und_geschlossen(self) -> None:
+        with ul.Ufs2Leser(self.abbild) as leser:
+            griff = leser._f
+            self.assertFalse(griff.closed)
+        self.assertTrue(griff.closed)
+        for pfad in (Path(self.abbild),):
+            with ul.Ufs2Leser(pfad) as leser:
+                self.assertEqual(self.inhalte["eboot.bin"], leser.datei_lesen("eboot.bin"))
+
+    def test_ein_fremder_griff_ohne_ufs2_loest_den_fehler_aus_und_bleibt_offen(self) -> None:
+        with open(os.path.join(self.tmp, "x.bin"), "w+b") as fh:
+            fh.write(os.urandom(200_000))
+            with self.assertRaises(ul.Ufs2Fehler):
+                ul.Ufs2Leser(fh)
+            self.assertFalse(fh.closed)
 
 
 class BereichTests(unittest.TestCase):

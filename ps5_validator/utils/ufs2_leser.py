@@ -18,6 +18,7 @@ geratene Antwort.
 """
 from __future__ import annotations
 
+import os
 import struct
 from typing import BinaryIO
 
@@ -44,13 +45,17 @@ MAX_TIEFE = 16
 class Ufs2Leser:
     """Liest Dateien nach Pfad aus einem UFS2-Abbild. Mit ``with`` benutzen (schliesst die Datei)."""
 
-    def __init__(self, pfad: str) -> None:
-        self._pfad = str(pfad)
-        self._f: BinaryIO = open(self._pfad, "rb")
+    def __init__(self, pfad: "str | BinaryIO") -> None:
+        """``pfad``: der Pfad der Datei - oder ein schon geoeffneter, suchbarer Griff (etwa die Ansicht auf das innere Abbild einer
+        ``.ffpfsc``). Einen fremden Griff liest dieser Leser nur; geschlossen wird er nicht (:meth:`schliessen`)."""
+        self._eigener_griff = isinstance(pfad, (str, bytes, os.PathLike))
+        self._pfad = str(pfad) if self._eigener_griff else ""
+        self._f: BinaryIO = open(self._pfad, "rb") if self._eigener_griff else pfad          # type: ignore[assignment]
         try:
             self._fs = _dateisystem.Ufs2Leser(self._f)
         except Exception:
-            self._f.close()
+            if self._eigener_griff:
+                self._f.close()
             raise
 
     def __enter__(self) -> "Ufs2Leser":
@@ -60,6 +65,8 @@ class Ufs2Leser:
         self.schliessen()
 
     def schliessen(self) -> None:
+        if not self._eigener_griff:
+            return
         try:
             self._f.close()
         except OSError:
