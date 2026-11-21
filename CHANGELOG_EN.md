@@ -20,6 +20,7 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 - **Fixed:** When converting an already lowered image, the program sometimes still asked for a backport to firmware 12.
 - **Fixed:** The manual said Dump Forge takes `fakelib` over into a package unchanged; for games with AMPR EMU it puts its own runtime there, and the log line for package builds now says so too.
 - **Fixed:** Several hints were out of date: the compression level (1 = fastest), the ShadowMount+ config.ini warning, what a backup is missing (only the content ID) and “zstd not yet measured on the console”.
+- **Fixed:** The bundled pack profiles for ASTRO BOT and EA Sports UFC 6 never applied to real PS5 dumps, because the program looked for the title ID only in the param.sfo, which PS5 dumps do not have; it now also reads the param.json.
 
 ---
 

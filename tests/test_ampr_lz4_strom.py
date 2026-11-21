@@ -476,6 +476,26 @@ class ProfilAusBaumTests(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertIn("PPSA21567", b.splitlines()[0])
 
+    def test_title_id_aus_der_param_json_wie_in_echten_ps5_dumps(self) -> None:
+        """PS5-Dumps tragen nur ``sce_sys/param.json`` (gemessen 21.11.2026): Ordner und Lesebaum waehlen daraus dasselbe Titelprofil."""
+        param = json.dumps(create_default_param(title_id="PPSA21567", title="ASTRO BOT")).encode("utf-8")
+        name, a, b = self.beide({"eboot.bin": b"x", "sce_sys/param.json": param, "data/a.pak": b"a"})
+        self.assertEqual("PPSA21567", name)
+        self.assertEqual(a, b)
+        self.assertIn("integriertes Profil fuer PPSA21567", b.splitlines()[0])
+        # die param.sfo geht vor - im Baum wie im Ordner
+        name, a, b = self.beide({"eboot.bin": b"x", "sce_sys/param.json": param, "sce_sys/param.sfo": _sfo("PPSA23566")})
+        self.assertEqual("PPSA23566", name)
+        self.assertEqual(a, b)
+        self.assertIn("integriertes Profil fuer PPSA23566", b.splitlines()[0])
+
+    def test_kaputte_param_json_im_baum_ist_kein_grund_zum_abbruch(self) -> None:
+        for roh in (b"{kaputt", b'{"titleId": 5}', b"\xff\xfe"):
+            with self.subTest(roh=roh):
+                name, a, b = self.beide({"eboot.bin": b"x", "sce_sys/param.json": roh, "data/a.pak": b"a"})
+                self.assertEqual("", name)
+                self.assertEqual(a, b)
+
     def test_insomniac_an_dag_toc_und_d(self) -> None:
         name, a, b = self.beide({"eboot.bin": b"x", "dag": b"d", "toc": b"t", "d/x.bin": b"x"})
         self.assertEqual("Insomniac", name)
@@ -1010,6 +1030,15 @@ class VorabTests(_HauptGrundlage):
             grund = self.gui()._lz4_strom_vorab(self.spiel, True, baum)
         self.assertIn("Gruppen", grund)
 
+    def test_integriertes_profil_mit_mehreren_gruppen_aus_der_param_json(self) -> None:
+        """Der Strom erkennt UFC 6 auch an der param.json (echte PS5-Dumps haben keine param.sfo) und weicht auf den Ordner aus."""
+        param = json.dumps(create_default_param(title_id="PPSA23566", title="UFC 6")).encode("utf-8")
+        _schreiben(self.spiel, {"sce_sys/param.json": param})
+        self.assertFalse(os.path.exists(os.path.join(self.spiel, "sce_sys", "param.sfo")))
+        with sb.OrdnerBaum(self.spiel) as baum:
+            grund = self.gui()._lz4_strom_vorab(self.spiel, True, baum)
+        self.assertIn("Gruppen", grund)
+
     def test_integriertes_profil_mit_einer_gruppe_geht(self) -> None:
         _schreiben(self.spiel, {"sce_sys/param.sfo": _sfo("PPSA21567")})                    # ASTRO BOT: eine Gruppe
         with sb.OrdnerBaum(self.spiel) as baum:
@@ -1221,6 +1250,15 @@ class ArbeitsordnerVorabTests(_HauptGrundlage):
     def test_titelprofil_mit_einer_gruppe_zeigt_das_feld_nicht(self) -> None:
         _schreiben(self.spiel, {"sce_sys/param.sfo": _sfo("PPSA21567")})                  # ASTRO BOT
         self.assertFalse(self.gui(self.spiel)._arbeitsordner_noetig())
+
+    def test_titelprofil_auch_aus_der_param_json(self) -> None:
+        """Echte PS5-Dumps haben keine param.sfo, nur die param.json (gemessen 21.11.2026): UFC 6 zeigt das Feld trotzdem."""
+        for title_id, soll in (("PPSA23566", True), ("PPSA21567", False), ("PPSA04263", False)):
+            with self.subTest(title_id=title_id):
+                param = json.dumps(create_default_param(title_id=title_id, title="Test")).encode("utf-8")
+                _schreiben(self.spiel, {"sce_sys/param.json": param})
+                self.assertFalse(os.path.exists(os.path.join(self.spiel, "sce_sys", "param.sfo")))
+                self.assertEqual(soll, self.gui(self.spiel)._arbeitsordner_noetig())
 
     def test_abbild_als_quelle_zeigt_das_feld_nicht(self) -> None:
         """Ein Abbild muesste geoeffnet werden, um das Profil zu kennen: Dort entscheidet erst der Lauf (und warnt im Protokoll)."""

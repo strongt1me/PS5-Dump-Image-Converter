@@ -91,6 +91,73 @@ class Erkennung(unittest.TestCase):
             self.assertEqual("", ap.title_id_aus_sfo(str(app0)))
             self.assertEqual(("", ""), ap.profil_integriert_fuer(""))
 
+    # --- Title-ID aus der param.json (PS5-Dumps haben keine param.sfo) ----------------------------------------------------------
+    # Gemessen am 21.11.2026: Keiner von 37 echten PS5-Dumps des Anwenders hatte eine sce_sys/param.sfo, alle eine param.json mit
+    # titleId. Bis dahin las die Profilwahl nur die param.sfo - die Titelprofile griffen bei echten Dumps nie.
+    @staticmethod
+    def _spiel_ps5(wurzel: Path, param: "bytes | str") -> Path:
+        """Ein Spielordner wie ein echtes PS5-Dump: ``sce_sys/param.json``, keine ``param.sfo``."""
+        app0 = wurzel / "app0"
+        (app0 / "sce_sys").mkdir(parents=True)
+        (app0 / "eboot.bin").write_bytes(b"\x7fELF" + b"\x00" * 2048)
+        roh = param.encode("utf-8") if isinstance(param, str) else param
+        (app0 / "sce_sys" / "param.json").write_bytes(roh)
+        return app0
+
+    def test_title_id_aus_der_param_json_wie_in_echten_ps5_dumps(self):
+        for title_id, profil in (("PPSA21567", "astrobot.toml"), ("PPSA23566", "ufc6-PPSA23566.toml")):
+            with self.subTest(title_id=title_id), tempfile.TemporaryDirectory() as basis:
+                app0 = self._spiel_ps5(Path(basis), json.dumps({"titleId": title_id, "contentVersion": "01.000.000"}, indent=2))
+                self.assertFalse((app0 / "sce_sys" / "param.sfo").exists())
+                self.assertEqual("", ap.title_id_aus_sfo(str(app0)), "die param.sfo-Lesung allein bleibt, wie sie war")
+                self.assertEqual(title_id, ap.title_id_des_spiels(str(app0)))
+                name, pfad = ap.profil_integriert_fuer(str(app0))
+                self.assertEqual((title_id, profil), (name, os.path.basename(pfad)))
+                self.assertEqual(title_id, ap.profil_integriert_nach_title_id(str(app0))[0])
+
+    def test_die_param_sfo_geht_vor(self):
+        """Wo es eine param.sfo gibt, aendert sich nichts: Sie entscheidet, auch wenn die param.json etwas anderes sagt."""
+        with tempfile.TemporaryDirectory() as basis:
+            app0 = self._spiel_ps5(Path(basis), '{"titleId": "PPSA23566"}')
+            (app0 / "sce_sys" / "param.sfo").write_bytes(_sfo("PPSA21567"))
+            self.assertEqual("PPSA21567", ap.title_id_des_spiels(str(app0)))
+            self.assertEqual("PPSA21567", ap.profil_integriert_fuer(str(app0))[0])
+            # eine unbrauchbare param.sfo verdeckt die param.json nicht
+            (app0 / "sce_sys" / "param.sfo").write_bytes(b"kaputt")
+            self.assertEqual("PPSA23566", ap.title_id_des_spiels(str(app0)))
+
+    def test_schreibweisen_der_param_json(self):
+        faelle = (
+            ('﻿{"titleId": "PPSA21567"}', "PPSA21567"),          # mit BOM
+            ('{"title_id": "PPSA21567"}', "PPSA21567"),               # Schluessel wie bei MkPFS erlaubt
+            ('{"titleId": "  PPSA21567 \\n"}', "PPSA21567"),         # Leerraum
+            ('{"titleId": "", "title_id": "PPSA21567"}', "PPSA21567"),
+            ('{"titleId": 21567}', ""),                               # keine Zeichenkette
+            ('{"titleId": null}', ""),
+            ('["PPSA21567"]', ""),                                     # kein Objekt
+            ('{"titleId": "PPSA21567"', ""),                          # abgeschnitten
+            ("", ""),
+        )
+        for text, soll in faelle:
+            with self.subTest(text=text):
+                self.assertEqual(soll, ap.title_id_aus_param_json_bytes(text.encode("utf-8")))
+        self.assertEqual("", ap.title_id_aus_param_json_bytes(b"\xff\xfe\x00kaputt"))
+        self.assertEqual("", ap.title_id_aus_param_json_bytes(b"[" * 100_000), "tiefe Schachtelung wirft nicht")
+
+    def test_fehlende_leere_oder_zu_grosse_param_json(self):
+        with tempfile.TemporaryDirectory() as basis:
+            self.assertEqual("", ap.title_id_des_spiels(""))
+            self.assertEqual("", ap.title_id_des_spiels(os.path.join(basis, "gibt_es_nicht")))
+            app0 = self._spiel_ps5(Path(basis), b"")
+            self.assertEqual("", ap.title_id_des_spiels(str(app0)))
+            # gueltiges JSON mit angehaengtem Leerraum: auch die ersten 1 MiB allein waeren lesbar - die Grenze muss selbst greifen
+            gross = '{"titleId": "PPSA21567"}' + " " * (1 << 20)
+            (app0 / "sce_sys" / "param.json").write_text(gross, encoding="utf-8")
+            self.assertEqual("", ap.title_id_des_spiels(str(app0)), "groesser als 1 MiB ist keine echte param.json")
+            self.assertEqual(("", ""), ap.profil_integriert_fuer(str(app0)))
+            (app0 / "sce_sys" / "param.json").write_text(gross[:1 << 20], encoding="utf-8")
+            self.assertEqual("PPSA21567", ap.title_id_des_spiels(str(app0)), "genau 1 MiB geht noch")
+
     def test_die_engine_wird_nur_gesucht_wenn_die_title_id_nichts_ergibt(self):
         """Die Engine-Erkennung laeuft durch den ganzen Spielordner: Bei einem Treffer ueber die Title-ID darf sie nicht anlaufen."""
         from unittest import mock

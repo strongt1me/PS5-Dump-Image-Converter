@@ -858,6 +858,50 @@ def title_id_aus_sfo_bytes(roh: bytes) -> str:
     return ""
 
 
+#: Groesser ist keine ``param.sfo``/``param.json`` (echte: wenige KB); groessere Dateien werden fuer die Title-ID nicht gelesen.
+_PARAM_HOECHSTENS = 1 << 20
+
+
+def title_id_aus_param_json_bytes(roh: bytes) -> str:
+    """Die ``titleId`` (oder ``title_id``) aus dem Inhalt einer ``sce_sys/param.json`` - oder ``''`` (nie werfend).
+
+    PS5-Spiele tragen ihre Kennung hier. Eine ``param.sfo`` ist das PS4-Format und fehlt in PS5-Dumps: Am 21.11.2026 an 37 echten
+    Dumps des Anwenders gemessen, hatte keiner eine, alle eine ``param.json`` mit ``titleId``. Bis dahin las die Profilwahl nur die
+    ``param.sfo``, und die Titelprofile (ASTRO BOT, UFC 6) griffen bei echten PS5-Dumps nie. Schluessel wie MkPFS
+    (``title_id_from_source``: ``titleId``, sonst ``title_id``).
+    """
+    try:
+        daten = json.loads(bytes(roh).decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return ""
+    if not isinstance(daten, dict):
+        return ""
+    wert = daten.get("titleId") or daten.get("title_id")
+    return wert.strip() if isinstance(wert, str) else ""
+
+
+def title_id_des_spiels(app0: str) -> str:
+    """Die Title-ID eines Spielordners: aus ``sce_sys/param.sfo``, sonst aus ``sce_sys/param.json`` - oder ``''``.
+
+    Die ``param.sfo`` geht vor, damit sich fuer Ordner, die eine haben, nichts aendert; PS5-Dumps haben in der Regel nur die
+    ``param.json`` (:func:`title_id_aus_param_json_bytes`). Nur lesend, nie werfend.
+    """
+    if not app0:
+        return ""
+    title_id = title_id_aus_sfo(app0)
+    if title_id:
+        return title_id
+    pfad = os.path.join(str(app0), "sce_sys", "param.json")
+    try:
+        if os.path.getsize(pfad) > _PARAM_HOECHSTENS:
+            return ""
+        with open(pfad, "rb") as dat:
+            roh = dat.read(_PARAM_HOECHSTENS + 1)
+    except OSError:
+        return ""
+    return title_id_aus_param_json_bytes(roh)
+
+
 def _erkennt_insomniac(app0: str) -> bool:
     """Typische Insomniac-Titelstruktur: ``dag``, ``toc`` und ``d/`` in app0.
 
@@ -877,7 +921,7 @@ def profil_integriert_fuer(app0: str) -> tuple[str, str]:
     """Welches mitgelieferte Profil passt zu diesem Spielordner?
 
     Prueft der Reihe nach:
-    1. Genaues Title-ID-Profil aus ``sce_sys/param.sfo``.
+    1. Genaues Title-ID-Profil (Title-ID aus ``sce_sys/param.sfo``, sonst ``sce_sys/param.json``: :func:`title_id_des_spiels`).
     2. Engine-Profil aus :func:`direktleser_merkmale` (derzeit: Unity).
     3. Insomniac-Engine anhand der typischen Ordnerstruktur.
 
@@ -886,7 +930,7 @@ def profil_integriert_fuer(app0: str) -> tuple[str, str]:
     """
     if not app0:
         return "", ""
-    return _profil_waehlen(title_id_aus_sfo(app0), lambda: direktleser_merkmale(app0)[0],
+    return _profil_waehlen(title_id_des_spiels(app0), lambda: direktleser_merkmale(app0)[0],
                            lambda: _erkennt_insomniac(app0))
 
 
@@ -918,14 +962,15 @@ def _profil_waehlen(title_id: str, engine: "str | Callable[[], str]", ist_insomn
 
 
 def profil_integriert_nach_title_id(app0: str) -> tuple[str, str]:
-    """Das mitgelieferte Profil, das genau zur Title-ID in ``sce_sys/param.sfo`` passt - ohne den Spielordner zu durchlaufen.
+    """Das mitgelieferte Profil, das genau zur Title-ID passt (``sce_sys/param.sfo`` oder ``param.json``) - ohne den Spielordner zu
+    durchlaufen.
 
-    Billig genug fuer die Platzpruefung vor dem Start (eine kleine Datei): Engine-Profile (Unity, Insomniac) brauchen einen Lauf durch den
+    Billig genug fuer die Platzpruefung vor dem Start (zwei kleine Dateien): Engine-Profile (Unity, Insomniac) brauchen einen Lauf durch den
     ganzen Ordner und fehlen hier. Gibt ``("", "")`` zurueck, wenn die Title-ID kein Profil hat.
     """
     if not app0:
         return "", ""
-    return _profil_waehlen(title_id_aus_sfo(app0), "", lambda: False)
+    return _profil_waehlen(title_id_des_spiels(app0), "", lambda: False)
 
 
 def _baum_merkmale(baum: Any) -> "tuple[dict[str, Any], list[str]]":
@@ -941,15 +986,22 @@ def _baum_merkmale(baum: Any) -> "tuple[dict[str, Any], list[str]]":
 
 
 def _title_id_aus_baum(dateien: "dict[str, Any]") -> str:
-    """Die TITLE_ID aus ``sce_sys/param.sfo`` im Lesebaum - oder ``''`` (nie werfend)."""
-    sfo = dateien.get("sce_sys/param.sfo")
-    if sfo is None or sfo.groesse > (1 << 20):
-        return ""
-    try:
-        return title_id_aus_sfo_bytes(b"".join(sfo.lesen()))
-    except Exception as exc:       # noqa: BLE001 - ein unlesbares SFO ist kein Grund abzubrechen
-        logger.debug("param.sfo im Lesebaum nicht lesbar: %s", exc)
-        return ""
+    """Die Title-ID im Lesebaum: aus ``sce_sys/param.sfo``, sonst aus ``sce_sys/param.json`` - oder ``''`` (nie werfend).
+
+    Dieselbe Reihenfolge wie :func:`title_id_des_spiels`; Strom und Weg ueber den Ordner waehlen so dasselbe Profil.
+    """
+    for rel, lesen in (("sce_sys/param.sfo", title_id_aus_sfo_bytes), ("sce_sys/param.json", title_id_aus_param_json_bytes)):
+        datei = dateien.get(rel)
+        if datei is None or datei.groesse > _PARAM_HOECHSTENS:
+            continue
+        try:
+            title_id = lesen(b"".join(datei.lesen()))
+        except Exception as exc:   # noqa: BLE001 - eine unlesbare Datei ist kein Grund abzubrechen
+            logger.debug("%s im Lesebaum nicht lesbar: %s", rel, exc)
+            continue
+        if title_id:
+            return title_id
+    return ""
 
 
 def profil_integriert_aus_baum(baum: Any) -> tuple[str, str]:
@@ -1028,7 +1080,7 @@ def profil_schreiben_aus_baum(ziel: str, baum: Any, arbeiter: int = 0, stufe: An
     """Wie :func:`profil_schreiben`, nur dass das Spiel ein Lesebaum (:mod:`spielbaum`) ist statt eines Ordners auf der Platte.
 
     Gebraucht der Weg ohne Zwischenordner (``ampr_lz4pack``): Title-ID, Engine, Film-, System- und lose Dateien kommen aus der
-    Dateiliste des Baums; ``param.sfo`` wird aus dem Baum gelesen. ``ng=True``: Standardprofil fuer ampr-emu-ng
+    Dateiliste des Baums; ``param.sfo`` bzw. ``param.json`` wird aus dem Baum gelesen. ``ng=True``: Standardprofil fuer ampr-emu-ng
     (:data:`NIE_PACKEN_NG`): alles packen ausser den Systemdateien, wie Dump Forge; mitgelieferte Titelprofile bleiben davon unberuehrt.
     """
     if os.path.isfile(ziel) and not profil_ist_eigenes(ziel):

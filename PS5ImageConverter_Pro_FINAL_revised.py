@@ -15376,7 +15376,7 @@ class PS5ConverterGUI:
         Gilt nur fuer **Ordner** als Quelle (Aufgabe 1 und Sammelkonvertierung): ein Packprofil des Anwenders neben dem Spielordner, oder ein
         Titelprofil mit mehreren Gruppen (:meth:`_lz4_strom_im_voraus_ausgeschlossen`, dieselbe Vorabfrage wie die Platzpruefung). Ein
         Abbild als Quelle muesste geoeffnet werden - dort bleibt es beim Strom, und der Lauf warnt selbst. Laeuft bei jeder Eingabe im Feld
-        QUELLE (``_arbeitsordner_nachziehen``): Es liest hoechstens ``param.sfo`` und ein Profil, und nur, wenn der Ordner existiert.
+        QUELLE (``_arbeitsordner_nachziehen``): Es liest hoechstens ``param.sfo``/``param.json`` und ein Profil, und nur, wenn der Ordner existiert.
         """
         try:
             quellen: list[str] = []
@@ -40612,7 +40612,7 @@ class PS5ConverterGUI:
         """Steht schon vor dem Start fest, dass LZ4 nicht im Strom gepackt wird (und der Zwischenordner das ganze Spiel braucht)?
 
         Die billige Fassung von :meth:`_lz4_strom_vorab` fuer die Platzpruefung (Hauptfaden, nur kleine Dateien): ein Packprofil des Anwenders
-        neben dem Dump-Ordner, oder ein Titelprofil mit mehreren Gruppen (nach ``param.sfo``). Was nur ein Blick in das Abbild zeigen wuerde
+        neben dem Dump-Ordner, oder ein Titelprofil mit mehreren Gruppen (Title-ID aus ``param.sfo`` oder ``param.json``). Was nur ein Blick in das Abbild zeigen wuerde
         (Engine-Profile, Abbilder als Quelle), bleibt hier unentschieden: Der Lauf selbst faellt dann zurueck und warnt vor dem Platz
         (:meth:`_lz4_rueckfall_melden`).
         """
