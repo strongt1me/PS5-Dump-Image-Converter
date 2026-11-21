@@ -38,7 +38,23 @@ TOTE_SCHLUESSEL = (
     "backport.fw_analyse_choose", "backport.fw_analyse_hint", "backport.fw_referenz_hint", "backport.eigene_ps5",
     "backport.eigene_ps4", "backport.eigene_fw", "backport.eigene_hint", "backport.option_landeplatz",
     "backport.option_landeplatz_kurz", "backport.option_landeplatz_hint",
+    # Entwurf A (21.11.2026): Kopfzeilen und lange Erklaerung ersetzt durch Pillen und kurze Zeilen.
+    "backport.field_title", "backport.field_title_id", "backport.field_version", "backport.target_label",
+    "backport.fw_vorschlag",
 )
+
+#: Neue Texte des aufgeraeumten Fensters (Entwurf A) und ihre Platzhalter.
+PILLENTEXTE = {
+    "backport.chip_version": "{version}",
+    "backport.konsole_stand": "{konsole}",
+    "backport.auto_bibliotheken": "{ordner}",
+    "backport.required_firmware_hint": "{fw}",
+    "backport.subtitle": "{path}",
+    "backport.auto_sicherung": "",
+    "backport.auto_param": "",
+    "backport.auto_funktionen": "",
+    "backport.hint_unsigned": "",
+}
 
 with io.open(HAUPTDATEI, encoding="utf-8") as _fh:
     QUELLE = _fh.read()
@@ -121,9 +137,25 @@ class FensterVerdrahtungTests(unittest.TestCase):
 
     def test_hinweis_und_eigene_werte_stehen_im_fenster(self) -> None:
         # ast.unparse schreibt Zeichenketten mit einfachen Anfuehrungszeichen.
-        self.assertIn("self._t('backport.auto_hinweis')", self.fenster)
+        # Entwurf A (21.11.2026): Die Beschreibung der Schritte steht als Tooltip an den Haken-Pillen.
+        self.assertIn("self._tooltip(pille, 'backport.auto_hinweis'", self.fenster)
         self.assertIn("self._backport_eigene_einstellungen()", self.fenster)
         self.assertIn("self._t('backport.eigene_aktiv'", self.fenster)
+
+    def test_vier_haken_pillen_und_ein_satz_warnung(self) -> None:
+        for schluessel in ("backport.auto_sicherung", "backport.auto_param",
+                           "backport.auto_bibliotheken", "backport.auto_funktionen"):
+            self.assertIn(f"'{schluessel}'", self.fenster, schluessel)
+        self.assertIn("gruen=True", self.fenster)
+        self.assertIn("self._t('backport.hint_unsigned')", self.fenster)
+        self.assertIn("ordner=self._fakelib_ordnername()", self.fenster,
+                      "Die Pille der Ersatzbibliotheken nennt den Ablageordner nicht mehr")
+
+    def test_die_langen_erklaerungen_stehen_nicht_mehr_im_fenster(self) -> None:
+        """Bibliotheksordner-Zeile samt "fakelib2"-Erklaerung stehen im Handbuch, nicht im Fenster."""
+        for alt in ("backport.fakelib_folder_label", "fakelib.folder_fixed", "backport.target_label",
+                    "backport.field_title", "backport.fw_vorschlag", "backport.auto_hinweis')"):
+            self.assertNotIn(alt, self.fenster, alt)
 
     def test_sicherung_laeuft_immer(self) -> None:
         """Der Worker bekommt ``sichern`` ohne Haken; nur der Platz entscheidet (und fragt)."""
@@ -147,6 +179,23 @@ class TexteTests(unittest.TestCase):
         for sprache in SPRACHEN:
             self.assertIn("{liste}", STRINGS["backport.eigene_aktiv"][sprache], sprache)
         self.assertNotEqual(STRINGS["backport.auto_hinweis"]["de"], STRINGS["backport.auto_hinweis"]["en"])
+
+    def test_texte_des_aufgeraeumten_fensters_in_fuenf_sprachen_mit_platzhaltern(self) -> None:
+        for schluessel, platzhalter in PILLENTEXTE.items():
+            self.assertEqual(set(STRINGS[schluessel]), set(SPRACHEN), schluessel)
+            for sprache in SPRACHEN:
+                text = STRINGS[schluessel][sprache]
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    self.assertTrue(text.strip())
+                    if platzhalter:
+                        self.assertIn(platzhalter, text)
+
+    def test_die_warnung_ist_ein_kurzer_satz(self) -> None:
+        """Sie war ein Absatz mit zwei Aufforderungen; die Sicherung laeuft seit 21.11.2026 ohnehin immer."""
+        for sprache in SPRACHEN:
+            text = STRINGS["backport.hint_unsigned"][sprache]
+            with self.subTest(sprache=sprache):
+                self.assertLessEqual(len(text), 150, text)
 
     def test_tote_texte_sind_weg(self) -> None:
         for schluessel in TOTE_SCHLUESSEL:

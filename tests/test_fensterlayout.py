@@ -255,13 +255,61 @@ class FensterLayoutTests(unittest.TestCase):
         try:
             texte = [str(w.cget("text")).strip().lower()
                      for w in _sammle(fenster, "Label")]
-            self.assertIn(self.app._fakelib_ordnername().lower(), texte,
-                          "Der Ablageordner steht nirgends im Fenster.")
+            # Seit Entwurf A (21.11.2026) steht er in der Pille "Ersatzbibliotheken -> fakelib", nicht mehr als
+            # eigene Zeile mit Erklaerung.
+            ordner = self.app._fakelib_ordnername().lower()
+            self.assertTrue(any(ordner in text for text in texte),
+                            "Der Ablageordner steht nirgends im Fenster.")
             # Und er darf nicht mehr auswaehlbar sein.
             for box in _sammle(fenster, "Combobox"):
                 self.assertNotIn(str(box.get()).strip().lower(),
                                  bp.FAKELIB_ORDNERNAMEN,
                                  "Der Ordner haengt wieder in einer Auswahl.")
+        finally:
+            self._schliesse(fenster)
+
+    def _backport_fenster_mit(self, meta):
+        """Das BACKPORT-Fenster mit vorgegebenen Spieldaten (statt der aus einem Ordner gelesenen)."""
+        from unittest import mock
+        ordner = _leerer_spielordner(self)
+        with mock.patch.object(self.app, "_read_game_meta", return_value=meta):
+            return self._oeffne(lambda: self.app._render_backport_window(ordner))
+
+    def test_backport_kopf_zeigt_spiel_pillen_und_verlangte_firmware(self):
+        """Entwurf A (21.11.2026): Name gross, Title-ID und Version als Pillen, "verlangt 11.20" ohne ".00.00"."""
+        fenster = self._backport_fenster_mit({
+            "title": "Testspiel", "title_id": "PPSA00001", "version": "01.000.000",
+            "required_firmware": "11.20.00.00"})
+        try:
+            texte = [str(w.cget("text")).strip() for w in _sammle(fenster, "Label")]
+            for erwartet in ("Testspiel", "PPSA00001",
+                             self.app._t("backport.chip_version", version="01.000.000"),
+                             self.app._t("backport.required_firmware_hint", fw="11.20")):
+                self.assertIn(erwartet, texte, f"Im Kopf fehlt: {erwartet}")
+            self.assertFalse([t for t in texte if "11.20.00" in t],
+                             "Die verlangte Firmware zeigt wieder ihre nachlaufenden Nullen")
+            # Die Pillen sind Bilder mit Text; das Bild darf nicht eingesammelt werden (leere Pille).
+            pillentexte = ("PPSA00001", self.app._t("backport.chip_version", version="01.000.000"))
+            pillen = [w for w in _sammle(fenster, "Label")
+                      if str(w.cget("image")) and (str(w.cget("text")).startswith("✓")
+                                                   or str(w.cget("text")) in pillentexte)]
+            self.assertEqual(len(pillen), 6, "Zwei Info-Pillen und vier Haken-Pillen erwartet")
+            for pille in pillen:
+                self.assertTrue(getattr(pille, "_foto", None), "Die Pille hat ihr Bild nicht festgehalten")
+        finally:
+            self._schliesse(fenster)
+
+    def test_backport_kopf_ohne_angaben_zeigt_keine_leeren_pillen(self):
+        fenster = self._backport_fenster_mit({
+            "title": "–", "title_id": "–", "version": "–", "required_firmware": "–"})
+        try:
+            texte = [str(w.cget("text")).strip() for w in _sammle(fenster, "Label")]
+            self.assertNotIn(self.app._t("backport.chip_version", version="—"), texte)
+            self.assertFalse([t for t in texte if t.startswith(self.app._t("backport.required_firmware_hint",
+                                                                          fw="").strip())],
+                             "Ohne verlangte Firmware darf der Hinweis nicht erscheinen")
+            haken = [t for t in texte if t.startswith("✓")]
+            self.assertEqual(len(haken), 4, "Die vier automatischen Schritte fehlen")
         finally:
             self._schliesse(fenster)
 

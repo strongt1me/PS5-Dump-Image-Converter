@@ -715,9 +715,12 @@ class FakelibOrdnerwahlTests(unittest.TestCase):
         self.assertNotIn('self._save_setting("fakelib_variante", wahl)', self.quelle,
                          "Die Wahl wird wieder gespeichert.")
         # Angezeigt wird der Ordner weiterhin - in beiden Fenstern, damit
-        # niemand raten muss, wohin die Dateien gehen.
-        self.assertEqual(2, self.quelle.count('text=self._fakelib_ordnername()'),
-                         "Der tatsaechliche Ordner steht nicht in beiden Fenstern.")
+        # niemand raten muss, wohin die Dateien gehen. Im BACKPORT-Fenster
+        # steht er seit Entwurf A (21.11.2026) in der Pille der Ersatzbibliotheken.
+        self.assertEqual(1, self.quelle.count('text=self._fakelib_ordnername()'),
+                         "Der tatsaechliche Ordner steht nicht mehr im Einbau-Fenster.")
+        self.assertIn('ordner=self._fakelib_ordnername()', self.quelle,
+                      "Der tatsaechliche Ordner steht nicht mehr im BACKPORT-Fenster.")
 
     def test_der_schluessel_wird_nur_noch_gelesen(self) -> None:
         """Genau ein Leser, kein Schreiber mehr.

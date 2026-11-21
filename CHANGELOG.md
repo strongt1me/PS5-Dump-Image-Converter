@@ -12,7 +12,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Neu:** Die Korrekturen für fehlende Funktionen decken vier weitere Fälle ab; ein neuer Haken bietet eine zweite Korrekturart (Versuch, aus; an FW 12.00 gemessen, noch ohne echten Backport erprobt).
 - **Geändert:** Die Rückfrage „Backport nötig“ erkennt ein schon herabgesetztes Spiel an seinen Programmen statt an der param.json – bei Spielordnern, .ffpkg, .exfat, .ffpfs, .ffpfsc und .pkg, ohne zu entpacken.
 - **Neu:** Das KLOG-Fenster hebt die Kernel-Meldung „Call to unpatched function“ farbig hervor und weist darauf hin, dass dem Spiel meist eine Ersatzbibliothek fehlt.
-- **Geändert:** Im BACKPORT-Fenster gibst du nur noch die Firmware an; Sicherung, Ersatzbibliotheken und der Ausgleich fehlender Funktionen laufen immer von selbst, die Haken und Felder entfallen.
+- **Geändert:** Im BACKPORT-Fenster gibst du nur noch die Firmware an; Sicherung, Ersatzbibliotheken und der Ausgleich fehlender Funktionen laufen immer von selbst, die Haken und Felder entfallen. Das Fenster ist aufgeräumt: Spielname groß, Title-ID und Version als kleine Pillen, die automatischen Schritte als grüne Haken, die Hinweise auf je einen Satz.
 - **Geändert:** Handbuch, FAQ, Anleitungen und README wurden in fünf Sprachen gegen das Programm geprüft und berichtigt; „Aufgabe 7 – PKG / FPKG“ steht jetzt vor „Aufgabe 8 – Validator“ (Kapitel 12 und 13).
 - **Aktualisiert:** AMPR EMU NG 0.5.0, die jetzt die Vorgabe für zstd-Asset-Packs ist, und Kraken Mount 0.3.1; die Warnung zum Indexspeicher kennt NG 0.5.0.
 - **Behoben:** Beim Umwandeln eines schon herabgesetzten Abbilds fragte das Programm manchmal trotzdem nach einem Backport für Firmware 12.

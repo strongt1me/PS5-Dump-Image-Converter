@@ -288,7 +288,7 @@ class VerdrahtungTests(unittest.TestCase):
                            "backport.folder_no_id", "backport.folder_inside_game", "backport.folder_exists",
                            "backport.folder_status", "backport.folder_log_start", "backport.folder_log_done",
                            "backport.folder_done_title", "backport.folder_done_message",
-                           "backport.fw_vorschlag"):
+                           "backport.konsole_stand"):
             for sprache in ("de", "en", "es", "it", "fr"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):
                     self.assertTrue(STRINGS[schluessel].get(sprache))

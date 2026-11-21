@@ -64545,6 +64545,38 @@ class PS5ConverterGUI:
         self._remember_source_dialog_path(ordner)
         self._render_backport_window(ordner)
 
+    def _backport_pille(self, eltern: "tk.Misc", text: str, *, gruen: bool = False) -> "tk.Label":
+        """Eine kleine Pille mit Text fuer das BACKPORT-Fenster (Title-ID, Version, Haken der Schritte).
+
+        Form aus ``bibliothek_zeichnen.rund_rechteck`` (weich gerundet, durchsichtige Ecken); die Schrift bleibt
+        Tk-Schrift. Die Masse folgen der Skalierung (``knopfmass``) und der gemessenen Textbreite. Das Bild haengt
+        am Label, sonst raeumt es die Speicherverwaltung ab und die Pille bliebe leer.
+        """
+        import tkinter.font as _tkfont  # noqa: PLC0415
+        c = self._COLORS
+        schrift = (UI_SCHRIFT, pt(8))
+        messer = _tkfont.Font(root=eltern, font=schrift)
+        hoehe = int(messer.metrics("linespace")) + knopfmass(8, eltern)
+        breite = int(messer.measure(text)) + knopfmass(22, eltern)
+        if gruen:
+            farbe = c["fg_success"]
+            fuellung = bibliothek_zeichnen.mischen(c["bg_main"], farbe, 0.14)
+            rand = bibliothek_zeichnen.mischen(c["bg_main"], farbe, 0.40)
+        else:
+            farbe = c["fg_secondary"]
+            fuellung = bibliothek_zeichnen.mischen(c["bg_main"], farbe, 0.10)
+            rand = bibliothek_zeichnen.mischen(c["bg_main"], farbe, 0.28)
+        try:
+            faktor = max(1.0, float(eltern.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            faktor = 1.0
+        bild = bibliothek_zeichnen.rund_rechteck(breite, hoehe, hoehe / 2.0, fuellung, rand, faktor)
+        foto = ImageTk.PhotoImage(bild, master=eltern)
+        pille = tk.Label(eltern, image=foto, text=text, compound="center", font=schrift, fg=farbe,
+                         bg=c["bg_main"], bd=0, padx=0, pady=0, highlightthickness=0)
+        pille._foto = foto  # Verweis halten
+        return pille
+
     def _render_backport_window(self, ordner: str) -> None:
         """Baut das Fenster: Erkanntes, Zielfirmware, Dateiliste, Protokoll."""
         c = self._COLORS
@@ -64560,33 +64592,50 @@ class PS5ConverterGUI:
             win, self._t("titlebar.backport"),
             self._t("backport.subtitle", path=ordner))
 
-        # ---- Kopfzeile: Erkanntes und Einstellungen ----
-        kopf = tk.Frame(win, bg=c["bg_main"], padx=16)
-        kopf.pack(fill="x", pady=(4, 0))
+        # ---- Kopf: das Spiel als Karte, darunter die Firmware-Wahl und was von selbst geschieht ----
+        # Entwurf A vom 21.11.2026 (Nutzerwunsch: "schoener, man sieht mehr Text als sonst was"): Spielname gross,
+        # Title-ID und Version als kleine Pillen, eine Zeile fuer die Wahl, die vier automatischen Schritte als
+        # Haken-Pillen, die Signatur-Warnung als ein Satz. Die langen Erklaerungen (Bibliotheksordner, "fakelib2")
+        # stehen im Handbuch; die Beschreibung der Schritte steht als Tooltip an den Pillen.
+        leer = "\u2014"
 
         def _wert(schluessel: str) -> str:
             roh = str(meta.get(schluessel, "") or "").strip()
-            return roh if roh not in ("", "–", "-") else "—"
+            return roh if roh not in ("", "\u2013", "-") else leer
 
-        for schluessel, wert in (
-            ("backport.field_title", _wert("title")),
-            ("backport.field_title_id", _wert("title_id")),
-            ("backport.field_version", _wert("version")),
-        ):
-            zeile = tk.Frame(kopf, bg=c["bg_main"])
-            zeile.pack(fill="x")
-            tk.Label(zeile, text=self._t(schluessel) + ":", width=12, anchor="w",
-                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                     fg=c["fg_secondary"]).pack(side="left")
-            tk.Label(zeile, text=wert, anchor="w", font=(UI_SCHRIFT, pt(9), "bold"),
-                     bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left", fill="x", expand=True)
+        karte = tk.Frame(win, bg=c["bg_main"], padx=16)
+        karte.pack(fill="x", pady=(2, 0))
+        tk.Label(karte, text=_wert("title"), anchor="w", justify="left", wraplength=900,
+                 font=(UI_SCHRIFT, pt(13), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"]).pack(fill="x")
+        pillentexte = []
+        if _wert("title_id") != leer:
+            pillentexte.append(_wert("title_id"))
+        if _wert("version") != leer:
+            pillentexte.append(self._t("backport.chip_version", version=_wert("version")))
+        if pillentexte:
+            pillenzeile = tk.Frame(karte, bg=c["bg_main"])
+            pillenzeile.pack(fill="x", pady=(6, 0))
+            for pillentext in pillentexte:
+                self._backport_pille(pillenzeile, pillentext).pack(side="left", padx=(0, 6))
 
         einstellungen = tk.Frame(win, bg=c["bg_main"], padx=16)
-        einstellungen.pack(fill="x", pady=(10, 0))
+        einstellungen.pack(fill="x", pady=(14, 0))
 
-        tk.Label(einstellungen, text=self._t("backport.target_label"),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
+        # Orientierung bei der Wahl (Nutzerwunsch 28.10.2026): required_firmware steht in den Metadaten bereits
+        # normalisiert ("10.01" oder "11.20.00.00"); angezeigt wird ohne die nachlaufenden ".00". Senkt nichts
+        # automatisch ab, zeigt nur, wovon herabgesetzt wird.
+        verlangt = str(meta.get("required_firmware", "\u2013") or "\u2013").strip()
+        if verlangt not in ("", "\u2013", "-"):
+            teile = verlangt.split(".")
+            while len(teile) > 2 and teile[-1] == "00":
+                teile.pop()
+            tk.Label(einstellungen, text=self._t("backport.required_firmware_hint", fw=".".join(teile)),
+                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                     fg=c["fg_secondary"]).pack(side="left")
+            tk.Label(einstellungen, text="\u2192", font=(UI_SCHRIFT, pt(11)), bg=c["bg_main"],
+                     fg=c["fg_secondary"]).pack(side="left", padx=(10, 10))
+
         # Bewusst ohne textvariable: Eine nur lokal gehaltene StringVar wird
         # eingesammelt, sobald diese Funktion zurueckkehrt - die Combobox zeigt
         # dann ins Leere, obwohl das Widget selbst noch lebt.
@@ -64601,7 +64650,7 @@ class PS5ConverterGUI:
         ]
         fw_box = self._pw.Combobox(einstellungen, state="readonly",
                               width=16, values=auswahlwerte)
-        fw_box.pack(side="left", padx=(8, 16))
+        fw_box.pack(side="left")
         # Vorauswahl: passend zur Konsole (die hoechste Stufe, die nicht darueber liegt), sonst der Standard.
         konsole_fw = self._konsole_firmware()
         vorschlag = ps5_backport.firmware_vorschlag(konsole_fw, firmwares)
@@ -64611,41 +64660,9 @@ class PS5ConverterGUI:
         except ValueError:
             fw_box.current(0)
         if vorschlag is not None:
-            tk.Label(einstellungen,
-                     text=self._t("backport.fw_vorschlag", konsole=konsole_fw, fw=f"{vorschlag}.00"),
-                     font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                     fg=c["fg_secondary"]).pack(side="left", padx=(0, 16))
-
-        # Orientierung bei der Wahl (Nutzerwunsch 28.10.2026): Die Metadaten
-        # sind oben ohnehin schon gelesen (meta) - required_firmware steht
-        # dort bereits normalisiert ("10.01"), wenn die param.json es nennt.
-        # Senkt nichts automatisch ab, zeigt nur, wovon herabgesetzt wird.
-        verlangt = str(meta.get("required_firmware", "–") or "–").strip()
-        if verlangt not in ("", "–", "-"):
-            tk.Label(einstellungen, text=self._t("backport.required_firmware_hint", fw=verlangt),
-                     font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                     fg=c["fg_secondary"]).pack(side="left", padx=(0, 16))
-
-        # Der Bibliotheksordner steht fest - hier stand bis zum 05.09.2026 eine
-        # Klappliste. Waehlen liess sich darin seit v1.8.98 nichts mehr, was
-        # eine Wirkung gehabt haette: Die Ablage entscheidet
-        # _fakelib_ordnername nach der Anleitung von ShadowMountPlus, weil ab
-        # 1.7 alpha8 ein "fakelib2" im Spielordner wortlos ignoriert wird. Die
-        # Liste nahm die Wahl trotzdem an und das Protokoll bestaetigte sie
-        # ("Ersatzbibliotheken gehen nach fakelib2") - abgelegt wurde nach
-        # fakelib. Wer danach in fakelib2 nachsah, fand nichts und hielt den
-        # Lauf fuer fehlgeschlagen. Die Wahl wirksam zu machen waere der
-        # falsche Weg gewesen: Dann startete das Spiel ohne die Bibliotheken.
-        tk.Label(einstellungen, text=self._t("backport.fakelib_folder_label"),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        tk.Label(einstellungen, text=self._fakelib_ordnername(),
-                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"]).pack(side="left", padx=(8, 8))
-        tk.Label(einstellungen, text=self._t("fakelib.folder_fixed"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                 fg=c["fg_secondary"], wraplength=420,
-                 justify="left").pack(side="left", padx=(0, 16))
+            tk.Label(einstellungen, text=self._t("backport.konsole_stand", konsole=konsole_fw),
+                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                     fg=c["fg_secondary"]).pack(side="left", padx=(14, 0))
 
         # Seit 21.11.2026 gibt es hier nichts mehr zu waehlen ausser der Firmware (Nutzerwunsch: "Der Anwender soll
         # nur die gewuenschte FW angeben, der Rest soll automatisch erfolgen"). Sicherung, Ersatzbibliotheken, libc-
@@ -64653,18 +64670,30 @@ class PS5ConverterGUI:
         # Korrekturprofil des Titels) laufen immer - im Fenster wie beim Einbau waehrend des Erstellens. Die frueheren
         # Haken, Ordnerfelder und eigenen Zielwerte sind entfallen. Was davon noch in der Einstellungsdatei steht,
         # gilt weiter und wird hier genannt (_backport_eigene_einstellungen): Nichts wirkt still.
-        tk.Label(win, text=self._t("backport.auto_hinweis"), font=(UI_SCHRIFT, pt(8)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w", wraplength=920,
-                 justify="left").pack(fill="x", padx=16, pady=(8, 0))
+        autozeile = tk.Frame(win, bg=c["bg_main"], padx=16)
+        autozeile.pack(fill="x", pady=(12, 0))
+        for schluessel in ("backport.auto_sicherung", "backport.auto_param",
+                           "backport.auto_bibliotheken", "backport.auto_funktionen"):
+            # Die Ablage steht in der Pille: Sonst muesste man raten, wohin die Ersatzbibliotheken gehen
+            # (der Name haengt an der Fassung von ShadowMountPlus, siehe _fakelib_ordnername).
+            pille = self._backport_pille(
+                autozeile, "\u2713 " + self._t(schluessel, ordner=self._fakelib_ordnername()), gruen=True)
+            pille.pack(side="left", padx=(0, 6))
+            self._tooltip(pille, "backport.auto_hinweis", delay_ms=600, wraplength=430)
         eigene_aktiv = self._backport_eigene_einstellungen()
         if eigene_aktiv:
             tk.Label(win, text=self._t("backport.eigene_aktiv", liste=", ".join(eigene_aktiv)),
                      font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
-                     wraplength=920, justify="left").pack(fill="x", padx=16, pady=(4, 0))
+                     wraplength=920, justify="left").pack(fill="x", padx=16, pady=(6, 0))
 
-        tk.Label(win, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
-                 bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
-                 wraplength=920, justify="left").pack(fill="x", padx=16, pady=(6, 0))
+        warnflaeche = bibliothek_zeichnen.mischen(c["bg_main"], c["fg_warning"], 0.14)
+        warnrahmen = tk.Frame(win, bg=warnflaeche, padx=10, pady=6)
+        warnrahmen.pack(fill="x", padx=16, pady=(12, 0))
+        tk.Label(warnrahmen, text="\u26a0", font=(UI_SCHRIFT, pt(9)), bg=warnflaeche,
+                 fg=c["fg_warning"]).pack(side="left")
+        tk.Label(warnrahmen, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
+                 bg=warnflaeche, fg=c["fg_warning"], anchor="w", wraplength=860,
+                 justify="left").pack(side="left", fill="x", expand=True, padx=(8, 0))
 
         # ---- Dateiliste ----
         # Der Rahmen wird hier nur gebaut, aber noch nicht gepackt: Er dehnt
