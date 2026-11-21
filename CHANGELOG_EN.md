@@ -9,7 +9,7 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 ## v2.0.1 – in progress
 
 - **New:** The BACKPORT window has a “Firmware reference (check only)” field: you pick an unpacked firmware folder, and the program reports which functions are missing there – it copies nothing.
-- **New:** The corrections for missing functions cover four more cases, and an extra checkbox offers a second kind of correction (experimental, off by default, not yet tested on the console).
+- **New:** The corrections for missing functions cover four more cases; a new checkbox adds a second kind of correction (experimental, off; measured on FW 12.00, not yet tried with a real backport).
 - **Changed:** The “Backport needed” question recognises an already lowered game by its programs, not the param.json – for game folders, .ffpkg, .exfat, .ffpfs, .ffpfsc and .pkg, without unpacking.
 - **New:** The KLOG window highlights the kernel message “Call to unpatched function” and points out that the game usually lacks a replacement library.
 - **Changed:** The BACKPORT window opens a little taller so that all buttons stay visible.

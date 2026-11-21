@@ -227,7 +227,9 @@ def _bereits_gesetzte_ergaenzen(elf: bytes, stubs: "dict[int, tuple[int, int]]",
 #: Der Landeplatz eines Stubs im "Landeplatz"-Modus: hinter dem ``jmp [GOT]`` (6 Byte) des PLT-Eintrags, dort wo sonst
 #: ``push idx; jmp Aufloeser`` steht. Der lazy gebundene GOT-Eintrag zeigt anfangs genau dorthin - ein Stub dort laeuft
 #: nur, wenn der Lader die Funktion **nicht** aufgeloest hat; hat er sie gebunden, springt der erste ``jmp`` in die
-#: echte Funktion (ob der Lader der PS5 so bindet, ist nicht belegt - Versuch, siehe :func:`stubs_setzen`).
+#: echte Funktion. Gemessen am 21.11.2026 an einer Konsole mit FW 12.00: Der Lader der PS5 bindet Funktionen der Firmware
+#: schon beim Laden (der Stub wird nie erreicht), bei einem unaufgeloesten Import zeigt der GOT auf Byte 6 (der Stub
+#: bekommt die Kontrolle). Mit einem echten Backport und auf 4.xx noch nicht erprobt (siehe :func:`stubs_setzen`).
 LANDEPLATZ_OFFSET = 6
 LANDEPLATZ_MAX = PLT_LAENGE - LANDEPLATZ_OFFSET
 
@@ -325,10 +327,12 @@ def stubs_setzen(elf: bytes, ziele: "dict[tuple[str, str], str | None]", *,
         elf: Das ELF (kein SELF).
         ziele: ``(Bibliothek, NID)`` -> Art-Kennung oder ``None`` (= :func:`stub_art`).
         schwache_auslassen: Schwach gebundene Importe nicht anfassen.
-        landeplatz: **Versuch, an keiner Konsole belegt.** Statt den ganzen PLT-Eintrag zu ueberschreiben, bleibt der
-            erste ``jmp [GOT]`` stehen und der Stub (Kurzform, bis 10 Byte) ersetzt nur das ``push idx; jmp Aufloeser``
-            dahinter. Bindet der Lader eine Funktion, die die Zielfirmware doch hat, bleibt sie dann erreichbar; der
-            feste Stub im Eintrag haette sie verdeckt. Ob der Lader der PS5 so bindet, ist die offene Frage.
+        landeplatz: **Versuch; der Mechanismus ist an FW 12.00 gemessen (21.11.2026), ein echter Backport-Lauf nicht.**
+            Statt den ganzen PLT-Eintrag zu ueberschreiben, bleibt der erste ``jmp [GOT]`` stehen und der Stub
+            (Kurzform, bis 10 Byte) ersetzt nur das ``push idx; jmp Aufloeser`` dahinter. Bindet der Lader eine
+            Funktion, die die Zielfirmware doch hat, bleibt sie dann erreichbar; der feste Stub im Eintrag haette sie
+            verdeckt. Gemessen (Sonden-Bau mit ``ud2``, KLOG-Mitschnitt): aufgeloeste Funktion bleibt nativ (Stub nie
+            erreicht, 2 von 2), unaufgeloester Import trifft den Stub bei Eintrag + 6 (2 von 2). Nicht gemessen: 4.xx.
 
     Returns:
         (Bytes, Ergebnisse). Ein Ziel, das in der Datei nicht vorkommt, taucht **nicht** auf - der Aufrufer prueft

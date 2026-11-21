@@ -9,7 +9,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 ## v2.0.1 – in Arbeit
 
 - **Neu:** Das BACKPORT-Fenster hat das Feld „Firmware-Referenz (nur Prüfung)“: Du wählst einen entpackten Firmware-Ordner, und das Programm meldet, welche Funktionen dort fehlen – es kopiert nichts.
-- **Neu:** Die Korrekturen für fehlende Funktionen decken vier weitere Fälle ab, und ein zusätzlicher Haken bietet eine zweite Korrekturart an (Versuch, standardmäßig aus, an der Konsole noch nicht geprüft).
+- **Neu:** Die Korrekturen für fehlende Funktionen decken vier weitere Fälle ab; ein neuer Haken bietet eine zweite Korrekturart (Versuch, aus; an FW 12.00 gemessen, noch ohne echten Backport erprobt).
 - **Geändert:** Die Rückfrage „Backport nötig“ erkennt ein schon herabgesetztes Spiel an seinen Programmen statt an der param.json – bei Spielordnern, .ffpkg, .exfat, .ffpfs, .ffpfsc und .pkg, ohne zu entpacken.
 - **Neu:** Das KLOG-Fenster hebt die Kernel-Meldung „Call to unpatched function“ farbig hervor und weist darauf hin, dass dem Spiel meist eine Ersatzbibliothek fehlt.
 - **Geändert:** Das BACKPORT-Fenster öffnet etwas höher, damit alle Knöpfe sichtbar bleiben.

@@ -59992,7 +59992,8 @@ class PS5ConverterGUI:
 
         Versuch: Der Stub ersetzt nur den Aufloeser hinter dem ersten ``jmp [GOT]`` des PLT-Eintrags, statt den ganzen
         Eintrag - eine Funktion, die die Zielfirmware doch hat, bleibt so erreichbar, falls der Lader sie bindet
-        (``backport_korrektur.stubs_setzen``). An keiner Konsole belegt.
+        (``backport_korrektur.stubs_setzen``). Der Mechanismus ist an FW 12.00 gemessen (21.11.2026); ein echter
+        Backport-Lauf damit ist es nicht.
         """
         return bool(self._load_setting("backport_stubs_landeplatz", False))
 
