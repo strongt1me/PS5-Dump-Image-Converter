@@ -29,6 +29,23 @@ _LAUFZEITEN = {"zstd": "ampr-emu-ng (zstd)", "other": "AMPR EMU", "forge_release
                "forge_trace": "Dump Forge (Trace)"}
 
 
+#: Dieselben Namen kurz, wie sie vor einer Fassung stehen (``ampr-emu-ng 0.5.0``, ``AMPR EMU 0.3.6.6``).
+_LAUFZEITEN_KURZ = {"zstd": "ampr-emu-ng", "other": "AMPR EMU", "forge_release": "ampr_emu", "forge_trace": "ampr_emu (Trace)"}
+
+
+def laufzeit_name(fakten) -> str:
+    """Die Laufzeit im Spiel mit ihrer Fassung, wie sie ein Anwender liest: ``ampr-emu-ng 0.5.0``, ``AMPR EMU 0.3.6.6`` (ohne Fassung: nur der Name)."""
+    name = _LAUFZEITEN_KURZ.get(str(fakten.laufzeit or "").strip().lower(), "AMPR EMU")
+    version = str(fakten.laufzeit_version or "").strip()
+    return "%s %s" % (name, version) if version else name
+
+
+def laufzeit_neu_name(fakten) -> str:
+    """Forges eigene Laufzeit, die es beim Paketbau einsetzt: ``ampr_emu 0.4.2.1`` (ohne Fassung: ``ampr_emu``)."""
+    version = str(fakten.laufzeit_neu or "").strip()
+    return "ampr_emu %s" % version if version else "ampr_emu"
+
+
 @dataclass(frozen=True)
 class Zeile:
     """Eine Zeile des Berichts: ``schluessel`` aus :data:`SCHLUESSEL`, ``stufe`` eine der ``STUFE_*``, ``text`` fertig."""
@@ -62,6 +79,11 @@ def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr
         liste.append(Zeile("ampr", STUFE_HINWEIS, t("bericht.ampr_forge")))
     elif fakten.ampr_fehlt is True:
         liste.append(Zeile("ampr", STUFE_FEHLT, t("bericht.ampr_fehlt")))
+    elif fakten.ampr_importiert and forge_ergaenzt_ampr and fakten.laufzeit_ersetzt:
+        # Ein Paket: Dump Forge setzt seine eigene Laufzeit an die des Spiels (auch ampr-emu-ng) - nur ein Hinweis, die Rueckfrage
+        # dazu stellt das Fenster (``Ps5PkgFenster._laufzeit_fragen``).
+        liste.append(Zeile("ampr", STUFE_HINWEIS,
+                           t("bericht.ampr_ersetzt", alt=laufzeit_name(fakten), neu=laufzeit_neu_name(fakten))))
     elif fakten.ampr_importiert:
         laufzeit = _LAUFZEITEN.get(str(fakten.laufzeit or "").lower(), "AMPR EMU")
         liste.append(Zeile("ampr", STUFE_OK, t("bericht.ampr_da", laufzeit=laufzeit)))

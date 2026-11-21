@@ -12,10 +12,12 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 - **New:** The corrections for missing functions cover four more cases; a new checkbox adds a second kind of correction (experimental, off; measured on FW 12.00, not yet tried with a real backport).
 - **Changed:** The “Backport needed” question recognises an already lowered game by its programs, not the param.json – for game folders, .ffpkg, .exfat, .ffpfs, .ffpfsc and .pkg, without unpacking.
 - **New:** The KLOG window highlights the kernel message “Call to unpatched function” and points out that the game usually lacks a replacement library.
+- **New:** Before a package is built, the program now says when Dump Forge would replace the game's AMPR runtime (even ampr-emu-ng) with its own, and names the way to keep it: an image from tasks 1 to 6, started with ShadowMount+.
 - **Changed:** In the BACKPORT window you only choose the firmware; backup, replacement libraries and compensation for missing functions always run by themselves, the checkboxes and fields are gone. The window is tidied up: the game name is large, Title ID and version are small pills, the automatic steps are green ticks, and the notes are down to one sentence each.
 - **Changed:** The manual, FAQ, guides and README were checked against the program in five languages and corrected; “Task 7 – PKG / FPKG” now comes before “Task 8 – Validator” (chapters 12 and 13).
 - **Updated:** AMPR EMU NG 0.5.0, now the default for zstd asset packs, and Kraken Mount 0.3.1; the index-memory warning knows NG 0.5.0.
 - **Fixed:** When converting an already lowered image, the program sometimes still asked for a backport to firmware 12.
+- **Fixed:** The manual said Dump Forge takes `fakelib` over into a package unchanged; for games with AMPR EMU it puts its own runtime there, and the log line for package builds now says so too.
 - **Fixed:** Several hints were out of date: the compression level (1 = fastest), the ShadowMount+ config.ini warning, what a backup is missing (only the content ID) and “zstd not yet measured on the console”.
 
 ---

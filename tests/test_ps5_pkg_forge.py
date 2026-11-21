@@ -1618,6 +1618,98 @@ class EinbauSeiteTests(_ForgeBasis):
                              "kein Hinweis auf ein Entpacken, das nicht stattfindet")
         self.assertEqual("", self.f._bau.get("entpacken", "") if self.f._bau else "")
 
+    # ---------------- Dump Forge ersetzt die AMPR-Laufzeit des Spiels im Paket (gemessen 21.11.2026, Forge 0.5.6) ----------------
+    @staticmethod
+    def _ng_fakten(**kw) -> "fc.QuellFakten":
+        """Wie Forge ein Spiel mit ampr-emu-ng 0.5.0 beschreibt: Beim Paketbau setzt es seine eigene Laufzeit (ampr_emu 0.4.2.1) dafuer ein."""
+        werte = dict(ampr_importiert=True, ampr_fehlt=False, laufzeit="zstd", laufzeit_version="0.5.0", laufzeit_neu="0.4.2.1",
+                     laufzeit_aktion="replace")
+        werte.update(kw)
+        return fc.QuellFakten(**werte)
+
+    def test_ersetzt_dump_forge_die_laufzeit_fragt_das_fenster_und_nennt_den_weg(self) -> None:
+        """Nutzerwunsch 21.11.2026: Das Programm richtet sich nach Dump Forge; will jemand etwas anderes (die Laufzeit des Spiels behalten),
+        sagt eine Meldung genau, wie es geht - ein Abbild aus den Aufgaben 1 bis 6, das ShadowMount+ startet."""
+        pfad = self._abbild(name="Ng.exfat", tid="PPSA00031")
+        self.infos[pfad].fakten = self._ng_fakten()
+        self._laden(pfad)
+        with self._attrappe():
+            self._starten_und_warten()
+        fragen = self.dialoge["frage"]
+        self.assertEqual(1, len(fragen), fragen)
+        self.assertEqual(_de("ps5pkg.laufzeit_titel"), fragen[0][0])
+        self.assertEqual(_de("ps5pkg.laufzeit_frage", alt="ampr-emu-ng 0.5.0", neu="ampr_emu 0.4.2.1"), fragen[0][1])
+        for stueck in ("ShadowMount+", ".ffpkg", "Aufgaben 1 bis 6", "AMPR EMU"):
+            self.assertIn(stueck, fragen[0][1])
+        log = self.f.protokoll.get("1.0", "end")
+        self.assertIn("[HINWEIS] " + _de("bericht.ampr_ersetzt", alt="ampr-emu-ng 0.5.0", neu="ampr_emu 0.4.2.1"), log)
+        self.assertIn(_de("ps5pkg.laufzeit_log"), log)
+        self.assertEqual(1, len(self.aufrufe), "mit Ja wird gebaut")
+
+    def test_sagt_der_anwender_nein_zur_ersetzten_laufzeit_wird_nichts_gebaut(self) -> None:
+        pfad = self._abbild(name="NgNein.exfat", tid="PPSA00032")
+        self.infos[pfad].fakten = self._ng_fakten()
+        self._laden(pfad)
+        with self._attrappe(), mock.patch.object(fz.messagebox, "askyesno", return_value=False) as frage:
+            self._starten_und_warten()
+        self.assertEqual(1, frage.call_count)
+        self.assertEqual([], self.aufrufe, "nichts gebaut")
+        self.assertEqual(_de("ps5pkg.laufzeit_abbruch"), self.f.status_var.get())
+        self.assertEqual([], os.listdir(self.ziel), "weder Arbeitsordner noch Paket")
+        self.assertNotIn(_de("ps5pkg.laufzeit_log"), self.f.protokoll.get("1.0", "end"))
+
+    def test_auch_bei_einem_spielordner_kommt_die_frage_mit_dem_namen_der_laufzeit(self) -> None:
+        ordner = self._spielordner(name="NgOrdner", tid="PPSA00033")
+        self._laden(ordner)
+        self.f._format_waehlen("pkg")
+        self.f.aktuell.fakten = self._ng_fakten(laufzeit="other", laufzeit_version="0.3.6.6")
+        with self._attrappe():
+            self._starten_und_warten()
+        self.assertEqual(1, len(self.dialoge["frage"]))
+        self.assertIn("AMPR EMU 0.3.6.6", self.dialoge["frage"][0][1])
+        self.assertEqual(1, len(self.aufrufe))
+
+    def test_ohne_austausch_kommt_keine_frage_zur_laufzeit(self) -> None:
+        faelle = (("Forges eigene Laufzeit bleibt", dict(laufzeit="forge_release", laufzeit_aktion="keep"), ""),
+                  ("keine Laufzeit im Spiel: Forge legt sie nur dazu", dict(laufzeit="none", laufzeit_aktion="install", ampr_fehlt=True), ""),
+                  ("Forge sagt nichts dazu", dict(laufzeit_aktion=""), ""),
+                  ("ein gepacktes Spiel entpackt das Programm, das Protokoll sagt es", dict(gepackt="zstd"), "zstd"))
+        for nr, (name, kw, entpacken) in enumerate(faelle):
+            with self.subTest(name):
+                self.aufrufe.clear()
+                self.dialoge["frage"].clear()
+                pfad = self._abbild(name="Ohne%d.exfat" % nr, tid="PPSA0004%d" % nr)
+                self.infos[pfad].fakten = self._ng_fakten(**kw)
+                self._laden(pfad)
+                with self._attrappe():
+                    self._starten_und_warten()
+                self.assertEqual([], self.dialoge["frage"])
+                self.assertEqual(1, len(self.aufrufe))
+                self.assertEqual(entpacken, self.aufrufe[0]["entpacken"])
+
+    def test_ein_spielordner_mit_pack_index_fragt_nicht_nach_der_laufzeit_auch_wenn_forge_ihn_nicht_als_gepackt_sieht(self) -> None:
+        """Forge liest ein beschaedigtes Manifest nicht als gepackt, das Programm entpackt trotzdem (Pack-Index an der Wurzel): Dort setzt
+        Forge seine Laufzeit beim Entpacken ein, das Protokoll sagt es schon - eine zweite Frage waere doppelt und irrefuehrend."""
+        ordner = self._spielordner(name="NgIndex", tid="PPSA00034")
+        Path(ordner, "ampr_zstd.index").write_bytes(b"AMPRZPK1")
+        self._laden(ordner)
+        self.f._format_waehlen("pkg")
+        self.f.aktuell.fakten = self._ng_fakten()          # Forge sieht nichts Gepacktes und will die Laufzeit trotzdem ersetzen
+        with self._attrappe():
+            self._starten_und_warten()
+        self.assertEqual([], self.dialoge["frage"])
+        self.assertEqual(1, len(self.aufrufe))
+        self.assertEqual("zstd", self.aufrufe[0]["entpacken"])
+
+    def test_bei_einem_abbild_als_ziel_kommt_keine_frage_zur_laufzeit(self) -> None:
+        """Ein Abbild baut Dump Forge nicht aus der Quelle neu: Die Laufzeit bleibt, die Frage waere falsch."""
+        info = self._umwandeln_vorbereiten("ffpkg")
+        info.fakten = self._ng_fakten()
+        with self._attrappe():
+            self._starten_und_warten()
+        self.assertEqual([], self.dialoge["frage"])
+        self.assertEqual("ffpkg", self.aufrufe[0]["format"])
+
     def test_das_entpacken_wird_erst_nach_der_rueckfrage_gemeldet(self) -> None:
         """Sagt der Anwender bei der Rueckfrage zu fehlendem PlayGo "Nein", wird nichts gebaut - und nichts vom Entpacken gesagt."""
         pfad = self._abbild()

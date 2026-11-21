@@ -2351,6 +2351,9 @@ class Ps5PkgFenster:
             return
         if not abbild and not self._emulatoren_fragen(info):
             return
+        # Ein gepacktes Spiel (``entpacken``) sagt das Protokoll schon: Dort setzt Dump Forge seine Laufzeit beim Entpacken ein.
+        if not abbild and not entpacken and not self._laufzeit_fragen(info):
+            return
         if entpacken:
             self._protokoll(self.t("ps5pkg.packs_entpacken_log", verfahren="LZ4" if entpacken == "lz4" else "zstd"))
         # Der Bau entsteht im Zielordner (gleiches Laufwerk: das Umbenennen am Ende kostet nichts), unter einem
@@ -2450,6 +2453,28 @@ class Ps5PkgFenster:
             self._status(self.t("ps5pkg.emu_abgebrochen"))
             return False
         self._protokoll(self.t("ps5pkg.emu_log"))
+        return True
+
+    def _laufzeit_fragen(self, info: "wz.PaketInfo") -> bool:
+        """Vor dem Bau eines Pakets: Dump Forge ersetzt die AMPR-Laufzeit des Spiels durch seine eigene - sagt es und nennt den Weg, falls sie bleiben soll.
+
+        Nutzerwunsch 21.11.2026: Das Programm richtet sich nach Dump Forge; will ein Anwender etwas anderes, als Forge vorgibt (hier: die
+        Laufzeit des Spiels, auch ampr-emu-ng, im Paket behalten), erscheint eine Meldung, die genau sagt, wie es geht. Gemessen mit Forge 0.5.6:
+        NG 0.5.0 und AMPR EMU 0.3.6.6 werden im ``.pkg`` zu ampr_emu 0.4.2.1, ohne Schalter (:attr:`forge_cli.QuellFakten.laufzeit_ersetzt`).
+        Den Weg, auf dem die Laufzeit bleibt, gibt es hier: ein Abbild aus den Aufgaben 1 bis 6, das ShadowMount+ startet.
+
+        Returns:
+            ``False``, wenn nicht gebaut wird (der Anwender sagt Nein).
+        """
+        fakten = self._quellfakten(info)
+        if fakten is None or not fakten.laufzeit_ersetzt:
+            return True
+        if not messagebox.askyesno(self.t("ps5pkg.laufzeit_titel"),
+                                   self.t("ps5pkg.laufzeit_frage", alt=qb.laufzeit_name(fakten), neu=qb.laufzeit_neu_name(fakten)),
+                                   parent=self.win):
+            self._status(self.t("ps5pkg.laufzeit_abbruch"))
+            return False
+        self._protokoll(self.t("ps5pkg.laufzeit_log"))
         return True
 
     def _quelle_pruefen(self, info: "wz.PaketInfo", paket: bool) -> "tuple[forge.QuellFakten | None, list[str], str]":

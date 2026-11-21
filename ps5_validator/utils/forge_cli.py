@@ -222,6 +222,13 @@ class QuellFakten:
     gepackt: str = ""
     #: Forges Name der Laufzeit in ``fakelib/libSceAmpr.sprx``: ``none``, ``other``, ``zstd`` (ampr-emu-ng) usw.
     laufzeit: str = ""
+    #: Die Fassung dieser Laufzeit (Forges ``lz4.runtime_version``, ``"0.5.0"``), sonst ``""``.
+    laufzeit_version: str = ""
+    #: Die Fassung von Forges eigener Laufzeit (``lz4.shipped_runtime_version``, ``"0.4.2.1"``), die es bei einem Austausch einsetzt.
+    laufzeit_neu: str = ""
+    #: Was Forge bei einer einfachen Umwandlung mit der Laufzeit tut (``lz4.runtime_action``): ``install``, ``replace`` oder ``keep``;
+    #: ``""`` = Forge sagt es nicht (aeltere Befehlszeile oder ein Spiel ohne ``libSceAmpr``-Import).
+    laufzeit_aktion: str = ""
     #: Die Emulatoren in ``fakelib/`` (Namen klein): ``ampr``, ``dlc``, ``playgo``, ``other``.
     emulatoren: tuple = ()
     #: Das Spiel traegt Zusatzinhalte (Forges ``dlcs``) ...
@@ -311,6 +318,19 @@ class QuellFakten:
         return bool(not self.backport_vorhanden and ist and ist[0] > 0 and verlangt and verlangt > ist)
 
     @property
+    def laufzeit_ersetzt(self) -> bool:
+        """Dump Forge setzt beim Paketbau seine eigene Laufzeit an die Stelle der des Spiels (``lz4.runtime_action`` = ``replace``).
+
+        Das gilt auch fuer ampr-emu-ng: Forge bringt NG nur durch Packen in ein Spiel, jede andere Umwandlung ersetzt es durch die Release-Laufzeit,
+        ohne Schalter (Forges Entwicklerhinweise, ``AGENTS.md``); gemessen 21.11.2026 mit Forge 0.5.6: NG 0.5.0 (715.264 Byte) und AMPR EMU 0.3.6.6
+        (255.126 Byte) wurden im ``.pkg`` zu ampr_emu 0.4.2.1 (423.350 Byte). Ein gepacktes Spiel zaehlt nicht: Dort entpackt das Programm
+        ohnehin (``--lz4-unpack`` / ``--zstd-unpack``) und sagt es im Protokoll. Ohne Laufzeit im Spiel (``none``) legt Forge sie nur dazu
+        (``ampr_fehlt``).
+        """
+        return bool(self.ampr_importiert and not self.gepackt and self.laufzeit_aktion == "replace"
+                    and str(self.laufzeit or "").strip().lower() not in ("", "none"))
+
+    @property
     def dlc_fehlt(self) -> bool:
         """Zusatzinhalte im Spiel, aber nichts meldet sie an der Konsole."""
         return self.dlc_vorhanden and not self.dlc_emuliert
@@ -357,6 +377,9 @@ def quellfakten(daten: dict, pfad: "str | None" = None) -> QuellFakten:
         ampr_fehlt=braucht_ampr(daten),
         gepackt=gepackt,
         laufzeit=str(lz4.get("runtime") or ""),
+        laufzeit_version=str(lz4.get("runtime_version") or ""),
+        laufzeit_neu=str(lz4.get("shipped_runtime_version") or ""),
+        laufzeit_aktion=str(lz4.get("runtime_action") or "").strip().lower(),
         emulatoren=emulatoren,
         dlc_vorhanden=bool(dlcs),
         dlc_emuliert="dlc" in emulatoren or any(d.get("emulated") for d in dlcs),
