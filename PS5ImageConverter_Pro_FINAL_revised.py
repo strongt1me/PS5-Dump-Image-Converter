@@ -64734,13 +64734,16 @@ class PS5ConverterGUI:
         spalten = ("datei", "typ", "sdk", "status")
         baum = self._pw.Treeview(rahmen, columns=spalten, show="headings", height=12)
         for spalte, schluessel, breite, anker in (
-            ("datei", "backport.col_file", 380, "w"),
-            ("typ", "backport.col_type", 90, "w"),
-            ("sdk", "backport.col_sdk", 80, "e"),
+            ("datei", "backport.col_file", 320, "w"),
+            ("typ", "backport.col_type", 120, "w"),      # "ELF (grezzo)" ist die laengste Art
+            ("sdk", "backport.col_sdk", 70, "center"),   # rechtsbuendig klebte die Zahl am Status
             ("status", "backport.col_status", 340, "w"),
         ):
             baum.heading(spalte, text=self._t(schluessel), anchor=anker)
-            baum.column(spalte, width=breite, anchor=anker, stretch=(spalte == "status"))
+            # Die Schrift waechst mit der Anzeigeskalierung, Pixelbreiten tun es nicht:
+            # bei 150-200 % wurden Art, Datei und Status abgeschnitten (22.11.2026).
+            baum.column(spalte, width=knopfmass(breite, rahmen), anchor=anker,
+                        stretch=(spalte == "status"))
         vsb = self._pw.Scrollbar(rahmen, orient="vertical", command=baum.yview)
         baum.configure(yscrollcommand=vsb.set)
         baum.grid(row=0, column=0, sticky="nsew")

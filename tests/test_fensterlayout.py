@@ -329,6 +329,48 @@ class FensterLayoutTests(unittest.TestCase):
         finally:
             self._schliesse(fenster)
 
+    def test_backport_tabellenspalten_reichen_bei_200_prozent_in_allen_sprachen(self):
+        """Die Spaltenbreiten wachsen mit der Anzeigeskalierung mit (22.11.2026).
+
+        Bei 150-200 % wurden "Art" und "Datei" abgeschnitten, weil die Schrift
+        mitwuchs, die festen Pixelbreiten aber nicht. Gemessen wird bei 200 %
+        (tk scaling 2.6667): die laengste Art je Sprache muss in ihre Spalte
+        passen, und die SDK-Zahl steht mittig, nicht rechtsbuendig am Status.
+        """
+        import tkinter.font as tkfont
+        from tkinter import ttk
+        sprache_vorher = self.app._current_language
+        skalierung_vorher = float(_WURZEL.tk.call("tk", "scaling"))
+        try:
+            _WURZEL.tk.call("tk", "scaling", 2.6667)
+            for sprache in ("de", "en", "es", "it", "fr"):
+                self.app._current_language = sprache
+                fenster = self._backport_fenster_mit({
+                    "title": "Testspiel", "title_id": "PPSA00001", "version": "01.000.000",
+                    "required_firmware": "11.20.00.00"})
+                try:
+                    baeume = [w for w in _sammle(fenster, "Treeview") if tuple(w["columns"]) ==
+                              ("datei", "typ", "sdk", "status")]
+                    self.assertEqual(len(baeume), 1, f"{sprache}: Dateitabelle fehlt")
+                    baum = baeume[0]
+                    stil = baum.cget("style") or "Treeview"
+                    schrift = tkfont.Font(font=ttk.Style().lookup(stil, "font") or "TkDefaultFont")
+                    arten = [self.app._t(f"backport.type_{t}") for t in
+                             ("self", "elf", "elf_gestrippt", "unbekannt")]
+                    breit = max(schrift.measure(t) for t in arten) + 8
+                    self.assertGreaterEqual(int(baum.column("typ", "width")), breit,
+                                            f"{sprache}: Spalte Art zu schmal fuer {arten}")
+                    pfad = max(schrift.measure("sce_module/libSceNpToolkit2.prx") + 8, 0)
+                    self.assertGreaterEqual(int(baum.column("datei", "width")), pfad,
+                                            f"{sprache}: Spalte Datei zu schmal")
+                    self.assertEqual(str(baum.column("sdk", "anchor")), "center",
+                                     "Die SDK-Zahl steht wieder rechtsbuendig neben dem Status")
+                finally:
+                    self._schliesse(fenster)
+        finally:
+            _WURZEL.tk.call("tk", "scaling", skalierung_vorher)
+            self.app._current_language = sprache_vorher
+
     def test_downloads_knoepfe_voll_sichtbar(self):
         fenster = self._oeffne(self.app._show_downloads_manager)
         try:
