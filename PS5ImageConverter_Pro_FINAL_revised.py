@@ -64717,9 +64717,13 @@ class PS5ConverterGUI:
         warnrahmen.pack(fill="x", padx=16, pady=(12, 0))
         tk.Label(warnrahmen, text="\u26a0", font=(UI_SCHRIFT, pt(9)), bg=warnflaeche,
                  fg=c["fg_warning"]).pack(side="left")
-        tk.Label(warnrahmen, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
+        warntext = tk.Label(warnrahmen, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
                  bg=warnflaeche, fg=c["fg_warning"], anchor="w", wraplength=860,
-                 justify="left").pack(side="left", fill="x", expand=True, padx=(8, 0))
+                 justify="left")
+        warntext.pack(side="left", fill="x", expand=True, padx=(8, 0))
+        # Umbruch folgt der Breite des Streifens statt einer festen Zahl
+        warntext.bind("<Configure>",
+                      lambda e, w=warntext: w.configure(wraplength=max(120, e.width - 8)))
 
         # ---- Dateiliste ----
         # Der Rahmen wird hier nur gebaut, aber noch nicht gepackt: Er dehnt

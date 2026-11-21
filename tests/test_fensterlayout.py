@@ -313,6 +313,22 @@ class FensterLayoutTests(unittest.TestCase):
         finally:
             self._schliesse(fenster)
 
+    def test_backport_warnsatz_bricht_nach_der_fensterbreite_um(self):
+        """Der Umbruch des Warnsatzes folgt der Breite seines Streifens (kein fester Wert)."""
+        fenster = self._backport_fenster_mit({
+            "title": "Testspiel", "title_id": "PPSA00001", "version": "01.000.000",
+            "required_firmware": "11.20.00.00"})
+        try:
+            text = self.app._t("backport.hint_unsigned")
+            warn = [w for w in _sammle(fenster, "Label") if str(w.cget("text")).strip() == text.strip()]
+            self.assertEqual(len(warn), 1, "Der Warnsatz fehlt oder steht doppelt im Fenster")
+            fenster.update_idletasks()
+            fenster.update()
+            self.assertEqual(int(str(warn[0].cget("wraplength"))), max(120, warn[0].winfo_width() - 8),
+                             "wraplength folgt nicht der Breite des Warnstreifens")
+        finally:
+            self._schliesse(fenster)
+
     def test_downloads_knoepfe_voll_sichtbar(self):
         fenster = self._oeffne(self.app._show_downloads_manager)
         try:
