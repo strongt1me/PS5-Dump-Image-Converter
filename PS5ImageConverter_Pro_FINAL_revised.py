@@ -121,6 +121,7 @@ from ps5_validator.utils import dlc_emu
 from ps5_validator.utils import fake_signieren
 from ps5_validator.utils import file_io
 from ps5_validator.utils import forge_cli
+from ps5_validator.utils import klog_hinweise
 from ps5_validator.utils import programm_sdk
 from ps5_validator.utils import quellbericht
 from ps5_validator.utils import werkzeug_updates
@@ -66517,9 +66518,32 @@ class PS5ConverterGUI:
         console.tag_configure("warning", foreground="#ffcc4d")
         console.tag_configure("debug", foreground="#8899aa")
         console.tag_configure("info", foreground="#39ff6a")
+        console.tag_configure("hinweis", foreground="#ffa94d")
         console.configure(state="disabled")
 
+        # Hinweis unter der Werkzeugleiste, sobald das Protokoll eine Meldung bringt, die weiterhilft (klog_hinweise):
+        # bisher "Call to unpatched function" = dem Spiel fehlt eine Bibliothek. Erst beim Treffer eingeblendet.
+        hinweis_lbl = tk.Label(
+            win, text="", bg=c["bg_main"], fg="#ffa94d", font=(UI_SCHRIFT, pt(9)),
+            justify="left", anchor="w", wraplength=640,
+        )
+        hinweis_lbl.bind("<Configure>", lambda e: hinweis_lbl.config(wraplength=max(240, e.width - 8)))
+
+        def _hinweis_zeigen(kennung: str) -> None:
+            text = self._t("klog.hinweis." + kennung)
+            if hinweis_lbl.cget("text") == text and hinweis_lbl.winfo_manager():
+                return
+            hinweis_lbl.config(text=text)
+            if not hinweis_lbl.winfo_manager():
+                hinweis_lbl.pack(fill="x", padx=16, pady=(0, 6), before=text_frame)
+
+        def _hinweis_verbergen() -> None:
+            hinweis_lbl.pack_forget()
+            hinweis_lbl.config(text="")
+
         def _classify(line: str) -> str:
+            if klog_hinweise.hinweis_kennung(line):
+                return "hinweis"
             low = line.lower()
             if any(w in low for w in ("error", "fatal", "panic", "assert", "crash")):
                 return "error"
@@ -66550,6 +66574,9 @@ class PS5ConverterGUI:
         def _render_line(line: str) -> None:
             zeit = datetime.datetime.now().strftime("%H:%M:%S")
             state["lines"].append((zeit, line))
+            kennung = klog_hinweise.hinweis_kennung(line)
+            if kennung:
+                _hinweis_zeigen(kennung)        # auch wenn der Filter die Zeile ausblendet
             if not _matches_filter(line):
                 return
             console.configure(state="normal")
@@ -66678,6 +66705,7 @@ class PS5ConverterGUI:
             console.configure(state="normal")
             console.delete("1.0", "end")
             console.configure(state="disabled")
+            _hinweis_verbergen()
 
         def _export() -> None:
             path = filedialog.asksaveasfilename(
