@@ -1043,7 +1043,8 @@ class DeckungVerdrahtungTests(unittest.TestCase):
         self.assertNotIn("backport.option_coverage", self.quelle)
 
     def test_wert_wird_an_den_worker_gereicht(self):
-        self.assertIn("start_btn, analyse_btn, win, True, minimal_var.get()", self.quelle)
+        # Seit 21.11.2026 kein Haken mehr: "nur benoetigte" ist keine Wahl (immer Nein).
+        self.assertIn("start_btn, analyse_btn, win, True, self._backport_fakelib_minimal()", self.quelle)
 
     def test_geprueft_wird_was_im_zielordner_liegt(self):
         # Gegen die Quellen zu pruefen waere wertlos: Aussagen soll der
@@ -1053,7 +1054,7 @@ class DeckungVerdrahtungTests(unittest.TestCase):
         self.assertIn("installiert.append(ziel_datei)", self.quelle)
 
     def test_alle_texte_uebersetzt(self):
-        for schluessel in ("backport.options_auto", "backport.option_backup_hint",
+        for schluessel in ("backport.auto_hinweis", "backport.eigene_aktiv",
                            "backport.coverage_start",
                            "backport.coverage_files", "backport.coverage_line",
                            "backport.coverage_ok", "backport.coverage_none",

@@ -489,18 +489,18 @@ footer{
 
   <div class="frage">
     <h3>¿Qué hace BACKPORT?</h3>
-    <p>Un juego de PS5 registra con qué kit de desarrollo (SDK) se creó; la consola no inicia nada que sea más reciente que su firmware. <strong>BACKPORT</strong> (en MÁS HERRAMIENTAS) reduce este valor a un firmware de destino (<strong>4.00, 5.00, 6.00 o 7.00</strong>) y coloca bibliotecas sustitutas adecuadas en una carpeta <code>fakelib</code>. Antes, la lista muestra cada archivo y lo que le ocurriría; viene preajustada una copia de seguridad de la carpeta.</p>
+    <p>Un juego de PS5 registra con qué kit de desarrollo (SDK) se creó; la consola no inicia nada que sea más reciente que su firmware. <strong>BACKPORT</strong> (en MÁS HERRAMIENTAS) reduce este valor a un firmware de destino (<strong>4.00, 5.00, 6.00 o 7.00</strong>) y coloca bibliotecas sustitutas adecuadas en una carpeta <code>fakelib</code>. Antes, la lista muestra cada archivo y lo que le ocurriría; el programa crea siempre una copia de seguridad de la carpeta; aparte del firmware de destino, no hay nada que ajustar.</p>
     <p class="warnung">El resultado solo funciona en una consola con jailbreak. No se puede saber de antemano si un juego se inicia tras el backport: conservar la copia de seguridad hasta que funcione en la consola. La <strong>comprobación de cobertura</strong> (siempre activa) muestra si faltan en las bibliotecas sustitutas funciones que el juego necesita.</p>
   </div>
 
   <div class="frage">
-    <h3>Mi juego no se inicia tras el backport. ¿Hay algo más que marcar?</h3>
-    <p>La ventana BACKPORT tiene dos casillas adicionales. Ambas están <strong>desactivadas de forma predeterminada</strong> y ambas se ofrecen <strong>sin ninguna garantía</strong>, porque modifican código del juego:</p>
+    <h3>Mi juego no se inicia tras el backport. ¿Puedo ajustar algo más?</h3>
+    <p>En la ventana BACKPORT ya no hay nada que ajustar: el programa hace por sí solo dos cosas adicionales. Ambas se ofrecen <strong>sin ninguna garantía</strong>, porque modifican código del juego:</p>
     <ul>
-      <li><strong>Neutralizar funciones que faltan (stubs, experimental)</strong>: si el juego necesita una función que el firmware de destino no conoce y que ninguna biblioteca sustituta puede proporcionar, se interrumpe en la primera llamada. Esta casilla sustituye esa llamada dentro del juego por un valor de retorno vacío. Si el juego funciona correctamente después, queda por ver.</li>
-      <li><strong>Aplicar el perfil de corrección del juego (si existe)</strong>: para títulos concretos se incluyen correcciones de bytes verificadas, cada una para exactamente una versión del juego (incluido: Anno 117 en el firmware 4.xx). Un perfil solo se aplica si coincide la suma de comprobación del archivo original sin modificar; de lo contrario, todo permanece como está.</li>
+      <li><strong>Compensar funciones que faltan (stubs)</strong>: si el juego necesita una función que el firmware de destino no conoce y que ninguna biblioteca sustituta puede proporcionar, se interrumpe en la primera llamada. El programa sustituye esa llamada dentro del juego por un valor de retorno vacío; si el firmware de destino sí tiene la función, esta sigue en uso (medido solo en una consola con firmware 12.00). Si el juego funciona correctamente después, queda por ver.</li>
+      <li><strong>Perfil de corrección del juego</strong>: para títulos concretos se incluyen correcciones de bytes verificadas, cada una para exactamente una versión del juego (incluido: Anno 117 en el firmware 4.xx). Un perfil solo se aplica si coincide la suma de comprobación del archivo original sin modificar; de lo contrario, todo permanece como está.</li>
     </ul>
-    <p>Las casillas también se aplican a la integración al crear. El registro nombra cada punto modificado; conservar la copia de seguridad.</p>
+    <p>Ambas también se aplican a la integración al crear. El registro nombra cada punto modificado; conservar la copia de seguridad.</p>
   </div>
 
   <div class="frage">

@@ -469,17 +469,13 @@ class RueckfrageNenntDieSicherungTests(unittest.TestCase):
                                  ast.unparse(self.teile[name]),
                                  "Die Rueckfrage steht wieder vor dem Ende der "
                                  "Platzpruefung.")
-        # _starten darf direkt nur ohne Sicherung weiter: Mit Sicherung steht
-        # erst nach der Messung fest, ob es bei ihr bleibt.
+        # _starten faehrt nie direkt zur Rueckfrage: Die Sicherung ist seit 21.11.2026 keine Wahl mehr (kein Haken
+        # "ohne Sicherung"), also steht erst nach der Messung fest, ob es bei ihr bleibt.
         direkt = [k for k in ast.walk(self.teile["_starten"])
                   if isinstance(k, ast.Call)
                   and getattr(k.func, "id", "") == "_nach_der_platzpruefung"]
-        self.assertTrue(direkt)
-        for aufruf in direkt:
-            zweites = aufruf.args[1] if len(aufruf.args) > 1 else None
-            self.assertTrue(isinstance(zweites, ast.Constant)
-                            and zweites.value is False,
-                            "_starten fragt mit Sicherung, bevor gemessen ist.")
+        self.assertEqual(direkt, [],
+                         "_starten fragt, bevor gemessen ist.")
         gemessen = ast.unparse(self.teile["_platz_gemessen"])
         platz = gemessen.index("_backport_platz_entscheiden")
         frage = gemessen.index("_nach_der_platzpruefung(firmware, antwort)")

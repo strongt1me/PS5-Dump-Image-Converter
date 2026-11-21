@@ -39738,6 +39738,9 @@ class PS5ConverterGUI:
 
         self._append_to_log(self._t("main.integrate_backport_start", firmware=firmware))
         self._set_status(self._t("main.integrate_backport_status", firmware=firmware))
+        eigene_aktiv = self._backport_eigene_einstellungen()
+        if eigene_aktiv:
+            self._append_to_log(self._t("backport.eigene_aktiv", liste=", ".join(eigene_aktiv)))
         self._backport_ziel_deckung_melden(ordner, firmware)
         # Das Profil gilt fuer das Original: dessen SHA-256 jetzt messen, nicht erst nach dem Herabsetzen.
         korrekturen = self._backport_korrekturen_vorbereiten(ordner, firmware)
@@ -59919,14 +59922,13 @@ class PS5ConverterGUI:
         """Ob nur die vom Spiel tatsaechlich importierten Ersatzbibliotheken
         eingebaut werden, statt immer dem kompletten Firmware-Satz.
 
-        Einstellbar ueber das Haekchen im BACKPORT-Fenster, wirkt aber auch
-        beim Einbau waehrend des Erstellens - wie ``backport_fakelib_ordner``.
-        Vorgabe Nein: ein voller Satz ist seit jeher das gewohnte Verhalten,
-        und ob die Einschraenkung auf der eigenen Konsole etwas aendert, ist
-        unbekannt (gemessen am 26.10.2026 nur anhand fremder Befunde, siehe
-        ``backport.option_minimal_hint``).
+        Seit 21.11.2026 keine Wahl mehr (Haken entfallen, "der Rest soll automatisch erfolgen"): immer Nein. Fuer
+        die mitgelieferten Staende FW 4 bis 7 entscheidet ohnehin die Deckungsluecke gegen die Exporttabelle der
+        Zielfirmware (:meth:`_backport_fakelib_auswahl`); nur wo keine Tabelle vorliegt, gilt der volle Satz - das
+        gewohnte Verhalten. Ein frueher gespeichertes ``backport_fakelib_nur_benoetigt`` wird bewusst nicht mehr
+        gelesen: Es liesse sich nirgends mehr sehen oder zuruecknehmen.
         """
-        return bool(self._load_setting("backport_fakelib_nur_benoetigt", False))
+        return False
 
     def _backport_eigene(self) -> "ps5_backport.EigeneWerte":
         """Eigene Zielwerte aus den Einstellungen (leer = Tabellenwert der gewaehlten Firmware).
@@ -59975,27 +59977,55 @@ class PS5ConverterGUI:
         return ps5_backport.fakelib_dateien(basis, firmware)
 
     def _backport_stubs_an(self) -> bool:
-        """Ob fehlende Funktionen im Spiel durch Stubs neutralisiert werden (Haken im BACKPORT-Fenster).
+        """Ob fehlende Funktionen im Spiel durch Stubs neutralisiert werden.
 
-        Wirkt auch beim Einbau waehrend des Erstellens, wie ``backport_fakelib_nur_benoetigt``. Vorgabe Nein: Ein Stub
-        meldet nur "Erfolg", ohne etwas zu tun - das Spiel kann danach trotzdem abstuerzen oder falsch laufen
-        (siehe ``backport_korrektur``).
+        Seit 21.11.2026 immer Ja (Haken entfallen, der Backport soll ohne Einstellungen laufen); gilt im Fenster wie
+        beim Einbau waehrend des Erstellens. Wirksam wird es nur, wo die Exporttabelle der Zielfirmware vorliegt
+        (FW 4 bis 7): Ohne sie meldet :meth:`_backport_korrekturen_anwenden` das und aendert nichts. Ein Stub meldet
+        nur "Erfolg", ohne etwas zu tun - das Spiel kann danach trotzdem abstuerzen oder falsch laufen (siehe
+        ``backport_korrektur``), aber ohne ihn bricht es an der fehlenden Funktion sicher ab. Ein frueher gespeichertes
+        ``backport_stubs`` wird nicht mehr gelesen.
         """
-        return bool(self._load_setting("backport_stubs", False))
+        return True
 
     def _backport_profile_an(self) -> bool:
-        """Ob ein vorhandenes Korrekturprofil des Titels angewendet wird (Haken im BACKPORT-Fenster). Vorgabe Nein."""
-        return bool(self._load_setting("backport_profile", False))
+        """Ob ein vorhandenes Korrekturprofil des Titels angewendet wird. Seit 21.11.2026 immer Ja.
+
+        Ungefaehrlich ohne Profil (es passiert nichts) und mit Profil: ``backport_korrektur`` wendet es nur an, wenn
+        die SHA-256 der Originaldatei stimmt, ganz oder gar nicht.
+        """
+        return True
 
     def _backport_landeplatz_an(self) -> bool:
-        """Ob Stubs im Landeplatz-Modus gesetzt werden (Haken unter "Erweiterte Einstellungen"). Vorgabe Nein.
+        """Ob Stubs im Landeplatz-Modus gesetzt werden. Seit 21.11.2026 immer Ja.
 
-        Versuch: Der Stub ersetzt nur den Aufloeser hinter dem ersten ``jmp [GOT]`` des PLT-Eintrags, statt den ganzen
-        Eintrag - eine Funktion, die die Zielfirmware doch hat, bleibt so erreichbar, falls der Lader sie bindet
-        (``backport_korrektur.stubs_setzen``). Der Mechanismus ist an FW 12.00 gemessen (21.11.2026); ein echter
-        Backport-Lauf damit ist es nicht.
+        Der Stub ersetzt nur den Aufloeser hinter dem ersten ``jmp [GOT]`` des PLT-Eintrags, statt den ganzen
+        Eintrag: Eine Funktion, die die Zielfirmware doch hat, bleibt nativ (der Lader bindet sie beim Laden), und fuer
+        eine fehlende laeuft der Stub (``backport_korrektur.stubs_setzen``). Der Mechanismus ist an FW 12.00 gemessen
+        (21.11.2026); auf 4.xx und mit einem echten Backport-Lauf noch nicht - dort ist der feste Stub der bewiesene
+        Weg (Anno 117), der Landeplatz aber nach allem, was gemessen ist, nicht schlechter.
         """
-        return bool(self._load_setting("backport_stubs_landeplatz", False))
+        return True
+
+    def _backport_eigene_einstellungen(self) -> list[str]:
+        """Namen der eigenen Werte, die noch in der Einstellungsdatei stehen und wirken (leer = alles automatisch).
+
+        Die Felder dafuer sind aus dem BACKPORT-Fenster entfallen (Eigener Bibliotheksordner, Firmware-Ordner fuer
+        die NID-Analyse, Firmware-Referenz, eigene Zielwerte); wer sie einmal gesetzt hat, behaelt die Wirkung - und
+        sieht sie hier, statt dass sie still weiterlaeuft.
+        """
+        aktiv: list[str] = []
+        eigen = str(self._load_setting("backport_fakelib_ordner", "") or "").strip()
+        if eigen and os.path.isdir(eigen):
+            aktiv.append(self._t("backport.fakelib_basis_label").rstrip(" :"))
+        for schluessel, text in (("backport_fw_analyse_ordner", "backport.fw_analyse_label"),
+                                 ("backport_firmware_referenz", "backport.fw_referenz_label")):
+            wert = str(self._load_setting(schluessel, "") or "").strip()
+            if wert and os.path.isdir(wert):
+                aktiv.append(self._t(text).rstrip(" :"))
+        if any(self._backport_eigene()):
+            aktiv.append(self._t("backport.eigene_label").rstrip(" :"))
+        return aktiv
 
     def _backport_profil_ordner(self) -> list[str]:
         """Ordner mit Korrekturprofilen: ``Korrekturprofile`` neben einem eigenen Bibliothekssatz zuerst, dann der mitgelieferte."""
@@ -64525,7 +64555,7 @@ class PS5ConverterGUI:
 
         win = self._build_modern_toplevel(
             self._t("backport.window_title", name=os.path.basename(ordner)),
-            980, 760, min_width=840, min_height=560)
+            980, 640, min_width=840, min_height=560)
         self._build_modern_header(
             win, self._t("titlebar.backport"),
             self._t("backport.subtitle", path=ordner))
@@ -64617,264 +64647,20 @@ class PS5ConverterGUI:
                  fg=c["fg_secondary"], wraplength=420,
                  justify="left").pack(side="left", padx=(0, 16))
 
-        # Bis v1.9.88 standen hier fuenf Haken in der Zeile der Zielfirmware,
-        # der letzte war abgeschnitten. Ersatzbibliotheken, libc-Anpassung und
-        # Deckungspruefung sind keine Wahl mehr: Das Erstellen-Fenster macht
-        # sie ohnehin immer (_integration_backport), und ohne die Bibliotheken
-        # startet ein herabgesetztes Spiel nicht. Es bleiben die Sicherung und
-        # die Auswahl der Bibliotheken - in einer eigenen Zeile.
-        optionen_zeile = tk.Frame(win, bg=c["bg_main"], padx=16)
-        optionen_zeile.pack(fill="x", pady=(6, 0))
-        sicherung_var = tk.BooleanVar(value=True)
-        minimal_var = tk.BooleanVar(value=self._backport_fakelib_minimal())
-        sicherung_check = self._pw.Checkbutton(
-            optionen_zeile, text=self._t("backport.option_backup"), variable=sicherung_var,
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
-            selectcolor=c["bg_card"], activebackground=c["bg_main"],
-            activeforeground=c["fg_accent"], anchor="w",
-        )
-        sicherung_check.pack(side="left", padx=(0, 16))
-        self._tooltip(sicherung_check, "backport.option_backup_hint",
-                      delay_ms=900, wraplength=430)
-
-        # Eigenes Haekchen: es speichert sich beim Umschalten, weil es auch den
-        # Einbau waehrend des Erstellens steuert (_backport_fakelib_minimal) -
-        # die Sicherung gilt nur fuer diesen einen Lauf im Fenster.
-        minimal_check = self._pw.Checkbutton(
-            optionen_zeile, text=self._t("backport.option_minimal"), variable=minimal_var,
-            command=lambda: self._save_setting(
-                "backport_fakelib_nur_benoetigt", minimal_var.get()),
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
-            selectcolor=c["bg_card"], activebackground=c["bg_main"],
-            activeforeground=c["fg_accent"], anchor="w",
-        )
-        minimal_check.pack(side="left", padx=(0, 16))
-        self._tooltip(minimal_check, "backport.option_minimal_hint",
-                      delay_ms=900, wraplength=430)
-        tk.Label(optionen_zeile, text=self._t("backport.options_auto"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_secondary"],
-                 anchor="w", justify="left", wraplength=520).pack(side="left", fill="x", expand=True)
-
-        # Zwei Zusaetze, die Spielcode aendern - beide aus, bis man sie waehlt, und ausdruecklich ohne Garantie
-        # (backport_korrektur). Wie "Nur benoetigte Bibliotheken" speichern sie sich beim Umschalten und gelten
-        # dann auch fuer den Einbau waehrend des Erstellens.
-        korrektur_zeile = tk.Frame(win, bg=c["bg_main"], padx=16)
-        korrektur_zeile.pack(fill="x", pady=(2, 0))
-        stubs_var = tk.BooleanVar(value=self._backport_stubs_an())
-        profil_var = tk.BooleanVar(value=self._backport_profile_an())
-        win._korrektur_vars = (stubs_var, profil_var)       # Tk haelt nur den Namen, nicht die Variable
-        for variable, schluessel, einstellung in (
-                (stubs_var, "backport.option_stubs", "backport_stubs"),
-                (profil_var, "backport.option_profile", "backport_profile")):
-            haken = self._pw.Checkbutton(
-                korrektur_zeile, text=self._t(schluessel), variable=variable,
-                command=lambda v=variable, e=einstellung: self._save_setting(e, v.get()),
-                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
-                selectcolor=c["bg_card"], activebackground=c["bg_main"],
-                activeforeground=c["fg_accent"], anchor="w",
-            )
-            haken.pack(side="left", padx=(0, 16))
-            self._tooltip(haken, schluessel + "_hint", delay_ms=900, wraplength=430)
-        tk.Label(korrektur_zeile, text=self._t("backport.option_korr_hinweis"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_secondary"],
-                 anchor="w", justify="left").pack(side="left")
-
-        # Zwei fortgeschrittene Felder (eigener Bibliotheksordner, Firmware-Ordner
-        # fuer die NID-Analyse) - ein Grossteil der Nutzer braucht sie nie, sie
-        # standen aber bis zum 28.10.2026 immer offen im Fenster. Eingeklappt,
-        # ausser einer der beiden Werte ist bereits gesetzt - sonst wuerde eine
-        # aktive, abweichende Einstellung wortlos verschwinden (Nutzerwunsch).
-        _basis_wert_vorab = str(self._load_setting("backport_fakelib_ordner", "")).strip()
-        _fw_analyse_wert_vorab = str(self._load_setting("backport_fw_analyse_ordner", "")).strip()
-        _fw_referenz_wert_vorab = str(self._load_setting("backport_firmware_referenz", "") or "").strip()
-        _eigene_vorab = self._backport_eigene()
-        erweitert_offen = tk.BooleanVar(value=bool(
-            _basis_wert_vorab or _fw_analyse_wert_vorab or _fw_referenz_wert_vorab or any(_eigene_vorab)
-            or self._backport_landeplatz_an()))
-        erweitert_rahmen = tk.Frame(win, bg=c["bg_main"])
-
-        def _erweitert_umschalten() -> None:
-            offen = not erweitert_offen.get()
-            erweitert_offen.set(offen)
-            if offen:
-                erweitert_rahmen.pack(fill="x", after=erweitert_umschalter)
-            else:
-                erweitert_rahmen.pack_forget()
-            erweitert_umschalter.configure(text=self._t(
-                "backport.advanced_toggle_open" if offen else "backport.advanced_toggle_closed"))
-
-        erweitert_umschalter = self._pw.Button(
-            win, text=self._t("backport.advanced_toggle_open" if erweitert_offen.get()
-                               else "backport.advanced_toggle_closed"),
-            command=_erweitert_umschalten)
-        erweitert_umschalter.pack(padx=16, pady=(8, 0), anchor="w")
-        if erweitert_offen.get():
-            erweitert_rahmen.pack(fill="x", after=erweitert_umschalter)
-
-        fakelib_ordner_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
-        fakelib_ordner_zeile.pack(fill="x", padx=16, pady=(6, 0))
-        tk.Label(fakelib_ordner_zeile, text=self._t("backport.fakelib_basis_label"),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        fakelib_basis_var = tk.StringVar(value=_basis_wert_vorab)
-        fakelib_basis_feld = self._pw.Entry(
-            fakelib_ordner_zeile, textvariable=fakelib_basis_var,
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
-            insertbackground=c["fg_primary"], relief="flat", width=50)
-        fakelib_basis_feld.pack(side="left", padx=(8, 6), ipady=2)
-
-        def _fakelib_basis_speichern(*_: object) -> None:
-            wert = fakelib_basis_var.get().strip()
-            self._save_setting("backport_fakelib_ordner", wert)
-            if wert and not os.path.isdir(wert):
-                stand_var.set(self._t("backport.fakelib_basis_not_found", pfad=wert))
-            else:
-                # Firmware-Liste im Auswahlfeld aktualisieren
-                neu = list(self._backport_firmwares())
-                fw_box.configure(values=[
-                    self._t("backport.firmware_entry", fw=f"{fw}.00") for fw in neu])
-                try:
-                    fw_box.current(neu.index(ps5_backport.FIRMWARE_STANDARD))
-                except ValueError:
-                    fw_box.current(0)
-                stand_var.set(self._t("backport.state_idle"))
-
-        # Die Spur geht mit dem Fenster: Ihr Tcl-Befehl haelt sonst Fenster, Bilder und Zeichner fuer immer.
-        bibliothek_raster.spur_bis_zerstoert(win, fakelib_basis_var, _fakelib_basis_speichern)
-
-        def _fakelib_basis_waehlen() -> None:
-            gewaehlt = filedialog.askdirectory(
-                parent=win, title=self._t("backport.fakelib_basis_label"),
-                initialdir=fakelib_basis_var.get() or None)
-            if gewaehlt:
-                fakelib_basis_var.set(os.path.normpath(gewaehlt))
-
-        self._pw.Button(fakelib_ordner_zeile, text=self._t("backport.fakelib_basis_choose"),
-                        command=_fakelib_basis_waehlen).pack(side="left")
-        tk.Label(fakelib_ordner_zeile, text=self._t("backport.fakelib_basis_hint"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
-
-        # ---- Firmware-Analyse-Ordner ----
-        fw_analyse_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
-        fw_analyse_zeile.pack(fill="x", padx=16, pady=(4, 0))
-        tk.Label(fw_analyse_zeile, text=self._t("backport.fw_analyse_label"),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        fw_analyse_var = tk.StringVar(value=_fw_analyse_wert_vorab)
-        fw_analyse_feld = self._pw.Entry(
-            fw_analyse_zeile, textvariable=fw_analyse_var,
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
-            insertbackground=c["fg_primary"], relief="flat", width=50)
-        fw_analyse_feld.pack(side="left", padx=(8, 6), ipady=2)
-
-        def _fw_analyse_speichern(*_: object) -> None:
-            wert = fw_analyse_var.get().strip()
-            self._save_setting("backport_fw_analyse_ordner", wert)
-            if wert and not os.path.isdir(wert):
-                stand_var.set(self._t("backport.fw_analyse_not_found", pfad=wert))
-            else:
-                stand_var.set(self._t("backport.state_idle"))
-
-        bibliothek_raster.spur_bis_zerstoert(win, fw_analyse_var, _fw_analyse_speichern)
-
-        def _fw_analyse_waehlen() -> None:
-            gewaehlt = filedialog.askdirectory(
-                parent=win, title=self._t("backport.fw_analyse_label"),
-                initialdir=fw_analyse_var.get() or None)
-            if gewaehlt:
-                fw_analyse_var.set(os.path.normpath(gewaehlt))
-
-        self._pw.Button(fw_analyse_zeile, text=self._t("backport.fw_analyse_choose"),
-                        command=_fw_analyse_waehlen).pack(side="left")
-        tk.Label(fw_analyse_zeile, text=self._t("backport.fw_analyse_hint"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
-
-        # ---- Firmware-Referenz (nur Pruefung, kopiert nichts) ----
-        fw_referenz_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
-        fw_referenz_zeile.pack(fill="x", padx=16, pady=(4, 0))
-        tk.Label(fw_referenz_zeile, text=self._t("backport.fw_referenz_label"),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        fw_referenz_var = tk.StringVar(value=_fw_referenz_wert_vorab)
-        fw_referenz_feld = self._pw.Entry(
-            fw_referenz_zeile, textvariable=fw_referenz_var,
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
-            insertbackground=c["fg_primary"], relief="flat", width=50)
-        fw_referenz_feld.pack(side="left", padx=(8, 6), ipady=2)
-
-        def _fw_referenz_speichern(*_: object) -> None:
-            wert = fw_referenz_var.get().strip()
-            self._save_setting("backport_firmware_referenz", wert)
-            if wert and not os.path.isdir(wert):
-                stand_var.set(self._t("backport.fw_analyse_not_found", pfad=wert))
-            else:
-                stand_var.set(self._t("backport.state_idle"))
-
-        bibliothek_raster.spur_bis_zerstoert(win, fw_referenz_var, _fw_referenz_speichern)
-
-        def _fw_referenz_waehlen() -> None:
-            gewaehlt = filedialog.askdirectory(
-                parent=win, title=self._t("backport.fw_referenz_label"),
-                initialdir=fw_referenz_var.get() or None)
-            if gewaehlt:
-                fw_referenz_var.set(os.path.normpath(gewaehlt))
-
-        self._pw.Button(fw_referenz_zeile, text=self._t("backport.fw_analyse_choose"),
-                        command=_fw_referenz_waehlen).pack(side="left")
-        tk.Label(fw_referenz_zeile, text=self._t("backport.fw_referenz_hint"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
-
-        # ---- Stubs im Landeplatz-Modus (Versuch) ----
-        landeplatz_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
-        landeplatz_zeile.pack(fill="x", padx=16, pady=(4, 0))
-        landeplatz_var = tk.BooleanVar(value=self._backport_landeplatz_an())
-        win._landeplatz_var = landeplatz_var                 # Tk haelt nur den Namen, nicht die Variable
-        landeplatz_haken = self._pw.Checkbutton(
-            landeplatz_zeile, text=self._t("backport.option_landeplatz"), variable=landeplatz_var,
-            command=lambda: self._save_setting("backport_stubs_landeplatz", landeplatz_var.get()),
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
-            selectcolor=c["bg_card"], activebackground=c["bg_main"],
-            activeforeground=c["fg_accent"], anchor="w")
-        landeplatz_haken.pack(side="left")
-        self._tooltip(landeplatz_haken, "backport.option_landeplatz_hint", delay_ms=900, wraplength=430)
-        tk.Label(landeplatz_zeile, text=self._t("backport.option_landeplatz_kurz"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
-
-        # ---- Eigene Zielwerte (statt der festen Stufentabelle) ----
-        # Wie min_ps5_sdk_version / min_ps4_sdk_version beim PS5-App-Dumper; dazu die verlangte Firmware der
-        # param.json mit Nebenversion (der FW-4.xx-Release von AC Black Flag traegt dort 4.50 bei SDK 4.00).
-        # Leer = Wert der gewaehlten Firmware. Gespeichert wird der Text wie getippt; ob er brauchbar ist,
-        # sagen Statuszeile und Protokoll beim Start (_eigene_pruefen) - kein stilles Zurueckfallen.
-        eigene_zeile = tk.Frame(erweitert_rahmen, bg=c["bg_main"])
-        eigene_zeile.pack(fill="x", padx=16, pady=(4, 0))
-        tk.Label(eigene_zeile, text=self._t("backport.eigene_label"),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        for schluessel, einstellung, vorab, breite in (
-            ("backport.eigene_ps5", "backport_sdk_ps5", _eigene_vorab.ps5_sdk, 12),
-            ("backport.eigene_ps4", "backport_sdk_ps4", _eigene_vorab.ps4_sdk, 12),
-            ("backport.eigene_fw", "backport_verlangte_fw", _eigene_vorab.verlangt_fw, 7),
-        ):
-            tk.Label(eigene_zeile, text=self._t(schluessel), font=(UI_SCHRIFT, pt(9)),
-                     bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left", padx=(10, 0))
-            eigene_var = tk.StringVar(value=vorab)
-            self._pw.Entry(
-                eigene_zeile, textvariable=eigene_var, font=(UI_SCHRIFT, pt(9)),
-                bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                relief="flat", width=breite).pack(side="left", padx=(6, 0), ipady=2)
-
-            def _eigene_speichern(*_: object, _var=eigene_var, _name=einstellung) -> None:
-                self._save_setting(_name, _var.get().strip())
-                stand_var.set(self._t("backport.state_idle"))
-
-            bibliothek_raster.spur_bis_zerstoert(win, eigene_var, _eigene_speichern)
-        tk.Label(erweitert_rahmen, text=self._t("backport.eigene_hint"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_secondary"],
-                 anchor="w", justify="left", wraplength=900).pack(fill="x", padx=16, pady=(2, 0))
+        # Seit 21.11.2026 gibt es hier nichts mehr zu waehlen ausser der Firmware (Nutzerwunsch: "Der Anwender soll
+        # nur die gewuenschte FW angeben, der Rest soll automatisch erfolgen"). Sicherung, Ersatzbibliotheken, libc-
+        # Anpassung, Deckungspruefung sowie die Korrekturen fuer fehlende Funktionen (Stubs im Landeplatz-Modus und das
+        # Korrekturprofil des Titels) laufen immer - im Fenster wie beim Einbau waehrend des Erstellens. Die frueheren
+        # Haken, Ordnerfelder und eigenen Zielwerte sind entfallen. Was davon noch in der Einstellungsdatei steht,
+        # gilt weiter und wird hier genannt (_backport_eigene_einstellungen): Nichts wirkt still.
+        tk.Label(win, text=self._t("backport.auto_hinweis"), font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w", wraplength=920,
+                 justify="left").pack(fill="x", padx=16, pady=(8, 0))
+        eigene_aktiv = self._backport_eigene_einstellungen()
+        if eigene_aktiv:
+            tk.Label(win, text=self._t("backport.eigene_aktiv", liste=", ".join(eigene_aktiv)),
+                     font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
+                     wraplength=920, justify="left").pack(fill="x", padx=16, pady=(4, 0))
 
         tk.Label(win, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
@@ -65080,9 +64866,8 @@ class PS5ConverterGUI:
             # Anwender nicht. Bricht der Lauf mittendrin ab, ist der Dump zum
             # Teil bearbeitet, und ohne Sicherung ist das nicht rückgängig zu
             # machen. Genau das sagte das Programm erst hinterher.
-            if not sicherung_var.get():
-                _nach_der_platzpruefung(firmware, False)
-                return
+            # (Die Sicherung ist seit 21.11.2026 keine Wahl mehr: Sie laeuft immer; nur wenn der Platz nicht reicht,
+            # fragt _backport_platz_entscheiden.)
             # Vermessen im Faden, entscheiden im Fensterfaden. Bis v1.9.24 lief
             # beides hier: Ein Dump von 40 bis 100 GB legte das Fenster fuer
             # Minuten still, und der Zwischenstand erschien erst danach.
@@ -65120,10 +64905,6 @@ class PS5ConverterGUI:
             analyse_btn.configure(state="normal")
             fw_box.configure(state="readonly")
             stand_var.set(vorher)
-            if not sicherung_var.get():
-                # Waehrend des Messens abgewaehlt - die Messung ist dann gleich.
-                _nach_der_platzpruefung(firmware, False)
-                return
             antwort = self._backport_platz_entscheiden(ordner, win, messung)
             if antwort is None:
                 return                          # abgebrochen
@@ -65149,7 +64930,7 @@ class PS5ConverterGUI:
                 target=self._backport_worker,
                 args=(ordner, firmware, sichern, True,
                       True, baum, zeilen, stand_var, laeuft,
-                      start_btn, analyse_btn, win, True, minimal_var.get()),
+                      start_btn, analyse_btn, win, True, self._backport_fakelib_minimal()),
                 daemon=True).start()
 
         def _beim_schliessen() -> None:
@@ -65220,7 +65001,7 @@ class PS5ConverterGUI:
             fw_box.configure(state="disabled")
             stand_var.set(self._t("backport.folder_status"))
             self._append_to_log(self._t("backport.folder_log_start", tid=tid, fw=f"{firmware}.00", pfad=ziel) + chr(10))
-            minimal = bool(minimal_var.get())
+            minimal = self._backport_fakelib_minimal()
             fakelib_name = self._fakelib_ordnername()
             eigene = self._backport_eigene()
 
@@ -65556,6 +65337,9 @@ class PS5ConverterGUI:
                 sicherung_fertig = True
 
             # ---- 1b) Korrekturprofil: das Original messen, bevor etwas herabgesetzt wird ----
+            eigene_aktiv = self._backport_eigene_einstellungen()
+            if eigene_aktiv:
+                self._append_to_log(self._t("backport.eigene_aktiv", liste=", ".join(eigene_aktiv)))
             korrekturen = self._backport_korrekturen_vorbereiten(ordner, firmware)
 
             # ---- 2) Dateien einzeln verarbeiten ----

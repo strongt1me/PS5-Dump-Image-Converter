@@ -176,8 +176,9 @@ class Hauptmodul(unittest.TestCase):
 
 class Texte(unittest.TestCase):
     def test_alle_schluessel_in_fuenf_sprachen_mit_platzhaltern(self):
-        for schluessel in ("backport.eigene_label", "backport.eigene_ps5", "backport.eigene_ps4",
-                           "backport.eigene_fw", "backport.eigene_hint", "backport.eigene_ungueltig"):
+        # Die Eingabefelder sind seit 21.11.2026 entfallen (eigene_ps5/_ps4/_fw/_hint); die Werte gelten aus der
+        # Einstellungsdatei weiter und werden im Fenster genannt (eigene_aktiv).
+        for schluessel in ("backport.eigene_label", "backport.eigene_aktiv", "backport.eigene_ungueltig"):
             self.assertEqual(set(STRINGS[schluessel]), {"de", "en", "es", "it", "fr"}, schluessel)
         for sprache, text in STRINGS["backport.eigene_ungueltig"].items():
             self.assertIn("{error}", text, sprache)

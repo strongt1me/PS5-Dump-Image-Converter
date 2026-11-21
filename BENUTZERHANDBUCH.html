@@ -2555,24 +2555,27 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>Der Ablauf</h4>
   <ol class="schritte">
     <li><strong>Ordner wählen.</strong> Der Dump-Ordner des Spiels, also der mit <code>eboot.bin</code> und <code>sce_sys</code> darin.</li>
-    <li><strong>Zielfirmware einstellen.</strong> Zur Auswahl stehen <strong>4.00, 5.00, 6.00 und 7.00</strong> – wählen Sie den Stand Ihrer Konsole oder einen niedrigeren.</li>
+    <li><strong>Zielfirmware einstellen.</strong> Zur Auswahl stehen <strong>4.00, 5.00, 6.00 und 7.00</strong> – wählen Sie den Stand Ihrer Konsole oder einen niedrigeren. Das ist die einzige Einstellung im Fenster.</li>
     <li><strong>Ansehen, was passieren würde.</strong> Beim Öffnen zeigt die Liste bereits jede ausführbare Datei mit ihrem aktuellen SDK und dem, was mit ihr geschähe. Der Knopf <strong>Nur prüfen</strong> wiederholt das, ohne etwas zu ändern.</li>
     <li><strong>Backport starten.</strong> Nach einer Rückfrage arbeitet das Programm die Liste ab.</li>
   </ol>
 
-  <h4>Die Einstellungen</h4>
+  <h4>Was von selbst geschieht</h4>
+  <p>Außer der Zielfirmware gibt es im Fenster nichts einzustellen – keine Ankreuzfelder, keine Eingabefelder. Das Programm erledigt immer:</p>
   <div class="tabelle">
   <table>
-    <thead><tr><th>Ankreuzfeld</th><th>Bedeutung</th></tr></thead>
+    <thead><tr><th>Schritt</th><th>Bedeutung</th></tr></thead>
     <tbody>
-      <tr><td><strong>Sicherung anlegen (empfohlen)</strong></td><td>Legt vor dem ersten Zugriff eine vollständige Kopie des Ordners mit Zeitstempel daneben. Standardmäßig an – bitte anlassen.</td></tr>
-      <tr><td><strong>Nur benötigte Bibliotheken (experimentell)</strong></td><td>Kopiert vom Ersatzsatz nur die Bibliotheken, die das Spiel laut seiner Importtabelle tatsächlich verwendet, statt immer den ganzen Satz. Standardmäßig aus; ohne lesbare Importtabelle bleibt es beim vollen Satz. Die Wahl gilt auch beim Einbau während des Erstellens.</td></tr>
-      <tr><td><strong>Fehlende Funktionen neutralisieren (Stubs, experimentell)</strong></td><td>Fehlt der Zielfirmware eine Funktion, die das Spiel verlangt und die keine Ersatzbibliothek liefern kann, bricht das Spiel beim ersten Aufruf ab. Mit diesem Haken ersetzt BACKPORT den Aufruf im Spiel selbst durch einen leeren Rückgabewert: Das Spiel läuft weiter – <strong>ob es dann richtig läuft, ist offen</strong>. Keine Garantie. Braucht die Exporttabelle der Zielfirmware (mitgeliefert für 4 bis 7). Standardmäßig aus; die Wahl gilt auch beim Einbau während des Erstellens und bei <em>Nur Backport-Ordner erstellen</em>. Das Protokoll nennt jede geänderte Stelle.</td></tr>
-      <tr><td><strong>Korrekturprofil des Spiels anwenden (falls vorhanden)</strong></td><td>Manche Spiele brauchen neben fehlenden Funktionen weitere Byte-Korrekturen an der Programmdatei. Ein Profil gilt für <strong>genau eine Fassung</strong> eines Titels: Es wird nur angewendet, wenn die SHA-256-Summe der unveränderten Originaldatei stimmt und an jeder Stelle die erwarteten Bytes stehen – sonst bleibt alles unverändert, und ein zweiter Lauf erkennt „schon angepasst“. Die Profile liegen als JSON je Title-ID im Ordner <code>Backport_Fakelibs/Korrekturprofile</code>; mitgeliefert ist eines für Anno 117 (Firmware 4.xx). Keine Garantie. Standardmäßig aus; gilt wie die anderen Haken auch beim Einbau während des Erstellens.</td></tr>
+      <tr><td><strong>Sicherung</strong></td><td>Legt vor dem ersten Zugriff eine vollständige Kopie des Ordners mit Zeitstempel daneben. Reicht der Platz dafür nicht, fragt das Programm, ob es ohne Sicherung weitermachen soll.</td></tr>
+      <tr><td><strong>Ersatzbibliotheken</strong></td><td>Die zur Zielfirmware passenden kommen in einen Ordner <code>fakelib</code> neben das Spiel (ohne sie erwartet das Spiel Funktionen, die es auf der älteren Firmware nicht gibt). Für die mitgelieferten Stände 4 bis 7 entscheidet die Exporttabelle der Zielfirmware, welche das Spiel tatsächlich braucht; ohne sie bleibt es beim vollen Satz.</td></tr>
+      <tr><td><strong>libc-Anpassung</strong></td><td>Folgt der Zielfirmware.</td></tr>
+      <tr><td><strong>Fehlende Funktionen ausgleichen (Stubs)</strong></td><td>Fehlt der Zielfirmware eine Funktion, die das Spiel verlangt und die keine Ersatzbibliothek liefern kann, bricht das Spiel beim ersten Aufruf ab. BACKPORT ersetzt den Aufruf im Spiel selbst durch einen leeren Rückgabewert: Das Spiel läuft weiter – <strong>ob es dann richtig läuft, ist offen</strong>. Hat die Zielfirmware die Funktion doch, bleibt sie in Gebrauch (gemessen nur an einer Konsole mit Firmware 12.00). Keine Garantie. Braucht die Exporttabelle der Zielfirmware (mitgeliefert für 4 bis 7). Gilt auch beim Einbau während des Erstellens und bei <em>Nur Backport-Ordner erstellen</em>. Das Protokoll nennt jede geänderte Stelle.</td></tr>
+      <tr><td><strong>Korrekturprofil des Spiels (falls vorhanden)</strong></td><td>Manche Spiele brauchen neben fehlenden Funktionen weitere Byte-Korrekturen an der Programmdatei. Ein Profil gilt für <strong>genau eine Fassung</strong> eines Titels: Es wird nur angewendet, wenn die SHA-256-Summe der unveränderten Originaldatei stimmt und an jeder Stelle die erwarteten Bytes stehen – sonst bleibt alles unverändert, und ein zweiter Lauf erkennt „schon angepasst“. Die Profile liegen als JSON je Title-ID im Ordner <code>Backport_Fakelibs/Korrekturprofile</code>; mitgeliefert ist eines für Anno 117 (Firmware 4.xx). Keine Garantie. Gilt auch beim Einbau während des Erstellens.</td></tr>
+      <tr><td><strong>Deckungsprüfung</strong></td><td>Steht anschließend im Protokoll (siehe unten).</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Alles Weitere stellen Sie nicht ein, es läuft von selbst mit: Die zur Zielfirmware passenden Ersatzbibliotheken kommen in einen Ordner <code>fakelib</code> neben das Spiel (ohne sie erwartet das Spiel Funktionen, die es auf der älteren Firmware nicht gibt), die libc-Anpassung folgt der Zielfirmware, und die Deckungsprüfung steht anschließend im Protokoll.</p>
+  <p><strong>Eigene Werte.</strong> Ein eigener Bibliotheksordner, ein Firmware-Ordner für die NID-Analyse, eine Firmware-Referenz und eigene Zielwerte haben kein Eingabefeld mehr. Stehen sie noch in der Einstellungsdatei, gelten sie weiter – das Fenster und das Protokoll nennen sie.</p>
 
   <h4>Was in der Liste steht</h4>
   <p>Aufgelistet werden <code>eboot.bin</code>, alle <code>.prx</code>- und <code>.sprx</code>-Dateien sowie jede andere Datei, die mit der Kennung eines ELF oder SELF beginnt (etwa <code>.elf</code>- oder <code>.self</code>-Dateien). Sicherungen mit der Endung <code>.bak</code> oder <code>.esbak</code> und die Ordner <code>fakelib</code> und <code>fakelib2</code> bleiben außen vor – die Bibliotheken darin passen bereits.</p>
@@ -2610,7 +2613,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Gearbeitet wird ausschließlich im Arbeitsspeicher. Eine Datei wird erst ersetzt, wenn Entpacken, Herabsetzen <strong>und</strong> Neusignieren gelungen sind – und dann in einem Zug. Bricht ein Schritt ab, bleibt das Original genau so, wie es war. Angehoben wird eine SDK-Angabe nie, nur herabgesetzt.</p>
   <div class="kasten warnung">
     <span class="titel">Wichtig</span>
-    <p>Das Ergebnis wird neu signiert, aber nicht <em>echt</em> signiert – es läuft nur auf einer bereits gejailbreakten Konsole. Und ob ein bestimmtes Spiel nach dem Backport tatsächlich startet, lässt sich vorher nicht sagen: Manche Spiele verlangen Funktionen, die es auf der älteren Firmware schlicht nicht gibt. Arbeiten Sie deshalb immer mit eingeschalteter Sicherung und behalten Sie den Sicherungsordner, bis Sie das Spiel auf der Konsole erfolgreich gestartet haben.</p>
+    <p>Das Ergebnis wird neu signiert, aber nicht <em>echt</em> signiert – es läuft nur auf einer bereits gejailbreakten Konsole. Und ob ein bestimmtes Spiel nach dem Backport tatsächlich startet, lässt sich vorher nicht sagen: Manche Spiele verlangen Funktionen, die es auf der älteren Firmware schlicht nicht gibt. Das Programm legt deshalb immer eine Sicherung an: Behalten Sie den Sicherungsordner, bis Sie das Spiel auf der Konsole erfolgreich gestartet haben.</p>
   </div>
   <h3>14.7 Wie FileZilla gefunden wird</h3>
   <p>Der Knopf <strong>FILEZILLA</strong> startet Ihre eigene FileZilla-Installation. Weil jeder sie woanders und unter unterschiedlichen Ordnernamen installiert, sucht das Programm unter Windows der Reihe nach (unter Linux und macOS prüft es die üblichen Installationsorte und die <code>PATH</code>-Variable):</p>

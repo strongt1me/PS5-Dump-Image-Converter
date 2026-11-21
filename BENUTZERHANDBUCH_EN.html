@@ -2534,24 +2534,27 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h4>The procedure</h4>
   <ol class="schritte">
     <li><strong>Choose the folder.</strong> The game's dump folder, that is, the one containing <code>eboot.bin</code> and <code>sce_sys</code>.</li>
-    <li><strong>Set the target firmware.</strong> The choices are <strong>4.00, 5.00, 6.00 and 7.00</strong> – choose your console's version or a lower one.</li>
+    <li><strong>Set the target firmware.</strong> The choices are <strong>4.00, 5.00, 6.00 and 7.00</strong> – choose your console's version or a lower one. It is the only setting in the window.</li>
     <li><strong>See what would happen.</strong> On opening, the list already shows every executable file with its current SDK and what would happen to it. The <strong>Analyse only</strong> button repeats this without changing anything.</li>
     <li><strong>Start the backport.</strong> After a confirmation prompt, the program works through the list.</li>
   </ol>
 
-  <h4>The settings</h4>
+  <h4>What happens by itself</h4>
+  <p>Apart from the target firmware, there is nothing to set in the window – no checkboxes, no input fields. The program always does the following:</p>
   <div class="tabelle">
   <table>
-    <thead><tr><th>Checkbox</th><th>Meaning</th></tr></thead>
+    <thead><tr><th>Step</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><strong>Create backup (recommended)</strong></td><td>Before the first access, places a complete, timestamped copy of the folder next to it. On by default – please leave it on.</td></tr>
-      <tr><td><strong>Only needed libraries (experimental)</strong></td><td>From the replacement set, copies only the libraries the game actually uses according to its import table, instead of always the whole set. Off by default; without a readable import table, the full set is used. The choice also applies to integration during creation.</td></tr>
-      <tr><td><strong>Neutralize missing functions (stubs, experimental)</strong></td><td>If the target firmware lacks a function that the game requires and that no replacement library can supply, the game aborts on the first call. With this box checked, BACKPORT replaces the call in the game itself with an empty return value: the game keeps running – <strong>whether it then runs correctly is an open question</strong>. No guarantee. Requires the export table of the target firmware (included for 4 to 7). Off by default; the choice also applies to integration during creation and to <em>Create backport folder only</em>. The log lists every changed location.</td></tr>
-      <tr><td><strong>Apply the game's correction profile (if available)</strong></td><td>Besides missing functions, some games need further byte corrections to the executable. A profile applies to <strong>exactly one version</strong> of a title: it is only applied if the SHA-256 sum of the unmodified original file matches and the expected bytes are found at every location – otherwise everything stays unchanged, and a second run recognizes “already adjusted”. The profiles are stored as JSON per Title ID in the folder <code>Backport_Fakelibs/Korrekturprofile</code>; one for Anno 117 (firmware 4.xx) is included. No guarantee. Off by default; like the other boxes, it also applies to integration during creation.</td></tr>
+      <tr><td><strong>Backup</strong></td><td>Before the first access, places a complete, timestamped copy of the folder next to it. If there is not enough space for it, the program asks whether to continue without a backup.</td></tr>
+      <tr><td><strong>Replacement libraries</strong></td><td>The ones matching the target firmware are placed in a <code>fakelib</code> folder next to the game (without them, the game expects functions that do not exist on the older firmware). For the included versions 4 to 7, the export table of the target firmware decides which ones the game actually needs; without it, the full set is used.</td></tr>
+      <tr><td><strong>libc adaptation</strong></td><td>Follows the target firmware.</td></tr>
+      <tr><td><strong>Compensate missing functions (stubs)</strong></td><td>If the target firmware lacks a function that the game requires and that no replacement library can supply, the game aborts on the first call. BACKPORT replaces the call in the game itself with an empty return value: the game keeps running – <strong>whether it then runs correctly is an open question</strong>. If the target firmware does have the function after all, it stays in use (measured only on a console with firmware 12.00). No guarantee. Requires the export table of the target firmware (included for 4 to 7). Also applies to integration during creation and to <em>Create backport folder only</em>. The log lists every changed location.</td></tr>
+      <tr><td><strong>Correction profile of the game (if available)</strong></td><td>Besides missing functions, some games need further byte corrections to the executable. A profile applies to <strong>exactly one version</strong> of a title: it is only applied if the SHA-256 sum of the unmodified original file matches and the expected bytes are found at every location – otherwise everything stays unchanged, and a second run recognizes “already adjusted”. The profiles are stored as JSON per Title ID in the folder <code>Backport_Fakelibs/Korrekturprofile</code>; one for Anno 117 (firmware 4.xx) is included. No guarantee. Also applies to integration during creation.</td></tr>
+      <tr><td><strong>Coverage check</strong></td><td>Appears in the log afterward (see below).</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Nothing else needs to be set; the rest runs on its own: the replacement libraries matching the target firmware are placed in a <code>fakelib</code> folder next to the game (without them, the game expects functions that do not exist on the older firmware), the libc adaptation follows the target firmware, and the coverage check appears in the log afterward.</p>
+  <p><strong>Custom values.</strong> A custom library folder, a firmware folder for the NID analysis, a firmware reference and custom target values no longer have an input field. If they are still in the settings file, they continue to apply – the window and the log name them.</p>
 
   <h4>What the list shows</h4>
   <p>Listed are <code>eboot.bin</code>, all <code>.prx</code> and <code>.sprx</code> files, and every other file that begins with the identifier of an ELF or SELF (such as <code>.elf</code> or <code>.self</code> files). Backups with the extension <code>.bak</code> or <code>.esbak</code> and the folders <code>fakelib</code> and <code>fakelib2</code> are left out – the libraries in them already fit.</p>
@@ -2589,7 +2592,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Work takes place exclusively in memory. A file is only replaced once unpacking, lowering <strong>and</strong> re-signing have all succeeded – and then in a single step. If any step fails, the original stays exactly as it was. An SDK value is never raised, only lowered.</p>
   <div class="kasten warnung">
     <span class="titel">Important</span>
-    <p>The result is re-signed, but not <em>genuinely</em> signed – it only runs on a console that is already jailbroken. And whether a particular game actually starts after the backport cannot be predicted: some games require functions that simply do not exist on the older firmware. Therefore always work with the backup switched on, and keep the backup folder until you have successfully started the game on the console.</p>
+    <p>The result is re-signed, but not <em>genuinely</em> signed – it only runs on a console that is already jailbroken. And whether a particular game actually starts after the backport cannot be predicted: some games require functions that simply do not exist on the older firmware. The program therefore always creates a backup: keep the backup folder until you have successfully started the game on the console.</p>
   </div>
   <h3>14.7 How FileZilla is found</h3>
   <p>The <strong>FILEZILLA</strong> button launches your own FileZilla installation. Because everyone installs it in a different place and under different folder names, the program searches, on Windows, in this order (on Linux and macOS it checks the usual installation locations and the <code>PATH</code> variable):</p>

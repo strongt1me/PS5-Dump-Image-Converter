@@ -489,18 +489,18 @@ footer{
 
   <div class="frage">
     <h3>Che cosa fa BACKPORT?</h3>
-    <p>Un gioco PS5 registra con quale kit di sviluppo (SDK) è stato creato; la console non avvia nulla che sia più recente del suo firmware. <strong>BACKPORT</strong> (sotto ALTRI STRUMENTI) abbassa questo valore a un firmware di destinazione – <strong>4.00, 5.00, 6.00 o 7.00</strong> – e inserisce in una cartella <code>fakelib</code> le librerie sostitutive corrispondenti. In anticipo l'elenco mostra ogni file e che cosa gli accadrebbe; è preimpostato un backup della cartella.</p>
+    <p>Un gioco PS5 registra con quale kit di sviluppo (SDK) è stato creato; la console non avvia nulla che sia più recente del suo firmware. <strong>BACKPORT</strong> (sotto ALTRI STRUMENTI) abbassa questo valore a un firmware di destinazione – <strong>4.00, 5.00, 6.00 o 7.00</strong> – e inserisce in una cartella <code>fakelib</code> le librerie sostitutive corrispondenti. In anticipo l'elenco mostra ogni file e che cosa gli accadrebbe; il programma crea sempre un backup della cartella; oltre al firmware di destinazione non c'è nulla da impostare.</p>
     <p class="warnung">Il risultato funziona solo su una console sottoposta a jailbreak. Non si può sapere in anticipo se un gioco si avvia dopo il backport – conservare il backup finché non funziona sulla console. Il <strong>controllo di copertura</strong> (sempre attivo) mostra se nelle librerie sostitutive mancano funzioni richieste dal gioco.</p>
   </div>
 
   <div class="frage">
-    <h3>Il gioco non si avvia dopo il backport – c'è qualcos'altro da selezionare?</h3>
-    <p>La finestra BACKPORT ha due caselle aggiuntive. Entrambe sono <strong>disattivate per impostazione predefinita</strong> ed entrambe sono offerte <strong>senza alcuna garanzia</strong>, perché modificano il codice del gioco:</p>
+    <h3>Il gioco non si avvia dopo il backport – posso ancora impostare qualcosa?</h3>
+    <p>Nella finestra BACKPORT non c'è più nulla da impostare: il programma esegue da solo due operazioni aggiuntive. Entrambe sono offerte <strong>senza alcuna garanzia</strong>, perché modificano il codice del gioco:</p>
     <ul>
-      <li><strong>Neutralizzare le funzioni mancanti (stub, sperimentale)</strong> – Se il gioco richiede una funzione che il firmware di destinazione non conosce e che nessuna libreria sostitutiva può fornire, si interrompe alla prima chiamata. Questa casella sostituisce quella chiamata all'interno del gioco con un valore di ritorno vuoto. Resta incerto se il gioco poi funzioni correttamente.</li>
-      <li><strong>Applicare il profilo di correzione del gioco (se presente)</strong> – Per singoli titoli sono inclusi correzioni di byte verificate, ciascuna esattamente per una versione del gioco (incluso: Anno 117 con firmware 4.xx). Un profilo viene applicato solo se il checksum del file originale non modificato corrisponde; altrimenti tutto resta com'è.</li>
+      <li><strong>Compensare le funzioni mancanti (stub)</strong> – Se il gioco richiede una funzione che il firmware di destinazione non conosce e che nessuna libreria sostitutiva può fornire, si interrompe alla prima chiamata. Il programma sostituisce quella chiamata all'interno del gioco con un valore di ritorno vuoto; se il firmware di destinazione ha comunque la funzione, questa resta in uso (misurato solo su una console con firmware 12.00). Resta incerto se il gioco poi funzioni correttamente.</li>
+      <li><strong>Profilo di correzione del gioco</strong> – Per singoli titoli sono inclusi correzioni di byte verificate, ciascuna esattamente per una versione del gioco (incluso: Anno 117 con firmware 4.xx). Un profilo viene applicato solo se il checksum del file originale non modificato corrisponde; altrimenti tutto resta com'è.</li>
     </ul>
-    <p>Le caselle valgono anche per l'integrazione durante la creazione. Il registro nomina ogni punto modificato – conservare il backup.</p>
+    <p>Entrambe valgono anche per l'integrazione durante la creazione. Il registro nomina ogni punto modificato – conservare il backup.</p>
   </div>
 
   <div class="frage">

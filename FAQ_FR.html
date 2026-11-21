@@ -489,18 +489,18 @@ footer{
 
   <div class="frage">
     <h3>Que fait BACKPORT ?</h3>
-    <p>Un jeu PS5 enregistre avec quel kit de développement (SDK) il a été construit ; la console ne lance rien qui soit plus récent que son firmware. <strong>BACKPORT</strong> (sous AUTRES OUTILS) abaisse cette valeur à un firmware cible – <strong>4.00, 5.00, 6.00 ou 7.00</strong> – et place des bibliothèques de remplacement adaptées dans un dossier <code>fakelib</code>. Au préalable, la liste montre chaque fichier et ce qu’il adviendrait de lui ; une sauvegarde du dossier est préréglée.</p>
+    <p>Un jeu PS5 enregistre avec quel kit de développement (SDK) il a été construit ; la console ne lance rien qui soit plus récent que son firmware. <strong>BACKPORT</strong> (sous AUTRES OUTILS) abaisse cette valeur à un firmware cible – <strong>4.00, 5.00, 6.00 ou 7.00</strong> – et place des bibliothèques de remplacement adaptées dans un dossier <code>fakelib</code>. Au préalable, la liste montre chaque fichier et ce qu’il adviendrait de lui ; le programme crée toujours une sauvegarde du dossier ; hormis le firmware cible, il n'y a rien à régler.</p>
     <p class="warnung">Le résultat ne fonctionne que sur une console jailbreakée. On ne peut pas savoir à l’avance si un jeu démarre après le backport – conservez la sauvegarde jusqu’à ce qu’il fonctionne sur la console. La <strong>vérification de couverture</strong> (toujours active) montre s’il manque dans les bibliothèques de remplacement des fonctions requises par le jeu.</p>
   </div>
 
   <div class="frage">
-    <h3>Mon jeu ne démarre pas après le backport – y a-t-il autre chose à cocher ?</h3>
-    <p>La fenêtre BACKPORT propose deux cases supplémentaires. Toutes deux sont <strong>décochées par défaut</strong> et toutes deux sont proposées <strong>sans aucune garantie</strong>, car elles modifient le code du jeu :</p>
+    <h3>Mon jeu ne démarre pas après le backport – puis-je encore régler quelque chose ?</h3>
+    <p>Il n’y a plus rien à régler dans la fenêtre BACKPORT : le programme fait lui-même deux choses supplémentaires. Les deux sont proposées <strong>sans aucune garantie</strong>, car elles modifient le code du jeu :</p>
     <ul>
-      <li><strong>Neutraliser les fonctions manquantes (stubs, expérimental)</strong> – Si le jeu exige une fonction que le firmware cible ne connaît pas et qu’aucune bibliothèque de remplacement ne peut fournir, il s’interrompt au premier appel. Cette case remplace cet appel, dans le jeu, par une valeur de retour vide. On ne sait pas si le jeu fonctionne ensuite correctement.</li>
-      <li><strong>Appliquer le profil de correction du jeu (s’il existe)</strong> – Pour certains titres, des corrections d’octets vérifiées sont incluses, chacune pour exactement une version du jeu (inclus : Anno 117 sur firmware 4.xx). Un profil n’est appliqué que si la somme de contrôle du fichier d’origine non modifié correspond ; sinon, tout reste en l’état.</li>
+      <li><strong>Compenser les fonctions manquantes (stubs)</strong> – Si le jeu exige une fonction que le firmware cible ne connaît pas et qu’aucune bibliothèque de remplacement ne peut fournir, il s’interrompt au premier appel. Le programme remplace cet appel, dans le jeu, par une valeur de retour vide ; si le firmware cible possède tout de même la fonction, elle reste utilisée (mesuré uniquement sur une console avec le firmware 12.00). On ne sait pas si le jeu fonctionne ensuite correctement.</li>
+      <li><strong>Profil de correction du jeu</strong> – Pour certains titres, des corrections d’octets vérifiées sont incluses, chacune pour exactement une version du jeu (inclus : Anno 117 sur firmware 4.xx). Un profil n’est appliqué que si la somme de contrôle du fichier d’origine non modifié correspond ; sinon, tout reste en l’état.</li>
     </ul>
-    <p>Les cases s’appliquent aussi à l’intégration lors de la création. Le journal nomme chaque endroit modifié – conservez la sauvegarde.</p>
+    <p>Les deux s’appliquent aussi à l’intégration lors de la création. Le journal nomme chaque endroit modifié – conservez la sauvegarde.</p>
   </div>
 
   <div class="frage">

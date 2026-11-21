@@ -489,18 +489,18 @@ footer{
 
   <div class="frage">
     <h3>Was macht BACKPORT?</h3>
-    <p>Ein PS5-Spiel merkt sich, mit welchem Entwicklungspaket (SDK) es gebaut wurde; die Konsole startet nichts, was neuer ist als ihre Firmware. <strong>BACKPORT</strong> (unter WEITERE TOOLS) setzt diese Angabe auf eine Zielfirmware herab – <strong>4.00, 5.00, 6.00 oder 7.00</strong> – und legt passende Ersatzbibliotheken in einen <code>fakelib</code>-Ordner. Vorher zeigt die Liste jede Datei und was mit ihr geschähe; eine Sicherung des Ordners ist voreingestellt.</p>
+    <p>Ein PS5-Spiel merkt sich, mit welchem Entwicklungspaket (SDK) es gebaut wurde; die Konsole startet nichts, was neuer ist als ihre Firmware. <strong>BACKPORT</strong> (unter WEITERE TOOLS) setzt diese Angabe auf eine Zielfirmware herab – <strong>4.00, 5.00, 6.00 oder 7.00</strong> – und legt passende Ersatzbibliotheken in einen <code>fakelib</code>-Ordner. Vorher zeigt die Liste jede Datei und was mit ihr geschähe; die Sicherung des Ordners legt das Programm immer an; außer der Zielfirmware ist nichts einzustellen.</p>
     <p class="warnung">Das Ergebnis läuft nur auf einer gejailbreakten Konsole. Ob ein Spiel nach dem Backport startet, lässt sich vorher nicht sagen – behalten Sie die Sicherung, bis es auf der Konsole läuft. Die <strong>Deckungsprüfung</strong> (läuft immer mit) zeigt, ob den Ersatzbibliotheken verlangte Funktionen fehlen.</p>
   </div>
 
   <div class="frage">
-    <h3>Mein Spiel startet nach dem Backport nicht – gibt es noch etwas zum Anhaken?</h3>
-    <p>Im BACKPORT-Fenster gibt es zwei zusätzliche Haken. Beide sind <strong>standardmäßig aus</strong> und beide gelten <strong>ohne Garantie</strong>, denn sie ändern Spielcode:</p>
+    <h3>Mein Spiel startet nach dem Backport nicht – kann ich noch etwas einstellen?</h3>
+    <p>Im BACKPORT-Fenster gibt es dazu nichts mehr einzustellen: Das Programm erledigt zwei Zusätze von selbst. Beide gelten <strong>ohne Garantie</strong>, denn sie ändern Spielcode:</p>
     <ul>
-      <li><strong>Fehlende Funktionen neutralisieren (Stubs, experimentell)</strong> – Verlangt das Spiel eine Funktion, die die Zielfirmware nicht kennt und die keine Ersatzbibliothek liefern kann, bricht es beim ersten Aufruf ab. Der Haken ersetzt diesen Aufruf im Spiel durch einen leeren Rückgabewert. Ob das Spiel dann richtig läuft, ist offen.</li>
-      <li><strong>Korrekturprofil des Spiels anwenden (falls vorhanden)</strong> – Für einzelne Titel liegen geprüfte Byte-Korrekturen bei, jeweils für genau eine Fassung des Spiels (mitgeliefert: Anno 117 auf Firmware 4.xx). Ein Profil wird nur angewendet, wenn die Prüfsumme der unveränderten Originaldatei stimmt; sonst bleibt alles, wie es ist.</li>
+      <li><strong>Fehlende Funktionen ausgleichen (Stubs)</strong> – Verlangt das Spiel eine Funktion, die die Zielfirmware nicht kennt und die keine Ersatzbibliothek liefern kann, bricht es beim ersten Aufruf ab. Das Programm ersetzt diesen Aufruf im Spiel durch einen leeren Rückgabewert; hat die Zielfirmware die Funktion doch, bleibt sie in Gebrauch (gemessen nur an einer Konsole mit Firmware 12.00). Ob das Spiel dann richtig läuft, ist offen.</li>
+      <li><strong>Korrekturprofil des Spiels</strong> – Für einzelne Titel liegen geprüfte Byte-Korrekturen bei, jeweils für genau eine Fassung des Spiels (mitgeliefert: Anno 117 auf Firmware 4.xx). Ein Profil wird nur angewendet, wenn die Prüfsumme der unveränderten Originaldatei stimmt; sonst bleibt alles, wie es ist.</li>
     </ul>
-    <p>Die Haken gelten auch beim Einbau während des Erstellens. Das Protokoll nennt jede geänderte Stelle – behalten Sie die Sicherung.</p>
+    <p>Beides gilt auch beim Einbau während des Erstellens. Das Protokoll nennt jede geänderte Stelle – behalten Sie die Sicherung.</p>
   </div>
 
   <div class="frage">

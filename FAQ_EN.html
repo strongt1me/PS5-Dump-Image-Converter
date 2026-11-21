@@ -489,18 +489,18 @@ footer{
 
   <div class="frage">
     <h3>What does BACKPORT do?</h3>
-    <p>A PS5 game records which development kit (SDK) it was built with; the console starts nothing that is newer than its firmware. <strong>BACKPORT</strong> (under MORE TOOLS) lowers this value to a target firmware – <strong>4.00, 5.00, 6.00 or 7.00</strong> – and places matching replacement libraries in a <code>fakelib</code> folder. Beforehand the list shows every file and what would happen to it; a backup of the folder is preset.</p>
+    <p>A PS5 game records which development kit (SDK) it was built with; the console starts nothing that is newer than its firmware. <strong>BACKPORT</strong> (under MORE TOOLS) lowers this value to a target firmware – <strong>4.00, 5.00, 6.00 or 7.00</strong> – and places matching replacement libraries in a <code>fakelib</code> folder. Beforehand the list shows every file and what would happen to it; the program always backs up the folder; apart from the target firmware, there is nothing to set.</p>
     <p class="warnung">The result only runs on a jailbroken console. Whether a game starts after the backport cannot be told in advance – keep the backup until it runs on the console. The <strong>coverage check</strong> (always on) shows whether functions the game requires are missing from the replacement libraries.</p>
   </div>
 
   <div class="frage">
-    <h3>My game does not start after the backport – is there anything else to tick?</h3>
-    <p>The BACKPORT window has two additional checkboxes. Both are <strong>off by default</strong> and both come <strong>without any guarantee</strong>, because they change game code:</p>
+    <h3>My game does not start after the backport – can I still set anything?</h3>
+    <p>There is nothing left to set in the BACKPORT window: the program does two additional things by itself. Both come <strong>without any guarantee</strong>, because they change game code:</p>
     <ul>
-      <li><strong>Neutralize missing functions (stubs, experimental)</strong> – If the game requires a function that the target firmware does not know and that no replacement library can provide, it aborts at the first call. This checkbox replaces that call inside the game with an empty return value. Whether the game then runs correctly is open.</li>
-      <li><strong>Apply the game's correction profile (if available)</strong> – For individual titles, verified byte corrections are included, each for exactly one version of the game (included: Anno 117 on firmware 4.xx). A profile is only applied if the checksum of the unmodified original file matches; otherwise everything stays as it is.</li>
+      <li><strong>Compensate missing functions (stubs)</strong> – If the game requires a function that the target firmware does not know and that no replacement library can provide, it aborts at the first call. The program replaces that call inside the game with an empty return value; if the target firmware does have the function after all, it stays in use (measured only on a console with firmware 12.00). Whether the game then runs correctly is open.</li>
+      <li><strong>The game's correction profile</strong> – For individual titles, verified byte corrections are included, each for exactly one version of the game (included: Anno 117 on firmware 4.xx). A profile is only applied if the checksum of the unmodified original file matches; otherwise everything stays as it is.</li>
     </ul>
-    <p>The checkboxes also apply to the integration while creating. The log names every changed spot – keep the backup.</p>
+    <p>Both also apply to the integration while creating. The log names every changed spot – keep the backup.</p>
   </div>
 
   <div class="frage">

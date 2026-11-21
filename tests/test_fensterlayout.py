@@ -157,50 +157,46 @@ class FensterLayoutTests(unittest.TestCase):
         _WURZEL.update_idletasks()
 
     def test_backport_knoepfe_voll_sichtbar(self):
-        """Seit 28.10.2026 stehen die beiden fortgeschrittenen Felder (Fakelib-Ordner,
-        Firmware-Ordner NID-Analyse) eingeklappt hinter "Erweiterte Einstellungen" -
-        ohne gesetzten Wert sind ihre Knoepfe deshalb beim Oeffnen nicht sichtbar.
-        """
+        """Seit 21.11.2026 gibt es im Fenster nur noch die Firmware zu waehlen: vier Knoepfe, keine Haken, keine Felder."""
         fenster = self._oeffne(
             lambda: self.app._render_backport_window(_leerer_spielordner(self)))
         try:
             zu_klein = _gequetschte_knoepfe(fenster)
             self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
             knoepfe = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
-            self.assertEqual(len(knoepfe), 5,
-                             "Erwartet: Starten, Nur prüfen, Backport-Ordner, Schließen, Erweiterte Einstellungen")
+            self.assertEqual(len(knoepfe), 4,
+                             "Erwartet: Starten, Nur prüfen, Backport-Ordner, Schließen")
             for knopf in knoepfe:
                 self.assertTrue(str(knopf.cget("text")).strip(),
                                 "Knopf ohne Beschriftung")
         finally:
             self._schliesse(fenster)
 
-    def test_backport_erweiterte_einstellungen_zeigen_die_zwei_felder(self):
-        """Aufklappen bringt genau die zwei fortgeschrittenen Knoepfe dazu."""
+    def test_backport_hat_keine_haken_und_keine_eingabefelder(self):
+        """Der Anwender gibt nur die Firmware an (Nutzerwunsch 21.11.2026): kein Haken, kein Eingabefeld, genau eine
+        Klappliste - alles Weitere macht das Programm selbst."""
         fenster = self._oeffne(
             lambda: self.app._render_backport_window(_leerer_spielordner(self)))
         try:
-            # Textfilter auf das Dreieck statt auf ein deutsches Wort: Steht in
-            # allen fuenf Sprachen gleich am Anfang (backport.advanced_toggle_*),
-            # andere Pruefungen in dieser Datei vermeiden uebersetzten Text bewusst.
-            umschalter = [b for b in _sammle(fenster, "Button")
-                          if str(b.cget("text")).strip().startswith(("▸", "▾"))]
-            self.assertEqual(len(umschalter), 1, "Umschalter nicht gefunden")
-            umschalter[0].invoke()
             fenster.update_idletasks()
-            zu_klein = _gequetschte_knoepfe(fenster)
-            self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
-            knoepfe = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
-            self.assertEqual(len(knoepfe), 8,
-                             "Erwartet: Starten, Nur prüfen, Backport-Ordner, Schließen, Erweiterte Einstellungen, "
-                             "Fakelib-Ordner wählen, Firmware-Analyse-Ordner wählen, Firmware-Referenz wählen")
+
+            def _alle(widget):
+                for kind in widget.winfo_children():
+                    yield kind
+                    yield from _alle(kind)
+
+            klassen = sorted({w.__class__.__name__ for w in _alle(fenster)})
+            for klasse in klassen:
+                niedrig = klasse.lower()
+                self.assertFalse("check" in niedrig or "entry" in niedrig or "spinbox" in niedrig,
+                                 f"{klasse} im BACKPORT-Fenster: {klassen}")
+            self.assertEqual(len(_sammle(fenster, "Combobox")), 1)
         finally:
             self._schliesse(fenster)
 
-    def test_backport_eigene_zielwerte_stehen_im_fenster(self):
-        """Ist ein eigener Zielwert gespeichert, klappt der Bereich von selbst auf und zeigt die drei Felder
-        (PS5-SDK, PS4-SDK, verlangte Firmware) vollstaendig innerhalb des Fensters."""
-        for name in ("backport_sdk_ps5", "backport_sdk_ps4", "backport_verlangte_fw"):
+    def test_backport_nennt_eigene_werte_aus_der_einstellungsdatei(self):
+        """Ein frueher gesetzter eigener Wert wirkt weiter - und steht im Fenster, statt still zu gelten."""
+        for name in ("backport_sdk_ps5", "backport_verlangte_fw"):
             self.addCleanup(self.app._save_setting, name, "")
         self.app._save_setting("backport_sdk_ps5", "0x04500031")
         self.app._save_setting("backport_verlangte_fw", "4.50")
@@ -208,14 +204,10 @@ class FensterLayoutTests(unittest.TestCase):
             lambda: self.app._render_backport_window(_leerer_spielordner(self)))
         try:
             fenster.update_idletasks()
-            felder = [w for w in _sammle(fenster, "Entry") + _sammle(fenster, "TEntry") if w.winfo_ismapped()]
-            texte = sorted(str(w.get()) for w in felder)
-            for erwartet in ("0x04500031", "4.50"):
-                self.assertIn(erwartet, texte, f"Feld mit {erwartet} fehlt: {texte}")
-            rechts = fenster.winfo_rootx() + fenster.winfo_width()
-            for feld in felder:
-                self.assertLessEqual(feld.winfo_rootx() + feld.winfo_width(), rechts,
-                                     f"Eingabefeld ragt aus dem Fenster: {feld.get()!r}")
+            erwartet = self.app._t("backport.eigene_aktiv",
+                                   liste=self.app._t("backport.eigene_label").rstrip(" :"))
+            texte = [str(w.cget("text")) for w in _sammle(fenster, "Label")]
+            self.assertIn(erwartet, texte)
         finally:
             self._schliesse(fenster)
 

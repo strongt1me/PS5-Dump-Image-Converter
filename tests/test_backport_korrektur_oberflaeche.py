@@ -94,14 +94,20 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertIn("ergebnis['ziel']", text[i_anwenden:i_anwenden + 120], "die Zusaetze wirken auf den Ergebnisordner")
         self.assertIn("abgebrochen", text[i_bauen:i_anwenden], "nach einem Abbruch wird nichts mehr angewendet")
 
-    def test_haken_stehen_im_backport_fenster_und_speichern_sich(self):
+    def test_zusaetze_laufen_immer_ohne_haken(self):
+        """Seit 21.11.2026 keine Haken mehr im Fenster: Stubs, Profil und Landeplatz sind immer an und lesen keine
+        gespeicherte Einstellung (ein frueher abgewaehlter Haken wuerde sich sonst unsichtbar halten)."""
+        for gespeichert in ({}, {"backport_stubs": False, "backport_profile": False, "backport_stubs_landeplatz": False}):
+            gui = _gui(dict(gespeichert))
+            with self.subTest(gespeichert=gespeichert):
+                self.assertTrue(gui._backport_stubs_an())
+                self.assertTrue(gui._backport_profile_an())
+                self.assertTrue(gui._backport_landeplatz_an())
         with io.open(HAUPTDATEI, encoding="utf-8") as fh:
             quelle = fh.read()
-        for schluessel in ("backport.option_stubs", "backport.option_profile", '"backport_stubs"', '"backport_profile"'):
-            self.assertIn(schluessel, quelle, schluessel)
-        # Beide Vorgaben sind Nein: Die Zusaetze aendern Spielcode.
-        self.assertIn('self._load_setting("backport_stubs", False)', quelle)
-        self.assertIn('self._load_setting("backport_profile", False)', quelle)
+        for alt in ('self._load_setting("backport_stubs"', 'self._load_setting("backport_profile"',
+                    'self._load_setting("backport_stubs_landeplatz"', '"backport.option_stubs"', '"backport.option_profile"'):
+            self.assertNotIn(alt, quelle, alt)
 
     def test_jeder_status_hat_eine_meldung(self):
         status = {getattr(bk, n) for n in dir(bk) if n.startswith("P_")}
@@ -111,9 +117,7 @@ class VerdrahtungTests(unittest.TestCase):
 
     def test_alle_texte_in_allen_sprachen_mit_denselben_platzhaltern(self):
         import re
-        schluessel = [k for k in STRINGS if k.startswith(("backport.korr_", "backport.option_stubs",
-                                                          "backport.option_profile", "backport.option_korr",
-                                                          "backport.state_korrekturen"))]
+        schluessel = [k for k in STRINGS if k.startswith(("backport.korr_", "backport.state_korrekturen"))]
         self.assertGreaterEqual(len(schluessel), 20)
         for k in schluessel:
             platzhalter = {sprache: set(re.findall(r"\{(\w+)\}", text)) for sprache, text in STRINGS[k].items()}
@@ -133,10 +137,12 @@ class VorbereitenTests(unittest.TestCase):
         (self.dump / "sce_sys").mkdir(parents=True)
         (self.dump / "sce_sys" / "param.json").write_text(json.dumps({"titleId": "PPSA23559"}), encoding="utf-8")
 
-    def test_haken_aus_tut_nichts(self):
+    def test_ohne_jede_einstellung_wird_das_profil_gesucht(self):
+        """Seit 21.11.2026 ohne Haken: Das Profil des Titels wird immer gesucht (und nur bei passender SHA-256 angewendet)."""
         gui = _gui()
-        self.assertIsNone(gui._backport_korrekturen_vorbereiten(str(self.dump), 4))
-        self.assertEqual(gui.protokoll, [])
+        vorb = gui._backport_korrekturen_vorbereiten(str(self.dump), 4)
+        self.assertIsNotNone(vorb)
+        self.assertGreaterEqual(len(gui.protokoll), 1)
 
     def test_haken_an_aber_titel_ohne_profil(self):
         (self.dump / "sce_sys" / "param.json").write_text(json.dumps({"titleId": "PPSA00000"}), encoding="utf-8")
@@ -187,14 +193,10 @@ class AnwendenTests(unittest.TestCase):
     def _anwenden(self, gui, vorb=None, **kw):
         return gui._backport_korrekturen_anwenden(str(self.dump), 4, str(self.basis), [], vorb, **kw)
 
-    def test_beides_aus_tut_nichts_und_liest_nichts(self):
-        gui = _gui()
-        self.assertEqual(self._anwenden(gui), set())
-        self.assertEqual(gui.protokoll, [])
-        self.assertEqual((self.dump / "eboot.bin").read_bytes(), self.elf)
-
     def test_stubs_neutralisieren_die_luecken_und_melden_es(self):
-        gui = _gui({"backport_stubs": True})
+        """Ohne jede Einstellung (seit 21.11.2026 immer an) und im Landeplatz-Modus: Der erste Sprung des PLT-Eintrags
+        bleibt, der Stub steht ab Byte 6."""
+        gui = _gui()
         status = []
         neutral = self._anwenden(gui, status=status.append)
         self.assertEqual(neutral, {("libkernel", "AAAAAAAAAAA"), ("libkernel", "NH6xARDOVv8"),
@@ -209,7 +211,10 @@ class AnwendenTests(unittest.TestCase):
         self.assertIn("('dateien', 1)", summe[0])
         self.assertEqual(status, ["backport.state_korrekturen[]"])
         va_nh6 = self.info["plt"][1]
-        self.assertEqual(elf[va_nh6:va_nh6 + 15], bk.STUB_AUSGABEN_MINUS1.bytes_)
+        kurz = bk.STUB_AUSGABEN_MINUS1.landeplatz_bytes()
+        self.assertEqual(elf[va_nh6:va_nh6 + 2], b"\xff\x25", "der erste Sprung (jmp [GOT]) bleibt")
+        self.assertEqual(elf[va_nh6 + bk.LANDEPLATZ_OFFSET:va_nh6 + bk.LANDEPLATZ_OFFSET + len(kurz)], kurz)
+        self.assertIn("backport.korr_landeplatz", [z.split("[")[0] for z in gui.protokoll])
 
     def test_ohne_luecken_wird_nichts_geaendert(self):
         _tabelle(self.basis, 4, {"libkernel": ["AAAAAAAAAAA", "NH6xARDOVv8"], "libSceAcm": ["BBBBBBBBBBB"],
