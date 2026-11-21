@@ -434,7 +434,7 @@ class KartenzeilenTests(unittest.TestCase):
         self.assertEqual("", a.dump_ordner_check.winfo_manager(), "und wieder weg")
 
     def test_dump_haken_folgt_der_regel_aus_den_einstellungen(self):
-        """Ohne Erzwingen: Strom an und kein LZ4-Asset-Pack -> weg; AMPR EMU mit LZ4-Asset-Pack (Rueckfall auf den Ordner) -> da."""
+        """Ohne Erzwingen: Strom an und kein LZ4-Asset-Pack -> weg; AMPR EMU mit LZ4-Asset-Pack -> nur da, wo der Rueckfall auf den Ordner feststeht."""
         from unittest import mock
         a = self.app
         self.addCleanup(self._arbeitsordner_zuruecksetzen)
@@ -444,9 +444,14 @@ class KartenzeilenTests(unittest.TestCase):
         with mock.patch.object(a, "_ampr_wird_eingebaut", return_value=True), \
                 mock.patch.object(a, "_ampr_methode", return_value=self.haupt.AMPR_METHODE_ASSETPACK), \
                 mock.patch.object(a, "_ampr_pack_verfahren", return_value="lz4"):
-            a._arbeitsordner_sichtbarkeit_setzen()
-            self.wurzel.update()
-            self.assertNotEqual("", a.dump_ordner_check.winfo_manager(), "LZ4-Asset-Pack: Zwischenordner moeglich")
+            with mock.patch.object(a, "_lz4_rueckfall_steht_fest", return_value=False):
+                a._arbeitsordner_sichtbarkeit_setzen()
+                self.wurzel.update()
+                self.assertEqual("", a.dump_ordner_check.winfo_manager(), "LZ4-Asset-Pack, aber der Strom packt: kein Zwischenordner")
+            with mock.patch.object(a, "_lz4_rueckfall_steht_fest", return_value=True):
+                a._arbeitsordner_sichtbarkeit_setzen()
+                self.wurzel.update()
+                self.assertNotEqual("", a.dump_ordner_check.winfo_manager(), "LZ4-Asset-Pack mit feststehendem Rueckfall: Zwischenordner")
         with mock.patch.object(a, "_ampr_wird_eingebaut", return_value=True), \
                 mock.patch.object(a, "_ampr_methode", return_value=self.haupt.AMPR_METHODE_ASSETPACK), \
                 mock.patch.object(a, "_ampr_pack_verfahren", return_value="zstd"):

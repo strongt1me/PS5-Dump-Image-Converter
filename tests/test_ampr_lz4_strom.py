@@ -1139,6 +1139,16 @@ class PlatzSchaetzungTests(_HauptGrundlage):
         g._ampr_methode = lambda: APP.AMPR_METHODE_NORMAL
         self.assertFalse(g._lz4_strom_im_voraus_ausgeschlossen(self.spiel, True))
 
+    def test_rueckfall_text_nennt_den_weg_zum_arbeitsordner(self) -> None:
+        """Bei einem Abbild bleibt TEMP-ORDNER verborgen: Der Platzhinweis im Protokoll sagt, wo sich der Ordner aendern laesst."""
+        from ps5_validator.utils.i18n import STRINGS, SUPPORTED_LANGUAGES
+        for sprache in SUPPORTED_LANGUAGES:
+            with self.subTest(sprache):
+                text = STRINGS["log.lz4_rueckfall_platz"][sprache]
+                self.assertIn("(TEMP)", text, "der Abschnitt ARBEITSORDNER (TEMP) in EINSTELLUNGEN muss genannt sein")
+                self.assertIn("{need}", text)
+                self.assertIn("{free}", text)
+
     def test_rueckfall_warnt_vor_zu_wenig_platz(self) -> None:
         g = self.gui(quelle_gb=100)
         g._get_runtime_temp_dir = lambda anlegen=True: self.tmp
@@ -1168,6 +1178,94 @@ class PlatzSchaetzungTests(_HauptGrundlage):
         ergebnis = g._mode_exfat_umpacken_strom(self.spiel, self.ziel, ordner=True)
         self.assertIsNone(ergebnis)
         self.assertTrue(any("Achtung" in z for z in g._log_lines), "\n".join(g._log_lines))
+
+
+class ArbeitsordnerVorabTests(_HauptGrundlage):
+    """TEMP-ORDNER zeigt sich bei LZ4 nur, wo der Rueckfall auf den Zwischenordner schon vor dem Start feststeht (Nutzerwunsch 21.11.2026).
+
+    Bis dahin erschien das Feld bei jedem AMPR EMU mit LZ4-Asset-Pack - auch dort, wo der Strom das Spiel ohne Ordner packt und
+    Quelle und Ziel auf verschiedenen Datentraegern liegen. ``_lz4_rueckfall_steht_fest`` fragt dieselbe Vorabfrage wie die Platzpruefung.
+    """
+
+    def gui(self, quellen: "str | list[str]" = "", modus: str = "pack_folder") -> "GUI":
+        import types
+        liste = [quellen] if isinstance(quellen, str) else list(quellen)
+        g = _gui(self.tmp)
+        g.current_mode = types.SimpleNamespace(get=lambda: modus)
+        g.source_path = types.SimpleNamespace(get=lambda: liste[0] if liste else "")
+        g._batch_sources = liste if modus == "batch_convert" else []
+        return g
+
+    def anwenderprofil(self, ordner: str) -> None:
+        Path(ordner + "_ampr_pack.toml").write_text("# aus Mitschnitten\n", encoding="utf-8")
+
+    def test_ordner_ohne_besonderheit_zeigt_das_feld_nicht(self) -> None:
+        g = self.gui(self.spiel)
+        self.assertFalse(g._lz4_rueckfall_steht_fest())
+        self.assertFalse(g._arbeitsordner_noetig(), "der Strom packt dieses Spiel ohne Zwischenordner")
+
+    def test_anwenderprofil_neben_dem_ordner_zeigt_das_feld(self) -> None:
+        self.anwenderprofil(self.spiel)
+        g = self.gui(self.spiel)
+        self.assertTrue(g._lz4_rueckfall_steht_fest())
+        self.assertTrue(g._arbeitsordner_noetig())
+
+    def test_profil_des_programms_neben_dem_ordner_zaehlt_nicht(self) -> None:
+        Path(self.spiel + "_ampr_pack.toml").write_text(ap.PROFIL_KENNZEILE + "\n", encoding="utf-8")
+        self.assertFalse(self.gui(self.spiel)._arbeitsordner_noetig())
+
+    def test_titelprofil_mit_mehreren_gruppen_zeigt_das_feld(self) -> None:
+        _schreiben(self.spiel, {"sce_sys/param.sfo": _sfo("PPSA23566")})                  # EA Sports UFC 6: drei Gruppen
+        self.assertTrue(self.gui(self.spiel)._arbeitsordner_noetig())
+
+    def test_titelprofil_mit_einer_gruppe_zeigt_das_feld_nicht(self) -> None:
+        _schreiben(self.spiel, {"sce_sys/param.sfo": _sfo("PPSA21567")})                  # ASTRO BOT
+        self.assertFalse(self.gui(self.spiel)._arbeitsordner_noetig())
+
+    def test_abbild_als_quelle_zeigt_das_feld_nicht(self) -> None:
+        """Ein Abbild muesste geoeffnet werden, um das Profil zu kennen: Dort entscheidet erst der Lauf (und warnt im Protokoll)."""
+        self.anwenderprofil(self.quelle)
+        g = self.gui(self.quelle)
+        self.assertFalse(g._lz4_rueckfall_steht_fest())
+        self.assertFalse(g._arbeitsordner_noetig())
+
+    def test_ohne_quelle_oder_mit_fehlendem_ordner_kein_feld(self) -> None:
+        self.assertFalse(self.gui("")._arbeitsordner_noetig())
+        fehlt = os.path.join(self.tmp, "gibt_es_nicht")
+        self.anwenderprofil(fehlt)
+        self.assertFalse(self.gui(fehlt)._arbeitsordner_noetig())
+
+    def test_sammelkonvertierung_ein_ordner_mit_rueckfall_genuegt(self) -> None:
+        zweiter = os.path.join(self.tmp, "zweites_spiel")
+        _schreiben(zweiter, {"eboot.bin": b"\x7fELF" + bytes(100)})
+        self.assertFalse(self.gui([self.spiel, zweiter], "batch_convert")._arbeitsordner_noetig())
+        self.anwenderprofil(zweiter)
+        self.assertTrue(self.gui([self.spiel, zweiter], "batch_convert")._arbeitsordner_noetig())
+
+    def test_nur_bei_lz4_mit_asset_pack_und_angehaktem_ampr(self) -> None:
+        self.anwenderprofil(self.spiel)
+        for name, aenderung in (("zstd", {"_ampr_pack_verfahren": lambda: "zstd"}),
+                                ("Methode normal", {"_ampr_methode": lambda: APP.AMPR_METHODE_NORMAL}),
+                                ("ohne AMPR EMU", {"_ampr_wird_eingebaut": lambda: False})):
+            with self.subTest(name):
+                g = self.gui(self.spiel)
+                for attribut, wert in aenderung.items():
+                    setattr(g, attribut, wert)
+                self.assertFalse(g._arbeitsordner_noetig())
+
+    def test_strom_aus_und_archiv_zeigen_das_feld_weiter(self) -> None:
+        g = self.gui(self.spiel)
+        g.einstellungen = {"exfat_strom": False}
+        self.assertTrue(g._arbeitsordner_noetig(), "ohne Strom entsteht immer ein Zwischenordner")
+        g = self.gui(self.spiel)
+        g._quelle_ist_archiv = lambda: True
+        self.assertTrue(g._arbeitsordner_noetig(), "ein Archiv wird in den Arbeitsordner entpackt")
+
+    def test_unlesbare_quelle_bleibt_beim_strom(self) -> None:
+        g = self.gui(self.spiel)
+        g.source_path = None                              # ``.get()`` wirft: ohne Auskunft gilt der Strom, das Feld bleibt verborgen
+        self.assertFalse(g._lz4_rueckfall_steht_fest())
+        self.assertFalse(g._arbeitsordner_noetig())
 
 
 class MessenImHauptmodulTests(_HauptGrundlage):

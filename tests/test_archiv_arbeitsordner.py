@@ -146,6 +146,28 @@ class ArbeitsordnerTests(unittest.TestCase):
             _WURZEL.update()
             self.assertEqual(["", "", ""], self._manager(), "ohne Archiv wieder weg")
 
+    def test_lz4_zeigt_das_feld_nur_bei_feststehendem_rueckfall(self) -> None:
+        """Nutzerwunsch 21.11.2026: Bei AMPR EMU mit LZ4-Asset-Pack erschien TEMP-ORDNER immer; jetzt nur, wo der Zwischenordner entsteht."""
+        a = self.app
+        with tempfile.TemporaryDirectory() as t, \
+                mock.patch.object(a, "_ampr_wird_eingebaut", return_value=True), \
+                mock.patch.object(a, "_ampr_methode", return_value=self.haupt.AMPR_METHODE_ASSETPACK), \
+                mock.patch.object(a, "_ampr_pack_verfahren", return_value="lz4"):
+            ordner = os.path.join(t, "PPSA01234")
+            os.mkdir(ordner)
+            a._arbeitsordner_sichtbarkeit_setzen()
+            a.source_path.set(ordner)
+            _WURZEL.update()
+            self.assertEqual(["", "", ""], self._manager(), "der Strom packt dieses Spiel ohne Zwischenordner")
+            Path(ordner + "_ampr_pack.toml").write_text("# aus Mitschnitten\n", encoding="utf-8")
+            a.source_path.set(ordner)                       # neu gewaehlt: die Eingabe im Feld QUELLE zieht die Anzeige nach
+            _WURZEL.update()
+            self.assertEqual(["grid", "grid", "grid"], self._manager(), "ein Packprofil des Anwenders: der Strom schreibt es nicht")
+            a.source_path.set(_datei(t, "spiel.exfat"))
+            _WURZEL.update()
+            self.assertEqual(["", "", ""], self._manager(), "ein Abbild als Quelle: der Lauf entscheidet erst selbst")
+        a._arbeitsordner_sichtbarkeit_setzen()
+
     def test_unveraendert_wird_die_zeile_nicht_neu_gelegt(self) -> None:
         """Jede Eingabe im Feld QUELLE ruft ``_arbeitsordner_nachziehen``: Es legt die Karte nur neu, wenn sich der Bedarf aendert."""
         a = self.app

@@ -15343,8 +15343,10 @@ class PS5ConverterGUI:
 
         Seit Stufe 3 laufen alle Abbild-Formate im Strom und brauchen keinen. Es bleiben zwei Faelle: die Einstellung ``exfat_strom``
         auf "aus", und AMPR EMU mit **LZ4**-Asset-Pack - dort schreibt der Strom (``ampr_lz4pack``, Etappe 14) nicht jedes Profil
-        (Anwenderprofil, mehrere Gruppen, Striping), und der Lauf faellt dann auf den Weg ueber den Ordner zurueck. Im Zweifel
-        (Einstellung nicht lesbar) bleibt das Feld sichtbar - lieber ein Feld zu viel als einen Ordner, den man nicht waehlen kann.
+        (Anwenderprofil, mehrere Gruppen, Striping), und der Lauf faellt dann auf den Weg ueber den Ordner zurueck. Bei LZ4 zeigt sich
+        das Feld nur, wo der Rueckfall schon vor dem Start feststeht (:meth:`_lz4_rueckfall_steht_fest`; Nutzerwunsch 21.11.2026: Es
+        erschien bei jedem LZ4-Asset-Pack, auch wenn der Strom das Spiel ohne Ordner packt). Im Zweifel (Einstellung nicht lesbar)
+        bleibt das Feld sichtbar - lieber ein Feld zu viel als einen Ordner, den man nicht waehlen kann.
 
         Dazu kommt (Nutzerwunsch 17.11.2026) ein **Archiv als Quelle**: Es wird in den Arbeitsordner entpackt, auch im Strom - dann soll der
         Ordner waehlbar sein (:meth:`_quelle_ist_archiv`).
@@ -15358,13 +15360,37 @@ class PS5ConverterGUI:
             logger.debug("Arbeitsordner-Bedarf nicht entscheidbar: %s", exc)
             return True
         # LZ4-Asset-Pack: Ein Packprofil des Anwenders oder ein Titelprofil mit mehreren Gruppen schreibt der Strom nicht (``Lz4NichtImStrom``);
-        # dann entsteht der Zwischenordner doch, und der Platz dafuer soll waehlbar sein (``log.lz4_rueckfall_platz`` verweist darauf).
+        # dann entsteht der Zwischenordner doch, und der Platz dafuer soll waehlbar sein. Das Feld zeigt sich aber nur, wenn das schon vor
+        # dem Start feststeht; bei einem Abbild als Quelle entscheidet sich der Rueckfall erst im Lauf (``log.lz4_rueckfall_platz`` nennt
+        # dann den Weg zu EINSTELLUNGEN > ARBEITSORDNER (TEMP)).
         try:
             return bool(self._ampr_wird_eingebaut() and self._ampr_methode() == AMPR_METHODE_ASSETPACK
-                        and self._ampr_pack_verfahren() == "lz4")
+                        and self._ampr_pack_verfahren() == "lz4" and self._lz4_rueckfall_steht_fest())
         except Exception as exc:  # noqa: BLE001 - ohne Auskunft zum Pack bleibt es beim Strom
             logger.debug("Packverfahren fuer den Arbeitsordner nicht lesbar: %s", exc)
             return False
+
+    def _lz4_rueckfall_steht_fest(self) -> bool:
+        """Steht fuer eine der gewaehlten Quellen schon fest, dass LZ4 nicht im Strom gepackt wird und der Zwischenordner entsteht?
+
+        Gilt nur fuer **Ordner** als Quelle (Aufgabe 1 und Sammelkonvertierung): ein Packprofil des Anwenders neben dem Spielordner, oder ein
+        Titelprofil mit mehreren Gruppen (:meth:`_lz4_strom_im_voraus_ausgeschlossen`, dieselbe Vorabfrage wie die Platzpruefung). Ein
+        Abbild als Quelle muesste geoeffnet werden - dort bleibt es beim Strom, und der Lauf warnt selbst. Laeuft bei jeder Eingabe im Feld
+        QUELLE (``_arbeitsordner_nachziehen``): Es liest hoechstens ``param.sfo`` und ein Profil, und nur, wenn der Ordner existiert.
+        """
+        try:
+            quellen: list[str] = []
+            if str(self.current_mode.get() or "") == "batch_convert":
+                quellen = [str(q) for q in (getattr(self, "_batch_sources", None) or []) if q]
+            if not quellen:
+                quellen = [str(self.source_path.get() or "")]
+            for quelle in quellen:
+                quelle = quelle.strip()
+                if quelle and os.path.isdir(quelle) and self._lz4_strom_im_voraus_ausgeschlossen(quelle, True):
+                    return True
+        except Exception as exc:  # noqa: BLE001 - ohne Auskunft zur Quelle bleibt es beim Strom
+            logger.debug("Rueckfall von LZ4 auf den Zwischenordner nicht vorab beurteilbar: %s", exc)
+        return False
 
     def _arbeitsordner_sichtbarkeit_setzen(self) -> bool:
         """Zeigt TEMP-ORDNER (Titel, Feld, Knopf) und den Haken "Dump-Ordner im Arbeitsordner" nur, wo ein Arbeitsordner gebraucht wird.

@@ -2172,6 +2172,7 @@ class WegwahlTests(unittest.TestCase):
         g._ampr_wird_eingebaut = lambda: kw.get("ampr", True)
         g._ampr_methode = lambda: kw.get("methode", APP.AMPR_METHODE_ASSETPACK)
         g._ampr_pack_verfahren = lambda: kw.get("verfahren", "zstd")
+        g._lz4_rueckfall_steht_fest = lambda: kw.get("rueckfall", False)
         g._integration_gewaehlt = lambda: kw.get("einbau", kw.get("ampr", True))
         return g
 
@@ -2206,10 +2207,13 @@ class WegwahlTests(unittest.TestCase):
         """TEMP-ORDNER erscheint in der Pfad-Karte nur, wo noch ein Zwischenordner angelegt wird (Etappe 14: auch LZ4 im Strom)."""
         for name, kw, erwartet in (
                 ("zstd", {}, False),
-                # LZ4-Asset-Pack: Der Strom schreibt nicht jedes Profil (Anwenderprofil, mehrere Gruppen); dann entsteht der Zwischenordner doch.
-                ("LZ4", {"verfahren": "lz4"}, True),
-                ("Methode normal", {"methode": "normal", "verfahren": "lz4"}, False),
-                ("ohne AMPR", {"ampr": False, "verfahren": "lz4"}, False),
+                # LZ4-Asset-Pack: Der Strom schreibt nicht jedes Profil (Anwenderprofil, mehrere Gruppen); dann entsteht der Zwischenordner doch -
+                # aber das Feld zeigt sich nur, wenn das vor dem Start feststeht (Nutzerwunsch 21.11.2026, ``ArbeitsordnerVorabTests``).
+                ("LZ4 im Strom", {"verfahren": "lz4"}, False),
+                ("LZ4 mit feststehendem Rueckfall", {"verfahren": "lz4", "rueckfall": True}, True),
+                ("zstd, Rueckfall gibt es dort nicht", {"verfahren": "zstd", "rueckfall": True}, False),
+                ("Methode normal", {"methode": "normal", "verfahren": "lz4", "rueckfall": True}, False),
+                ("ohne AMPR", {"ampr": False, "verfahren": "lz4", "rueckfall": True}, False),
                 ("Strom aus", {"einstellungen": {"exfat_strom": False}}, True)):
             with self.subTest(name):
                 self.assertEqual(erwartet, self._probe(**kw)._arbeitsordner_noetig())
