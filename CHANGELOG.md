@@ -21,6 +21,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Behoben:** Das Handbuch sagte, Dump Forge übernehme `fakelib` unverändert ins Paket; bei Spielen mit AMPR EMU setzt es dort seine eigene Laufzeit ein, und die Protokollzeile zum Paketbau sagt es jetzt auch.
 - **Behoben:** Mehrere Hinweise stimmten nicht mehr: die Kompressionsstufe (1 statt 3 = am schnellsten), die config.ini-Warnung zu ShadowMount+, was einem Backup fehlt (nur die Content-ID) und „zstd an der Konsole noch nicht gemessen“.
 - **Behoben:** Die mitgelieferten Packprofile für ASTRO BOT und EA Sports UFC 6 griffen bei echten PS5-Dumps nie, weil das Programm die Title-ID nur in der param.sfo suchte, die PS5-Dumps nicht haben; jetzt liest es auch die param.json.
+- **Behoben:** Im BACKPORT-Fenster wurde bei Anzeigegrößen ab 125 % Text in der Dateitabelle abgeschnitten (Spalte „Art“, bei 200 % auch Dateinamen und Status); die Spalten wachsen jetzt mit der Anzeigegröße mit, die SDK-Zahl steht mittig, und der Warnsatz bricht nach der Fensterbreite um statt nach einer festen Zahl.
 
 ---
 
