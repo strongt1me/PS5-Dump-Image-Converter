@@ -13,7 +13,10 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Geändert:** Die Rückfrage „Backport nötig“ erkennt ein schon herabgesetztes Spiel an seinen Programmen statt an der param.json – bei Spielordnern, .ffpkg, .exfat, .ffpfs, .ffpfsc und .pkg, ohne zu entpacken.
 - **Neu:** Das KLOG-Fenster hebt die Kernel-Meldung „Call to unpatched function“ farbig hervor und weist darauf hin, dass dem Spiel meist eine Ersatzbibliothek fehlt.
 - **Geändert:** Das BACKPORT-Fenster öffnet etwas höher, damit alle Knöpfe sichtbar bleiben.
+- **Geändert:** Handbuch, FAQ, Anleitungen und README wurden in fünf Sprachen gegen das Programm geprüft und berichtigt; „Aufgabe 7 – PKG / FPKG“ steht jetzt vor „Aufgabe 8 – Validator“ (Kapitel 12 und 13).
+- **Aktualisiert:** AMPR EMU NG 0.5.0, die jetzt die Vorgabe für zstd-Asset-Packs ist, und Kraken Mount 0.3.1; die Warnung zum Indexspeicher kennt NG 0.5.0.
 - **Behoben:** Beim Umwandeln eines schon herabgesetzten Abbilds fragte das Programm manchmal trotzdem nach einem Backport für Firmware 12.
+- **Behoben:** Mehrere Hinweise stimmten nicht mehr: die Kompressionsstufe (1 statt 3 = am schnellsten), die config.ini-Warnung zu ShadowMount+, was einem Backup fehlt (nur die Content-ID) und „zstd an der Konsole noch nicht gemessen“.
 
 ---
 

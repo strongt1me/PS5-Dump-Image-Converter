@@ -13,7 +13,14 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 - **Changed:** The “Backport needed” question recognises an already lowered game by its programs, not the param.json – for game folders, .ffpkg, .exfat, .ffpfs, .ffpfsc and .pkg, without unpacking.
 - **New:** The KLOG window highlights the kernel message “Call to unpatched function” and points out that the game usually lacks a replacement library.
 - **Changed:** The BACKPORT window opens a little taller so that all buttons stay visible.
+- **Changed:** The manual, FAQ, guides and README were checked against the program in five languages and corrected; “Task 7 – PKG / FPKG” now comes before “Task 8 – Validator” (chapters 12 and 13).
+- **Updated:** AMPR EMU NG 0.5.0, now the default for zstd asset packs, and Kraken Mount 0.3.1; the index-memory warning knows NG 0.5.0.
 - **Fixed:** When converting an already lowered image, the program sometimes still asked for a backport to firmware 12.
+- **Fixed:** Several hints were out of date: the compression level (1 = fastest), the ShadowMount+ config.ini warning, what a backup is missing (only the content ID) and “zstd not yet measured on the console”.
+
+---
+
+## v2.0.0 – 2026-11-19
 
 - **New:** PKG / FPKG looks like tasks 1 to 6 (add-ons, source check, progress), and Dump Forge alone builds packages – from game folders and images, without an intermediate folder.
 - **New:** A game with LZ4 or zstd packs becomes an FPKG because Dump Forge unpacks the packs during the build; a PS4 package from a packed dump folder is refused.

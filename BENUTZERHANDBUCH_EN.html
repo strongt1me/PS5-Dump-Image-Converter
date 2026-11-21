@@ -335,8 +335,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Task 5 – Batch conversion</li>
     <li>Task 6 – AIO conversion</li>
     <li>AMPR EMU Manager (CONSOLE view)</li>
-    <li>Task 8 – Validator</li>
     <li>Task 7 – PKG / FPKG</li>
+    <li>Task 8 – Validator</li>
     <li>The toolbar at the top</li>
     <li>Theme and background image</li>
     <li>Solving common problems easily</li>
@@ -363,8 +363,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li><a href="#k9">Task 5 – Batch conversion</a></li>
     <li><a href="#k10">Task 6 – AIO conversion</a></li>
     <li><a href="#k11">AMPR EMU Manager (CONSOLE view)</a></li>
-    <li><a href="#k12">Task 8 – Validator</a></li>
-    <li><a href="#k13">Task 7 – PKG / FPKG</a></li>
+    <li><a href="#k12">Task 7 – PKG / FPKG</a></li>
+    <li><a href="#k13">Task 8 – Validator</a></li>
     <li><a href="#k14">The toolbar at the top</a></li>
     <li><a href="#k15">Theme and background image</a></li>
     <li><a href="#k16">Solving common problems</a></li>
@@ -419,7 +419,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>TARGET FORMAT</strong></td><td>Determines whether a dump folder, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code>, or <code>.ffpkg</code> is to be created. Appears only when it is needed.</td></tr>
       <tr><td><strong>COMPRESSION (PFS)</strong></td><td>How strongly the data is packed – 1 is fastest, 9 is smallest. To get started, “6 – Balanced” is enough. The field can be operated only if <code>.ffpfsc</code> is chosen as the target format; the other formats are not compressed.</td></tr>
       <tr><td><strong>WORKERS</strong></td><td>How many work processes run at the same time. One core always stays free; very large images are additionally throttled. Since v1.8.92 the value is set with a <strong>rotary knob</strong>: turn it while holding the mouse button, change it by one with the <strong>mouse wheel</strong> or the <strong>arrow keys</strong>, and reset it to the default with a <strong>double-click</strong>. The current number is shown in the center of the knob. Move the mouse over it and the hint shows what your setting actually does.</td></tr>
-      <tr><td><strong>VERIFY</strong></td><td>Whether the finished image is checked after packing. “Quick” checks the structure and a sample of the blocks (about 1 %, at most 1 GiB), “Full” additionally reads everything back and takes considerably longer, “Off” checks only the structure. <a href="#k12">Task 8</a> can also check at any time afterward.</td></tr>
+      <tr><td><strong>VERIFY</strong></td><td>Whether the finished image is checked after packing. “Quick” checks the structure and a sample of the blocks (about 1 %, at most 1 GiB), “Full” additionally reads everything back and takes considerably longer, “Off” checks only the structure. <a href="#k13">Task 8</a> can also check at any time afterward.</td></tr>
       <tr><td><strong>TARGET FOLDER</strong></td><td>The program writes the finished result here. It is best to use a different folder than the source. The field starts empty; the selection dialog opens in the most recently used target folder.</td></tr>
       <tr><td><strong>TEMP FOLDER</strong></td><td>Since v1.9.98 the field appears only where an intermediate folder is still created (when the conversion without an intermediate folder is switched off, with AMPR EMU and an LZ4 asset pack, where a run may exceptionally still need an intermediate folder, <a href="#k3">Section 3.3</a>, or when the source is an archive that is unpacked first); otherwise it stays hidden, and a folder chosen earlier remains in effect. The field starts empty; <strong>empty means: the default work folder</strong> &ndash; under Windows <code>Temp - Dump-Image Converter</code> in the root directory of the system drive (usually <code>C:\</code>), under Linux and macOS the system's temp folder. When a task starts, the program enters it in the field. Storage for temporary working files. Best is a dedicated folder on a large drive (e.g.&nbsp;<code>D:\PS5-Temp</code>): in the Windows temp folder, Windows storage optimization may delete files when space is low &ndash; even a working copy in the middle of a run. If the temp folder is located there and deletion is enabled, the log warns you when a run starts.</td></tr>
       <tr><td><strong>Dump folder in the work folder</strong></td><td>Checkbox in the path card; it appears only together with the <em>TEMP FOLDER</em> field, that is, only where the program creates an intermediate folder. If the program first unpacks the source into a temporary dump folder when repacking (for example <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>), this is placed at the <em>target</em> by default; if the box is checked, it moves to the work folder &ndash; then only the finished result is created on the target drive. The work folder must be able to hold the complete dump for this. Pure unpack tasks are not affected: there the dump folder <em>is</em> the result.</td></tr>
@@ -1547,7 +1547,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     two games with zstd packs from this program ran without errors, one with NG 0.3.5, one with NG 0.4.0-beta.
     Whether a particular game runs is only shown by a test there &ndash; the packed originals are missing from the result; keep the source dump (it stays unchanged).</p>
     <p><strong>New NG versions.</strong> The button <em>Look for new NG versions now</em> under <strong>SETTINGS</strong> fetches the latest ampr-emu-ng release from GitHub, checks the file against GitHub's checksum and places it in the <em>AMPR EMU updates</em> folder next to the program; the program never fetches pre-releases (“beta”). Under <strong>SETTINGS</strong>, section <em>AMPR EMU NG: NEW VERSIONS</em>, you find the <strong>automatic search</strong>, <strong>on by default</strong>: at startup the program asks at most once a day and writes to the log once GitHub has answered (without an internet connection it stays silent: no message, no download); if you do not want that, clear the check mark. <strong>Note:</strong> A newly fetched version immediately becomes the default for zstd asset packs, without having been tested on the console.</p>
-    <p><strong>Kraken Mount instead of ShadowMount+.</strong> According to its documentation and source code (version 0.3.1), the payload Kraken Mount (not to be confused with the compression method of the same name) only reads game folders &ndash; plain or with zstd or LZ4 packs &ndash; and debug FPKG <code>.pkg</code> files in the plaintext profile as built by ps5-dump-forge: uncompressed or Kraken-compressed at any level, also with holes (sparse). It rejects retail packages, encrypted packages, update packages (LIH), packages with a byte shuffle and PS4 packages. The packages of Task&nbsp;7 are built by Dump Forge itself, i.e. in the format Kraken Mount reads; whether Kraken Mount mounts them on the console has not been tested with this program. It mounts the packages without installing them &ndash; reportedly also on firmware 13.60, which has no public FPKG installation yet. It only starts once kstuff is loaded and ShadowMount+ has stopped. It does not read this program's images (<code>.exfat</code>, <code>.ffpkg</code>, <code>.ffpfs</code>, <code>.ffpfsc</code>); for Kraken Mount, choose the dump folder as the target. Kraken Mount also ships its own ampr-emu-ng (<code>/data/krakenmount/ampr/</code>) and places it over the game's fakelib: the NG version selected here only applies there if its <code>libSceAmpr.sprx</code> is in that folder. How to load and use Kraken Mount and Dump Forge is described in section&nbsp;11.5.</p>
+    <p><strong>Kraken Mount instead of ShadowMount+.</strong> According to its documentation and source code (version 0.3.1), the payload Kraken Mount (not to be confused with the compression method of the same name) only reads game folders &ndash; plain or with zstd or LZ4 packs &ndash; and debug FPKG <code>.pkg</code> files in the plaintext profile as built by ps5-dump-forge: uncompressed or Kraken-compressed at any level, also with holes (sparse). It rejects retail packages, encrypted packages, update packages (LIH), packages with a byte shuffle and PS4 packages. The packages of Task&nbsp;7 are built by Dump Forge itself, i.e. in the format Kraken Mount reads; measured on the console: a package built this way could be mounted and started with Kraken Mount 0.3.1. It mounts the packages without installing them &ndash; reportedly also on firmware 13.60, which has no public FPKG installation yet. It only starts once kstuff is loaded and ShadowMount+ has stopped. It does not read this program's images (<code>.exfat</code>, <code>.ffpkg</code>, <code>.ffpfs</code>, <code>.ffpfsc</code>); for Kraken Mount, choose the dump folder as the target. Kraken Mount also ships its own ampr-emu-ng (<code>/data/krakenmount/ampr/</code>) and places it over the game's fakelib: the NG version selected here only applies there if its <code>libSceAmpr.sprx</code> is in that folder. How to load and use Kraken Mount and Dump Forge is described in section&nbsp;11.5.</p>
 <p><strong>Unsigned programs are fake-signed (since v1.9.92).</strong> If a game's <code>eboot.bin</code> and modules are plain ELF files, it never starts on the PS5 – the loader rejects them. When a task starts and the program finds such programs in a folder, it asks whether to write them as fake-signed SELF files when creating (as ps5-dump-forge does). Under <strong>SETTINGS</strong> in the section <em>Unsigned programs</em> this can be switched on permanently without asking; the program then also checks images, which it unpacks for that. It writes in the working copy or the unpacked folder; in the original folder a <code>.orig</code> of every file stays next to it. Already signed programs stay untouched, and the log names every changed file.</p>
     <p><strong>Already compressed files stay loose (since v1.9.80).</strong>
     The general profile does not pack images and textures (<code>png</code>,
@@ -1858,7 +1858,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   the program then cleans up; when unpacking into the game folder, the
   whole set remains in place, and the run can be repeated.</p>
   <h3>11.5 Using Kraken Mount and Dump Forge</h3>
-    <p><strong>Using Kraken Mount.</strong> The file <code>kraken-mount_v0.3.1.elf</code> is in the <code>helloworld</code> folder and appears under <em>CONSOLE</em> in the table of <em>Console &amp; payloads</em> (row <em>Kraken Mount</em>, port&nbsp;8097, web interface). The steps come from the authors' instructions (version 0.3.1); this path is untested on the console.</p>
+    <p><strong>Using Kraken Mount.</strong> The file <code>kraken-mount_v0.3.1.elf</code> is in the <code>helloworld</code> folder and appears under <em>CONSOLE</em> in the table of <em>Console &amp; payloads</em> (row <em>Kraken Mount</em>, port&nbsp;8097, web interface). The steps come from the authors' instructions (version 0.3.1). Measured on the console: a .pkg built with Task&nbsp;7 could be mounted and started with Kraken Mount 0.3.1; other cases are untested.</p>
 <ol>
 <li>Load kstuff and stop ShadowMount+: Kraken Mount waits until both are true.</li>
 <li>Select the <em>Kraken Mount</em> row and press <em>Start selected</em> &ndash; the program sends the file to the ELF loader (port&nbsp;9021). By hand: <code>nc -w 3 &lt;PS5-Adresse&gt; 9021 &lt; kraken-mount.elf</code>.</li>
@@ -1871,73 +1871,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 </section>
 
 <section class="kapitel" id="k12">
-  <h2><span class="nr">12</span> Task 8 – Validator</h2>
-  <div class="kasten">
-    <span class="titel">What is this for?</span>
-    <p>The task that <strong>changes nothing</strong>. It looks into a folder or a container file and reports what is wrong: missing required files, a damaged file system, incorrect nesting.</p><p>Useful before passing a file on and after every aborted run. Important to know: <strong>unchecked is not a verdict.</strong> If a check could not take place – for example because administrator rights are missing – the report says so explicitly instead of reporting the file as faulty.</p>
-  </div>
-  <p>Task 8 checks a dump folder or a supported container file for detectable problems. It does not create a conversion result; the outcome appears in the log.</p>
-  <ol class="schritte">
-    <li>Select the folder or file to be checked.</li>
-    <li>Click START.</li>
-    <li>Read the completion message and note any warnings.</li>
-  </ol>
-  <div class="kasten tipp">
-    <span class="titel">A good first step</span>
-    <p>If you do not know a source yet, start with Task 8. A successful check is a good foundation – but it does not replace your own backup copy.</p>
-  </div>
-
-  <h3>12.1 What is additionally checked for .ffpfsc and .ffpfs</h3>
-  <p>An <code>.ffpfsc</code> has a two-level structure: the container on the outside, and inside it exactly one image holding the game files. An <code>.ffpfs</code>, by contrast, is itself the image: the game files are flat in the image root. If something went wrong while creating an <code>.ffpfsc</code>, another level may have ended up in between by mistake – from the outside the file then looks completely normal, but it is unusable on the console.</p>
-  <p>Task 8 therefore looks one level deeper and reports in the log:</p>
-  <div class="tabelle">
-  <table>
-    <thead><tr><th>Line</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><span class="punkt p-gruen"></span><code>nesting: in Ordnung</code></td><td>The game files are on the innermost level – as it should be. An <code>.ffpfsc</code> built from an <code>.exFAT</code> or an <code>.ffpkg</code>, however, contains this image on purpose; the line then reads <code>in Ordnung (exFAT-Abbild im Container)</code> or <code>in Ordnung (UFS2-Abbild im Container)</code>, respectively.</td></tr>
-      <tr><td><span class="punkt p-rot"></span><code>nesting: falsch verschachtelt</code></td><td>Another image is there instead of the files. The file must be created again. For an <code>.ffpfs</code> the line reads <code>nesting: geschachtelt</code>.</td></tr>
-      <tr><td><code>inner_files</code> / <code>inner_dirs</code></td><td>Number of files and folders on the innermost level.</td></tr>
-      <tr><td><span class="punkt p-gruen"></span><code>nesting: flach aufgebaut</code></td><td>For an <code>.ffpfs</code>, the required form: the game files are flat in the image root.</td></tr>
-      <tr><td><span class="punkt p-gelb"></span><code>nesting: flach aufgebaut</code></td><td>For an <code>.ffpfsc</code>: the files are directly in the container; the inner image is missing (the log reports an unusual structure). Appears, for example, when checking an intermediate result.</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>The check does <strong>not</strong> unpack the file for this: it only reads the table of contents of the inner level – for a 392 MB file, about 750 kilobytes in under a tenth of a second.</p>
-
-  <h3>12.2 Unpack check for .ffpfsc</h3>
-  <p>The payload data of an <code>.ffpfsc</code> is stored compressed, and every block carries its own checksum. Simply reading the file does not reveal a damaged block – the storage device delivers it without complaint. Task 8 therefore additionally unpacks every block (without saving anything) and reports in the log:</p>
-  <div class="tabelle">
-  <table>
-    <thead><tr><th>Line</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><span class="punkt p-gruen"></span><code>payload: in Ordnung</code></td><td>All blocks can be unpacked and match their checksum.</td></tr>
-      <tr><td><span class="punkt p-rot"></span><code>payload: beschädigt</code></td><td>At least one block cannot be unpacked – typical of an interrupted copy or transfer. Copy the file again or create it again.</td></tr>
-      <tr><td><span class="punkt p-gelb"></span><code>payload: nicht prüfbar</code></td><td>The file is uncompressed (<code>.ffpfs</code>) – it has no checksums that could be compared.</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>This takes as long as unpacking does – several minutes for a large title. The bar shows the first half for this, and the subsequent reading for the SHA-256 checksum the second; CANCEL takes effect immediately in both parts.</p>
-  <p><strong>Limit:</strong> An <code>.ffpfs</code>, an <code>.exFAT</code> and an <code>.ffpkg</code> carry no checksums for their payload data, and neither does a block that the engine stored uncompressed. Task 8 does not notice a corrupted bit in the middle of the game data there. Structure, size and file system are still checked; anyone who wants to be sure compares the checksum (SHA-256) of the copy with that of the original.</p>
-  <p>For an <code>.exFAT</code>, Task 8 additionally checks the beginning of the image: the name “EXFAT” in the boot sector and the checksum of the boot region. If the name is missing or the checksum does not match, the file is <strong>damaged</strong> (no longer just a note); the same applies to an <code>.ffpfs</code>/<code>.ffpfsc</code> with an unknown header.</p>
-  <p>Before starting, the program checks the sources of Tasks 1 to 6 for a plausible signature at the start of the file: an empty, wrongly named or truncated <code>.exfat</code> or <code>.ffpkg</code> is rejected with a message instead of “successfully” producing a small, unusable result.</p>
-  <div class="kasten">
-    <span class="titel">Unchecked is not a verdict</span>
-    <p>An <code>.ffpkg</code> is checked via UFS2Tool, and that
-    requires <strong>administrator rights</strong>. If they are missing, the
-    result since v1.9.1 is <strong>UNCHECKED</strong> – no longer
-    “failed”. The difference matters:
-    <em>failed</em> means something was found;
-    <em>unchecked</em> means nothing was looked at. It says nothing about
-    the file. Start the program as administrator and
-    check again.</p>
-    <p>In command-line mode, Task 8 returns the exit code
-    <strong>4</strong> for this – neither 0 (OK) nor 1
-    (flagged).</p>
-  </div>
-</section>
-
-<section class="kapitel" id="k13">
-  <h2><span class="nr">13</span> Task 7 – PKG / FPKG</h2>
+  <h2><span class="nr">12</span> Task 7 – PKG / FPKG</h2>
 
   <div class="kasten hinweis">
     <span class="titel">Two interfaces behind one button</span>
@@ -1953,7 +1887,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     for conversion via the same route (<em>Convert</em>) and automatically shows the <strong>PS4 PKG</strong> area.</p>
   </div>
 
-  <h3 id="k7pkg">13.1 PKG – unpack, convert and build PS4 packages</h3>
+  <h3 id="k7pkg">12.1 PKG – unpack, convert and build PS4 packages</h3>
   <p>This page does everything with PS4 games that you need for the PS5: a
   <strong>dump folder</strong> (unpacked game), an <strong>ffpfsc</strong> or
   <strong>exFAT image</strong> for ShadowMount+, or a single <strong>package</strong> made from base and
@@ -2180,7 +2114,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     </ul>
   </div>
 
-  <h3 id="k7fpkg">13.2 FPKG – Unpacking, converting and building PS5 packages</h3>
+  <h3 id="k7fpkg">12.2 FPKG – Unpacking, converting and building PS5 packages</h3>
   <p><strong>Where to find it:</strong> Task 7 – PKG / FPKG; in the <strong>SOURCE</strong> field choose a PS5 package, a game folder or an image – the page
   then shows the <strong>PS5 PKG</strong> area. This page
   opens PS5 packages (<code>.pkg</code>) and turns them into a dump folder or an image; from a
@@ -2340,6 +2274,72 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 </section>
 
+
+<section class="kapitel" id="k13">
+  <h2><span class="nr">13</span> Task 8 – Validator</h2>
+  <div class="kasten">
+    <span class="titel">What is this for?</span>
+    <p>The task that <strong>changes nothing</strong>. It looks into a folder or a container file and reports what is wrong: missing required files, a damaged file system, incorrect nesting.</p><p>Useful before passing a file on and after every aborted run. Important to know: <strong>unchecked is not a verdict.</strong> If a check could not take place – for example because administrator rights are missing – the report says so explicitly instead of reporting the file as faulty.</p>
+  </div>
+  <p>Task 8 checks a dump folder or a supported container file for detectable problems. It does not create a conversion result; the outcome appears in the log.</p>
+  <ol class="schritte">
+    <li>Select the folder or file to be checked.</li>
+    <li>Click START.</li>
+    <li>Read the completion message and note any warnings.</li>
+  </ol>
+  <div class="kasten tipp">
+    <span class="titel">A good first step</span>
+    <p>If you do not know a source yet, start with Task 8. A successful check is a good foundation – but it does not replace your own backup copy.</p>
+  </div>
+
+  <h3>13.1 What is additionally checked for .ffpfsc and .ffpfs</h3>
+  <p>An <code>.ffpfsc</code> has a two-level structure: the container on the outside, and inside it exactly one image holding the game files. An <code>.ffpfs</code>, by contrast, is itself the image: the game files are flat in the image root. If something went wrong while creating an <code>.ffpfsc</code>, another level may have ended up in between by mistake – from the outside the file then looks completely normal, but it is unusable on the console.</p>
+  <p>Task 8 therefore looks one level deeper and reports in the log:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Line</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><span class="punkt p-gruen"></span><code>nesting: in Ordnung</code></td><td>The game files are on the innermost level – as it should be. An <code>.ffpfsc</code> built from an <code>.exFAT</code> or an <code>.ffpkg</code>, however, contains this image on purpose; the line then reads <code>in Ordnung (exFAT-Abbild im Container)</code> or <code>in Ordnung (UFS2-Abbild im Container)</code>, respectively.</td></tr>
+      <tr><td><span class="punkt p-rot"></span><code>nesting: falsch verschachtelt</code></td><td>Another image is there instead of the files. The file must be created again. For an <code>.ffpfs</code> the line reads <code>nesting: geschachtelt</code>.</td></tr>
+      <tr><td><code>inner_files</code> / <code>inner_dirs</code></td><td>Number of files and folders on the innermost level.</td></tr>
+      <tr><td><span class="punkt p-gruen"></span><code>nesting: flach aufgebaut</code></td><td>For an <code>.ffpfs</code>, the required form: the game files are flat in the image root.</td></tr>
+      <tr><td><span class="punkt p-gelb"></span><code>nesting: flach aufgebaut</code></td><td>For an <code>.ffpfsc</code>: the files are directly in the container; the inner image is missing (the log reports an unusual structure). Appears, for example, when checking an intermediate result.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The check does <strong>not</strong> unpack the file for this: it only reads the table of contents of the inner level – for a 392 MB file, about 750 kilobytes in under a tenth of a second.</p>
+
+  <h3>13.2 Unpack check for .ffpfsc</h3>
+  <p>The payload data of an <code>.ffpfsc</code> is stored compressed, and every block carries its own checksum. Simply reading the file does not reveal a damaged block – the storage device delivers it without complaint. Task 8 therefore additionally unpacks every block (without saving anything) and reports in the log:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Line</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><span class="punkt p-gruen"></span><code>payload: in Ordnung</code></td><td>All blocks can be unpacked and match their checksum.</td></tr>
+      <tr><td><span class="punkt p-rot"></span><code>payload: beschädigt</code></td><td>At least one block cannot be unpacked – typical of an interrupted copy or transfer. Copy the file again or create it again.</td></tr>
+      <tr><td><span class="punkt p-gelb"></span><code>payload: nicht prüfbar</code></td><td>The file is uncompressed (<code>.ffpfs</code>) – it has no checksums that could be compared.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>This takes as long as unpacking does – several minutes for a large title. The bar shows the first half for this, and the subsequent reading for the SHA-256 checksum the second; CANCEL takes effect immediately in both parts.</p>
+  <p><strong>Limit:</strong> An <code>.ffpfs</code>, an <code>.exFAT</code> and an <code>.ffpkg</code> carry no checksums for their payload data, and neither does a block that the engine stored uncompressed. Task 8 does not notice a corrupted bit in the middle of the game data there. Structure, size and file system are still checked; anyone who wants to be sure compares the checksum (SHA-256) of the copy with that of the original.</p>
+  <p>For an <code>.exFAT</code>, Task 8 additionally checks the beginning of the image: the name “EXFAT” in the boot sector and the checksum of the boot region. If the name is missing or the checksum does not match, the file is <strong>damaged</strong> (no longer just a note); the same applies to an <code>.ffpfs</code>/<code>.ffpfsc</code> with an unknown header.</p>
+  <p>Before starting, the program checks the sources of Tasks 1 to 6 for a plausible signature at the start of the file: an empty, wrongly named or truncated <code>.exfat</code> or <code>.ffpkg</code> is rejected with a message instead of “successfully” producing a small, unusable result.</p>
+  <div class="kasten">
+    <span class="titel">Unchecked is not a verdict</span>
+    <p>An <code>.ffpkg</code> is checked via UFS2Tool, and that
+    requires <strong>administrator rights</strong>. If they are missing, the
+    result since v1.9.1 is <strong>UNCHECKED</strong> – no longer
+    “failed”. The difference matters:
+    <em>failed</em> means something was found;
+    <em>unchecked</em> means nothing was looked at. It says nothing about
+    the file. Start the program as administrator and
+    check again.</p>
+    <p>In command-line mode, Task 8 returns the exit code
+    <strong>4</strong> for this – neither 0 (OK) nor 1
+    (flagged).</p>
+  </div>
+</section>
 
 <section class="kapitel" id="k14">
   <h2><span class="nr">14</span> The toolbar at the top</h2>
@@ -3316,7 +3316,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>4</td><td>Convert ffpkg</td><td>Check, unpack, or convert <code>.ffpkg</code>.</td></tr>
       <tr><td>5</td><td>Batch conversion</td><td>Process several dump folders and containers in one batch.</td></tr>
       <tr><td>6</td><td>AIO conversion</td><td>Automatically detect and export a supported source.</td></tr>
-      <tr><td>7</td><td>PKG / FPKG</td><td>Read, unpack and convert PS4 and PS5 packages to images, build with Dump Forge, download updates and send them to the console (see <a href="#k13">Chapter 13</a>).</td></tr>
+      <tr><td>7</td><td>PKG / FPKG</td><td>Read, unpack and convert PS4 and PS5 packages to images, build with Dump Forge, download updates and send them to the console (see <a href="#k12">Chapter 12</a>).</td></tr>
       <tr><td>8</td><td>Validator</td><td>Check a source without creating a conversion result.</td></tr>
       <tr><td>–</td><td>AMPR EMU Manager (CONSOLE view)</td><td>Choose, apply, or reset the AMPR/PlayGo version; create the index – also directly on the PS5.</td></tr>
     </tbody>

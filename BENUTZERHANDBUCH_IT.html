@@ -335,8 +335,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Attività 5 – Conversione collettiva</li>
     <li>Attività 6 – Conversione AIO</li>
     <li>AMPR EMU Manager (vista CONSOLE)</li>
-    <li>Attività 8 – Validatore</li>
     <li>Attività 7 – PKG / FPKG</li>
+    <li>Attività 8 – Validatore</li>
     <li>La barra degli strumenti in alto</li>
     <li>Tema e immagine di sfondo</li>
     <li>Risolvere facilmente i problemi frequenti</li>
@@ -363,8 +363,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li><a href="#k9">Attività 5 – Conversione collettiva</a></li>
     <li><a href="#k10">Attività 6 – Conversione AIO</a></li>
     <li><a href="#k11">AMPR EMU Manager (vista CONSOLE)</a></li>
-    <li><a href="#k12">Attività 8 – Validatore</a></li>
-    <li><a href="#k13">Attività 7 – PKG / FPKG</a></li>
+    <li><a href="#k12">Attività 7 – PKG / FPKG</a></li>
+    <li><a href="#k13">Attività 8 – Validatore</a></li>
     <li><a href="#k14">La barra degli strumenti in alto</a></li>
     <li><a href="#k15">Tema e immagine di sfondo</a></li>
     <li><a href="#k16">Risolvere i problemi frequenti</a></li>
@@ -419,7 +419,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>FORMATO DI DESTINAZIONE</strong></td><td>Stabilisce se deve essere creata una cartella dump, un file <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> o <code>.ffpkg</code>. Compare solo quando serve.</td></tr>
       <tr><td><strong>COMPRESSIONE (PFS)</strong></td><td>Quanto si comprime – 1 è la più veloce, 9 la più piccola. Per iniziare basta “6 – Equilibrata”. Il campo è utilizzabile solo se come formato di destinazione è selezionato <code>.ffpfsc</code>; gli altri formati non vengono compressi.</td></tr>
       <tr><td><strong>WORKERS</strong></td><td>Quanti processi di lavoro vengono eseguiti contemporaneamente. Un core resta sempre libero; le immagini molto grandi vengono inoltre limitate. Dalla v1.8.92 il valore si imposta con una <strong>manopola</strong>: ruotare tenendo premuto il pulsante del mouse, modificare di uno con la <strong>rotellina del mouse</strong> o con i <strong>tasti freccia</strong>, tornare al valore predefinito con un <strong>doppio clic</strong>. Il numero impostato è al centro della manopola. Passando con il mouse sopra la manopola, viene mostrato cosa comporta concretamente l'impostazione.</td></tr>
-      <tr><td><strong>VERIFICA</strong></td><td>Se l'immagine finita viene verificata dopo l'impacchettamento. “Rapida” verifica la struttura e un campione dei blocchi (circa l'1 %, al massimo 1 GiB), “Completa” rilegge inoltre tutto e richiede molto più tempo, “Disattivato” verifica solo la struttura. L'<a href="#k12">attività 8</a> verifica anche in un secondo momento, in qualsiasi momento.</td></tr>
+      <tr><td><strong>VERIFICA</strong></td><td>Se l'immagine finita viene verificata dopo l'impacchettamento. “Rapida” verifica la struttura e un campione dei blocchi (circa l'1 %, al massimo 1 GiB), “Completa” rilegge inoltre tutto e richiede molto più tempo, “Disattivato” verifica solo la struttura. L'<a href="#k13">attività 8</a> verifica anche in un secondo momento, in qualsiasi momento.</td></tr>
       <tr><td><strong>CARTELLA DI DESTINAZIONE</strong></td><td>Qui il programma scrive il risultato finito. Meglio usare una cartella diversa dall'origine. Il campo parte vuoto; la finestra di selezione si apre nell'ultima cartella di destinazione utilizzata.</td></tr>
       <tr><td><strong>CARTELLA TEMPORANEA</strong></td><td>Dalla v1.9.98 il campo compare solo dove viene ancora creata una cartella intermedia (quando la conversione senza cartella intermedia è disattivata, con AMPR EMU e un pack di asset LZ4, dove un'esecuzione può eccezionalmente richiedere comunque una cartella intermedia, <a href="#k3">sezione 3.3</a>, oppure quando l'origine è un archivio che viene prima estratto); altrimenti resta nascosto, e una cartella scelta in precedenza continua a valere. Il campo parte vuoto; <strong>vuoto significa: la cartella di lavoro predefinita</strong> &ndash; in Windows <code>Temp - Dump-Image Converter</code> nella directory radice dell'unità di sistema (di solito <code>C:\</code>), su Linux e macOS la cartella temporanea del sistema. All'avvio di un'attività il programma la inserisce nel campo. Posto per i file di lavoro temporanei. Meglio una cartella dedicata su un'unità capiente (ad es. <code>D:\PS5-Temp</code>): nella cartella Temp di Windows l'ottimizzazione dello spazio di archiviazione di Windows può eliminare file quando lo spazio scarseggia &ndash; anche una copia di lavoro a metà esecuzione. Se la cartella temporanea si trova lì e l'eliminazione è attivata, il registro lo segnala all'avvio di un'esecuzione.</td></tr>
       <tr><td><strong>Cartella dump nella cartella di lavoro</strong></td><td>Casella di controllo nella scheda del percorso; compare solo insieme al campo <em>CARTELLA TEMPORANEA</em>, cioè solo dove il programma crea una cartella intermedia. Se nel ripacchettamento (ad es. da <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>) il programma estrae prima l'origine in una cartella dump temporanea, questa di fabbrica si trova presso la <em>destinazione</em>; se la casella è spuntata, passa nella cartella di lavoro &ndash; sull'unità di destinazione resta allora solo il risultato finito. A tal fine la cartella di lavoro deve poter contenere il dump completo. Le attività di sola estrazione non sono interessate: lì la cartella dump <em>è</em> il risultato.</td></tr>
@@ -1561,7 +1561,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     due giochi con pack zstd di questo programma sono partiti senza errori, uno con NG 0.3.5 e uno con NG 0.4.0-beta.
     Se un determinato gioco funziona lo mostra solo un test lì – gli originali pacchettizzati mancano nel risultato; conservare il dump di origine (resta invariato).</p>
     <p><strong>Nuove versioni di NG.</strong> Il pulsante <em>Cerca ora nuove versioni di NG</em> in <strong>IMPOSTAZIONI</strong> scarica da GitHub l’ultima versione di ampr-emu-ng, verifica il file con il checksum di GitHub e lo salva nella cartella <em>AMPR EMU updates</em> accanto al programma; il programma non scarica mai versioni preliminari («beta»). In <strong>IMPOSTAZIONI</strong>, sezione <em>AMPR EMU NG: NUOVE VERSIONI</em>, c’è la <strong>ricerca automatica</strong>, <strong>attiva di fabbrica</strong>: all’avvio il programma chiede al massimo una volta al giorno e scrive nel registro quando GitHub ha risposto (senza connessione a internet non succede nulla: nessun messaggio, nessun download); chi non lo vuole toglie la spunta. <strong>Attenzione:</strong> una versione appena scaricata diventa subito quella predefinita per gli asset pack zstd, senza essere stata provata sulla console.</p>
-    <p><strong>Kraken Mount al posto di ShadowMount+.</strong> Secondo le sue istruzioni e il suo codice sorgente (versione 0.3.1), il payload Kraken Mount (da non confondere con l’omonimo metodo di compressione) legge solo cartelle di gioco – invariate o con pack zstd o LZ4 – e file <code>.pkg</code> FPKG di debug nel profilo in chiaro, come li crea ps5-dump-forge: non compressi o compressi con Kraken a qualsiasi livello, anche con buchi (sparse). Rifiuta i pacchetti retail, i pacchetti cifrati, i pacchetti di aggiornamento (LIH), i pacchetti con rimescolamento dei byte e i pacchetti PS4. I pacchetti dell’attività&nbsp;7 sono creati da Dump Forge stesso, quindi nel formato che Kraken Mount legge; non è stato verificato con questo programma che Kraken Mount li monti sulla console. Monta i pacchetti senza installarli – secondo alcune segnalazioni anche sul firmware 13.60, per il quale non esiste ancora un’installazione FPKG pubblica. Si avvia solo quando kstuff è caricato e ShadowMount+ è terminato. Non legge le immagini di questo programma (<code>.exfat</code>, <code>.ffpkg</code>, <code>.ffpfs</code>, <code>.ffpfsc</code>); per Kraken Mount scegliere come destinazione la cartella dump. Kraken Mount porta inoltre un proprio ampr-emu-ng (<code>/data/krakenmount/ampr/</code>) e lo pone sopra la fakelib del gioco: la versione NG scelta qui vale lì solo se la sua <code>libSceAmpr.sprx</code> si trova in quella cartella. Come caricare e usare Kraken Mount e Dump Forge è spiegato nella sezione&nbsp;11.5.</p>
+    <p><strong>Kraken Mount al posto di ShadowMount+.</strong> Secondo le sue istruzioni e il suo codice sorgente (versione 0.3.1), il payload Kraken Mount (da non confondere con l’omonimo metodo di compressione) legge solo cartelle di gioco – invariate o con pack zstd o LZ4 – e file <code>.pkg</code> FPKG di debug nel profilo in chiaro, come li crea ps5-dump-forge: non compressi o compressi con Kraken a qualsiasi livello, anche con buchi (sparse). Rifiuta i pacchetti retail, i pacchetti cifrati, i pacchetti di aggiornamento (LIH), i pacchetti con rimescolamento dei byte e i pacchetti PS4. I pacchetti dell’attività&nbsp;7 sono creati da Dump Forge stesso, quindi nel formato che Kraken Mount legge; misurato sulla console: un pacchetto creato così è stato montato e avviato con Kraken Mount 0.3.1. Monta i pacchetti senza installarli – secondo alcune segnalazioni anche sul firmware 13.60, per il quale non esiste ancora un’installazione FPKG pubblica. Si avvia solo quando kstuff è caricato e ShadowMount+ è terminato. Non legge le immagini di questo programma (<code>.exfat</code>, <code>.ffpkg</code>, <code>.ffpfs</code>, <code>.ffpfsc</code>); per Kraken Mount scegliere come destinazione la cartella dump. Kraken Mount porta inoltre un proprio ampr-emu-ng (<code>/data/krakenmount/ampr/</code>) e lo pone sopra la fakelib del gioco: la versione NG scelta qui vale lì solo se la sua <code>libSceAmpr.sprx</code> si trova in quella cartella. Come caricare e usare Kraken Mount e Dump Forge è spiegato nella sezione&nbsp;11.5.</p>
 <p><strong>I programmi non firmati vengono firmati con firma finta (dalla v1.9.92).</strong> Se <code>eboot.bin</code> e i moduli di un gioco sono semplici file ELF, il gioco non si avvia mai sulla PS5: il loader li rifiuta. Se all'avvio di un'attività il programma trova tali programmi in una cartella, chiede se scriverli come SELF con firma finta durante la creazione (come fa ps5-dump-forge). In <strong>IMPOSTAZIONI</strong>, nella sezione <em>Programmi non firmati</em>, è possibile attivarlo sempre senza richiesta; il programma controlla allora anche le immagini, che a tal fine estrae. Scrive nella copia di lavoro o nella cartella estratta; nella cartella originale accanto a ogni file resta un <code>.orig</code>. I programmi già firmati restano intatti e il registro nomina ogni file modificato.</p>
     <p><strong>I file già compressi restano sparsi (dalla v1.9.80).</strong>
     Il profilo generico non pacchettizza immagini e texture (<code>png</code>,
@@ -1871,7 +1871,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   il programma ripulisce poi tutto; con l’estrazione nella cartella del gioco
   l’intero set resta com’è, e l’esecuzione può essere ripetuta.</p>
   <h3>11.5 Usare Kraken Mount e Dump Forge</h3>
-    <p><strong>Usare Kraken Mount.</strong> Il file <code>kraken-mount_v0.3.1.elf</code> si trova nella cartella <code>helloworld</code> e compare sotto <em>CONSOLE</em>, nella tabella di <em>Console e payload</em> (riga <em>Kraken Mount</em>, porta&nbsp;8097, interfaccia web). I passaggi provengono dalle istruzioni degli autori (versione 0.3.1); questo percorso non è provato sulla console.</p>
+    <p><strong>Usare Kraken Mount.</strong> Il file <code>kraken-mount_v0.3.1.elf</code> si trova nella cartella <code>helloworld</code> e compare sotto <em>CONSOLE</em>, nella tabella di <em>Console e payload</em> (riga <em>Kraken Mount</em>, porta&nbsp;8097, interfaccia web). I passaggi provengono dalle istruzioni degli autori (versione 0.3.1). Misurato sulla console: un .pkg creato con l’attività&nbsp;7 è stato montato e avviato con Kraken Mount 0.3.1; gli altri casi non sono provati.</p>
 <ol>
 <li>Carichi kstuff e arresti ShadowMount+: Kraken Mount attende finché entrambe le condizioni sono vere.</li>
 <li>Selezioni la riga <em>Kraken Mount</em> e prema <em>Avvia selezione</em>: il programma invia il file al caricatore ELF (porta&nbsp;9021). A mano: <code>nc -w 3 &lt;PS5-Adresse&gt; 9021 &lt; kraken-mount.elf</code>.</li>
@@ -1884,73 +1884,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 </section>
 
 <section class="kapitel" id="k12">
-  <h2><span class="nr">12</span> Attività 8 – Validatore</h2>
-  <div class="kasten">
-    <span class="titel">A cosa serve?</span>
-    <p>L’attività che <strong>non modifica nulla</strong>. Guarda all’interno di una cartella o di un file contenitore e segnala ciò che non va: file obbligatori mancanti, un file system danneggiato, un annidamento errato.</p><p>Utile prima di passare i file ad altri e dopo ogni esecuzione interrotta. Importante da sapere: <strong>non verificato non è un giudizio.</strong> Se un controllo non ha potuto essere eseguito – per esempio perché mancano i diritti di amministratore –, il rapporto lo dice espressamente, invece di segnalare il file come difettoso.</p>
-  </div>
-  <p>L’attività 8 controlla una cartella di dump o un file contenitore supportato alla ricerca di problemi riconoscibili. Non crea alcun risultato di conversione; l’esito compare nel registro.</p>
-  <ol class="schritte">
-    <li>Scegliere la cartella o il file da controllare.</li>
-    <li>Fare clic su AVVIA.</li>
-    <li>Leggere il messaggio finale e tenere conto di eventuali avvisi.</li>
-  </ol>
-  <div class="kasten tipp">
-    <span class="titel">Un buon primo passo</span>
-    <p>Se non si conosce ancora un’origine, iniziare con l’attività 8. Un controllo riuscito è una buona base – ma non sostituisce una copia di sicurezza personale.</p>
-  </div>
-
-  <h3>12.1 Che cosa viene controllato in più per .ffpfsc e .ffpfs</h3>
-  <p>Un <code>.ffpfsc</code> ha una struttura a due livelli: all’esterno il contenitore, al suo interno esattamente un’immagine con i file del gioco. Un <code>.ffpfs</code>, invece, è esso stesso l’immagine: i file del gioco si trovano piatti nella radice dell’immagine. Se durante la creazione di un <code>.ffpfsc</code> qualcosa è andato storto, può trovarsi per errore un ulteriore livello nel mezzo – dall’esterno il file sembra del tutto normale, ma sulla console è inutilizzabile.</p>
-  <p>L’attività 8 guarda quindi un livello più in profondità e riporta nel registro:</p>
-  <div class="tabelle">
-  <table>
-    <thead><tr><th>Riga</th><th>Significato</th></tr></thead>
-    <tbody>
-      <tr><td><span class="punkt p-gruen"></span><code>nesting: in Ordnung</code></td><td>Al livello più interno si trovano i file del gioco – come deve essere. Un <code>.ffpfsc</code> costruito da un <code>.exFAT</code> o da un <code>.ffpkg</code> contiene invece di proposito questa immagine; la riga è allora <code>in Ordnung (exFAT-Abbild im Container)</code> oppure <code>in Ordnung (UFS2-Abbild im Container)</code>.</td></tr>
-      <tr><td><span class="punkt p-rot"></span><code>nesting: falsch verschachtelt</code></td><td>Lì si trova un’altra immagine invece dei file. Il file deve essere creato di nuovo. Per un <code>.ffpfs</code> la riga è <code>nesting: geschachtelt</code>.</td></tr>
-      <tr><td><code>inner_files</code> / <code>inner_dirs</code></td><td>Numero di file e cartelle al livello più interno.</td></tr>
-      <tr><td><span class="punkt p-gruen"></span><code>nesting: flach aufgebaut</code></td><td>Per un <code>.ffpfs</code> la forma prescritta: i file del gioco si trovano piatti nella radice dell’immagine.</td></tr>
-      <tr><td><span class="punkt p-gelb"></span><code>nesting: flach aufgebaut</code></td><td>Per un <code>.ffpfsc</code>: i file si trovano direttamente nel contenitore, manca l’immagine interna (il registro segnala una struttura insolita). Compare, per esempio, quando si controlla un risultato intermedio.</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>Per questo il controllo <strong>non</strong> estrae il file: legge soltanto l’indice del livello interno – per un file da 392 MB circa 750 kilobyte in meno di un decimo di secondo.</p>
-
-  <h3>12.2 Controllo di estrazione per .ffpfsc</h3>
-  <p>I dati utili di un file <code>.ffpfsc</code> sono compressi e ogni blocco porta la propria somma di controllo. Con la semplice lettura del file un blocco danneggiato non viene notato – il supporto lo restituisce senza problemi. L’attività 8 quindi estrae in aggiunta ogni blocco (senza salvare nulla) e riporta nel registro:</p>
-  <div class="tabelle">
-  <table>
-    <thead><tr><th>Riga</th><th>Significato</th></tr></thead>
-    <tbody>
-      <tr><td><span class="punkt p-gruen"></span><code>payload: in Ordnung</code></td><td>Tutti i blocchi si lasciano estrarre e corrispondono alla loro somma di controllo.</td></tr>
-      <tr><td><span class="punkt p-rot"></span><code>payload: beschädigt</code></td><td>Almeno un blocco non si lascia estrarre – tipico di una copia o di un trasferimento interrotti. Copiare di nuovo il file o crearlo di nuovo.</td></tr>
-      <tr><td><span class="punkt p-gelb"></span><code>payload: nicht prüfbar</code></td><td>Il file non è compresso (<code>.ffpfs</code>) – lì non ci sono somme di controllo da confrontare.</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>Ci vuole tanto tempo quanto per l’estrazione, per un titolo grande alcuni minuti. La barra mostra a questo scopo la prima metà, la lettura successiva per la somma SHA-256 la seconda; ANNULLA ha effetto immediato in entrambe le parti.</p>
-  <p><strong>Limite:</strong> Un file <code>.ffpfs</code>, un <code>.exFAT</code> e un <code>.ffpkg</code> non hanno somme di controllo per i propri dati utili, e nemmeno un blocco che il motore ha memorizzato non compresso ne ha una. Un bit danneggiato in mezzo ai dati del gioco, in questi casi, l’attività 8 non lo nota. Struttura, dimensione e file system vengono comunque controllati; chi vuole essere sicuro confronta la somma di controllo (SHA-256) della copia con quella dell’originale.</p>
-  <p>Per un <code>.exFAT</code> l’attività 8 controlla inoltre l’inizio dell’immagine: il nome “EXFAT” nel settore di avvio e la somma di controllo della regione di avvio. Se il nome manca o la somma non corrisponde, il file è <strong>danneggiato</strong> (non più soltanto un avviso); lo stesso vale per un <code>.ffpfs</code>/<code>.ffpfsc</code> con intestazione sconosciuta.</p>
-  <p>Le origini delle attività da 1 a 6 vengono controllate dal programma prima dell’avvio alla ricerca di un identificatore plausibile all’inizio del file: un <code>.exfat</code> o un <code>.ffpkg</code> vuoto, con nome errato o troncato viene respinto con un messaggio, invece di fornire “con successo” un piccolo risultato inutilizzabile.</p>
-  <div class="kasten">
-    <span class="titel">Non verificato non è un giudizio</span>
-    <p>Un <code>.ffpkg</code> viene controllato tramite UFS2Tool, e ciò
-    richiede i <strong>diritti di amministratore</strong>. Se mancano, il
-    risultato è dalla v1.9.1 <strong>NON VERIFICATO</strong> – non più
-    “non riuscito”. La differenza è importante:
-    <em>non riuscito</em> significa che è stato trovato qualcosa;
-    <em>non verificato</em> significa che non è stato guardato nulla. Sul
-    file questo non dice nulla. Avviare il programma come amministratore e
-    controllare di nuovo.</p>
-    <p>Nella modalità a riga di comando l’attività 8 restituisce in questo caso il valore
-    <strong>4</strong> – né 0 (in ordine) né 1
-    (contestato).</p>
-  </div>
-</section>
-
-<section class="kapitel" id="k13">
-  <h2><span class="nr">13</span> Attività 7 – PKG / FPKG</h2>
+  <h2><span class="nr">12</span> Attività 7 – PKG / FPKG</h2>
 
   <div class="kasten hinweis">
     <span class="titel">Due interfacce dietro un pulsante</span>
@@ -1966,7 +1900,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     conversione attraverso lo stesso percorso (<em>Converti</em>) e mostra automaticamente l’area <strong>PS4 PKG</strong>.</p>
   </div>
 
-  <h3 id="k7pkg">13.1 PKG – estrarre, convertire e creare pacchetti PS4</h3>
+  <h3 id="k7pkg">12.1 PKG – estrarre, convertire e creare pacchetti PS4</h3>
   <p>Questa pagina ricava dai giochi PS4 tutto ciò che serve per la PS5: una
   <strong>cartella di dump</strong> (gioco estratto), un’<strong>immagine ffpfsc</strong> o
   <strong>exFAT</strong> per ShadowMount+ oppure un unico <strong>pacchetto</strong> composto da base e
@@ -2191,7 +2125,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     </ul>
   </div>
 
-  <h3 id="k7fpkg">13.2 FPKG – Estrarre, convertire e costruire pacchetti PS5</h3>
+  <h3 id="k7fpkg">12.2 FPKG – Estrarre, convertire e costruire pacchetti PS5</h3>
   <p><strong>Dove si trova:</strong> Attività 7 – PKG / FPKG; nel campo <strong>ORIGINE</strong> scegliere un pacchetto PS5, una cartella di gioco o un’immagine – la pagina
   mostra allora l’area <strong>PS5 PKG</strong>. Questa pagina
   apre pacchetti PS5 (<code>.pkg</code>) e ne ricava una cartella di dump o un’immagine; da una
@@ -2353,6 +2287,72 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 </section>
 
+
+<section class="kapitel" id="k13">
+  <h2><span class="nr">13</span> Attività 8 – Validatore</h2>
+  <div class="kasten">
+    <span class="titel">A cosa serve?</span>
+    <p>L’attività che <strong>non modifica nulla</strong>. Guarda all’interno di una cartella o di un file contenitore e segnala ciò che non va: file obbligatori mancanti, un file system danneggiato, un annidamento errato.</p><p>Utile prima di passare i file ad altri e dopo ogni esecuzione interrotta. Importante da sapere: <strong>non verificato non è un giudizio.</strong> Se un controllo non ha potuto essere eseguito – per esempio perché mancano i diritti di amministratore –, il rapporto lo dice espressamente, invece di segnalare il file come difettoso.</p>
+  </div>
+  <p>L’attività 8 controlla una cartella di dump o un file contenitore supportato alla ricerca di problemi riconoscibili. Non crea alcun risultato di conversione; l’esito compare nel registro.</p>
+  <ol class="schritte">
+    <li>Scegliere la cartella o il file da controllare.</li>
+    <li>Fare clic su AVVIA.</li>
+    <li>Leggere il messaggio finale e tenere conto di eventuali avvisi.</li>
+  </ol>
+  <div class="kasten tipp">
+    <span class="titel">Un buon primo passo</span>
+    <p>Se non si conosce ancora un’origine, iniziare con l’attività 8. Un controllo riuscito è una buona base – ma non sostituisce una copia di sicurezza personale.</p>
+  </div>
+
+  <h3>13.1 Che cosa viene controllato in più per .ffpfsc e .ffpfs</h3>
+  <p>Un <code>.ffpfsc</code> ha una struttura a due livelli: all’esterno il contenitore, al suo interno esattamente un’immagine con i file del gioco. Un <code>.ffpfs</code>, invece, è esso stesso l’immagine: i file del gioco si trovano piatti nella radice dell’immagine. Se durante la creazione di un <code>.ffpfsc</code> qualcosa è andato storto, può trovarsi per errore un ulteriore livello nel mezzo – dall’esterno il file sembra del tutto normale, ma sulla console è inutilizzabile.</p>
+  <p>L’attività 8 guarda quindi un livello più in profondità e riporta nel registro:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Riga</th><th>Significato</th></tr></thead>
+    <tbody>
+      <tr><td><span class="punkt p-gruen"></span><code>nesting: in Ordnung</code></td><td>Al livello più interno si trovano i file del gioco – come deve essere. Un <code>.ffpfsc</code> costruito da un <code>.exFAT</code> o da un <code>.ffpkg</code> contiene invece di proposito questa immagine; la riga è allora <code>in Ordnung (exFAT-Abbild im Container)</code> oppure <code>in Ordnung (UFS2-Abbild im Container)</code>.</td></tr>
+      <tr><td><span class="punkt p-rot"></span><code>nesting: falsch verschachtelt</code></td><td>Lì si trova un’altra immagine invece dei file. Il file deve essere creato di nuovo. Per un <code>.ffpfs</code> la riga è <code>nesting: geschachtelt</code>.</td></tr>
+      <tr><td><code>inner_files</code> / <code>inner_dirs</code></td><td>Numero di file e cartelle al livello più interno.</td></tr>
+      <tr><td><span class="punkt p-gruen"></span><code>nesting: flach aufgebaut</code></td><td>Per un <code>.ffpfs</code> la forma prescritta: i file del gioco si trovano piatti nella radice dell’immagine.</td></tr>
+      <tr><td><span class="punkt p-gelb"></span><code>nesting: flach aufgebaut</code></td><td>Per un <code>.ffpfsc</code>: i file si trovano direttamente nel contenitore, manca l’immagine interna (il registro segnala una struttura insolita). Compare, per esempio, quando si controlla un risultato intermedio.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Per questo il controllo <strong>non</strong> estrae il file: legge soltanto l’indice del livello interno – per un file da 392 MB circa 750 kilobyte in meno di un decimo di secondo.</p>
+
+  <h3>13.2 Controllo di estrazione per .ffpfsc</h3>
+  <p>I dati utili di un file <code>.ffpfsc</code> sono compressi e ogni blocco porta la propria somma di controllo. Con la semplice lettura del file un blocco danneggiato non viene notato – il supporto lo restituisce senza problemi. L’attività 8 quindi estrae in aggiunta ogni blocco (senza salvare nulla) e riporta nel registro:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Riga</th><th>Significato</th></tr></thead>
+    <tbody>
+      <tr><td><span class="punkt p-gruen"></span><code>payload: in Ordnung</code></td><td>Tutti i blocchi si lasciano estrarre e corrispondono alla loro somma di controllo.</td></tr>
+      <tr><td><span class="punkt p-rot"></span><code>payload: beschädigt</code></td><td>Almeno un blocco non si lascia estrarre – tipico di una copia o di un trasferimento interrotti. Copiare di nuovo il file o crearlo di nuovo.</td></tr>
+      <tr><td><span class="punkt p-gelb"></span><code>payload: nicht prüfbar</code></td><td>Il file non è compresso (<code>.ffpfs</code>) – lì non ci sono somme di controllo da confrontare.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Ci vuole tanto tempo quanto per l’estrazione, per un titolo grande alcuni minuti. La barra mostra a questo scopo la prima metà, la lettura successiva per la somma SHA-256 la seconda; ANNULLA ha effetto immediato in entrambe le parti.</p>
+  <p><strong>Limite:</strong> Un file <code>.ffpfs</code>, un <code>.exFAT</code> e un <code>.ffpkg</code> non hanno somme di controllo per i propri dati utili, e nemmeno un blocco che il motore ha memorizzato non compresso ne ha una. Un bit danneggiato in mezzo ai dati del gioco, in questi casi, l’attività 8 non lo nota. Struttura, dimensione e file system vengono comunque controllati; chi vuole essere sicuro confronta la somma di controllo (SHA-256) della copia con quella dell’originale.</p>
+  <p>Per un <code>.exFAT</code> l’attività 8 controlla inoltre l’inizio dell’immagine: il nome “EXFAT” nel settore di avvio e la somma di controllo della regione di avvio. Se il nome manca o la somma non corrisponde, il file è <strong>danneggiato</strong> (non più soltanto un avviso); lo stesso vale per un <code>.ffpfs</code>/<code>.ffpfsc</code> con intestazione sconosciuta.</p>
+  <p>Le origini delle attività da 1 a 6 vengono controllate dal programma prima dell’avvio alla ricerca di un identificatore plausibile all’inizio del file: un <code>.exfat</code> o un <code>.ffpkg</code> vuoto, con nome errato o troncato viene respinto con un messaggio, invece di fornire “con successo” un piccolo risultato inutilizzabile.</p>
+  <div class="kasten">
+    <span class="titel">Non verificato non è un giudizio</span>
+    <p>Un <code>.ffpkg</code> viene controllato tramite UFS2Tool, e ciò
+    richiede i <strong>diritti di amministratore</strong>. Se mancano, il
+    risultato è dalla v1.9.1 <strong>NON VERIFICATO</strong> – non più
+    “non riuscito”. La differenza è importante:
+    <em>non riuscito</em> significa che è stato trovato qualcosa;
+    <em>non verificato</em> significa che non è stato guardato nulla. Sul
+    file questo non dice nulla. Avviare il programma come amministratore e
+    controllare di nuovo.</p>
+    <p>Nella modalità a riga di comando l’attività 8 restituisce in questo caso il valore
+    <strong>4</strong> – né 0 (in ordine) né 1
+    (contestato).</p>
+  </div>
+</section>
 
 <section class="kapitel" id="k14">
   <h2><span class="nr">14</span> La barra degli strumenti in alto</h2>
@@ -3331,7 +3331,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>4</td><td>Convertire ffpkg</td><td>Controllare, estrarre o convertire <code>.ffpkg</code>.</td></tr>
       <tr><td>5</td><td>Conversione collettiva</td><td>Elaborare in un unico lotto più cartelle dump e contenitori.</td></tr>
       <tr><td>6</td><td>Conversione AIO</td><td>Riconoscere automaticamente l’origine supportata ed esportarla.</td></tr>
-      <tr><td>7</td><td>PKG / FPKG</td><td>Leggere ed estrarre pacchetti PS4 e PS5, convertirli in immagini, costruirli con Dump Forge, scaricare aggiornamenti e inviarli alla console (vedere <a href="#k13">capitolo 13</a>).</td></tr>
+      <tr><td>7</td><td>PKG / FPKG</td><td>Leggere ed estrarre pacchetti PS4 e PS5, convertirli in immagini, costruirli con Dump Forge, scaricare aggiornamenti e inviarli alla console (vedere <a href="#k12">capitolo 12</a>).</td></tr>
       <tr><td>8</td><td>Validatore</td><td>Controllare l’origine senza creare un risultato di conversione.</td></tr>
       <tr><td>–</td><td>AMPR EMU Manager (vista CONSOLE)</td><td>Scegliere, applicare o ripristinare la versione AMPR/PlayGo; generare l’indice – anche direttamente sulla PS5.</td></tr>
     </tbody>
