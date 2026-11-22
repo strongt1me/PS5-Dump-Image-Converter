@@ -19,6 +19,7 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 - **Changed:** The manual, FAQ, guides and README were checked against the program in five languages and corrected; “Task 7 – PKG / FPKG” now comes before “Task 8 – Validator” (chapters 12 and 13).
 - **Updated:** AMPR EMU NG 0.5.0, now the default for zstd asset packs, and Kraken Mount 0.3.1; the index-memory warning knows NG 0.5.0.
 - **Updated:** Dump Forge 0.5.7 (console ELF and command line), elfldr 0.28, WebKit Autoloader 0.8.3 (0.8.2 is included as a choice too) and YT-Blocker 1.4r6.
+- **Updated:** garlic-savemgr 2.0, PS5Upload 12.6.22 and PS5 Cooling & System Center – Pro 1.91.0.
 - **Fixed:** When converting an already lowered image, the program sometimes still asked for a backport to firmware 12.
 - **Fixed:** The manual said Dump Forge takes `fakelib` over into a package unchanged; for games with AMPR EMU it puts its own runtime there, and the log line for package builds now says so too.
 - **Fixed:** Several hints were out of date: the compression level (1 = fastest), the ShadowMount+ config.ini warning, what a backup is missing (only the content ID) and “zstd not yet measured on the console”.
