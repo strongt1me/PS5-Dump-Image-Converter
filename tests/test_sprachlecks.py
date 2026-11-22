@@ -937,5 +937,34 @@ class NeueSchluesselTests(unittest.TestCase):
         self.assertEqual([], schief, "\n  ".join(schief))
 
 
+class DokumentPlatzhalterTests(unittest.TestCase):
+    """Platzhalter wie ``<PS5-Adresse>`` werden in Handbuch und FAQ mituebersetzt.
+
+    Befund vom 22.11.2026: In den Handbuechern EN/ES/FR/IT standen acht deutsche Platzhalter (``<PS5-Adresse>``,
+    ``<Ordner>``, ``<Ordnername>``, ``<Abbild>``, ``<Endung>``, ``<Fassung>``, ``<Spiel>``, ``<Titel>``), in der FAQ
+    ES/FR/IT ``<Abbild>`` - beim Uebersetzen des Satzes blieb der Platzhalter im ``<code>`` stehen. Verglichen wird mit
+    den Platzhaltern der deutschen Fassung; technische Namen sind in allen Sprachen gleich.
+    """
+
+    #: Gleich in jeder Sprache: Kennungen und Zaehler.
+    NEUTRAL = {"ID", "Title-ID", "TITLE_ID", "Content-ID", "Label", "n"}
+    MUSTER = re.compile(r"&lt;([^&<>]{1,60}?)&gt;")
+
+    def _platzhalter(self, name: str) -> set:
+        with open(os.path.join(PROJEKT, name), encoding="utf-8") as f:
+            return set(self.MUSTER.findall(f.read()))
+
+    def test_keine_deutschen_platzhalter_in_den_uebersetzungen(self):
+        for deutsch_datei, muster in (("BENUTZERHANDBUCH.html", "BENUTZERHANDBUCH_%s.html"), ("FAQ.html", "FAQ_%s.html")):
+            deutsch = self._platzhalter(deutsch_datei) - self.NEUTRAL
+            self.assertTrue(deutsch, "%s hat keine Platzhalter mehr - die Pruefung misst nichts" % deutsch_datei)
+            for sprache in ("EN", "ES", "FR", "IT"):
+                name = muster % sprache
+                with self.subTest(datei=name):
+                    eigene = self._platzhalter(name)
+                    self.assertTrue(eigene, "%s hat keine Platzhalter - die Pruefung misst nichts" % name)
+                    self.assertEqual(set(), eigene & deutsch, "deutsche Platzhalter in %s" % name)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

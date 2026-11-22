@@ -56,7 +56,12 @@ def _attr(text: str, name: str) -> Counter:
 
 
 def _code(text: str) -> Counter:
-    return Counter(re.sub(r"<[^>]+>", "", inhalt).strip()
+    """Inhalt aller ``<code>``/``<pre>``; Platzhalter wie ``&lt;PS5-Adresse&gt;`` zaehlen als gleich.
+
+    Platzhalter werden mituebersetzt (``<PS5 address>``, ``<dirección de la PS5>`` ..., Befund 22.11.2026 und
+    ``DokumentPlatzhalterTests`` in ``test_sprachlecks``); Befehl, Pfad und Dateiname drumherum muessen gleich bleiben.
+    """
+    return Counter(re.sub(r"&lt;[^&<>]{1,60}?&gt;", "&lt;…&gt;", re.sub(r"<[^>]+>", "", inhalt).strip())
                    for _, inhalt in re.findall(r"<(code|pre)\b[^>]*>(.*?)</\1>", text, re.S))
 
 

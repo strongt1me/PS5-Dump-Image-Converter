@@ -455,7 +455,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   the title bar. <strong>‹&nbsp;CONVERT</strong> leads back &ndash;
   the selected source, the settings and a running job are kept. The program always starts in the CONVERT view &ndash; even
   if CONSOLE was open when it was last closed.</p>
-  <p><strong>QR code.</strong> Below the table of <em>1.&nbsp;Console &amp; payloads</em>, the <em>QR code</em> button shows, for the selected service with a web interface, a QR code for your phone containing its address (<code>http://&lt;PS5-Adresse&gt;:&lt;Port&gt;/</code>); the phone's camera app opens the page. The same button is in the header of the pages with their own web interface. Phone and console must be on the same network; the code contains only the address, no access codes. It is generated in the program; nothing goes onto the network.</p>
+  <p><strong>QR code.</strong> Below the table of <em>1.&nbsp;Console &amp; payloads</em>, the <em>QR code</em> button shows, for the selected service with a web interface, a QR code for your phone containing its address (<code>http://&lt;PS5 address&gt;:&lt;port&gt;/</code>); the phone's camera app opens the page. The same button is in the header of the pages with their own web interface. Phone and console must be on the same network; the code contains only the address, no access codes. It is generated in the program; nothing goes onto the network.</p>
   <p><strong>4.&nbsp;Prospero Manager</strong>, <strong>5.&nbsp;CoolSysCent-Pro</strong>,
   <strong>6.&nbsp;ShadowMount+</strong>
   and <strong>7.&nbsp;SMPlusGui</strong>, by contrast, do not show a page
@@ -1018,7 +1018,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Only where the stream does not work, a complete working copy is created
   in the work folder as before, and the space needed there is as large as
   the game itself: with a pack profile of your own
-  <code>&lt;Ordnername&gt;_ampr_pack.toml</code> next to the dump folder, with
+  <code>&lt;folder name&gt;_ampr_pack.toml</code> next to the dump folder, with
   a title profile with several groups (such as EA Sports UFC&nbsp;6), if
   the source already carries a packed asset layer or
   contains symbolic links, and with a <code>.ffpkg</code> with names
@@ -1526,7 +1526,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     before anything goes into the game folder. On the command line it is set with
     <code>--ampr-pack-verfahren zstd</code> and <code>--ampr-zstd-stufe</code>
     (1 to 22). <strong>Custom pack rules:</strong> If a file
-    <code>&lt;Ordnername&gt;_ampr_pack.toml</code> sits next to the dump folder,
+    <code>&lt;folder name&gt;_ampr_pack.toml</code> sits next to the dump folder,
     it also decides with zstd what stays loose (<code>[pack] default_action</code> with
     <code>compress</code>, <code>store</code> or <code>loose</code>, plus
     <code>[[rule]]</code> with <code>action</code>, <code>include</code> and
@@ -1861,13 +1861,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <p><strong>Using Kraken Mount.</strong> The file <code>kraken-mount_v0.3.1.elf</code> is in the <code>helloworld</code> folder and appears under <em>CONSOLE</em> in the table of <em>Console &amp; payloads</em> (row <em>Kraken Mount</em>, port&nbsp;8097, web interface). The steps come from the authors' instructions (version 0.3.1). Measured on the console: a .pkg built with Task&nbsp;7 could be mounted and started with Kraken Mount 0.3.1; other cases are untested.</p>
 <ol>
 <li>Load kstuff and stop ShadowMount+: Kraken Mount waits until both are true.</li>
-<li>Select the <em>Kraken Mount</em> row and press <em>Start selected</em> &ndash; the program sends the file to the ELF loader (port&nbsp;9021). By hand: <code>nc -w 3 &lt;PS5-Adresse&gt; 9021 &lt; kraken-mount.elf</code>.</li>
+<li>Select the <em>Kraken Mount</em> row and press <em>Start selected</em> &ndash; the program sends the file to the ELF loader (port&nbsp;9021). By hand: <code>nc -w 3 &lt;PS5 address&gt; 9021 &lt; kraken-mount.elf</code>.</li>
 <li>Put each game in a scan folder: on the internal SSD <code>/data/homebrew</code> or <code>/data/etaHEN/games</code>; on an M.2 or extended drive (<code>/mnt/ext0</code>, <code>/mnt/ext1</code>) and on a USB drive (<code>/mnt/usb0</code> to <code>/mnt/usb7</code>) in <code>homebrew</code>, <code>etaHEN/games</code> or the root of the drive. A game may also lie in a folder directly inside one (for example <code>/data/homebrew/rpg/PPSA01234</code>); deeper folders are not scanned, and on a drive root only the root itself. A game is a folder with <code>eboot.bin</code> and <code>sce_sys/param.json</code> (plain, or with zstd or LZ4 packs) or a debug FPKG <code>.pkg</code>.</li>
 <li>For every game it finds, Kraken Mount reports &ldquo;&hellip; registered&rdquo; and puts its own tile on the home screen; nothing is installed.</li>
-<li>The web interface at <code>http://&lt;PS5-Adresse&gt;:8097</code> shows the games, the drives, the cache and the log, and changes the settings.</li>
+<li>The web interface at <code>http://&lt;PS5 address&gt;:8097</code> shows the games, the drives, the cache and the log, and changes the settings.</li>
 </ol>
 <p>On the console, the cache for each game is in <code>/data/krakenmount/caches/&lt;TITLE_ID&gt;</code>, the settings in <code>/data/krakenmount/config.toml</code> and the log in <code>/data/krakenmount/kraken.log</code>. To use your own ampr-emu-ng build, put its <code>libSceAmpr.sprx</code> in <code>/data/krakenmount/ampr/</code>; it stays there until you delete it. By default Kraken Mount fetches a newer ampr-emu-ng build from GitHub at start (setting <code>ampr_auto_update</code>). To update, send <code>kraken-mount.elf</code> to the ELF loader once; at the first start after that, Kraken Mount rebuilds the caches of all games, which takes a while and needs free space. Since version 0.3.0, Kraken Mount puts its bundled DLC EMU or PlayGo emulator into a game's fakelib when the game needs one and ships none of its own (setting <code>add_emulators</code>, on by default); at the first start after the update it recomposes every game's fakelib once. A game that is still being copied is skipped until its files stop changing (<code>stability_wait_seconds</code>), and a title whose source stays gone for five minutes is removed from the home screen (<code>auto_remove_missing</code>, on by default). The author calls the payload experimental: FPKG games are the newest and least tested part &ndash; if a game runs worse as a <code>.pkg</code>, try it as a zstd folder.</p>
-<p><strong>Dump Forge.</strong> PS5 Dump Forge (quer3q, GPL-3.0-or-later) converts and edits game folders, <code>.exfat</code>, <code>.ffpkg</code>, <code>.ffpfs</code>, <code>.ffpfsc</code> and debug FPKG &ndash; also straight from <code>zip</code>, <code>7z</code> and <code>rar</code> &ndash;, packs games into zstd and LZ4 packs and transfers files between devices; it has a web interface and runs on the PS5 itself as well as on Windows, macOS and Linux. The PS5 version is included with this program: <code>ps5-dump-forge_v0.5.7.elf</code> in the <code>helloworld</code> folder (version 0.5.7 of 22.11.2026). Send it with <strong>JS LOADER</strong> (choose <em>Already implemented payloads</em>, then <em>Selected payload &ndash; send directly</em>) to the ELF loader (port&nbsp;9021, as above). Dump Forge has no row of its own in the <em>Console &amp; payloads</em> table because its interface uses the same port as AnyPad PS5. Download the versions for Windows, macOS and Linux from <code>github.com/quer3q/ps5-dump-forge/releases</code>. The interface opens from the icon on the home screen or in a browser at <code>http://&lt;PS5-Adresse&gt;:8095</code> (in the console's browser, L2 and R2 switch tabs). In the desktop app, <em>Dump Forge on PS5</em> on the <em>Connect</em> tab installs the payload with one click. For Kraken Mount, choose <em>pkg</em> (debug FPKG) as the target &ndash; on the command line <code>ps5-dump-forge convert &lt;Ordner&gt; --to pkg</code> &ndash; and put the <code>.pkg</code> in one of the scan folders above. Port&nbsp;8095 is also used by AnyPad PS5; if both run, only one can hold the port.</p>
+<p><strong>Dump Forge.</strong> PS5 Dump Forge (quer3q, GPL-3.0-or-later) converts and edits game folders, <code>.exfat</code>, <code>.ffpkg</code>, <code>.ffpfs</code>, <code>.ffpfsc</code> and debug FPKG &ndash; also straight from <code>zip</code>, <code>7z</code> and <code>rar</code> &ndash;, packs games into zstd and LZ4 packs and transfers files between devices; it has a web interface and runs on the PS5 itself as well as on Windows, macOS and Linux. The PS5 version is included with this program: <code>ps5-dump-forge_v0.5.7.elf</code> in the <code>helloworld</code> folder (version 0.5.7 of 22.11.2026). Send it with <strong>JS LOADER</strong> (choose <em>Already implemented payloads</em>, then <em>Selected payload &ndash; send directly</em>) to the ELF loader (port&nbsp;9021, as above). Dump Forge has no row of its own in the <em>Console &amp; payloads</em> table because its interface uses the same port as AnyPad PS5. Download the versions for Windows, macOS and Linux from <code>github.com/quer3q/ps5-dump-forge/releases</code>. The interface opens from the icon on the home screen or in a browser at <code>http://&lt;PS5 address&gt;:8095</code> (in the console's browser, L2 and R2 switch tabs). In the desktop app, <em>Dump Forge on PS5</em> on the <em>Connect</em> tab installs the payload with one click. For Kraken Mount, choose <em>pkg</em> (debug FPKG) as the target &ndash; on the command line <code>ps5-dump-forge convert &lt;folder&gt; --to pkg</code> &ndash; and put the <code>.pkg</code> in one of the scan folders above. Port&nbsp;8095 is also used by AnyPad PS5; if both run, only one can hold the port.</p>
 </section>
 
 <section class="kapitel" id="k12">
@@ -2190,7 +2190,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Choose a <strong>game folder</strong> (containing <code>eboot.bin</code> and <code>sce_sys/param.json</code>)
   or an <strong>image</strong>, the target folder and, in the <strong>TARGET FORMAT</strong> field, the entry <em>.pkg</em>. The program builds a
   <strong>debug package (FPKG)</strong> from it. Since 17 Nov 2026 packages are built <strong>only with Dump Forge</strong> (see
-  <a href="#k7forge">Building a package with Dump Forge</a>); the package is named <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>.
+  <a href="#k7forge">Building a package with Dump Forge</a>); the package is named <code>&lt;title&gt; [&lt;Title-ID&gt;].pkg</code>.
   There is no second package builder any more: LibProsperoPkg (<code>ffpfsc-pkg-tool</code>) only reads, checks and unpacks packages,
   and ProsperoPkgTool has been removed. With them went the choice of builder, the repair of <code>param.json</code> before the build,
   apply backport before the build, the minimum firmware, the patch mode for an update PKG, the PlayGo chunks and the reproducible build.</p>
@@ -2227,7 +2227,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <em>Balanced</em>, <em>Smallest package</em>, <em>Stored</em> – the two middle ones make the package about 2.6&nbsp;% smaller
     and take about 6 and 9 times as long), <strong>Verify completely</strong> and <strong>Leave out the backport libraries</strong>
     (<code>fakelib/</code>; Dump Forge refuses this when the SDK in <code>eboot.bin</code> was lowered). The number of worker cores is set in the same tab (0 = all). Dump Forge does not offer minimum firmware, update PKG (patch mode), backport before the build, PlayGo chunks or a reproducible build; it takes over the program files and <code>fakelib</code> of the source – with one exception: for every game that loads <code>libSceAmpr</code>, Dump Forge puts its own runtime (ampr_emu, version 0.4.2.1 in Dump Forge 0.5.6) into <code>fakelib/libSceAmpr.sprx</code>, even in place of ampr-emu-ng, and there is no switch for it (measured on 21.11.2026 with Dump Forge 0.5.6: ampr-emu-ng 0.5.0 and AMPR EMU 0.3.6.6 both became ampr_emu 0.4.2.1). Before the build the program says so in a window <em>Dump Forge replaces the AMPR runtime</em> and names the way to keep the game's runtime: an image from tasks 1 to 6, which ShadowMount+ starts. A game packed with LZ4 or zstd is unpacked by Dump Forge while building.</li>
-    <li><strong>Name and space:</strong> The package is named <code>&lt;Titel&gt; [&lt;Title-ID&gt;].pkg</code>; the name without the
+    <li><strong>Name and space:</strong> The package is named <code>&lt;title&gt; [&lt;Title-ID&gt;].pkg</code>; the name without the
     extension stays within 63 bytes (the title is shortened, the identifier stays). The space in the target folder is checked beforehand.</li>
     <li><strong>Platforms:</strong> The command-line tool is included for Windows (x64 and arm64), Linux (x64 and arm64) and macOS; the two arm64 versions have not yet been tried on an arm64 machine. If it is missing on your platform, the program builds no package and says so.</li>
     <li><strong>Checking afterwards:</strong> The action <em>Check</em> (the LibProsperoPkg checklist) reports one finding on a package from Dump Forge, about the RSA wrap (<code>cnt.wrap</code>): measured on the package from the example below, it passed 33 checks and failed this one, while a package built from the same source with LibProsperoPkg passed 42 of 42. A package with this finding was started on the console and runs; Dump Forge checks its package by its own rules and passes them.</li>
@@ -2494,7 +2494,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h4>Sony's official list – without the detour (since v1.9.81)</h4>
   <p>If the <code>sce_sys\param.json</code> of the selected PS5 game names the address of the update list (<code>versionFileUri</code>) – or if it can be read from an image file (with the title ID in its name) in the source folder or from the console's database (via FTP) –, <em>Game info</em> additionally shows Sony's own versions with size and required firmware, the newest one marked with a star – under the subheading <em>DIRECT DL</em> and with the link <strong>► Direct DL</strong>. This address contains an identifier for each title and cannot be calculated from the Title ID – it is therefore found only in the data of the game or the console. Like the others, the query runs only when online lookup is permitted.</p>
-  <p>Clicking <strong>► Direct DL</strong> in such a row opens a separate window and downloads the package <em>directly</em> – without a browser, without a security check, without pasting an address. The program fetches the directory of the parts, downloads them (three at a time) into a <code>.teil</code> file, and checks <strong>every part against the SHA-256 from Sony</strong>; if one does not match, it is downloaded once more, after which the run is aborted. Only when everything matches does the file receive its name (<code>&lt;Content-ID&gt;_v&lt;Fassung&gt;.pkg</code>) in the <em>PS5 Spiele Updates</em> folder (newest) or <em>Patches</em>. <strong>Cancel</strong> is harmless: the progress is kept, and the next click resumes. Beforehand, the program checks whether enough free space is available on the drive.</p>
+  <p>Clicking <strong>► Direct DL</strong> in such a row opens a separate window and downloads the package <em>directly</em> – without a browser, without a security check, without pasting an address. The program fetches the directory of the parts, downloads them (three at a time) into a <code>.teil</code> file, and checks <strong>every part against the SHA-256 from Sony</strong>; if one does not match, it is downloaded once more, after which the run is aborted. Only when everything matches does the file receive its name (<code>&lt;Content-ID&gt;_v&lt;version&gt;.pkg</code>) in the <em>PS5 Spiele Updates</em> folder (newest) or <em>Patches</em>. <strong>Cancel</strong> is harmless: the progress is kept, and the next click resumes. Beforehand, the program checks whether enough free space is available on the drive.</p>
   <p>Communication is only with Sony's delivery network (<code>sgst</code>/<code>gst</code>/<code>gs2.ww.prod.dl.playstation.net</code>), using a private root certificate from Sony that the program brings along. The download goes to the computer, <strong>not</strong> to the console, and nothing is installed; whether the assembled file can be installed on your console has not been verified.</p>
   <div class="kasten warnung">
     <span class="titel">Is nanoDNS running on the console?</span>
@@ -2673,7 +2673,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <table>
     <thead><tr><th></th><th>old method (up to alpha6)</th><th>new method (from alpha8)</th></tr></thead>
     <tbody>
-      <tr><td><strong>Where it looks</strong></td><td><code>app0/fakelib2</code>, otherwise <code>app0/fakelib</code></td><td>fixed order: <code>backports/&lt;ID&gt;/fakelib2</code> &rarr; <code>backports/&lt;ID&gt;/fakelib</code> &rarr; <code>&lt;Spiel&gt;/fakelib2</code> &rarr; <code>&lt;Spiel&gt;/fakelib</code></td></tr>
+      <tr><td><strong>Where it looks</strong></td><td><code>app0/fakelib2</code>, otherwise <code>app0/fakelib</code></td><td>fixed order: <code>backports/&lt;ID&gt;/fakelib2</code> &rarr; <code>backports/&lt;ID&gt;/fakelib</code> &rarr; <code>&lt;game&gt;/fakelib2</code> &rarr; <code>&lt;game&gt;/fakelib</code></td></tr>
       <tr><td><strong><code>fakelib2</code> in the game folder</strong></td><td>takes effect</td><td>1.7 alpha8 to alpha13fix1: <strong>is ignored</strong>; from 1.7beta1 (included: 1.7beta12) it takes effect again and overrides a <code>fakelib</code> next to it</td></tr>
       <tr><td><strong>Folder name in <code>backports</code></strong></td><td><code>&lt;ID&gt;</code>, without a suffix after the ID</td><td><code>&lt;ID&gt;</code>; from 1.7beta6 also <code>&lt;ID&gt; Zusatz</code> (the exact name wins, otherwise the first in byte order)</td></tr>
       <tr><td><strong>global + game-specific</strong></td><td>two layers on top of each other</td><td>previously copied together into a cache</td></tr>
@@ -2711,7 +2711,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <table>
     <thead><tr><th>Route</th><th>Folder</th><th>Effect</th></tr></thead>
     <tbody>
-      <tr><td><strong>Per game</strong></td><td>The title's backport folder, otherwise <code>&lt;Spiel&gt;/fakelib</code></td><td>applies to this one game only</td></tr>
+      <tr><td><strong>Per game</strong></td><td>The title's backport folder, otherwise <code>&lt;game&gt;/fakelib</code></td><td>applies to this one game only</td></tr>
       <tr><td><strong>Global</strong></td><td><code>/data/shadowmount/fakelib</code></td><td>applies to <strong>every</strong> registered game</td></tr>
       <tr><td><strong>Emulators</strong></td><td><code>/data/shadowmount/emus</code></td><td>only from alpha8 &ndash; and <strong>only replaces what is already there</strong></td></tr>
     </tbody>
@@ -2997,7 +2997,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     the new state, while the file stays untouched. Whatever is not possible (name already taken, no room) is rejected
     &ndash; and then nothing is queued either.</li>
     <li><strong>Apply changes.</strong> Only now is anything written, in the background: first the old bytes of every
-    affected spot into a journal next to the image (<code>&lt;Abbild&gt;.undo</code>), then the new content, and finally the
+    affected spot into a journal next to the image (<code>&lt;image&gt;.undo</code>), then the new content, and finally the
     file system's management data. If writing is interrupted (crash, power loss), the program reverses it the next time
     the image is opened, using the journal, and tells you so. A change that has been applied completely cannot be taken
     back this way. If you close the window with queued changes, the program asks and discards them.</li>
@@ -3033,7 +3033,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     and <em>New folder</em>. Every change takes effect immediately in the work folder.</li>
     <li><strong>Save.</strong> Choose the format (the original's is preselected), <em>Save as
     image&nbsp;&hellip;</em>, choose the target folder. The result is named
-    <code>&lt;Name&gt;_bearbeitet.&lt;Endung&gt;</code>; <strong>the original stays unchanged.</strong>
+    <code>&lt;name&gt;_bearbeitet.&lt;extension&gt;</code>; <strong>the original stays unchanged.</strong>
     It is also possible to save to a different format or to save several times.</li>
   </ol>
   <ul>
