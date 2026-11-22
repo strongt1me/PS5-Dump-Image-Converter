@@ -465,7 +465,7 @@ class MitgelieferteBefehlszeilenTests(unittest.TestCase):
                     self.assertEqual(kennzahl, struct.unpack_from("<H", d, pe + 4)[0], "PE Machine")
                 else:
                     self.assertEqual(b"\xca\xfe\xba\xbe", d[:4], "Mach-O universal")
-                self.assertIn(b"0.5.6", d, "die Fassung der Freigabe steht in der Datei")
+                self.assertIn(b"0.5.7", d, "die Fassung der Freigabe steht in der Datei")
 
     def test_die_plattformordner_stimmen_mit_der_auswahl_des_programms_ueberein(self) -> None:
         gewaehlt = set()
