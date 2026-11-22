@@ -52,6 +52,12 @@ _PARAM = {"contentId": "EP9999-PPSA99999_00-TESTSPIEL0000001", "titleId": "PPSA9
           "localizedParameters": {"defaultLanguage": "en-US", "en-US": {"titleName": "Testspiel"}}}
 
 
+#: Abgeschrieben aus Dump Forge, ``vendor/ps5upload-fpkg/src/kraken_image.rs`` (``SHUFFLES``, LibProsperoPkg's 13 ``PfsShufflePattern``) -
+#: die unabhaengige Vorlage fuer ``pkg_eboot._MISCHUNGEN``.
+FORGE_MISCHUNGEN = ((), (4, 4), (2, 2, 4), (1, 1, 6), (1, 1, 1, 1, 1, 1, 1, 1), (8, 2, 2, 4), (1, 1, 6, 2, 2, 4), (1, 1, 6, 1, 1, 6),
+                    (4, 4, 4, 4), (8, 8), (8, 4, 4), (2, 6), (2, 6, 2, 6))
+
+
 def _sha3(daten: bytes) -> bytes:
     return hashlib.sha3_256(daten).digest()
 
@@ -187,6 +193,52 @@ class KrakenBausteineTests(unittest.TestCase):
         self.assertEqual(b"abcdef" * 100, bytes(daten))
         with self.assertRaises(pe.PaketFehler):
             pe._entmischen(daten, 13)
+
+    def test_die_mischungen_wie_in_dump_forge(self) -> None:
+        """Unabhaengig von der eigenen Tabelle: Forges ``SHUFFLES`` und sein von Hand gerechnetes Beispiel ``Shuffle44``. Bis 22.11.2026
+        prueften die Tests die Tabelle nur gegen sich selbst - eine vertauschte Zeile waere gruen geblieben."""
+        self.assertEqual(FORGE_MISCHUNGEN, tuple(tuple(m) for m in pe._MISCHUNGEN))
+        daten = bytearray([0, 1, 2, 3, 8, 9, 10, 11, 4, 5, 6, 7, 12, 13, 14, 15, 16, 17, 18])
+        pe._entmischen(daten, 1)
+        self.assertEqual(bytes(range(19)), bytes(daten), "zwei Vektoren, drei Bytes Rest bleiben")
+
+    def test_die_dinode_zahl_aus_dem_oberblock_wird_gekappt(self) -> None:
+        """Die Zahl ist ein u64 aus dem Paket; gezaehlt wird nur, was in der Tabelle Platz hat (vorher lief die Schleife bis zur Zahl)."""
+        import time
+        tabelle = bytes(pe._DINODE_LEN * 3 + 10)
+        beginn = time.perf_counter()
+        self.assertEqual(3, len(pe._dinodes(tabelle, 2 ** 64)))
+        self.assertLess(time.perf_counter() - beginn, 1.0)
+        self.assertEqual(2, len(pe._dinodes(tabelle, 2)))
+        self.assertEqual([], pe._dinodes(tabelle, -1))
+
+    def test_zu_viele_leerbereiche_werden_abgelehnt(self) -> None:
+        """Eine Beschreibung mit einem Leerbereich (Art 0x40) - bei einer Grenze von 0 Bereichen abgelehnt, mit der echten nicht."""
+        from unittest import mock
+        dateien, ublocks = 2, 1
+        w0 = (dateien - 1) | 2 << 24 | ublocks << 32
+        blob = struct.pack("<QQ", w0, 0) + (0).to_bytes(5, "little") + b"\x40" + (0x40000).to_bytes(5, "little") + b"\x02"
+        blob += bytes(64 - len(blob))
+        with mock.patch.object(pe, "_MAX_LEERBEREICHE", 0), self.assertRaises(pe.PaketFehler) as r:
+            pe._beschreiben(blob)
+        self.assertIn("Leerbereiche", str(r.exception))
+        try:
+            pe._beschreiben(blob)
+        except pe.PaketFehler as exc:                       # die Saetze dieser Mini-Beschreibung muessen nicht stimmen
+            self.assertNotIn("Leerbereiche", str(exc))
+        # Ein einziger Leerbereich ueber viele Bloecke zaehlt nach Bloecken (drei hier), nicht nach Bereichen.
+        ublocks = 3
+        w0 = (dateien - 1) | 2 << 24 | ublocks << 32
+        gross = struct.pack("<QQ", w0, 0) + (0).to_bytes(5, "little") + b"\x40" + (3 * 0x40000).to_bytes(5, "little") + b"\x02"
+        gross += bytes(64 - len(gross))
+        with mock.patch.object(pe, "_MAX_LEERBLOECKE", 2), self.assertRaises(pe.PaketFehler) as r:
+            pe._beschreiben(gross)
+        self.assertIn("Leerbereiche", str(r.exception))
+        with mock.patch.object(pe, "_MAX_LEERBLOECKE", 3):
+            try:
+                pe._beschreiben(gross)
+            except pe.PaketFehler as exc:
+                self.assertNotIn("Leerbereiche", str(exc))
 
     def test_die_form_der_beschreibung(self) -> None:
         """``mount.rs shape``: ``00 00 04`` vor den Saetzen heisst Kraken; sonst entscheidet die Laenge zwischen Kraken, flach und beidem."""
@@ -468,6 +520,31 @@ class MitEchterForgeBefehlszeileTests(unittest.TestCase):
                 punkt._zwischen.clear()
                 punkt.lesen(logisch + grenze - 10, 20)
                 self.assertEqual(2, zaehler.call_count, "ueber eine Blockgrenze: zwei Bloecke")
+
+    def test_eine_mischtabelle_in_der_beschreibung_wird_erkannt(self) -> None:
+        """Wie Forges ``a_shuffle_table_moves_the_boundary_table``: Forge schreibt nie eine Mischung; eine Tabelle zwischen den
+        Aussen-Pruefsummen und den Grenzen verschiebt nur, wo die Grenzen stehen - die Bloecke bleiben dieselben. Eine unbekannte
+        Beschreibung (die Felder umgedreht) wird abgelehnt."""
+        with open(self.pakete["orig"], "rb") as fh:
+            datei = pe._beschreibungsdatei(pe._aussenwelt(fh, pe.STANDARD_PASSCODE))
+            blob = datei.lesen(0, datei.groesse)
+        w0, w1 = struct.unpack_from("<QQ", blob, 0)
+        self.assertEqual(0, (w0 >> 28) & 0xF, "Vorbedingung: Forge schreibt keine Mischtabelle")
+        ende = 16 + (w1 & 0xFFFFFF) * 8
+
+        def mit_tabelle(eintraege) -> bytes:
+            tabelle = b"".join(bytes(e) + bytes(8 - len(e)) for e in eintraege)
+            return struct.pack("<Q", w0 | len(eintraege) << 28) + blob[8:ende] + tabelle + blob[ende:]
+
+        bloecke, groesse = pe._beschreiben(blob)
+        form = [(b.logisch, b.laenge, b.abgelegt_ab, b.abgelegt_laenge) for b in bloecke]
+        for anzahl in (1, 3, 15):
+            with self.subTest(anzahl=anzahl):
+                b2, g2 = pe._beschreiben(mit_tabelle([FORGE_MISCHUNGEN[1 + p % 12] for p in range(anzahl)]))
+                self.assertEqual(groesse, g2)
+                self.assertEqual(form, [(b.logisch, b.laenge, b.abgelegt_ab, b.abgelegt_laenge) for b in b2])
+        with self.assertRaises(pe.PaketFehler):
+            pe._beschreiben(mit_tabelle([(4, 2, 2)]))
 
     def test_es_sind_mehrere_bloecke_und_alle_arten_gewesen(self) -> None:
         """Der Aufbau der Testdaten fuehrt durch LZ-Haelften, Huffman-Felder und rohe Haelften - sonst waere das Rundreisen oben zu schwach."""

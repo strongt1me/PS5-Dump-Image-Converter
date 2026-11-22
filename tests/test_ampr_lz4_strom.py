@@ -510,6 +510,16 @@ class ProfilAusBaumTests(unittest.TestCase):
         self.assertEqual("", name)
         self.assertEqual(a, b)
 
+    def test_eine_unbrauchbare_sfo_laesst_die_param_json_gelten(self) -> None:
+        """Ordner und Lesebaum gleich: Liefert die param.sfo keine Title-ID, zaehlt die param.json (Befund der Testpruefung 22.11.2026 -
+        im Baum fehlte dieser Fall, ein ``return`` nach der sfo haette dort ein anderes Profil gewaehlt als im Ordner)."""
+        param = json.dumps(create_default_param(title_id="PPSA21567", title="ASTRO BOT")).encode("utf-8")
+        name, a, b = self.beide({"eboot.bin": b"x", "sce_sys/param.sfo": b"kaputt", "sce_sys/param.json": param,
+                                 "data/a.pak": b"a"})
+        self.assertEqual("PPSA21567", name)
+        self.assertEqual(a, b)
+        self.assertIn("integriertes Profil fuer PPSA21567", b.splitlines()[0])
+
     def test_ein_anwenderprofil_bleibt(self) -> None:
         _schreiben(self.spiel, {"eboot.bin": b"x"})
         ziel = os.path.join(self.tmp, "eigen.toml")

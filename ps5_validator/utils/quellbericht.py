@@ -40,6 +40,16 @@ def laufzeit_name(fakten) -> str:
     return "%s %s" % (name, version) if version else name
 
 
+def _ersetzt_beim_umwandeln(fakten) -> bool:
+    """Ersetzt Dump Forge die Laufzeit des Spiels, wenn es die Quelle selbst umwandelt (``.pkg`` direkt in ein Abbild)?
+
+    Anders als :attr:`forge_cli.QuellFakten.laufzeit_ersetzt` (Paketbau: ein gepacktes Spiel entpackt das Programm dort ohnehin) zaehlt
+    hier auch ein gepacktes Spiel - der direkte Weg reicht kein Entpacken mit.
+    """
+    return (str(fakten.laufzeit_aktion or "") == "replace"
+            and str(fakten.laufzeit or "").strip().lower() not in ("", "none"))
+
+
 def laufzeit_neu_name(fakten) -> str:
     """Forges eigene Laufzeit, die es beim Paketbau einsetzt: ``ampr_emu 0.4.2.1`` (ohne Fassung: ``ampr_emu``)."""
     version = str(fakten.laufzeit_neu or "").strip()
@@ -61,7 +71,8 @@ def konsole_anzeige(firmware: str) -> str:
     return text[:-2] + "xx" if text.endswith(".99") else text
 
 
-def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr: bool = False) -> "list[Zeile]":
+def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr: bool = False,
+           forge_wandelt: bool = False) -> "list[Zeile]":
     """Die Zeilen des Berichts zu ``fakten`` (:class:`forge_cli.QuellFakten`), eine je Schluessel.
 
     Args:
@@ -71,6 +82,10 @@ def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr
             unbekannt. Ohne sie steht bei BACKPORT nur, was das Spiel verlangt.
         forge_ergaenzt_ampr: Das Paket baut Dump Forge, und es legt AMPR EMU fuer ein Spiel, das ``libSceAmpr`` laedt,
             selbst dazu - ein fehlender AMPR EMU ist dann nur ein Hinweis, nichts, was der Anwender einbauen muss.
+        forge_wandelt: Dump Forge schreibt das Abbild selbst aus der Quelle (``convert x.pkg --to ffpkg|exfat``). Auch dort setzt
+            es seine Laufzeit an die des Spiels: "ampr-emu-ng goes into a game only by packing: any other job puts the release
+            runtime in its place" (Forge ``lz4.rs``, ``Runtime::action`` - dieselbe Regel, die ``inspect`` als ``runtime_action``
+            nennt). Ohne diese Zeile stand dort "[OK] vorhanden (ampr-emu-ng)", und im Abbild steckte danach ampr_emu.
     """
     liste: list[Zeile] = []
 
@@ -84,6 +99,12 @@ def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr
         # dazu stellt das Fenster (``Ps5PkgFenster._laufzeit_fragen``).
         liste.append(Zeile("ampr", STUFE_HINWEIS,
                            t("bericht.ampr_ersetzt", alt=laufzeit_name(fakten), neu=laufzeit_neu_name(fakten))))
+    elif fakten.ampr_importiert and forge_wandelt and _ersetzt_beim_umwandeln(fakten):
+        # Auch ein gepacktes Spiel: Forges ``runtime_action`` ist das, was eine einfache Umwandlung tut (``inspect.rs``: bei LZ4-Packs
+        # ``action(.., packs)``, bei zstd-Packs ``zstd_action`` - dort kommt Forges mitgeliefertes ampr-emu-ng hinein, nicht ampr_emu).
+        neu = "ampr-emu-ng" if fakten.gepackt == "zstd" else laufzeit_neu_name(fakten)
+        liste.append(Zeile("ampr", STUFE_HINWEIS,
+                           t("bericht.ampr_ersetzt_umwandeln", alt=laufzeit_name(fakten), neu=neu)))
     elif fakten.ampr_importiert:
         laufzeit = _LAUFZEITEN.get(str(fakten.laufzeit or "").lower(), "AMPR EMU")
         liste.append(Zeile("ampr", STUFE_OK, t("bericht.ampr_da", laufzeit=laufzeit)))
@@ -121,8 +142,13 @@ def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr
     elif not konsole:
         liste.append(Zeile("backport", STUFE_HINWEIS, t("bericht.backport_konsole_unbekannt", spiel=verlangt)))
     elif fakten.backport_noetig(konsole):
+        # Ohne gelesenes SDK der Programme (verschluesseltes Paket, fremdes Verfahren, unlesbares Abbild) urteilt nur die param.json -
+        # das sagt die Zeile, statt wie ein gemessenes Urteil auszusehen (bei einem schon herabgesetzten Spiel waere es ein Fehlalarm).
+        # Gemessen heisst: die eboot.bin gelesen oder Forges backport_firmware (alle Programme) - die Module allein (sce_module) nicht.
+        gemessen = getattr(fakten, "eboot_sdk", "?") or getattr(fakten, "backport_firmware", "")
+        schluessel = "bericht.backport_fehlt" if gemessen else "bericht.backport_fehlt_param"
         liste.append(Zeile("backport", STUFE_FEHLT,
-                           t("bericht.backport_fehlt", spiel=verlangt, konsole=konsole_anzeige(konsole))))
+                           t(schluessel, spiel=verlangt, konsole=konsole_anzeige(konsole))))
     else:
         liste.append(Zeile("backport", STUFE_OK,
                            t("bericht.backport_nicht_noetig", spiel=verlangt, konsole=konsole_anzeige(konsole))))

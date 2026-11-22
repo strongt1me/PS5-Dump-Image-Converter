@@ -356,7 +356,7 @@ def stubs_setzen(elf: bytes, ziele: "dict[tuple[str, str], str | None]", *,
                 puffer = bytearray(elf)
             puffer[stelle_offset:stelle_offset + len(neu)] = neu
             status = STATUS_GESETZT
-        elif stelle == neu:
+        elif stelle == neu or _eigener_stub_da(elf, e, art):
             status = STATUS_BEREITS
         else:
             status = STATUS_ABWEICHEND
@@ -381,6 +381,20 @@ def _plt_eintrag_original(elf: bytes, e: "PltEintrag") -> bool:
     """Steht im PLT-Eintrag noch ``jmp [GOT]; push idx`` - also weder ein fester noch ein Landeplatz-Stub von uns?"""
     return (elf[e.plt_offset:e.plt_offset + 2] == _SPRUNG
             and elf[e.plt_offset + LANDEPLATZ_OFFSET:e.plt_offset + LANDEPLATZ_OFFSET + 1] == bytes((_PUSH,)))
+
+
+def _eigener_stub_da(elf: bytes, e: "PltEintrag", art: StubArt) -> bool:
+    """Traegt der Eintrag schon unseren Stub dieser Art - in einer der beiden Formen?
+
+    Ein frueherer Lauf kann ihn in der anderen Form gesetzt haben: bis 21.11.2026 fest am Eintragsanfang, seitdem fuer Luecken auf
+    dem Landeplatz hinter dem ersten ``jmp [GOT]``. Beide fangen die fehlende Funktion ab (der feste sogar immer) - das ist erledigt,
+    keine "unerwarteten Bytes" (frueher ``STATUS_ABWEICHEND``, und die Restmeldung nannte die Funktion dann als offene Luecke).
+    """
+    fest = elf[e.plt_offset:e.plt_offset + len(art.bytes_)] == art.bytes_
+    kurz = art.landeplatz_bytes()
+    auf_landeplatz = (elf[e.plt_offset:e.plt_offset + 2] == _SPRUNG
+                      and elf[e.plt_offset + LANDEPLATZ_OFFSET:e.plt_offset + LANDEPLATZ_OFFSET + len(kurz)] == kurz)
+    return fest or auf_landeplatz
 
 
 def luecken_neutralisieren(elf: bytes, luecken: "dict[str, Iterable[str]]", *,
@@ -645,12 +659,14 @@ def profil_datei_anwenden(elf: bytes, sha_original: str, pd: ProfilDatei, *,
             return elf, ProfilErgebnis(pd.pfad, P_ADRESSE, 0, 0, "0x%X" % p.va)
         stellen.append((offset, p.alt, p.neu, "0x%X" % p.va))
     eintraege = {(e.bibliothek, e.nid): e for e in plt_eintraege(elf)} if pd.stubs else {}
+    stub_eintraege = []                 # (PLT-Eintrag, Art) je Stub des Profils
     for s in pd.stubs:
         e = eintraege.get((s.bibliothek, s.nid))
         if e is None:
             return elf, ProfilErgebnis(pd.pfad, P_STUB, 0, 0, "%s %s" % (s.bibliothek, s.nid))
         stub_offset, stub_bytes = stub_stelle(e, STUB_ARTEN[s.art], landeplatz)
         stellen.append((stub_offset, None, stub_bytes, "%s %s" % (s.bibliothek, s.nid)))
+        stub_eintraege.append((e, STUB_ARTEN[s.art]))
 
     def ist_neu(offset: int, neu: bytes) -> bool:
         return elf[offset:offset + len(neu)] == neu
@@ -665,9 +681,13 @@ def profil_datei_anwenden(elf: bytes, sha_original: str, pd: ProfilDatei, *,
 
     alle_neu = all(ist_neu(o, n) for o, _a, n, _t in stellen)
     if sha_original != pd.sha256_elf:
-        status = P_BEREITS if alle_neu else P_SHA
-        return elf, ProfilErgebnis(pd.pfad, status, len(pd.patches) if alle_neu else 0,
-                                   len(pd.stubs) if alle_neu else 0, "")
+        if alle_neu:
+            return elf, ProfilErgebnis(pd.pfad, P_BEREITS, len(pd.patches), len(pd.stubs), "")
+        if not landeplatz:
+            umgesetzt = _profil_stubs_vom_landeplatz_holen(elf, stellen, stub_eintraege)
+            if umgesetzt is not None:
+                return umgesetzt[0], ProfilErgebnis(pd.pfad, P_ANGEWENDET, 0, umgesetzt[1], "")
+        return elf, ProfilErgebnis(pd.pfad, P_SHA, 0, 0, "")
     for offset, alt, _neu, text in stellen:
         if not ist_alt(offset, alt):
             return elf, ProfilErgebnis(pd.pfad, P_BYTES, 0, 0, text)
@@ -675,6 +695,39 @@ def profil_datei_anwenden(elf: bytes, sha_original: str, pd: ProfilDatei, *,
     for offset, _alt, neu, _text in stellen:
         puffer[offset:offset + len(neu)] = neu
     return bytes(puffer), ProfilErgebnis(pd.pfad, P_ANGEWENDET, len(pd.patches), len(pd.stubs), "")
+
+
+def _profil_stubs_vom_landeplatz_holen(elf: bytes, stellen: list, stub_eintraege: list) -> "tuple[bytes, int] | None":
+    """Ein Profil, das am 21./22.11.2026 mit seinen Stubs auf dem Landeplatz angewendet wurde, auf die feste Form bringen.
+
+    Seit 22.11.2026 stehen Profil-Stubs fest im Eintrag (:func:`korrekturen_anwenden`); auf dem Landeplatz erreicht sie der Lader bei
+    einer Funktion, die die Zielfirmware doch hat, nie. Die SHA-256 stimmt bei so einer Datei nicht mehr (sie ist schon bearbeitet) -
+    umgesetzt wird darum nur, wenn **alle** Byte-Aenderungen des Profils schon stehen und jeder Stub entweder fest oder in genau
+    seiner Landeplatz-Form dasteht. ``None``: nicht diese Lage (dann bleibt es bei "andere Fassung").
+
+    Nur bei einer Profil-Datei **mit** Byte-Aenderungen: Erst sie belegen die Fassung. Eine Datei nur mit Stubs (Anno 117:
+    ``sce_module/libc.prx``) koennte sonst die Luecken-Stubs einer anderen Fassung fuer Profil-Stubs halten (gleiche Art, gleicher
+    Landeplatz) - dort fehlen die Funktionen ohnehin, und der Landeplatz wirkt (Gegenlese 22.11.2026).
+    """
+    patches = [(o, n) for o, a, n, _t in stellen if a is not None]
+    if not patches or not all(elf[o:o + len(n)] == n for o, n in patches):
+        return None
+    zu_setzen = []
+    for e, art in stub_eintraege:
+        if elf[e.plt_offset:e.plt_offset + len(art.bytes_)] == art.bytes_:
+            continue
+        kurz = art.landeplatz_bytes()
+        if (elf[e.plt_offset:e.plt_offset + 2] == _SPRUNG
+                and elf[e.plt_offset + LANDEPLATZ_OFFSET:e.plt_offset + LANDEPLATZ_OFFSET + len(kurz)] == kurz):
+            zu_setzen.append((e, art))
+            continue
+        return None
+    if not zu_setzen:
+        return None
+    puffer = bytearray(elf)
+    for e, art in zu_setzen:
+        puffer[e.plt_offset:e.plt_offset + len(art.bytes_)] = art.bytes_
+    return bytes(puffer), len(zu_setzen)
 
 
 # --------------------------------------------------------------------------
@@ -691,6 +744,8 @@ class Bericht:
         self.fehler: list[tuple[str, str]] = []
         #: (Bibliothek, NID) der Luecken, die irgendwo gestubbt wurden - fuer die Restmeldung der Oberflaeche.
         self.neutralisiert: set = set()
+        #: ``laeuft`` meldete einen Abbruch, bevor alle Dateien dran waren: Die Korrekturen stehen nur in einem Teil der Programme.
+        self.abgebrochen = False
 
 
 def _atomar_schreiben(pfad: str, daten: bytes) -> None:
@@ -716,7 +771,12 @@ def korrekturen_anwenden(ordner: str, dateien: "Iterable[str]", *,
     """Wendet Profile und Luecken-Stubs auf die Programmdateien eines Dumps an.
 
     Args:
-        landeplatz: Alle Stubs (Profile und Luecken) im Landeplatz-Modus setzen (:func:`stubs_setzen`, Versuch).
+        landeplatz: Die Stubs der **Luecken** im Landeplatz-Modus setzen (:func:`stubs_setzen`). Die Stubs eines **Profils** stehen
+            immer fest im Eintrag: Ein Profil baut einen an der Konsole gemessenen Zustand nach (Anno 117, Test Z3, feste Stubs),
+            und seine Stubs treffen gerade Funktionen, die die Zielfirmware oder eine Ersatzbibliothek doch liefert (Anno 117 auf
+            FW 4: ``libSceAudioOut2 v8iOE+j8a5o`` hat die Firmware, ``TViD1EZXkNI`` die mitgelieferte ``libSceAudioOut.sprx``) -
+            auf dem Landeplatz bindet der Lader sie, und der Stub wird nie erreicht. Eine Luecke, die ein Profil in derselben
+            Datei schon stubbt, fasst der Luecken-Stub nicht noch einmal an.
         ordner: Wurzel des Dumps.
         dateien: Absolute Pfade der Kandidaten (:func:`ps5_backport.kandidaten`).
         aktive: Ergebnis von :func:`profile_vorbereiten`; leer = keine Profile.
@@ -738,6 +798,7 @@ def korrekturen_anwenden(ordner: str, dateien: "Iterable[str]", *,
 
     for pfad in dateien:
         if laeuft is not None and not laeuft():
+            bericht.abgebrochen = True
             break
         rel = os.path.relpath(pfad, ordner).replace("\\", "/")
         profile_hier = nach_pfad.get(pfad_schluessel(rel), [])
@@ -758,13 +819,18 @@ def korrekturen_anwenden(ordner: str, dateien: "Iterable[str]", *,
 
         neu = elf
         profil_ergebnisse = []          # (Profil, Ergebnis, Profil-Datei)
+        vom_profil: set = set()         # (Bibliothek, NID), die ein Profil in dieser Datei schon fest stubbt
         for a, pd in profile_hier:
-            neu, ergebnis = profil_datei_anwenden(neu, a.sha.get(pfad_schluessel(pd.pfad), ""), pd,
-                                                  landeplatz=landeplatz)
+            # Fest im Eintrag, nie auf dem Landeplatz (siehe ``landeplatz`` oben).
+            neu, ergebnis = profil_datei_anwenden(neu, a.sha.get(pfad_schluessel(pd.pfad), ""), pd)
             profil_ergebnisse.append((a.profil, ergebnis, pd))
+            if ergebnis.status in (P_ANGEWENDET, P_BEREITS):
+                vom_profil.update((s.bibliothek, s.nid) for s in pd.stubs)
         stub_ergebnisse = []
         if luecken:
-            neu, stub_ergebnisse = luecken_neutralisieren(neu, luecken, landeplatz=landeplatz)
+            luecken_hier = ({lib: [n for n in nids if (lib, n) not in vom_profil] for lib, nids in luecken.items()}
+                            if vom_profil else luecken)
+            neu, stub_ergebnisse = luecken_neutralisieren(neu, luecken_hier, landeplatz=landeplatz)
         if neu is not elf:
             try:
                 schreiben(pfad, bp.elf_signieren(neu))

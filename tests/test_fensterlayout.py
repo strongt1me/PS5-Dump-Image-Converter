@@ -185,11 +185,17 @@ class FensterLayoutTests(unittest.TestCase):
                     yield kind
                     yield from _alle(kind)
 
-            klassen = sorted({w.__class__.__name__ for w in _alle(fenster)})
+            alle = list(_alle(fenster))
+            klassen = sorted({w.__class__.__name__ for w in alle})
             for klasse in klassen:
                 niedrig = klasse.lower()
-                self.assertFalse("check" in niedrig or "entry" in niedrig or "spinbox" in niedrig,
+                # "haken": die Haken des Programms sind gezeichnet (RunderHaken, ein tk.Canvas) - ohne das Wort sah die
+                # Pruefung sie nicht (Befund 22.11.2026).
+                self.assertFalse(any(w in niedrig for w in ("check", "entry", "spinbox", "haken")),
                                  f"{klasse} im BACKPORT-Fenster: {klassen}")
+            runder_haken = getattr(self.haupt, "RunderHaken", None)
+            self.assertIsNotNone(runder_haken, "die Klasse der gezeichneten Haken heisst anders - Test anpassen")
+            self.assertFalse([w for w in alle if isinstance(w, runder_haken)], "ein gezeichneter Haken im BACKPORT-Fenster")
             self.assertEqual(len(_sammle(fenster, "Combobox")), 1)
         finally:
             self._schliesse(fenster)
@@ -210,6 +216,83 @@ class FensterLayoutTests(unittest.TestCase):
             self.assertIn(erwartet, texte)
         finally:
             self._schliesse(fenster)
+
+    def test_klog_hinweis_erscheint_beim_empfang_auch_wenn_der_filter_die_zeile_ausblendet(self):
+        """Verhalten statt Quelltextsuche (Befund 22.11.2026: ``_hinweis_zeigen(kennung)`` durch ``pass`` ersetzt waere gruen geblieben).
+
+        Empfangen wird ueber einen Ersatz fuer ``socket`` - nichts geht ins Netz, nichts wird gespeichert.
+        """
+        import time
+        import types
+        from unittest import mock
+        from ps5_validator.utils import klog_hinweise
+        zeile = "[KERNEL] Call to unpatched function is detected!!!"
+        kennung = klog_hinweise.hinweis_kennung(zeile)
+        self.assertTrue(kennung, "Vorbedingung: die Zeile loest den Hinweis aus")
+        erwartet = self.app._t("klog.hinweis." + kennung)
+        empfang = [("eine gewoehnliche Zeile\n" + zeile + "\n").encode("utf-8")]
+
+        class _Sock:
+            def __init__(self, *_a, **_k):
+                self._daten = list(empfang)
+
+            def settimeout(self, *_a):
+                pass
+
+            def connect(self, *_a):
+                pass
+
+            def recv(self, _n):
+                return self._daten.pop(0) if self._daten else b""
+
+            def shutdown(self, *_a):
+                pass
+
+            def close(self):
+                pass
+
+        ersatz = types.SimpleNamespace(socket=_Sock, AF_INET=2, SOCK_STREAM=1, SHUT_RDWR=2)
+
+        def _in_schleife(fertig, sekunden=8.0):
+            ende = time.monotonic() + sekunden
+
+            def _takt():
+                if fertig() or time.monotonic() > ende:
+                    _WURZEL.quit()
+                else:
+                    _WURZEL.after(20, _takt)
+            _WURZEL.after(20, _takt)
+            _WURZEL.mainloop()          # der Empfang meldet ueber _spaeter_im_fenster - update() genuegt dafuer nicht
+
+        with mock.patch.object(self.haupt, "socket", ersatz), \
+                mock.patch.object(self.app, "_ps5_wert_oder_zentral",
+                                  lambda schluessel, _w: "127.0.0.1" if schluessel == "klog_ip" else "3232"), \
+                mock.patch.object(self.app, "_ps5_port_finden", lambda _ip, port, _art: port), \
+                mock.patch.object(self.app, "_ps5_wert_merken", lambda *_a: None):
+            fenster = self._oeffne(self.app._show_klog_window)
+            try:
+                filterfeld = _sammle(fenster, "Entry")[-1]            # IP, Port, dann der Filter
+                filterfeld.insert(0, "passt-zu-nichts")
+                knopf = next(b for b in _sammle(fenster, "Button") if str(b.cget("text")) == self.app._t("action.connect"))
+                if hasattr(knopf, "invoke"):
+                    knopf.invoke()
+                else:
+                    _WURZEL.tk.call(knopf.cget("command"))
+
+                def hinweis():
+                    return next((w for w in _sammle(fenster, "Label")
+                                 if str(w.cget("text")) == erwartet and w.winfo_manager()), None)
+                _in_schleife(lambda: hinweis() is not None)
+                self.assertIsNotNone(hinweis(), "der Hinweis muss erscheinen, auch wenn der Filter die Zeile ausblendet")
+                konsole = _sammle(fenster, "Text")[0]
+                self.assertEqual("", konsole.get("1.0", "end").strip(), "die Zeilen selbst blendet der Filter aus")
+                filterfeld.delete(0, "end")                          # ohne Filter: die Zeile steht farbig im Protokollfeld
+                _WURZEL.update()
+                bereiche = konsole.tag_ranges("hinweis")
+                self.assertTrue(bereiche, "die Zeile traegt den Tag 'hinweis'")
+                self.assertIn("Call to unpatched function", konsole.get(bereiche[0], bereiche[1]))
+            finally:
+                self._schliesse(fenster)
 
     def test_backport_auswahlfelder_zeigen_einen_wert(self):
         """Die Klappliste im Backport-Fenster: die Firmware.
@@ -304,7 +387,14 @@ class FensterLayoutTests(unittest.TestCase):
             "title": "–", "title_id": "–", "version": "–", "required_firmware": "–"})
         try:
             texte = [str(w.cget("text")).strip() for w in _sammle(fenster, "Label")]
-            self.assertNotIn(self.app._t("backport.chip_version", version="—"), texte)
+            # Die Spieldaten tragen den Halbgeviertstrich (U+2013); geprueft wurde bis 22.11.2026 nur der Geviertstrich (U+2014).
+            for leer in ("–", "—", "-"):
+                self.assertNotIn(self.app._t("backport.chip_version", version=leer), texte)
+            # Pillen sind Bild + Text (ein Bild ohne Text, etwa das Spielbild, ist keine Pille).
+            info_pillen = [str(w.cget("text")) for w in _sammle(fenster, "Label")
+                           if str(w.cget("image")) and str(w.cget("text")).strip()
+                           and not str(w.cget("text")).startswith("✓")]
+            self.assertEqual(info_pillen, [], "ohne Angaben keine Info-Pillen (Title-ID, Version)")
             self.assertFalse([t for t in texte if t.startswith(self.app._t("backport.required_firmware_hint",
                                                                           fw="").strip())],
                              "Ohne verlangte Firmware darf der Hinweis nicht erscheinen")

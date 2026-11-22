@@ -50,6 +50,8 @@ _SELF_VERSCHLUESSELT = 1 << 1
 _SELF_KOMPRIMIERT = 1 << 3
 #: Mehr Programmkoepfe hat keine echte Datei; schuetzt vor einem beschaedigten Kopf.
 _MAX_PROGRAMMKOEPFE = 4096
+#: Ausnahmen, die ein gebautes Abbild in den fremden Lesern ausloest, obwohl es keine Ein-/Ausgabefehler sind - "Wirft nie" gilt auch dann.
+_UNERWARTET = (OverflowError, MemoryError, RecursionError)
 
 
 def _zahl(daten: bytes, ab: int, fmt: str) -> "int | None":
@@ -165,6 +167,44 @@ def eboot_sdk_im_ordner(ordner: str) -> str:
         return ""
 
 
+#: Mehr Module liest :func:`module_sdk_im_ordner` nicht (echte Spiele: einige Dutzend).
+_MAX_MODULE = 512
+
+
+def module_sdk_im_ordner(ordner: str) -> str:
+    """Das hoechste SDK der Module in ``sce_module`` eines Spielordners (``.prx``/``.sprx``) als Text; ``""``, wenn keins zu lesen ist.
+
+    Ein Backport setzt alle Programme herab, nach dem Pfad sortiert (``ps5_backport.kandidaten``): ``sce_module`` kommt nach der
+    ``eboot.bin``. Bricht er dazwischen ab,
+    traegt die ``eboot.bin`` schon das niedrige SDK, die Module noch das hohe - nur nach der ``eboot.bin`` geurteilt hiess das "schon
+    herabgesetzt" (Befund 22.11.2026). Forge nennt das hoechste SDK aller Programme (``backport_firmware``) nur bei einem Spiel mit
+    ``fakelib/``. Je Modul werden nur die Koepfe gelesen wie bei der ``eboot.bin``; Unterordner von ``sce_module`` nicht.
+    """
+    try:
+        with os.scandir(ordner) as eintraege:
+            module = next((e.path for e in eintraege if e.name.lower() == "sce_module" and e.is_dir()), "")
+        if not module:
+            return ""
+        with os.scandir(module) as eintraege:
+            pfade = sorted(e.path for e in eintraege if e.is_file() and e.name.lower().endswith((".prx", ".sprx")))
+    except OSError:
+        return ""
+    hoechst, text = 0, ""
+    for pfad in pfade[:_MAX_MODULE]:
+        try:
+            with open(pfad, "rb") as datei:
+                def lesen(ab: int, laenge: int, datei: Any = datei) -> bytes:
+                    datei.seek(ab)
+                    return datei.read(laenge)
+                wort = sdk_wort_lesen(lesen)
+        except OSError:
+            continue
+        gelesen = sdk_text(wort)
+        if gelesen and wort is not None and wort > hoechst:          # BCD: die Zahl ordnet wie die Fassung
+            hoechst, text = wort, gelesen
+    return text
+
+
 # ------------------------------------------------------------------------------------------------------------------ Abbilder
 #: Der Ordner mit dem Paket ``mkpfs`` (die Engine, die das Hauptprogramm bereitstellt); gemerkt von :func:`mkpfs_ordner_merken`.
 _mkpfs_ordner = ""
@@ -204,8 +244,10 @@ class _Mkpfs:
         else:
             raise ImportError("mkpfs nicht gefunden")
         self.consts, self.exfat, self.pfs = consts, exfat, pfs
-        #: Was beim Lesen eines beschaedigten oder fremden Abbilds fliegen kann (``CompressionError`` ist kein ``ValueError``).
-        self.fehler = (OSError, ValueError, struct.error, KeyError, IndexError, CompressionError)
+        #: Was beim Lesen eines beschaedigten oder fremden Abbilds fliegen kann (``CompressionError`` ist kein ``ValueError``). Dazu
+        #: die drei, die MkPFS' exFAT-Leser bei einem gebauten Bootsektor wirft (gemessen 22.11.2026): ``OverflowError`` (Cluster-Shift
+        #: 255), ``MemoryError`` (Shift 30 = 512-GiB-Cluster), ``RecursionError`` (ein namenloser Ordner, der auf die Wurzel zeigt).
+        self.fehler = (OSError, ValueError, struct.error, KeyError, IndexError, CompressionError, *_UNERWARTET)
 
 
 def _ist_exfat(fh: Any) -> bool:
@@ -341,7 +383,7 @@ def eboot_sdk_in_abbild(pfad: str, mkpfs_ordner: str = "") -> str:
         mk = _Mkpfs(mkpfs_ordner)
     except ImportError:
         mk = None                                          # ohne MkPFS bleibt das ``.ffpkg`` in einer ``.ffpfsc`` zu, ein ``.ffpkg`` selbst nicht
-    fehler = mk.fehler if mk is not None else (OSError, ValueError, struct.error, KeyError, IndexError)   # Ufs2Fehler, ExfatError: ValueError
+    fehler = mk.fehler if mk is not None else (OSError, ValueError, struct.error, KeyError, IndexError, *_UNERWARTET)   # Ufs2Fehler, ExfatError: ValueError
     try:
         with open(pfad, "rb") as fh:
             return _sdk_im_abbild(fh, mk)
@@ -354,7 +396,7 @@ def eboot_sdk_in_ffpkg(abbild: str) -> str:
     try:
         with open(abbild, "rb") as fh:
             return _sdk_in_ufs2(fh) if _ist_ufs2(fh) else ""
-    except (OSError, ValueError):                  # Ufs2Fehler ist ein ValueError
+    except (OSError, ValueError, *_UNERWARTET):    # Ufs2Fehler ist ein ValueError
         return ""
 
 
@@ -380,6 +422,6 @@ def eboot_sdk(quelle: str, mkpfs_ordner: str = "") -> str:
             if quelle.lower().endswith(".pkg"):
                 from . import pkg_eboot                    # spaet: pkg_eboot nutzt selbst dieses Modul
                 return pkg_eboot.eboot_sdk(quelle)
-    except (OSError, ValueError):
+    except (OSError, ValueError, *_UNERWARTET):
         pass
     return ""

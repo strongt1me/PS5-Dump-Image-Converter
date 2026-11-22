@@ -252,14 +252,19 @@ class QuellFakten:
     #: Das SDK der ``eboot.bin``, vom Programm selbst gelesen (``programm_sdk``: Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs``,
     #: ``.ffpfsc``, ``.pkg``); ``""``: nicht zu lesen (ein ``.pkg`` als Verkaufsfassung, mit fremdem Passcode oder einem anderen Verfahren).
     eboot_sdk: str = ""
+    #: Das hoechste SDK der Module in ``sce_module`` (``programm_sdk.module_sdk_im_ordner``), nur bei einem Spielordner, sonst ``""``.
+    #: Ohne es galt ein halb herabgesetztes Spiel (eboot.bin schon herabgesetzt, die Module noch nicht) als "schon eingebaut".
+    module_sdk: str = ""
 
     @property
     def programme_sdk(self) -> str:
-        """Das hoechste SDK der Programme, soweit bekannt: ``eboot_sdk`` und Forges ``backport_firmware``; ``""``, wenn keins bekannt ist.
+        """Das hoechste SDK der Programme, soweit bekannt: ``eboot_sdk``, ``module_sdk`` und Forges ``backport_firmware``; ``""``, wenn
+        keins bekannt ist.
 
         Das prueft die Konsole beim Start - nicht die Angaben der ``param.json``.
         """
-        bekannt = [(t, text) for text in (self.eboot_sdk, self.backport_firmware) for t in (_teile(text),) if t and t[0] > 0]
+        bekannt = [(t, text) for text in (self.eboot_sdk, self.module_sdk, self.backport_firmware)
+                   for t in (_teile(text),) if t and t[0] > 0]
         return max(bekannt)[1] if bekannt else ""
 
     @property
@@ -270,7 +275,12 @@ class QuellFakten:
         Programme und legen Ersatzbibliotheken in ``fakelib/``, die ``param.json`` bleibt aber auf den Werten des Originals; ein anderes
         (Ghost of Yotei, SDK 8.00 bei ``sdkVersion`` 11.00) hat in ``fakelib/`` nur AMPR EMU. Beides sind keine Spiele, die noch einen
         Backport brauchen - ihre ``param.json`` sagt nur nicht mehr, was die Programme verlangen.
+
+        ``module_sdk`` darf das Urteil nur anheben, nicht allein tragen: Es sieht nur ``sce_module``. Ohne gelesene ``eboot.bin`` und ohne
+        Forges ``backport_firmware`` (alle Programme) gilt ein Spiel nicht als herabgesetzt.
         """
+        if not any(t and t[0] > 0 for t in (_teile(self.eboot_sdk), _teile(self.backport_firmware))):
+            return False
         programme, angabe = _teile(self.programme_sdk), _teile(self.sdk)
         return bool(programme and angabe and programme[0] > 0 and angabe[0] > 0 and programme < angabe)
 
@@ -319,7 +329,8 @@ class QuellFakten:
 
     @property
     def laufzeit_ersetzt(self) -> bool:
-        """Dump Forge setzt beim Paketbau seine eigene Laufzeit an die Stelle der des Spiels (``lz4.runtime_action`` = ``replace``).
+        """Dump Forge setzt beim Paketbau - und bei jeder anderen Umwandlung ausser dem Packen, auch ``.pkg`` direkt in ein Abbild - seine
+        eigene Laufzeit an die Stelle der des Spiels (``lz4.runtime_action`` = ``replace``).
 
         Das gilt auch fuer ampr-emu-ng: Forge bringt NG nur durch Packen in ein Spiel, jede andere Umwandlung ersetzt es durch die Release-Laufzeit,
         ohne Schalter (Forges Entwicklerhinweise, ``AGENTS.md``); gemessen 21.11.2026 mit Forge 0.5.6: NG 0.5.0 (715.264 Byte) und AMPR EMU 0.3.6.6
@@ -359,7 +370,9 @@ def quellfakten(daten: dict, pfad: "str | None" = None) -> QuellFakten:
     """Die Fakten aus Forges ``inspect``-Antwort.
 
     Mit ``pfad`` (Spielordner, ``.ffpkg``, ``.exfat``, ``.ffpfs``, ``.ffpfsc`` oder ``.pkg``) liest das Programm zusaetzlich das SDK der
-    ``eboot.bin`` selbst (:func:`programm_sdk.eboot_sdk`, einige KiB, nie mehr): Forge nennt es nur bei einem Spiel mit ``fakelib/``.
+    ``eboot.bin`` selbst (:func:`programm_sdk.eboot_sdk`: von der ``eboot.bin`` nur einige KiB; dazu die Koepfe und Verzeichnisse des
+    Abbilds - bei einem flachen ``.ffpfs`` die ganze Inode-Tabelle und den Baum, die Forges ``inspect`` gerade eben auch gelesen hat):
+    Forge nennt es nur bei einem Spiel mit ``fakelib/``.
     Ohne ``pfad`` - und bei jeder Quelle, die sich so nicht lesen laesst (ein ``.pkg`` als Verkaufsfassung oder mit fremdem Passcode,
     ein Archiv) - bleibt ``eboot_sdk`` leer. Sonst rein, ohne Start.
     """
@@ -390,6 +403,7 @@ def quellfakten(daten: dict, pfad: "str | None" = None) -> QuellFakten:
         backport_vorhanden=bool(daten.get("backport")),
         backport_firmware=str(daten.get("backport_firmware") or ""),
         eboot_sdk=programm_sdk.eboot_sdk(str(pfad)) if pfad else "",
+        module_sdk=programm_sdk.module_sdk_im_ordner(str(pfad)) if pfad and os.path.isdir(str(pfad)) else "",
     )
 
 

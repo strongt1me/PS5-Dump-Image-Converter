@@ -138,14 +138,27 @@ class VersionssortierungTests(unittest.TestCase):
         self.assertEqual(schluessel("0.3.4"), schluessel("0.3.4.0"))
 
     def test_neueste_steht_im_speicher_oben(self) -> None:
+        """Oben steht die neueste Fassung von drakmor. AMPR EMU NG ist eine eigene Reihe (``_ampr_ordnen``, Nutzerwunsch 05.11.2026):
+        Ihre Nummern werden nie gegen die von drakmor gerechnet - seit NG 0.5.0 (hoeher als 0.4.2.1) verglich der Test sie doch
+        und schlug an (Volllauf 22.11.2026)."""
         g = _gui(ampr=True, backport=False)
         if not g._ampr_versionsauswahl:
             self.skipTest("kein AMPR-Versionsspeicher vorhanden")
-        erste = next(iter(g._ampr_versionsauswahl))
-        alle = list(g._ampr_versionsauswahl)
+        erste_beschriftung, erste = next(iter(g._ampr_versionsauswahl.items()))
+        drakmor = [b for b, e in g._ampr_versionsauswahl.items() if not g._ampr_ist_ng(e)]
+        if not drakmor:
+            self.skipTest("keine Fassung von drakmor im Speicher")
+        self.assertFalse(g._ampr_ist_ng(erste), "die Vorgabe oben ist eine Fassung von drakmor, nicht NG")
         schluessel = PS5ConverterGUI._ampr_version_sort_key
-        hoechste = max(alle, key=lambda b: schluessel(b.split()[0]))
-        self.assertEqual(schluessel(erste.split()[0]), schluessel(hoechste.split()[0]))
+        hoechste = max(drakmor, key=lambda b: schluessel(b.split()[0]))
+        self.assertEqual(schluessel(erste_beschriftung.split()[0]), schluessel(hoechste.split()[0]))
+        ng = [b for b, e in g._ampr_versionsauswahl.items() if g._ampr_ist_ng(e)]
+        if ng:
+            # NG steht direkt unter dem Block der neuesten drakmor-Nummer, vor den aelteren Fassungen von drakmor.
+            reihe = list(g._ampr_versionsauswahl)
+            neueste = schluessel(hoechste.split()[0])
+            erste_aeltere = next((i for i, b in enumerate(reihe) if b in drakmor and schluessel(b.split()[0]) < neueste), len(reihe))
+            self.assertTrue(all(reihe.index(b) < erste_aeltere for b in ng), reihe)
 
 
 class PlayGoZuordnungTests(unittest.TestCase):

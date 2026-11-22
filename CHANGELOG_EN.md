@@ -8,20 +8,25 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 
 ## v2.0.1 – in progress
 
-- **New:** The BACKPORT window has a “Firmware reference (check only)” field: you pick an unpacked firmware folder, and the program reports which functions are missing there – it copies nothing.
-- **New:** The corrections for missing functions cover four more cases; a new checkbox adds a second kind of correction (experimental, off; measured on FW 12.00, not yet tried with a real backport).
+- **New:** The corrections for missing functions cover four more cases and leave a function the firmware does have untouched (measured on FW 12.00, not yet tried with a real backport); title profiles still work as measured on the console.
 - **Changed:** The “Backport needed” question recognises an already lowered game by its programs, not the param.json – for game folders, .ffpkg, .exfat, .ffpfs, .ffpfsc and .pkg, without unpacking.
 - **New:** The KLOG window highlights the kernel message “Call to unpatched function” and points out that the game usually lacks a replacement library.
 - **New:** Before a package is built, the program now says when Dump Forge would replace the game's AMPR runtime (even ampr-emu-ng) with its own, and names the way to keep it: an image from tasks 1 to 6, started with ShadowMount+.
 - **Changed:** With AMPR EMU and an LZ4 asset pack, the TEMP FOLDER field now appears only when it is already clear before the start that the run needs an intermediate folder (a pack profile of the user next to the game folder, a title profile with several groups) – no longer for every game.
-- **Changed:** In the BACKPORT window you only choose the firmware; backup, replacement libraries and compensation for missing functions always run by themselves, the checkboxes and fields are gone. The window is tidied up: the game name is large, Title ID and version are small pills, the automatic steps are green ticks, and the notes are down to one sentence each.
+- **Changed:** In the BACKPORT window you only choose the firmware; backup, replacement libraries and compensation for missing functions always run by themselves, the checkboxes and fields are gone.
+- **Changed:** The BACKPORT window is tidied up: the game name is large, Title ID and version are small pills, the automatic steps are green ticks, and the notes are down to one sentence each.
+- **Changed:** An unusable custom target value in the settings file no longer blocks BACKPORT – the log names it, and the value from the firmware table applies; a firmware reference from the settings file now also applies in the BACKPORT window.
 - **Changed:** The manual, FAQ, guides and README were checked against the program in five languages and corrected; “Task 7 – PKG / FPKG” now comes before “Task 8 – Validator” (chapters 12 and 13).
 - **Updated:** AMPR EMU NG 0.5.0, now the default for zstd asset packs, and Kraken Mount 0.3.1; the index-memory warning knows NG 0.5.0.
 - **Fixed:** When converting an already lowered image, the program sometimes still asked for a backport to firmware 12.
 - **Fixed:** The manual said Dump Forge takes `fakelib` over into a package unchanged; for games with AMPR EMU it puts its own runtime there, and the log line for package builds now says so too.
 - **Fixed:** Several hints were out of date: the compression level (1 = fastest), the ShadowMount+ config.ini warning, what a backup is missing (only the content ID) and “zstd not yet measured on the console”.
 - **Fixed:** The bundled pack profiles for ASTRO BOT and EA Sports UFC 6 never applied to real PS5 dumps, because the program looked for the title ID only in the param.sfo, which PS5 dumps do not have; it now also reads the param.json.
-- **Fixed:** In the BACKPORT window, text in the file table was cut off at display sizes from 125 % (the “Kind” column, at 200 % also file names and status); the columns now grow with the display size, the SDK number is centred, and the warning sentence wraps at the window width instead of a fixed number.
+- **Fixed:** In the BACKPORT window, text in the file table was cut off at display sizes from 125 % (the “Kind” column, at 200 % also file names and status); the columns now grow with it, the SDK number is centred, and the warning sentence wraps at the window width.
+- **Fixed:** BACKPORT counts failed corrections in its error count, and closing the window while the corrections run brings the cancel message instead of “Done”.
+- **Fixed:** A game folder whose BACKPORT was cancelled after the eboot.bin counted as “already lowered”; the modules in sce_module now count too.
+- **Fixed:** When Dump Forge converts a .pkg straight into an image, the report now names the exchange of the AMPR runtime; a “BACKPORT needed” that rests on the param.json alone now says so.
+- **Fixed:** Deliberately damaged packages and images can no longer hold up the source check for minutes or make it end with an error.
 
 ---
 

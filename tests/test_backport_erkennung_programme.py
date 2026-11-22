@@ -29,7 +29,8 @@ sys.path.insert(0, str(PROJEKT))
 sys.path.insert(0, str(PROJEKT / "tests"))
 sys.path.insert(0, str(PROJEKT / "MkPFS-1.1.0"))
 
-import pruefumgebung                                        # noqa: E402,F401
+import pruefumgebung                                        # noqa: E402
+pruefumgebung.umlenken("backport_erkennung_programme")      # PlanUndBerichtTests laedt das Hauptmodul: nie den Einstellungsordner des Anwenders
 from mkpfs import consts                                     # noqa: E402
 from mkpfs.exfat import ExfatReader                          # noqa: E402
 from mkpfs.exfat_writer import iter_exfat_image              # noqa: E402
@@ -189,16 +190,20 @@ class SdkLeserTests(_Grundlage):
         elf = baue_elf(0x10000038)
         signiert = als_self(elf)
         verschluesselt = bytearray(signiert)
+        komprimiert = bytearray(signiert)
         segmente = struct.unpack_from("<H", verschluesselt, 0x18)[0]
         for k in range(segmente):
             eigenschaften = struct.unpack_from("<Q", verschluesselt, 0x20 + k * 0x20)[0]
             struct.pack_into("<Q", verschluesselt, 0x20 + k * 0x20, eigenschaften | (1 << 1))
+            struct.pack_into("<Q", komprimiert, 0x20 + k * 0x20, eigenschaften | (1 << 3))
+        self.assertEqual(0x10000038, ps.sdk_wort_lesen(lese(signiert)), "Gegenprobe: ohne die Bits wird gelesen")
         ohne_param = bytearray(elf)
         struct.pack_into("<I", ohne_param, 0x40 + bp.PHDR_SIZE, bp.PT_SCE_COMMENT)       # der Programmkopf des Modulkopfs ist keiner mehr
         falsche_kennung = bytearray(elf)
         struct.pack_into("<I", falsche_kennung, 0x4000 + PARAM_IM_SEGMENT + bp.PARAM_MAGIC_OFFSET, 0xDEADBEEF)   # ohne ``davor`` liegt der Modulkopf bei 0x4000
         for name, daten in (("leer", b""), ("Muell", b"nicht viel davon"), ("nur Kopf", elf[:0x30]), ("abgeschnitten", elf[:0x60]),
-                            ("verschluesselt", bytes(verschluesselt)), ("ohne Modulkopf", bytes(ohne_param)),
+                            ("verschluesselt", bytes(verschluesselt)), ("komprimiert", bytes(komprimiert)),
+                            ("ohne Modulkopf", bytes(ohne_param)),
                             ("falsche Kennung", bytes(falsche_kennung)), ("Nullen", bytes(0x20000))):
             with self.subTest(fall=name):
                 self.assertIsNone(ps.sdk_wort_lesen(lese(daten)))
@@ -490,6 +495,20 @@ class AbbilderTests(unittest.TestCase):
                 fh.write(stueck)
         self.assertEqual("", ps.eboot_sdk(ziel))
 
+    def test_ein_unmoeglicher_cluster_shift_ergibt_leer_statt_einer_ausnahme(self) -> None:
+        """"Wirft nie" gilt auch fuer ein gebautes exFAT, an dem MkPFS' Leser mit anderen Ausnahmen als ``OSError``/``ValueError``
+        scheitert (Befund 22.11.2026, gemessen: Cluster-Shift 255 -> ``OverflowError``, Shift 30 -> ``MemoryError``)."""
+        heil = Path(self.abbilder[("O", "exfat")]).read_bytes()
+        self.assertEqual("10.00", ps.eboot_sdk(self.abbilder[("O", "exfat")]), "Gegenprobe: das heile Abbild")
+        for shift in (30, 255):
+            with self.subTest(shift=shift):
+                kaputt = bytearray(heil)
+                kaputt[0x6D] = shift                      # SectorsPerClusterShift im Bootsektor
+                ziel = os.path.join(self.tmp, "shift_%d.exfat" % shift)
+                Path(ziel).write_bytes(bytes(kaputt))
+                self.assertEqual("", ps.eboot_sdk(ziel))
+                self.assertEqual("", ps.eboot_sdk_in_abbild(ziel))
+
 
 class Ufs2GriffTests(unittest.TestCase):
     """``ufs2_leser.Ufs2Leser`` nimmt auch einen schon geoeffneten Griff (die Ansicht auf das innere Abbild einer ``.ffpfsc``)."""
@@ -712,6 +731,53 @@ class WegZuDenFaktenTests(_Grundlage):
         ordner = self.spielordner("a", als_self(baue_elf(0x10000038)))
         with mock.patch.object(ps, "sdk_wort_lesen", side_effect=OSError("weg")):
             self.assertEqual("", fc.quellfakten(_daten("10.00", "11.20"), ordner).eboot_sdk)
+
+    def _modul(self, ordner: str, name: str, daten: bytes) -> None:
+        os.makedirs(os.path.join(ordner, "sce_module"), exist_ok=True)
+        Path(ordner, "sce_module", name).write_bytes(daten)
+
+    def test_ein_halb_herabgesetztes_spiel_gilt_nicht_als_eingebaut(self) -> None:
+        """Befund 22.11.2026: Ein BACKPORT-Lauf, abgebrochen nach der ``eboot.bin`` (``kandidaten`` sortiert sie vor ``sce_module``), liess
+        die Module auf SDK 10 - geurteilt nur nach der ``eboot.bin`` hiess das "schon eingebaut", und das Spiel startete nicht."""
+        modul = baue_elf(0x10000038, art=bp.PT_SCE_MODULE_PARAM)
+        ordner = self.spielordner("halb", herabgesetzt(baue_elf(0x10000038), 7))
+        self._modul(ordner, "libc.prx", als_self(modul))
+        self._modul(ordner, "libSceFios2.prx", herabgesetzt(modul, 7))
+        fakten = fc.quellfakten(_daten("10.00", "11.20"), ordner)
+        self.assertEqual(("7.00", "10.00"), (fakten.eboot_sdk, fakten.module_sdk), "das hoechste Modul zaehlt")
+        self.assertFalse(fakten.herabgesetzt)
+        self.assertFalse(fakten.backport_schon_da("7.99"))
+        self.assertTrue(fakten.backport_noetig("7.99"))
+        # Gegenprobe: Sind alle Programme herabgesetzt, ist das Spiel es auch.
+        self._modul(ordner, "libc.prx", herabgesetzt(modul, 7))
+        fakten = fc.quellfakten(_daten("10.00", "11.20"), ordner)
+        self.assertEqual("7.00", fakten.module_sdk)
+        self.assertTrue(fakten.backport_schon_da("7.99"))
+
+    def test_die_module_allein_machen_kein_spiel_herabgesetzt(self) -> None:
+        """``module_sdk`` sieht nur ``sce_module`` - es darf das Urteil anheben, nicht allein tragen (Korrektur-Pruefer 22.11.2026: bei
+        unlesbarer eboot.bin hiess ein Spiel mit herabgesetzten Modulen sonst "schon eingebaut")."""
+        nur_module = fc.QuellFakten(sdk="10.00", firmware="11.20", module_sdk="7.00")
+        self.assertFalse(nur_module.herabgesetzt)
+        self.assertFalse(nur_module.backport_schon_da("9.99"))
+        self.assertTrue(nur_module.backport_noetig("9.99"))
+        for kw in ({"eboot_sdk": "7.00"}, {"backport_firmware": "7.00"}):
+            with self.subTest(kw=kw):
+                self.assertTrue(fc.QuellFakten(sdk="10.00", firmware="11.20", module_sdk="7.00", **kw).herabgesetzt)
+
+    def test_module_sdk_liest_nur_sce_module_und_nur_programme(self) -> None:
+        ordner = self.spielordner("m", herabgesetzt(baue_elf(0x10000038), 7))
+        self.assertEqual("", ps.module_sdk_im_ordner(ordner), "ohne sce_module")
+        modul = baue_elf(0x10000038, art=bp.PT_SCE_MODULE_PARAM)
+        os.makedirs(os.path.join(ordner, "sce_module", "tief"))
+        Path(ordner, "sce_module", "tief", "libx.prx").write_bytes(als_self(modul))     # Unterordner: nicht gelesen
+        Path(ordner, "sce_module", "notiz.txt").write_bytes(b"kein Programm")
+        Path(ordner, "sce_module", "kaputt.sprx").write_bytes(b"\x00" * 64)
+        self.assertEqual("", ps.module_sdk_im_ordner(ordner))
+        self._modul(ordner, "LIBA.SPRX", herabgesetzt(modul, 5))
+        self.assertEqual("5.00", ps.module_sdk_im_ordner(ordner), "Gross-/Kleinschreibung der Endung egal")
+        self.assertEqual("", ps.module_sdk_im_ordner(self.pfad("gibt_es_nicht")))
+        self.assertEqual("", fc.quellfakten(_daten("10.00", "11.20")).module_sdk, "ohne Pfad: nichts gelesen")
 
 
 def _forge_befehlszeile() -> str:

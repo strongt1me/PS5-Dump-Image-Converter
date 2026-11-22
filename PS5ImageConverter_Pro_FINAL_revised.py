@@ -39753,12 +39753,15 @@ class PS5ConverterGUI:
         except (ValueError, ps5_backport.BackportFehler) as exc:
             self._append_to_log(self._t("main.integrate_backport_bad_fw", error=exc))
             return False
-        # Eigene SDK-Werte / verlangte Firmware (BACKPORT-Fenster, Erweiterte Einstellungen): ein unbrauchbarer
-        # Wert bricht ab, statt still den Tabellenwert zu nehmen.
+        # Eigene SDK-Werte / verlangte Firmware aus der Einstellungsdatei: Ein unbrauchbarer wird genannt und uebergangen
+        # (_backport_eigene) - seit dem 21.11.2026 gibt es kein Feld mehr, in dem er sich berichtigen liesse.
+        grund = self._backport_eigene_fehler()
+        if grund:
+            self._append_to_log(self._t("backport.eigene_ungueltig", error=grund))
         try:
             ziel = ps5_backport.ziel_werte(firmware, self._backport_eigene())
         except ps5_backport.BackportFehler as exc:
-            self._append_to_log(self._t("backport.eigene_ungueltig", error=exc))
+            self._append_to_log(self._t("main.integrate_backport_bad_fw", error=exc))
             return False
         ziel_ps5, ziel_ps4 = ziel.ps5_sdk, ziel.ps4_sdk
 
@@ -39866,14 +39869,21 @@ class PS5ConverterGUI:
         self._backport_fremdlibs_klaeren(ordner, bool(self._tk_wert("ampr_integrate_var", False)),
                                          bool(self._tk_wert("ampr_playgo_var", False)))
         self._backport_param_json(ordner, firmware)
+        # Fehler der Korrekturen stehen in der Fehlerzahl der Schlusszeile (bis 22.11.2026 hiess es dort "0 Fehler", nur eine
+        # Protokollzeile sagte es) - sie kippen den Einbau aber nicht: Die Dateien sind herabgesetzt, nur ohne diesen Zusatz, und
+        # ein Abbruch der Aufgabe wuerde bei "Einbau in die Sicherung" die fertige Kopie loeschen. Entscheidend bleiben die Dateien.
+        korr_fehler: list = []
+        korr_zustand: dict = {}
         neutralisiert = self._backport_korrekturen_anwenden(
             ordner, firmware, basis, installiert, korrekturen,
-            laeuft=lambda: bool(self.is_running), status=self._set_status)
+            laeuft=lambda: bool(self.is_running), status=self._set_status, fehler=korr_fehler, zustand=korr_zustand)
+        if korr_zustand.get("abgebrochen"):
+            return False                    # abgebrochen, waehrend die Korrekturen liefen: nicht "[OK] BACKPORT"
         if basis:
             self._backport_luecken_melden(basis, firmware, ordner, installiert, neutralisiert)
         self._append_to_log(
             self._t("main.integrate_backport_done",
-                    patched=gepatcht, libs=kopiert, errors=fehler)
+                    patched=gepatcht, libs=kopiert, errors=fehler + len(korr_fehler))
         )
         return fehler == 0
 
@@ -59956,27 +59966,49 @@ class PS5ConverterGUI:
         """
         return False
 
-    def _backport_eigene(self) -> "ps5_backport.EigeneWerte":
-        """Eigene Zielwerte aus den Einstellungen (leer = Tabellenwert der gewaehlten Firmware).
+    #: Feld von ``ps5_backport.EigeneWerte`` -> Schluessel in der Einstellungsdatei.
+    _BACKPORT_EIGENE_SCHLUESSEL = (("ps5_sdk", "backport_sdk_ps5"), ("ps4_sdk", "backport_sdk_ps4"),
+                                   ("verlangt_fw", "backport_verlangte_fw"))
 
-        Gelten im BACKPORT-Fenster und beim Einbau waehrend des Erstellens gleichermassen, wie
-        ``backport_fakelib_ordner``. Der Text wird hier nicht geprueft: Ein unbrauchbarer Wert soll sichtbar
-        scheitern (:meth:`_backport_eigene_fehler`), nicht still durch den Tabellenwert ersetzt werden.
-        """
+    def _backport_eigene_roh(self) -> "ps5_backport.EigeneWerte":
+        """Die eigenen Zielwerte, wie sie in der Einstellungsdatei stehen - ungeprueft."""
         def _text(schluessel: str) -> str:
             return str(self._load_setting(schluessel, "") or "").strip()
 
-        return ps5_backport.EigeneWerte(
-            ps5_sdk=_text("backport_sdk_ps5"), ps4_sdk=_text("backport_sdk_ps4"),
-            verlangt_fw=_text("backport_verlangte_fw"))
+        return ps5_backport.EigeneWerte(**{feld: _text(s) for feld, s in self._BACKPORT_EIGENE_SCHLUESSEL})
+
+    @classmethod
+    def _backport_eigene_gruende(cls, eigene: "ps5_backport.EigeneWerte") -> "list[tuple[str, str]]":
+        """``(Feld, Grund)`` je unbrauchbarem eigenen Wert, jeder fuer sich geprueft."""
+        gruende = []
+        for feld, _schluessel in cls._BACKPORT_EIGENE_SCHLUESSEL:
+            try:
+                ps5_backport.ziel_werte(ps5_backport.FIRMWARE_STANDARD,
+                                        ps5_backport.EigeneWerte(**{feld: getattr(eigene, feld)}))
+            except ps5_backport.BackportFehler as exc:
+                gruende.append((feld, str(exc)))
+        return gruende
+
+    def _backport_eigene(self) -> "ps5_backport.EigeneWerte":
+        """Eigene Zielwerte aus den Einstellungen (leer = Tabellenwert der gewaehlten Firmware).
+
+        Gelten im BACKPORT-Fenster und beim Einbau waehrend des Erstellens gleichermassen, wie ``backport_fakelib_ordner``.
+        **Ein unbrauchbarer Wert wird uebergangen** (es gilt der Tabellenwert) und genannt (:meth:`_backport_eigene_fehler`,
+        Meldung ``backport.eigene_ungueltig``). Bis 21.11.2026 hielt er jeden Backport an - damals mit dem Eingabefeld, in dem man
+        ihn berichtigen konnte. Das Feld ist entfallen; eine Sperre, die sich im Programm nicht mehr loesen laesst (ein frueher
+        getipptes "4.5" in der Einstellungsdatei), waere schlimmer als der Tabellenwert.
+        """
+        roh = self._backport_eigene_roh()
+        schlecht = {feld for feld, _grund in self._backport_eigene_gruende(roh)}
+        return roh._replace(**{feld: "" for feld in schlecht}) if schlecht else roh
 
     def _backport_eigene_fehler(self, eigene: "ps5_backport.EigeneWerte | None" = None) -> str:
-        """Leer, wenn die eigenen Werte brauchbar sind, sonst der Grund (fuer Protokoll und Statuszeile)."""
-        try:
-            ps5_backport.ziel_werte(ps5_backport.FIRMWARE_STANDARD, eigene or self._backport_eigene())
-        except ps5_backport.BackportFehler as exc:
-            return str(exc)
-        return ""
+        """Leer, wenn die eigenen Werte brauchbar sind, sonst der Grund (mehrere mit "; ") - fuer Protokoll und Statuszeile.
+
+        Ohne ``eigene``: die Werte, wie sie in der Einstellungsdatei stehen (:meth:`_backport_eigene_roh`).
+        """
+        roh = eigene if eigene is not None else self._backport_eigene_roh()
+        return "; ".join(grund for _feld, grund in self._backport_eigene_gruende(roh))
 
     def _backport_fakelib_auswahl(self, basis: str, firmware: int, ordner: str) -> list[str]:
         """Welche Ersatzbibliotheken ins Spiel kommen - zuerst gegen die Zielfirmware gemessen.
@@ -60023,7 +60055,11 @@ class PS5ConverterGUI:
         return True
 
     def _backport_landeplatz_an(self) -> bool:
-        """Ob Stubs im Landeplatz-Modus gesetzt werden. Seit 21.11.2026 immer Ja.
+        """Ob die Stubs fuer **Luecken** im Landeplatz-Modus gesetzt werden. Seit 21.11.2026 immer Ja.
+
+        Die Stubs eines Korrekturprofils stehen immer fest im Eintrag (``backport_korrektur.korrekturen_anwenden``, seit
+        22.11.2026): Sie bauen einen gemessenen Zustand nach und treffen gerade Funktionen, die die Zielfirmware oder eine
+        Ersatzbibliothek doch hat - auf dem Landeplatz wuerden sie nie erreicht (Anno 117 auf FW 4: zwei AudioOut2-Funktionen).
 
         Der Stub ersetzt nur den Aufloeser hinter dem ersten ``jmp [GOT]`` des PLT-Eintrags, statt den ganzen
         Eintrag: Eine Funktion, die die Zielfirmware doch hat, bleibt nativ (der Lader bindet sie beim Laden), und fuer
@@ -60102,12 +60138,17 @@ class PS5ConverterGUI:
     }
 
     def _backport_korrekturen_anwenden(self, ordner: str, firmware: int, basis: str, installierte_fakelibs: list[str],
-                                       vorbereitung, laeuft=None, status=None) -> set:
+                                       vorbereitung, laeuft=None, status=None, fehler: "list | None" = None,
+                                       zustand: "dict | None" = None) -> set:
         """Wendet Korrekturprofil und Stubs an - NACH dem Einbau der Ersatzbibliotheken.
 
         Erst dann steht fest, welche Funktionen wirklich fehlen (:func:`ps5_backport.luecken_ohne_ersatz`). Jede Datei
         wird nur veraendert, wenn sich das Ergebnis neu signieren und atomar schreiben laesst. Ein Fehler hier bricht
-        den Backport nicht ab - die Dateien sind dann herabgesetzt, nur eben ohne diese Zusaetze.
+        den Backport nicht ab - die Dateien sind dann herabgesetzt, nur eben ohne diese Zusaetze. Gezaehlt wird er aber:
+        ``fehler`` (eine Liste des Aufrufers) bekommt je gescheiterter Datei ``(Datei, Grund)`` - die Zusammenfassung des
+        Laufs nennt sie mit (bis 22.11.2026 stand dort "0 Fehler", und nur eine Protokollzeile sagte es). ``zustand`` (ein
+        dict des Aufrufers) bekommt ``"abgebrochen"``: ``True``, wenn ``laeuft`` vor der letzten Datei anhielt
+        (``backport_korrektur.Bericht.abgebrochen``) - nicht schon dann, wenn der Abbruch erst nach der letzten kam.
 
         Returns:
             ``(Bibliothek, NID)`` der neutralisierten Luecken, fuer :meth:`_backport_luecken_melden`.
@@ -60154,6 +60195,8 @@ class PS5ConverterGUI:
         except Exception as exc:  # noqa: BLE001 - die Zusaetze duerfen den fertigen Backport nicht kippen
             logger.exception("Backport-Korrekturen fehlgeschlagen")
             self._append_to_log(self._t("backport.korr_fehler", datei="-", fehler=exc))
+            if fehler is not None:
+                fehler.append(("-", str(exc)))
             return set()
 
         for profil, erg in bericht.profile:
@@ -60175,6 +60218,10 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("backport.korr_stub_summe", anzahl=gesetzt, dateien=len(dateien)))
         for rel, text in bericht.fehler:
             self._append_to_log(self._t("backport.korr_fehler", datei=rel, fehler=text))
+        if fehler is not None:
+            fehler.extend(bericht.fehler)
+        if zustand is not None:
+            zustand["abgebrochen"] = bool(getattr(bericht, "abgebrochen", False))
         return bericht.neutralisiert
 
     def _backport_luecken_melden(self, basis: str, firmware: int, ordner: str,
@@ -64767,16 +64814,17 @@ class PS5ConverterGUI:
         # Anwender hat beim Schliessen abgebrochen; der Faden haelt an der
         # naechsten Datei bzw. am naechsten Kopierblock an.
         laeuft = {"aktiv": False, "backport": False, "abbruch": False}
+        eigene_gemeldet = {"grund": ""}
 
         def _eigene_pruefen() -> bool:
-            """Sind die eigenen Zielwerte (Erweiterte Einstellungen) brauchbar? Sonst Grund zeigen und nicht starten."""
+            """Nennt unbrauchbare eigene Zielwerte aus der Einstellungsdatei - einmal je Fenster und Grund. Sie werden uebergangen
+            (es gilt der Tabellenwert, :meth:`_backport_eigene`); bis 21.11.2026 hielt ein solcher Wert jeden Start an, damals mit
+            dem Feld, in dem man ihn berichtigen konnte. Ohne Feld waere das eine Sperre ohne Ausweg."""
             grund = self._backport_eigene_fehler()
-            if not grund:
-                return True
-            text = self._t("backport.eigene_ungueltig", error=grund)
-            stand_var.set(text.strip())
-            self._append_to_log(text)
-            return False
+            if grund and grund != eigene_gemeldet["grund"]:
+                eigene_gemeldet["grund"] = grund
+                self._append_to_log(self._t("backport.eigene_ungueltig", error=grund))
+            return True
 
         def _ziel_firmware() -> int:
             # current() liefert -1, wenn nichts ausgewaehlt ist. Ein blosser
@@ -64855,8 +64903,8 @@ class PS5ConverterGUI:
             try:
                 ziel_ps5 = ps5_backport.ziel_werte(firmware, self._backport_eigene()).ps5_sdk
             except ps5_backport.BackportFehler:
-                # _analysieren hat die eigenen Werte vorab geprueft; aendert sie jemand waehrend des Laufs, zaehlt
-                # fuer diese reine Anzeige der Tabellenwert.
+                # Unbrauchbare eigene Werte laesst _backport_eigene schon weg; bleibt nur eine Firmware ausserhalb der
+                # Tabelle - dann zaehlt fuer diese reine Anzeige der Tabellenwert.
                 ziel_ps5 = ps5_backport.sdk_paar(firmware)[0]
             dateien = ps5_backport.kandidaten(ordner)
             if not dateien:
@@ -65096,6 +65144,11 @@ class PS5ConverterGUI:
 
             def _arbeit() -> None:
                 try:
+                    # Wie der Lauf im Spielordner: eigene Werte aus der Einstellungsdatei nennen, die Firmware-Referenz pruefen.
+                    eigene_aktiv = self._backport_eigene_einstellungen()
+                    if eigene_aktiv:
+                        self._append_to_log(self._t("backport.eigene_aktiv", liste=", ".join(eigene_aktiv)))
+                    self._backport_ziel_deckung_melden(ordner, firmware)
                     # Profil: das Original messen, bevor etwas herabgesetzt wird (der Spielordner bleibt unberuehrt).
                     korrekturen = self._backport_korrekturen_vorbereiten(ordner, firmware)
                     ergebnis = ps5_backport.backport_ordner_bauen(
@@ -65111,10 +65164,13 @@ class PS5ConverterGUI:
                         installiert = ([os.path.join(bib, n) for n in sorted(os.listdir(bib))
                                         if n.lower().endswith(ps5_backport.FAKELIB_ENDUNGEN)]
                                        if os.path.isdir(bib) else [])
+                        korr_fehler: list = []
                         self._backport_korrekturen_anwenden(
                             ergebnis["ziel"], firmware, basis, installiert, korrekturen,
                             laeuft=lambda: not laeuft.get("abbruch"),
-                            status=lambda text: self._spaeter_im_fenster(win, stand_var.set, text))
+                            status=lambda text: self._spaeter_im_fenster(win, stand_var.set, text), fehler=korr_fehler)
+                        # Gescheiterte Korrekturen zaehlen in der Fertigmeldung mit (das Protokoll nennt sie schon einzeln).
+                        ergebnis["fehler"] = int(ergebnis.get("fehler", 0)) + len(korr_fehler)
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("Backport-Ordner gescheitert: %s", exc)
                     ergebnis = {"ziel": ziel, "gepatcht": 0, "fehler": 1, "bibliotheken": 0,
@@ -65407,6 +65463,9 @@ class PS5ConverterGUI:
             eigene_aktiv = self._backport_eigene_einstellungen()
             if eigene_aktiv:
                 self._append_to_log(self._t("backport.eigene_aktiv", liste=", ".join(eigene_aktiv)))
+            # Wie beim Einbau waehrend des Erstellens (_integration_backport): Eine Firmware-Referenz aus der Einstellungsdatei
+            # sagt vorher, was dort fehlt. Die Warnzeile des Fensters nennt sie als wirksam - bis 22.11.2026 las der Lauf hier sie nie.
+            self._backport_ziel_deckung_melden(ordner, firmware)
             korrekturen = self._backport_korrekturen_vorbereiten(ordner, firmware)
 
             # ---- 2) Dateien einzeln verarbeiten ----
@@ -65575,12 +65634,19 @@ class PS5ConverterGUI:
                         "backport.log_fw_analyse_kein_stand",
                         fw=firmware, basis=fw_basis) + "\n")
 
-            # ---- 4) Korrekturprofil und Stubs (nur auf Haken) - erst jetzt steht fest, was wirklich fehlt ----
+            # ---- 4) Korrekturprofil und Stubs - erst jetzt steht fest, was wirklich fehlt ----
             if laeuft.get("abbruch"):
                 raise _KopieAbgebrochen()
+            korr_fehler: list = []
+            korr_zustand: dict = {}
             neutralisiert = self._backport_korrekturen_anwenden(
                 ordner, firmware, basis, installiert, korrekturen,
-                laeuft=lambda: not laeuft.get("abbruch"), status=stand)
+                laeuft=lambda: not laeuft.get("abbruch"), status=stand, fehler=korr_fehler, zustand=korr_zustand)
+            fehler += len(korr_fehler)
+            # Mitten in den Korrekturen geschlossen: nur ein Teil der Programme traegt sie - das ist ein Abbruch, kein "Fertig".
+            # (Kam das Schliessen erst nach der letzten Datei, ist alles fertig - dann bleibt es bei "Fertig".)
+            if korr_zustand.get("abgebrochen"):
+                raise _KopieAbgebrochen()
             if basis:
                 self._backport_luecken_melden(basis, firmware, ordner, installiert, neutralisiert)
 

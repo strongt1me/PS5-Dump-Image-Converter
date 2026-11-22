@@ -62,6 +62,11 @@ _EINTRAG_PUNKTPUNKT = 5
 #: Final Fantasy VII Rebirth: 34 MB). Gemessen: 450.835 Bloecke (LEGO Batman) brauchen ~150 MB, die Spitze liegt bei ~175 MB; 48 MiB halten
 #: die Spitze unter etwa 1 GB.
 _MAX_BESCHREIBUNG = 48 << 20
+#: Leerbereiche (Dateien ohne gespeicherte Daten, Art 0x40) in der Beschreibung: echte Pakete haben eine Handvoll (LEGO Batman: 1 von 176
+#: Eintraegen). Jeder wird zu eigenen Bloecken - die Grenze haelt eine gebaute Beschreibung mit Millionen davon fern.
+_MAX_LEERBEREICHE = 100_000
+#: ... und hoechstens so viele Bloecke daraus (256 KiB je Block: 64 GiB ohne gespeicherte Daten).
+_MAX_LEERBLOECKE = 262_144
 _AUSSEN_ZWISCHENSPEICHER = 48
 _ENTPACKT_ZWISCHENSPEICHER = 6
 
@@ -249,7 +254,9 @@ class _Dinode:
 
 
 def _dinodes(tabelle: bytes, anzahl: int) -> "list[_Dinode]":
-    return [_Dinode(tabelle, j * _DINODE_LEN) for j in range(anzahl) if (j + 1) * _DINODE_LEN <= len(tabelle)]
+    # Die Zahl kommt aus dem Oberblock (u64): gezaehlt wird nur, was in der Tabelle Platz hat - nicht bis 2**64 (ein gebautes Paket
+    # mit stimmigen Pruefsummen kaeme an Forges ``inspect`` vorbei, das selbst mit ``take_while`` zaehlt).
+    return [_Dinode(tabelle, j * _DINODE_LEN) for j in range(min(max(0, anzahl), len(tabelle) // _DINODE_LEN))]
 
 
 def _aussen_verzeichnis(block: bytes, groesse: int) -> "list[tuple[int, int, str]]":
@@ -899,9 +906,16 @@ def _beschreiben(blob: bytes) -> "tuple[list[_Beschrieben], int]":
         return grenzen[i] if i < len(grenzen) else einhaengen
 
     leer = {}
+    leer_bloecke = 0
     for ab, art in eintraege:
         if art == 0x40 and ab < einhaengen and ab not in leer:
             leer[ab] = naechste_grenze(ab)
+            leer_bloecke += -(-max(0, leer[ab] - ab) // _UBLOCK)
+            if len(leer) > _MAX_LEERBEREICHE or leer_bloecke > _MAX_LEERBLOECKE:
+                # Jeder Leerbereich wird zu eigenen Bloecken; eine gebaute Beschreibung mit Millionen davon brauchte Gigabytes
+                # (gemessen: 2 Mio. -> 598 MB, 19 s), ebenso ein einziger Bereich ueber Terabytes (1 Mio. Bloecke -> 155 MB).
+                # Echte Pakete haben eine Handvoll (LEGO Batman: einen).
+                raise _verfahren("die Beschreibung nennt zu viele Leerbereiche (%d, %d Bloecke)" % (len(leer), leer_bloecke))
     aus: "list[_Beschrieben]" = []
 
     def fuellen(logisch: int) -> int:
@@ -1224,6 +1238,7 @@ def eboot_sdk(pfad: str, passcode: str = STANDARD_PASSCODE) -> str:
             return programm_sdk.sdk_text(programm_sdk.sdk_wort_lesen(lesen))
     except PaketFehler as exc:
         logger.debug("Paket nicht gelesen (%s): %s", pfad, exc)
-    except (OSError, ValueError, KeyError, IndexError, struct.error, OverflowError, ImportError, MemoryError) as exc:
+    except (OSError, ValueError, KeyError, IndexError, struct.error, OverflowError, ImportError, MemoryError,
+            RecursionError) as exc:
         logger.debug("Paket nicht gelesen (%s): %s: %s", pfad, type(exc).__name__, exc)
     return ""

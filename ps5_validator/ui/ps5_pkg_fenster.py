@@ -2477,8 +2477,12 @@ class Ps5PkgFenster:
         self._protokoll(self.t("ps5pkg.laufzeit_log"))
         return True
 
-    def _quelle_pruefen(self, info: "wz.PaketInfo", paket: bool) -> "tuple[forge.QuellFakten | None, list[str], str]":
+    def _quelle_pruefen(self, info: "wz.PaketInfo", paket: bool,
+                        forge_wandelt: bool = False) -> "tuple[forge.QuellFakten | None, list[str], str]":
         """Sucht in der Quelle nach AMPR EMU, Packs, PlayGo, DLC und BACKPORT, schreibt den Bericht und liefert, was fehlt.
+
+        ``forge_wandelt``: Dump Forge schreibt das Abbild direkt aus dem Paket (:meth:`_abbild_direkt_moeglich`) - der Bericht sagt dann
+        auch, dass es dabei die Laufzeit des Spiels ersetzt (``quellbericht.zeilen``).
 
         Returns:
             ``(Fakten, Schluessel dessen, was fehlt, die Punkte dazu als Text fuer die Frage)``; ohne Fakten (Quelle nicht
@@ -2491,7 +2495,7 @@ class Ps5PkgFenster:
         # BACKPORT zuerst: Kennt das Programm die Firmware der Konsole nicht, fragt es hier einmal (``_backport_plan``).
         backport = self._backport_zeile(fakten)
         konsole = self.g._konsole_fw_bekannt() or ""
-        zeilen = qb.zeilen(fakten, self.t, konsole, forge_ergaenzt_ampr=paket)
+        zeilen = qb.zeilen(fakten, self.t, konsole, forge_ergaenzt_ampr=paket, forge_wandelt=forge_wandelt)
         for text in qb.protokoll(zeilen, self.t):
             self._protokoll(text)
         self._protokoll(self.t("bericht.einbau_paket" if paket else "bericht.einbau_nichts"))
@@ -2826,7 +2830,7 @@ class Ps5PkgFenster:
         if liste:
             self._protokoll(self.t("ps5pkg.log_einbau_braucht_ordner", liste=", ".join(liste)))
             return False
-        fakten, fehlt, punkte = self._quelle_pruefen(info, paket=False)
+        fakten, fehlt, punkte = self._quelle_pruefen(info, paket=False, forge_wandelt=True)
         if fehlt and messagebox.askyesno(self.t("ps5pkg.emu_titel"), self.t("ps5pkg.emu_frage_entpacken", liste=punkte),
                                          parent=self.win):
             namen = self._einbau_ankreuzen(fakten, fehlt)

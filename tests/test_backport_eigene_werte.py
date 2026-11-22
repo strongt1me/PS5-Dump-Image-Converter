@@ -152,7 +152,21 @@ class Hauptmodul(unittest.TestCase):
         grund = _gui({"backport_sdk_ps4": "zzz"})._backport_eigene_fehler()
         self.assertIn("PS4-SDK", grund)
 
-    def test_einbau_bricht_bei_unbrauchbarem_wert_ab_und_aendert_nichts(self):
+    def test_ein_unbrauchbarer_wert_faellt_einzeln_weg(self):
+        """Seit 22.11.2026: Die Felder sind entfallen (21.11.), ein unbrauchbarer Wert liesse sich im Programm nicht mehr
+        berichtigen - er wird genannt und uebergangen, die brauchbaren gelten weiter."""
+        gui = _gui({"backport_sdk_ps5": "0x4", "backport_verlangte_fw": "4.50"})
+        self.assertEqual(gui._backport_eigene(), b.EigeneWerte("", "", "4.50"))
+        grund = gui._backport_eigene_fehler()
+        self.assertIn("PS5-SDK", grund)
+        self.assertNotIn("Verlangte Firmware", grund)
+        zwei = _gui({"backport_sdk_ps5": "0x4", "backport_verlangte_fw": "4.5"})
+        self.assertEqual(zwei._backport_eigene(), b.EigeneWerte())
+        self.assertEqual(zwei._backport_eigene_fehler().count(";"), 1, "beide Gruende werden genannt")
+        self.assertEqual(_gui({"backport_sdk_ps5": "0x4"})._backport_eigene_einstellungen(), [],
+                         "ein uebergangener Wert gilt nicht als wirksamer eigener Wert")
+
+    def test_einbau_laeuft_mit_dem_tabellenwert_weiter_und_nennt_den_wert(self):
         ordner = Path(tempfile.mkdtemp(prefix="bp_einbau_"))
         self.addCleanup(shutil.rmtree, ordner, True)
         (ordner / "sce_sys").mkdir()
@@ -160,9 +174,17 @@ class Hauptmodul(unittest.TestCase):
         gui = _gui({"backport_sdk_ps5": "0x4"})
         gui._tk_wert = lambda name, vorgabe=None: 4
         gui._set_status = lambda *_a, **_k: None
-        self.assertFalse(gui._integration_backport(str(ordner)))
-        self.assertTrue(any("Eigener Zielwert unbrauchbar" in zeile for zeile in gui.protokoll), gui.protokoll)
-        self.assertEqual((ordner / "sce_sys" / "param.json").read_bytes(), PARAM)
+        gui.is_running = True
+        # Was hier nicht geprueft wird, laeuft ohne Wirkung (Ersatzbibliotheken, Profile, Referenz)
+        gui._backport_fakelib_basis = lambda: ""
+        gui._backport_ziel_deckung_melden = lambda *_a: None
+        gui._backport_korrekturen_vorbereiten = lambda *_a: None
+        gui._backport_fremdlibs_klaeren = lambda *_a, **_k: None
+        gui._backport_korrekturen_anwenden = lambda *_a, **_k: set()
+        self.assertTrue(gui._integration_backport(str(ordner)), gui.protokoll)
+        self.assertTrue(any("Eigener Zielwert in der Einstellungsdatei unbrauchbar" in z for z in gui.protokoll), gui.protokoll)
+        neu = (ordner / "sce_sys" / "param.json").read_bytes()
+        self.assertIn(b'"sdkVersion": "0x0400000000000000"', neu, "der Tabellenwert der Firmware 4 gilt")
 
     def test_param_json_nimmt_die_eigene_firmware(self):
         ordner = Path(tempfile.mkdtemp(prefix="bp_param_"))

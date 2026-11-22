@@ -494,6 +494,75 @@ class GesamtlaufTests(unittest.TestCase):
             laeuft=lambda: False)
         self.assertEqual(Path(self.pfad).read_bytes(), self.elf)
         self.assertEqual(bericht.geaendert, [])
+        self.assertTrue(bericht.abgebrochen, "die Oberflaeche muss den Abbruch sehen, sonst meldet sie 'Fertig'")
+        ganz = bk.korrekturen_anwenden(self.ordner, [self.pfad], luecken={"libkernel": ["AAAAAAAAAAA"]})
+        self.assertFalse(ganz.abgebrochen)
+
+    # ---- Seit 22.11.2026: Profil-Stubs fest im Eintrag, Luecken-Stubs auf dem Landeplatz ----
+    def test_im_landeplatz_modus_stehen_die_stubs_des_profils_fest_im_eintrag(self):
+        """Anno 117 auf FW 4: Das Profil stubbt zwei AudioOut2-Funktionen, die Firmware bzw. die Ersatzbibliothek doch liefern.
+        Auf dem Landeplatz bindet der Lader sie, der Stub wird nie erreicht - der gemessene Zustand (Test Z3, feste Stubs) waere weg."""
+        bericht = bk.korrekturen_anwenden(self.ordner, [self.pfad], aktive=self.aktive,
+                                          luecken={"libkernel": ["AAAAAAAAAAA"]}, landeplatz=True)
+        self.assertEqual(bericht.fehler, [])
+        elf = self._lesen()
+        va_aaaa, va_nh6, va_acm = self.info["plt"][0], self.info["plt"][1], self.info["plt"][2]
+        self.assertEqual(elf[va_nh6:va_nh6 + len(bk.STUB_AUSGABEN_MINUS1.bytes_)], bk.STUB_AUSGABEN_MINUS1.bytes_,
+                         "Profil-Stub NH6x: fest am Eintragsanfang, die lange Form")
+        self.assertEqual(elf[va_acm:va_acm + 3], bk.STUB_STANDARD.bytes_, "Profil-Stub BBBB: fest am Eintragsanfang")
+        self.assertEqual(elf[va_aaaa:va_aaaa + 6], self.elf[va_aaaa:va_aaaa + 6], "Luecke AAAA: der erste Sprung bleibt")
+        self.assertEqual(elf[va_aaaa + 6:va_aaaa + 9], bk.STUB_STANDARD.bytes_, "Luecke AAAA: Stub auf dem Landeplatz")
+        self.assertEqual([e.status for _p, e in bericht.profile], [bk.P_ANGEWENDET])
+        self.assertEqual(bericht.neutralisiert, {("libkernel", "AAAAAAAAAAA"), ("libkernel", "NH6xARDOVv8"),
+                                                 ("libSceAcm", "BBBBBBBBBBB")})
+        # Zweiter Lauf: alles schon da, nichts wird geschrieben
+        vorher = Path(self.pfad).read_bytes()
+        aktive = bk.profile_vorbereiten(self.ordner, [self.profil], "PPSA00001", 4).aktiv
+        zweiter = bk.korrekturen_anwenden(self.ordner, [self.pfad], aktive=aktive,
+                                          luecken={"libkernel": ["AAAAAAAAAAA"]}, landeplatz=True)
+        self.assertEqual(Path(self.pfad).read_bytes(), vorher)
+        self.assertEqual([e.status for _p, e in zweiter.profile], [bk.P_BEREITS])
+        self.assertEqual({s.status for _r, s in zweiter.stubs}, {bk.STATUS_BEREITS})
+
+    def test_ein_profil_vom_21_11_mit_stubs_auf_dem_landeplatz_wird_fest_gesetzt(self):
+        """Am 21./22.11.2026 liefen Profil-Stubs auf dem Landeplatz (bei Anno 117 auf FW 4 wirkungslos). Ein neuer Lauf auf so einem
+        Dump setzt sie fest - statt "andere Fassung" zu melden und sie stehen zu lassen (Korrektur-Pruefer 22.11.2026)."""
+        sha = hashlib.sha256(self.elf).hexdigest()
+        alt, erg = bk.profil_datei_anwenden(self.elf, sha, self.profil.dateien[0], landeplatz=True)
+        self.assertEqual(erg.status, bk.P_ANGEWENDET)
+        Path(self.pfad).write_bytes(bp.elf_signieren(alt))
+        aktive = bk.profile_vorbereiten(self.ordner, [self.profil], "PPSA00001", 4).aktiv
+        bericht = bk.korrekturen_anwenden(self.ordner, [self.pfad], aktive=aktive,
+                                          luecken={"libkernel": ["AAAAAAAAAAA"]}, landeplatz=True)
+        self.assertEqual(bericht.fehler, [])
+        self.assertEqual([(e.status, e.stubs) for _p, e in bericht.profile], [(bk.P_ANGEWENDET, 2)])
+        elf = self._lesen()
+        va_nh6, va_acm = self.info["plt"][1], self.info["plt"][2]
+        self.assertEqual(elf[va_nh6:va_nh6 + len(bk.STUB_AUSGABEN_MINUS1.bytes_)], bk.STUB_AUSGABEN_MINUS1.bytes_)
+        self.assertEqual(elf[va_acm:va_acm + 3], bk.STUB_STANDARD.bytes_)
+        aktive = bk.profile_vorbereiten(self.ordner, [self.profil], "PPSA00001", 4).aktiv
+        vorher = Path(self.pfad).read_bytes()
+        zweiter = bk.korrekturen_anwenden(self.ordner, [self.pfad], aktive=aktive,
+                                          luecken={"libkernel": ["AAAAAAAAAAA"]}, landeplatz=True)
+        self.assertEqual([e.status for _p, e in zweiter.profile], [bk.P_BEREITS])
+        self.assertEqual(Path(self.pfad).read_bytes(), vorher)
+
+    def test_eine_luecke_die_das_profil_schon_stubbt_wird_nicht_noch_einmal_angefasst(self):
+        """Das Profil setzt fuer NH6x eine andere Art als die Tabelle (hier ``standard`` statt ``ausgaben_minus1``): Der Luecken-Stub
+        darf den Eintrag nicht als "unerwartete Bytes" melden - das Profil hat ihn gesetzt, und er gilt als neutralisiert."""
+        d = _profil_dict(hashlib.sha256(self.elf).hexdigest())
+        d["dateien"][0]["patches"][0]["va"] = hex(self.stelle - BASIS)
+        d["dateien"][0]["plt_stubs"][0]["art"] = "standard"
+        profil = bk.profil_aus_dict(d, "test")
+        aktive = bk.profile_vorbereiten(self.ordner, [profil], "PPSA00001", 4).aktiv
+        bericht = bk.korrekturen_anwenden(self.ordner, [self.pfad], aktive=aktive,
+                                          luecken={"libkernel": ["NH6xARDOVv8", "AAAAAAAAAAA"]}, landeplatz=True)
+        self.assertEqual([e.status for _p, e in bericht.profile], [bk.P_ANGEWENDET])
+        self.assertNotIn(bk.STATUS_ABWEICHEND, {s.status for _r, s in bericht.stubs})
+        self.assertEqual([s.nid for _r, s in bericht.stubs], ["AAAAAAAAAAA"], "NH6x stubbt das Profil, nicht die Luecke")
+        self.assertIn(("libkernel", "NH6xARDOVv8"), bericht.neutralisiert)
+        va_nh6 = self.info["plt"][1]
+        self.assertEqual(self._lesen()[va_nh6:va_nh6 + 3], bk.STUB_STANDARD.bytes_)
 
     def test_datei_die_kein_elf_ist(self):
         Path(self.pfad).write_bytes(b"kein ELF " * 20)
@@ -646,15 +715,26 @@ class LandeplatzTests(unittest.TestCase):
         self.assertEqual({e.status for e in erg}, {bk.STATUS_BEREITS})
 
     def test_festen_und_landeplatz_stub_nicht_mischen(self):
+        """Steht unser Stub derselben Art schon in der anderen Form da (vor dem 21.11.2026 gesetzt: fest), bleiben die Bytes, wie sie
+        sind, und der Eintrag gilt als erledigt (``STATUS_BEREITS``). Bis 22.11.2026 hiess das "unerwartete Bytes", und die
+        Restmeldung nannte die Funktion als offene Luecke, obwohl der Stub sie abfaengt."""
         elf, _ = _elf()
         fest, _ = bk.stubs_setzen(elf, self.ZIELE)
         wieder, erg = bk.stubs_setzen(fest, self.ZIELE, landeplatz=True)
         self.assertIs(wieder, fest)
-        self.assertEqual({e.status for e in erg}, {bk.STATUS_ABWEICHEND})
+        self.assertEqual({e.status for e in erg}, {bk.STATUS_BEREITS})
         lande, _ = bk.stubs_setzen(elf, self.ZIELE, landeplatz=True)
         wieder, erg = bk.stubs_setzen(lande, self.ZIELE)
         self.assertIs(wieder, lande)
-        self.assertEqual({e.status for e in erg}, {bk.STATUS_ABWEICHEND})
+        self.assertEqual({e.status for e in erg}, {bk.STATUS_BEREITS})
+
+    def test_ein_stub_anderer_art_bleibt_abweichend(self):
+        """Gegenprobe: Ein fester Stub einer ANDEREN Art (``standard`` statt ``ausgaben_minus1`` fuer NH6x) ist nicht der gesuchte."""
+        elf, _ = _elf()
+        fest, _ = bk.stubs_setzen(elf, {("libkernel", "NH6xARDOVv8"): "standard"})
+        wieder, erg = bk.stubs_setzen(fest, {("libkernel", "NH6xARDOVv8"): None}, landeplatz=True)
+        self.assertIs(wieder, fest)
+        self.assertEqual([e.status for e in erg], [bk.STATUS_ABWEICHEND])
 
     def test_zu_langer_stub_wird_abgelehnt(self):
         elf, _ = _elf()
@@ -689,9 +769,32 @@ class LandeplatzTests(unittest.TestCase):
         nochmal, erg2 = bk.profil_datei_anwenden(neu, sha_neu, pd, landeplatz=True)
         self.assertIs(nochmal, neu)
         self.assertEqual(erg2.status, bk.P_BEREITS)
-        # der Modus gehoert zum Lauf: im festen Modus gilt dieselbe Datei nicht als "bereits angewendet"
-        _, erg3 = bk.profil_datei_anwenden(neu, sha_neu, pd)
-        self.assertEqual(erg3.status, bk.P_SHA)
+        # Im festen Modus (so laeuft das Profil seit 22.11.2026) gilt dieselbe Datei nicht als "bereits angewendet": Die Stubs
+        # vom Landeplatz kommen fest in den Eintrag - nur sie, die Byte-Aenderung steht schon.
+        fest, erg3 = bk.profil_datei_anwenden(neu, sha_neu, pd)
+        self.assertEqual((erg3.status, erg3.patches, erg3.stubs), (bk.P_ANGEWENDET, 0, 2))
+        self.assertEqual(fest[va_nh6:va_nh6 + len(bk.STUB_AUSGABEN_MINUS1.bytes_)], bk.STUB_AUSGABEN_MINUS1.bytes_)
+        self.assertEqual(fest[va_acm:va_acm + 3], bk.STUB_STANDARD.bytes_)
+        geaendert = {i for i in range(len(neu)) if neu[i] != fest[i]}
+        self.assertTrue(geaendert <= set(range(va_nh6, va_nh6 + 16)) | set(range(va_acm, va_acm + 16)), "nur die beiden Eintraege")
+        _, erg4 = bk.profil_datei_anwenden(fest, hashlib.sha256(fest).hexdigest(), pd)
+        self.assertEqual(erg4.status, bk.P_BEREITS)
+        # Eine Profil-Datei nur mit Stubs belegt keine Fassung: Die gleichen Luecken-Stubs einer ANDEREN Fassung (Landeplatz, gleiche
+        # Art) werden nicht als Profil-Stubs umgesetzt (Gegenlese 22.11.2026: Anno 117 libc.prx hat nur Stubs).
+        d = _profil_dict("e" * 64)
+        d["dateien"][0]["patches"] = []
+        nur_stubs = bk.profil_aus_dict(d, "test").dateien[0]
+        fremd, _ = bk.stubs_setzen(elf, {("libkernel", "NH6xARDOVv8"): "ausgaben_minus1", ("libSceAcm", "BBBBBBBBBBB"): None},
+                                   landeplatz=True)
+        bleibt, erg6 = bk.profil_datei_anwenden(fremd, hashlib.sha256(fremd).hexdigest(), nur_stubs)
+        self.assertEqual(erg6.status, bk.P_SHA)
+        self.assertIs(bleibt, fremd)
+        # Gegenprobe: fehlt eine Byte-Aenderung, wird nichts umgesetzt (dann ist es eine andere Fassung)
+        halb = bytearray(neu)
+        halb[stelle:stelle + 2] = b"\x75\x26"
+        unveraendert, erg5 = bk.profil_datei_anwenden(bytes(halb), "x" * 64, pd)
+        self.assertEqual(erg5.status, bk.P_SHA)
+        self.assertEqual(unveraendert, bytes(halb))
 
     def test_gesamtlauf_schreibt_signiert_und_laesst_sich_wiederholen(self):
         with tempfile.TemporaryDirectory() as ordner:

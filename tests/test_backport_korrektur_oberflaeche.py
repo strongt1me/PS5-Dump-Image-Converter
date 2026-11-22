@@ -94,6 +94,76 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertIn("ergebnis['ziel']", text[i_anwenden:i_anwenden + 120], "die Zusaetze wirken auf den Ergebnisordner")
         self.assertIn("abgebrochen", text[i_bauen:i_anwenden], "nach einem Abbruch wird nichts mehr angewendet")
 
+    def test_fehler_und_abbruch_der_korrekturen_zaehlen_mit(self):
+        """Bis 22.11.2026 standen gescheiterte Korrekturen nur im Protokoll ("[OK] BACKPORT ... 0 Fehler"), und wer das Fenster
+        mitten in den Korrekturen schloss, bekam "Fertig" - obwohl nur ein Teil der Programme die Stubs trug."""
+        for name in ("_integration_backport", "_backport_worker"):
+            text = _methode(name)
+            i_anwenden = text.find("self._backport_korrekturen_anwenden(")
+            zwischen = text[i_anwenden:text.find("self._backport_luecken_melden(", i_anwenden)]
+            with self.subTest(name=name):
+                self.assertGreater(i_anwenden, 0)
+                self.assertIn("fehler=korr_fehler", zwischen)
+                self.assertIn("zustand=korr_zustand", zwischen)
+                self.assertIn("korr_zustand.get('abgebrochen')", zwischen, "der Abbruch kommt aus dem Bericht, nicht von der Fahne")
+        worker = _methode("_backport_worker")
+        i = worker.find("self._backport_korrekturen_anwenden(")
+        zwischen = worker[i:worker.find("self._backport_luecken_melden(", i)]
+        self.assertIn("raise _KopieAbgebrochen()", zwischen)
+        self.assertLess(zwischen.index("fehler += len(korr_fehler)"), zwischen.index("raise _KopieAbgebrochen()"),
+                        "auch die Abbruchmeldung zaehlt die Korrekturfehler")
+        fenster = _methode("_render_backport_window")
+        i = fenster.find("self._backport_korrekturen_anwenden(", fenster.find("ps5_backport.backport_ordner_bauen("))
+        self.assertGreater(i, 0)
+        rest = fenster[i:fenster.find("except Exception", i)]
+        for stueck in ("fehler=korr_fehler", "len(korr_fehler)"):
+            self.assertIn(stueck, rest)
+
+    def test_korrekturfehler_kippen_den_einbau_beim_erstellen_nicht(self):
+        """Die Fehlerzahl der Schlusszeile nennt sie - aber ``_integration_backport`` gibt ``True``: Ein ``False`` liesse die ganze
+        Aufgabe abbrechen, und beim Einbau in die Sicherung wuerde die fertige, herabgesetzte Kopie geloescht (Korrektur-Pruefer
+        22.11.2026). Die Dateien sind herabgesetzt; nur der Zusatz fehlt."""
+        with tempfile.TemporaryDirectory() as t:
+            ordner = Path(t)
+            (ordner / "sce_sys").mkdir()
+            (ordner / "sce_sys" / "param.json").write_bytes(
+                b'{"requiredSystemSoftwareVersion": "0x1360000000000000", "sdkVersion": "0x1100000000000000"}')
+            gui = _gui()
+            gui._tk_wert = lambda name, vorgabe=None: 4
+            gui._set_status = lambda *_a, **_k: None
+            gui.is_running = True
+            gui._backport_fakelib_basis = lambda: ""
+            gui._backport_ziel_deckung_melden = lambda *_a: None
+            gui._backport_korrekturen_vorbereiten = lambda *_a: None
+            gui._backport_fremdlibs_klaeren = lambda *_a, **_k: None
+
+            def korrekturen(*_a, fehler=None, zustand=None, **_k):
+                fehler.append(("eboot.bin", "Platte voll"))
+                zustand["abgebrochen"] = False
+                return set()
+            gui._backport_korrekturen_anwenden = korrekturen
+            self.assertTrue(gui._integration_backport(str(ordner)))
+            schluss = [z for z in gui.protokoll if z.startswith("main.integrate_backport_done")]
+            self.assertEqual(1, len(schluss))
+            self.assertIn("('errors', 1)", schluss[0])
+
+            def abgebrochen(*_a, fehler=None, zustand=None, **_k):
+                zustand["abgebrochen"] = True
+                return set()
+            gui._backport_korrekturen_anwenden = abgebrochen
+            self.assertFalse(gui._integration_backport(str(ordner)), "ein Abbruch mitten in den Korrekturen ist kein [OK]")
+
+    def test_das_fenster_nutzt_die_firmware_referenz_wie_der_einbau(self):
+        """Die Warnzeile des Fensters nennt eine Firmware-Referenz aus der Einstellungsdatei als wirksam - also muss der Lauf
+        im Fenster sie auch lesen (bis 22.11.2026 tat es nur der Einbau waehrend des Erstellens)."""
+        for name, schleife in (("_integration_backport", "ps5_backport.kandidaten(ordner):"),
+                               ("_backport_worker", "enumerate(dateien, 1)")):
+            text = _methode(name)
+            i = text.find("self._backport_ziel_deckung_melden(ordner, firmware)")
+            with self.subTest(name=name):
+                self.assertGreater(i, 0)
+                self.assertLess(i, text.find(schleife), "vor dem Herabsetzen")
+
     def test_zusaetze_laufen_immer_ohne_haken(self):
         """Seit 21.11.2026 keine Haken mehr im Fenster: Stubs, Profil und Landeplatz sind immer an und lesen keine
         gespeicherte Einstellung (ein frueher abgewaehlter Haken wuerde sich sonst unsichtbar halten)."""
@@ -246,6 +316,31 @@ class AnwendenTests(unittest.TestCase):
             bk.korrekturen_anwenden = alt
         self.assertEqual(neutral, set())
         self.assertTrue(any(z.startswith("backport.korr_fehler") and "unerwartet" in z for z in gui.protokoll))
+
+    def test_fehler_der_zusaetze_landen_in_der_liste_des_aufrufers(self):
+        """Damit die Zusammenfassung sie mitzaehlt: die Ausnahme selbst und jede Datei, die sich nicht schreiben liess."""
+        from unittest import mock
+        gui = _gui()
+        fehler: list = []
+        with mock.patch.object(bk, "korrekturen_anwenden", side_effect=RuntimeError("unerwartet")):
+            self._anwenden(gui, fehler=fehler)
+        self.assertEqual(fehler, [("-", "unerwartet")])
+        bericht = bk.Bericht()
+        bericht.fehler = [("eboot.bin", "Platte voll")]
+        fehler = []
+        with mock.patch.object(bk, "korrekturen_anwenden", return_value=bericht):
+            self._anwenden(gui, fehler=fehler)
+        self.assertEqual(fehler, [("eboot.bin", "Platte voll")])
+        # Ohne Liste wie bisher: nichts wirft
+        with mock.patch.object(bk, "korrekturen_anwenden", return_value=bericht):
+            self.assertEqual(self._anwenden(gui), set())
+        # Der Abbruch kommt aus dem Bericht
+        for abgebrochen in (False, True):
+            bericht.abgebrochen = abgebrochen
+            zustand: dict = {}
+            with mock.patch.object(bk, "korrekturen_anwenden", return_value=bericht):
+                self._anwenden(gui, zustand=zustand)
+            self.assertEqual({"abgebrochen": abgebrochen}, zustand)
 
     def test_profil_wird_gemeldet(self):
         d = {"format": 1, "titel_id": "PPSA00001", "name": "Test", "fassung": "1", "firmware": [4], "dateien": [{

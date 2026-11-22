@@ -105,6 +105,41 @@ class ZeilenTests(unittest.TestCase):
         z = qb.zeilen(self._laufzeit_fakten(laufzeit="forge_release", laufzeit_aktion="keep"), _t, forge_ergaenzt_ampr=True)[0]
         self.assertEqual((qb.STUFE_OK, "bericht.ampr_da|laufzeit=Dump Forge"), (z.stufe, z.text))
 
+    def test_wandelt_dump_forge_ein_paket_direkt_in_ein_abbild_steht_der_austausch_auch_da(self) -> None:
+        """``convert x.pkg --to ffpkg|exfat``: Forge ersetzt ampr-emu-ng auch dort ("any other job puts the release runtime in its
+        place", Forge ``lz4.rs``). Vorher stand "[OK] vorhanden (ampr-emu-ng)", und im Abbild steckte danach ampr_emu."""
+        liste = qb.zeilen(self._laufzeit_fakten(), _t, forge_wandelt=True)
+        z = liste[0]
+        self.assertEqual((qb.STUFE_HINWEIS, "bericht.ampr_ersetzt_umwandeln|alt=ampr-emu-ng 0.5.0,neu=ampr_emu 0.4.2.1"),
+                         (z.stufe, z.text))
+        self.assertEqual([], qb.fehlendes(liste), "ein Hinweis, keine Rueckfrage")
+        # Auch ein gepacktes Spiel: Der direkte Weg reicht kein Entpacken mit, Forge wandelt die Quelle, wie sie ist (inspect.rs:
+        # LZ4-Packs -> action(.., packs), zstd-Packs -> zstd_action mit Forges ampr-emu-ng). Korrektur-Pruefer 22.11.2026.
+        lz4 = qb.zeilen(self._laufzeit_fakten(gepackt="lz4", laufzeit="other", laufzeit_version="0.3.6.6"), _t, forge_wandelt=True)[0]
+        self.assertEqual((qb.STUFE_HINWEIS, "bericht.ampr_ersetzt_umwandeln|alt=AMPR EMU 0.3.6.6,neu=ampr_emu 0.4.2.1"),
+                         (lz4.stufe, lz4.text))
+        zstd = qb.zeilen(self._laufzeit_fakten(gepackt="zstd", laufzeit_version="0.4.1"), _t, forge_wandelt=True)[0]
+        self.assertEqual((qb.STUFE_HINWEIS, "bericht.ampr_ersetzt_umwandeln|alt=ampr-emu-ng 0.4.1,neu=ampr-emu-ng"),
+                         (zstd.stufe, zstd.text))
+        # Gegenproben: Forges eigene Laufzeit bleibt; ohne Angabe von Forge wird nichts geraten.
+        for kw in ({"laufzeit": "forge_release", "laufzeit_aktion": "keep"}, {"laufzeit_aktion": ""}, {"gepackt": "zstd", "laufzeit_aktion": "keep"}):
+            with self.subTest(kw=kw):
+                self.assertEqual(qb.STUFE_OK, qb.zeilen(self._laufzeit_fakten(**kw), _t, forge_wandelt=True)[0].stufe)
+        for sprache in ("de", "en", "es", "it", "fr"):
+            with self.subTest(sprache=sprache):
+                text = STRINGS["bericht.ampr_ersetzt_umwandeln"][sprache].format(alt="ampr-emu-ng 0.5.0", neu="ampr_emu 0.4.2.1")
+                self.assertIn("ampr-emu-ng 0.5.0", text)
+                self.assertIn("ampr_emu 0.4.2.1", text)
+
+    def test_der_direkte_weg_im_paketfenster_meldet_den_austausch(self) -> None:
+        """``_abbild_direkt_moeglich`` ruft den Bericht mit ``forge_wandelt`` auf - sonst sieht der Anwender die Zeile nie."""
+        from ps5_validator.ui import ps5_pkg_fenster as pf
+        import inspect as _inspect
+        quelle = _inspect.getsource(pf.Ps5PkgFenster._abbild_direkt_moeglich)
+        self.assertEqual(1, quelle.count("self._quelle_pruefen(info, paket=False, forge_wandelt=True)"))
+        quelle = _inspect.getsource(pf.Ps5PkgFenster._quelle_pruefen)
+        self.assertEqual(1, quelle.count("forge_wandelt=forge_wandelt)"))
+
     def test_die_namen_der_laufzeiten_mit_fassung(self) -> None:
         for laufzeit, version, soll in (("zstd", "0.5.0", "ampr-emu-ng 0.5.0"), ("other", "0.3.6.6", "AMPR EMU 0.3.6.6"),
                                         ("other", "", "AMPR EMU"), ("forge_trace", "", "ampr_emu (Trace)"), ("", "", "AMPR EMU")):
@@ -161,9 +196,17 @@ class ZeilenTests(unittest.TestCase):
 
     def test_backport_an_gemessenen_spielen(self) -> None:
         """Terminator 2D: SDK 10.00, Firmware 11.20; Arcade Game Zone mit BACKPORT: ``backport_firmware`` 7.00 (17.11.2026)."""
-        terminator = dict(sdk="10.00", firmware="11.20")
+        terminator = dict(sdk="10.00", firmware="11.20", eboot_sdk="10.00")
+        nur_param = dict(sdk="10.00", firmware="11.20")
         faelle = (
             (terminator, "7.99", qb.STUFE_FEHLT, "bericht.backport_fehlt|konsole=7.xx,spiel=11.20"),
+            # Das SDK der Programme liess sich nicht lesen: Die Zeile sagt, dass nur die param.json urteilt.
+            (nur_param, "7.99", qb.STUFE_FEHLT, "bericht.backport_fehlt_param|konsole=7.xx,spiel=11.20"),
+            (dict(nur_param, backport_firmware="10.00"), "7.99", qb.STUFE_FEHLT,
+             "bericht.backport_fehlt|konsole=7.xx,spiel=11.20"),
+            # Nur die Module gelesen (eboot.bin unlesbar): das ist keine Messung der Programme - Urteil nach der param.json.
+            (dict(nur_param, module_sdk="7.00"), "9.99", qb.STUFE_FEHLT,
+             "bericht.backport_fehlt_param|konsole=9.xx,spiel=11.20"),
             (terminator, "12.00", qb.STUFE_OK, "bericht.backport_nicht_noetig|konsole=12.00,spiel=11.20"),
             (terminator, "", qb.STUFE_HINWEIS, "bericht.backport_konsole_unbekannt|spiel=11.20"),
             (dict(sdk="7.00", firmware="9.60", backport_vorhanden=True), "7.99", qb.STUFE_OK, "bericht.backport_da"),

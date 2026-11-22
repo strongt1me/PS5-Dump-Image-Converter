@@ -8,20 +8,25 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ## v2.0.1 – in Arbeit
 
-- **Neu:** Das BACKPORT-Fenster hat das Feld „Firmware-Referenz (nur Prüfung)“: Du wählst einen entpackten Firmware-Ordner, und das Programm meldet, welche Funktionen dort fehlen – es kopiert nichts.
-- **Neu:** Die Korrekturen für fehlende Funktionen decken vier weitere Fälle ab; ein neuer Haken bietet eine zweite Korrekturart (Versuch, aus; an FW 12.00 gemessen, noch ohne echten Backport erprobt).
+- **Neu:** Die Korrekturen für fehlende Funktionen decken vier weitere Fälle ab und lassen eine Funktion, die die Firmware doch hat, unangetastet (an FW 12.00 gemessen, noch ohne echten Backport erprobt); Titelprofile wirken weiter wie an der Konsole gemessen.
 - **Geändert:** Die Rückfrage „Backport nötig“ erkennt ein schon herabgesetztes Spiel an seinen Programmen statt an der param.json – bei Spielordnern, .ffpkg, .exfat, .ffpfs, .ffpfsc und .pkg, ohne zu entpacken.
 - **Neu:** Das KLOG-Fenster hebt die Kernel-Meldung „Call to unpatched function“ farbig hervor und weist darauf hin, dass dem Spiel meist eine Ersatzbibliothek fehlt.
 - **Neu:** Vor dem Bau eines Pakets sagt das Programm jetzt, wenn Dump Forge die AMPR-Laufzeit des Spiels (auch ampr-emu-ng) durch seine eigene ersetzt, und nennt den Weg, sie zu behalten: ein Abbild aus den Aufgaben 1 bis 6, das ShadowMount+ startet.
 - **Geändert:** Das Feld TEMP-ORDNER erscheint bei AMPR EMU mit LZ4-Asset-Pack nur noch, wenn schon vor dem Start feststeht, dass der Lauf einen Zwischenordner braucht (Packprofil des Anwenders neben dem Spielordner, Titelprofil mit mehreren Gruppen) – nicht mehr bei jedem Spiel.
-- **Geändert:** Im BACKPORT-Fenster gibst du nur noch die Firmware an; Sicherung, Ersatzbibliotheken und der Ausgleich fehlender Funktionen laufen immer von selbst, die Haken und Felder entfallen. Das Fenster ist aufgeräumt: Spielname groß, Title-ID und Version als kleine Pillen, die automatischen Schritte als grüne Haken, die Hinweise auf je einen Satz.
+- **Geändert:** Im BACKPORT-Fenster gibst du nur noch die Firmware an; Sicherung, Ersatzbibliotheken und der Ausgleich fehlender Funktionen laufen immer von selbst, die Haken und Felder entfallen.
+- **Geändert:** Das BACKPORT-Fenster ist aufgeräumt: Spielname groß, Title-ID und Version als kleine Pillen, die automatischen Schritte als grüne Haken, die Hinweise auf je einen Satz.
+- **Geändert:** Ein unbrauchbarer eigener Zielwert aus der Einstellungsdatei sperrt BACKPORT nicht mehr – das Protokoll nennt ihn, und es gilt der Wert der Firmware-Tabelle; eine Firmware-Referenz aus der Einstellungsdatei gilt jetzt auch im BACKPORT-Fenster.
 - **Geändert:** Handbuch, FAQ, Anleitungen und README wurden in fünf Sprachen gegen das Programm geprüft und berichtigt; „Aufgabe 7 – PKG / FPKG“ steht jetzt vor „Aufgabe 8 – Validator“ (Kapitel 12 und 13).
 - **Aktualisiert:** AMPR EMU NG 0.5.0, die jetzt die Vorgabe für zstd-Asset-Packs ist, und Kraken Mount 0.3.1; die Warnung zum Indexspeicher kennt NG 0.5.0.
 - **Behoben:** Beim Umwandeln eines schon herabgesetzten Abbilds fragte das Programm manchmal trotzdem nach einem Backport für Firmware 12.
 - **Behoben:** Das Handbuch sagte, Dump Forge übernehme `fakelib` unverändert ins Paket; bei Spielen mit AMPR EMU setzt es dort seine eigene Laufzeit ein, und die Protokollzeile zum Paketbau sagt es jetzt auch.
 - **Behoben:** Mehrere Hinweise stimmten nicht mehr: die Kompressionsstufe (1 statt 3 = am schnellsten), die config.ini-Warnung zu ShadowMount+, was einem Backup fehlt (nur die Content-ID) und „zstd an der Konsole noch nicht gemessen“.
 - **Behoben:** Die mitgelieferten Packprofile für ASTRO BOT und EA Sports UFC 6 griffen bei echten PS5-Dumps nie, weil das Programm die Title-ID nur in der param.sfo suchte, die PS5-Dumps nicht haben; jetzt liest es auch die param.json.
-- **Behoben:** Im BACKPORT-Fenster wurde bei Anzeigegrößen ab 125 % Text in der Dateitabelle abgeschnitten (Spalte „Art“, bei 200 % auch Dateinamen und Status); die Spalten wachsen jetzt mit der Anzeigegröße mit, die SDK-Zahl steht mittig, und der Warnsatz bricht nach der Fensterbreite um statt nach einer festen Zahl.
+- **Behoben:** Im BACKPORT-Fenster wurde bei Anzeigegrößen ab 125 % Text in der Dateitabelle abgeschnitten (Spalte „Art“, bei 200 % auch Dateinamen und Status); die Spalten wachsen jetzt mit, die SDK-Zahl steht mittig, und der Warnsatz bricht nach der Fensterbreite um.
+- **Behoben:** BACKPORT zählt gescheiterte Korrekturen in der Fehlerzahl mit, und wer das Fenster während der Korrekturen schließt, bekommt die Abbruchmeldung statt „Fertig“.
+- **Behoben:** Ein Spielordner, bei dem ein BACKPORT nach der eboot.bin abgebrochen wurde, galt als „schon herabgesetzt“; jetzt zählen auch die Module in sce_module.
+- **Behoben:** Wandelt Dump Forge ein .pkg direkt in ein Abbild, nennt der Bericht jetzt den Austausch der AMPR-Laufzeit; ein „BACKPORT nötig“, das nur auf der param.json beruht, sagt das jetzt dazu.
+- **Behoben:** Gezielt beschädigte Pakete und Abbilder können die Prüfung der Quelle nicht mehr minutenlang aufhalten oder mit einem Fehler abbrechen.
 
 ---
 
