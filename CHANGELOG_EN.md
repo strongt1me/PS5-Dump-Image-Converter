@@ -18,6 +18,7 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 - **Changed:** An unusable custom target value in the settings file no longer blocks BACKPORT – the log names it, and the value from the firmware table applies; a firmware reference from the settings file now also applies in the BACKPORT window.
 - **Changed:** The manual, FAQ, guides and README were checked against the program in five languages and corrected; “Task 7 – PKG / FPKG” now comes before “Task 8 – Validator” (chapters 12 and 13).
 - **Updated:** AMPR EMU NG 0.5.0, now the default for zstd asset packs, and Kraken Mount 0.3.1; the index-memory warning knows NG 0.5.0.
+- **Updated:** Dump Forge 0.5.7 (console ELF and command line), elfldr 0.28, WebKit Autoloader 0.8.3 (0.8.2 is included as a choice too) and YT-Blocker 1.4r6.
 - **Fixed:** When converting an already lowered image, the program sometimes still asked for a backport to firmware 12.
 - **Fixed:** The manual said Dump Forge takes `fakelib` over into a package unchanged; for games with AMPR EMU it puts its own runtime there, and the log line for package builds now says so too.
 - **Fixed:** Several hints were out of date: the compression level (1 = fastest), the ShadowMount+ config.ini warning, what a backup is missing (only the content ID) and “zstd not yet measured on the console”.
@@ -27,6 +28,7 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 - **Fixed:** A game folder whose BACKPORT was cancelled after the eboot.bin counted as “already lowered”; the modules in sce_module now count too.
 - **Fixed:** When Dump Forge converts a .pkg straight into an image, the report now names the exchange of the AMPR runtime; a “BACKPORT needed” that rests on the param.json alone now says so.
 - **Fixed:** Deliberately damaged packages and images can no longer hold up the source check for minutes or make it end with an error.
+- **Fixed:** In the English, Spanish, French and Italian manuals and in the FAQ, examples showed German or English placeholders such as `<PS5-Adresse>`; they are now in the language of the document.
 
 ---
 
