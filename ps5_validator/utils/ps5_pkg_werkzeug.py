@@ -22,8 +22,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import struct
 import threading
 import time
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -463,6 +465,62 @@ def lesen(werkzeug: str, paket: str, arbeitsordner: str | None = None, *, passco
 def ordner_ist_spiel(ordner: str) -> bool:
     """Liegt in ``ordner`` ein Spiel (``sce_sys/param.json``)?"""
     return os.path.isfile(os.path.join(ordner, "sce_sys", "param.json"))
+
+
+#: Die Bilder in ``sce_sys``, die ein Paket als Eintraege traegt (die ``.dds`` daneben sind Rohdaten, kein PNG).
+SCE_SYS_BILDER = ("icon0.png", "pic0.png", "pic1.png", "pic2.png")
+_PNG_KOPF = b"\x89PNG\r\n\x1a\n"
+
+#: Arten eines beschaedigten PNG (:func:`png_fehler`) - die Oberflaeche macht daraus Text.
+PNG_KOPF_FEHLT, PNG_KETTE_DEFEKT, PNG_ENDE_DEFEKT = "kopf", "kette", "ende"
+
+
+def png_fehler(daten: bytes) -> str:
+    """Prueft ein PNG wie ein Leser: Kennung, Kette der Datenbloecke mit CRC-32, ``IEND``, nichts dahinter.
+
+    Returns:
+        ``""`` fuer ein ganzes PNG, sonst :data:`PNG_KOPF_FEHLT` (keine PNG-Kennung - so sah ein beschaedigtes ``pic2.png`` in einem
+        echten Dump aus: 532 Zufallsbytes), :data:`PNG_KETTE_DEFEKT` (ein Datenblock ueber das Dateiende hinaus oder mit falscher
+        Pruefsumme, also abgeschnitten oder verfaelscht) oder :data:`PNG_ENDE_DEFEKT` (``IEND`` fehlt, oder es folgen Bytes danach).
+    """
+    if daten[:8] != _PNG_KOPF:
+        return PNG_KOPF_FEHLT
+    pos = 8
+    while pos + 12 <= len(daten):
+        laenge, = struct.unpack(">I", daten[pos:pos + 4])
+        art = daten[pos + 4:pos + 8]
+        if pos + 12 + laenge > len(daten):
+            return PNG_KETTE_DEFEKT
+        crc, = struct.unpack(">I", daten[pos + 8 + laenge:pos + 12 + laenge])
+        if zlib.crc32(daten[pos + 4:pos + 8 + laenge]) & 0xFFFFFFFF != crc:
+            return PNG_KETTE_DEFEKT
+        pos += 12 + laenge
+        if art == b"IEND":
+            return "" if pos == len(daten) else PNG_ENDE_DEFEKT
+    return PNG_ENDE_DEFEKT                       # die Kette endet ohne IEND (an einer Blockgrenze abgeschnitten)
+
+
+def bilder_befunde(ordner: str) -> "list[tuple[str, int, str]]":
+    """Die beschaedigten PNG in ``<ordner>/sce_sys`` (:data:`SCE_SYS_BILDER`) als ``(Name, Groesse, Art)``; nur lesend.
+
+    Dump Forge packt so eine Datei unveraendert ins Paket und sagt nichts dazu (gemessen 22.11.2026 mit Forge 0.5.7: 532 Zufallsbytes
+    als ``pic2.png``, mit und ohne ``pic2.dds`` daneben, ebenso ein abgeschnittenes PNG). Nicht lesbare Dateien werden uebergangen:
+    Das Lesen soll den Bau nie aufhalten.
+    """
+    befunde: list[tuple[str, int, str]] = []
+    for name in SCE_SYS_BILDER:
+        pfad = os.path.join(ordner, "sce_sys", name)
+        try:
+            if not os.path.isfile(pfad):
+                continue
+            with open(pfad, "rb") as datei:
+                daten = datei.read()
+        except OSError:
+            continue
+        art = png_fehler(daten)
+        if art:
+            befunde.append((name, len(daten), art))
+    return befunde
 
 
 #: Nach so vielen gezaehlten Dateien meldet ``ordner_groesse`` den Zwischenstand (``fortschritt``).

@@ -282,6 +282,40 @@ class ForgeFensterTests(_ForgeBasis):
         self.assertEqual(ordner, self.aufrufe[0]["quelle"])
         self.assertEqual(["Gamma Spiel [PPSA00003].pkg"], os.listdir(self.ziel))
 
+    def test_ein_beschaedigtes_bild_im_spielordner_steht_als_hinweis_im_protokoll_und_der_bau_laeuft_weiter(self) -> None:
+        """Dump Forge packt ein kaputtes ``pic2.png`` still ein (22.11.2026): Das Protokoll nennt es vorher, gebaut wird trotzdem."""
+        from test_png_pruefung import png_bytes
+        ordner = self._spielordner()
+        Path(ordner, "sce_sys", "icon0.png").write_bytes(png_bytes())
+        Path(ordner, "sce_sys", "pic2.png").write_bytes(bytes(range(256)) * 2 + bytes(20))
+        self._laden(ordner)
+        self.f._format_waehlen("pkg")
+        with self._attrappe():
+            self._starten_und_warten()
+        log = self.f.protokoll.get("1.0", "end")
+        self.assertIn(_de("ps5pkg.bild_kaputt", datei="sce_sys/pic2.png", groesse="532 B",
+                          grund=_de("ps5pkg.bild_grund_kopf")), log)
+        self.assertNotIn("sce_sys/icon0.png", log, "ein ganzes Bild wird nicht gemeldet")
+        self.assertEqual(1, len(self.aufrufe), "der Bau laeuft trotzdem")
+        self.assertEqual(["Gamma Spiel [PPSA00003].pkg"], os.listdir(self.ziel))
+        self.assertEqual(b"\x89PNG"[:1], Path(ordner, "sce_sys", "icon0.png").read_bytes()[:1])
+        self.assertEqual(532, Path(ordner, "sce_sys", "pic2.png").stat().st_size, "der Spielordner bleibt unveraendert")
+
+    def test_ganze_bilder_und_abbilder_als_quelle_machen_keine_bildzeile(self) -> None:
+        from test_png_pruefung import png_bytes
+        ordner = self._spielordner()
+        Path(ordner, "sce_sys", "pic2.png").write_bytes(png_bytes())
+        self._laden(ordner)
+        self.f._format_waehlen("pkg")
+        with self._attrappe():
+            self._starten_und_warten()
+        self.assertNotIn("sce_sys/pic2.png", self.f.protokoll.get("1.0", "end"))
+        self._laden(self._abbild())
+        with mock.patch.object(wz, "bilder_befunde", side_effect=AssertionError("ein Abbild wird nicht gelesen")) as m, \
+                self._attrappe():
+            self._starten_und_warten()
+        m.assert_not_called()
+
     def test_ohne_dump_forge_wird_nicht_gebaut_und_der_grund_steht_da(self) -> None:
         """Es gibt keinen zweiten Paketersteller mehr: Fehlt die Befehlszeile, meldet die Seite es und baut nichts."""
         ordner = self._spielordner()

@@ -2842,6 +2842,22 @@ class Ps5PkgFenster:
         """Die Stufe aus Forges Fortschrittsstrom in der Sprache des Programms (unbekannte Stufen bleiben, wie sie sind)."""
         return self.t("ps5pkg.forge_stage_" + stufe) if stufe in FORGE_STUFEN else stufe
 
+    def _bilder_melden(self, info: "wz.PaketInfo") -> None:
+        """Arbeitsfaden, vor dem Bau aus einem Spielordner: eine Zeile je beschaedigtem PNG in ``sce_sys`` (``wz.bilder_befunde``).
+
+        Dump Forge packt so ein Bild unveraendert ins Paket und warnt nicht (gemessen 22.11.2026, Forge 0.5.7); im Dump
+        ``PPSA02195-Trackmania`` liegt eine ``pic2.png`` aus 532 Zufallsbytes. Eine Warnung, kein Abbruch: Ob die Konsole ein solches
+        Paket startet, ist nicht geprueft. Das Programm aendert den Spielordner nicht (kein Ersatz aus der ``.dds``).
+        """
+        try:
+            befunde = wz.bilder_befunde(info.pfad)
+        except Exception:  # noqa: BLE001 - die Pruefung darf den Bau nie aufhalten
+            logger.debug("PNG-Pruefung der sce_sys-Bilder", exc_info=True)
+            return
+        for name, groesse, art in befunde:
+            self._melden(self.t("ps5pkg.bild_kaputt", datei="sce_sys/" + name, groesse="%d B" % groesse,
+                                grund=self.t("ps5pkg.bild_grund_" + art)))
+
     def _lauf_bauen_forge(self, info: "wz.PaketInfo", ziel: str, bau: dict) -> dict:
         """Arbeitsfaden: ``convert --to pkg`` in den Arbeitsordner, danach das fertige Paket an seinen Platz im Ziel."""
         def fortschritt(prozent: int, stufe: str) -> None:
@@ -2857,6 +2873,8 @@ class Ps5PkgFenster:
             name = str(bau.get("name") or "") or self._forge_dateiname(info)
             kraken = str(self._einstellung(opt.FORGE_KRAKEN, opt.STANDARD[opt.FORGE_KRAKEN]))
             if abbild == "pkg":
+                if info.ist_ordner:
+                    self._bilder_melden(info)
                 erg = forge.bauen(
                     self._werkzeug_forge(), info.pfad, os.path.join(temp, name),
                     kraken=kraken if kraken in forge.KRAKEN_STUFEN else "fast",
