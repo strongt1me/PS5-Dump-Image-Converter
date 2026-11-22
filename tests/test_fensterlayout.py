@@ -371,6 +371,22 @@ class FensterLayoutTests(unittest.TestCase):
             _WURZEL.tk.call("tk", "scaling", skalierung_vorher)
             self.app._current_language = sprache_vorher
 
+    def test_backport_pfad_im_kopf_bricht_nach_der_fensterbreite_um(self):
+        """Der Pfad im Untertitel folgt der Fensterbreite statt der festen 640 px des gemeinsamen Kopfs (22.11.2026)."""
+        fenster = self._backport_fenster_mit({
+            "title": "Testspiel", "title_id": "PPSA00001", "version": "01.000.000",
+            "required_firmware": "11.20.00.00"})
+        try:
+            pfad = [w for w in _sammle(fenster, "Label") if "ps5conv_test_backport_" in str(w.cget("text"))]
+            self.assertEqual(len(pfad), 1, "Der Pfad fehlt oder steht doppelt im Kopf")
+            fenster.update_idletasks()
+            fenster.update()
+            self.assertEqual(int(str(pfad[0].cget("wraplength"))), max(120, pfad[0].winfo_width() - 8))
+            self.assertGreater(int(str(pfad[0].cget("wraplength"))), 640,
+                               "Der Pfad bricht wieder bei den festen 640 px um")
+        finally:
+            self._schliesse(fenster)
+
     def test_downloads_knoepfe_voll_sichtbar(self):
         fenster = self._oeffne(self.app._show_downloads_manager)
         try:

@@ -64614,9 +64614,14 @@ class PS5ConverterGUI:
         win = self._build_modern_toplevel(
             self._t("backport.window_title", name=os.path.basename(ordner)),
             980, 640, min_width=840, min_height=560)
-        self._build_modern_header(
+        kopfzeile = self._build_modern_header(
             win, self._t("titlebar.backport"),
             self._t("backport.subtitle", path=ordner))
+        # Der Pfad im Untertitel bricht nach der Fensterbreite um, nicht nach den festen 640 px des gemeinsamen Kopfs:
+        # Ein Pfad hat keine Leerzeichen als Umbruchstellen, Tk schnitt ihn bei 640 px mitten im Wort ab.
+        untertitel = kopfzeile.winfo_children()[-1]
+        untertitel.bind("<Configure>",
+                        lambda e, w=untertitel: w.configure(wraplength=max(120, e.width - 8)))
 
         # ---- Kopf: das Spiel als Karte, darunter die Firmware-Wahl und was von selbst geschieht ----
         # Entwurf A vom 21.11.2026 (Nutzerwunsch: "schoener, man sieht mehr Text als sonst was"): Spielname gross,
