@@ -20,6 +20,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Aktualisiert:** AMPR EMU NG 0.5.0, die jetzt die Vorgabe für zstd-Asset-Packs ist, und Kraken Mount 0.3.1; die Warnung zum Indexspeicher kennt NG 0.5.0.
 - **Aktualisiert:** Dump Forge 0.5.7 (Konsolen-ELF und Befehlszeile), elfldr 0.28, WebKit Autoloader 0.8.3 (0.8.2 liegt zur Auswahl mit bei) und YT-Blocker 1.4r6.
 - **Aktualisiert:** garlic-savemgr 2.0, PS5Upload 12.6.22 und PS5 Cooling & System Center – Pro 1.91.0.
+- **Entfernt:** Die ältere OnionHEN 0.0.13 liegt nicht mehr bei; mitgeliefert wird nur noch OnionHEN 0.9.0.
 - **Behoben:** Beim Umwandeln eines schon herabgesetzten Abbilds fragte das Programm manchmal trotzdem nach einem Backport für Firmware 12.
 - **Behoben:** Das Handbuch sagte, Dump Forge übernehme `fakelib` unverändert ins Paket; bei Spielen mit AMPR EMU setzt es dort seine eigene Laufzeit ein, und die Protokollzeile zum Paketbau sagt es jetzt auch.
 - **Behoben:** Mehrere Hinweise stimmten nicht mehr: die Kompressionsstufe (1 statt 3 = am schnellsten), die config.ini-Warnung zu ShadowMount+, was einem Backup fehlt (nur die Content-ID) und „zstd an der Konsole noch nicht gemessen“.
