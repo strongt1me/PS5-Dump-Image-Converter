@@ -26,7 +26,7 @@ if str(PROJEKT) not in sys.path:
 
 from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI, PS5_FTP_PORTS
 
-HOST = "192.168.1.94"
+HOST = "192.168.1.77"
 
 
 class _Gui:

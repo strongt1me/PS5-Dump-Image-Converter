@@ -27917,7 +27917,7 @@ class PS5ConverterGUI:
         Wert da, und der schlägt den zentralen: Wer danach in den
         Einstellungen eine andere Adresse einträgt, sieht sie in KLOG, den
         FTP-Fenstern und im AMPR-Picker nie wieder. Gemessen: nach einem
-        einzigen Verbinden zeigte KLOG weiterhin 192.168.1.94:3232, obwohl
+        einzigen Verbinden zeigte KLOG weiterhin 192.168.1.77:3232, obwohl
         in den Einstellungen 192.168.1.50:3333 stand.
 
         Stimmt der Wert mit dem zentralen überein, wird der eigene deshalb
@@ -63679,7 +63679,7 @@ class PS5ConverterGUI:
             """Merkt die Adresse - erst wenn sie fertig getippt ist.
 
             Vorher hing das an ``ip_var.trace_add("write", ...)``, also an
-            jedem Tastendruck: Waehrend "192.168.1.94" entstand, wanderten elf
+            jedem Tastendruck: Waehrend "192.168.1.77" entstand, wanderten elf
             Zwischenstaende ("1", "19", "192", "192.", ...) in die **zentrale**
             Einstellung ``ps5_ip``, die alle anderen Fenster lesen. Wer
             mittendrin abbrach oder das Fenster schloss, hinterliess dort
@@ -64408,7 +64408,7 @@ class PS5ConverterGUI:
 
             Dieselbe Falle wie im Autoloader-Fenster, dort am 05.09.2026
             behoben und hier stehen geblieben: ``trace_add("write", ...)``
-            haengt an **jedem Tastendruck**. Waehrend "192.168.1.94" entsteht,
+            haengt an **jedem Tastendruck**. Waehrend "192.168.1.77" entsteht,
             wandern elf Zwischenstaende ("1", "19", "192", "192.", ...) in die
             **zentrale** Einstellung ``ps5_ip``, die alle anderen Fenster
             lesen. Wer mittendrin abbricht oder das Fenster schliesst, laesst
@@ -68335,7 +68335,7 @@ class PS5ConverterGUI:
         # Frueher stand hier eine fest verdrahtete Adresse. Jetzt kommt sie aus
         # den Einstellungen; nur wenn dort nichts steht, bleibt der alte Wert
         # als Beispiel stehen.
-        ip_var = tk.StringVar(value=self._ps5_ip("192.168.1.94") or "192.168.1.94")
+        ip_var = tk.StringVar(value=self._ps5_ip("192.168.1.77") or "192.168.1.77")
         ip_entry = self._pw.Entry(ip_row, textvariable=ip_var, width=18,
                             bg=c["bg_main"], fg=c["fg_primary"],
                             insertbackground=c["fg_primary"],
@@ -68375,7 +68375,7 @@ class PS5ConverterGUI:
         # hat die Übernahme etwas gefunden, werden sie hier nachgezogen.
         _uebernommen = self._jsloader_ini_uebernehmen()
         if _uebernommen:
-            ip_var.set(self._ps5_ip("192.168.1.94") or ip_var.get())
+            ip_var.set(self._ps5_ip("192.168.1.77") or ip_var.get())
             js_port_var.set(self._ps5_wert_oder_zentral("jsloader_js_port", 50000))
 
         def _save_ip_ini(*_e):

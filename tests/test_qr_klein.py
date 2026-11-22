@@ -21,11 +21,13 @@ if str(PROJEKT) not in sys.path:
 from ps5_validator.utils import konsole_dienste, qr_klein   # noqa: E402
 from ps5_validator.utils.i18n import STRINGS               # noqa: E402
 
-#: Text -> (Kantenlaenge, Pruefsumme der Module) - aus dem Vergleich mit dem C-Original.
+#: Text -> (Kantenlaenge, Pruefsumme der Module) - aus dem Vergleich mit dem C-Original. Die zwei Zeilen mit 192.168.1.77 tragen seit
+#: 22.11.2026 eine neutrale Beispieladresse (gleich lang wie die verglichene, also gleiche Kante); ihre Pruefsumme ist die der eigenen
+#: Erzeugung.
 BEKANNT = {
     "a": (21, "8ac8f40772e90e7a"),
-    "http://192.168.1.94:5905/": (25, "b09965c6b689fbc1"),
-    "http://192.168.1.94:7070/": (25, "3b22f984f4be586d"),
+    "http://192.168.1.77:5905/": (25, "24b60c8d992d42f1"),
+    "http://192.168.1.77:7070/": (25, "1ccfbef37a1d7b6d"),
     "http://10.0.0.5:12800/": (25, "1812d4d914391236"),
     "x" * 14: (21, "759a539d1bf76152"),
     "x" * 15: (25, "57ca9909926a1866"),
@@ -54,7 +56,7 @@ class CodeTests(unittest.TestCase):
                 self.assertEqual(_pruefsumme(module), _pruefsumme(qr_klein.erzeuge(text)))
 
     def test_die_drei_sucher_und_der_dunkle_baustein_stehen(self) -> None:
-        m = qr_klein.erzeuge("http://192.168.1.94:5905/")
+        m = qr_klein.erzeuge("http://192.168.1.77:5905/")
         n = len(m)
         for r0, c0 in ((0, 0), (0, n - 7), (n - 7, 0)):
             self.assertTrue(all(m[r0][c0 + k] for k in range(7)))

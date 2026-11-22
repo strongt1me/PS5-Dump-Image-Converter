@@ -2,7 +2,7 @@
 """Ein QR-Code fuer einen kurzen Text - die Adresse einer Weboberflaeche, damit ein Handy sie abfotografieren kann.
 
 Byte-Modus, Fehlerkorrektur M, Versionen 1 bis 6 (bis 106 Byte), Maske 0 - das genuegt fuer eine Adresse wie
-``http://192.168.1.94:5905/``. Keine Bibliothek noetig.
+``http://192.168.1.77:5905/``. Keine Bibliothek noetig.
 
 Herkunft: eine Uebertragung nach Python von ``webhb/qr.c`` aus **webhb 0.4.1** (GPL-3.0-oder-neuer; Copyright (C) 2025
 EchoStretch, (C) 2026 slopmaster33; Quelle: https://github.com/EchoStretch/ps5-app-dumper bzw. das webhb-Archiv).

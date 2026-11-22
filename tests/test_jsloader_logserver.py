@@ -36,7 +36,7 @@ class HerkunftTests(unittest.TestCase):
     """``_logserver_absender_erlaubt`` - die Wache selbst."""
 
     def test_das_eigene_netz_darf(self):
-        for adresse in ("192.168.1.94", "192.168.0.5", "10.0.0.7",
+        for adresse in ("192.168.1.77", "192.168.0.5", "10.0.0.7",
                         "172.16.3.1", "127.0.0.1", "169.254.1.1"):
             with self.subTest(adresse=adresse):
                 self.assertTrue(APP._logserver_absender_erlaubt(adresse))

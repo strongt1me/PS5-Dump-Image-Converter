@@ -71,9 +71,9 @@ class VorrangTests(unittest.TestCase):
     """Der eigene Wert eines Fensters schlaegt den zentralen."""
 
     def test_eigener_wert_gewinnt(self):
-        obj = _app({"klog_ip": "10.1.1.1", "ps5_ip": "192.168.1.94"})
+        obj = _app({"klog_ip": "10.1.1.1", "ps5_ip": "192.168.1.77"})
         self.assertEqual(
-            APP.PS5ConverterGUI._ps5_wert_oder_zentral(obj, "klog_ip", "192.168.1.94"),
+            APP.PS5ConverterGUI._ps5_wert_oder_zentral(obj, "klog_ip", "192.168.1.77"),
             "10.1.1.1")
 
     def test_zentraler_wert_wenn_eigener_leer(self):
@@ -81,8 +81,8 @@ class VorrangTests(unittest.TestCase):
             with self.subTest(leer=leer):
                 obj = _app({"klog_ip": leer})
                 self.assertEqual(
-                    APP.PS5ConverterGUI._ps5_wert_oder_zentral(obj, "klog_ip", "192.168.1.94"),
-                    "192.168.1.94")
+                    APP.PS5ConverterGUI._ps5_wert_oder_zentral(obj, "klog_ip", "192.168.1.77"),
+                    "192.168.1.77")
 
     def test_zentraler_port_wird_als_text_geliefert(self):
         obj = _app({})
@@ -112,7 +112,7 @@ class MerkenTests(unittest.TestCase):
 
     def test_der_unveraenderte_wert_wird_nicht_festgeschrieben(self):
         obj, werte = self._app_mit_speicher()
-        obj._ps5_wert_merken("klog_ip", "192.168.1.94", "192.168.1.94")
+        obj._ps5_wert_merken("klog_ip", "192.168.1.77", "192.168.1.77")
         self.assertEqual("", werte.get("klog_ip"),
                          "Der zentrale Wert wurde als eigener festgehalten - "
                          "dann folgt das Fenster der Einstellung nie wieder.")
@@ -120,9 +120,9 @@ class MerkenTests(unittest.TestCase):
     def test_danach_wirkt_eine_geaenderte_einstellung_wieder(self):
         """Der eigentliche Fall, gemessen ueber beide Methoden."""
         obj, werte = self._app_mit_speicher()
-        werte["ps5_ip"] = "192.168.1.94"
+        werte["ps5_ip"] = "192.168.1.77"
         # Verbinden, ohne etwas zu aendern
-        obj._ps5_wert_merken("klog_ip", "192.168.1.94", werte["ps5_ip"])
+        obj._ps5_wert_merken("klog_ip", "192.168.1.77", werte["ps5_ip"])
         # Jetzt zentral umstellen
         werte["ps5_ip"] = "192.168.1.50"
         self.assertEqual(
@@ -131,7 +131,7 @@ class MerkenTests(unittest.TestCase):
 
     def test_ein_bewusst_anderer_wert_bleibt(self):
         obj, werte = self._app_mit_speicher()
-        werte["ps5_ip"] = "192.168.1.94"
+        werte["ps5_ip"] = "192.168.1.77"
         obj._ps5_wert_merken("klog_ip", "10.0.0.5", werte["ps5_ip"])
         self.assertEqual("10.0.0.5", werte["klog_ip"])
         self.assertEqual(
@@ -151,7 +151,7 @@ class MerkenTests(unittest.TestCase):
     def test_ein_leerer_wert_loescht_den_eigenen(self):
         obj, werte = self._app_mit_speicher()
         werte["klog_ip"] = "10.0.0.5"
-        obj._ps5_wert_merken("klog_ip", "   ", "192.168.1.94")
+        obj._ps5_wert_merken("klog_ip", "   ", "192.168.1.77")
         self.assertEqual("", werte["klog_ip"])
 
     def test_kein_fenster_speichert_mehr_direkt(self):
@@ -184,7 +184,7 @@ class QuelltextTests(unittest.TestCase):
         cls.text = QUELLE.read_text(encoding="utf-8")
 
     def test_js_loader_hat_keine_fest_verdrahtete_adresse_mehr(self):
-        self.assertNotIn('ip_var = tk.StringVar(value="192.168.1.94")', self.text)
+        self.assertNotIn('ip_var = tk.StringVar(value="192.168.1.77")', self.text)
 
     def test_die_vier_fenster_fragen_die_zentrale_stelle(self):
         for stelle in ('_ps5_wert_oder_zentral("klog_ip"',
@@ -228,7 +228,7 @@ class QuelltextTests(unittest.TestCase):
         """Kein Speicherer der zentralen Adresse haengt an ``trace_add``.
 
         Zweimal dieselbe Falle: Ein ``ip_var.trace_add("write", _ip_merken)``
-        feuert bei **jedem Tastendruck**. Waehrend "192.168.1.94" entsteht,
+        feuert bei **jedem Tastendruck**. Waehrend "192.168.1.77" entsteht,
         wandern elf Zwischenstaende ("1", "19", "192", "192.", ...) in die
         zentrale Einstellung, die alle anderen Fenster lesen; wer mittendrin
         abbricht, laesst dort einen Torso zurueck. Im Autoloader-Fenster am

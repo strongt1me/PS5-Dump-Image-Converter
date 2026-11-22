@@ -190,7 +190,7 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                     "fünf Ziffern.",
                     "**Angezeigter Name** – was unter der Kachel steht.",
                     "**Adresse** – wohin die Kachel führt, zum "
-                    "Beispiel `http://192.168.1.94:8080`.",
+                    "Beispiel `http://192.168.1.77:8080`.",
                     "**Symbolbild** wählen: eine PNG-Datei, am besten "
                     "512×512.",
                     "**PS5-Adresse** prüfen – die IP Ihrer Konsole.",
@@ -345,7 +345,7 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                     "say. Nine characters: four letters, five digits.",
                     "**Displayed name** – what appears under the tile.",
                     "**Address** – where the tile leads, for example "
-                    "`http://192.168.1.94:8080`.",
+                    "`http://192.168.1.77:8080`.",
                     "Choose an **icon image**: a PNG file, ideally "
                     "512×512.",
                     "Check the **PS5 address** – your console's IP.",

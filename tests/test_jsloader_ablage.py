@@ -128,8 +128,8 @@ class RueckwegTests(_MitEigenenEinstellungen):
     """Was im Fenster steht, wird zentral gemerkt."""
 
     def test_adresse_und_beide_ports(self):
-        self.gui._jsloader_verbindung_merken("192.168.1.94", "50000", "9021")
-        self.assertEqual("192.168.1.94", self.werte.get("ps5_ip"))
+        self.gui._jsloader_verbindung_merken("192.168.1.77", "50000", "9021")
+        self.assertEqual("192.168.1.77", self.werte.get("ps5_ip"))
         self.assertEqual("50000", self.werte.get("jsloader_js_port"))
         self.assertEqual("9021", self.werte.get("jsloader_elf_port"))
 
@@ -141,12 +141,12 @@ class RueckwegTests(_MitEigenenEinstellungen):
         self.assertEqual("50000", self.werte.get("jsloader_js_port"))
 
     def test_leere_eingaben_loeschen_nichts(self):
-        self.werte["ps5_ip"] = "192.168.1.94"
+        self.werte["ps5_ip"] = "192.168.1.77"
         self.gui._jsloader_verbindung_merken("", "", "")
-        self.assertEqual("192.168.1.94", self.werte.get("ps5_ip"))
+        self.assertEqual("192.168.1.77", self.werte.get("ps5_ip"))
 
     def test_unsinnige_ports_werden_uebergangen(self):
-        self.gui._jsloader_verbindung_merken("192.168.1.94", "0", "70000")
+        self.gui._jsloader_verbindung_merken("192.168.1.77", "0", "70000")
         self.assertIsNone(self.werte.get("jsloader_js_port"))
         self.assertIsNone(self.werte.get("jsloader_elf_port"))
 

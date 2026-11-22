@@ -58,7 +58,7 @@ def _gui(*, offene_ports: set[int], usb: list[str] | None = None) -> PS5Converte
     g._log_lines = []
     g._append_to_log = g._log_lines.append
     g._load_setting = lambda schluessel, vorgabe="": (
-        "192.168.1.94" if schluessel == "ps5_ip" else vorgabe)
+        "192.168.1.77" if schluessel == "ps5_ip" else vorgabe)
     g._fmt_bytes = lambda n: "%d B" % n
     g._ps5_port_open = lambda _ip, port, timeout=1.5: int(port) in offene_ports
     g._ps5_usb_datentraeger = lambda _ftp: list(
@@ -248,15 +248,15 @@ class FtpPortTests(unittest.TestCase):
 
     def test_bevorzugt_2121(self) -> None:
         g = _gui(offene_ports={2121, 2021})
-        self.assertEqual(g._webkit_ftp_port("192.168.1.94"), 2121)
+        self.assertEqual(g._webkit_ftp_port("192.168.1.77"), 2121)
 
     def test_nimmt_2021_wenn_2121_schweigt(self) -> None:
         g = _gui(offene_ports={2021})
-        self.assertEqual(g._webkit_ftp_port("192.168.1.94"), 2021)
+        self.assertEqual(g._webkit_ftp_port("192.168.1.77"), 2021)
 
     def test_null_wenn_keiner_antwortet(self) -> None:
         g = _gui(offene_ports=set())
-        self.assertEqual(g._webkit_ftp_port("192.168.1.94"), 0)
+        self.assertEqual(g._webkit_ftp_port("192.168.1.77"), 0)
 
 
 class InstallerwegTests(unittest.TestCase):

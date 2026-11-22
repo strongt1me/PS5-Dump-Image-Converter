@@ -431,7 +431,7 @@ class AdresseMerkenTests(_Quelltext):
     """Die zentrale Adresse darf nicht bei jedem Tastendruck wandern.
 
     ``_ip_merken`` hing an ``ip_var.trace_add("write", ...)``: Waehrend
-    "192.168.1.94" entstand, gingen elf Zwischenstaende in die zentrale
+    "192.168.1.77" entstand, gingen elf Zwischenstaende in die zentrale
     Einstellung ``ps5_ip``, die alle anderen Fenster lesen. Wer mittendrin
     abbrach, hinterliess dort einen Torso.
     """
@@ -460,10 +460,10 @@ class AdresseMerkenTests(_Quelltext):
     def test_zwischenstaende_werden_abgewiesen(self) -> None:
         """Die Pruefung selbst - an zehn Faellen gemessen."""
         pruefe = hauptprogramm.PS5ConverterGUI._ist_plausible_ps5_adresse
-        for wert in ("192.168.1.94", "10.0.0.1", "ps5.local", "konsole"):
+        for wert in ("192.168.1.77", "10.0.0.1", "ps5.local", "konsole"):
             with self.subTest(gut=wert):
                 self.assertTrue(pruefe(wert))
-        for wert in ("192.168.1.", "19", "192.168.1.94.", "", "256.1.1.1", "1.2.3"):
+        for wert in ("192.168.1.", "19", "192.168.1.77.", "", "256.1.1.1", "1.2.3"):
             with self.subTest(schlecht=wert):
                 self.assertFalse(pruefe(wert))
 
