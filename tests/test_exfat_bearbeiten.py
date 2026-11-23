@@ -609,6 +609,9 @@ class JournalTests(_Abbild):
         Path(eb.journal_pfad(self.pfad)).write_bytes(roh[:-5])              # abgeschnitten: ohne Ende-Marke
         self.assertFalse(eb.journal_zurueckspielen(self.pfad), "Ein unvollstaendiges Journal spielt nichts zurueck")
         self.assertFalse(os.path.exists(eb.journal_pfad(self.pfad)))
+        # Seit der Gesamtpruefung 23.11.2026: Ein ``.undo`` entsteht nur vollstaendig - ist es abgeschnitten, ist es beschaedigt und
+        # wird beiseitegelegt (``.undo.defekt``), nicht geloescht. Ein halbes ``.undo.neu`` dagegen verschwindet (test_abbild_journal).
+        self.assertTrue(os.path.exists(eb.journal_pfad(self.pfad) + ".defekt"))
         self.assertEqual(self.original, Path(self.pfad).read_bytes())
 
     def test_ein_beschaedigtes_journal_wird_nicht_zurueckgespielt(self) -> None:
@@ -658,6 +661,37 @@ def _wsl_pruefen(abbild: str, tmp: str) -> "dict[str, str] | None":
             summe, _, name = zeile.partition("  ")
             ergebnis[name[2:] if name.startswith("./") else name] = summe.strip()
     return ergebnis
+
+
+class BitmapClusterGrenzenTests(unittest.TestCase):
+    """Gesamtpruefung 23.11.2026: Die Bitmap wurde in 4-KiB-Stuecken ab ihrem Cluster geschrieben. Bei Clustern unter 4 KiB lief ein Stueck
+    physisch in die Folgecluster - auch wenn die Kette der Bitmap woanders weitergeht (Nachbardaten ueberschrieben)."""
+
+    def _abbild(self, cluster: int, kette: "list[int]"):
+        import io
+        a = eb.ExfatAbbild.__new__(eb.ExfatAbbild)
+        a.sektor, a.cluster_groesse, a.heap_sektor, a.fat_sektor = 512, cluster, 64, 8
+        a.fat = bytearray(512)
+        platte = bytearray(4 * 1024 * 1024)
+        a._fh = io.BytesIO(platte)                                          # FAT und Bitmap auf der Platte: alles 0
+        a.bitmap_kette = list(kette)
+        a.bitmap = bytearray(b"\xff" * (len(kette) * cluster))             # jedes Bitmap-Byte geaendert
+        a._plan = eb._Plan()
+        return a
+
+    def test_kein_schreibstueck_ueberschreitet_einen_cluster_der_kette(self) -> None:
+        for cluster in (512, 1024, 2048, 4096, 65536):
+            with self.subTest(cluster=cluster):
+                kette = [5, 9, 20]                                           # nicht am Stueck
+                a = self._abbild(cluster, kette)
+                a._metadaten_planen()
+                erlaubt = [(a._cluster_offset(c), a._cluster_offset(c) + cluster) for c in kette]
+                geschrieben = 0
+                for offset, daten in a._plan.stellen:
+                    self.assertTrue(any(von <= offset and offset + len(daten) <= bis for von, bis in erlaubt),
+                                    "Stueck %#x+%d liegt nicht ganz in einem Cluster der Bitmap" % (offset, len(daten)))
+                    geschrieben += len(daten)
+                self.assertEqual(len(kette) * cluster, geschrieben, "die ganze Bitmap wird geschrieben")
 
 
 class LinuxKernTests(_Abbild):

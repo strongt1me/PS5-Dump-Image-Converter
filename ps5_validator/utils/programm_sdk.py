@@ -391,6 +391,117 @@ def eboot_sdk_in_abbild(pfad: str, mkpfs_ordner: str = "") -> str:
         return ""
 
 
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Einzelne Dateien aus sce_sys eines Abbilds (fuer die PNG-Pruefung vor dem Paketbau, seit 23.11.2026)
+# ---------------------------------------------------------------------------------------------------------------------------------
+#: Groessere Dateien liefert :func:`sce_sys_dateien_in_abbild` nicht (die Bilder in ``sce_sys`` haben gemessen 5 KB bis wenige MB;
+#: so viel liest auch :class:`ufs2_leser.Ufs2Leser` hoechstens).
+SCE_SYS_HOECHSTENS = _ufs2.MAX_DATEI
+
+
+def _sce_sys_in_ufs2(fh: Any, namen: "set[str]") -> "dict[str, bytes]":
+    with _ufs2.Ufs2Leser(fh) as leser:
+        ordner = next((n for n, ist_ordner, _g in leser.auflisten("") if ist_ordner and n.lower() == "sce_sys"), "")
+        if not ordner:
+            return {}
+        ergebnis: dict[str, bytes] = {}
+        for name, ist_ordner, groesse in leser.auflisten(ordner):
+            if not ist_ordner and name.lower() in namen and 0 < groesse <= SCE_SYS_HOECHSTENS:
+                ergebnis[name.lower()] = leser.datei_lesen(ordner + "/" + name, groesse)
+        return ergebnis
+
+
+def _sce_sys_in_exfat(fh: Any, mk: _Mkpfs, namen: "set[str]") -> "dict[str, bytes]":
+    """Liest nur die Wurzel und ``sce_sys`` (nicht den ganzen Baum, siehe :func:`_sdk_in_exfat`)."""
+    class _NurSceSys(mk.exfat.ExfatReader):
+        def _walk_directory(self, first_cluster, no_fat_chain, length, rel_dir):          # noqa: ANN001, ANN202
+            if rel_dir and rel_dir.lower() != "sce_sys":
+                return []
+            return super()._walk_directory(first_cluster, no_fat_chain, length, rel_dir)
+
+    fh.seek(0)
+    leser = _NurSceSys(fh)
+    ordner = next((e for e in leser.root_entries() if e.is_dir and e.name.lower() == "sce_sys"), None)
+    if ordner is None:
+        return {}
+    groesse = leser.geometry.cluster_size
+    ergebnis: dict[str, bytes] = {}
+    for eintrag in ordner.children:
+        if eintrag.is_dir or eintrag.name.lower() not in namen or not 0 < eintrag.length <= SCE_SYS_HOECHSTENS:
+            continue
+        teile: list[bytes] = []
+        for cluster in leser._iter_clusters(eintrag.first_cluster, eintrag.no_fat_chain, eintrag.length):
+            fh.seek(leser._cluster_byte_offset(cluster))
+            teile.append(fh.read(groesse))
+        ergebnis[eintrag.name.lower()] = b"".join(teile)[:eintrag.length]
+    return ergebnis
+
+
+def _sce_sys_in_pfs(fh: Any, mk: _Mkpfs, namen: "set[str]", ebene: int) -> "dict[str, bytes]":
+    pfs = mk.pfs
+    kopf = pfs.parse_image_header(fh)
+    if kopf.magic != mk.consts.PFS_MAGIC or kopf.block_size <= 0 or kopf.block_size & (kopf.block_size - 1):
+        return {}
+    inodes = pfs.parse_image_inodes(fh, kopf)
+    fehler: list[str] = []
+    wurzel, _fpt, _koll, _bes = pfs.parse_superroot_and_indexes(fh, kopf, inodes, fehler)
+    if wurzel < 0:
+        return {}
+    dateien, _ordner, _eintraege = pfs.build_tree_from_uroot(fh, kopf, inodes, wurzel, fehler)
+    if fehler or not dateien:
+        return {}
+    if len(dateien) == 1 and ebene < _MAX_EBENEN:
+        inode = inodes[next(iter(dateien.values()))]
+        if not (inode.db_sig or inode.ib_sig) and inode.blocks > 0 and inode.logical_size >= 16:
+            sicht = pfs._LogicalFileView(fh, kopf, inode)
+            if _abbild_art(sicht, mk):
+                return _sce_sys_im_abbild(sicht, mk, namen, ebene + 1)
+    ergebnis: dict[str, bytes] = {}
+    for rel, nummer in dateien.items():
+        teile = str(rel).replace("\\", "/").lower().split("/")
+        if len(teile) != 2 or teile[0] != "sce_sys" or teile[1] not in namen:
+            continue
+        inode = inodes[nummer]
+        if inode.db_sig or inode.ib_sig or inode.blocks <= 0 or not 0 < inode.logical_size <= SCE_SYS_HOECHSTENS:
+            continue                                       # signiert oder verstreut gespeichert: so nicht zu lesen
+        sicht = pfs._LogicalFileView(fh, kopf, inode)
+        sicht.seek(0)
+        ergebnis[teile[1]] = sicht.read(inode.logical_size)
+    return ergebnis
+
+
+def _sce_sys_im_abbild(fh: Any, mk: "_Mkpfs | None", namen: "set[str]", ebene: int = 0) -> "dict[str, bytes]":
+    art = _abbild_art(fh, mk)
+    if art == "ufs2":
+        return _sce_sys_in_ufs2(fh, namen)
+    if mk is None:
+        return {}
+    if art == "exfat":
+        return _sce_sys_in_exfat(fh, mk, namen)
+    if art == "pfs":
+        return _sce_sys_in_pfs(fh, mk, namen, ebene)
+    return {}
+
+
+def sce_sys_dateien_in_abbild(pfad: str, namen: "Any", mkpfs_ordner: str = "") -> "dict[str, bytes]":
+    """Die Dateien ``sce_sys/<name>`` eines Abbilds (``.ffpkg``, ``.exfat``, ``.ffpfs``, ``.ffpfsc``, auch umhuellt) als
+    ``{name klein: Inhalt}`` - nur die gefundenen, lesbaren und hoechstens :data:`SCE_SYS_HOECHSTENS` grossen. Entpackt nichts. Wirft nie:
+    Was sich nicht lesen laesst, fehlt im Ergebnis.
+    """
+    gesucht = {str(n).lower() for n in namen}
+    mk: "_Mkpfs | None"
+    try:
+        mk = _Mkpfs(mkpfs_ordner)
+    except ImportError:
+        mk = None
+    fehler = mk.fehler if mk is not None else (OSError, ValueError, struct.error, KeyError, IndexError, *_UNERWARTET)
+    try:
+        with open(pfad, "rb") as fh:
+            return _sce_sys_im_abbild(fh, mk, gesucht)
+    except fehler:
+        return {}
+
+
 def eboot_sdk_in_ffpkg(abbild: str) -> str:
     """Das SDK der ``eboot.bin`` in einer ``.ffpkg`` (UFS2) als Text; ``""``, wenn nichts zu lesen ist. Entpackt nichts."""
     try:

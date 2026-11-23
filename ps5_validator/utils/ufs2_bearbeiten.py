@@ -36,6 +36,7 @@ from ps5_validator.utils.abbild_journal import (
     DirektPlatzFehlt,
     journal_pfad,
     journal_schreiben,
+    journal_entfernen,
     journal_zurueckspielen,
 )
 from ps5_validator.utils.ufs2_dateisystem import (
@@ -974,7 +975,7 @@ class Ufs2Abbild:
                 pass
             journal_zurueckspielen(self.pfad, eigen=True)              # ein Fehler mitten im Schreiben: sofort zurueck
             raise
-        os.remove(journal_pfad(self.pfad))
+        journal_entfernen(journal_pfad(self.pfad))
         self._laden()
 
     def _daten_herkunft(self) -> "dict[int, tuple[str, int, int]]":

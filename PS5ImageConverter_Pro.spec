@@ -521,7 +521,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v2.0.0',
+    name='PS5_Dump_Image_Converter_v2.0.1',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

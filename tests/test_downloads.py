@@ -86,6 +86,16 @@ class AdresseZerlegenTests(unittest.TestCase):
             meldungen.add(str(ctx.exception))
         self.assertEqual(len(meldungen), 4)
 
+    def test_ein_name_mit_trenner_oder_punkten_vorn_wird_abgewiesen(self):
+        """Gesamtpruefung 23.11.2026: ``..\\`` im Namen fuehrte unter Windows aus "PS5 Spiele Updates" heraus."""
+        basis = ECHTE_URL.rsplit("/", 1)[0] + "/"
+        for name in ("..\\..\\UP8016-PPSA19015_00-0489895718491618.pkg", "..%5CUP8016-PPSA19015_00-0489895718491618.pkg",
+                     ".UP8016-PPSA19015_00-0489895718491618.pkg", "C:UP8016-PPSA19015_00-0489895718491618.pkg"):
+            with self.subTest(name=name):
+                with self.assertRaises(dl.DownloadAdresseUngueltig):
+                    dl.parse_pkg_url(basis + name)
+        self.assertEqual("UP8016-PPSA19015_00-0489895718491618.pkg", dl.parse_pkg_url(ECHTE_URL)["dateiname"], "Gegenprobe")
+
     def test_ist_pkg_url_wirft_nicht(self):
         self.assertFalse(dl.ist_pkg_url("https://prosperopatches.com/PPSA19015"))
         self.assertTrue(dl.ist_pkg_url(ECHTE_URL))

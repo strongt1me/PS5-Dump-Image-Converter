@@ -818,7 +818,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v2.0.0"
+APP_VERSION = "v2.0.1"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Obergrenzen fuer das, was aus dem Netz im Speicher landet (Webseiten, JSON, Titelbilder). Die Quellen sind
@@ -15787,6 +15787,13 @@ class PS5ConverterGUI:
                 self._mitschnitt_nicht_abwarten = True
             return
 
+        # Der Abbau laeuft schon (ein zweiter Klick auf X, waehrend er z. B. auf das Ende des Entpackens wartet): keine zweite
+        # Rueckfrage und kein zweiter Abbau-Faden, der Aushaengen und Aufraeumen doppelt und gleichzeitig liefe (Gesamtpruefung
+        # 23.11.2026).
+        _abbau = getattr(self, "_beenden_faden", None)
+        if _abbau is not None and _abbau.is_alive():
+            return
+
         shutdown_mode = ""
         shutdown_src = ""
         shutdown_dst = ""
@@ -15863,6 +15870,18 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0018'))
             self.is_running = False
             self.monitor_active = False
+            # Ein Archiv wird gerade als Quelle entpackt: 7-Zip bzw. das ZIP-Entpacken anhalten; der Faden raeumt den halben
+            # Entpackordner selbst weg, der Abbau unten wartet auf ihn.
+            _archiv_abbruch = getattr(self, "_archiv_abbruch", None)
+            if getattr(self, "_archiv_laeuft", False) and _archiv_abbruch is not None:
+                _archiv_abbruch.set()
+                self._archiv_laeuft = False
+                _siebenzip = (getattr(self, "_archiv_prozess", None) or {}).get("prozess")
+                if _siebenzip is not None and _siebenzip.poll() is None:
+                    try:
+                        _siebenzip.kill()
+                    except OSError:
+                        pass
 
             # file_monitor-Thread stoppen (falls aktiv)
             engine_done = getattr(self, "_engine_done_event", None)
@@ -15912,6 +15931,12 @@ class PS5ConverterGUI:
             # Ein beim Schliessen abgebrochener PKG-Merge raeumt seine .tmp
             # noch weg - erst danach darf der Prozess enden.
             self._auf_pkg_merge_warten()
+            # Ebenso das Entpacken eines Archivs (oben abgebrochen): 7-Zip
+            # endet am naechsten Fortschrittsschritt, danach loescht der
+            # Faden den halben Entpackordner.
+            _archiv_faden = getattr(self, "_archiv_faden", None)
+            if _archiv_faden is not None and _archiv_faden.is_alive():
+                _archiv_faden.join(30.0)
             self._force_dismount_all()
             self._cleanup_exit_temp_targets(
                 checkpoint_mode=shutdown_mode,
@@ -15925,7 +15950,8 @@ class PS5ConverterGUI:
                 logger.warning("Fenster nach dem Beenden nicht schliessbar - "
                                "die Hauptschleife nahm den Aufruf nicht an.")
 
-        threading.Thread(target=_shutdown, daemon=True).start()
+        self._beenden_faden = threading.Thread(target=_shutdown, daemon=True)
+        self._beenden_faden.start()
 
     def _ask_yesno_threadsafe(self, title: str, message: str,
                               default_yes: bool = True) -> bool:
@@ -21266,6 +21292,16 @@ class PS5ConverterGUI:
                 text=self._t("quelle.archiv_status", name=name, prozent=prozent))
                 if hasattr(self, "status_label") else None)
 
+        # Beenden waehrend des Entpackens (on_closing): Bis zum 23.11.2026 kam keine Rueckfrage, 7-Zip entpackte nach dem Schliessen
+        # weiter, und der halbe Entpackordner blieb im Arbeitsordner (Gesamtpruefung). Jetzt fragt das Beenden (_arbeit_laeuft),
+        # setzt dieses Ereignis, archiv_quelle beendet 7-Zip bzw. das ZIP-Entpacken, und der Faden raeumt den Ordner selbst weg.
+        abbruch = threading.Event()
+        self._archiv_abbruch = abbruch
+        # Der laufende 7-Zip-Prozess: on_closing beendet ihn sofort (die Abbruchfrage in archiv_quelle kommt erst nach dem naechsten
+        # Stueck Ausgabe - bei einer grossen Datei schreibt 7-Zip lange nichts).
+        prozess_ablage: dict = {}
+        self._archiv_prozess = prozess_ablage
+
         def arbeit() -> None:
             try:
                 # ZIP ohne Entpackordner: nur sce_sys und eboot.bin kommen in einen Schattenordner, das Spiel liest der Strom aus dem Archiv.
@@ -21273,21 +21309,36 @@ class PS5ConverterGUI:
                           if endung == ".zip" and self._archiv_strom_gewaehlt() else None)
                 if wurzel is None:
                     wurzel = archiv_quelle.entpacken(archiv, ziel, wurzeln=wurzeln, melden=fortschritt,
-                                                     popen_extra=popen_extra, passwort=passwort,
-                                                     weitere_passwoerter=self._archiv_weitere_passwoerter())
+                                                     abbruch=abbruch.is_set, popen_extra=popen_extra, passwort=passwort,
+                                                     weitere_passwoerter=self._archiv_weitere_passwoerter(),
+                                                     prozess_ablage=prozess_ablage)
                 fehler = ""
             except archiv_quelle.PasswortFehler as exc:
+                if abbruch.is_set():
+                    _rmtree_force(ziel, ignore_errors=True)
+                    return
                 grund = str(exc)      # ``exc`` gibt es nach dem except-Block nicht mehr - die Lambda liefe in einen NameError
                 self._hauptfaden_planen(lambda: self._archiv_passwort_fragen(archiv, bool(passwort), grund))
                 return
             except archiv_quelle.ArchivFehler as exc:
+                if abbruch.is_set():
+                    # Beim Beenden abgebrochen: keine Meldung mehr, nur den halben Entpackordner wegraeumen.
+                    _rmtree_force(ziel, ignore_errors=True)
+                    return
                 wurzel, fehler = "", str(exc) or "?"
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Archiv entpacken")
                 wurzel, fehler = "", "%s: %s" % (type(exc).__name__, exc)
+            if abbruch.is_set():
+                # Das Programm wird gerade beendet (das Entpacken war schon fertig oder scheiterte anders): kein _archiv_fertig mitten im
+                # Abbau - es setzte die Quelle oder zeigte eine Meldung -, nur den Entpackordner wegraeumen (Gegenlese 23.11.2026).
+                _rmtree_force(ziel, ignore_errors=True)
+                return
             self._hauptfaden_planen(lambda: self._archiv_fertig(archiv, wurzel, fehler))
 
-        threading.Thread(target=arbeit, daemon=True, name="archiv-entpacken").start()
+        faden = threading.Thread(target=arbeit, daemon=True, name="archiv-entpacken")
+        self._archiv_faden = faden
+        faden.start()
 
     @staticmethod
     def _archiv_schluessel(pfad: str) -> str:
@@ -29034,9 +29085,11 @@ class PS5ConverterGUI:
         """Laeuft gerade etwas, das Beenden oder Herunterfahren abreissen wuerde?
 
         Dieselbe Frage wie beim Schliessen des Fensters (``on_closing``): die
-        Aufgabe, der PKG-Merger und Uebertragungen zur Konsole.
+        Aufgabe, der PKG-Merger, Uebertragungen zur Konsole und (seit
+        23.11.2026) das Entpacken eines Archivs als Quelle.
         """
         return bool(getattr(self, "is_running", False)
+                    or bool(getattr(self, "_archiv_laeuft", False))
                     or int(getattr(self, "_pkg_merge_laeuft", 0) or 0) > 0
                     or int(getattr(self, "_bibliothek_uebertragungen", 0) or 0) > 0
                     or any(_s.beschaeftigt() for _s in self._aufgabe7_bereiche()))
@@ -61081,14 +61134,16 @@ class PS5ConverterGUI:
         stand = self.__dict__.get("_sm_stand")
         if stand is None and self._sm_format_gespeichert() == sm_cfg.FORMAT_V2:
             stand = self._sm_stand_aus_sitzung(ftp, self._sm_datei_lesen(ftp, sm_gen.CONFIG_PFAD))
+        # Ueber Zwischendatei + Umbenennen (konsole_ftp.datei_ablegen): Ein direkter STOR kuerzt die Datei sofort, ein Abriss liess
+        # eine halbe config.ini zurueck, mit der ShadowMount+ beim naechsten Start falsch einhaengt (Gesamtpruefung 23.11.2026).
         if not stand or stand["format"] != sm_cfg.FORMAT_V2:
-            ftp.storbinary("STOR %s" % sm_gen.CONFIG_PFAD, io.BytesIO(ansicht_text.encode("utf-8")))
+            konsole_ftp.datei_ablegen(ftp, io.BytesIO(ansicht_text.encode("utf-8")), sm_gen.CONFIG_PFAD)
             return []
         config, profile, uebergangen = sm_cfg.zurueckschreiben(ansicht_text, stand["config"], stand["profiles"])
         if config != stand["config"] or not stand["config"]:
-            ftp.storbinary("STOR %s" % sm_cfg.CONFIG_PFAD, io.BytesIO(config.encode("utf-8")))
+            konsole_ftp.datei_ablegen(ftp, io.BytesIO(config.encode("utf-8")), sm_cfg.CONFIG_PFAD)
         if profile != stand["profiles"]:
-            ftp.storbinary("STOR %s" % sm_cfg.PROFILES_PFAD, io.BytesIO(profile.encode("utf-8")))
+            konsole_ftp.datei_ablegen(ftp, io.BytesIO(profile.encode("utf-8")), sm_cfg.PROFILES_PFAD)
             self._append_to_log(self._t("smcfg.profiles_geschrieben", pfad=sm_cfg.PROFILES_PFAD))
         stand.update(config=config, profiles=profile, ansicht=sm_cfg.ansicht(config, profile))
         if uebergangen:
@@ -68156,13 +68211,15 @@ class PS5ConverterGUI:
                         if stand_v2 is not None:
                             neu_cfg, neu_prof, _ueberg = sm_cfg.zurueckschreiben(
                                 ini_text, stand_v2["config"], stand_v2["profiles"])
-                            ftp.storbinary("STOR " + remote_config_path, io.BytesIO(neu_cfg.encode("utf-8")))
+                            # Zwischendatei + Umbenennen: nie eine halbe config.ini/profiles.ini (Gesamtpruefung 23.11.2026).
+                            konsole_ftp.datei_ablegen(ftp, io.BytesIO(neu_cfg.encode("utf-8")), remote_config_path)
                             if neu_prof != stand_v2["profiles"]:
-                                ftp.storbinary("STOR " + sm_cfg.PROFILES_PFAD, io.BytesIO(neu_prof.encode("utf-8")))
+                                konsole_ftp.datei_ablegen(ftp, io.BytesIO(neu_prof.encode("utf-8")),
+                                                          sm_cfg.PROFILES_PFAD)
                             ergebnis_v2.update(config=neu_cfg, profiles=neu_prof)
                         else:
                             buf = io.BytesIO(ini_text.encode("utf-8"))
-                            ftp.storbinary("STOR " + remote_config_path, buf)
+                            konsole_ftp.datei_ablegen(ftp, buf, remote_config_path)
                     finally:
                         try:
                             ftp.quit()
@@ -70437,8 +70494,10 @@ class PS5ConverterGUI:
                         self._t("klog.usb.offer_root", usb=usb, datei=name),
                         parent=parent):
                     return
+                # Zwischendatei + Umbenennen (konsole_ftp.datei_ablegen): Ein Abriss mitten im direkten STOR liess eine halbe
+                # ELF bzw. autoload.txt zurueck, die der Autoloader beim naechsten Start las (Gesamtpruefung 23.11.2026).
                 with open(elf, "rb") as fh:
-                    ftp.storbinary(f"STOR {usb}/{name}", fh)
+                    konsole_ftp.datei_ablegen(ftp, fh, f"{usb}/{name}")
                 self._im_hauptfaden(messagebox.showinfo, titel,
                                     self._t("klog.usb.done_root", datei=name, usb=usb),
                                     parent=parent)
@@ -70446,7 +70505,7 @@ class PS5ConverterGUI:
 
             # --- Weg ueber den Autoloader ---
             with open(elf, "rb") as fh:
-                ftp.storbinary(f"STOR {ordner}/{name}", fh)
+                konsole_ftp.datei_ablegen(ftp, fh, f"{ordner}/{name}")
 
             puffer = io.BytesIO()
             ftp.retrbinary(f"RETR {autoload}", puffer.write)
@@ -70457,7 +70516,7 @@ class PS5ConverterGUI:
                                     self._t("klog.usb.already_listed", datei=name),
                                     parent=parent)
                 return
-            ftp.storbinary(f"STOR {autoload}", io.BytesIO(neu.encode("utf-8")))
+            konsole_ftp.datei_ablegen(ftp, io.BytesIO(neu.encode("utf-8")), autoload)
             eintrag = f"{self._PS5_AUTOLOAD_PAUSE}\n{name}" if self._PS5_AUTOLOAD_PAUSE in neu else name
             self._im_hauptfaden(messagebox.showinfo, titel,
                                 self._t("klog.usb.done_autoloader", datei=name,

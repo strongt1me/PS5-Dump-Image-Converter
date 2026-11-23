@@ -89,7 +89,17 @@ class _Ftp:
         pfad = befehl.split(" ", 1)[1]
         daten = strom.read()
         self.stor.append((pfad, daten))
+        self.roh_stor = getattr(self, "roh_stor", []) + [pfad]
         self.dateien[pfad] = daten
+
+    def rename(self, alt, neu):
+        """Wie ftpsrv (``rename(2)``): ersetzt ein vorhandenes Ziel. Seit 23.11.2026 schreibt das Programm ueber ``<ziel>.tmp`` +
+        Umbenennen (``konsole_ftp.datei_ablegen``); ``stor`` nennt danach den endgueltigen Namen."""
+        self.dateien[neu] = self.dateien.pop(alt)
+        self.stor = [(neu if p == alt else p, d) for p, d in self.stor]
+
+    def delete(self, pfad):
+        self.dateien.pop(pfad, None)
 
     def text(self, pfad: str) -> str:
         return self.dateien[pfad].decode("utf-8")
@@ -244,6 +254,19 @@ class LesenSchreibenTests(unittest.TestCase):
         # und danach wieder lesbar wie bisher
         jetzt = gui._ampr_gen_config_lesen(ftp)
         self.assertEqual(["PPSA12345"], parse_flat_ini_multi(jetzt)["global_fakelib_exclude"])
+
+    def test_jede_datei_kommt_ueber_eine_zwischendatei(self) -> None:
+        """Gesamtpruefung 23.11.2026: Ein direkter STOR kuerzt die Datei sofort - ein Abriss liess eine halbe config.ini/profiles.ini
+        auf der Konsole. Jetzt ``<ziel>.tmp`` + Umbenennen (``konsole_ftp.datei_ablegen``), in beiden Formaten."""
+        for fmt, vorlage, aenderung in (("v2", V2_CONFIG, {"update_emulators": "0", "global_fakelib_exclude": ["PPSA12345"]}),
+                                        ("v1", V1_CONFIG, {"update_emulators": "0"})):
+            with self.subTest(format=fmt):
+                gui = _gui({"shadowmount_config_format": fmt})
+                ftp = _Ftp({CONFIG: vorlage})
+                gui._ampr_gen_config_schreiben(ftp, gui._ampr_gen_config_lesen(ftp), aenderung)
+                self.assertTrue(ftp.roh_stor)
+                self.assertTrue(all(p.endswith(".tmp") for p in ftp.roh_stor), ftp.roh_stor)
+                self.assertFalse([p for p in ftp.dateien if p.endswith(".tmp")], "keine Zwischendatei bleibt liegen")
 
     def test_schreiben_im_alten_format_wie_bisher(self) -> None:
         gui = _gui({"shadowmount_config_format": "v1"})

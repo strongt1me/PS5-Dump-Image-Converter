@@ -371,6 +371,16 @@ class DumpOrdnerTests(unittest.TestCase):
             au.dump_ordner_machen(str(roh))
         self.assertEqual("ohne_image0", ctx.exception.schluessel)
 
+    def test_ein_reines_lizenz_dlc_ohne_image0_ist_erlaubt(self) -> None:
+        """Gesamtpruefung 23.11.2026: Ein PSAL-DLC bringt nur sce_sys - es brach den ganzen Lauf ab."""
+        roh = self._roh({}, {"param.sfo": b"S", "icon0.png": b"I"})
+        self.assertEqual({"dateien": 0, "systemdateien": 2}, au.dump_ordner_machen(str(roh), nur_system_erlaubt=True))
+        self.assertEqual(b"S", (roh / "sce_sys" / "param.sfo").read_bytes())
+        leer = self.wo / "leer"
+        leer.mkdir()
+        with self.assertRaises(au.AufgabeFehler):
+            au.dump_ordner_machen(str(leer), nur_system_erlaubt=True)        # ganz ohne Inhalt bleibt es ein Fehler
+
     def test_ordner_mit_gleichem_namen_werden_zusammengelegt(self) -> None:
         roh = self._roh({"data/a.bin": b"A", "data/tief/x.bin": b"X"}, {})
         (roh / "data").mkdir(exist_ok=True)
@@ -613,6 +623,30 @@ class ArbeitenMitFalschemWerkzeugTests(unittest.TestCase):
         self.assertIn("Patch", ctx.exception.text)
         self.assertEqual([], [p for p in self.wo.iterdir() if p.name.startswith(".ps4ota")])
         self.assertTrue(self.basis.is_file() and self.update.is_file())
+
+    def test_zusammenfuehren_fehlschlag_entfernt_die_halbe_ausgabe(self) -> None:
+        """Gesamtpruefung 23.11.2026: Nach einem Fehlschlag (Platte voll, Absturz) lag die halbe .pkg unter ihrem Endnamen."""
+        ausgabe = self.wo / "m.pkg"
+
+        def fn(basis, update, aus, **kw):
+            Path(aus).write_bytes(b"halb")
+            return orbispkg.BauErgebnis(ok=False, meldung="No space left on device")
+
+        self.falsch.zusammenfuehren_fn = fn
+        with self.assertRaises(au.AufgabeFehler):
+            au.arbeit_zusammenfuehren(self.a, str(self.basis), str(self.update), str(ausgabe), t)
+        self.assertFalse(ausgabe.exists())
+
+    def test_zusammenfuehren_zaehlt_arbeitsordner_und_paket_auf_einem_laufwerk(self) -> None:
+        """Gesamtpruefung 23.11.2026: Gezaehlt wurde nur das 1,5-fache fuer den Arbeitsordner, nicht das fertige Paket daneben."""
+        pakete = 2000 + 500
+        genug_nur_fuer_die_arbeit = int(1.5 * pakete) + 10
+        with mock.patch.object(au, "freier_platz", return_value=genug_nur_fuer_die_arbeit):
+            with self.assertRaises(au.AufgabeFehler) as ctx:
+                au.arbeit_zusammenfuehren(self.a, str(self.basis), str(self.update), str(self.wo / "m.pkg"), t)
+        self.assertEqual("kein_platz", ctx.exception.schluessel)
+        self.assertEqual(int(1.5 * pakete) + int(1.1 * pakete), ctx.exception.werte["noetig"])
+        self.assertEqual([], self.falsch.aufrufe)
 
     def test_zusammenfuehren_abbruch_entfernt_die_halbe_ausgabe(self) -> None:
         ausgabe = self.wo / "m.pkg"

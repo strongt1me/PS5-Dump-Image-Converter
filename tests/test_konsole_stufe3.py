@@ -572,7 +572,8 @@ class WindowsNamenTests(unittest.TestCase):
             self.assertTrue(kf.unter_windows_speicherbar("a:b/c?.bin"))
             return
         self.assertTrue(kf.unter_windows_speicherbar("sce_sys/param.json"))
-        for pfad in ("Spiel: Titel/eboot.bin", "daten/a?.bin", "punkt./x", "raum /x"):
+        for pfad in ("Spiel: Titel/eboot.bin", "daten/a?.bin", "punkt./x", "raum /x",
+                     "..\\..\\Startup\\x.bat", "a\\b"):
             with self.subTest(pfad=pfad):
                 self.assertFalse(kf.unter_windows_speicherbar(pfad))
 
@@ -601,6 +602,66 @@ class WindowsNamenTests(unittest.TestCase):
                              "Ein Datenstrom-Rest liegt im Ziel.")
         self.assertIn("Spiel: Titel.bin", str(fehler.exception))
         self.assertEqual(["RETR /dump/ok.bin"], verbindung.retr)
+
+    def test_ein_pfad_aus_dem_ziel_heraus_wird_abgewiesen(self):
+        """Gesamtpruefung 23.11.2026: ``..`` (jeder Server) und unter Windows ``\\`` fuehrten aus dem Zielordner heraus."""
+        for pfad in ("../x.bin", "a/../../x.bin", "/abs/x.bin", "a//b", "./x", ""):
+            with self.subTest(pfad=pfad):
+                self.assertFalse(kf.bleibt_im_ziel(pfad))
+        for pfad in ("x.bin", "sce_sys/param.json", "a/b/c..d.bin", "..x"):
+            with self.subTest(pfad=pfad):
+                self.assertTrue(kf.bleibt_im_ziel(pfad))
+
+    def test_holen_endet_vor_einem_pfad_aus_dem_ziel_heraus(self):
+        import tempfile
+
+        class _Verbindung:
+            def __init__(self):
+                self.retr: list = []
+                self.timeout = 10.0
+
+            def retrbinary(self, befehl, rueckruf, *_a, **_k):
+                self.retr.append(befehl)
+                rueckruf(b"x")
+
+        faelle = [("/dump/../ausserhalb.bin", kf.Eintrag("../ausserhalb.bin", False, 1), True),
+                  # wie unter Linux/macOS: dort gibt es die Windows-Namenspruefung nicht, die ".." (Punkt am Ende) schon abweist
+                  ("/dump/../ausserhalb.bin", kf.Eintrag("../ausserhalb.bin", False, 1), False)]
+        if os.name == "nt":
+            faelle.append(("/dump/..\\ausserhalb.bin", kf.Eintrag("..\\ausserhalb.bin", False, 1), True))
+        for fern, eintrag, windows_pruefung in faelle:
+            with self.subTest(fern=fern, windows_pruefung=windows_pruefung), tempfile.TemporaryDirectory() as wurzel:
+                lokal = os.path.join(wurzel, "ziel")
+                verbindung = _Verbindung()
+                speicherbar = kf.unter_windows_speicherbar if windows_pruefung else (lambda _r: True)
+                with mock.patch.object(kf, "verbinden", lambda *a, **k: verbindung), \
+                        mock.patch.object(kf, "schliessen", lambda _v: None), \
+                        mock.patch.object(kf, "unter_windows_speicherbar", speicherbar), \
+                        mock.patch.object(kf, "_durchlaufen", lambda *_a, **_k: iter([(fern, eintrag)])):
+                    with self.assertRaises(kf.FtpFehler):
+                        kf.ordner_holen("127.0.0.1", "/dump", lokal)
+                self.assertEqual([], verbindung.retr, "kein RETR fuer einen solchen Namen")
+                self.assertFalse(os.path.exists(os.path.join(wurzel, "ausserhalb.bin")))
+
+    def test_ein_abriss_im_retr_laesst_keine_halbe_datei_unter_dem_endnamen(self):
+        """Gesamtpruefung 23.11.2026: Nach einem Netzfehler mitten in der Datei lag sie gekuerzt unter ihrem Namen."""
+        import tempfile
+
+        class _Verbindung:
+            timeout = 10.0
+
+            def retrbinary(self, _befehl, rueckruf, *_a, **_k):
+                rueckruf(b"angefangen")
+                raise EOFError("Verbindung weg")
+
+        eintraege = [("/dump/sce_sys/param.json", kf.Eintrag("param.json", False, 999))]
+        with tempfile.TemporaryDirectory() as lokal, \
+                mock.patch.object(kf, "verbinden", lambda *a, **k: _Verbindung()), \
+                mock.patch.object(kf, "schliessen", lambda _v: None), \
+                mock.patch.object(kf, "_durchlaufen", lambda *_a, **_k: iter(eintraege)):
+            with self.assertRaises(kf.FtpFehler):
+                kf.ordner_holen("127.0.0.1", "/dump", lokal)
+            self.assertFalse(os.path.exists(os.path.join(lokal, "sce_sys", "param.json")))
 
     def test_der_bibliotheksdownload_bereinigt_den_namen(self):
         import PS5ImageConverter_Pro_FINAL_revised as haupt
@@ -708,11 +769,15 @@ class EinzeldateiHolenTests(_StubenTest):
 
         ziel = self.lokal / "eboot.bin"
         with mock.patch.object(kf, "open", _VollePlatte, create=True):
-            with self.assertRaises(kf.FtpFehler):
+            with self.assertRaises(kf.FtpFehler) as fehler:
                 kf.datei_holen(self._verbindung(), "/PPSA01234/eboot.bin", ziel)
         self.assertFalse(ziel.exists())
         self.assertFalse(ziel.with_name(ziel.name + ".tmp").exists(),
                          "Die angefangene Zwischendatei blieb liegen.")
+        # Gesamtpruefung 23.11.2026: wie ordner_holen den RETR zu Ende lesen - ein abgerissener legt ftpsrv lahm.
+        self.assertIn("/PPSA01234/eboot.bin", self.stube.fertig_gesendet,
+                      "Der RETR wurde mittendrin abgerissen.")
+        self.assertIn("nicht speicherbar", str(fehler.exception))
 
     def test_groessenabweichung_nach_der_uebertragung_ist_ein_fehler(self):
         verbindung = self._verbindung()

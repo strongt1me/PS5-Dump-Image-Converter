@@ -98,6 +98,9 @@ def aufgabe_starten(gui, quelle: str, ziel: str, zielformat: str,
             gui.source_path.set(vorher["quelle"])
             gui.dest_path.set(vorher["ziel"])
             gui._batch_sources = vorher["sammel"]
+            # Auch das Zielformat - zuletzt, nach Aufgabe und Quelle, deren Wechsel die Liste der Formate neu fuellt. Bis zum
+            # 23.11.2026 blieb das Format des Bearbeitens stehen, und die naechste Umwandlung erzeugte es (Gesamtpruefung).
+            gui.target_format.set(vorher["format"])
         except Exception as exc:  # noqa: BLE001 - die Oberflaeche darf an einer Wiederherstellung nicht scheitern
             logger.debug("Oberflaeche nicht wiederhergestellt: %s", exc)
 
@@ -567,6 +570,10 @@ class BearbeitenFenster:
         rueckgaengig = ergebnis == abbild_direkt.ZURUECKGESPIELT
         if ergebnis == abbild_direkt.FREMD:
             messagebox.showwarning(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_journal_fremd", pfad=beiseite),
+                                   parent=self.win)
+        elif ergebnis == abbild_direkt.DEFEKT:
+            # Ein .undo, das sich nicht lesen laesst: beiseitegelegt, das Abbild kann halb geschrieben sein (Gesamtpruefung 23.11.2026).
+            messagebox.showwarning(self.t("titlebar.abbild_bearbeiten"), self.t("bearbeiten.direkt_journal_defekt", pfad=beiseite),
                                    parent=self.win)
         self.bild = os.path.normpath(bild)
         self.protokoll = ab.Protokoll()

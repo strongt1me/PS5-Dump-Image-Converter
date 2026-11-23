@@ -221,6 +221,56 @@ class SiebenzipArchivTests(unittest.TestCase):
             self.assertIn("7-Zip", str(ctx.exception))
 
 
+class AbbruchImGrossenEintragTests(unittest.TestCase):
+    """Gesamtpruefung 23.11.2026 (Gegenlese): ``z.extract`` einer Datei von mehreren GB lief ohne Abbruchfrage durch; 7-Zip wurde nur
+    zwischen zwei Stuecken Ausgabe gefragt. Jetzt: grosse ZIP-Eintraege stueckweise, der 7-Zip-Prozess liegt fuer das Beenden bereit."""
+
+    def test_ein_grosser_zip_eintrag_haelt_beim_abbruch_mitten_drin_an(self) -> None:
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as t:
+            archiv = Path(t) / "spiel.zip"
+            with zipfile.ZipFile(archiv, "w", zipfile.ZIP_STORED) as z:
+                z.writestr("PPSA01234/sce_sys/param.json", "{}")
+                z.writestr("PPSA01234/gross.bin", b"x" * 40_000)
+            gefragt = []
+
+            def abbruch() -> bool:
+                gefragt.append(1)
+                return len(gefragt) > 5            # mitten im grossen Eintrag
+
+            ziel = Path(t) / "ziel"
+            with mock.patch.object(archiv_quelle, "_STROM_AB", 1000), mock.patch.object(archiv_quelle, "_STROM_STUECK", 4096):
+                with self.assertRaises(archiv_quelle.ArchivFehler) as f:
+                    archiv_quelle.entpacken(str(archiv), str(ziel), abbruch=abbruch)
+            self.assertIn("abgebrochen", str(f.exception))
+            halb = ziel / "PPSA01234" / "gross.bin"
+            self.assertLess(halb.stat().st_size, 40_000, "abgebrochen mitten in der Datei, nicht danach")
+            # Gegenprobe: ohne Abbruch kommt die Datei ganz und gleich an
+            ziel2 = Path(t) / "ziel2"
+            with mock.patch.object(archiv_quelle, "_STROM_AB", 1000), mock.patch.object(archiv_quelle, "_STROM_STUECK", 4096):
+                archiv_quelle.entpacken(str(archiv), str(ziel2))
+            self.assertEqual(b"x" * 40_000, (ziel2 / "PPSA01234" / "gross.bin").read_bytes())
+
+    def test_ein_name_mit_sonderzeichen_geht_den_gewohnten_weg(self) -> None:
+        self.assertTrue(archiv_quelle._name_schlicht("PPSA01234/data/a.bin"))
+        for name in ("a/b:c.bin", "a/..", "punkt./x", "", "a/x?.bin"):
+            with self.subTest(name=name):
+                self.assertFalse(archiv_quelle._name_schlicht(name))
+
+    @unittest.skipUnless(SIEBENZIP, "7-Zip fehlt")
+    def test_der_siebenzip_prozess_liegt_in_der_ablage(self) -> None:
+        with tempfile.TemporaryDirectory() as t:
+            quelle = Path(t) / "q" / "PPSA01234"
+            _spiel(quelle)
+            archiv = Path(t) / "spiel.7z"
+            subprocess.run([SIEBENZIP, "a", str(archiv), str(quelle), "-bso0", "-bsp0"], check=True, stdin=subprocess.DEVNULL,
+                           creationflags=0x08000000 if sys.platform == "win32" else 0)
+            ablage: dict = {}
+            archiv_quelle.entpacken(str(archiv), str(Path(t) / "ziel"), wurzeln=[str(PROJEKT)], prozess_ablage=ablage)
+            self.assertIn("prozess", ablage)
+            self.assertEqual(0, ablage["prozess"].returncode)
+
+
 class EingabeTests(unittest.TestCase):
 
     def test_ist_archiv(self) -> None:
@@ -298,6 +348,85 @@ class FensterTests(unittest.TestCase):
             self.assertTrue(quelle.endswith("PPSA01234"), quelle)
             self.assertTrue(os.path.isfile(os.path.join(quelle, "sce_sys", "param.json")))
             self.assertEqual("", self.app._validate_source_path(quelle, "pack_folder"))
+
+    def test_beenden_waehrend_des_entpackens_fragt_haelt_an_und_raeumt_weg(self) -> None:
+        """Gesamtpruefung 23.11.2026: Schliessen waehrend des Entpackens kam ohne Rueckfrage durch, 7-Zip lief weiter, der halbe
+        Entpackordner blieb liegen. Jetzt zaehlt das Entpacken als laufende Arbeit (Rueckfrage beim Beenden), ``on_closing`` setzt
+        ``_archiv_abbruch``, und der Faden raeumt den Ordner selbst weg - ohne Fehlermeldung."""
+        import inspect
+        import threading as _threading
+        from unittest import mock
+        gestartet = _threading.Event()
+
+        def entpacken_bis_zum_abbruch(archiv, ziel, *, abbruch=None, **_k):
+            Path(ziel, "halb.bin").write_bytes(b"x" * 100)
+            gestartet.set()
+            while not (abbruch and abbruch()):
+                self.time.sleep(0.01)
+            raise self.haupt.archiv_quelle.ArchivFehler("abgebrochen")
+
+        with tempfile.TemporaryDirectory() as t:
+            archiv = Path(t) / "gross.7z"
+            archiv.write_bytes(b"7z")
+            self.addCleanup(setattr, self.app, "_archiv_laeuft", False)
+            with mock.patch.object(self.haupt.archiv_quelle, "siebenzip_suchen", return_value="7z.exe"), \
+                    mock.patch.object(self.haupt.archiv_quelle, "entpacken", entpacken_bis_zum_abbruch), \
+                    mock.patch.object(self.haupt.PS5ConverterGUI, "_archiv_braucht_entpacken", return_value=False), \
+                    mock.patch.object(self.haupt.messagebox, "showerror") as fehler:
+                self.app._archiv_als_quelle(str(archiv))
+                self.assertTrue(gestartet.wait(10))
+                ordner = self.app._archiv_ordner
+                self.assertTrue(os.path.isdir(ordner))
+                self.assertTrue(self.app._arbeit_laeuft(), "das Entpacken zaehlt beim Beenden als laufende Arbeit")
+                self.app._archiv_abbruch.set()                          # was on_closing nach dem "Ja" tut
+                self.app._archiv_faden.join(10)
+                self.assertFalse(self.app._archiv_faden.is_alive())
+                self.assertFalse(os.path.isdir(ordner), "der halbe Entpackordner ist weg")
+                while self.offen:
+                    rueckruf, args = self.offen.pop(0)
+                    rueckruf(*args)
+            fehler.assert_not_called()
+        quelle = inspect.getsource(self.haupt.PS5ConverterGUI.on_closing)
+        self.assertIn("_archiv_abbruch.set()", quelle)
+        self.assertIn("_archiv_faden.join(", quelle)
+        self.assertIn("_siebenzip.kill()", quelle, "7-Zip wird beim Beenden sofort angehalten (Gegenlese 23.11.2026)")
+        self.assertIn("_beenden_faden", quelle, "ein zweiter Klick auf X startet keinen zweiten Abbau")
+
+    def test_beenden_kurz_nach_dem_entpacken_meldet_nichts_und_raeumt_weg(self) -> None:
+        """Gegenlese 23.11.2026: Das Entpacken war schon fertig, als beendet wurde - trotzdem lief _archiv_fertig mitten im Abbau
+        (setzte die Quelle oder zeigte eine Meldung), und der Entpackordner blieb liegen."""
+        import threading as _threading
+        from unittest import mock
+        gestartet = _threading.Event()
+
+        def entpacken_fertig_beim_abbruch(archiv, ziel, *, abbruch=None, **_k):
+            spiel = Path(ziel, "PPSA01234")
+            (spiel / "sce_sys").mkdir(parents=True)
+            (spiel / "sce_sys" / "param.json").write_text("{}", encoding="utf-8")
+            gestartet.set()
+            while not (abbruch and abbruch()):
+                self.time.sleep(0.01)
+            return str(spiel)                                   # fertig - der Abbruch kam erst danach
+
+        with tempfile.TemporaryDirectory() as t:
+            archiv = Path(t) / "fertig.7z"
+            archiv.write_bytes(b"7z")
+            self.addCleanup(setattr, self.app, "_archiv_laeuft", False)
+            self.app.source_path.set("VORHER")
+            with mock.patch.object(self.haupt.archiv_quelle, "siebenzip_suchen", return_value="7z.exe"), \
+                    mock.patch.object(self.haupt.archiv_quelle, "entpacken", entpacken_fertig_beim_abbruch), \
+                    mock.patch.object(self.haupt.PS5ConverterGUI, "_archiv_braucht_entpacken", return_value=False), \
+                    mock.patch.object(self.haupt.PS5ConverterGUI, "_archiv_fertig") as fertig:
+                self.app._archiv_als_quelle(str(archiv))
+                self.assertTrue(gestartet.wait(10))
+                ordner = self.app._archiv_ordner
+                self.app._archiv_abbruch.set()
+                self.app._archiv_faden.join(10)
+                while self.offen:
+                    rueckruf, args = self.offen.pop(0)
+                    rueckruf(*args)
+            fertig.assert_not_called()
+            self.assertFalse(os.path.isdir(ordner))
 
     def test_waehrend_eines_laufs_kein_neues_archiv(self) -> None:
         """Gesamtpruefung 14.11.2026, A5: Ein neues Archiv raeumte den Entpackordner des alten weg - vielleicht die laufende Quelle."""

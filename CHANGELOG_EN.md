@@ -2,11 +2,11 @@
 
 This English changelog starts with v2.0.0 and describes in plain language what changed for you as a user. The newest version is at the top. Earlier versions are listed in German in [CHANGELOG.md](CHANGELOG.md). Purely technical changes (for example to the build process or internal tests) are left out on purpose.
 
-> **In short (v2.0.0):** The PKG / FPKG area now looks like tasks 1 to 6, builds packages with Dump Forge and shows the size of a game much faster.
+> **In short (v2.0.1):** BACKPORT only needs the firmware, four more payloads are bundled, and transfers to the console, archives as a source, “Edit image” and PS4 package builds are protected against interruptions.
 
 ---
 
-## v2.0.1 – in progress
+## v2.0.1 – 2026-11-23
 
 - **New:** The corrections for missing functions cover four more cases and leave a function the firmware does have untouched (measured on FW 12.00, not yet tried with a real backport); title profiles still work as measured on the console.
 - **Changed:** The “Backport needed” question recognises an already lowered game by its programs, not the param.json – for game folders, .ffpkg, .exfat, .ffpfs, .ffpfsc and .pkg, without unpacking.
@@ -32,6 +32,21 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 - **Fixed:** When Dump Forge converts a .pkg straight into an image, the report now names the exchange of the AMPR runtime; a “BACKPORT needed” that rests on the param.json alone now says so.
 - **Fixed:** Deliberately damaged packages and images can no longer hold up the source check for minutes or make it end with an error.
 - **Fixed:** In the English, Spanish, French and Italian manuals and in the FAQ, examples showed German or English placeholders such as `<PS5-Adresse>`; they are now in the language of the document.
+- **New:** Four more payloads are bundled: NTFS Browser 1.4.0, NoUpdate 1.0.0, Linux Flasher 1.6.4 and PS5 Cleanup 1.3; the three with a web interface appear in the payload table under CONSOLE.
+- **New:** Before a package is built, the log also names a damaged picture in sce_sys when the source is an image (.ffpkg, .exfat, .ffpfs, .ffpfsc), not only a game folder.
+- **Fixed:** When a folder is copied from the console, a file name with a backslash or “..” can no longer lead outside the target folder, and a broken transfer no longer leaves a cut file under its final name.
+- **Fixed:** If the PC drive runs full while a single file is fetched from the console, the transfer is still read to the end, so ftpsrv on the console stays usable.
+- **Fixed:** Closing the program while an archive is being unpacked as the source now asks first, stops 7-Zip and removes the half-unpacked folder.
+- **Fixed:** config.ini and profiles.ini of ShadowMount+, autoload.txt and the KLOG payload on USB are written through a temporary file, so a broken connection never leaves a half file on the console.
+- **Fixed:** The Updates button no longer stores the WebKit Autoloader host (.exe/.py) without a checksum, and a tool with several files is stored completely or not at all.
+- **Fixed:** “Edit image” keeps an undo journal that cannot be read (as .undo.defekt) and warns that the image may be half written, and it no longer saves over an undo journal that is still pending.
+- **Fixed:** After converting from “Edit image”, the main window gets its target format back; on exFAT images with clusters below 4 KiB, saving no longer writes into neighbouring clusters.
+- **Fixed:** A pasted PS5 update address whose file name contains a backslash or “..” is refused.
+- **Fixed:** PS4 PKG Dump & Image Converter no longer lays an update that is not newer than the chosen base game over it, and a second update with the same version is named in the log instead of being dropped silently.
+- **Fixed:** PS4 PKG Dump & Image Converter: a licence-only DLC without game data no longer stops the run; a failed or cancelled run removes its half package or half image (.partial), and a time limit is reported as such.
+- **Fixed:** When base game and update are merged into one PS4 package, the space check now also counts the finished package on the same drive.
+- **Fixed:** The game info no longer reads a whole PS5 .pkg into memory to find its update address.
+- **Changed:** The Updates button no longer asks GitHub about DPI v2 (its project has no releases), so a full check stays below the limit of 60 requests per hour.
 
 ---
 

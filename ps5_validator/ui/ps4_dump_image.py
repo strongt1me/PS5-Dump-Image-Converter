@@ -939,8 +939,8 @@ class Ps4DumpImageFenster:
         """Die Groesse eines Spiels aus seinen Paketen (Basis und Updates) oder, bei einem Ordner, 0 (unbekannt)."""
         if s.dump_ordner:
             return 0
-        pakete = ([s.basis] if s.basis is not None else []) + list(s.updates or [])
-        return sum(int(getattr(p, "groesse", 0) or 0) for p in pakete)
+        # Basis und die wirksamen Updates (seit 23.11.2026 ohne die, die nicht neuer als die Basis sind - sie werden nicht eingespielt).
+        return sum(int(getattr(p, "groesse", 0) or 0) for p in s.pakete())
 
     def _lauf_fuer(self, aufgabe: au.Aufgabe):
         """Ein ``lauf`` fuer PS4 FFPFSC, der den Prozess der Aufgabe zum Abbrechen ablegt."""
@@ -974,7 +974,10 @@ class Ps4DumpImageFenster:
             return t("ps4dib.dump_gepackt", title_id=s.title_id, verfahren="LZ4" if verfahren == "lz4" else "zstd")
         if s.dump_ordner and kennung not in ab.ABBILD_FORMATE:
             return t("ps4dib.dump_nur_abbild")
-        if kennung == ab.FORMAT_PKG and not s.updates:
+        if kennung == ab.FORMAT_PKG and not s.updates_wirksam:
+            if s.updates and s.basis is not None:
+                # Updates liegen da, sind aber nicht neuer als das gewaehlte Basisspiel - "kein Update" waere falsch (Gegenlese 23.11.2026).
+                return t("ps4dib.pkg_update_aelter", title_id=s.title_id, basis=s.basis.app_ver or "-")
             return t("ps4dib.pkg_ohne_update", title_id=s.title_id)
         if kennung in (ab.FORMAT_DUMP, ab.FORMAT_PKG) and not orbispkg.verfuegbar():
             return t("ps4dib.ohne_orbis", system=sys.platform)
@@ -1014,13 +1017,16 @@ class Ps4DumpImageFenster:
 
         Gemessen am 03.11.2026: Wer das Programm waehrend "Dump-Ordner" schloss, liess ``OrbisPkgTool`` weiterlaufen; es
         schrieb in den Zielordner und hielt ``<Title-ID>.partial`` offen - loeschen liess es sich erst nach seinem Ende.
-        Die Warteschlange beendet den Prozessbaum und raeumt den Arbeitsordner; hier wird darauf gewartet.
+        Die Warteschlange beendet den Prozessbaum und raeumt den Arbeitsordner; hier wird darauf gewartet - mit dem Rest der Zeit
+        auch auf das Loeschen eines halben Abbilds, das MkPFS nach dem Abbruch noch kurz gesperrt hielt (die Loeschfaeden sind
+        Daemon-Faeden und endeten sonst mit dem Prozess; Gegenlese 23.11.2026).
         """
         self._z["scan_abbruch"] = True
         self.warteschlange.alle_abbrechen()
         ende = time.monotonic() + max(0.0, warten)
         while self.warteschlange.offen and time.monotonic() < ende:
             time.sleep(0.1)
+        ab.partial_loeschen_abwarten(max(0.0, ende - time.monotonic()))
 
     def _bei_zerstoerung(self, ereignis) -> None:
         if ereignis.widget is not self.win:

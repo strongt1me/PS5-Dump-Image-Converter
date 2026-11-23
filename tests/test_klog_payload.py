@@ -179,6 +179,17 @@ class QuelltextTests(unittest.TestCase):
                 return k
         self.fail("Methode %s nicht gefunden" % name)
 
+    def test_konfiguration_und_payload_auf_der_konsole_nie_per_direktem_stor(self):
+        """Gesamtpruefung 23.11.2026: autoload.txt, die KLOG-ELF auf USB und config.ini/profiles.ini von ShadowMount+ gingen per
+        direktem STOR auf ihren Endnamen - ein Abriss liess eine halbe Datei zurueck. Jetzt ``konsole_ftp.datei_ablegen``."""
+        import ast
+
+        for name in ("_klog_auf_usb_ablegen", "_sm_config_stor", "_show_remote_ini_editor"):
+            with self.subTest(methode=name):
+                aufrufe = [getattr(k.func, "attr", "") for k in ast.walk(self._methode(name)) if isinstance(k, ast.Call)]
+                self.assertNotIn("storbinary", aufrufe)
+                self.assertIn("datei_ablegen", aufrufe)
+
     def test_pruefung_darf_das_fenster_nicht_verhindern(self):
         """Das Fenster geht auf, egal was die Messung ergibt."""
         import ast

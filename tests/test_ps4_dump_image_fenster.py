@@ -198,6 +198,22 @@ class FensterTests(unittest.TestCase):
             paket = ab.Spiel(title_id="CUSA00003", titel="Paket", basis=mock.Mock(pfad="E:/a.pkg"))
             self.assertNotIn("gepackt", f._pruefe_spiel(paket, ab.FORMAT_FFPFSC).lower())
 
+    def test_ein_paket_nur_mit_aelteren_updates_nennt_den_wahren_grund(self) -> None:
+        """Gegenlese 23.11.2026: Basis 01.05 und Patch 01.03 - die Liste zeigte "1 Patch", der Start sagte "kein Update"."""
+        from ps5_validator.utils import ps4pkg_bibliothek as bib
+        f = self._fenster()
+        basis = bib.PkgEintrag(pfad="E:/b.pkg", groesse=10, lesbar=True, title_id="CUSA00005", titel="T", typ=bib.TYP_BASIS,
+                               app_ver="01.05", content_id="")
+        alt = bib.PkgEintrag(pfad="E:/u.pkg", groesse=5, lesbar=True, title_id="CUSA00005", titel="T", typ=bib.TYP_UPDATE,
+                             app_ver="01.03", content_id="")
+        s = ab.Spiel(title_id="CUSA00005", titel="T", basis=basis, updates=[alt])
+        with mock.patch.object(fenster_modul.orbispkg, "verfuegbar", return_value=True):
+            self.assertEqual(STRINGS["ps4dib.pkg_update_aelter"]["de"].format(title_id="CUSA00005", basis="01.05"),
+                             f._pruefe_spiel(s, ab.FORMAT_PKG))
+            ohne = ab.Spiel(title_id="CUSA00005", titel="T", basis=basis)
+            self.assertEqual(STRINGS["ps4dib.pkg_ohne_update"]["de"].format(title_id="CUSA00005"),
+                             f._pruefe_spiel(ohne, ab.FORMAT_PKG), "Gegenprobe: ohne jedes Update bleibt die bisherige Meldung")
+
     def test_der_start_zeigt_die_meldung_und_baut_nichts(self) -> None:
         f = self._fenster()
         with tempfile.TemporaryDirectory() as tmp:
@@ -395,6 +411,17 @@ class FensterTests(unittest.TestCase):
         abbrechen.assert_called_once_with()
         self.assertTrue(f._z["scan_abbruch"])
         self.assertFalse(f.beschaeftigt())
+
+    def test_programmende_wartet_auf_das_loeschen_halber_abbilder(self) -> None:
+        """Gegenlese 23.11.2026: Der Faden, der ein noch gesperrtes halbes Abbild loescht, ist ein Daemon - ohne Warten endete er mit
+        dem Prozess, und die .partial blieb liegen. Gewartet wird mit dem Rest derselben Frist."""
+        from ps5_validator.utils import ps4_abbild as ab
+        f = self._fenster()
+        with mock.patch.object(f.warteschlange, "alle_abbrechen"), \
+                mock.patch.object(ab, "partial_loeschen_abwarten") as abwarten:
+            f.programmende(warten=5)
+        abwarten.assert_called_once()
+        self.assertTrue(0.0 < abwarten.call_args.args[0] <= 5.0)
 
     def test_ausserhalb_des_stapels_gilt_dasselbe(self) -> None:
         from ps5_validator.utils import ps4pkg_aufgaben as au

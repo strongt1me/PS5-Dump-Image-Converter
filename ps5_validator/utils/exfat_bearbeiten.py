@@ -40,6 +40,7 @@ from ps5_validator.utils.abbild_journal import (  # noqa: F401  (die alten Namen
     journal_lesen,
     journal_pfad,
     journal_schreiben,
+    journal_entfernen,
     journal_zurueckspielen,
     stellen_zusammenfassen,
 )
@@ -792,8 +793,11 @@ class ExfatAbbild:
                 self._plan.schreiben(self.fat_sektor * self.sektor + i, bytes(self.fat[i:i + _BLOCK]))
         bitmap_alt = bytes(self._roh_lesen(self.bitmap_kette))
         self._bitmap_platte = bitmap_alt
-        for k in range(0, len(self.bitmap), _BLOCK):
-            stueck = bytes(self.bitmap[k:k + _BLOCK])
+        # Stuecke nie ueber eine Clustergrenze: Bei Clustern unter 4 KiB lief ein 4-KiB-Stueck physisch in die Folgecluster, auch wenn
+        # die FAT-Kette der Bitmap dort nicht weitergeht - Nachbardaten waeren ueberschrieben worden (Gesamtpruefung 23.11.2026).
+        schritt = min(_BLOCK, self.cluster_groesse)
+        for k in range(0, len(self.bitmap), schritt):
+            stueck = bytes(self.bitmap[k:k + schritt])
             if stueck != bitmap_alt[k:k + len(stueck)]:
                 self._plan.schreiben(self._cluster_offset(self.bitmap_kette[k // self.cluster_groesse]) + k % self.cluster_groesse,
                                      stueck)
@@ -844,7 +848,7 @@ class ExfatAbbild:
                 pass
             journal_zurueckspielen(self.pfad, eigen=True)                            # ein Fehler mitten im Schreiben: sofort zurueck
             raise
-        os.remove(journal_pfad(self.pfad))
+        journal_entfernen(journal_pfad(self.pfad))                    # mit Wiederholung (Virenscanner, Gesamtpruefung 23.11.2026)
         self._plan = _Plan()
         self._daten_cluster = set()
         self._cache = {}

@@ -263,6 +263,33 @@ def _zip_passwort_passt(z: zipfile.ZipFile, eintraege: "list[zipfile.ZipInfo]", 
     return True
 
 
+#: Ab dieser Groesse wird ein ZIP-Eintrag stueckweise entpackt, mit Abbruchfrage je Stueck: ``z.extract`` einer Datei von mehreren GB
+#: lief ununterbrochen durch, und das Beenden des Programms wartete vergeblich (Gesamtpruefung 23.11.2026).
+_STROM_AB = 64 * 1024 * 1024
+_STROM_STUECK = 8 * 1024 * 1024
+_WINDOWS_UNZULAESSIG = re.compile(r'[:<>|"?*\x00-\x1f]')
+
+
+def _name_schlicht(name: str) -> bool:
+    """Ein Name, den ``zipfile`` beim Entpacken unveraendert uebernimmt (kein Teil mit Sonderzeichen, Punkt/Leerzeichen am Ende, ..)."""
+    teile = [t for t in name.replace("\\", "/").split("/") if t]
+    return bool(teile) and all(t not in (".", "..") and not _WINDOWS_UNZULAESSIG.search(t) and t.rstrip(" .") == t
+                               for t in teile)
+
+
+def _zip_datei_stroemen(z: zipfile.ZipFile, info: zipfile.ZipInfo, ziel_pfad: str, kennwort: "bytes | None",
+                        abbruch: Callable[[], bool] | None) -> None:
+    os.makedirs(os.path.dirname(ziel_pfad), exist_ok=True)
+    with z.open(info, pwd=kennwort) as quelle, open(ziel_pfad, "wb") as ziel:
+        while True:
+            if abbruch and abbruch():
+                raise ArchivFehler("abgebrochen")
+            block = quelle.read(_STROM_STUECK)
+            if not block:
+                break
+            ziel.write(block)
+
+
 def _zip_entpacken(archiv: str, ziel: str, melden: _Melder | None, abbruch: Callable[[], bool] | None,
                    passwort: str = "", reserve: int = PLATZ_RESERVE) -> None:
     ziel_abs = os.path.realpath(ziel)
@@ -282,7 +309,10 @@ def _zip_entpacken(archiv: str, ziel: str, melden: _Melder | None, abbruch: Call
                 ziel_pfad = os.path.realpath(os.path.join(ziel_abs, info.filename))
                 if ziel_pfad != ziel_abs and not ziel_pfad.startswith(ziel_abs + os.sep):
                     raise ArchivFehler("Unzulaessiger Pfad im Archiv: %s" % info.filename)
-                z.extract(info, ziel_abs, pwd=kennwort)
+                if not info.is_dir() and info.file_size >= _STROM_AB and _name_schlicht(info.filename):
+                    _zip_datei_stroemen(z, info, ziel_pfad, kennwort, abbruch)
+                else:
+                    z.extract(info, ziel_abs, pwd=kennwort)
                 prozent = i * 100 // gesamt
                 if melden and prozent != letzte and prozent % 5 == 0:
                     letzte = prozent
@@ -300,7 +330,7 @@ def _zip_entpacken(archiv: str, ziel: str, melden: _Melder | None, abbruch: Call
 
 def _siebenzip_entpacken(archiv: str, ziel: str, programm: str, melden: _Melder | None,
                          abbruch: Callable[[], bool] | None, popen_extra: dict | None, passwort: str = "",
-                         reserve: int = PLATZ_RESERVE) -> None:
+                         reserve: int = PLATZ_RESERVE, prozess_ablage: "dict | None" = None) -> None:
     if sys.platform != "win32":
         try:
             os.chmod(programm, os.stat(programm).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -315,6 +345,10 @@ def _siebenzip_entpacken(archiv: str, ziel: str, programm: str, melden: _Melder 
                                    stdin=subprocess.DEVNULL, **(popen_extra or {}))
     except OSError as exc:
         raise ArchivFehler("7-Zip laesst sich nicht starten: %s" % exc) from exc
+    if prozess_ablage is not None:
+        # Wer beendet (Programmende), haelt 7-Zip damit sofort an - die Abbruchfrage unten kommt erst nach dem naechsten
+        # Stueck Ausgabe, und bei einer grossen Datei schreibt 7-Zip lange nichts (Gesamtpruefung 23.11.2026).
+        prozess_ablage["prozess"] = prozess
     ausgabe: list[str] = []
     letzte = -1
     assert prozess.stdout is not None
@@ -336,7 +370,10 @@ def _siebenzip_entpacken(archiv: str, ziel: str, programm: str, melden: _Melder 
                 prozess.kill()
                 prozess.wait()
                 raise
-        stueck = prozess.stdout.read(256)
+        # read1: was gerade da ist (hoechstens 256 Bytes) - ``read(256)`` wartete, bis 256 Bytes beisammen waren, und die
+        # Abbruchfrage oben kam entsprechend selten.
+        lesen = getattr(prozess.stdout, "read1", prozess.stdout.read)
+        stueck = lesen(256)
         if not stueck:
             break
         puffer += stueck
@@ -363,10 +400,12 @@ def _siebenzip_entpacken(archiv: str, ziel: str, programm: str, melden: _Melder 
 def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melden: _Melder | None = None,
               abbruch: Callable[[], bool] | None = None, popen_extra: dict | None = None,
               passwort: str = "", platz_reserve: int = PLATZ_RESERVE,
-              weitere_passwoerter: "list[str] | tuple[str, ...]" = ()) -> str:
+              weitere_passwoerter: "list[str] | tuple[str, ...]" = (),
+              prozess_ablage: "dict | None" = None) -> str:
     """Entpackt ``archiv`` nach ``ziel`` und gibt den Spiel-Ordner darin zurueck.
 
     Args:
+        prozess_ablage: Nimmt den laufenden 7-Zip-Prozess unter ``"prozess"`` auf, damit das Programmende ihn beenden kann.
         platz_reserve: Soviel Platz bleibt auf dem Ziellaufwerk mindestens frei; wird es knapp, bricht das Entpacken ab.
         weitere_passwoerter: Die Passwortliste des Anwenders (Einstellung ``archiv_passwoerter``); sie wird nach den bekannten
             probiert, wenn kein ``passwort`` angegeben ist.
@@ -398,7 +437,8 @@ def entpacken(archiv: str, ziel: str, *, wurzeln: list[str] | None = None, melde
             if mit_zipfile:
                 _zip_entpacken(archiv, ziel, melden, abbruch, kandidat, platz_reserve)
             else:
-                _siebenzip_entpacken(archiv, ziel, programm, melden, abbruch, popen_extra, kandidat, platz_reserve)
+                _siebenzip_entpacken(archiv, ziel, programm, melden, abbruch, popen_extra, kandidat, platz_reserve,
+                                     prozess_ablage=prozess_ablage)
             letzter = None
             break
         except PasswortFehler as exc:

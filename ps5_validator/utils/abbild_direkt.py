@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 
 from ps5_validator.utils.abbild_journal import (  # noqa: F401  (fuer die Oberflaeche an einer Stelle)
+    DEFEKT,
     FREMD,
     FREMD_ENDUNG,
     ZURUECKGESPIELT,

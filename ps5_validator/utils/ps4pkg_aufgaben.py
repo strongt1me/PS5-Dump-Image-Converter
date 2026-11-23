@@ -357,6 +357,41 @@ def freier_platz(ordner: str) -> int:
         return -1
 
 
+def _vorhandener_vorfahr(ordner: str) -> str:
+    pfad = os.path.abspath(ordner)
+    while pfad and not os.path.exists(pfad):
+        eltern = os.path.dirname(pfad)
+        if eltern == pfad:
+            break
+        pfad = eltern
+    return pfad
+
+
+def _gleiches_laufwerk(a: str, b: str) -> bool:
+    """Liegen beide Ordner (die noch fehlen duerfen) auf demselben Datentraeger? Im Zweifel ``True`` (dann zaehlt die Summe)."""
+    try:
+        return os.stat(_vorhandener_vorfahr(a)).st_dev == os.stat(_vorhandener_vorfahr(b)).st_dev
+    except OSError:
+        return True
+
+
+def _werkzeugfehler(erg: "orbispkg.BauErgebnis") -> None:
+    """Wirft den passenden Fehler fuer einen gescheiterten Bau: die Zeitgrenze in der Sprache der Oberflaeche (``fehler_zeit``),
+    sonst die Zeile des Werkzeugs (``fehler_werkzeug``). Bis zum 23.11.2026 kam die Zeitgrenze als deutscher Satz, angeblich vom
+    Werkzeug (Gesamtpruefung, Gegenlese)."""
+    if getattr(erg, "zeit_ueberschritten", False):
+        stunden = max(1, int(round(float(getattr(erg, "dauer", 0.0) or 0.0) / 3600.0)))
+        raise AufgabeFehler("zeit", erg.meldung, stunden=stunden)
+    raise AufgabeFehler("werkzeug", erg.meldung, grund=erg.meldung)
+
+
+def _platz_genug(ordner: str, noetig: int) -> None:
+    frei = freier_platz(ordner)
+    if frei >= 0 and noetig > frei:
+        raise AufgabeFehler("kein_platz", "Es fehlt Platz: %d noetig, %d frei" % (noetig, frei),
+                            noetig=noetig, frei=frei, noetig_text=_mb(noetig), frei_text=_mb(frei))
+
+
 def zielordner_name(e: PkgEintrag) -> str:
     """Der Ordnername fuer ein entpacktes Paket: ``CUSA00775``, ``CUSA16627_patch_01.02``, ``CUSA16627_dlc_<Label>``."""
     title_id = dateiname_bereinigen(e.title_id) if e.title_id else ""
@@ -447,7 +482,8 @@ def _verschmelzen(quelle: str, ziel: str, melden: "Callable[[int], None] | None"
 
 
 def dump_ordner_machen(roh: str, melden: "Callable[[int], None] | None" = None,
-                       pruefen: "Callable[[], None] | None" = None) -> dict[str, Any]:
+                       pruefen: "Callable[[], None] | None" = None, *,
+                       nur_system_erlaubt: bool = False) -> dict[str, Any]:
     """Macht aus ``Image0/`` und ``Sc0/`` einen Dump-Ordner: Spieldateien in die Wurzel, Systemdateien nach ``sce_sys/``.
 
     So sieht ein entpacktes PS4-Spiel ueberall aus - auch das Ergebnis von
@@ -457,6 +493,9 @@ def dump_ordner_machen(roh: str, melden: "Callable[[int], None] | None" = None,
     Args:
         melden: ``(bisher)`` - wie viele Dateien schon umgeordnet sind (siehe :func:`_verschmelzen`).
         pruefen: Wird vor jeder Datei gerufen und darf abbrechen (``AufgabeAbgebrochen``).
+        nur_system_erlaubt: Ein Paket ohne ``Image0`` ist erlaubt, wenn es ``Sc0`` traegt - ein reines Lizenz-DLC
+            (PSAL) bringt keine Spieldaten, nur ``sce_sys`` (so erwartet es auch PS4 FFPFSC, ``dlc_embed.py``). Bis zum
+            23.11.2026 brach ein solches DLC den ganzen Dump- bzw. Abbildlauf ab (Gesamtpruefung).
 
     Returns:
         ``{"dateien": n, "systemdateien": m}``.
@@ -466,14 +505,15 @@ def dump_ordner_machen(roh: str, melden: "Callable[[int], None] | None" = None,
     """
     image0 = os.path.join(roh, "Image0")
     sc0 = os.path.join(roh, "Sc0")
-    if not os.path.isdir(_lang(image0)):
-        raise AufgabeFehler("ohne_image0", "Image0 fehlt im entpackten Paket")
     erg = {"dateien": 0, "systemdateien": 0}
-    erg["dateien"] = _verschmelzen(image0, roh, melden, pruefen)
-    try:
-        os.rmdir(_lang(image0))
-    except OSError:
-        pass
+    if os.path.isdir(_lang(image0)):
+        erg["dateien"] = _verschmelzen(image0, roh, melden, pruefen)
+        try:
+            os.rmdir(_lang(image0))
+        except OSError:
+            pass
+    elif not (nur_system_erlaubt and os.path.isdir(_lang(sc0))):
+        raise AufgabeFehler("ohne_image0", "Image0 fehlt im entpackten Paket")
     if os.path.isdir(_lang(sc0)):
         erg["systemdateien"] = _verschmelzen(sc0, os.path.join(roh, "sce_sys"), melden, pruefen)
         try:
@@ -643,11 +683,17 @@ def arbeit_zusammenfuehren(a: Aufgabe, basis: str, update: str, ausgabe: str, t:
     # Ein **eigener** Unterordner, auch wenn der Anwender einen Arbeitsordner nennt: Aufgeraeumt
     # wird nur, was dieses Modul angelegt hat - nie der Ordner des Anwenders.
     arbeit = os.path.join(arbeitsordner or os.path.dirname(ausgabe), ".ps4ota_arbeit_%d" % a.kennung)
-    noetig = int(1.5 * (os.path.getsize(basis) + os.path.getsize(update)))
-    frei = freier_platz(arbeit)
-    if frei >= 0 and noetig > frei:
-        raise AufgabeFehler("kein_platz", "Es fehlt Platz: %d noetig, %d frei" % (noetig, frei),
-                            noetig=noetig, frei=frei, noetig_text=_mb(noetig), frei_text=_mb(frei))
+    # Arbeitsordner (das 1,5-fache) UND das fertige Paket (das 1,1-fache, wie ps4_abbild.platz_noetig) - liegen beide auf
+    # demselben Laufwerk, zaehlt die Summe. Bis zum 23.11.2026 wurde nur der Arbeitsordner gezaehlt: Bei 50 + 10 GB und
+    # 100 GB frei lief die Platte nach Stunden voll (Gesamtpruefung).
+    pakete = os.path.getsize(basis) + os.path.getsize(update)
+    noetig_arbeit, noetig_ziel = int(1.5 * pakete), int(1.1 * pakete)
+    ziel_ordner = os.path.dirname(ausgabe) or "."
+    if _gleiches_laufwerk(arbeit, ziel_ordner):
+        _platz_genug(arbeit, noetig_arbeit + noetig_ziel)
+    else:
+        _platz_genug(arbeit, noetig_arbeit)
+        _platz_genug(ziel_ordner, noetig_ziel)
     a.schreiben(t("ps4ota.log_zusammenfuehren", basis=os.path.basename(basis),
                   update=os.path.basename(update), ziel=ausgabe))
     a.melden(t("ps4ota.status_zusammenfuehren"), 1)
@@ -670,7 +716,12 @@ def arbeit_zusammenfuehren(a: Aufgabe, basis: str, update: str, ausgabe: str, t:
             os.remove(ausgabe)
         raise AufgabeAbgebrochen()
     if not erg.ok:
-        raise AufgabeFehler("werkzeug", erg.meldung, grund=erg.meldung)
+        # Wie arbeit_bauen: Das Werkzeug schreibt halb nach --out. Bis zum 23.11.2026 blieb nach einem Fehlschlag (Platte
+        # voll, Absturz, Zeitgrenze) die halbe .pkg unter ihrem Endnamen liegen - der naechste Lauf meldete "Ziel gibt es
+        # schon", die Sammlung las sie als Paket (Gesamtpruefung).
+        if os.path.isfile(ausgabe):
+            os.remove(ausgabe)
+        _werkzeugfehler(erg)
     a.ergebnis = ausgabe
     a.melden(t("ps4ota.status_zusammengefuehrt"), 100)
     a.schreiben(t("ps4ota.log_zusammengefuehrt", ziel=ausgabe))
@@ -706,7 +757,9 @@ def arbeit_neu_packen(a: Aufgabe, paket: str, ausgabe: str, t: Uebersetzer, *,
             os.remove(ausgabe)
         raise AufgabeAbgebrochen()
     if not erg.ok:
-        raise AufgabeFehler("werkzeug", erg.meldung, grund=erg.meldung)
+        if os.path.isfile(ausgabe):
+            os.remove(ausgabe)
+        _werkzeugfehler(erg)
     a.ergebnis = ausgabe
     a.melden(t("ps4ota.status_neu_gepackt"), 100)
 
@@ -770,7 +823,7 @@ def arbeit_bauen(a: Aufgabe, ordner: str, ausgabe: str, t: Uebersetzer, *, patch
     if not erg.ok:
         if os.path.isfile(ausgabe):
             os.remove(ausgabe)
-        raise AufgabeFehler("werkzeug", erg.meldung, grund=erg.meldung)
+        _werkzeugfehler(erg)
     a.ergebnis = ausgabe
     a.melden(t("ps4ota.status_gebaut"), 100)
 

@@ -2,11 +2,11 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v2.0.0):** Der Bereich PKG / FPKG sieht aus wie die Aufgaben 1 bis 6, baut Pakete mit Dump Forge und zeigt die Größe eines Spiels deutlich schneller.
+> **Kurz zum aktuellen Stand (v2.0.1):** BACKPORT braucht nur noch die Firmware, vier weitere Payloads liegen bei, und Übertragungen zur Konsole, Archive als Quelle, „Abbild bearbeiten“ und der PS4-Paketbau sind gegen Abbrüche abgesichert.
 
 ---
 
-## v2.0.1 – in Arbeit
+## v2.0.1 – 23.11.2026
 
 - **Neu:** Die Korrekturen für fehlende Funktionen decken vier weitere Fälle ab und lassen eine Funktion, die die Firmware doch hat, unangetastet (an FW 12.00 gemessen, noch ohne echten Backport erprobt); Titelprofile wirken weiter wie an der Konsole gemessen.
 - **Geändert:** Die Rückfrage „Backport nötig“ erkennt ein schon herabgesetztes Spiel an seinen Programmen statt an der param.json – bei Spielordnern, .ffpkg, .exfat, .ffpfs, .ffpfsc und .pkg, ohne zu entpacken.
@@ -32,6 +32,21 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Behoben:** Wandelt Dump Forge ein .pkg direkt in ein Abbild, nennt der Bericht jetzt den Austausch der AMPR-Laufzeit; ein „BACKPORT nötig“, das nur auf der param.json beruht, sagt das jetzt dazu.
 - **Behoben:** Gezielt beschädigte Pakete und Abbilder können die Prüfung der Quelle nicht mehr minutenlang aufhalten oder mit einem Fehler abbrechen.
 - **Behoben:** Im englischen, spanischen, französischen und italienischen Handbuch und in der FAQ standen in Beispielen deutsche oder englische Platzhalter wie `<PS5-Adresse>`; sie stehen jetzt in der Sprache des Dokuments.
+- **Neu:** Vier weitere Payloads liegen bei: NTFS Browser 1.4.0, NoUpdate 1.0.0, Linux Flasher 1.6.4 und PS5 Cleanup 1.3; die drei mit Weboberfläche stehen unter KONSOLE in der Payload-Tabelle.
+- **Neu:** Vor dem Bau eines Pakets nennt das Protokoll ein beschädigtes Bild in sce_sys auch, wenn die Quelle ein Abbild ist (.ffpkg, .exfat, .ffpfs, .ffpfsc), nicht nur bei einem Spielordner.
+- **Behoben:** Beim Holen eines Ordners von der Konsole kann ein Dateiname mit Rückstrich oder „..“ nicht mehr aus dem Zielordner führen, und eine abgebrochene Übertragung lässt keine gekürzte Datei unter ihrem Endnamen zurück.
+- **Behoben:** Läuft beim Holen einer einzelnen Datei von der Konsole der PC-Datenträger voll, wird die Übertragung trotzdem zu Ende gelesen – ftpsrv auf der Konsole bleibt bedienbar.
+- **Behoben:** Wer das Programm schließt, während ein Archiv als Quelle entpackt wird, wird jetzt gefragt; 7-Zip wird angehalten und der halbe Entpackordner weggeräumt.
+- **Behoben:** config.ini und profiles.ini von ShadowMount+, autoload.txt und das KLOG-Payload auf USB werden über eine Zwischendatei geschrieben – ein Verbindungsabriss hinterlässt auf der Konsole nie eine halbe Datei.
+- **Behoben:** Der Knopf „Updates“ legt den Host des WebKit Autoloaders (.exe/.py) nie ohne Prüfsumme ab, und ein Werkzeug aus mehreren Dateien kommt ganz oder gar nicht an seinen Platz.
+- **Behoben:** „Abbild bearbeiten“ legt ein nicht lesbares Rückgängig-Journal beiseite (.undo.defekt) und warnt, dass das Abbild halb geschrieben sein kann; über ein noch offenes Journal wird nicht mehr gespeichert.
+- **Behoben:** Nach dem Umwandeln aus „Abbild bearbeiten“ hat das Hauptfenster sein Zielformat wieder; bei exFAT-Abbildern mit Clustern unter 4 KiB schreibt das Speichern nicht mehr in Nachbarcluster.
+- **Behoben:** Eine eingefügte PS5-Update-Adresse mit Rückstrich oder „..“ im Dateinamen wird abgewiesen.
+- **Behoben:** „PS4 PKG Dump & Image Converter“ legt ein Update, das nicht neuer als das gewählte Basisspiel ist, nicht mehr darüber, und ein zweites Update gleicher Fassung wird im Protokoll genannt, statt still wegzufallen.
+- **Behoben:** „PS4 PKG Dump & Image Converter“: Ein reines Lizenz-DLC ohne Spieldaten hält den Lauf nicht mehr auf; ein gescheiterter oder abgebrochener Lauf räumt sein halbes Paket bzw. Abbild (.partial) weg, und eine Zeitgrenze wird als solche gemeldet.
+- **Behoben:** Beim Zusammenführen von Basisspiel und Update zu einem PS4-Paket zählt die Platzprüfung jetzt auch das fertige Paket auf demselben Laufwerk.
+- **Behoben:** Die Spiel-Info liest ein PS5-.pkg nicht mehr ganz in den Speicher, um seine Update-Adresse zu finden.
+- **Geändert:** Der Knopf „Updates“ fragt GitHub nicht mehr nach DPI v2 (das Projekt hat keine Freigaben) – eine volle Prüfung bleibt so unter der Grenze von 60 Anfragen je Stunde.
 
 ---
 

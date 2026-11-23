@@ -223,8 +223,27 @@ class _FtpSpeicher:
         del self.dateien[pfad]
         return "250 geloescht"
 
+    def size(self, pfad):
+        if pfad not in self.dateien:
+            raise ftplib.error_perm("550 %s: No such file" % pfad)
+        return len(self.dateien[pfad])
+
 
 class AblegenTests(unittest.TestCase):
+
+    def test_ein_liegengebliebenes_alt_haelt_einen_server_ohne_ersetzen_nicht_auf(self) -> None:
+        """Gegenlese 23.11.2026: Ein frueherer Lauf konnte <ziel>.alt nicht loeschen - jedes weitere Ablegen scheiterte daran. Es ist
+        ueberholt, wenn das Ziel selbst da ist."""
+        ftp = _FtpSpeicher({ZIEL: b"ALT", ZIEL + kf.BEISEITE_ENDUNG: b"UEBERHOLT"}, ersetzt=False)
+        kf.datei_ablegen(ftp, io.BytesIO(b"NEU"), ZIEL)
+        self.assertEqual({ZIEL: b"NEU"}, ftp.dateien)
+
+    def test_fehlt_das_ziel_bleibt_das_alt_unberuehrt(self) -> None:
+        """Gegenprobe: Ohne Ziel ist <ziel>.alt vielleicht die einzige bisherige Fassung - sie wird nie geloescht."""
+        ftp = _FtpSpeicher({ZIEL + kf.BEISEITE_ENDUNG: b"EINZIGE"}, ersetzt=False, umbenennen_scheitert=True)
+        with self.assertRaises(kf.FtpFehler):
+            kf.datei_ablegen(ftp, io.BytesIO(b"NEU"), ZIEL)
+        self.assertEqual(b"EINZIGE", ftp.dateien[ZIEL + kf.BEISEITE_ENDUNG])
     """konsole_ftp.datei_ablegen: nie halb, und nie gar nicht."""
 
     def test_ftpsrv_ersetzt_beim_umbenennen(self) -> None:

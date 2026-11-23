@@ -115,10 +115,75 @@ class GruppierenTests(unittest.TestCase):
                                   _eintrag("u2.pkg", bib.TYP_UPDATE, app_ver="01.05")])[0]
         self.assertEqual(1, len(s.updates))
 
+    def test_zwei_verschiedene_updates_gleicher_fassung_werden_genannt(self) -> None:
+        """Gesamtpruefung 23.11.2026: "v1.10" und "v1.10 Backport" - das zweite fiel still weg."""
+        s = ab.spiele_gruppieren([_eintrag("b.pkg", bib.TYP_BASIS), _eintrag("u.pkg", bib.TYP_UPDATE, app_ver="01.10"),
+                                  _eintrag("u backport.pkg", bib.TYP_UPDATE, app_ver="01.10"),
+                                  _eintrag("u.pkg", bib.TYP_UPDATE, app_ver="01.10")])[0]
+        self.assertEqual(["u.pkg"], [u.pfad for u in s.updates])
+        self.assertEqual(["u backport.pkg"], [u.pfad for u in s.updates_doppelt], "dasselbe Paket zweimal zaehlt nicht")
+        a = au.Aufgabe(kennung=1, art="x", titel="x")
+        ab.hinweise_schreiben(a, s, _t)
+        self.assertEqual([_t("ps4dib.log_update_doppelt", datei="u backport.pkg", version="01.10", genommen="u.pkg")],
+                         a.protokoll)
+
+    def test_ein_update_nicht_neuer_als_die_basis_wird_nicht_eingespielt(self) -> None:
+        """Gesamtpruefung 23.11.2026: Basis 01.05 und Patch 01.03 - der Patch setzte Dateien und param.sfo zurueck."""
+        s = ab.spiele_gruppieren([_eintrag("alt.pkg", bib.TYP_BASIS, app_ver="01.00"),
+                                  _eintrag("neu.pkg", bib.TYP_BASIS, app_ver="01.05"),
+                                  _eintrag("p103.pkg", bib.TYP_UPDATE, app_ver="01.03"),
+                                  _eintrag("p105.pkg", bib.TYP_UPDATE, app_ver="01.05"),
+                                  _eintrag("p110.pkg", bib.TYP_UPDATE, app_ver="01.10")])[0]
+        self.assertEqual("neu.pkg", s.basis.pfad)
+        self.assertEqual(["neu.pkg", "p110.pkg"], [p.pfad for p in s.pakete()])
+        self.assertEqual(["p103.pkg", "p105.pkg"], [u.pfad for u in s.updates_veraltet])
+        self.assertEqual("p110.pkg", s.neuestes_update.pfad)
+        a = au.Aufgabe(kennung=1, art="x", titel="x")
+        ab.hinweise_schreiben(a, s, _t)
+        self.assertIn(_t("ps4dib.log_update_aelter", datei="p103.pkg", version="01.03", basis="01.05"), a.protokoll)
+        # Gegenprobe: mit der alten Basis gelten alle drei
+        s.basis_setzen(s.basen[0])
+        self.assertEqual(["alt.pkg", "p103.pkg", "p105.pkg", "p110.pkg"], [p.pfad for p in s.pakete()])
+        self.assertEqual([], s.updates_veraltet)
+
+    def test_unlesbare_fassungen_werden_nicht_aussortiert(self) -> None:
+        s = ab.spiele_gruppieren([_eintrag("b.pkg", bib.TYP_BASIS, app_ver=""), _eintrag("u.pkg", bib.TYP_UPDATE, app_ver="01.01")])[0]
+        self.assertEqual(["b.pkg", "u.pkg"], [p.pfad for p in s.pakete()])
+
     def test_titel_kommt_von_der_basis(self) -> None:
         s = ab.spiele_gruppieren([_eintrag("u.pkg", bib.TYP_UPDATE, titel="Update-Name", app_ver="01.01"),
                                   _eintrag("b.pkg", bib.TYP_BASIS, titel="Spielname")])[0]
         self.assertEqual("Spielname", s.titel)
+
+
+class ZeitgrenzeUndPaketleserTests(unittest.TestCase):
+    """Gesamtpruefung 23.11.2026: zwei kleinere Befunde im PS4-/Paketbereich."""
+
+    def test_die_zeitgrenze_wird_als_solche_gemeldet(self) -> None:
+        lauf = orbispkg.LaufErgebnis(rueckgabe=1, ausgabe=["[ 87%] Compressing"], fehler=[], zeit_ueberschritten=True,
+                                     dauer=14400.0)
+        with tempfile.TemporaryDirectory() as t:
+            ausgabe = os.path.join(t, "x.pkg")
+            Path(ausgabe).write_bytes(b"halb")
+            erg = orbispkg._bauergebnis(lauf, ausgabe)
+        self.assertFalse(erg.ok)
+        self.assertIn("Zeitgrenze", erg.meldung)
+        self.assertIn("14400", erg.meldung)
+        self.assertTrue(erg.zeit_ueberschritten)
+        # Gegenlese 23.11.2026: Die Oberflaeche bekommt einen eigenen, uebersetzten Fehler, nicht "Das Werkzeug meldet: Zeitgrenze ..."
+        with self.assertRaises(au.AufgabeFehler) as f:
+            au._werkzeugfehler(erg)
+        self.assertEqual(("zeit", 4), (f.exception.schluessel, f.exception.werte["stunden"]))
+        for sprache in ("de", "en", "es", "it", "fr"):
+            self.assertIn("{stunden}", STRINGS["ps4ota.fehler_zeit"][sprache])
+
+    def test_der_paketleser_laedt_das_paket_nicht_ganz(self) -> None:
+        """Bis zum 23.11.2026 lag ein PS5-.pkg von 40-80 GB ganz im Speicher (f.read())."""
+        import inspect
+        from ps5_validator.utils import pkg_reader
+        quelle = inspect.getsource(pkg_reader.read_pkg)
+        self.assertNotIn("data = f.read()", quelle)
+        self.assertIn("data = mmap.mmap(", quelle)
 
 
 class DumpLesenTests(unittest.TestCase):
@@ -232,6 +297,19 @@ class DumpTests(unittest.TestCase):
         self.assertEqual("DLC", self._lies(ziel, "addcont/DLCEINS000000001/dlc.dat"))
         self.assertEqual("SFO-dlc", self._lies(ziel, "addcont/DLCEINS000000001/sce_sys/param.sfo"))
         self.assertIn("dlc.pkg", self.entpacker.aufrufe)
+
+    def test_ein_lizenz_dlc_ohne_spieldaten_haelt_den_lauf_nicht_auf(self) -> None:
+        """Gesamtpruefung 23.11.2026: Ein PSAL-DLC traegt nur sce_sys - "Image0 fehlt" brach den ganzen Lauf ab."""
+        self.inhalt["dlc.pkg"] = {"Sc0/param.sfo": "SFO-lizenz"}
+        ziel = self.tmp / "ausgabe" / "dump"
+        ab.dump_bereitstellen(_aufgabe(), self.spiel, str(ziel), _t, mit_dlc=True, dumper_aufbau=True)
+        self.assertEqual("SFO-lizenz", self._lies(ziel, "addcont/DLCEINS000000001/sce_sys/param.sfo"))
+        self.assertEqual("EBOOT-1", self._lies(ziel, "app/eboot.bin"))
+        # Gegenprobe: Das Basisspiel ohne Image0 bleibt ein Fehler
+        self.inhalt["basis.pkg"] = {"Sc0/param.sfo": "SFO-basis"}
+        with self.assertRaises(au.AufgabeFehler) as f:
+            ab.dump_bereitstellen(_aufgabe(), self.spiel, str(self.tmp / "ausgabe" / "zwei"), _t)
+        self.assertEqual("ohne_image0", f.exception.schluessel)
 
     def test_ohne_dlc_wird_kein_zusatz_entpackt(self) -> None:
         ab.dump_bereitstellen(_aufgabe(), self.spiel, str(self.tmp / "d"), _t)
@@ -472,6 +550,78 @@ class AbbildTests(unittest.TestCase):
         self.assertEqual(["CUSA00001-A0101-V0101.ffpfsc"], os.listdir(ziel))
         self.assertEqual([], [n for n in os.listdir(arbeit) if n.startswith(("lauf_", "quelle_"))])
         self.assertFalse(os.path.exists(self.dump_beim_lauf["ordner"]))
+
+    def test_ein_gescheiterter_lauf_raeumt_sein_halbes_abbild_weg(self) -> None:
+        """Gesamtpruefung 23.11.2026: PS4 FFPFSC schreibt nach <Ziel>/<Name>.ffpfsc.partial; nach Abbruch oder Fehler blieb es liegen.
+        Eine .partial, die schon vorher lag, gehoert nicht diesem Lauf und bleibt."""
+        ziel = self.tmp / "ziel"
+        ziel.mkdir()
+        (ziel / "frueher.ffpfsc.partial").write_bytes(b"alt")
+
+        def lauf(argumente, *, arbeitsordner, zeile_callback, **_):
+            (Path(argumente[argumente.index("--output-dir") + 1]) / "CUSA00001-A0101-V0101.ffpfsc.partial").write_bytes(b"halb")
+            zeile_callback("Fehler: kaputt")
+            return 1, ""
+
+        with self.assertRaises(au.AufgabeFehler):
+            self._abbild(lauf=lauf)
+        self.assertEqual(["frueher.ffpfsc.partial"], sorted(os.listdir(ziel)))
+
+    def test_eine_partial_gleichen_namens_die_der_lauf_neu_schrieb_geht_auch(self) -> None:
+        """Gegenlese 23.11.2026: PS4 FFPFSC nimmt fuer dasselbe Spiel immer denselben Namen und schreibt einen alten Rest neu - der
+        Name allein stand schon in der Liste von vorher, und die halbe Datei dieses Laufs blieb."""
+        ziel = self.tmp / "ziel"
+        ziel.mkdir()
+        name = "CUSA00001-A0101-V0101.ffpfsc.partial"
+        (ziel / name).write_bytes(b"rest")
+        os.utime(ziel / name, (1_000_000_000, 1_000_000_000))
+
+        def lauf(argumente, *, arbeitsordner, zeile_callback, **_):
+            (Path(argumente[argumente.index("--output-dir") + 1]) / name).write_bytes(b"neu-und-halb")
+            return 1, ""
+
+        with self.assertRaises(au.AufgabeFehler):
+            self._abbild(lauf=lauf)
+        self.assertEqual([], os.listdir(ziel))
+
+    def test_eine_noch_gesperrte_partial_wird_spaeter_geloescht(self) -> None:
+        """Gegenlese 23.11.2026: Nach einem Abbruch haelt MkPFS die Datei noch kurz offen (WinError 32) - ein einziger Versuch reichte nicht."""
+        with tempfile.TemporaryDirectory() as t:
+            pfad = os.path.join(t, "x.ffpfsc.partial")
+            Path(pfad).write_bytes(b"halb")
+            echt = os.remove
+            versuche = []
+
+            def gesperrt(p):
+                versuche.append(p)
+                if len(versuche) < 3:
+                    raise PermissionError(32, "gesperrt (gestellt)")
+                echt(p)
+
+            with mock.patch.object(ab.os, "remove", gesperrt):
+                ab._partial_wegraeumen([pfad])
+                # Das Programmende wartet auf den Loeschfaden (Daemon) - sonst endete er mit dem Prozess.
+                self.assertTrue(ab.partial_loeschen_abwarten(10))
+            self.assertFalse(os.path.exists(pfad))
+            self.assertGreaterEqual(len(versuche), 3)
+
+    def test_die_partial_eines_anderen_spiels_bleibt(self) -> None:
+        """Gegenlese 23.11.2026: Jede .partial, die waehrend des Laufs entstand oder wuchs, galt als die dieses Laufs - auch die eines
+        zweiten Baus fuer ein anderes Spiel im selben Zielordner. PS4 FFPFSC beginnt jeden Namen mit der Title-ID."""
+        ziel = self.tmp / "ziel"
+        ziel.mkdir()
+        fremd = "CUSA09999 - Anderes Spiel [v01.00].ffpfsc.partial"
+        eigen = "CUSA00001 - Testspiel [v01.00].ffpfsc.partial"
+
+        def lauf(argumente, *, arbeitsordner, zeile_callback, **_):
+            aus = Path(argumente[argumente.index("--output-dir") + 1])
+            (aus / fremd).write_bytes(b"anderer-bau")
+            (aus / eigen).write_bytes(b"halb")
+            return 1, ""
+
+        with self.assertRaises(au.AufgabeFehler):
+            self._abbild(lauf=lauf)
+        self.assertEqual([fremd], os.listdir(ziel))
 
     def test_die_quelle_ueberschneidet_sich_nicht_mit_dem_arbeitsordner_des_werkzeugs(self) -> None:
         """PS4 FFPFSC lehnt sonst ab: Die Quelle ueberschneide sich mit seinem Arbeitsordner."""

@@ -9,7 +9,12 @@ halbes Abbild hinterlaesst, schreibt er vorher die **alten** Bytes jeder Stelle,
 * Waechst das Abbild beim Schreiben (PFS haengt neue Daten hinten an), steht die alte Laenge als eigener Satz darin: Beim Zurueckspielen
   wird das Abbild wieder auf sie gekuerzt.
 * Findet das Programm beim naechsten Oeffnen ein vollstaendiges Journal, spielt es die alten Bytes zurueck - das Abbild ist wieder wie
-  vorher. Ein unvollstaendiges heisst: Es wurde noch nichts geaendert; es wird nur entfernt.
+  vorher. Ein unvollstaendiges ``.undo.neu`` heisst: Es wurde noch nichts geaendert; es wird nur entfernt. Ein ``.undo`` dagegen
+  entsteht nur vollstaendig (Umbenennen nach dem Erzwingen auf die Platte) - laesst es sich spaeter nicht lesen (defekter Sektor,
+  Datentraeger ohne verlaessliches fsync, Lesefehler), wird es **nicht** geloescht, sondern als ``<Abbild>.undo.defekt`` beiseitegelegt
+  und gemeldet: Das Abbild kann halb geschrieben sein (Gesamtpruefung 23.11.2026).
+* Liegt beim Speichern noch ein ``.undo`` (ein frueherer Lauf scheiterte, und auch das Zurueckspielen gelang nicht), wird nichts
+  geschrieben: Ein neues Journal haette die halb neuen Bytes als "alt" festgehalten und das einzige gueltige ueberschrieben.
 
 **Format 2 (Gesamtpruefung 14.11.2026, E3):** Zu jeder Verwaltungsstelle stehen auch die Pruefsummen der **neuen** Bytes, je Sektor
 (512 Bytes). Zurueckgespielt wird nur, wenn an jeder dieser Stellen jeder Sektor entweder noch alt oder schon neu ist - so ein Abbild
@@ -33,6 +38,8 @@ logger = logging.getLogger(__name__)
 JOURNAL_ENDUNG = ".undo"
 #: Endung eines Journals, das nicht zum Abbild daneben passt (es wird nicht zurueckgespielt, aber auch nicht still geloescht).
 FREMD_ENDUNG = ".fremd"
+#: Endung eines ``.undo``, das sich nicht lesen laesst (Pruefsumme, abgeschnitten, Lesefehler) - beiseitegelegt, nie geloescht.
+DEFEKT_ENDUNG = ".defekt"
 _MAGIC = b"PS5CONV-EXFAT-UNDO1\n"
 _MAGIC2 = b"PS5CONV-DIREKT-UNDO2\n"
 _ENDE = b"ENDE-DES-JOURNALS!"
@@ -124,6 +131,16 @@ def journal_schreiben(pfad: str, stellen: "list[tuple]", *, laenge_vorher: "int 
     auch ein Rueckruf sein, der sie erst hier liefert (Dateidaten: nie alle zugleich im Speicher); ``None`` aus ihm heisst unbekannt.
     ``laenge_vorher``: die Laenge des Abbilds vor dem Schreiben, wenn es wachsen wird (beim Zurueckspielen wird es darauf gekuerzt).
     """
+    if os.path.lexists(pfad):
+        # Ein frueherer Lauf scheiterte, und sein Journal liess sich nicht zurueckspielen: Es ist die einzige Rettung des Abbilds. Ein
+        # neues haette die halb geschriebenen Bytes als "alt" festgehalten (Gesamtpruefung 23.11.2026). Erst neu oeffnen - das spielt
+        # es zurueck oder legt es beiseite. Ausnahme: Das Abbild traegt an jeder geprueften Stelle schon die NEUEN Bytes - der Lauf ist
+        # vollstaendig geschrieben, nur das Entfernen des Journals scheiterte (Virenscanner, Sync). Dann ist es erledigt und darf weg;
+        # sonst kaeme beim Neuoeffnen ein Zurueckspielen, das die gespeicherten Aenderungen verwirft.
+        if not _erledigt(pfad):
+            raise DirektFehler("Ein unerledigtes Rueckgaengig-Journal liegt noch neben dem Abbild (%s) - bitte das Abbild neu "
+                               "oeffnen, bevor erneut gespeichert wird." % os.path.basename(pfad))
+        journal_entfernen(pfad)
     saetze: "list[tuple[int, bytes, Any]]" = [
         (int(s[0]), bytes(s[1]), s[2] if len(s) > 2 else None) for s in stellen]
     if laenge_vorher is not None:
@@ -206,6 +223,48 @@ def _saetze_lesen(pfad: str) -> "list[tuple[int, bytes, list[int] | None]] | Non
         return None
 
 
+def _erledigt(pfad: str) -> bool:
+    """Gehoert das Journal ``pfad`` zu einem vollstaendig geschriebenen Lauf? Jede Stelle mit bekannten neuen Bytes ist im Abbild
+    Sektor fuer Sektor NEU (nicht "alt oder neu" wie beim Zurueckspielen). Ohne solche Stellen oder unlesbar: ``False``."""
+    saetze = _saetze_lesen(pfad)
+    abbild = pfad[:-len(JOURNAL_ENDUNG)] if pfad.endswith(JOURNAL_ENDUNG) else ""
+    if not saetze or not abbild:
+        return False
+    geprueft = 0
+    try:
+        with open(abbild, "rb") as fh:
+            for offset, alt, summen in saetze:
+                if summen is None or offset == _LAENGE_SATZ:
+                    continue
+                fh.seek(offset)
+                jetzt = fh.read(len(alt))
+                if len(jetzt) < len(alt):
+                    return False
+                for n, (von, bis) in enumerate(_stuecke(offset, len(alt))):
+                    if (zlib.crc32(jetzt[von:bis]) & 0xFFFFFFFF) != summen[n]:
+                        return False
+                geprueft += 1
+    except OSError:
+        return False
+    return geprueft > 0
+
+
+def journal_entfernen(pfad: str, versuche: int = 3) -> None:
+    """Entfernt das Journal nach einem vollstaendigen Lauf - mit ein paar Versuchen: Ein Virenscanner oder ein Sync-Dienst haelt eine
+    frisch geschriebene Datei kurz offen (Gesamtpruefung 23.11.2026). Scheitert es auch dann, kommt der Fehler (``OSError``)."""
+    import time
+    for versuch in range(max(1, versuche)):
+        try:
+            os.remove(pfad)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            if versuch + 1 >= max(1, versuche):
+                raise
+            time.sleep(0.2 * (versuch + 1))
+
+
 def journal_lesen(pfad: str) -> "list[tuple[int, bytes]] | None":
     """Die Saetze eines vollstaendigen Journals als ``(Offset, alte Bytes)`` (samt Laengensatz), sonst ``None``."""
     saetze = _saetze_lesen(pfad)
@@ -229,31 +288,43 @@ def _gehoert_zum_abbild(fh, saetze: "list[tuple[int, bytes, list[int] | None]]")
 
 
 #: Ergebnisse von :func:`zurueckspielen`.
-NICHTS, ZURUECKGESPIELT, UNVOLLSTAENDIG, FREMD = "", "zurueckgespielt", "unvollstaendig", "fremd"
+NICHTS, ZURUECKGESPIELT, UNVOLLSTAENDIG, FREMD, DEFEKT = "", "zurueckgespielt", "unvollstaendig", "fremd", "defekt"
 
 
-def _fremd_pfad(pfad: str) -> str:
+def _fremd_pfad(pfad: str, endung: str = FREMD_ENDUNG) -> str:
     """Ein freier Name fuer ein beiseitegelegtes Journal: ``.undo.fremd``, sonst ``.undo.fremd2``, ... - nie ein frueheres ueberschreiben
-    (Gesamtpruefung, R2-J3: es koennte die einzige Rettung eines anderen Laufs sein)."""
-    kandidat = pfad + FREMD_ENDUNG
+    (Gesamtpruefung, R2-J3: es koennte die einzige Rettung eines anderen Laufs sein). Ebenso ``.undo.defekt``."""
+    kandidat = pfad + endung
     nummer = 2
     while os.path.lexists(kandidat):
-        kandidat = "%s%s%d" % (pfad, FREMD_ENDUNG, nummer)
+        kandidat = "%s%s%d" % (pfad, endung, nummer)
         nummer += 1
     return kandidat
 
 
 def journal_zurueckspielen(abbild: str, *, eigen: bool = False) -> bool:
-    """Wie :func:`zurueckspielen`; ``True``, wenn etwas zurueckgespielt wurde."""
-    return zurueckspielen(abbild, eigen=eigen)[0] == ZURUECKGESPIELT
+    """Wie :func:`zurueckspielen`; ``True``, wenn etwas zurueckgespielt wurde.
+
+    Raises:
+        DirektFehler: nur mit ``eigen=True`` (die Rueckabwicklung eines gescheiterten ``speichern``), wenn das eben geschriebene
+            Journal sich nicht lesen liess - das Abbild kann halb geschrieben sein. Bis zum 23.11.2026 kam dann nur der urspruengliche
+            Fehler, und das naechste Oeffnen fand ein ``.undo.defekt`` ohne Warnung (Gesamtpruefung, Gegenlese).
+    """
+    ergebnis, ort = zurueckspielen(abbild, eigen=eigen)
+    if eigen and ergebnis == DEFEKT:
+        raise DirektFehler("Speichern gescheitert, und das Rueckgaengig-Journal liess sich nicht lesen (beiseitegelegt als %s) - das "
+                           "Abbild kann halb geschrieben sein; bitte mit Aufgabe 8 pruefen oder neu bauen."
+                           % os.path.basename(ort))
+    return ergebnis == ZURUECKGESPIELT
 
 
 def zurueckspielen(abbild: str, *, eigen: bool = False) -> "tuple[str, str]":
     """Spielt ein vollstaendiges Journal zurueck (die alten Bytes, dann die alte Laenge) und entfernt es.
 
-    Rueckgabe ``(Ergebnis, beiseitegelegt)``: :data:`NICHTS` (kein Journal), :data:`ZURUECKGESPIELT`, :data:`UNVOLLSTAENDIG` (der Lauf
-    brach vor dem ersten Schreiben ins Abbild ab: das Journal wird nur entfernt) oder :data:`FREMD` mit dem Pfad, unter dem das Journal
-    jetzt liegt. Ein vollstaendiges ``.undo.neu`` ohne ``.undo`` (Strom weg, bevor das Umbenennen auf der Platte stand) gilt wie das
+    Rueckgabe ``(Ergebnis, beiseitegelegt)``: :data:`NICHTS` (kein Journal), :data:`ZURUECKGESPIELT`, :data:`UNVOLLSTAENDIG` (ein halbes
+    ``.undo.neu``: der Lauf brach vor dem ersten Schreiben ins Abbild ab, es wird nur entfernt), :data:`FREMD` oder :data:`DEFEKT` (ein
+    ``.undo``, das sich nicht lesen laesst - das Abbild kann halb geschrieben sein) jeweils mit dem Pfad, unter dem das Journal jetzt
+    liegt. Ein vollstaendiges ``.undo.neu`` ohne ``.undo`` (Strom weg, bevor das Umbenennen auf der Platte stand) gilt wie das
     Journal selbst (Gesamtpruefung 14.11.2026, U5). Gehoert das Journal nicht zu diesem Abbild (Format 2, E3), bleibt das Abbild
     unberuehrt.
 
@@ -298,6 +369,22 @@ def zurueckspielen(abbild: str, *, eigen: bool = False) -> "tuple[str, str]":
                     except OSError:
                         pass
             return FREMD, ziel
+    elif quelle == pfad:
+        # Ein ``.undo`` entsteht nur vollstaendig (journal_schreiben benennt erst nach fsync um). Laesst es sich nicht lesen, ist es
+        # beschaedigt - nicht "noch nichts geaendert": beiseitelegen und melden, nie loeschen (Gesamtpruefung 23.11.2026).
+        ziel = _fremd_pfad(pfad, DEFEKT_ENDUNG)
+        logger.warning("Undo-Journal zu %s laesst sich nicht lesen - nicht zurueckgespielt, beiseitegelegt als %s; "
+                       "das Abbild kann halb geschrieben sein", abbild, ziel)
+        try:
+            os.replace(pfad, ziel)
+        except OSError:
+            ziel = pfad
+        if ziel != pfad:
+            try:
+                os.remove(teil)
+            except OSError:
+                pass
+        return DEFEKT, ziel
     for datei in (pfad, teil):
         try:
             os.remove(datei)

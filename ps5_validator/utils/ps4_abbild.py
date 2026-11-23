@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -66,6 +68,29 @@ class Spiel:
     basen: list = field(default_factory=list)
     #: Der Anwender hat das Basispaket selbst gewaehlt - dann wird nicht noch einmal gefragt.
     basis_gewaehlt: bool = False
+    #: Updates mit derselben Fassung wie ein schon aufgenommenes (z. B. "v1.10" und "v1.10 Backport"): Sie werden nicht eingespielt,
+    #: aber genannt (:func:`hinweise_schreiben`). Bis zum 23.11.2026 fiel das zweite still weg (Gesamtpruefung).
+    updates_doppelt: list = field(default_factory=list)
+
+    @property
+    def updates_wirksam(self) -> list:
+        """Die Updates, die ueber die gewaehlte Basis gehoeren: nur die mit hoeherer Fassung als die Basis.
+
+        Ein aelteres Update ueber eine neuere Basis (Basis 01.05, Patch 01.03) setzte bis zum 23.11.2026 Dateien und die
+        ``param.sfo`` auf den alten Stand zurueck - ein Mischstand (Gesamtpruefung). Unlesbare Fassungen bleiben drin (nichts raten).
+        """
+        if self.basis is None:
+            return list(self.updates)
+        basis = bib.fassung_zahlen(self.basis.app_ver)
+        if basis == (-1,):
+            return list(self.updates)
+        return [u for u in self.updates if bib.fassung_zahlen(u.app_ver) == (-1,) or bib.fassung_zahlen(u.app_ver) > basis]
+
+    @property
+    def updates_veraltet(self) -> list:
+        """Updates, die nicht neuer sind als die gewaehlte Basis - sie werden uebergangen und genannt."""
+        wirksam = self.updates_wirksam
+        return [u for u in self.updates if all(u is not w for w in wirksam)]
 
     def basis_setzen(self, eintrag) -> None:
         """Waehlt eines der vorhandenen Basispakete (nach Pfad verglichen)."""
@@ -84,13 +109,14 @@ class Spiel:
     def version(self) -> str:
         if self.dump_ordner:
             return self.dump_version or "-"
-        if self.updates:
-            return self.updates[-1].app_ver or self.updates[-1].version or "-"
+        wirksam = self.updates_wirksam
+        if wirksam:
+            return wirksam[-1].app_ver or wirksam[-1].version or "-"
         return (self.basis.app_ver or self.basis.version or "-") if self.basis else "-"
 
     def pakete(self, mit_zusaetzen: bool = False) -> list[Any]:
-        """Die Pakete in Einspielreihenfolge: Basis, Updates, auf Wunsch DLC."""
-        erg = ([self.basis] if self.basis is not None else []) + list(self.updates)
+        """Die Pakete in Einspielreihenfolge: Basis, die wirksamen Updates (:attr:`updates_wirksam`), auf Wunsch DLC."""
+        erg = ([self.basis] if self.basis is not None else []) + self.updates_wirksam
         if mit_zusaetzen:
             erg += list(self.zusaetze)
         return erg
@@ -100,7 +126,8 @@ class Spiel:
 
     @property
     def neuestes_update(self):
-        return self.updates[-1] if self.updates else None
+        wirksam = self.updates_wirksam
+        return wirksam[-1] if wirksam else None
 
 
 def spiele_gruppieren(eintraege) -> list[Spiel]:
@@ -127,8 +154,11 @@ def spiele_gruppieren(eintraege) -> list[Spiel]:
             else:
                 s.basis = e
         elif e.typ == bib.TYP_UPDATE:
-            if all(bib.fassung_zahlen(u.app_ver) != bib.fassung_zahlen(e.app_ver) for u in s.updates):
+            gleich = [u for u in s.updates if bib.fassung_zahlen(u.app_ver) == bib.fassung_zahlen(e.app_ver)]
+            if not gleich:
                 s.updates.append(e)
+            elif all(os.path.normcase(u.pfad) != os.path.normcase(e.pfad) for u in gleich + s.updates_doppelt):
+                s.updates_doppelt.append(e)                 # ein anderes Paket derselben Fassung: genannt, nicht eingespielt
         elif e.typ == bib.TYP_ZUSATZ:
             if all(z.pfad != e.pfad for z in s.zusaetze):
                 s.zusaetze.append(e)
@@ -155,6 +185,19 @@ def spiel_aus_dump(ordner: str) -> "Spiel | None":
             return Spiel(title_id=title_id, titel=titel, dump_ordner=os.path.abspath(ordner),
                          dump_version=str(werte.get("APP_VER") or ""))
     return None
+
+
+def hinweise_schreiben(a: au.Aufgabe, spiel: Spiel, t) -> None:
+    """Nennt im Protokoll, welche Updates nicht eingespielt werden: doppelte Fassungen und solche, die nicht neuer als die Basis sind."""
+    for doppelt in spiel.updates_doppelt:
+        genommen = next((u for u in spiel.updates
+                         if bib.fassung_zahlen(u.app_ver) == bib.fassung_zahlen(doppelt.app_ver)), None)
+        a.schreiben(t("ps4dib.log_update_doppelt", datei=doppelt.datei, version=doppelt.app_ver or "-",
+                      genommen=genommen.datei if genommen is not None else "-"))
+    if spiel.basis is not None:
+        for alt in spiel.updates_veraltet:
+            a.schreiben(t("ps4dib.log_update_aelter", datei=alt.datei, version=alt.app_ver or "-",
+                          basis=spiel.basis.app_ver or "-"))
 
 
 def zusatz_kennung(e: "bib.PkgEintrag") -> str:
@@ -247,7 +290,7 @@ class _Groessenwaechter:
 
 
 def _teil_entpacken(a: au.Aufgabe, paket: str, ziel: str, t, von: float, bis: float,
-                    passcode: "str | None") -> None:
+                    passcode: "str | None", *, zusatz: bool = False) -> None:
     """Entpackt ein Paket nach ``ziel`` und ordnet es zum Dump-Ordner; der Balken geht von ``von`` bis ``bis``."""
     a.schreiben(t("ps4ota.log_entpacke", paket=os.path.basename(paket), ziel=ziel))
     a.melden(t("ps4ota.status_lese_inhalt"), von)
@@ -290,8 +333,9 @@ def _teil_entpacken(a: au.Aufgabe, paket: str, ziel: str, t, von: float, bis: fl
         text = erg.meldung or "; ".join(erg.fehler[:3])
         raise au.AufgabeFehler("werkzeug", text, grund=text)
     a.melden(t("ps4ota.status_ordnen"), von + (bis - von) * 0.92)
+    # Ein Zusatz darf ohne Image0 kommen: ein reines Lizenz-DLC (PSAL) bringt nur sce_sys (Gesamtpruefung 23.11.2026).
     au.dump_ordner_machen(ziel, lambda n: a.melden(t("ps4ota.status_ordnen_n", anzahl=n), von + (bis - von) * 0.95),
-                          pruefen=a.pruefen_abbruch)
+                          pruefen=a.pruefen_abbruch, nur_system_erlaubt=zusatz)
 
 
 def dump_bereitstellen(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, von: float = 0.0, bis: float = 100.0,
@@ -343,7 +387,7 @@ def dump_bereitstellen(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, von: float 
         a.pruefen_abbruch()
         anfang, ende = _abschnitt(spiel.basis)
         _teil_entpacken(a, spiel.basis.pfad, app, t, anfang, ende, passcode)
-        for u in spiel.updates:
+        for u in spiel.updates_wirksam:
             a.pruefen_abbruch()
             zwischen = teil + "_update"
             aufraeumen(zwischen)
@@ -358,7 +402,8 @@ def dump_bereitstellen(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, von: float 
         for z in zusaetze:
             a.pruefen_abbruch()
             anfang, ende = _abschnitt(z)
-            _teil_entpacken(a, z.pfad, os.path.join(teil, "addcont", zusatz_kennung(z)), t, anfang, ende, passcode)
+            _teil_entpacken(a, z.pfad, os.path.join(teil, "addcont", zusatz_kennung(z)), t, anfang, ende, passcode,
+                            zusatz=True)
         os.replace(au._lang(teil), au._lang(ziel))
     except BaseException:
         if not aufraeumen_dem_aufrufer:
@@ -372,6 +417,7 @@ def arbeit_dump(a: au.Aufgabe, spiel: Spiel, ziel: str, t, *, passcode: "str | N
                 mit_dlc: bool = False) -> None:
     """Aufgabe „Dump-Ordner“: Basis und Updates entpackt und eingespielt nach ``ziel``."""
     a.schreiben(t("ps4dib.log_dump", titel=spiel.titel, ziel=ziel))
+    hinweise_schreiben(a, spiel, t)
     noetig_arbeit, noetig_ziel = platz_noetig(spiel, FORMAT_DUMP, mit_dlc)
     _platz_pruefen(os.path.dirname(os.path.abspath(ziel)) or ".", noetig_ziel)
     au.reste_wegraeumen(os.path.dirname(os.path.abspath(ziel)) or ".")    # Reste eines frueheren Abbruchs
@@ -390,6 +436,7 @@ def arbeit_pkg_zusammen(a: au.Aufgabe, spiel: Spiel, ziel_ordner: str, t, *, pfs
     """
     if spiel.basis is None:
         raise au.AufgabeFehler("ohne_basis", "Zu %s liegt kein Basisspiel vor" % spiel.title_id, title_id=spiel.title_id)
+    hinweise_schreiben(a, spiel, t)
     neu = spiel.neuestes_update
     if neu is None:
         raise au.AufgabeFehler("ohne_update", "Zu %s liegt kein Update vor" % spiel.title_id, title_id=spiel.title_id)
@@ -398,6 +445,99 @@ def arbeit_pkg_zusammen(a: au.Aufgabe, spiel: Spiel, ziel_ordner: str, t, *, pfs
     au.arbeit_zusammenfuehren(a, spiel.basis.pfad, neu.pfad, ausgabe, t, pruefen_danach=pruefen_danach,
                               pfsc_modus=pfsc_modus, arbeiter=arbeiter, passcode=passcode,
                               arbeitsordner=os.path.abspath(ziel_ordner))
+
+
+def _partial_dateien(ordner: str, title_id: str) -> "dict[str, tuple[int, int]]":
+    """Die ``*.partial``-Dateien dieses Spiels direkt in ``ordner``: voller Pfad -> (Groesse, Aenderungszeit in ns).
+
+    PS4 FFPFSC beginnt jeden Namen mit der Title-ID (``<ID> - <Titel> [v<Fassung>]<Endung>.partial``, ``inventory.py`` und
+    ``pipeline.py`` von 0.2.9); eine .partial eines anderen Spiels oder Werkzeugs im selben Zielordner zaehlt nie mit
+    (Gegenlese 23.11.2026: vorher galt jede neue oder gewachsene .partial als die dieses Laufs)."""
+    erg: dict[str, tuple[int, int]] = {}
+    kennung = str(title_id or "").strip().upper()
+    if not kennung:
+        return erg
+    try:
+        namen = os.listdir(ordner)
+    except OSError:
+        return erg
+    for n in namen:
+        if not n.lower().endswith(".partial") or not n.upper().startswith(kennung):
+            continue
+        pfad = os.path.join(ordner, n)
+        try:
+            st = os.stat(pfad)
+        except OSError:
+            continue
+        if os.path.isfile(pfad):
+            erg[pfad] = (st.st_size, st.st_mtime_ns)
+    return erg
+
+
+def _partial_dieses_laufs(ordner: str, title_id: str, vorher: "dict[str, tuple[int, int]]") -> "list[str]":
+    """Die ``.partial`` dieses Spiels, die dieser Lauf angelegt oder neu geschrieben hat. PS4 FFPFSC nimmt fuer dasselbe Spiel immer
+    denselben Namen und legt eine liegengebliebene Datei beim Start neu an - verglichen wird deshalb auch Groesse und Zeit, nicht nur
+    der Name."""
+    return [p for p, stand in _partial_dateien(ordner, title_id).items() if vorher.get(p) != stand]
+
+
+#: Faeden, die gesperrte halbe Abbilder spaeter loeschen. Es sind Daemon-Faeden (ein haengender Versuch soll das Programm nicht
+#: festhalten); ``partial_loeschen_abwarten`` wartet beim Programmende auf sie - sonst endete der Prozess mitten in den 30 s, und
+#: das halbe Abbild blieb liegen (Gegenlese 23.11.2026).
+_LOESCHFAEDEN: "list[threading.Thread]" = []
+_LOESCHFAEDEN_SPERRE = threading.Lock()
+
+
+def partial_loeschen_abwarten(hoechstens: float) -> bool:
+    """Wartet hoechstens ``hoechstens`` Sekunden auf laufende Loeschversuche. True, wenn keiner mehr laeuft."""
+    ende = time.monotonic() + max(0.0, float(hoechstens))
+    with _LOESCHFAEDEN_SPERRE:
+        faeden = list(_LOESCHFAEDEN)
+    for faden in faeden:
+        faden.join(max(0.0, ende - time.monotonic()))
+    with _LOESCHFAEDEN_SPERRE:
+        _LOESCHFAEDEN[:] = [f for f in _LOESCHFAEDEN if f.is_alive()]
+        return not _LOESCHFAEDEN
+
+
+def _partial_wegraeumen(pfade: "list[str]") -> None:
+    """Loescht die halben Abbilder - mit Wiederholung im Hintergrund: Nach einem Abbruch endet der Starter vor MkPFS, das die Datei
+    noch kurz offen haelt (WinError 32; ``ps4_dump_image`` kennt denselben Fall). Bis zum 23.11.2026 gab es nur einen Versuch."""
+    rest = []
+    for pfad in pfade:
+        try:
+            os.remove(pfad)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            rest.append(pfad)
+    if not rest:
+        return
+
+    def _nachher() -> None:
+        offen = list(rest)
+        for _ in range(60):                          # bis zu 30 s
+            time.sleep(0.5)
+            for pfad in list(offen):
+                try:
+                    os.remove(pfad)
+                    offen.remove(pfad)
+                except FileNotFoundError:
+                    offen.remove(pfad)
+                except OSError:
+                    pass
+            if not offen:
+                return
+        for pfad in offen:
+            logger.warning("Halbes Abbild bleibt liegen (gesperrt): %s", pfad)
+
+    faden = threading.Thread(target=_nachher, daemon=True, name="ps4-partial-weg")
+    with _LOESCHFAEDEN_SPERRE:
+        # Unter der Sperre starten: ``partial_loeschen_abwarten`` darf keinen eingetragenen, aber noch nicht gestarteten Faden sehen
+        # (``join`` wirft dann, ``is_alive`` sagt False und das Programmende hielte ihn fuer fertig; Gegenlese 23.11.2026).
+        _LOESCHFAEDEN[:] = [f for f in _LOESCHFAEDEN if f.is_alive()]
+        faden.start()
+        _LOESCHFAEDEN.append(faden)
 
 
 #: ``lauf(argumente, arbeitsordner=, zeile_callback=, fortschritt_callback=, prozess_ablage=)`` -> ``(rc, text)``.
@@ -444,6 +584,14 @@ def arbeit_abbild(a: au.Aufgabe, spiel: Spiel, ziel: str, format_: str, t, *, la
     dump = ""
     anteil = 0.0
     a.schreiben(t("ps4dib.log_abbild", titel=spiel.titel, ziel=ziel, format=format_))
+    if not spiel.dump_ordner:
+        hinweise_schreiben(a, spiel, t)
+    # PS4 FFPFSC schreibt nach ``<Ziel>/<Name>.<format>.partial`` und raeumt nur bei eigenen Ausnahmen auf; ein Abbruch beendet es
+    # hart. Bis zum 23.11.2026 blieben so zweistellige GB im Zielordner (Gesamtpruefung). Weggeraeumt wird nur, was dieser Lauf
+    # fuer dieses Spiel angelegt oder neu geschrieben hat - eine .partial, die vorher schon lag und unberuehrt blieb, oder die eines
+    # anderen Spiels bleibt.
+    partial_vorher = _partial_dateien(ziel, spiel.title_id)
+    fertig = False
     try:
         os.makedirs(lauf_ordner, exist_ok=True)
         if spiel.dump_ordner:
@@ -497,7 +645,10 @@ def arbeit_abbild(a: au.Aufgabe, spiel: Spiel, ziel: str, format_: str, t, *, la
         if rc != 0:
             text = "; ".join(letzte[-3:]) or ("Rueckgabewert %d" % rc)
             raise au.AufgabeFehler("abbild", text, code=rc, grund=text)
+        fertig = True
     finally:
+        if not fertig:
+            _partial_wegraeumen(_partial_dieses_laufs(ziel, spiel.title_id, partial_vorher))
         for ordner in (lauf_ordner, quell_ordner):
             if os.path.isdir(ordner):
                 # Nach einem Abbruch nicht abwarten: Auf einem USB-Laufwerk dauert das Loeschen eines entpackten

@@ -310,6 +310,21 @@ RELEASES = {
         ('v0.0.3', False, '2026-10-30', ['PS5-FPKG-Converter-v0.0.3-portable-win64.zip']),
         ('v0.0.2', False, '2026-10-07', ['PS5-FPKG-Converter-v0.0.2-portable-win64.zip']),
     ],
+    # Seit 23.11.2026 (Antworten vom 23.11.2026, gekuerzt).
+    'abcde6543/PS5-NTFS-BROWSER': [
+        ('v1.4.0', False, '2026-11-22', ['ntfs-browser-v1.4.0.zip', 'ntfs-browser.elf', 'SHA256SUMS']),
+        ('v1.3.0', False, '2026-11-22', ['ntfs-browser-v1.3.0.zip', 'ntfs-browser.elf', 'SHA256SUMS']),
+    ],
+    'zerodayofficial/NoUpdate': [
+        ('v1.0.0', False, '2026-11-21', ['NoUpdate.elf', 'SHA256SUMS.txt']),
+    ],
+    'abrocoma/PS5-Linux-Flasher': [
+        ('v1.6.4', False, '2026-11-21', ['Linux_Flasher.elf']),
+    ],
+    'xXBneutzerNameXx/PS5-Cleanup': [
+        ('v1.3', False, '2026-11-22', ['PS5-Cleanup-1.3.zip', 'ps5cleanup_v1.3.elf']),
+        ('v1.2', False, '2026-11-18', ['PS5-Cleanup-1.2.zip', 'ps5cleanup_v1.2.elf']),
+    ],
 }
 
 #: Die ELF-Dateien in helloworld/ am 10.10.2026 (Dump Forge seit 22.11.2026 auf 0.5.7 wie die feste Fassung der Befehlszeile in
@@ -332,6 +347,8 @@ HELLOWORLD = [
     "ps5upload-6.7.3.elf", "shadowmountplus_v1.7beta4.elf", "shsrv-ps5_v0.20.elf", "unjail-ps5app-payload.elf",
     "web-file-mgr-v1.10.elf", "webkit-autoloader-installer_v0.6.1.elf", "websrv-ps5_v0.34.elf",
     "zftpd-ps5-v1.6.0.elf", "zftpd-ps5-zhttp-v1.6.0.elf",
+    # seit 23.11.2026
+    "Linux_Flasher_v1.6.4.elf", "NoUpdate_v1.0.0.elf", "ntfs-browser_v1.4.0.elf", "ps5cleanup_v1.3.elf",
 ]
 #: Der Ordner „PS5 WebKit Autoloader“ am 10.10.2026: fuenf Fassungen, je drei Dateien.
 WEBKIT = sorted("webkit-autoloader-%s_v%s.%s" % (art, fassung, endung)
@@ -346,8 +363,13 @@ AMPR = [("0.4.2.1", "test-pack"), ("0.4.2.1", "test-nopack"), ("0.4.2.1", "test-
 #: Freigaben-Seite ihres Autors (noch) nicht steht.
 ERWARTET_ABWEICHUNG = {
     "game-compressor": wu.STATUS_NEUER, "np-fake-signin": wu.STATUS_NEUER, "garlic-savemgr": wu.STATUS_NEUER,
-    "dpiv2": wu.STATUS_UNKLAR,
 }
+
+#: Eine Quelle, die gefragt wird und keine Freigabe hat - so stand DPI v2 bis zum 23.11.2026 in der Tabelle. Seitdem ist DPI v2 ein
+#: Eintrag ohne Anfrage (das Repo hat weder Freigaben noch Tags, jede Abfrage kostete eine der 60 je Stunde); die Tests des Abfragens
+#: behalten den Fall "leere Freigabenliste" mit dieser Probe.
+OHNE_FREIGABE = wu.Werkzeug("dpiv2", "DPI v2 (OnionHEN-Plugin)", wu.GRUPPE_PAYLOAD, "OnionBuddies/onionHEN-dpiv2-plugin",
+                            muster="dpiv2-*.elf", art=wu.ART_HINWEIS, hinweis="updates.hinweis_ohne_freigabe", lokal="fest:")
 
 
 def inhalt(name: str) -> bytes:
@@ -653,8 +675,10 @@ class TabelleTests(unittest.TestCase):
         for seite in ohne_vergleich:
             repo = seite.split("github.com/", 1)[1].rsplit("/releases", 1)[0]
             self.assertNotIn(repo, zu_fragen)
-        # Eine vollstaendige Pruefung braucht rund 50 Anfragen; GitHub erlaubt ohne Anmeldung 60 je Stunde.
-        self.assertLessEqual(len(zu_fragen), 58, "Die Anfragegrenze von GitHub liegt bei 60 je Stunde")
+        # Eine vollstaendige Pruefung braucht rund 50 Anfragen; GitHub erlaubt ohne Anmeldung 60 je Stunde. Gezaehlt werden nur die
+        # Quellen auf GitHub - Codeberg (AnyPad) hat eine eigene Grenze (seit 23.11.2026 so gezaehlt; damals 58 GitHub-Quellen).
+        auf_github = [q for q in zu_fragen if ":" not in q]
+        self.assertLessEqual(len(auf_github), 58, "Die Anfragegrenze von GitHub liegt bei 60 je Stunde")
 
     def test_jede_quelle_der_tabelle_steht_in_den_festen_freigaben(self) -> None:
         # Sonst belegt der Rest dieser Datei nichts fuer sie.
@@ -824,7 +848,10 @@ class UrteilTests(unittest.TestCase):
         self.assertGreater(pruefte, 40, "Die Pruefung hat kaum etwas gemessen")
 
     def test_die_abweichungen_haben_den_erwarteten_grund(self) -> None:
-        self.assertEqual(wu.MELDUNG_KEINE_FREIGABE, self.nach["dpiv2"].meldung)
+        # DPI v2: seit 23.11.2026 ohne Anfrage, nur mit Link (das Repo hat keine Freigabe).
+        self.assertEqual(wu.STATUS_OHNE_QUELLE, self.nach["dpiv2"].status)
+        self.assertIn("OnionBuddies/onionHEN-dpiv2-plugin", self.nach["dpiv2"].werkzeug.seite)
+        self.assertNotIn("OnionBuddies/onionHEN-dpiv2-plugin", wu.quellen(wu.WERKZEUGE))
         for schluessel in ("game-compressor", "np-fake-signin", "garlic-savemgr"):
             self.assertGreater(wu.fassungsschluessel(self.nach[schluessel].lokal),
                                wu.fassungsschluessel(self.nach[schluessel].neu))
@@ -959,9 +986,10 @@ class UrteilTests(unittest.TestCase):
         self.assertEqual(len(self.befunde), sum(zaehler.values()))
         # Drei Fassungen, die ihr Autor (noch) nicht so veroeffentlicht hat, dazu LibProsperoPkg 2.6.0 (Eigenbau).
         self.assertEqual(4, zaehler.get(wu.STATUS_NEUER))
-        self.assertEqual(1, zaehler.get(wu.STATUS_UNKLAR))                 # DPI v2: keine Freigabe
-        # davon YT-Blocker (Sammlung, kein Einzel-ELF), Byepervisor Reborn (kein Release) und ps5-ultrapack (bleibt bewusst auf 2.5.1)
-        self.assertEqual(13, zaehler.get(wu.STATUS_OHNE_QUELLE))
+        self.assertNotIn(wu.STATUS_UNKLAR, zaehler)                        # DPI v2 (keine Freigabe) wird seit 23.11.2026 nicht gefragt
+        # davon YT-Blocker (Sammlung, kein Einzel-ELF), Byepervisor Reborn (kein Release), ps5-ultrapack (bleibt bewusst auf 2.5.1) und
+        # seit 23.11.2026 DPI v2 (Repo ohne Freigabe und Tags)
+        self.assertEqual(14, zaehler.get(wu.STATUS_OHNE_QUELLE))
         self.assertGreaterEqual(zaehler.get(wu.STATUS_NEU_HINWEIS, 0), 1)  # 7-Zip 26.04
         self.assertNotIn(wu.STATUS_FEHLER, zaehler)
         self.assertNotIn(wu.STATUS_NEU, zaehler)
@@ -1034,7 +1062,8 @@ class PruefenTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.bestand = bestand_aus()
-        self.werkzeuge = [wu.werkzeug(s) for s in ("elfldr", "ftpsrv", "ps5upload", "dpiv2", "cooling")]
+        self.werkzeuge = [wu.werkzeug("elfldr"), wu.werkzeug("ftpsrv"), wu.werkzeug("ps5upload"), OHNE_FREIGABE,
+                          wu.werkzeug("cooling")]
 
     def _pruefen(self, netz, speicher=None, **opt):
         return wu.pruefen(self.werkzeuge, self.bestand, netz, speicher, heute="2026-10-10", **opt)
@@ -1301,6 +1330,65 @@ class HolenTests(unittest.TestCase):
         self.assertEqual(1, len(ergebnis.fehler))
         self.assertIn("SHA-256", ergebnis.fehler[0])
         self.assertEqual([], self._alle_dateien(), "Auch die zwei guten Teile bleiben draussen, und nichts liegt herum")
+
+    def test_mehrteilig_ganz_oder_gar_nicht_auch_beim_ablegen(self) -> None:
+        """Gesamtpruefung 23.11.2026: Scheiterte das Kopieren eines spaeteren Teils (Platte voll), lag das erste schon an seinem Platz."""
+        echt = shutil.copyfile
+        kopiert = []
+
+        def kopieren(quelle, ziel, *a, **k):
+            kopiert.append(ziel)
+            if len(kopiert) == 3:
+                raise OSError(28, "No space left on device")
+            return echt(quelle, ziel, *a, **k)
+
+        with mock.patch.object(wu.shutil, "copyfile", kopieren):
+            ergebnis = wu.holen([self.webkit], self.basis, FakeNetz())
+        self.assertEqual([], ergebnis.abgelegt)
+        self.assertEqual(1, len(ergebnis.fehler))
+        self.assertEqual([], self._alle_dateien(), "kein Teil an seinem Platz, keine .teil-Reste")
+
+    def test_ein_gescheitertes_umbenennen_legt_alles_zurueck(self) -> None:
+        """Gegenlese 23.11.2026: Scheiterte ``os.replace`` beim zweiten Teil (Ziel gesperrt), lag das erste schon - und die alte Fassung
+        war ueberschrieben. Jetzt kommt die bisherige Fassung jedes Teils zurueck, und keine .alt/.teil bleibt liegen."""
+        wu.holen([self.webkit], self.basis, FakeNetz())
+        vorher = {}
+        for rel in self._alle_dateien():
+            pfad = os.path.join(self.basis, *rel.split("/"))
+            Path(pfad).write_bytes(b"BISHER:" + rel.encode())
+            vorher[rel] = Path(pfad).read_bytes()
+        echt = os.replace
+        neue_ablagen = []
+
+        def ersetzen(quelle, ziel):
+            if str(quelle).endswith(".teil"):
+                neue_ablagen.append(ziel)
+                if len(neue_ablagen) == 2:
+                    raise PermissionError(32, "gesperrt (gestellt)")
+            return echt(quelle, ziel)
+
+        with mock.patch.object(wu.os, "replace", ersetzen):
+            ergebnis = wu.holen([self.webkit], self.basis, FakeNetz())
+        self.assertEqual([], ergebnis.abgelegt)
+        self.assertEqual(1, len(ergebnis.fehler))
+        self.assertEqual(sorted(vorher), self._alle_dateien(), "keine .alt- und .teil-Reste")
+        for rel, inhalt in vorher.items():
+            self.assertEqual(inhalt, Path(self.basis, *rel.split("/")).read_bytes(), rel)
+
+    def test_ein_pc_programm_ohne_pruefsumme_wird_nie_abgelegt(self) -> None:
+        """Gesamtpruefung 23.11.2026: Der Host des WebKit Autoloaders (.exe/.py) startet das Programm - ohne SHA-256 in der Freigabe wie
+        bei ``webkit_host_holen`` nichts ablegen. Eine ELF ohne Pruefsumme kommt weiter (mit Meldung, siehe unten)."""
+        w = wu.werkzeug("webkit")
+        roh = github_roh(w.quelle, [('v0.6.2', False, '2026-10-12', [
+            'webkit-autoloader-host_v0.6.2.exe', 'webkit-autoloader-host_v0.6.2.py', 'webkit-autoloader-installer_v0.6.2.elf'])])
+        for anhang in roh[0]["assets"]:
+            anhang["digest"] = ""
+        befund = wu.beurteilen(w, wu.lokale_fassung(w, bestand_aus()), wu.freigaben_lesen(roh))
+        ergebnis = wu.holen([befund], self.basis, FakeNetz())
+        self.assertEqual([], ergebnis.abgelegt)
+        self.assertEqual(1, len(ergebnis.fehler))
+        self.assertIn("SHA-256", ergebnis.fehler[0])
+        self.assertEqual([], self._alle_dateien())
 
     def test_ein_fehler_haelt_die_uebrigen_nicht_auf(self) -> None:
         netz = FakeNetz()

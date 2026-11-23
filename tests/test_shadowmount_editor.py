@@ -115,7 +115,7 @@ class EditorSchreibwegTests(unittest.TestCase):
         cls.app._current_language = "de"
 
     def setUp(self) -> None:
-        self.lage = {"datei": GEPFLEGT, "stor": [], "fehlt": False}
+        self.lage = {"datei": GEPFLEGT, "stor": [], "fehlt": False, "zwischen": {}, "umbenannt": []}
         lage = self.lage
 
         class _FTP:
@@ -133,7 +133,16 @@ class EditorSchreibwegTests(unittest.TestCase):
             def storbinary(self, befehl, strom):
                 daten = strom.read()
                 lage["stor"].append(daten)
-                lage["datei"] = daten
+                lage["zwischen"][befehl.split(" ", 1)[1]] = daten
+
+            # Seit 23.11.2026 schreibt der Editor ueber <ziel>.tmp + Umbenennen (konsole_ftp.datei_ablegen); erst das Umbenennen
+            # macht die neue Fassung zur Datei. Ohne rename scheiterte der gute Weg mit AttributeError, ohne dass ein Test es sah.
+            def rename(self, alt, neu):
+                lage["datei"] = lage["zwischen"].pop(alt)
+                lage["umbenannt"].append(neu)
+
+            def delete(self, pfad):
+                lage["zwischen"].pop(pfad, None)
 
         self._echtes_ftp = ftplib.FTP
         ftplib.FTP = _FTP
@@ -238,6 +247,9 @@ class EditorSchreibwegTests(unittest.TestCase):
                      lambda: self._druecken("SCHREIBEN"))
         self.assertEqual(1, len(self.lage["stor"]),
                          "Nach dem Laden muss sich schreiben lassen.")
+        self.assertEqual(["/data/shadowmount/config.ini"], self.lage["umbenannt"],
+                         "Die Zwischendatei wurde nicht an ihren Platz gebracht - der Schreibweg scheiterte.")
+        self.assertEqual(self.lage["stor"][-1], self.lage["datei"])
         geschrieben = self.lage["stor"][-1].decode("utf-8")
         kommentare = [z for z in geschrieben.splitlines() if z.startswith("#")]
         self.assertGreaterEqual(

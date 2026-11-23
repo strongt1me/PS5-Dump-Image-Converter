@@ -2843,7 +2843,8 @@ class Ps5PkgFenster:
         return self.t("ps5pkg.forge_stage_" + stufe) if stufe in FORGE_STUFEN else stufe
 
     def _bilder_melden(self, info: "wz.PaketInfo") -> None:
-        """Arbeitsfaden, vor dem Bau aus einem Spielordner: eine Zeile je beschaedigtem PNG in ``sce_sys`` (``wz.bilder_befunde``).
+        """Arbeitsfaden, vor dem Bau eines Pakets: eine Zeile je beschaedigtem PNG in ``sce_sys`` (``wz.bilder_befunde``) - aus einem
+        Spielordner und seit 23.11.2026 auch aus einem Abbild (gelesen, ohne es zu entpacken).
 
         Dump Forge packt so ein Bild unveraendert ins Paket und warnt nicht (gemessen 22.11.2026, Forge 0.5.7); im Dump
         ``PPSA02195-Trackmania`` liegt eine ``pic2.png`` aus 532 Zufallsbytes. Eine Warnung, kein Abbruch: Ob die Konsole ein solches
@@ -2873,8 +2874,7 @@ class Ps5PkgFenster:
             name = str(bau.get("name") or "") or self._forge_dateiname(info)
             kraken = str(self._einstellung(opt.FORGE_KRAKEN, opt.STANDARD[opt.FORGE_KRAKEN]))
             if abbild == "pkg":
-                if info.ist_ordner:
-                    self._bilder_melden(info)
+                self._bilder_melden(info)
                 erg = forge.bauen(
                     self._werkzeug_forge(), info.pfad, os.path.join(temp, name),
                     kraken=kraken if kraken in forge.KRAKEN_STUFEN else "fast",

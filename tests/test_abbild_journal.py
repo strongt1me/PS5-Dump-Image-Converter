@@ -86,6 +86,78 @@ class ZugehoerigkeitTests(_Abbild):
         self.assertEqual(ALT, Path(self.bild).read_bytes()[1000:5096])
 
 
+class DefektUndVorhandenTests(_Abbild):
+    """Gesamtpruefung 23.11.2026: zwei Luecken bei Lesefehlern und Fehlerketten."""
+
+    def test_ein_unlesbares_undo_wird_beiseitegelegt_nicht_geloescht(self) -> None:
+        """Ein ``.undo`` entsteht nur vollstaendig. Laesst es sich spaeter nicht lesen, kann das Abbild halb geschrieben sein - bis zum
+        23.11.2026 wurde es geloescht wie ein halbes ``.undo.neu``, und das Abbild oeffnete sich wortlos."""
+        for name, verderben in (("abgeschnitten", lambda roh: roh[:-7]), ("Pruefsumme", lambda roh: roh[:40] + bytes([roh[40] ^ 0xFF]) + roh[41:])):
+            with self.subTest(fall=name):
+                aj.journal_schreiben(self.journal, [(1000, ALT, NEU)])
+                Path(self.journal).write_bytes(verderben(Path(self.journal).read_bytes()))
+                self.schreiben_bis(536)                                         # halb geschrieben
+                vorher = Path(self.bild).read_bytes()
+                ergebnis, ort = aj.zurueckspielen(self.bild)
+                self.assertEqual(aj.DEFEKT, ergebnis)
+                self.assertTrue(ort.startswith(self.journal + aj.DEFEKT_ENDUNG), ort)
+                self.assertTrue(os.path.exists(ort), "das Journal bleibt erhalten")
+                self.assertFalse(os.path.exists(self.journal))
+                self.assertEqual(vorher, Path(self.bild).read_bytes(), "nichts Unpruefbares wird zurueckgespielt")
+                os.remove(ort)
+
+    def test_ein_unlesbares_journal_im_eigenen_rueckweg_wird_gemeldet(self) -> None:
+        """Gegenlese 23.11.2026: Scheiterte ``speichern`` und war das eben geschriebene Journal unlesbar, kam nur der urspruengliche
+        Fehler - und das naechste Oeffnen fand ein .undo.defekt ohne Warnung."""
+        Path(self.journal).write_bytes(b"kaputt")
+        with self.assertRaises(aj.DirektFehler) as f:
+            aj.journal_zurueckspielen(self.bild, eigen=True)
+        self.assertIn(".undo.defekt", str(f.exception))
+        Path(self.journal).write_bytes(b"kaputt")
+        self.assertFalse(aj.journal_zurueckspielen(self.bild), "beim Oeffnen (nicht eigen) bleibt es bei der Rueckgabe")
+
+    def test_ein_zweites_defektes_bekommt_einen_eigenen_namen(self) -> None:
+        orte = []
+        for _ in range(2):
+            Path(self.journal).write_bytes(b"kaputt")
+            orte.append(aj.zurueckspielen(self.bild)[1])
+        self.assertEqual([self.journal + ".defekt", self.journal + ".defekt2"], orte)
+
+    def test_ein_erledigtes_journal_haelt_das_speichern_nicht_auf(self) -> None:
+        """Gegenlese 23.11.2026: Ein Lauf schrieb vollstaendig, nur das Entfernen des Journals scheiterte (Virenscanner). Das naechste
+        Speichern wurde verweigert, und das Neuoeffnen spielte zurueck - die gespeicherten Aenderungen waeren weg gewesen."""
+        aj.journal_schreiben(self.journal, [(1000, ALT, NEU)])
+        self.schreiben_bis(4096)                                              # alles neu: der Lauf ist durch
+        aj.journal_schreiben(self.journal, [(1000, NEU, ALT)])               # kein DirektFehler
+        self.assertEqual([(1000, NEU)], aj.journal_lesen(self.journal), "das neue Journal steht")
+
+    def test_das_entfernen_versucht_es_mehrmals(self) -> None:
+        aj.journal_schreiben(self.journal, [(1000, ALT, NEU)])
+        echt = os.remove
+        versuche = []
+
+        def gesperrt(pfad):
+            versuche.append(pfad)
+            if len(versuche) < 3:
+                raise PermissionError(32, "gesperrt (gestellt)")
+            echt(pfad)
+
+        with mock.patch.object(os, "remove", gesperrt), mock.patch("time.sleep"):
+            aj.journal_entfernen(self.journal)
+        self.assertEqual(3, len(versuche))
+        self.assertFalse(os.path.exists(self.journal))
+
+    def test_speichern_ueberschreibt_kein_liegengebliebenes_journal(self) -> None:
+        """Scheiterten Schreiben und Zurueckspielen, liegt das ``.undo`` noch. Ein erneutes Speichern haette die halb neuen Bytes als
+        "alt" festgehalten und das einzige gueltige Journal ersetzt."""
+        aj.journal_schreiben(self.journal, [(1000, ALT, NEU)])
+        roh = Path(self.journal).read_bytes()
+        with self.assertRaises(aj.DirektFehler):
+            aj.journal_schreiben(self.journal, [(1000, NEU, ALT)])
+        self.assertEqual(roh, Path(self.journal).read_bytes(), "das erste Journal ist unveraendert")
+        self.assertFalse(os.path.exists(self.journal + ".neu"))
+
+
 class TeildateiTests(_Abbild):
     def test_vollstaendiges_neu_ohne_undo_wird_zurueckgespielt(self) -> None:
         """U5: Strom weg, bevor das Umbenennen auf der Platte stand - das vollstaendige ``.undo.neu`` gilt als Journal."""

@@ -16,6 +16,8 @@ kein Uebersetzen/Kopieren des dortigen C#-Quellcodes.
 from __future__ import annotations
 
 import json
+import mmap
+import os
 import struct
 from dataclasses import dataclass, field
 
@@ -342,26 +344,34 @@ def read_pkg(path: str) -> PkgInfo:
         # nichts bedeuten - also bleibt es bei der Art.
         return PkgInfo(path=path, type=pkg_type)
 
+    # Ueber eine Speicherabbildung statt ``f.read()``: Bis zum 23.11.2026 lag hier das ganze Paket im Speicher - bei einem PS5-.pkg
+    # von 40 bis 80 GB (Spiel-Info liest die versionFileUri, version_uri_suche) ein MemoryError, der still "" ergab, oder ein
+    # zaeher Rechner (Gesamtpruefung). Gelesen werden nur Kopf, Eintragstabelle und die Seed-Stelle; das Betriebssystem laedt nur
+    # diese Seiten.
     with open(path, "rb") as f:
-        data = f.read()
+        if os.fstat(f.fileno()).st_size == 0:
+            raise PkgParseError(f"Leere Datei: {path}")
+        data = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        try:
+            if pkg_type == "meta":
+                header = _read_cnt_header(data, 0)
+                entries = _read_entry_table(data, 0, header)
+                return PkgInfo(path=path, type=pkg_type, header=header, entries=entries)
 
-    if pkg_type == "meta":
-        header = _read_cnt_header(data, 0)
-        entries = _read_entry_table(data, 0, header)
-        return PkgInfo(path=path, type=pkg_type, header=header, entries=entries)
+            fih = _read_fih_header(data)
+            cnt_base = fih.embedded_cnt_offset
+            info = PkgInfo(path=path, type=pkg_type, fih=fih,
+                           plaintext_marker=_traegt_klartextmarke(data, fih))
+            if cnt_base <= 0 or cnt_base + HEADER_SIZE > len(data):
+                return info
 
-    fih = _read_fih_header(data)
-    cnt_base = fih.embedded_cnt_offset
-    info = PkgInfo(path=path, type=pkg_type, fih=fih,
-                   plaintext_marker=_traegt_klartextmarke(data, fih))
-    if cnt_base <= 0 or cnt_base + HEADER_SIZE > len(data):
-        return info
-
-    header = _read_cnt_header(data, cnt_base)
-    entries = _read_entry_table(data, cnt_base, header)
-    info.header = header
-    info.entries = entries
-    return info
+            header = _read_cnt_header(data, cnt_base)
+            entries = _read_entry_table(data, cnt_base, header)
+            info.header = header
+            info.entries = entries
+            return info
+        finally:
+            data.close()
 
 
 def _traegt_klartextmarke(data: bytes, fih: FihHeader) -> bool | None:

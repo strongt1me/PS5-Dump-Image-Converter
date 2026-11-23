@@ -489,7 +489,7 @@ def png_fehler(daten: bytes) -> str:
     while pos + 12 <= len(daten):
         laenge, = struct.unpack(">I", daten[pos:pos + 4])
         art = daten[pos + 4:pos + 8]
-        if pos + 12 + laenge > len(daten):
+        if laenge > 0x7FFFFFFF or pos + 12 + laenge > len(daten):       # die PNG-Norm erlaubt hoechstens 2^31-1 Bytes je Block
             return PNG_KETTE_DEFEKT
         crc, = struct.unpack(">I", daten[pos + 8 + laenge:pos + 12 + laenge])
         if zlib.crc32(daten[pos + 4:pos + 8 + laenge]) & 0xFFFFFFFF != crc:
@@ -500,22 +500,51 @@ def png_fehler(daten: bytes) -> str:
     return PNG_ENDE_DEFEKT                       # die Kette endet ohne IEND (an einer Blockgrenze abgeschnitten)
 
 
-def bilder_befunde(ordner: str) -> "list[tuple[str, int, str]]":
-    """Die beschaedigten PNG in ``<ordner>/sce_sys`` (:data:`SCE_SYS_BILDER`) als ``(Name, Groesse, Art)``; nur lesend.
+#: Groessere Bilder werden nicht beurteilt (wie beim Abbild: :data:`programm_sdk.SCE_SYS_HOECHSTENS`).
+BILD_HOECHSTENS = 8 * 1024 * 1024
 
-    Dump Forge packt so eine Datei unveraendert ins Paket und sagt nichts dazu (gemessen 22.11.2026 mit Forge 0.5.7: 532 Zufallsbytes
-    als ``pic2.png``, mit und ohne ``pic2.dds`` daneben, ebenso ein abgeschnittenes PNG). Nicht lesbare Dateien werden uebergangen:
-    Das Lesen soll den Bau nie aufhalten.
-    """
-    befunde: list[tuple[str, int, str]] = []
-    for name in SCE_SYS_BILDER:
-        pfad = os.path.join(ordner, "sce_sys", name)
+
+def _bilder_im_ordner(ordner: str) -> "dict[str, bytes]":
+    """Die Bilder aus ``<ordner>/sce_sys`` als ``{name klein: Inhalt}``; die Schreibweise der Namen zaehlt nicht (Linux, macOS)."""
+    sce_sys = os.path.join(ordner, "sce_sys")
+    try:
+        namen = os.listdir(sce_sys)
+    except OSError:
+        return {}
+    gefunden: dict[str, bytes] = {}
+    for name in namen:
+        schluessel = name.lower()
+        if schluessel not in SCE_SYS_BILDER or schluessel in gefunden:
+            continue
+        pfad = os.path.join(sce_sys, name)
         try:
-            if not os.path.isfile(pfad):
+            if not os.path.isfile(pfad) or os.path.getsize(pfad) > BILD_HOECHSTENS:
                 continue
             with open(pfad, "rb") as datei:
-                daten = datei.read()
+                gefunden[schluessel] = datei.read()
         except OSError:
+            continue
+    return gefunden
+
+
+def bilder_befunde(quelle: str, mkpfs_ordner: str = "") -> "list[tuple[str, int, str]]":
+    """Die beschaedigten PNG in ``sce_sys`` (:data:`SCE_SYS_BILDER`) als ``(Name, Groesse, Art)``; nur lesend.
+
+    ``quelle`` ist ein Spielordner oder (seit 23.11.2026) ein Abbild (``.ffpkg``, ``.exfat``, ``.ffpfs``, ``.ffpfsc``), aus dem die Bilder
+    gelesen werden, ohne es zu entpacken (:func:`programm_sdk.sce_sys_dateien_in_abbild`). Dump Forge packt so eine Datei unveraendert ins
+    Paket und sagt nichts dazu (gemessen 22.11.2026 mit Forge 0.5.7: 532 Zufallsbytes als ``pic2.png``, mit und ohne ``pic2.dds``
+    daneben, ebenso ein abgeschnittenes PNG). Nicht lesbare und zu grosse Dateien werden uebergangen: Das Lesen soll den Bau nie
+    aufhalten.
+    """
+    if os.path.isdir(quelle):
+        bilder = _bilder_im_ordner(quelle)
+    else:
+        from ps5_validator.utils import programm_sdk                # spaet: braucht MkPFS erst hier
+        bilder = programm_sdk.sce_sys_dateien_in_abbild(quelle, SCE_SYS_BILDER, mkpfs_ordner)
+    befunde: list[tuple[str, int, str]] = []
+    for name in SCE_SYS_BILDER:
+        daten = bilder.get(name)
+        if daten is None:
             continue
         art = png_fehler(daten)
         if art:

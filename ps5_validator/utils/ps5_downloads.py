@@ -37,6 +37,9 @@ ART_PATCH = "patch"
 # UP8016-PPSA19015_00-0489895718491618
 _CONTENT_ID_RE = re.compile(r"([A-Z]{2}\d{4})-((?:PPSA|CUSA|PLAS)\d{5})_(\d{2})-([A-Z0-9]{16})")
 
+#: Ein Dateiname, der sich gefahrlos an den Zielordner haengen laesst (keine Trenner, kein "..", keine Sonderzeichen).
+_SICHERER_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
 
 class DownloadAdresseUngueltig(ValueError):
     """Die Adresse gehoert nicht zu einem PS5-Update-Paket."""
@@ -70,6 +73,10 @@ def parse_pkg_url(url: str) -> dict[str, str]:
     dateiname = zerlegt.path.rsplit("/", 1)[-1]
     if not dateiname.lower().endswith(".pkg"):
         raise DownloadAdresseUngueltig("Die Adresse endet nicht auf eine .pkg-Datei.")
+    # Der Name wird spaeter Teil des Zielpfads (zielpfad): Ein Rueckstrich oder ".." darin fuehrte unter Windows aus dem
+    # Ordner "PS5 Spiele Updates" heraus (Gesamtpruefung 23.11.2026). Sonys Namen bestehen nur aus Buchstaben, Ziffern, - und _.
+    if (not _SICHERER_NAME.fullmatch(dateiname)) or dateiname.startswith("."):
+        raise DownloadAdresseUngueltig("Der Dateiname in der Adresse enthält unzulässige Zeichen.")
     inhalt = _CONTENT_ID_RE.search(dateiname)
     if not inhalt:
         raise DownloadAdresseUngueltig(

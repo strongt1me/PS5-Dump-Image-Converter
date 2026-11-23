@@ -37,6 +37,7 @@ from ps5_validator.utils.abbild_journal import (
     DirektPlatzFehlt,
     journal_pfad,
     journal_schreiben,
+    journal_entfernen,
     journal_zurueckspielen,
     stellen_zusammenfassen,
 )
@@ -679,7 +680,7 @@ class PfsAbbild:
                 pass
             journal_zurueckspielen(self.pfad, eigen=True)
             raise
-        os.remove(journal_pfad(self.pfad))
+        journal_entfernen(journal_pfad(self.pfad))
 
     def _daten_schreiben(self, k: _Knoten) -> None:
         erster, bloecke = k.neu_lage                                  # type: ignore[misc]

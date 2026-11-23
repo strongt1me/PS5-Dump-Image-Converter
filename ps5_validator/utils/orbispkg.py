@@ -617,6 +617,8 @@ class BauErgebnis:
     abgebrochen: bool = False
     meldung: str = ""
     arbeitsordner_behalten: str = ""
+    #: Das Werkzeug lief ueber die Zeitgrenze und wurde beendet (die Oberflaeche nennt das in ihrer Sprache, nicht ``meldung``).
+    zeit_ueberschritten: bool = False
 
 
 def _bau_zeile(fortschritt: "Callable[[str, int | None], None] | None"):
@@ -750,14 +752,20 @@ def bauen(gp4: str, ordner: str, ausgabe: str, *, passcode: "str | None" = None,
 
 
 def _bauergebnis(lauf: LaufErgebnis, ausgabe: str) -> BauErgebnis:
-    erg = BauErgebnis(ok=lauf.rueckgabe == 0 and not lauf.abgebrochen
+    erg = BauErgebnis(ok=lauf.rueckgabe == 0 and not lauf.abgebrochen and not lauf.zeit_ueberschritten
                       and os.path.isfile(ausgabe),
                       ausgabe=ausgabe, dauer=lauf.dauer,
                       abgebrochen=lauf.abgebrochen)
     for zeile in lauf.ausgabe:
         if "Work directory kept:" in zeile:
             erg.arbeitsordner_behalten = zeile.split("kept:", 1)[1].strip()
-    if not erg.ok and not erg.abgebrochen:
+    if lauf.zeit_ueberschritten and not erg.abgebrochen:
+        # Bis zum 23.11.2026 stand hier die letzte Werkzeugzeile ("[ 87%] Compressing...") - kein Wort von der Zeitgrenze, die den
+        # Lauf beendet hatte (Gesamtpruefung). ``zeit_ueberschritten`` traegt es zur Oberflaeche (``ps4ota.fehler_zeit``);
+        # ``meldung`` bleibt fuer das Protokoll.
+        erg.zeit_ueberschritten = True
+        erg.meldung = _satz(None, "zeit", sekunden=int(lauf.dauer))
+    elif not erg.ok and not erg.abgebrochen:
         erg.meldung = lauf.letzte_fehlerzeile or lauf.text[-300:]
     return erg
 

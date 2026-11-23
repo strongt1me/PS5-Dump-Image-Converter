@@ -287,6 +287,21 @@ KATALOG: tuple[Dienst, ...] = (
     # version_muster: ``/api/state`` nennt ``version`` erst hinter den Spielen (Reihenfolge der Schluessel nicht gemessen), es
     # gaebe sonst eine Spielfassung aus. An der Konsole noch NICHT nachgemessen. Anlaufzeit geschaetzt.
     Dienst("kraken_mount", 8097, "kraken-mount_v*.elf", web="/", anlaufzeit=3.0),
+    # --- NTFS Browser, Linux Flasher, PS5 Cleanup (seit 23.11.2026, Nutzerwunsch) ----------------------------------------
+    # NTFS Browser (abcde6543, GPL-3.0): NTFS-USB-Laufwerke an der PS5 durchsuchen, kopieren, hochladen, loeschen. Port 8085 laut
+    # README des Autors ("http://<ps5-ip>:8085", ``make PORT=...``, Vorgabe 8085). Die laufende Version nennt ``GET /api/status``
+    # als ``"version"`` (``route_status`` in src/api.c, Quelltext 1.4.0 gelesen, an der Konsole NICHT nachgemessen).
+    Dienst("ntfs_browser", 8085, "ntfs-browser_v*.elf", web="/", anlaufzeit=2.0,
+           version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/status"),
+    # Linux Flasher (abrocoma, GPL-3.0-or-later): ein Linux-Abbild auf ein USB-Laufwerk schreiben. Port 9077 aus dem Quelltext
+    # (src/main.c ``#define PORT 9077``, bindet an INADDR_ANY) und aus dem ELF ("deeplinkUri": "http://127.0.0.1:9077/"). An der
+    # Konsole NICHT nachgemessen; Anlaufzeit geschaetzt.
+    Dienst("linux_flasher", 9077, "Linux_Flasher_v*.elf", web="/", anlaufzeit=2.0),
+    # PS5 Cleanup (da_Chris86 / xXBneutzerNameXx, GPL-3.0): Reste von Spielen und Werkzeugen aufraeumen, startet im Testmodus.
+    # Weboberflaeche laut README "meist http://<IP der PS5>:9100 - ist der Port belegt, der naechste freie bis 9109"; geprueft
+    # wird hier nur 9100. Die Kachel im ELF zeigt auf 127.0.0.1:9099 (fuer den Browser der Konsole). An der Konsole NICHT
+    # nachgemessen; Anlaufzeit geschaetzt (es schliesst beim Start das offene Spiel).
+    Dienst("ps5cleanup", 9100, "ps5cleanup_v*.elf", web="/", anlaufzeit=4.0),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,

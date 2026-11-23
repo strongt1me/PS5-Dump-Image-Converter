@@ -83,8 +83,10 @@ DATEN_ZEIT = 60.0
 
 #: Zeichen, die Windows in Dateinamen nicht speichert. Ein ":" legt dort
 #: still einen alternativen Datenstrom an - die Datei sieht danach leer aus
-#: (Durchsicht vom 23.09.2026, H9-9).
-_WINDOWS_VERBOTEN = frozenset('<>:"|?*')
+#: (Durchsicht vom 23.09.2026, H9-9). Der Rueckstrich ist unter FreeBSD ein
+#: gewoehnliches Zeichen im Namen, unter Windows ein Trenner: ``..\..\x`` von
+#: der Konsole fuehrte aus dem Zielordner heraus (Gesamtpruefung 23.11.2026).
+_WINDOWS_VERBOTEN = frozenset('<>:"|?*\\')
 
 
 def unter_windows_speicherbar(relativ: str) -> bool:
@@ -97,6 +99,17 @@ def unter_windows_speicherbar(relativ: str) -> bool:
         if teil and teil.rstrip(" .") != teil:
             return False       # Windows liesse Punkt oder Leerzeichen still fallen
     return True
+
+
+def bleibt_im_ziel(relativ: str) -> bool:
+    """Bleibt ein Pfad von der Konsole (mit "/" getrennt) unterhalb des Zielordners - auf jedem System?
+
+    Abgewiesen werden leere Teile, ``.`` und ``..`` (auch ein Server, der ``../x`` meldet) und absolute Pfade.
+    """
+    text = str(relativ or "")
+    if not text or text.startswith("/") or "\x00" in text:
+        return False
+    return all(teil not in ("", ".", "..") for teil in text.split("/"))
 
 
 class FtpFehler(RuntimeError):
@@ -359,6 +372,10 @@ def ordner_holen(adresse: str, fern: str, lokal: "str | Path",
                 break
 
             relativ = posixpath.relpath(pfad, fern)
+            if not bleibt_im_ziel(relativ):
+                raise FtpFehler(
+                    "%s fuehrt aus dem Zielordner heraus - vor dieser Datei "
+                    "beendet." % relativ)
             if not unter_windows_speicherbar(relativ):
                 # Umbenennen wuerde den Dump still veraendern; also ehrlich
                 # enden - vor dem RETR, wo das der Konsole nicht schadet.
@@ -367,6 +384,11 @@ def ordner_holen(adresse: str, fern: str, lokal: "str | Path",
                     "wie : oder ? im Namen) - vor dieser Datei beendet."
                     % relativ)
             datei = ziel / Path(relativ)
+            ziel_voll = os.path.abspath(ziel)
+            if os.path.commonpath([ziel_voll, os.path.abspath(datei)]) != ziel_voll:
+                raise FtpFehler(
+                    "%s fuehrt aus dem Zielordner heraus - vor dieser Datei "
+                    "beendet." % relativ)
             datei.parent.mkdir(parents=True, exist_ok=True)
 
             stand.aktuell = relativ
@@ -398,6 +420,18 @@ def ordner_holen(adresse: str, fern: str, lokal: "str | Path",
 
                 verbindung.retrbinary("RETR %s" % pfad, schreiben)
             except Exception as fehler:  # noqa: BLE001
+                # Die angefangene Datei nicht unter ihrem Endnamen liegen
+                # lassen: Ein Ordner mit sce_sys/param.json gilt sonst als
+                # Dump, und die gekuerzte Datei wuerde spaeter eingepackt
+                # (Gesamtpruefung 23.11.2026).
+                try:
+                    ausgabe.close()
+                except OSError:
+                    pass
+                try:
+                    datei.unlink()
+                except OSError:
+                    pass
                 raise FtpFehler("%s nicht ladbar: %s"
                                 % (pfad, fehler)) from fehler
             finally:
@@ -769,6 +803,14 @@ def _still_loeschen(verbindung: ftplib.FTP, pfad: str) -> None:
         logger.debug("%s bleibt liegen: %s", pfad, fehler)
 
 
+def _ziel_da(verbindung: ftplib.FTP, pfad: str) -> bool:
+    """Gibt es ``pfad`` auf der Konsole (``SIZE`` antwortet)? Kann der Server das nicht: ``False`` (dann nichts wagen)."""
+    try:
+        return verbindung.size(pfad) is not None
+    except Exception:  # noqa: BLE001 - ftplib wirft breit; "weiss nicht" heisst hier "nein"
+        return False
+
+
 def umbenennen(verbindung: ftplib.FTP, alt: str, neu: str) -> None:
     """Benennt ``alt`` in ``neu`` um - und ersetzt dabei ein vorhandenes ``neu``.
 
@@ -798,9 +840,21 @@ def umbenennen(verbindung: ftplib.FTP, alt: str, neu: str) -> None:
     try:
         verbindung.rename(neu, beiseite)
     except ftplib.all_errors:
-        # Das Ziel gibt es nicht oder es laesst sich nicht bewegen - dann
-        # lag es nicht am Ziel, und der erste Fehler ist der Grund.
-        raise FtpFehler("%s nicht umbenennbar: %s" % (alt, erster)) from erster
+        # Ein liegengebliebenes ``<neu>.alt`` (ein frueherer Lauf konnte es
+        # nicht loeschen) haelt einen Server ohne Ersetzen fuer immer auf.
+        # Ueberholt ist es nur, wenn ``neu`` selbst da ist - dann stand die
+        # Fassung danach schon (Gesamtpruefung 23.11.2026, Gegenlese). Fehlt
+        # ``neu``, ist ``.alt`` vielleicht die einzige bisherige Fassung und
+        # bleibt.
+        if not _ziel_da(verbindung, neu):
+            raise FtpFehler("%s nicht umbenennbar: %s" % (alt, erster)) from erster
+        _still_loeschen(verbindung, beiseite)
+        try:
+            verbindung.rename(neu, beiseite)
+        except ftplib.all_errors:
+            # Das Ziel laesst sich nicht bewegen - dann lag es nicht am Ziel,
+            # und der erste Fehler ist der Grund.
+            raise FtpFehler("%s nicht umbenennbar: %s" % (alt, erster)) from erster
 
     try:
         verbindung.rename(alt, neu)
@@ -900,9 +954,22 @@ def datei_holen(verbindung: ftplib.FTP, fern: str, lokal: "str | Path") -> bool:
         erwartet = verbindung.size(fern)
     except Exception:  # noqa: BLE001 - SIZE ist optional, nicht jeder Server kann es
         erwartet = None
+    # Scheitert das Schreiben auf dem PC (Platte voll), wird der RETR trotzdem
+    # zu Ende gelesen: Eine Ausnahme im Rueckruf risse ihn mittendrin ab - und
+    # das legt ftpsrv lahm (Modulkopf; wie in ordner_holen, Gesamtpruefung
+    # 23.11.2026).
+    schreibfehler: list[OSError] = []
     try:
         with open(zwischen, "wb") as ziel:
-            verbindung.retrbinary("RETR %s" % fern, ziel.write)
+            def schreiben(block: bytes) -> None:
+                if schreibfehler:
+                    return
+                try:
+                    ziel.write(block)
+                except OSError as fehler:
+                    schreibfehler.append(fehler)
+
+            verbindung.retrbinary("RETR %s" % fern, schreiben)
     except ftplib.error_perm as fehler:
         _lokale_zwischendatei_loeschen(zwischen)
         logger.debug("%s (noch) nicht auf der Konsole: %s", fern, fehler)
@@ -910,6 +977,11 @@ def datei_holen(verbindung: ftplib.FTP, fern: str, lokal: "str | Path") -> bool:
     except Exception as fehler:  # noqa: BLE001 - ftplib wirft breit
         _lokale_zwischendatei_loeschen(zwischen)
         raise FtpFehler("%s nicht lesbar: %s" % (fern, fehler)) from fehler
+    if schreibfehler:
+        _lokale_zwischendatei_loeschen(zwischen)
+        raise FtpFehler(
+            "%s nicht speicherbar: %s (der Download wurde zu Ende gelesen, "
+            "ftpsrv bleibt bedienbar)" % (lokal_pfad, schreibfehler[0])) from schreibfehler[0]
 
     tatsaechlich = zwischen.stat().st_size
     if erwartet is not None and tatsaechlich != erwartet:

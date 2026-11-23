@@ -62,6 +62,13 @@ class _FtpNachbau:
     def storbinary(self, befehl: str, strom) -> None:
         self.geschrieben[befehl.split(" ", 1)[1]] = strom.read()
 
+    def rename(self, alt: str, neu: str) -> None:
+        """Seit 23.11.2026 schreibt das Programm ueber ``<ziel>.tmp`` + Umbenennen (``konsole_ftp.datei_ablegen``)."""
+        self.geschrieben[neu] = self.geschrieben.pop(alt)
+
+    def delete(self, pfad: str) -> None:
+        self.geschrieben.pop(pfad, None)
+
 
 def _zurueckgeschrieben(aenderungen: dict[str, str],
                         vorlage: str = VORLAGE) -> str:

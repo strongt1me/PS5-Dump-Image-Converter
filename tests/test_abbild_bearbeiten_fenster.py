@@ -111,6 +111,8 @@ class AufgabeStartenTests(unittest.TestCase):
         self.assertEqual(("pack_folder", "alt-quelle", "alt-ziel", ["x", "y"]),
                          (gui.current_mode.get(), gui.source_path.get(), gui.dest_path.get(), gui._batch_sources),
                          "die Oberflaeche steht wieder, wie sie war")
+        # Gesamtpruefung 23.11.2026: auch das Zielformat - vorher blieb das des Bearbeitens stehen.
+        self.assertEqual("alt-format", gui.target_format.get())
 
     def test_misserfolg_wird_gemeldet(self) -> None:
         gui = _AttrenGui()

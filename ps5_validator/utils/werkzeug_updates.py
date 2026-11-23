@@ -506,6 +506,14 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     # und ``SHA256SUMS``); hier auf das Namensschema des Ordners umbenannt.
     _p("dump-forge", "Dump Forge", "quer3q/ps5-dump-forge", "ps5-dump-forge_v*.elf",
        _d("ps5-dump-forge-{f}-ps5.elf", "ps5-dump-forge_v{f}.elf")),
+    # Seit 23.11.2026 (Nutzerwunsch): NTFS Browser, NoUpdate, Linux Flasher, PS5 Cleanup - je ein Anhang, beim Autor ohne Fassung
+    # im Namen (ausser PS5 Cleanup); hier auf das Namensschema des Ordners umbenannt.
+    _p("ntfs-browser", "NTFS Browser", "abcde6543/PS5-NTFS-BROWSER", "ntfs-browser_v*.elf",
+       _d("ntfs-browser.elf", "ntfs-browser_v{f}.elf")),
+    _p("noupdate", "NoUpdate", "zerodayofficial/NoUpdate", "NoUpdate_v*.elf", _d("NoUpdate.elf", "NoUpdate_v{f}.elf")),
+    _p("linux-flasher", "Linux Flasher", "abrocoma/PS5-Linux-Flasher", "Linux_Flasher_v*.elf",
+       _d("Linux_Flasher.elf", "Linux_Flasher_v{f}.elf")),
+    _p("ps5cleanup", "PS5 Cleanup", "xXBneutzerNameXx/PS5-Cleanup", "ps5cleanup_v*.elf", _d("ps5cleanup_v{f}.elf")),
     _p("anypad", "AnyPad PS5", "codeberg:elmonomalva0/Any-Pad-ps5", "AnyPad-PS5-*.elf", _d("AnyPad-PS5-{f}.elf"),
        vorab=True, hinweis="updates.hinweis_vorab"),
     _p("onionhen", "OnionHEN", "aydencharles/onionHEN", "OnionHEN_v*.elf", _d("OnionHEN.elf", "OnionHEN_v{f}.elf"),
@@ -526,9 +534,11 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
              "updates.hinweis_archiv"),
     _hinweis("unjail", "unjail-ps5app-payload", "SvenGDK/unjail-ps5app-payload", "unjail-ps5app-payload.elf",
              "updates.hinweis_ordner_fassung", lokal="ordnername:helloworld/unjail-ps5app-payload-*"),
-    # Die Zahlen im Dateinamen (13.60-1.00) sind Firmware und Plugin-Fassung, keine Fassung der Freigabe.
-    _hinweis("dpiv2", "DPI v2 (OnionHEN-Plugin)", "OnionBuddies/onionHEN-dpiv2-plugin", "dpiv2-*.elf",
-             "updates.hinweis_ohne_freigabe", lokal="fest:"),
+    # Die Zahlen im Dateinamen (13.60-1.00) sind Firmware und Plugin-Fassung, keine Fassung der Freigabe. Das Repo hat weder
+    # Freigaben noch Tags (geprueft 23.11.2026): Seit dem 23.11.2026 nur der Link, keine Anfrage - jede Abfrage kostete eine der 60
+    # Anfragen je Stunde, die GitHub ohne Anmeldung erlaubt, und brachte nie ein Ergebnis.
+    _ohne("dpiv2", "DPI v2 (OnionHEN-Plugin)", "dpiv2-*.elf", "updates.hinweis_ohne_freigabe", lokal="fest:",
+          seite=_SEITEN["github"] % "OnionBuddies/onionHEN-dpiv2-plugin"),
     _ohne("byepervisor", "Byepervisor Reborn", "byepervisor_reborn.elf",
           "updates.hinweis_ohne_freigabe", seite=_SEITEN["github"] % "drakmor/Byepervisor-Reborn"),
     _ohne("kstuff-drakmor", "kstuff-lite (drakmor, Testfassung)", "kstuff_v*-fpkg-dr-test*.elf",
@@ -1291,17 +1301,70 @@ def _soll_summe(teil: Teil, netz: Any) -> str:
     return ""
 
 
-def _ablegen(teil: Teil, vorlaeufig: str, basis: str) -> list[str]:
-    pfade = []
-    for ort in teil.orte:
-        ordner = os.path.join(update_ordner(basis), ort)
-        os.makedirs(ordner, exist_ok=True)
-        ziel = os.path.join(ordner, teil.ziel)
-        zwischen = ziel + ".teil"
-        shutil.copyfile(vorlaeufig, zwischen)
-        os.replace(zwischen, ziel)
-        pfade.append(ziel)
-    return pfade
+#: Endungen von Dateien, die das Programm auf dem PC startet (der Host des WebKit Autoloaders). Ohne Pruefsumme in der
+#: Freigabe werden sie nie abgelegt - wie bei :func:`webkit_host_holen` (Gesamtpruefung 23.11.2026).
+PC_PROGRAMM_ENDUNGEN = (".exe", ".py")
+
+
+def _ablegen_alle(geladen: "Sequence[tuple[Teil, str]]", basis: str) -> list[str]:
+    """Legt alle Teile eines Werkzeugs ab - ganz oder gar nicht.
+
+    Erst kommt jedes Teil als ``<Ziel>.teil`` neben sein Ziel (Kopieren kann scheitern: Platte voll, Virenscanner); erst wenn
+    alle Kopien stehen, werden sie per ``os.replace`` umbenannt. Bis zum 23.11.2026 lag nach einem Fehler beim zweiten Teil
+    das erste schon an seinem Platz - beim WebKit Autoloader ein Host ohne passenden Installer (Gesamtpruefung).
+    """
+    vorbereitet: list[tuple[str, str]] = []
+    try:
+        for teil, vorlaeufig in geladen:
+            for ort in teil.orte:
+                ordner = os.path.join(update_ordner(basis), ort)
+                os.makedirs(ordner, exist_ok=True)
+                ziel = os.path.join(ordner, teil.ziel)
+                zwischen = ziel + ".teil"
+                vorbereitet.append((zwischen, ziel))
+                shutil.copyfile(vorlaeufig, zwischen)
+    except BaseException:
+        for zwischen, _ziel in vorbereitet:
+            try:
+                os.remove(zwischen)
+            except OSError:
+                pass
+        raise
+    # Auch das Umbenennen ganz oder gar nicht: Eine vorhandene Datei kommt erst beiseite (``.alt``); scheitert ein spaeteres Teil
+    # (Ziel gesperrt, schreibgeschuetzt), gehen die schon gesetzten zurueck (Gesamtpruefung 23.11.2026, Gegenlese).
+    beiseite: list[tuple[str, str]] = []
+    gesetzt: list[str] = []
+    try:
+        for zwischen, ziel in vorbereitet:
+            if os.path.exists(ziel):
+                alt = ziel + ".alt"
+                os.replace(ziel, alt)
+                beiseite.append((alt, ziel))
+            os.replace(zwischen, ziel)
+            gesetzt.append(ziel)
+    except BaseException:
+        for ziel in gesetzt:
+            try:
+                os.remove(ziel)
+            except OSError:
+                pass
+        for alt, ziel in beiseite:
+            try:
+                os.replace(alt, ziel)
+            except OSError:
+                logger.warning("Werkzeug-Update: %s liess sich nicht zuruecklegen (liegt als %s)", ziel, alt)
+        for zwischen, _ziel in vorbereitet:
+            try:
+                os.remove(zwischen)
+            except OSError:
+                pass
+        raise
+    for alt, _ziel in beiseite:
+        try:
+            os.remove(alt)
+        except OSError:
+            pass
+    return gesetzt
 
 
 def holen(befunde: Sequence[Befund], basis: str, netz: Any, melden: "Melder | None" = None,
@@ -1348,10 +1411,11 @@ def holen(befunde: Sequence[Befund], basis: str, netz: Any, melden: "Melder | No
                 if soll and soll != summe:
                     raise ValueError("%s: SHA-256 stimmt nicht" % teil.ziel)
                 if not soll:
+                    if teil.ziel.lower().endswith(PC_PROGRAMM_ENDUNGEN):
+                        raise ValueError("%s: keine SHA-256 in der Freigabe - ein Programm, das auf dem PC startet, "
+                                         "wird nicht ungeprueft abgelegt" % teil.ziel)
                     ohne_summe.append(teil.ziel)
-            pfade: list[str] = []
-            for teil, vorlaeufig in geladen:
-                pfade.extend(_ablegen(teil, vorlaeufig, basis))
+            pfade = _ablegen_alle(geladen, basis)
             ergebnis.abgelegt.extend(pfade)
             ergebnis.ohne_summe.extend(ohne_summe)
             ergebnis.fertig.append(name)
