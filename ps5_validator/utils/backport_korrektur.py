@@ -411,6 +411,81 @@ def luecken_neutralisieren(elf: bytes, luecken: "dict[str, Iterable[str]]", *,
 
 
 # --------------------------------------------------------------------------
+# libc: Heap-Flags hinter dem Zeichenkettenpatch
+# --------------------------------------------------------------------------
+
+#: Der Import, auf den der libc-Patch (:data:`ps5_backport.LIBC_NEU`) die neue Map-Funktion umbiegt:
+#: ``sceKernelMapFlexibleMemory`` (libkernel).
+LIBC_MAP_IMPORT = ("libkernel", "IWIBBdTHit4")
+
+#: ``mov ecx, 0x8000`` - das Flag, das eine libc ab SDK 7 der neuen Map-Funktion (``4h6F1LLbTiw``) mitgibt.
+#: Die alte Funktion lehnt es auf jeder Firmware ab, auf die der Zeichenkettenpatch zielt: libkernel 4.00 bis 6.50
+#: (entschluesselte Staende, 23.11.2026) prueft ``flags & 0xffbfff6f`` und meldet sonst 0x80020016 (EINVAL); 7.61 weist
+#: ``0x88000`` vor dem Aufruf ausdruecklich ab. Gemessen an GTA V (PPSA04264, SDK-9-libc, FW 4.03, 23.11.2026): mit dem
+#: Flag "Failed to create the heap" (r9 = 0x80020016), mit ``mov ecx, 0`` an den drei Aufrufstellen startet das Spiel.
+#: Spiele, die malloc ersetzen (GT7), erreichen diesen Pfad nie - deshalb fiel es dort nicht auf.
+LIBC_MAP_FLAG_ALT = bytes.fromhex("b900800000")
+LIBC_MAP_FLAG_NEU = bytes.fromhex("b900000000")
+
+#: So weit (Byte) vor dem Aufruf wird das Flag gesucht. Bei GTA V liegt es 11 bzw. 16 Byte davor.
+LIBC_MAP_FENSTER = 32
+
+_AUFRUF = re.compile(rb"[\xe8\xe9]")
+
+
+class LibcFlagsErgebnis(NamedTuple):
+    #: Aufrufe (``call``/``jmp rel32``) des Imports, die gefunden wurden.
+    aufrufe: int
+    #: Dateioffsets der korrigierten ``mov ecx``-Befehle.
+    korrigiert: "tuple[int, ...]"
+    #: Aufrufe, vor denen schon ``mov ecx, 0`` steht (frueherer Lauf).
+    bereits: int
+    #: Aufrufe ohne eindeutiges ``mov ecx, 0x8000`` im Fenster - bleiben unveraendert.
+    unklar: int
+
+
+def libc_map_flags_korrigieren(elf: bytes) -> "tuple[bytes, LibcFlagsErgebnis]":
+    """Setzt vor jedem Aufruf von ``sceKernelMapFlexibleMemory`` das Flag ``0x8000`` auf 0 (siehe :data:`LIBC_MAP_FLAG_ALT`).
+
+    Nur sinnvoll nach dem Zeichenkettenpatch der libc (:func:`ps5_backport.libc_patchen`): Erst dann ruft die libc die
+    alte Funktion mit den Argumenten der neuen auf. Geaendert wird nur, wo im Fenster vor dem Aufruf **genau ein**
+    ``mov ecx, 0x8000`` steht; alles andere bleibt und wird als ``unklar`` gezaehlt.
+
+    Returns:
+        (Bytes, Ergebnis). Die Bytes sind dasselbe Objekt, wenn nichts zu aendern war.
+    """
+    ziele = {e.plt_va for e in plt_eintraege(elf) if (e.bibliothek, e.nid) == LIBC_MAP_IMPORT}
+    if not ziele:
+        return elf, LibcFlagsErgebnis(0, (), 0, 0)
+    aufrufe = bereits = unklar = 0
+    korrigiert: list[int] = []
+    for k in _koepfe(elf):
+        if k.typ != PT_LOAD or not k.flags & PF_X:
+            continue
+        bis = min(k.offset + k.filesz, len(elf)) - 4
+        for treffer in _AUFRUF.finditer(elf, k.offset, max(k.offset, bis)):
+            pos = treffer.start()
+            rel, = struct.unpack_from("<i", elf, pos + 1)
+            if k.vaddr + (pos - k.offset) + 5 + rel not in ziele:
+                continue
+            aufrufe += 1
+            anfang = max(k.offset, pos - LIBC_MAP_FENSTER)
+            fenster = elf[anfang:pos]
+            if fenster.count(LIBC_MAP_FLAG_ALT) == 1:
+                korrigiert.append(anfang + fenster.index(LIBC_MAP_FLAG_ALT))
+            elif LIBC_MAP_FLAG_ALT not in fenster and LIBC_MAP_FLAG_NEU in fenster:
+                bereits += 1
+            else:
+                unklar += 1
+    if not korrigiert:
+        return elf, LibcFlagsErgebnis(aufrufe, (), bereits, unklar)
+    puffer = bytearray(elf)
+    for stelle in korrigiert:
+        puffer[stelle:stelle + len(LIBC_MAP_FLAG_NEU)] = LIBC_MAP_FLAG_NEU
+    return bytes(puffer), LibcFlagsErgebnis(aufrufe, tuple(korrigiert), bereits, unklar)
+
+
+# --------------------------------------------------------------------------
 # Korrekturprofile
 # --------------------------------------------------------------------------
 

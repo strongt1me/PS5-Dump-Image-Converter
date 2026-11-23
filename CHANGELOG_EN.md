@@ -28,6 +28,7 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 - **Fixed:** In the BACKPORT window, text in the file table was cut off at display sizes from 125 % (the “Kind” column, at 200 % also file names and status); the columns now grow with it, the SDK number is centred, and the warning sentence wraps at the window width.
 - **Fixed:** BACKPORT counts failed corrections in its error count, and closing the window while the corrections run brings the cancel message instead of “Done”.
 - **Fixed:** A game folder whose BACKPORT was cancelled after the eboot.bin counted as “already lowered”; the modules in sce_module now count too.
+- **Fixed:** After a BACKPORT to firmware 4 to 6, some games stopped right at the start with “Failed to create the heap”: the adjusted libc passed the older firmware a flag it does not know. BACKPORT now adjusts these places too (measured with GTA V on FW 4.03).
 - **Fixed:** When Dump Forge converts a .pkg straight into an image, the report now names the exchange of the AMPR runtime; a “BACKPORT needed” that rests on the param.json alone now says so.
 - **Fixed:** Deliberately damaged packages and images can no longer hold up the source check for minutes or make it end with an error.
 - **Fixed:** In the English, Spanish, French and Italian manuals and in the FAQ, examples showed German or English placeholders such as `<PS5-Adresse>`; they are now in the language of the document.

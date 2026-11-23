@@ -812,5 +812,78 @@ class LandeplatzTests(unittest.TestCase):
             self.assertEqual(bericht2.geaendert, [])
 
 
+class LibcMapFlagsTests(unittest.TestCase):
+    """Heap-Flags hinter dem libc-Patch (GTA V auf FW 4.03, 23.11.2026): ``mov ecx, 0x8000`` vor dem Aufruf der alten
+    Map-Funktion wird ``mov ecx, 0`` - nur dort, nur eindeutig, und ein zweiter Lauf aendert nichts mehr."""
+
+    IMPORTE = [("libkernel", "IWIBBdTHit4", False), ("libkernel", "AAAAAAAAAAA", False)]
+    VOR = bytes.fromhex("488d7da8" "ba03000000")       # lea rdi,[rbp-0x58]; mov edx,3
+    NACH = bytes.fromhex("4889de")                    # mov rsi,rbx
+
+    def _bauen(self):
+        """Vier Aufrufstellen: Map mit Flag, anderer Import mit Flag, Map ohne Flag, Map mit zwei Flags im Fenster."""
+        teile = [
+            ("map", self.VOR + bk.LIBC_MAP_FLAG_ALT + self.NACH),
+            ("fremd", self.VOR + bk.LIBC_MAP_FLAG_ALT + self.NACH),
+            ("map", self.VOR + self.NACH),
+            ("map", bk.LIBC_MAP_FLAG_ALT + self.VOR + bk.LIBC_MAP_FLAG_ALT + self.NACH),
+        ]
+        laenge = sum(len(v) + 5 + 16 for _z, v in teile)
+        _elf, info = baue_elf(self.IMPORTE, b"\x90" * laenge)
+        code = bytearray()
+        aufrufe = []
+        for ziel, vorspann in teile:
+            code += vorspann
+            va = info["code_va"] + len(code)
+            ziel_va = info["plt_va"][0 if ziel == "map" else 1]
+            aufrufe.append(info["code"] + len(code))
+            code += b"\xe8" + struct.pack("<i", ziel_va - (va + 5))
+            code += b"\x90" * 16
+        elf, info2 = baue_elf(self.IMPORTE, bytes(code))
+        self.assertEqual(info2["code"], info["code"])
+        return elf, aufrufe
+
+    def test_nur_eindeutige_map_aufrufe_werden_korrigiert(self):
+        elf, aufrufe = self._bauen()
+        neu, erg = bk.libc_map_flags_korrigieren(elf)
+        self.assertEqual(erg.aufrufe, 3, "drei Aufrufe der Map-Funktion, der vierte ruft einen anderen Import")
+        self.assertEqual(len(erg.korrigiert), 1)
+        self.assertEqual(erg.unklar, 2, "ohne Flag und mit zwei Flags im Fenster")
+        stelle = erg.korrigiert[0]
+        self.assertEqual(stelle, aufrufe[0] - len(self.NACH) - len(bk.LIBC_MAP_FLAG_ALT))
+        self.assertEqual(neu[stelle:stelle + 5], bk.LIBC_MAP_FLAG_NEU)
+        # Sonst bleibt jedes Byte, auch das Flag vor dem fremden Import und beide Flags vor dem vierten Aufruf.
+        unterschiede = [i for i in range(len(elf)) if elf[i] != neu[i]]
+        self.assertEqual(unterschiede, [stelle + 2])
+        self.assertEqual(neu.count(bk.LIBC_MAP_FLAG_ALT), elf.count(bk.LIBC_MAP_FLAG_ALT) - 1)
+
+    def test_zweiter_lauf_aendert_nichts(self):
+        elf, _ = self._bauen()
+        neu, _ = bk.libc_map_flags_korrigieren(elf)
+        nochmal, erg = bk.libc_map_flags_korrigieren(neu)
+        self.assertIs(nochmal, neu)
+        self.assertEqual((erg.korrigiert, erg.bereits), ((), 1))
+
+    def test_ohne_map_import_nichts(self):
+        elf, _ = _elf()
+        neu, erg = bk.libc_map_flags_korrigieren(elf)
+        self.assertIs(neu, elf)
+        self.assertEqual(erg, bk.LibcFlagsErgebnis(0, (), 0, 0))
+
+    def test_greift_erst_nach_dem_zeichenkettenpatch(self):
+        """Vor dem libc-Patch heisst der Import ``4h6F1LLbTiw`` (neue Funktion, Flag gueltig) - dann bleibt alles."""
+        elf, _ = self._bauen()
+        name_neu, name_alt = b"IWIBBdTHit4#A#A", b"4h6F1LLbTiw#A#B"
+        self.assertEqual(elf.count(name_neu), 1)
+        vorher = elf.replace(name_neu, name_alt)
+        unveraendert, erg = bk.libc_map_flags_korrigieren(vorher)
+        self.assertIs(unveraendert, vorher)
+        self.assertEqual(erg.aufrufe, 0)
+        gepatcht, stelle = bp.libc_patchen(vorher)
+        self.assertGreaterEqual(stelle, 0)
+        _neu, erg2 = bk.libc_map_flags_korrigieren(gepatcht)
+        self.assertEqual(len(erg2.korrigiert), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

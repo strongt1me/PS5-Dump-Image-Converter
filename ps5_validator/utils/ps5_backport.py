@@ -10,7 +10,7 @@ Der Ablauf je Datei - die Reihenfolge ist zwingend::
     1. Typ bestimmen (ELF, SELF oder unbrauchbar)
     2. SELF -> ELF entpacken (nur bei SELF)
     3. SDK-Angabe im Modulkopf herabsetzen
-    4. optionaler libc-Zeichenkettenpatch (nur 6.xx, nur libc.prx)
+    4. optionaler libc-Zeichenkettenpatch samt Heap-Flags (Ziel bis 6, nur libc.prx)
     5. ELF -> SELF neu signieren  *** nicht optional ***
     6. Original erst danach ersetzen
 
@@ -1079,6 +1079,10 @@ MELDUNGEN: dict[str, str] = {
         ', libc-Muster nicht gefunden',
     'libc_zurueckgesetzt':
         ', libc-Patch bei 0x{stelle} zurückgenommen',
+    'libc_flags_korrigiert':
+        ', Heap-Flags an {anzahl} Stellen auf 0 gesetzt',
+    'libc_flags_unklar':
+        ', Heap-Flags an {anzahl} Stellen nicht eindeutig – unverändert',
 }
 
 
@@ -1089,6 +1093,19 @@ def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
         return vorlage.format(**werte)
     except (KeyError, IndexError, ValueError):
         return MELDUNGEN[kennung].format(**werte)
+
+def _libc_flags_anpassen(elf: bytes, texte: "dict[str, str] | None") -> tuple[bytes, str]:
+    """Heap-Flags hinter dem libc-Patch (:func:`backport_korrektur.libc_map_flags_korrigieren`) samt Zusatztext."""
+    # Spaet eingebunden: backport_korrektur bindet dieses Modul selbst ein.
+    from ps5_validator.utils import backport_korrektur
+    elf, erg = backport_korrektur.libc_map_flags_korrigieren(elf)
+    zusatz = ""
+    if erg.korrigiert:
+        zusatz += _satz(texte, "libc_flags_korrigiert", anzahl=len(erg.korrigiert))
+    if erg.unklar:
+        zusatz += _satz(texte, "libc_flags_unklar", anzahl=erg.unklar)
+    return elf, zusatz
+
 
 def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
                       libc_zusatz: bool = False,
@@ -1147,6 +1164,10 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
                 zusatz = _satz(texte, "libc_bereits_gepatcht")
             else:
                 zusatz = _satz(texte, "libc_muster_fehlt")
+            if stelle != -1:
+                # Erst mit dem umgebogenen Import bekommt die alte Map-Funktion die Flags der neuen (GTA V, FW 4.03).
+                elf, flags_zusatz = _libc_flags_anpassen(elf, texte)
+                zusatz += flags_zusatz
         else:
             # Ziel 7 und hoeher: wie Auto-Backpork - ein frueher gesetzter Patch geht zurueck, sonst bleibt es.
             elf, stelle = libc_zuruecksetzen(elf)

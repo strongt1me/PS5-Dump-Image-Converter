@@ -28,6 +28,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Behoben:** Im BACKPORT-Fenster wurde bei Anzeigegrößen ab 125 % Text in der Dateitabelle abgeschnitten (Spalte „Art“, bei 200 % auch Dateinamen und Status); die Spalten wachsen jetzt mit, die SDK-Zahl steht mittig, und der Warnsatz bricht nach der Fensterbreite um.
 - **Behoben:** BACKPORT zählt gescheiterte Korrekturen in der Fehlerzahl mit, und wer das Fenster während der Korrekturen schließt, bekommt die Abbruchmeldung statt „Fertig“.
 - **Behoben:** Ein Spielordner, bei dem ein BACKPORT nach der eboot.bin abgebrochen wurde, galt als „schon herabgesetzt“; jetzt zählen auch die Module in sce_module.
+- **Behoben:** Nach einem BACKPORT für Firmware 4 bis 6 brachen manche Spiele gleich beim Start mit „Failed to create the heap“ ab: Die angepasste libc übergab der älteren Firmware ein Flag, das sie nicht kennt. BACKPORT passt diese Stellen jetzt mit an (an GTA V auf FW 4.03 gemessen).
 - **Behoben:** Wandelt Dump Forge ein .pkg direkt in ein Abbild, nennt der Bericht jetzt den Austausch der AMPR-Laufzeit; ein „BACKPORT nötig“, das nur auf der param.json beruht, sagt das jetzt dazu.
 - **Behoben:** Gezielt beschädigte Pakete und Abbilder können die Prüfung der Quelle nicht mehr minutenlang aufhalten oder mit einem Fehler abbrechen.
 - **Behoben:** Im englischen, spanischen, französischen und italienischen Handbuch und in der FAQ standen in Beispielen deutsche oder englische Platzhalter wie `<PS5-Adresse>`; sie stehen jetzt in der Sprache des Dokuments.

@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 PROJEKT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJEKT))
@@ -77,6 +78,39 @@ class LibcRegelTests(unittest.TestCase):
         self.assertIn(bp.LIBC_ALT, elf)
         self.assertNotIn(bp.LIBC_NEU, elf)
         self.assertIn("libc", grund)
+
+    # Heap-Flags hinter dem libc-Patch (GTA V, FW 4.03, 23.11.2026) - die Korrektur selbst pruefen
+    # LibcMapFlagsTests in test_backport_korrektur.py; hier nur, wann der libc-Schritt sie aufruft.
+
+    def _mit_flags(self, quelle: bytes, firmware: int, ergebnis=None):
+        from ps5_validator.utils import backport_korrektur as bk
+        erg = ergebnis or bk.LibcFlagsErgebnis(3, (0x10, 0x20), 0, 1)
+        with mock.patch.object(bk, "libc_map_flags_korrigieren", side_effect=lambda elf: (elf, erg)) as aufruf:
+            return self._verarbeiten(quelle, firmware), aufruf
+
+    def test_flags_nach_dem_patch_und_im_grund(self) -> None:
+        (kennung, _neu, grund), aufruf = self._mit_flags(_quelle_mit_alt(), 4)
+        self.assertEqual(bp.ERG_GEPATCHT, kennung)
+        self.assertEqual(1, aufruf.call_count)
+        self.assertIn(bp.LIBC_NEU, aufruf.call_args[0][0], "die Flags kommen erst nach dem Zeichenkettenpatch")
+        self.assertIn("Heap-Flags an 2 Stellen auf 0", grund)
+        self.assertIn("Heap-Flags an 1 Stellen nicht eindeutig", grund)
+
+    def test_flags_auch_bei_schon_gepatchter_zeichenkette(self) -> None:
+        (_kennung, _neu, grund), aufruf = self._mit_flags(_quelle_mit_neu(), 4)
+        self.assertEqual(1, aufruf.call_count)
+        self.assertIn("libc bereits gepatcht", grund)
+
+    def test_keine_flags_ohne_muster_oder_ab_ziel_7(self) -> None:
+        ohne = bp.elf_signieren(bytes(baue_elf(0x10000040, 0x12090001)))
+        for quelle, firmware in ((ohne, 4), (_quelle_mit_alt(), 7), (_quelle_mit_neu(), 7)):
+            _ergebnis, aufruf = self._mit_flags(quelle, firmware)
+            self.assertEqual(0, aufruf.call_count, firmware)
+
+    def test_ohne_korrektur_kein_zusatz(self) -> None:
+        from ps5_validator.utils import backport_korrektur as bk
+        (_kennung, _neu, grund), _aufruf = self._mit_flags(_quelle_mit_alt(), 4, bk.LibcFlagsErgebnis(0, (), 0, 0))
+        self.assertNotIn("Heap-Flags", grund)
 
 
 class DateiauswahlTests(unittest.TestCase):
