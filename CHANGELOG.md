@@ -18,8 +18,8 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 - **Geändert:** Ein unbrauchbarer eigener Zielwert aus der Einstellungsdatei sperrt BACKPORT nicht mehr – das Protokoll nennt ihn, und es gilt der Wert der Firmware-Tabelle; eine Firmware-Referenz aus der Einstellungsdatei gilt jetzt auch im BACKPORT-Fenster.
 - **Geändert:** Handbuch, FAQ, Anleitungen und README wurden in fünf Sprachen gegen das Programm geprüft und berichtigt; „Aufgabe 7 – PKG / FPKG“ steht jetzt vor „Aufgabe 8 – Validator“ (Kapitel 12 und 13).
 - **Aktualisiert:** AMPR EMU NG 0.5.0, die jetzt die Vorgabe für zstd-Asset-Packs ist, und Kraken Mount 0.3.1; die Warnung zum Indexspeicher kennt NG 0.5.0.
-- **Aktualisiert:** Dump Forge 0.5.7 (Konsolen-ELF und Befehlszeile), elfldr 0.28, WebKit Autoloader 0.8.3 (0.8.2 liegt zur Auswahl mit bei) und YT-Blocker 1.4r6.
-- **Aktualisiert:** garlic-savemgr 2.0, PS5Upload 12.6.22 und PS5 Cooling & System Center – Pro 1.91.0.
+- **Aktualisiert:** Dump Forge 0.5.7 (Konsolen-ELF und Befehlszeile), elfldr 0.28, WebKit Autoloader 0.8.4 (0.8.2 und 0.8.3 liegen zur Auswahl mit bei) und YT-Blocker 1.4r6.
+- **Aktualisiert:** garlic-savemgr 2.0, PS5Upload 12.6.24 und PS5 Cooling & System Center – Pro 1.92.0.
 - **Entfernt:** Die ältere OnionHEN 0.0.13 liegt nicht mehr bei; mitgeliefert wird nur noch OnionHEN 0.9.0.
 - **Behoben:** Beim Umwandeln eines schon herabgesetzten Abbilds fragte das Programm manchmal trotzdem nach einem Backport für Firmware 12.
 - **Behoben:** Das Handbuch sagte, Dump Forge übernehme `fakelib` unverändert ins Paket; bei Spielen mit AMPR EMU setzt es dort seine eigene Laufzeit ein, und die Protokollzeile zum Paketbau sagt es jetzt auch.
