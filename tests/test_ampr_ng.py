@@ -65,12 +65,12 @@ NG_DATEIEN = {
     # v0.5.0 (20.11.2026 09:58 UTC, Marke auf d20210e): bis zu 20 % schnellere Lesezugriffe, 150,89 statt 184,44 MiB Modul (Cache ab 32 MiB,
     # waechst in den freien Indexspeicher), Index 30-40 % schneller geladen, Zeilen der Ansicht je 32 B, mehrere Spielfehler (FF XVI, GTA V,
     # Marvel's Avengers, Demon Slayer, Spielstaende auf FW 4.xx); innen "ampr-emu-ng 0.5.0". Digest = GitHub-Digest = SHA256SUMS des Autors;
-    # dieselbe libSceAmpr.sprx steckt byte-gleich in Kraken Mount 0.3.1.
+    # dieselbe libSceAmpr.sprx steckte byte-gleich in Kraken Mount 0.3.1 (die 0.5.1 steckt in Kraken Mount 0.3.2).
     "0.5.0 ng": "7379e49953d8f14f26b45ff06a863ecea56aa90a60ba3d5a375f61c52618a174",
     "0.5.0 ng-debug": "3b8c5c6fc6c168d75298231fb8a0a5ff7c26d582ba9f80e1e45bdab0d9f3306c",
     # v0.5.1 (23.11.2026 19:36 UTC, Marke auf main, "Latest"): Spielstand-Fixes im pkg-Modus (Marvel's Wolverine, Hades), schnellere Lese-
     # stapel (Lese-Ueberlappung je Lane, Lesepool 6 -> 8 Threads), DIRT 5, MARVEL Cosmic Invasion, Scott Pilgrim EX; Dateiformate und Index-
-    # speicher unveraendert; innen "ampr-emu-ng 0.5.1". Digest = GitHub-Digest = SHA256SUMS des Autors. Kraken Mount 0.3.1 bringt noch 0.5.0 mit.
+    # speicher unveraendert; innen "ampr-emu-ng 0.5.1". Digest = GitHub-Digest = SHA256SUMS des Autors. Kraken Mount 0.3.2 (24.11.2026) bringt sie byte-gleich mit.
     "0.5.1 ng": "7ca61afc444f0b44d2f005506dde16cb43e74dae4b1e045323b291b8db1c3d5d",
     "0.5.1 ng-debug": "b7b269f5f6ac0f60e414a7057087f077a73e6e7bbede89f6923d54301d277d30",
 }
