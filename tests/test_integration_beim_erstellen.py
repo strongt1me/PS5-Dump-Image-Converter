@@ -154,9 +154,13 @@ class VersionssortierungTests(unittest.TestCase):
         self.assertEqual(schluessel(erste_beschriftung.split()[0]), schluessel(hoechste.split()[0]))
         ng = [b for b, e in g._ampr_versionsauswahl.items() if g._ampr_ist_ng(e)]
         if ng:
-            # NG steht direkt unter dem Block der neuesten drakmor-Nummer, vor den aelteren Fassungen von drakmor.
+            # NG steht direkt unter dem Block der neuesten drakmor-Nummer, die einen normalen Bau hat (ein neuerer reiner Pack-Bau,
+            # 0.4.2.2 test-pack seit 24.11.2026, steht darueber und zaehlt hier nicht), vor den aelteren Fassungen von drakmor.
+            from ps5_validator.utils import ampr_assetpakete
             reihe = list(g._ampr_versionsauswahl)
-            neueste = schluessel(hoechste.split()[0])
+            normale = [b for b in drakmor
+                       if not ampr_assetpakete.variante_nur_packbau(str(g._ampr_versionsauswahl[b].get("variant") or ""))]
+            neueste = schluessel(max(normale or drakmor, key=lambda b: schluessel(b.split()[0])).split()[0])
             erste_aeltere = next((i for i, b in enumerate(reihe) if b in drakmor and schluessel(b.split()[0]) < neueste), len(reihe))
             self.assertTrue(all(reihe.index(b) < erste_aeltere for b in ng), reihe)
 

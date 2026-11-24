@@ -41794,7 +41794,10 @@ class PS5ConverterGUI:
             True, wenn beide Bibliotheken abgelegt wurden. False heißt nur
             "nicht von hier" – der Aufrufer geht dann seinen bisherigen Weg.
         """
-        vorrat = self._ampr_alle_fassungen()
+        # Ohne die Pack-Bauten (test-pack, test-debug-pack): Sie lesen gepackte Baender und gehoeren nicht in den normalen
+        # Weg. 0.4.2.2 kam am 24.11.2026 nur als Pack-Bau und stand damit ganz oben im Speicher - ohne diesen Filter haette
+        # die Versorgung einem Titel ohne Packs einen Pack-Bau in die fakelib gelegt.
+        vorrat = self._ampr_gen_fassungen_ohne_pack(self._ampr_alle_fassungen())
         ampr = next((e for e in vorrat
                      if e.get("lib") == self._AMPR_SPRX_NAME), None)
         if not ampr:
@@ -42823,9 +42826,14 @@ class PS5ConverterGUI:
             if not drakmor or not ng:
                 raus.extend(lauf)
                 continue
-            neueste = self._ampr_version_sort_key(drakmor[0]["version"])
+            # Der Kopf endet nach dem Block der neuesten Fassung, die einen normalen Bau hat. Ein neuerer reiner Pack-Bau
+            # (0.4.2.2 test-pack, 24.11.2026) steht davor, schiebt NG aber nicht vor die normale Vorgabe: In der Liste "Normal"
+            # fehlt er, und NG stuende dort sonst ganz oben.
+            normal = next((e for e in drakmor
+                           if not ampr_assetpakete.variante_nur_packbau(str(e.get("variant") or ""))), drakmor[0])
+            neueste = self._ampr_version_sort_key(normal["version"])
             kopf = 0
-            while kopf < len(drakmor) and self._ampr_version_sort_key(drakmor[kopf]["version"]) == neueste:
+            while kopf < len(drakmor) and self._ampr_version_sort_key(drakmor[kopf]["version"]) >= neueste:
                 kopf += 1
             raus.extend(drakmor[:kopf] + ng + drakmor[kopf:])
         return raus

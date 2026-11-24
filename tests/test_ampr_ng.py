@@ -112,10 +112,13 @@ class BestandTests(unittest.TestCase):
         for fassung in ("0.2.0", "0.3.0", "0.3.1", "0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.4.0-beta", "0.4.1", "0.5.0", "0.5.1"):
             self.assertIn((fassung, "ng"), paare)
             self.assertIn((fassung, "ng-debug"), paare)
-        self.assertEqual(("0.4.2.1", "test-nopack"), paare[0], "die oberste (= Vorgabe) bleibt drakmor")
+        # 0.4.2.2 (24.11.2026, nur als Pack-Bau, vom Nutzer gebracht) steht als neueste Nummer ganz oben, ist aber ein reiner
+        # Pack-Bau: Die Vorgabe des normalen Wegs bleibt die neueste Fassung mit normalem Bau, drakmor 0.4.2.1.
+        self.assertEqual(("0.4.2.2", "test-pack"), paare[0], "die neueste Nummer von drakmor steht oben")
+        self.assertEqual(("0.4.2.1", "test-nopack"), paare[1], "die oberste normale Fassung (= Vorgabe) bleibt drakmor 0.4.2.1")
         # Nutzerwunsch 05.11.2026: die NG-Fassungen stehen unterhalb von 0.4.2.1 (mit seinen drei Bauarten),
         # neueste zuerst, und vor den aelteren Fassungen von drakmor.
-        self.assertEqual({"0.4.2.1"}, {v for v, _ in paare[:3]})
+        self.assertEqual({"0.4.2.1"}, {v for v, _ in paare[1:4]})
         self.assertEqual([("0.5.1", "ng"), ("0.5.1", "ng-debug"), ("0.5.0", "ng"), ("0.5.0", "ng-debug"),
                           ("0.4.1", "ng"), ("0.4.1", "ng-debug"),
                           ("0.4.0-beta", "ng"), ("0.4.0-beta", "ng-debug"),
@@ -123,9 +126,9 @@ class BestandTests(unittest.TestCase):
                           ("0.3.3", "ng"), ("0.3.3", "ng-debug"),
                           ("0.3.2", "ng"), ("0.3.2", "ng-debug"),
                           ("0.3.1", "ng"), ("0.3.1", "ng-debug"), ("0.3.0", "ng"), ("0.3.0", "ng-debug"),
-                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[3:25])
-        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[25:]), "danach nur noch Fassungen von drakmor")
-        self.assertEqual("0.3.6.6", paare[25][0])
+                          ("0.2.0", "ng"), ("0.2.0", "ng-debug")], paare[4:26])
+        self.assertFalse(any(G._ampr_ist_ng(e) for e in eintraege[26:]), "danach nur noch Fassungen von drakmor")
+        self.assertEqual("0.3.6.6", paare[26][0])
 
 
 class BetaTests(unittest.TestCase):
@@ -307,6 +310,16 @@ class OrdnungTests(unittest.TestCase):
         self.assertEqual(["0.3.0 ng", "0.3.0 ng-debug", "0.2.0 ng", "0.2.0 ng-debug"], namen[1:5])
         self.assertEqual("0.4.2.1 test-nopack", namen[5])
 
+    def test_eine_neuere_pack_fassung_schiebt_ng_nicht_vor_die_normale_vorgabe(self) -> None:
+        """0.4.2.2 kam am 24.11.2026 nur als Pack-Bau. In der Liste "Normal" fehlt er; NG darf dort nicht ganz oben stehen."""
+        vorrat = self._vorrat() + [_eintrag("0.4.2.2", "test-pack")]
+        namen = self._namen(self.gui._ampr_ordnen(vorrat))
+        self.assertEqual(["0.4.2.2 test-pack", "0.4.2.1 test-nopack", "0.4.2.1 test-pack", "0.4.2.1 test-debug-pack",
+                          "0.3.0 ng", "0.3.0 ng-debug", "0.2.0 ng", "0.2.0 ng-debug"], namen[:8])
+        ohne_pack = [n for n in namen if "test-pack" not in n and "test-debug-pack" not in n]
+        self.assertEqual("0.4.2.1 test-nopack", ohne_pack[0], "ohne die Pack-Bauten bleibt die normale Vorgabe oben")
+        self.assertEqual("0.3.0 ng", ohne_pack[1], "NG gleich darunter")
+
     def test_ohne_ng_oder_ohne_drakmor_aendert_sich_nichts(self) -> None:
         nur_drakmor = [e for e in self._vorrat() if not G._ampr_ist_ng(e)]
         nur_ng = [e for e in self._vorrat() if G._ampr_ist_ng(e)]
@@ -348,7 +361,9 @@ class OrdnungTests(unittest.TestCase):
         """Dieselbe Ordnung kommt aus dem Scanner des Bestands - dort liest sie die Klappliste, Aufgabe 7 und der Rest."""
         eintraege = [e for e in self.gui._ampr_scan_einen_speicher(str(BESTAND)) if e["lib"] == "libSceAmpr.sprx"]
         namen = self._namen(eintraege)
-        self.assertEqual("0.4.2.1 test-nopack", namen[0])
+        self.assertEqual(["0.4.2.2 test-pack", "0.4.2.1 test-nopack"], namen[:2],
+                         "ganz oben die neueste Nummer (ein Pack-Bau), darunter die normale Vorgabe")
+        self.assertLess(namen.index("0.4.2.1 test-debug-pack"), namen.index("0.5.1 ng"), "NG steht unter dem Block 0.4.2.1")
         self.assertLess(namen.index("0.3.0 ng"), namen.index("0.3.6.6 no debug"))
         self.assertGreater(namen.index("0.3.0 ng"), namen.index("0.4.2.1 test-debug-pack"))
 

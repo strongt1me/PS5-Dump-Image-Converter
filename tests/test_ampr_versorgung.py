@@ -130,6 +130,23 @@ class VersorgungTests(unittest.TestCase):
             self.assertEqual(fh.read(), ziel.read_bytes(),
                              "Eingebaut wurde nicht die neueste Fassung.")
 
+    def test_eine_neuere_pack_fassung_verdraengt_die_normale_nicht(self):
+        """0.4.2.2 kam am 24.11.2026 nur als Pack-Bau (test-pack) und stand damit ganz oben im Versionsspeicher.
+
+        Die Pack-Bauten gehoeren nicht in den normalen Weg (die Fassungswahl in Aufgabe 7 und die normale Liste nehmen sie
+        heraus). Die Versorgung nahm aber den ersten Eintrag und haette einem Titel ohne Packs einen Pack-Bau in die fakelib
+        gelegt.
+        """
+        self.lage = _Lage()
+        _fassung(self.lage.speicher, "0.4.2.1 test-nopack", "libSceAmpr.sprx")
+        _fassung(self.lage.speicher, "0.4.2.1 test-pack", "libSceAmpr.sprx")
+        _fassung(self.lage.speicher, "0.4.2.2 test-pack", "libSceAmpr.sprx")
+        gui = self.lage.gui()
+        self.assertTrue(gui._ampr_aus_speicher_versorgen(self.lage.dump), self.lage.protokoll)
+        ziel = gui._fakelib_pfad(self.lage.dump) / "libSceAmpr.sprx"
+        self.assertEqual(b"0.4.2.1 test-nopack/libSceAmpr.sprx", ziel.read_bytes(),
+                         "Eingebaut wurde nicht die neueste normale Fassung.")
+
     def test_ohne_playgo_wird_gar_nichts_abgelegt(self):
         """Halb versorgt waere schlechter als gar nicht.
 
