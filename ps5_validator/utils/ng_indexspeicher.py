@@ -52,6 +52,11 @@ ohne Seitenspeicher plus die abgelehnte Anforderung, gegen den Block ohne Seiten
   (``index_view.rs view_bytes_at_300k_files``: 14.055 / 15.227 / 16.399 KiB Spitze ohne Pack / zstd / LZ4 bei 300.000 Dateien) trifft die
   Rechnung (``tests/test_ng_indexspeicher.py``). Der Cache waechst nach dem Laden in den freien Indexspeicher - er nimmt dem Index nichts
   weg, was er braucht (``INDEX_KEPT_ROOM`` 2 MiB), darum aendert das die Pruefung nicht. An der Konsole nicht gemessen.
+* **0.5.1** (Freigabe vom 23.11.2026; gelesen im Vergleich v0.5.0...v0.5.1): ``rt/index_view.rs`` und ``ampr-format/src/view.rs`` bleiben
+  unberuehrt, ``rt/index_memory.rs`` aendert nur einen Kommentar und die Testzahl des **Debug**-Pools (Cache 30,61 statt 30,64 MiB; der
+  Release-Pool 0x9030000, ``INDEX_MEMORY_MAX`` 80 MiB und der 32-MiB-Cache stehen unveraendert), ``rt/index.rs`` rettet nur ``errno``. Das
+  Modell 0.5.0 gilt darum unveraendert auch fuer 0.5.1 (Lesepool von 6 auf 8 Threads, Lese-Ueberlappung je Lane und Spielstand-Fixes
+  aendern nichts am Indexspeicher). An der Konsole nicht gemessen.
 
 Gegengeprueft an den gemeldeten Faellen (Issues #53, #61, #67 von ampr-emu-ng; Zahlen aus den Kommentaren): Demon's Souls (LZ4,
 223.180 Dateien, 0.4.0: "need 62MiB, over the 48 MiB") und Final Fantasy XVI (zstd, 0.4.0: "49 MiB against 48"; 0.3.5:
@@ -101,7 +106,7 @@ MODELL_041 = "0.4.1"
 #: Freigabe 0.5.0 und neuer: wie 0.4.1, die Ansicht aber mit einer 32-Byte-Zeile je Datei.
 MODELL_050 = "0.5.0"
 #: Die neueste NG-Fassung, fuer die eine Rechnung steht (Empfehlung "mit dieser Fassung reicht der Speicher").
-NEUESTE_FASSUNG = "0.5.0"
+NEUESTE_FASSUNG = "0.5.1"
 
 
 def modell_fuer(fassung: str) -> str:

@@ -308,6 +308,20 @@ class Modell050Tests(unittest.TestCase):
         self.assertEqual(n.MODELL_050, n.pruefen("0.5.0", n.Kopf(0, mitte)).modell, "auch der Fehlbefund nennt das Modell von 0.5.0")
         self.assertEqual(n.MODELL_041, n.pruefen("0.4.1", n.Kopf(0, grenze_alt)).modell)
 
+    def test_0_5_1_rechnet_wie_0_5_0(self) -> None:
+        """v0.5.1 (23.11.2026) laesst Ansicht, Block (80 MiB) und Ladefolge unveraendert (Vergleich v0.5.0...v0.5.1: ``index_view.rs`` und
+        ``view.rs`` nicht angefasst, ``index_memory.rs`` nur Debug-Pool): dasselbe Modell, dieselben Zahlen, Befund fuer Befund."""
+        self.assertEqual(n.MODELL_050, n.modell_fuer("0.5.1"))
+        self.assertEqual(n.MODELL_050, n.modell_fuer("0.5.2"), "bis ein Vergleich etwas anderes zeigt, gilt das Modell weiter")
+        faelle = (("", n.Kopf(0, 100_000), None), ("", n.Kopf(0, 3_000_000), None),
+                  ("lz4", n.Kopf(34_358_192, 223_180), n.Kopf(0, 223_180, 1_513_210, 18)),
+                  ("zstd", n.Kopf(int(29.54 * n.MIB), 242_436), n.Kopf(32 * n.MIB, 242_436, 1_339_356, 72)))
+        for art, idx, pack in faelle:
+            with self.subTest(art=art, dateien=idx.dateien):
+                alt, neu = n.pruefen("0.5.0", idx, art, pack), n.pruefen("0.5.1", idx, art, pack)
+                self.assertEqual((alt.modell, alt.passt, alt.benoetigt, alt.grenze, alt.belegt),
+                                 (neu.modell, neu.passt, neu.benoetigt, neu.grenze, neu.belegt))
+
     def test_die_ordnerzahl_wirkt_wie_bei_0_4_1_nur_auf_die_ansicht(self) -> None:
         normal, viele = n.ansicht_050(1000, "zstd"), n.ansicht_050(1000, "zstd", ordner=5000)
         self.assertGreater(viele[0], normal[0])
