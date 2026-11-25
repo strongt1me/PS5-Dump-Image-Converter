@@ -198,6 +198,115 @@ class FakelibDateienFuerZiel(unittest.TestCase):
                 b.symbole_aus_datei = alt
 
 
+def _symbole(importe=None, exporte=None) -> dict:
+    return {"importe": importe or {}, "exporte": exporte or {}, "import_bibliotheken": {},
+            "export_bibliotheken": {}}
+
+
+class FakelibAuswahlTransitiv(unittest.TestCase):
+    """Auch die Importe der gewaehlten Ersatzbibliotheken muessen auf der Zielfirmware gedeckt sein.
+
+    Gemessen an Valheim (PPSA28824, FW 4.03, 25.11.2026): Die eboot.bin verlangt aus ``libSceAgcDriver`` nur
+    Funktionen, die 4.03 hat - gewaehlt wurde deshalb nur ``libSceAgc.sprx``. Die braucht aber vier
+    ``libSceAgcDriver``-Funktionen, die 4.03 fehlen; die Konsole lud den System-AgcDriver und das Spiel brach in
+    ``libSceAgc`` mit ``0xa0020101`` ab.
+    """
+
+    def _auswahl(self, basis: Path, tabelle: dict) -> set:
+        alt = b.symbole_aus_datei
+        b.symbole_aus_datei = lambda pfad: tabelle.get(os.path.basename(pfad), _symbole())
+        try:
+            ergebnis = b.fakelib_dateien_fuer_ziel(str(basis), 4, ["spiel"])
+        finally:
+            b.symbole_aus_datei = alt
+        self.assertIsNotNone(ergebnis)
+        return {os.path.basename(p) for p in ergebnis}
+
+    def test_ersatzdatei_zieht_die_bibliothek_nach_die_sie_braucht(self):
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceAgc.sprx", "libSceAgcDriver.sprx")
+            _exporttabelle_schreiben(basis, 4, {"libSceAgcDriver": ["D1D1D1D1D1D"]})
+            namen = self._auswahl(basis, {
+                "spiel": _symbole(importe={"libSceAgc": {"G1G1G1G1G1G"}, "libSceAgcDriver": {"D1D1D1D1D1D"}}),
+                "libSceAgc.sprx": _symbole(importe={"libSceAgcDriver": {"D1D1D1D1D1D", "SFB48L57OKQ"}},
+                                           exporte={"libSceAgc": {"G1G1G1G1G1G"}}),
+                "libSceAgcDriver.sprx": _symbole(exporte={"libSceAgcDriver": {"D1D1D1D1D1D", "SFB48L57OKQ"}}),
+            })
+            self.assertEqual(namen, {"FW4", "libSceAgc.sprx", "libSceAgcDriver.sprx"})
+
+    def test_was_die_firmware_hat_zieht_nichts_nach(self):
+        """Gegenprobe: Braucht die Ersatzdatei nur Funktionen, die die Zielfirmware hat, bleibt es bei ihr allein."""
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceAgc.sprx", "libSceAgcDriver.sprx")
+            _exporttabelle_schreiben(basis, 4, {"libSceAgcDriver": ["D1D1D1D1D1D"]})
+            namen = self._auswahl(basis, {
+                "spiel": _symbole(importe={"libSceAgc": {"G1G1G1G1G1G"}}),
+                "libSceAgc.sprx": _symbole(importe={"libSceAgcDriver": {"D1D1D1D1D1D"}},
+                                           exporte={"libSceAgc": {"G1G1G1G1G1G"}}),
+                "libSceAgcDriver.sprx": _symbole(exporte={"libSceAgcDriver": {"D1D1D1D1D1D"}}),
+            })
+            self.assertEqual(namen, {"FW4", "libSceAgc.sprx"})
+
+    def test_abschluss_ueber_mehrere_stufen(self):
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceA.sprx", "libSceB.sprx", "libSceC.sprx", "libSceD.sprx")
+            _exporttabelle_schreiben(basis, 4, {"unbeteiligt": ["ZZZZZZZZZZZ"]})
+            namen = self._auswahl(basis, {
+                "spiel": _symbole(importe={"libSceA": {"A1A1A1A1A1A"}}),
+                "libSceA.sprx": _symbole(importe={"libSceB": {"B1B1B1B1B1B"}}, exporte={"libSceA": {"A1A1A1A1A1A"}}),
+                "libSceB.sprx": _symbole(importe={"libSceC": {"C1C1C1C1C1C"}}, exporte={"libSceB": {"B1B1B1B1B1B"}}),
+                "libSceC.sprx": _symbole(exporte={"libSceC": {"C1C1C1C1C1C"}}),
+                "libSceD.sprx": _symbole(exporte={"libSceD": {"D1D1D1D1D1D"}}),
+            })
+            self.assertEqual(namen, {"FW4", "libSceA.sprx", "libSceB.sprx", "libSceC.sprx"})
+
+    def test_ausgenommene_datei_bleibt_auch_transitiv_draussen(self):
+        """``AUTOMATIK_AUSGENOMMEN`` (libSceAudioOut.sprx, Anno 117 Test H) gilt auch fuer den Abschluss."""
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceAgc.sprx", "libSceAudioOut.sprx")
+            _exporttabelle_schreiben(basis, 4, {"libSceAudioOut2": ["Z1Z1Z1Z1Z1Z"]})
+            namen = self._auswahl(basis, {
+                "spiel": _symbole(importe={"libSceAgc": {"G1G1G1G1G1G"}}),
+                "libSceAgc.sprx": _symbole(importe={"libSceAudioOut2": {"Z2Z2Z2Z2Z2Z"}},
+                                           exporte={"libSceAgc": {"G1G1G1G1G1G"}}),
+                "libSceAudioOut.sprx": _symbole(exporte={"libSceAudioOut2": {"Z2Z2Z2Z2Z2Z"}}),
+            })
+            self.assertEqual(namen, {"FW4", "libSceAgc.sprx"})
+
+    def test_kernluecke_einer_ersatzdatei_zieht_nichts_nach_und_endet(self):
+        """Valheim/GTA: Die Agc-Ersatzdatei importiert libkernel ``qSleeVC6lwI``, das 4.03 fehlt und keine Datei des
+        Satzes liefert - die Auswahl endet trotzdem und bleibt, wie sie ist."""
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceAgc.sprx", "libSceFoo.sprx")
+            _exporttabelle_schreiben(basis, 4, {"libkernel": ["KKKKKKKKKKK"]})
+            namen = self._auswahl(basis, {
+                "spiel": _symbole(importe={"libSceAgc": {"G1G1G1G1G1G"}}),
+                "libSceAgc.sprx": _symbole(importe={"libkernel": {"KKKKKKKKKKK", "qSleeVC6lwI"}},
+                                           exporte={"libSceAgc": {"G1G1G1G1G1G"}}),
+                "libSceFoo.sprx": _symbole(exporte={"libSceFoo": {"F1F1F1F1F1F"}}),
+            })
+            self.assertEqual(namen, {"FW4", "libSceAgc.sprx"})
+
+    def test_ampr_zieht_seine_abhaengigkeit_ebenfalls_nach(self):
+        """Auch die immer gewaehlten Dateien (AMPR EMU, PlayGo) zaehlen: Was sie brauchen und der Firmware fehlt, kommt
+        mit."""
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceAmpr.sprx", "libSceBar.sprx")
+            _exporttabelle_schreiben(basis, 4, {"libkernel": ["KKKKKKKKKKK"]})
+            namen = self._auswahl(basis, {
+                "spiel": _symbole(importe={"libkernel": {"KKKKKKKKKKK"}}),
+                "libSceAmpr.sprx": _symbole(importe={"libSceBar": {"B1B1B1B1B1B"}}),
+                "libSceBar.sprx": _symbole(exporte={"libSceBar": {"B1B1B1B1B1B"}}),
+            })
+            self.assertEqual(namen, {"FW4", "libSceAmpr.sprx", "libSceBar.sprx"})
+
+
 class LueckenOhneErsatz(unittest.TestCase):
     """``luecken_ohne_ersatz`` -- was nach dem Einbau noch fehlt."""
 

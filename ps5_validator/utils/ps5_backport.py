@@ -1516,6 +1516,14 @@ def fakelib_dateien_fuer_ziel(basis: str, firmware: int,
     217 Funktionen grosse Datei eingebaut, genau die Art ueberfluessiger Bibliothek, die bei Mordhau/Anno 117
     den Start abbrach.
 
+    Danach zaehlen auch die Importe der gewaehlten Ersatzbibliotheken selbst (transitiver Abschluss): Braucht eine
+    gewaehlte Datei eine Funktion, die der Zielfirmware fehlt, kommt die Datei des Satzes mit, die sie liefert - so
+    lange, bis nichts mehr dazukommt. Gemessen an Valheim (PPSA28824, FW 4.03, 25.11.2026): Die eboot.bin verlangt aus
+    ``libSceAgcDriver`` nur Funktionen, die 4.03 hat, aus ``libSceAgc`` aber fehlende - gewaehlt wurde nur
+    ``libSceAgc.sprx``. Diese Ersatzdatei braucht vier ``libSceAgcDriver``-Funktionen, die 4.03 nicht hat
+    (``SFB48L57OKQ`` u. a.), die Konsole lud den System-AgcDriver, und das Spiel brach in ``libSceAgc`` mit
+    ``0xa0020101 PRX_NOT_RESOLVED_FUNCTION`` ab. Stubs helfen dort nicht: Sie gehen nur in die Spieldateien.
+
     Returns:
         Liste der Dateien; ``None``, wenn keine Exporttabelle vorliegt oder sich keine Importtabelle lesen
         laesst - dann entscheidet der Aufrufer wie bisher (voller Satz oder :func:`fakelib_dateien_benoetigt`).
@@ -1528,21 +1536,43 @@ def fakelib_dateien_fuer_ziel(basis: str, firmware: int,
         return None
     offen = _luecken(verlangt, eigene, exporte)
     markierung = f"FW{int(firmware)}".lower()
-    ergebnis: list[str] = []
-    for pfad in fakelib_dateien(basis, firmware):
+    satz = fakelib_dateien(basis, firmware)
+    satz_exporte = {pfad: _bibliothek_exporte(pfad) for pfad in satz
+                    if os.path.basename(pfad).lower() != markierung}
+
+    def schliesst(pfad: str, luecken: dict[str, set]) -> bool:
+        # Leere NIDs heisst: keine lesbare Exporttabelle - dann zaehlt wie bei
+        # fakelib_dateien_benoetigt der Dateiname allein (Fallback in _bibliothek_exporte).
+        return any(lib in luecken and (not nids or (nids & luecken[lib]))
+                   for lib, nids in satz_exporte[pfad].items())
+
+    gewaehlt: set[str] = set()
+    for pfad in satz:
         name = os.path.basename(pfad).lower()
         if name == markierung or name in AMPR_PLAYGO_BIBLIOTHEKEN:
-            ergebnis.append(pfad)
-            continue
-        if name in AUTOMATIK_AUSGENOMMEN:
-            continue
-        for lib, nids in _bibliothek_exporte(pfad).items():
-            # Leere NIDs heisst: keine lesbare Exporttabelle - dann zaehlt wie bei
-            # fakelib_dateien_benoetigt der Dateiname allein (Fallback in _bibliothek_exporte).
-            if lib in offen and (not nids or (nids & offen[lib])):
-                ergebnis.append(pfad)
-                break
-    return ergebnis
+            gewaehlt.add(pfad)
+        elif name not in AUTOMATIK_AUSGENOMMEN and schliesst(pfad, offen):
+            gewaehlt.add(pfad)
+
+    while True:
+        geliefert: dict[str, set] = {}
+        weiter_verlangt: dict[str, set] = {}
+        for pfad in gewaehlt:
+            if pfad not in satz_exporte:
+                continue
+            for lib, nids in satz_exporte[pfad].items():
+                geliefert.setdefault(lib, set()).update(nids)
+            for lib, nids in symbole_aus_datei(pfad)["importe"].items():
+                if lib and lib != "?":
+                    weiter_verlangt.setdefault(lib, set()).update(nids)
+        weiter_offen = _luecken(weiter_verlangt, eigene, exporte, geliefert)
+        neu = {pfad for pfad in satz_exporte
+               if pfad not in gewaehlt and os.path.basename(pfad).lower() not in AUTOMATIK_AUSGENOMMEN
+               and schliesst(pfad, weiter_offen)}
+        if not neu:
+            break
+        gewaehlt |= neu
+    return [pfad for pfad in satz if pfad in gewaehlt]
 
 
 def luecken_ohne_ersatz(basis: str, firmware: int, spieldateien: list[str],
@@ -1551,6 +1581,9 @@ def luecken_ohne_ersatz(basis: str, firmware: int, spieldateien: list[str],
 
     Ist hier etwas uebrig, scheitert das Spiel auf der Konsole spaetestens beim ersten Aufruf
     (``0xa0020101 PRX_NOT_RESOLVED_FUNCTION``).
+
+    Gezaehlt werden nur die Importe der Spieldateien - nur dort kann ein Stub die Luecke abfangen. Was die
+    Ersatzbibliotheken selbst brauchen, deckt schon die Auswahl (:func:`fakelib_dateien_fuer_ziel`, transitiv).
 
     Returns:
         Bibliotheksname -> sortierte NIDs (leer = alles gedeckt); ``None`` ohne Exporttabelle oder lesbare
