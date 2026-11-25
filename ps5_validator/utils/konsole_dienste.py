@@ -281,11 +281,12 @@ KATALOG: tuple[Dienst, ...] = (
     # Spieleinbinder von quer3q (GPL-3.0-or-later): Spielordner (unverpackt, zstd oder LZ4) und Debug-FPKG-.pkg erscheinen mit
     # eigener Kachel auf dem Startbildschirm, ohne installiert zu werden; ampr-emu-ng liegt bei. Port 8097 und Weboberflaeche aus
     # dem DESIGN.md des Autors ("take port 8097", ``GET /api/state``) und aus dem ELF ("web UI on port"); das Payload nimmt den
-    # Port, bevor es auf kstuff und das Ende von ShadowMount+ wartet - die Seite ist also schon da, wenn noch nichts gemountet
-    # wird (``waiting`` in ``/api/state``). Gestartet wird das ELF ueber den ELF-Loader (payload_muster, README: ``nc -w 3 <IP> 9021
-    # < kraken-mount.elf``), aber nur, wenn kstuff geladen ist und ShadowMount+ NICHT laeuft - sonst wartet es nur. Keine
-    # version_muster: ``/api/state`` nennt ``version`` erst hinter den Spielen (Reihenfolge der Schluessel nicht gemessen), es
-    # gaebe sonst eine Spielfassung aus. An der Konsole noch NICHT nachgemessen. Anlaufzeit geschaetzt.
+    # Port, bevor es auf das Ende von ShadowMount+ wartet (bis 0.3.2 auch auf kstuff) - die Seite ist also schon da, wenn noch
+    # nichts gemountet wird (``waiting`` in ``/api/state``). Gestartet wird das ELF ueber den ELF-Loader (payload_muster, README:
+    # ``nc -w 3 <IP> 9021 < kraken-mount.elf``), aber nur, wenn ShadowMount+ NICHT laeuft - sonst wartet es nur; seit 0.4.0 braucht
+    # es zum Start kein kstuff mehr (ein fake-signiertes Spiel weiter). Keine version_muster: ``/api/state`` nennt ``version`` erst
+    # hinter den Spielen (Reihenfolge der Schluessel nicht gemessen), es gaebe sonst eine Spielfassung aus. An der Konsole nur
+    # lesend gemessen (24.11.2026, Fassung 0.3.2): Port 8097 antwortet, ``/api/state`` liefert ``version``. Anlaufzeit geschaetzt.
     Dienst("kraken_mount", 8097, "kraken-mount_v*.elf", web="/", anlaufzeit=3.0),
     # --- NTFS Browser, Linux Flasher, PS5 Cleanup (seit 23.11.2026, Nutzerwunsch) ----------------------------------------
     # NTFS Browser (abcde6543, GPL-3.0): NTFS-USB-Laufwerke an der PS5 durchsuchen, kopieren, hochladen, loeschen. Port 8085 laut
