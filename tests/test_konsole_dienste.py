@@ -303,8 +303,11 @@ class HomeHiderTests(unittest.TestCase):
         self.assertEqual(1, len(dateien), dateien)
         roh = dateien[0].read_bytes()
         fassung = kd.version_aus_dateiname(dateien[0].name)
-        self.assertEqual("2.0.0", fassung)
+        self.assertEqual("2.1.0", fassung)
         self.assertIn(b"HOMEHIDER-ELF-VERSION=" + fassung.encode() + b";", roh)
+        # Die Antwort, aus der die Dienstetabelle die laufende Version liest (``version_muster`` auf ``/api/status``).
+        self.assertIn(b'{"ok":true,"version":"%s","port":%d', roh)
+        self.assertIn(b"/api/status", roh)
         # Den Port setzt der Quelltext (``HH_PORT``) per Formatzeichen ein; die Seite steht im ELF.
         self.assertIn(b"http://127.0.0.1:%d/", roh)
         self.assertIn(b"Home Hider %s running on port %d", roh)

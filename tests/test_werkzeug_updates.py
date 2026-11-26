@@ -236,6 +236,10 @@ RELEASES = {
         ('0.2_beta', True, '2026-01-31', ['np-fake-signin-ps4.elf', 'np-fake-signin-ps5.elf']),
     ],
     'ItsBlurf/PoorDS4': [
+        # Seit 26.11.2026 mit der v0.2.0 (wie Dump Forge unten nachgezogen): Mit ihr wechselte der Autor von "rc51" auf eine
+        # Punktzahl und von "PoorDS4rc51.elf" auf "PoorDS4.elf" - der Tabelleneintrag liest seitdem die Punktzahl.
+        ('v0.2.0', False, '2026-10-21', ['PoorDS4-status.elf', 'PoorDS4-stop.elf', 'PoorDS4-v0.2.0-source.zip',
+                                         'PoorDS4-v0.2.0.zip', 'PoorDS4.elf', 'SHA256SUMS.txt']),
         ('v0.1.0-rc51', False, '2026-09-30', ['PoorDS4-status.elf', 'PoorDS4-stop.elf', 'PoorDS4rc51.elf',
                                               'SHA256SUMS.txt']),
         ('v0.1.0-rc44', False, '2026-09-18', ['PoorDS4-status.elf', 'PoorDS4-stop.elf', 'PoorDS4rc44.elf',
@@ -329,11 +333,12 @@ RELEASES = {
 }
 
 #: Die ELF-Dateien in helloworld/ am 10.10.2026 (Dump Forge seit 26.11.2026 auf 0.6.0 wie die feste Fassung der Befehlszeile in
-#: ``werkzeug_updates``; sonst urteilte die Tabelle die Befehlszeile hier als "neuer als die Freigabe").
+#: ``werkzeug_updates``; sonst urteilte die Tabelle die Befehlszeile hier als "neuer als die Freigabe"). PoorDS4 ebenfalls seit
+#: 26.11.2026 mit den Namen der v0.2.0 - der Tabelleneintrag liest seitdem ``PoorDS4_v*.elf`` statt ``PoorDS4_rc*.elf``.
 HELLOWORLD = [
     "AnyPad-PS5-0.8.1-beta.elf", "CheatRunner_v0.17.2.elf", "MemDBG-ps5_nightly-20260930.elf", "OffAct_v0.4.2.elf",
     "OnionHEN_v0.0.13.elf", "OnionHEN_v0.9.0-beta2.elf", "PIZZA-HEN-v2.00.elf",
-    "PS5_Cooling_System_Center_v1.56.0.elf", "PoorDS4-status_rc51.elf", "PoorDS4-stop_rc51.elf", "PoorDS4_rc51.elf",
+    "PS5_Cooling_System_Center_v1.56.0.elf", "PoorDS4-status_v0.2.0.elf", "PoorDS4-stop_v0.2.0.elf", "PoorDS4_v0.2.0.elf",
     "ProsperoMgr_v1.1.elf", "SMPlusGui_v1.0.1.elf", "actremotelink_agent_v2.0.elf",
     "actremotelink_pin_notify_v2.0.elf", "aria2-v1.37.0-3.elf", "bdj_unpatch_1340.elf",
     "bfpilot_v0.4.4-multilang.elf", "dpiv2-13.60-1.00.elf", "dump_installer_v1.07.elf", "elfldr-ps5_v0.26.elf",

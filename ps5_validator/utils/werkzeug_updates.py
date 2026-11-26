@@ -524,9 +524,11 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
        _d("garlic-savemgr.elf", "garlic-savemgr_v{f}.elf")),
     _p("garlic-worker", "garlic-worker", "earthonion/garlic-worker", "garlic-worker-ps5_*.elf",
        _d("garlic-worker-ps5.elf", "garlic-worker-ps5_{f}.elf"), modus="datum", hinweis="updates.hinweis_datum"),
-    _p("poords4", "PoorDS4", "ItsBlurf/PoorDS4", "PoorDS4_rc*.elf",
-       _d("PoorDS4{f}.elf", "PoorDS4_{f}.elf"), _d("PoorDS4-status.elf", "PoorDS4-status_{f}.elf"),
-       _d("PoorDS4-stop.elf", "PoorDS4-stop_{f}.elf"), modus="rc"),
+    # Seit v0.2.0 (21.10.2026) traegt die Marke eine Punktzahl und der Hauptanhang heisst "PoorDS4.elf"; bis rc51 hiess er
+    # "PoorDS4rc51.elf" und die Marke "v0.1.0-rc51" (Modus "rc" - der sah die 0.2.0 nicht, die Datei blieb einen Monat liegen).
+    _p("poords4", "PoorDS4", "ItsBlurf/PoorDS4", "PoorDS4_v*.elf",
+       _d("PoorDS4.elf", "PoorDS4_v{f}.elf"), _d("PoorDS4-status.elf", "PoorDS4-status_v{f}.elf"),
+       _d("PoorDS4-stop.elf", "PoorDS4-stop_v{f}.elf")),
     _p("memdbg", "MemDBG", "seregonwar/MemDBG", "MemDBG-ps5_nightly-*.elf",
        _d("MemDBG-ps5.elf", "MemDBG-ps5_nightly-{f}.elf"), modus="datum8", hinweis="updates.hinweis_datum"),
     # Agent und PIN-Anzeige kommen aus demselben Archiv ("actremotelink_agent_v2.0.elf", "..._pin_notify_v2.0.elf").
@@ -545,7 +547,11 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
           "updates.hinweis_testfassung", seite=_SEITEN["github"] % "drakmor/kstuff-lite"),
     _ohne("bdj-unpatch", "Y2JB-P2JB bdj_unpatch", "bdj_unpatch_*.elf", "updates.hinweis_paket",
           seite=_SEITEN["github"] % "owendswang/Y2JB-P2JB-bdj_unpatch"),
-    _ohne("ftpsrv-ng", "ftpsrv (-ng-Fork)", "ftpsrv-ps5_v*-ng*.elf", "updates.hinweis_ohne_quelle"),
+    # Quelle seit 26.11.2026 belegt: drakmor/ftpsrv (Fork von ps5-payload-dev/ftpsrv), Freigabe "1.16-ng-stable" - der Digest des
+    # Anhangs "ftpsrv-ps5.elf" ist die SHA-256 der mitgelieferten Datei. Ohne Anfrage (nur Link): Das Programm sendet genau diese
+    # Datei (``_FTPSRV_PAYLOAD_NAME``), ein Austausch ist Handarbeit.
+    _ohne("ftpsrv-ng", "ftpsrv (-ng-Fork)", "ftpsrv-ps5_v*-ng*.elf", "updates.hinweis_festgelegt",
+          seite=_SEITEN["github"] % "drakmor/ftpsrv"),
     _ohne("pizza-hen", "PIZZA-HEN", "PIZZA-HEN-v*.elf", "updates.hinweis_ohne_quelle"),
     _ohne("bfpilot", "BFpilot", "bfpilot_v*.elf", "updates.hinweis_ohne_quelle"),
     _ohne("yt-blocker", "YT-Blocker", "YT-Blocker_v*.elf", "updates.hinweis_paket",
@@ -553,8 +559,8 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     # Keine Versionsnummer im Dateinamen; Fassung nur zur Laufzeit per GET /api/state -> "version".
     _hinweis("exfat2ampr", "exFAT2AMPR", "exFAT2AMPR/exfat2ampr", "exfat2ampr.elf",
              "updates.hinweis_laufzeit_fassung", lokal="fest:1.104"),
-    # Der Tag der Freigabe heisst "RELEASE-V2" (Titel "HomeHider V2.0", Anhang "HomeHider.elf" ohne Nummer): keine
-    # vergleichbare Fassung. Die Nummer steht im ELF ("HOMEHIDER-ELF-VERSION=2.0.0") und zur Laufzeit in GET /api/status.
+    # Der Tag der Freigabe heisst "RELEASE-V2.1" (Titel "HomeHider v2.1", davor "RELEASE-V2"; Anhang "HomeHider.elf" ohne Nummer):
+    # keine vergleichbare Fassung. Die Nummer steht im ELF ("HOMEHIDER-ELF-VERSION=2.1.0") und zur Laufzeit in GET /api/status.
     _ohne("homehider", "Home Hider", "HomeHider_v*.elf", "updates.hinweis_tag_ohne_nummer",
           seite=_SEITEN["github"] % "Euphoric-Dev/HomeHider"),
     # Keine Versionsnummer im Dateinamen; Fassung nur zur Laufzeit per GET /api/status -> "version".
