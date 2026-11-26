@@ -272,10 +272,17 @@ STUB_FEHLER_809F0008 = StubArt("fehler_809f0008", bytes.fromhex("b808009f80c3"),
 #: ``sceSystemServiceOpenTournamentOccurrence``: ``return 0x80A10001`` (ein vom Spiel behandelter Fehlerzweig).
 STUB_FEHLER_80A10001 = StubArt("fehler_80a10001", bytes.fromhex("b80100a180c3"), "eax=0x80A10001; ret")
 
+#: ``sceNpCommerceDialogOpen2`` (erst ab FW 7.01): ``return 0x80020016`` - ein negativer Wert, also "Dialog nicht
+#: geoeffnet". Gelesen an Valheim (PPSA28824, ``Media/Plugins/PSN.prx``, Aufrufer 0x2c6c, 26.11.2026): ``test eax,eax;
+#: js Fehlerzweig``, bei eax >= 0 nimmt das Unity-PSN-Plugin einen offenen Store-Dialog an und wartet womoeglich auf ein
+#: Schliessen, das nie kommt. Der Fehlerzweig protokolliert nur. Der genaue Code ist gleichgueltig, der Aufrufer
+#: prueft nur das Vorzeichen. An der Konsole nicht gemessen (wirkt nur, wenn im Spiel der Store geoeffnet wird).
+STUB_FEHLER_80020016 = StubArt("fehler_80020016", bytes.fromhex("b816000280c3"), "eax=0x80020016; ret")
+
 #: Arten, die ein Profil beim Namen nennen darf.
 STUB_ARTEN: dict[str, StubArt] = {a.kennung: a for a in (
     STUB_STANDARD, STUB_AUSGABEN_MINUS1, STUB_AUSGABE_BOOL0, STUB_AUSGABE_INT0, STUB_FEHLER_809F0008,
-    STUB_FEHLER_80A10001)}
+    STUB_FEHLER_80A10001, STUB_FEHLER_80020016)}
 
 #: Ausnahmen von der Standard-Art je (Bibliothek, NID). Gemessen an Anno 117 (04.11.2026): ``NH6xARDOVv8`` (libkernel,
 #: erst ab FW 11.00) hat drei Aufrufer, die danach ``cmp dword [rbp-0xe0],1`` auf einem AUSGABEPARAMETER ausfuehren;
@@ -291,6 +298,8 @@ STUB_TABELLE: dict[tuple[str, str], StubArt] = {
     # Marsupilami 2 (PPSA34356) fuehrt dieselbe NID unter dem Bibliotheksnamen "libSceSaveData_native" (gemessen 20.11.2026)
     ("libSceSaveData_native", "2mfSRGdshtk"): STUB_FEHLER_809F0008,
     ("libSceSystemService", "gELp9ue2ccQ"): STUB_FEHLER_80A10001,       # erste Fassung unbekannt
+    # Eigene Lesung am Aufrufer (Valheim PSN.prx), siehe STUB_FEHLER_80020016:
+    ("libSceNpCommerce", "IXmfUaze9So"): STUB_FEHLER_80020016,          # sceNpCommerceDialogOpen2, erst ab FW 7.01
 }
 
 #: Zwei weitere Vertraege des Toolkits fehlen hier mit Absicht: ``gWT7X8H0bYs`` (VideoOut, 0x40 Byte nullen, nur wenn

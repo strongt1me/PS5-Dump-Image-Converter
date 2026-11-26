@@ -656,6 +656,19 @@ class NeueVertraegeTests(unittest.TestCase):
         self.assertNotIn("gWT7X8H0bYs", schluessel, "braucht einen eigenen Puffer des Aufrufers")
         self.assertNotIn("YFC3dBBipj8", schluessel, "braucht, dass der Aufrufer 0x80020003 vergleicht")
 
+    def test_store_dialog_meldet_einen_fehler(self):
+        """sceNpCommerceDialogOpen2: Der Aufrufer in Valheims PSN.prx prueft nur das Vorzeichen (``js``). Ein Stub mit 0
+        meldete "Dialog offen", obwohl keiner erscheint."""
+        art = bk.stub_art("libSceNpCommerce", "IXmfUaze9So")
+        self.assertIs(art, bk.STUB_FEHLER_80020016)
+        self.assertEqual(art.bytes_, bytes.fromhex("b816000280c3"))
+        self.assertLess(struct.unpack_from("<i", art.bytes_, 1)[0], 0, "negativer Rueckgabewert")
+        elf, info = baue_elf([("libSceNpCommerce", "IXmfUaze9So", False), ("libSceFoo", "XXXXXXXXXXX", False)])
+        neu, erg = bk.luecken_neutralisieren(elf, {"libSceNpCommerce": ["IXmfUaze9So"]}, landeplatz=True)
+        self.assertEqual([(e.art, e.status) for e in erg], [("fehler_80020016", bk.STATUS_GESETZT)])
+        va = info["plt"][0]
+        self.assertEqual(neu[va + 6:va + 12], art.bytes_)
+
     def test_gleiche_nid_in_anderer_bibliothek_bleibt_standard(self):
         self.assertEqual(bk.stub_art("libSceFremd", "gELp9ue2ccQ"), bk.STUB_STANDARD)
 
