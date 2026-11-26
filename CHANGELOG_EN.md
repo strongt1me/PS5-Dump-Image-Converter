@@ -6,6 +6,15 @@ This English changelog starts with v2.0.0 and describes in plain language what c
 
 ---
 
+## Next version (not released yet)
+
+- **Fixed:** After a BACKPORT to firmware 4 to 6, some games crashed at start because a needed replacement library was missing; the program now also picks the libraries that other replacement libraries need themselves (measured with Valheim on FW 4.03).
+- **Fixed:** Newer Unity games stayed on a black screen without an error message after a BACKPORT to firmware 4 or 5 (measured with Valheim on FW 4.03).
+- **Fixed:** Newer Unity games did not accept a controller after a BACKPORT to firmware 4 to 6 and asked for one to be connected; controls and vibration now work (measured with Valheim on FW 4.03).
+- **Changed:** When a game wants to open the PlayStation Store after a BACKPORT to firmware 4 to 6, which that firmware does not support in this form, it is now told that this is not possible instead of waiting for a dialog that never appears.
+
+---
+
 ## v2.0.1 – 2026-11-23
 
 - **New:** The corrections for missing functions cover four more cases and leave a function the firmware does have untouched (measured on FW 12.00, not yet tried with a real backport); title profiles still work as measured on the console.

@@ -6,6 +6,15 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ---
 
+## Nächste Fassung (noch nicht veröffentlicht)
+
+- **Behoben:** Nach einem BACKPORT für Firmware 4 bis 6 stürzten manche Spiele beim Start ab, weil eine benötigte Ersatzbibliothek fehlte; das Programm wählt jetzt auch die Bibliotheken, die andere Ersatzbibliotheken selbst brauchen (an Valheim auf FW 4.03 gemessen).
+- **Behoben:** Neuere Unity-Spiele blieben nach einem BACKPORT für Firmware 4 oder 5 ohne Fehlermeldung im schwarzen Bild hängen (an Valheim auf FW 4.03 gemessen).
+- **Behoben:** Neuere Unity-Spiele nahmen nach einem BACKPORT für Firmware 4 bis 6 keinen Controller an und baten, ihn anzuschließen; jetzt funktionieren Steuerung und Vibration (an Valheim auf FW 4.03 gemessen).
+- **Geändert:** Will ein Spiel nach einem BACKPORT für Firmware 4 bis 6 den PlayStation Store öffnen, den diese Firmware so noch nicht kennt, erfährt es jetzt, dass das nicht geht, statt auf einen Dialog zu warten, der nie erscheint.
+
+---
+
 ## v2.0.1 – 23.11.2026
 
 - **Neu:** Die Korrekturen für fehlende Funktionen decken vier weitere Fälle ab und lassen eine Funktion, die die Firmware doch hat, unangetastet (an FW 12.00 gemessen, noch ohne echten Backport erprobt); Titelprofile wirken weiter wie an der Konsole gemessen.
