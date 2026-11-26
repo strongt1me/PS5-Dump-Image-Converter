@@ -593,7 +593,7 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     # Dieselbe Freigabe wie die ELF "dump-forge" oben (die Konsolenfassung); hier die Fassung der mitgelieferten Befehlszeile,
     # Dump-Forge-CLI/README.md haelt sie samt Pruefsummen fest.
     Werkzeug("dump-forge-cli", "Dump Forge (Befehlszeile, baut Pakete)", GRUPPE_WERKZEUG, "quer3q/ps5-dump-forge",
-             ordner="Dump-Forge-CLI", art=ART_HINWEIS, hinweis="updates.hinweis_buendel", lokal="fest:0.5.7"),
+             ordner="Dump-Forge-CLI", art=ART_HINWEIS, hinweis="updates.hinweis_buendel", lokal="fest:0.6.0"),
     Werkzeug("wee-tools", "PS5 Wee Tools", GRUPPE_WERKZEUG, "andy-man/ps5-wee-tools", ordner="PS5-Wee-Tools-*",
              art=ART_HINWEIS, hinweis="updates.hinweis_festgelegt", lokal="ordnername"),
     Werkzeug("7zip", "7-Zip", GRUPPE_WERKZEUG, "ip7z/7zip", ordner="7-Zip-*", art=ART_HINWEIS,

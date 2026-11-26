@@ -2463,10 +2463,20 @@ class Ps5PkgFenster:
         NG 0.5.0 und AMPR EMU 0.3.6.6 werden im ``.pkg`` zu ampr_emu 0.4.2.1, ohne Schalter (:attr:`forge_cli.QuellFakten.laufzeit_ersetzt`).
         Den Weg, auf dem die Laufzeit bleibt, gibt es hier: ein Abbild aus den Aufgaben 1 bis 6, das ShadowMount+ startet.
 
+        Seit Forge 0.6.0 (gemessen 26.11.2026) ersetzt Forge die Laufzeit im ``.pkg`` nicht mehr, es laesst sie weg ("a .pkg carries no AMPR
+        runtime, the console's loader provides it", :attr:`forge_cli.QuellFakten.laufzeit_entfaellt`): gleiche Rueckfrage, eigener Text.
+
         Returns:
             ``False``, wenn nicht gebaut wird (der Anwender sagt Nein).
         """
         fakten = self._quellfakten(info)
+        if fakten is not None and fakten.laufzeit_entfaellt:
+            if not messagebox.askyesno(self.t("ps5pkg.laufzeit_weg_titel"),
+                                       self.t("ps5pkg.laufzeit_weg_frage", alt=qb.laufzeit_name(fakten)), parent=self.win):
+                self._status(self.t("ps5pkg.laufzeit_weg_abbruch"))
+                return False
+            self._protokoll(self.t("ps5pkg.laufzeit_weg_log"))
+            return True
         if fakten is None or not fakten.laufzeit_ersetzt:
             return True
         if not messagebox.askyesno(self.t("ps5pkg.laufzeit_titel"),

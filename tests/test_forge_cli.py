@@ -397,10 +397,11 @@ class ErkennungTests(unittest.TestCase):
             with self.subTest(windows=maschine), mock.patch.object(sys, "platform", "win32"), \
                     mock.patch.object(fc.platform, "machine", return_value=maschine):
                 self.assertEqual((soll, "ps5-dump-forge.exe"), (fc.unterordner(), fc.dateiname()))
-        for maschine in ("arm64", "x86_64"):
+        # Seit Dump Forge 0.6.0 je Architektur eine Datei (vorher eine gemeinsame "macos-universal").
+        for maschine, soll in (("arm64", "macos-arm64"), ("aarch64", "macos-arm64"), ("x86_64", "macos-x64")):
             with self.subTest(mac=maschine), mock.patch.object(sys, "platform", "darwin"), \
                     mock.patch.object(fc.platform, "machine", return_value=maschine):
-                self.assertEqual("macos-universal", fc.unterordner(), "Apple Silicon und Intel gleichermassen")
+                self.assertEqual((soll, "ps5-dump-forge"), (fc.unterordner(), fc.dateiname()))
         for maschine, soll in (("x86_64", "linux-x64"), ("AMD64", "linux-x64"), ("aarch64", "linux-arm64"), ("arm64", "linux-arm64"),
                                ("riscv64", ""), ("armv7l", "")):
             with self.subTest(linux=maschine), mock.patch.object(sys, "platform", "linux"), \
@@ -430,10 +431,13 @@ class MitgelieferteBefehlszeilenTests(unittest.TestCase):
     """``Dump-Forge-CLI/`` haelt je Plattform eine unveraenderte Datei der Freigabe: Herkunft laut README, Pruefsumme, Dateikopf."""
 
     ORDNER = Path(__file__).resolve().parent.parent / "Dump-Forge-CLI"
-    #: Ordner -> (Dateiname, Kennzeichen am Dateianfang: ELF e_machine, PE Machine, Mach-O universal)
+    #: Ordner -> (Dateiname, Kennzeichen am Dateianfang: ELF e_machine, PE Machine, Mach-O cputype). Seit Dump Forge 0.6.0 liefert
+    #: der Autor fuer macOS je Architektur eine Datei (64-Bit-Mach-O), keine gemeinsame mehr.
     ERWARTET = {"win-x64": ("ps5-dump-forge.exe", ("pe", 0x8664)), "win-arm64": ("ps5-dump-forge.exe", ("pe", 0xAA64)),
                 "linux-x64": ("ps5-dump-forge", ("elf", 0x3E)), "linux-arm64": ("ps5-dump-forge", ("elf", 0xB7)),
-                "macos-universal": ("ps5-dump-forge", ("fat", 0))}
+                "macos-arm64": ("ps5-dump-forge", ("macho", 0x0100000C)), "macos-x64": ("ps5-dump-forge", ("macho", 0x01000007))}
+    #: Die Fassung der Freigabe, wie sie in jeder Datei steht.
+    FASSUNG = b"0.6.0"
 
     def _tabelle(self) -> dict:
         text = (self.ORDNER / "README.md").read_text(encoding="utf-8")
@@ -464,12 +468,14 @@ class MitgelieferteBefehlszeilenTests(unittest.TestCase):
                     self.assertEqual(b"PE\0\0", d[pe:pe + 4])
                     self.assertEqual(kennzahl, struct.unpack_from("<H", d, pe + 4)[0], "PE Machine")
                 else:
-                    self.assertEqual(b"\xca\xfe\xba\xbe", d[:4], "Mach-O universal")
-                self.assertIn(b"0.5.7", d, "die Fassung der Freigabe steht in der Datei")
+                    self.assertEqual(b"\xcf\xfa\xed\xfe", d[:4], "Mach-O, 64 Bit, eine Architektur (kein universal mehr)")
+                    self.assertEqual(kennzahl, struct.unpack_from("<I", d, 4)[0], "Mach-O cputype")
+                self.assertIn(self.FASSUNG, d, "die Fassung der Freigabe steht in der Datei")
 
     def test_die_plattformordner_stimmen_mit_der_auswahl_des_programms_ueberein(self) -> None:
         gewaehlt = set()
-        for sp, maschine in (("win32", "AMD64"), ("win32", "ARM64"), ("darwin", "arm64"), ("linux", "x86_64"), ("linux", "aarch64")):
+        for sp, maschine in (("win32", "AMD64"), ("win32", "ARM64"), ("darwin", "arm64"), ("darwin", "x86_64"), ("linux", "x86_64"),
+                             ("linux", "aarch64")):
             with mock.patch.object(sys, "platform", sp), mock.patch.object(fc.platform, "machine", return_value=maschine):
                 gewaehlt.add(fc.unterordner())
         self.assertEqual(set(self.ERWARTET), gewaehlt, "jeder gelieferte Ordner wird auch gewaehlt und umgekehrt")

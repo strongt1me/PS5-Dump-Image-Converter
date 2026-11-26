@@ -281,9 +281,10 @@ jobs:
           " "$WURZEL"
 
       - name: Dump-Forge-Befehlszeile im fertigen Buendel
-        # Das Fenster "PKG / FPKG" baut Pakete mit dieser Befehlszeile (seit 16.11.2026; Dump-Forge-CLI/macos-universal).
-        # Es gibt sie nur als eine Datei fuer beide Architekturen, und PyInstaller und codesign fassen sie beim Einbetten
-        # an - geprueft wird darum die Datei IM Buendel, auf beiden Laeufern: Sie muss starten, ein kleines Spiel lesen und
+        # Das Fenster "PKG / FPKG" baut Pakete mit dieser Befehlszeile (seit 16.11.2026). Seit Dump Forge 0.6.0 gibt es je
+        # Architektur eine Datei (Dump-Forge-CLI/macos-arm64 und macos-x64, vorher macos-universal); im Buendel liegt nur die
+        # des Laeufers. PyInstaller und codesign fassen sie beim Einbetten an - geprueft wird darum die Datei IM Buendel,
+        # auf beiden Laeufern: Sie muss starten, ein kleines Spiel lesen und
         # daraus ein Paket bauen (die ersten Bytes sind 0x7f und FIH). An echter Apple-Hardware ist das sonst nirgends zu sehen.
         run: |
           set -e

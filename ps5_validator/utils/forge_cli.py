@@ -8,8 +8,8 @@ die Quelle ueber seinen Lesebaum (ohne Zwischenordner, auch das Abbild in einer 
 liest es zurueck und prueft es.
 
 Dump Forge (quer3q, GPL-3.0-or-later) liegt als fertige Befehlszeile je Plattform unter
-``Dump-Forge-CLI/<Plattform>/`` (Windows x64, Linux x64 statisch, macOS universal; Quelle, Fassung und Pruefsummen in
-``Dump-Forge-CLI/README.md``). Forge schreibt den Fortschritt als **eine JSON-Zeile je Ereignis** auf stdout
+``Dump-Forge-CLI/<Plattform>/`` (Windows und Linux je x64 und arm64, macOS seit Forge 0.6.0 je Architektur statt universal;
+Quelle, Fassung und Pruefsummen in ``Dump-Forge-CLI/README.md``). Forge schreibt den Fortschritt als **eine JSON-Zeile je Ereignis** auf stdout
 (``{"kind": "stages"|"progress"|"log"|"done", ...}``) und eine Kurzfassung fuer Menschen auf stderr; beides kommt hier
 ueber :func:`ps5_validator.utils.ps5_pkg_werkzeug.laufen` an (gleiche Abbruch-, Fenster- und Aufraeumregeln wie bei
 den anderen Werkzeugen).
@@ -57,14 +57,15 @@ def unterordner() -> str:
     """Die Plattform dieses Rechners, wie die Ordner unter ``Dump-Forge-CLI`` heissen; ``""``, wenn es keine gibt.
 
     Windows = ``win-x64``, mit einem arm64-Python ``win-arm64`` (ein x64-Python meldet auch auf einem ARM-Rechner ``AMD64``);
-    macOS (Apple Silicon und Intel gleichermassen) = ``macos-universal``; Linux auf x86-64 = ``linux-x64`` (statisch gegen
-    musl gebunden), auf arm64 = ``linux-arm64`` (dynamisch gegen glibc gebunden).
+    macOS auf Apple Silicon = ``macos-arm64``, auf Intel = ``macos-x64`` (seit Forge 0.6.0 liefert der Autor je Architektur eine
+    Datei, vorher eine gemeinsame ``macos-universal``); Linux auf x86-64 = ``linux-x64``, auf arm64 = ``linux-arm64`` (beide
+    statisch gebunden).
     """
     arm = platform.machine().lower() in ("arm64", "aarch64")
     if sys.platform == "win32":
         return "win-arm64" if arm else "win-x64"
     if sys.platform == "darwin":
-        return "macos-universal"
+        return "macos-arm64" if arm else "macos-x64"
     if platform.machine().lower() in ("x86_64", "amd64"):
         return "linux-x64"
     return "linux-arm64" if arm else ""
@@ -229,6 +230,9 @@ class QuellFakten:
     #: Was Forge bei einer einfachen Umwandlung mit der Laufzeit tut (``lz4.runtime_action``): ``install``, ``replace`` oder ``keep``;
     #: ``""`` = Forge sagt es nicht (aeltere Befehlszeile oder ein Spiel ohne ``libSceAmpr``-Import).
     laufzeit_aktion: str = ""
+    #: Was Forge beim **Paketbau** mit der Laufzeit tut (``lz4.pkg_runtime_action``, seit Forge 0.6.0): ``omit`` = ein ``.pkg`` traegt
+    #: keine AMPR-Laufzeit, die im Spiel bleibt draussen. ``""`` = Forge sagt es nicht (bis 0.5.7; dort galt ``runtime_action``).
+    laufzeit_aktion_paket: str = ""
     #: Die Emulatoren in ``fakelib/`` (Namen klein): ``ampr``, ``dlc``, ``playgo``, ``other``.
     emulatoren: tuple = ()
     #: Das Spiel traegt Zusatzinhalte (Forges ``dlcs``) ...
@@ -337,9 +341,31 @@ class QuellFakten:
         (255.126 Byte) wurden im ``.pkg`` zu ampr_emu 0.4.2.1 (423.350 Byte). Ein gepacktes Spiel zaehlt nicht: Dort entpackt das Programm
         ohnehin (``--lz4-unpack`` / ``--zstd-unpack``) und sagt es im Protokoll. Ohne Laufzeit im Spiel (``none``) legt Forge sie nur dazu
         (``ampr_fehlt``).
+
+        Das ist der Stand bis Forge 0.5.7. Seit 0.6.0 nennt ``inspect`` den Paketbau eigens (``pkg_runtime_action``): Dort wird die
+        Laufzeit weggelassen (:attr:`laufzeit_entfaellt`), nicht ersetzt - dann ist das hier ``False``.
         """
-        return bool(self.ampr_importiert and not self.gepackt and self.laufzeit_aktion == "replace"
+        aktion = self.laufzeit_aktion_paket or self.laufzeit_aktion
+        return bool(self.ampr_importiert and not self.gepackt and aktion == "replace"
                     and str(self.laufzeit or "").strip().lower() not in ("", "none"))
+
+    @property
+    def paket_ohne_laufzeit(self) -> bool:
+        """Ein Paket aus dieser Quelle traegt keine AMPR-Laufzeit (Forge ab 0.6.0, ``pkg_runtime_action`` = ``omit``).
+
+        Gemessen 26.11.2026 mit Forge 0.6.0 an einem Spiel mit AMPR EMU 0.3.6.6: "LZ4: leaving out fakelib/libSceAmpr.sprx: a .pkg carries
+        no AMPR runtime, the console's loader provides it"; das zurueckgelesene Paket enthaelt die Datei nicht. Vorher (0.5.6/0.5.7) setzte
+        Forge dort seine ampr_emu 0.4.2.1 ein.
+        """
+        return bool(self.ampr_importiert and self.laufzeit_aktion_paket == "omit")
+
+    @property
+    def laufzeit_entfaellt(self) -> bool:
+        """Das Spiel bringt eine AMPR-Laufzeit mit, und Dump Forge laesst sie beim Paketbau weg (:attr:`paket_ohne_laufzeit`).
+
+        Auch bei einem gepackten Spiel: Im Paket steht sie in keinem Fall. Ohne Laufzeit im Spiel (``none``) entfaellt nichts.
+        """
+        return bool(self.paket_ohne_laufzeit and str(self.laufzeit or "").strip().lower() not in ("", "none"))
 
     @property
     def dlc_fehlt(self) -> bool:
@@ -393,6 +419,7 @@ def quellfakten(daten: dict, pfad: "str | None" = None) -> QuellFakten:
         laufzeit_version=str(lz4.get("runtime_version") or ""),
         laufzeit_neu=str(lz4.get("shipped_runtime_version") or ""),
         laufzeit_aktion=str(lz4.get("runtime_action") or "").strip().lower(),
+        laufzeit_aktion_paket=str(lz4.get("pkg_runtime_action") or "").strip().lower(),
         emulatoren=emulatoren,
         dlc_vorhanden=bool(dlcs),
         dlc_emuliert="dlc" in emulatoren or any(d.get("emulated") for d in dlcs),

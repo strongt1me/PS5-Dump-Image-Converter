@@ -51,7 +51,15 @@ def _ersetzt_beim_umwandeln(fakten) -> bool:
 
 
 def laufzeit_neu_name(fakten) -> str:
-    """Forges eigene Laufzeit, die es beim Paketbau einsetzt: ``ampr_emu 0.4.2.1`` (ohne Fassung: ``ampr_emu``)."""
+    """Forges eigene Laufzeit, die es an die Stelle der des Spiels setzt.
+
+    Bis Forge 0.5.7 ``ampr_emu 0.4.2.1`` (``shipped_runtime_version``; ohne Fassung: ``ampr_emu``). Seit 0.6.0 liefert Forge nur noch
+    ampr-emu-ng mit und setzt es bei jeder Umwandlung ein (gemessen 26.11.2026: "replacing the game's runtime ... with the bundled
+    ampr-emu-ng 0.5.1"); ``shipped_runtime_version`` nennt dort weiter die alte Nummer und gilt nicht mehr. Erkannt wird 0.6.0 an
+    ``pkg_runtime_action``, das es vorher nicht gab - die Fassung von NG nennt ``inspect`` nicht.
+    """
+    if str(getattr(fakten, "laufzeit_aktion_paket", "") or ""):
+        return "ampr-emu-ng"
     version = str(fakten.laufzeit_neu or "").strip()
     return "ampr_emu %s" % version if version else "ampr_emu"
 
@@ -90,10 +98,19 @@ def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr
     liste: list[Zeile] = []
 
     # AMPR EMU: braucht das Spiel libSceAmpr, und bringt es einen Ersatz mit?
-    if fakten.ampr_fehlt is True and forge_ergaenzt_ampr:
+    paket_ohne = bool(forge_ergaenzt_ampr and getattr(fakten, "paket_ohne_laufzeit", False))
+    if fakten.ampr_fehlt is True and paket_ohne:
+        # Forge ab 0.6.0: Ein .pkg traegt keine AMPR-Laufzeit - ein fehlender AMPR EMU ist beim Paketbau kein Mangel, und Forge legt
+        # auch keinen dazu (vorher: ``bericht.ampr_forge``).
+        liste.append(Zeile("ampr", STUFE_HINWEIS, t("bericht.ampr_paket_ohne")))
+    elif fakten.ampr_fehlt is True and forge_ergaenzt_ampr:
         liste.append(Zeile("ampr", STUFE_HINWEIS, t("bericht.ampr_forge")))
     elif fakten.ampr_fehlt is True:
         liste.append(Zeile("ampr", STUFE_FEHLT, t("bericht.ampr_fehlt")))
+    elif fakten.ampr_importiert and paket_ohne and fakten.laufzeit_entfaellt:
+        # Forge ab 0.6.0: Die Laufzeit des Spiels bleibt beim Paketbau draussen - nur ein Hinweis, die Rueckfrage dazu stellt das
+        # Fenster (``Ps5PkgFenster._laufzeit_fragen``).
+        liste.append(Zeile("ampr", STUFE_HINWEIS, t("bericht.ampr_entfaellt", alt=laufzeit_name(fakten))))
     elif fakten.ampr_importiert and forge_ergaenzt_ampr and fakten.laufzeit_ersetzt:
         # Ein Paket: Dump Forge setzt seine eigene Laufzeit an die des Spiels (auch ampr-emu-ng) - nur ein Hinweis, die Rueckfrage
         # dazu stellt das Fenster (``Ps5PkgFenster._laufzeit_fragen``).

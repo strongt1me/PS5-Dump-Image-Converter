@@ -152,8 +152,10 @@ if os.path.isdir(os.path.join(_pkgtool, _rid_mac)):
 # im Bereich „PKG / FPKG“ (seit 16.11.2026; Herkunft und Pruefsummen in Dump-Forge-CLI/README.md). Nur die
 # Befehlszeile dieser Plattform, dazu Lizenz und Hinweise.
 _forgecli = os.path.join(_here, 'Dump-Forge-CLI')
-if os.path.isdir(os.path.join(_forgecli, 'macos-universal')):
-    _datas.append((os.path.join(_forgecli, 'macos-universal'), 'Dump-Forge-CLI/macos-universal'))
+# Seit Dump Forge 0.6.0 je Architektur eine Datei (vorher macos-universal); forge_cli.unterordner() waehlt genauso.
+_forge_unter = 'macos-arm64' if platform.machine().lower() in ('arm64', 'aarch64') else 'macos-x64'
+if os.path.isdir(os.path.join(_forgecli, _forge_unter)):
+    _datas.append((os.path.join(_forgecli, _forge_unter), 'Dump-Forge-CLI/' + _forge_unter))
     for _n in ('LICENSE', 'THIRD-PARTY-NOTICES.md', 'README.md'):
         _datas.append((os.path.join(_forgecli, _n), 'Dump-Forge-CLI'))
 

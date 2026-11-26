@@ -157,6 +157,78 @@ class ZeilenTests(unittest.TestCase):
                 for schluessel in ("bericht.ampr_ersetzt", "ps5pkg.laufzeit_titel", "ps5pkg.laufzeit_log", "ps5pkg.laufzeit_abbruch"):
                     self.assertTrue(STRINGS[schluessel][sprache], schluessel)
 
+    # ---------------- Dump Forge ab 0.6.0: ein .pkg traegt keine AMPR-Laufzeit (gemessen 26.11.2026) ----------------
+    #: Der ``lz4``-Block, wie ihn ``inspect --json`` von Forge 0.6.0 fuer ein Spiel mit AMPR EMU 0.3.6.6 liefert (Crazy Chicken Shooter).
+    LZ4_060 = {"imports_ampr": True, "packed": None, "manifest_error": None, "runtime": "other", "shipped_runtime_version": "0.4.2.1",
+               "runtime_version": None, "runtime_action": "replace", "keep_runtime_action": "keep", "unpack_runtime_action": None,
+               "pack_runtime_action": "replace", "pkg_runtime_action": "omit", "index": "stale", "keep_index": "ok"}
+
+    def _fakten_060(self, **lz4) -> "fc.QuellFakten":
+        block = dict(self.LZ4_060)
+        block.update(lz4)
+        emulatoren = [] if block["runtime"] == "none" else [{"path": "fakelib/libSceAmpr.sprx", "name": "AMPR"}]
+        return fc.quellfakten({"lz4": block, "emulators": emulatoren})
+
+    def test_forge_060_laesst_die_laufzeit_im_paket_weg_statt_sie_zu_ersetzen(self) -> None:
+        f = self._fakten_060()
+        self.assertEqual(("omit", "replace"), (f.laufzeit_aktion_paket, f.laufzeit_aktion))
+        self.assertTrue(f.paket_ohne_laufzeit)
+        self.assertTrue(f.laufzeit_entfaellt)
+        self.assertFalse(f.laufzeit_ersetzt, "beim Paketbau gilt pkg_runtime_action, nicht runtime_action")
+        ohne = self._fakten_060(runtime="none", runtime_action="install")
+        self.assertTrue(ohne.paket_ohne_laufzeit)
+        self.assertFalse(ohne.laufzeit_entfaellt, "ohne Laufzeit im Spiel entfaellt nichts")
+        kein_import = fc.quellfakten({"lz4": dict(self.LZ4_060, imports_ampr=False)})
+        self.assertFalse(kein_import.paket_ohne_laufzeit, "ein Spiel ohne libSceAmpr betrifft das nicht")
+
+    def test_bis_057_bleibt_es_beim_ersetzen(self) -> None:
+        """Gegenprobe: Ohne ``pkg_runtime_action`` (Forge bis 0.5.7) gilt weiter ``runtime_action``."""
+        alt = {k: v for k, v in self.LZ4_060.items() if k not in ("pkg_runtime_action", "keep_runtime_action", "unpack_runtime_action",
+                                                                 "keep_index")}
+        f = fc.quellfakten({"lz4": alt, "emulators": [{"path": "fakelib/libSceAmpr.sprx", "name": "AMPR"}]})
+        self.assertEqual("", f.laufzeit_aktion_paket)
+        self.assertTrue(f.laufzeit_ersetzt)
+        self.assertFalse(f.paket_ohne_laufzeit)
+        self.assertFalse(f.laufzeit_entfaellt)
+        self.assertEqual("ampr_emu 0.4.2.1", qb.laufzeit_neu_name(f))
+
+    def test_der_bericht_zum_paket_sagt_dass_die_laufzeit_wegbleibt(self) -> None:
+        z = qb.zeilen(self._fakten_060(), _t, forge_ergaenzt_ampr=True)[0]
+        self.assertEqual((qb.STUFE_HINWEIS, "bericht.ampr_entfaellt|alt=AMPR EMU"), (z.stufe, z.text))
+        self.assertEqual([], qb.fehlendes(qb.zeilen(self._fakten_060(), _t, forge_ergaenzt_ampr=True)))
+        # ohne Paketbau (ein Abbild aus den Aufgaben 1 bis 6) bleibt die Laufzeit des Spiels, und der Bericht sagt nur, dass sie da ist
+        z = qb.zeilen(self._fakten_060(), _t)[0]
+        self.assertEqual((qb.STUFE_OK, "bericht.ampr_da|laufzeit=AMPR EMU"), (z.stufe, z.text))
+
+    def test_fehlt_die_laufzeit_ist_das_beim_paket_von_forge_060_kein_mangel_und_forge_legt_nichts_dazu(self) -> None:
+        f = self._fakten_060(runtime="none", runtime_action="install")
+        self.assertIs(True, f.ampr_fehlt)
+        liste = qb.zeilen(f, _t, forge_ergaenzt_ampr=True)
+        self.assertEqual((qb.STUFE_HINWEIS, "bericht.ampr_paket_ohne"), (liste[0].stufe, liste[0].text))
+        self.assertEqual([], qb.fehlendes(liste))
+        # fuer ein Abbild fehlt er weiter
+        self.assertEqual((qb.STUFE_FEHLT, "bericht.ampr_fehlt"), (qb.zeilen(f, _t)[0].stufe, qb.zeilen(f, _t)[0].text))
+
+    def test_wandelt_forge_060_selbst_um_setzt_es_ampr_emu_ng_ein(self) -> None:
+        """Gemessen 26.11.2026: "replacing the game's runtime ... with the bundled ampr-emu-ng 0.5.1" - nicht mehr ampr_emu 0.4.2.1,
+        obwohl ``shipped_runtime_version`` die alte Nummer weiter nennt."""
+        f = self._fakten_060()
+        self.assertEqual("ampr-emu-ng", qb.laufzeit_neu_name(f))
+        z = qb.zeilen(f, _t, forge_wandelt=True)[0]
+        self.assertEqual((qb.STUFE_HINWEIS, "bericht.ampr_ersetzt_umwandeln|alt=AMPR EMU,neu=ampr-emu-ng"), (z.stufe, z.text))
+
+    def test_die_texte_zur_weggelassenen_laufzeit_gibt_es_in_allen_sprachen(self) -> None:
+        for sprache in ("de", "en", "es", "it", "fr"):
+            with self.subTest(sprache=sprache):
+                text = STRINGS["ps5pkg.laufzeit_weg_frage"][sprache].format(alt="AMPR EMU 0.3.6.6")
+                for stueck in ("AMPR EMU 0.3.6.6", "ShadowMount+", ".ffpkg", "Kraken Mount", "ampr-emu-ng"):
+                    self.assertIn(stueck, text)
+                self.assertIn("AMPR EMU 0.3.6.6", STRINGS["bericht.ampr_entfaellt"][sprache].format(alt="AMPR EMU 0.3.6.6"))
+                for schluessel in ("bericht.ampr_paket_ohne", "ps5pkg.laufzeit_weg_titel", "ps5pkg.laufzeit_weg_log",
+                                   "ps5pkg.laufzeit_weg_abbruch", "bericht.einbau_paket"):
+                    self.assertTrue(STRINGS[schluessel][sprache], schluessel)
+                self.assertNotEqual(STRINGS["ps5pkg.laufzeit_weg_titel"][sprache], STRINGS["ps5pkg.laufzeit_titel"][sprache])
+
     def test_bei_einem_paket_von_dump_forge_ist_fehlendes_ampr_nur_ein_hinweis(self) -> None:
         f = fc.QuellFakten(ampr_importiert=True, ampr_fehlt=True)
         z = qb.zeilen(f, _t, forge_ergaenzt_ampr=True)[0]

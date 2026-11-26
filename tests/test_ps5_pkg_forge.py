@@ -1697,6 +1697,57 @@ class EinbauSeiteTests(_ForgeBasis):
         self.assertEqual([], os.listdir(self.ziel), "weder Arbeitsordner noch Paket")
         self.assertNotIn(_de("ps5pkg.laufzeit_log"), self.f.protokoll.get("1.0", "end"))
 
+    # ---------------- Dump Forge ab 0.6.0 laesst die AMPR-Laufzeit im Paket weg (gemessen 26.11.2026) ----------------
+    @staticmethod
+    def _fakten_060(**kw) -> "fc.QuellFakten":
+        """Wie Forge 0.6.0 ein Spiel mit AMPR EMU 0.3.6.6 beschreibt: Beim Paketbau bleibt die Laufzeit draussen (``pkg_runtime_action`` omit)."""
+        werte = dict(ampr_importiert=True, ampr_fehlt=False, laufzeit="other", laufzeit_version="0.3.6.6", laufzeit_neu="0.4.2.1",
+                     laufzeit_aktion="replace", laufzeit_aktion_paket="omit")
+        werte.update(kw)
+        return fc.QuellFakten(**werte)
+
+    def test_laesst_dump_forge_die_laufzeit_weg_fragt_das_fenster_mit_eigenem_text(self) -> None:
+        pfad = self._abbild(name="Weg.exfat", tid="PPSA00041")
+        self.infos[pfad].fakten = self._fakten_060()
+        self._laden(pfad)
+        with self._attrappe():
+            self._starten_und_warten()
+        fragen = self.dialoge["frage"]
+        self.assertEqual(1, len(fragen), fragen)
+        self.assertEqual(_de("ps5pkg.laufzeit_weg_titel"), fragen[0][0])
+        self.assertEqual(_de("ps5pkg.laufzeit_weg_frage", alt="AMPR EMU 0.3.6.6"), fragen[0][1])
+        for stueck in ("ShadowMount+", ".ffpkg", "Aufgaben 1 bis 6", "Kraken Mount"):
+            self.assertIn(stueck, fragen[0][1])
+        self.assertNotIn("0.4.2.1", fragen[0][1], "eine eingesetzte Laufzeit gibt es nicht mehr")
+        log = self.f.protokoll.get("1.0", "end")
+        self.assertIn("[HINWEIS] " + _de("bericht.ampr_entfaellt", alt="AMPR EMU 0.3.6.6"), log)
+        self.assertIn(_de("ps5pkg.laufzeit_weg_log"), log)
+        self.assertNotIn(_de("ps5pkg.laufzeit_log"), log)
+        self.assertEqual(1, len(self.aufrufe), "mit Ja wird gebaut")
+
+    def test_sagt_der_anwender_nein_zur_weggelassenen_laufzeit_wird_nichts_gebaut(self) -> None:
+        pfad = self._abbild(name="WegNein.exfat", tid="PPSA00042")
+        self.infos[pfad].fakten = self._fakten_060()
+        self._laden(pfad)
+        with self._attrappe(), mock.patch.object(fz.messagebox, "askyesno", return_value=False) as frage:
+            self._starten_und_warten()
+        self.assertEqual(1, frage.call_count)
+        self.assertEqual([], self.aufrufe, "nichts gebaut")
+        self.assertEqual(_de("ps5pkg.laufzeit_weg_abbruch"), self.f.status_var.get())
+        self.assertNotIn(_de("ps5pkg.laufzeit_weg_log"), self.f.protokoll.get("1.0", "end"))
+
+    def test_ohne_laufzeit_im_spiel_fragt_forge_060_nichts_und_der_bericht_sagt_warum_keine_noetig_ist(self) -> None:
+        pfad = self._abbild(name="WegOhne.exfat", tid="PPSA00043")
+        self.infos[pfad].fakten = self._fakten_060(ampr_fehlt=True, laufzeit="none", laufzeit_version="", laufzeit_aktion="install")
+        self._laden(pfad)
+        with self._attrappe():
+            self._starten_und_warten()
+        self.assertEqual([], self.dialoge["frage"], "nichts entfaellt, also keine Rueckfrage")
+        log = self.f.protokoll.get("1.0", "end")
+        self.assertIn(_de("bericht.ampr_paket_ohne"), log)
+        self.assertNotIn(_de("bericht.ampr_forge"), log, "Forge 0.6.0 legt keine Laufzeit mehr ins Paket")
+        self.assertEqual(1, len(self.aufrufe))
+
     def test_auch_bei_einem_spielordner_kommt_die_frage_mit_dem_namen_der_laufzeit(self) -> None:
         ordner = self._spielordner(name="NgOrdner", tid="PPSA00033")
         self._laden(ordner)

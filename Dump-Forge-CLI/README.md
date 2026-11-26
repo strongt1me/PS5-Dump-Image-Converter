@@ -17,35 +17,49 @@ Der Fortschritt kommt als eine JSON-Zeile je Ereignis auf stdout (`stages`, `pro
 
 ## Fassung und Herkunft
 
-**Dump Forge v0.5.7**, Freigabe vom 22.11.2026 (Quelltext: <https://github.com/quer3q/ps5-dump-forge/tree/v0.5.7>).
-Die Dateien stammen unverändert aus den Archiven der Freigabe. Bei allen fünf Archiven stimmt deren
-SHA-256 mit `SHA256SUMS` der Freigabe und mit dem Digest überein, den GitHub für den Anhang meldet (Dreierprobe, 22.11.2026).
+**Dump Forge v0.6.0**, Freigabe vom 26.11.2026 (Quelltext: <https://github.com/quer3q/ps5-dump-forge/tree/v0.6.0>).
+Seit 0.6.0 liefert der Autor keine Archive mehr, sondern je Betriebssystem und Architektur eine blanke Datei
+(`ps5-dump-forge-cli-<Fassung>-…`). Die Dateien hier sind diese Anhänge, unverändert und nur umbenannt. Bei allen sechs stimmt
+die SHA-256 mit `SHA256SUMS` der Freigabe und mit dem Digest überein, den GitHub für den Anhang meldet (26.11.2026).
 
-| Ordner | Datei | SHA-256 der Datei | aus dem Archiv der Freigabe (SHA-256 des Archivs) |
+| Ordner | Datei | SHA-256 der Datei | Anhang der Freigabe |
 |---|---|---|---|
-| `win-x64/` | `ps5-dump-forge.exe` | `a847df998d952bf7ebb75d64a53ce9cd820d4c2682052de34bd5fe7c53a0081f` | `ps5-dump-forge-0.5.7-windows-x86-64.zip` (`c569c39d692fbf1fad71035be6dc75937a33e8591ee84666a0d9c616ad918134`) |
-| `macos-universal/` | `ps5-dump-forge` | `48f5bd723359a2275abf3ee03a92b0782a62c5df1a07a058ff208e2c763fb0d8` | `ps5-dump-forge-0.5.7-macos-universal.zip` (`de47e5a4954b945fd0fd854b31173966bbc7543e73ddf9f570283cc400048d39`) |
-| `linux-x64/` | `ps5-dump-forge` (statisch, musl) | `b62b60cfbf9c71a5b41fd68de5545b8aa3ec88828f02bdedc93f1f838fcb8cf6` | `ps5-dump-forge-0.5.7-linux-x86-64-musl.tar.gz` (`f0c6b2201731c630a77215c4326c75d3c832841ea7eccdd74ba75178e1f7d364`) |
-| `win-arm64/` | `ps5-dump-forge.exe` (nativ arm64) | `20c1aec0e0e082e049c158b5fc721e89adf25fd244b3a8a9706d8cf85b4070c5` | `ps5-dump-forge-0.5.7-windows-arm64.zip` (`80373c7d7d61f28a914796df2d3e1945ecf42c064578d3a8dec89e3b2cc4f582`) |
-| `linux-arm64/` | `ps5-dump-forge` (dynamisch, glibc ab 2.34) | `79ad4e9c76170ee21f1d6a28c79a86c896d73c572dd5d04ac09b8b5d11473240` | `ps5-dump-forge-0.5.7-linux-arm64.tar.gz` (`830ca7414d7853c7872e8eb418877f19ef52d4c4afd3c7391e7aaff93c084e53`) |
+| `win-x64/` | `ps5-dump-forge.exe` | `1b637a921d2a356e542681611f52ea38c44877381a6d5c0291b71d47071c6686` | `ps5-dump-forge-cli-0.6.0-windows-x86-64.exe` |
+| `macos-arm64/` | `ps5-dump-forge` (Apple Silicon) | `336f3f9385b9682841b054dc58d767bf5a9a79f55281bf82c37fe67d7e9c463e` | `ps5-dump-forge-cli-0.6.0-macos-arm64` |
+| `macos-x64/` | `ps5-dump-forge` (Intel) | `f2275e1ffa5fb2f79c643fdba6c4f13660993861ec9f04f5b65c2d3ead75b86c` | `ps5-dump-forge-cli-0.6.0-macos-x86-64` |
+| `linux-x64/` | `ps5-dump-forge` (statisch) | `6b950e280a57ac7bf4ffdc2e6d9ab9fbc6e037ba4ccebd2aacf441bd5e361fd6` | `ps5-dump-forge-cli-0.6.0-linux-x86-64` |
+| `win-arm64/` | `ps5-dump-forge.exe` (nativ arm64) | `96159000036cd70b0d1e87533359e0c54aef0031b6701e6bf876fd5e1e4301c8` | `ps5-dump-forge-cli-0.6.0-windows-arm64.exe` |
+| `linux-arm64/` | `ps5-dump-forge` (statisch) | `2f2080fcd8472aa16961765cbbf337e3ada7da48a1b640018b8fba396f540f94` | `ps5-dump-forge-cli-0.6.0-linux-arm64` |
 
 `LICENSE` (GPL-3.0) und `THIRD-PARTY-NOTICES.md` (die Hinweise zu den in Forge enthaltenen Fremdteilen: ps5upload-Engine,
-ampr_emu, ampr-emu-ng, LZ4 und andere) sind die Dateien der Freigabe (in 0.5.7 byte-gleich denen von 0.5.6).
+ampr-emu-ng, LZ4 und andere) liegen der Freigabe nicht mehr als Anhang bei; sie stammen aus dem Quelltext der Marke `v0.6.0`.
+Gegenüber 0.5.7 ist `LICENSE` byte-gleich; die Hinweise nennen jetzt ps5upload v12.6.30 und nur noch ampr-emu-ng v0.5.1
+(das früher beiliegende ampr_emu 0.4.2.1 ist entfallen).
+
+**macOS** (26.11.2026): Bis 0.5.7 gab es eine gemeinsame Datei für beide Macs (`macos-universal/`). Seit 0.6.0 gibt es je
+Architektur eine; das Programm wählt nach `platform.machine()` (`forge_cli.unterordner()`), und ins Bündel kommt nur die
+Datei seiner Architektur. Beide wurden hier **nicht ausgeführt** (kein Mac zur Hand): geprüft sind Herkunft, Prüfsumme,
+Dateikopf (64-Bit-Mach-O, cputype arm64 bzw. x86_64) und die Fassung in der Datei; ausgeführt werden sie im Mac-Lauf der CI
+(Schritt „Dump-Forge-Befehlszeile im fertigen Buendel“).
 
 **arm64** (17.11.2026): `win-arm64/` ist die native Befehlszeile; sie gilt, wenn das Programm mit einem arm64-Python läuft (ein
 x64-Python meldet auf einem ARM-Rechner `AMD64` und nimmt `win-x64`; fehlt `win-arm64/`, fällt die Suche auf `win-x64/` zurück).
-`linux-arm64/` ist anders als `linux-x64/` nicht statisch, sondern gegen glibc gebunden (Marke `GLIBC_2.34`): Forge liefert für
-arm64 nur das große Archiv mit der Oberfläche, die Befehlszeile daraus ist die Datei hier (seit 0.5.7 gibt es zusätzlich ein statisches Archiv `linux-arm64-musl`, das hier nicht verwendet wird). Beide wurden **nicht ausgeführt** (kein
-arm64-Rechner zur Hand): geprüft sind Herkunft, Prüfsumme, Dateikopf (PE Machine `0xAA64`, ELF `e_machine` `0xB7`) und die
-Fassung `0.5.7` in der Datei (`tests/test_forge_cli.py`, `MitgelieferteBefehlszeilenTests`).
+`linux-arm64/` ist seit 0.6.0 wie `linux-x64/` statisch gebunden. Beide wurden **nicht ausgeführt** (kein arm64-Rechner zur
+Hand): geprüft sind Herkunft, Prüfsumme, Dateikopf (PE Machine `0xAA64`, ELF `e_machine` `0xB7`) und die Fassung `0.6.0` in
+der Datei (`tests/test_forge_cli.py`, `MitgelieferteBefehlszeilenTests`).
+
+**Was 0.6.0 am Paketbau ändert** (gemessen 26.11.2026 an einem Spiel mit AMPR EMU): Ein `.pkg` trägt keine AMPR-Laufzeit
+mehr; Forge lässt `fakelib/libSceAmpr.sprx` weg („a .pkg carries no AMPR runtime, the console's loader provides it“). Bis
+0.5.7 setzte es dort ampr_emu 0.4.2.1 ein. Bei jeder anderen Umwandlung setzt 0.6.0 das mitgelieferte ampr-emu-ng 0.5.1 ein.
+`inspect --json` nennt den Paketbau eigens (`lz4.pkg_runtime_action`); das Programm richtet seine Rückfrage danach.
 
 Auf einer Plattform ohne Ordner (zum Beispiel Linux auf RISC-V) fehlt die Befehlszeile; das Fenster baut dann kein Paket und sagt
 es. Gebaut wird seit 17.11.2026 nur noch mit Dump Forge.
 
 ## Neue Fassung einspielen
 
-1. Archiv der Freigabe laden und gegen `SHA256SUMS` und den GitHub-Digest prüfen.
-2. `ps5-dump-forge[.exe]` je Plattform in den Ordner legen, `LICENSE` und `THIRD-PARTY-NOTICES.md` ersetzen; die Dateien
+1. Die Anhänge `ps5-dump-forge-cli-<Fassung>-…` der Freigabe laden und gegen `SHA256SUMS` und den GitHub-Digest prüfen.
+2. Je Plattform als `ps5-dump-forge[.exe]` in den Ordner legen, `LICENSE` und `THIRD-PARTY-NOTICES.md` aus dem Quelltext der Marke ersetzen; die Dateien
    für Linux und macOS brauchen das Ausführungsrecht (`git update-index --chmod=+x`; das gilt auch für `linux-arm64/`).
 3. Diese Tabelle, die Zeile in `THIRD_PARTY_LICENSES.md` und `werkzeug_updates.py` (`dump-forge-cli`) nachziehen;
    `tests/test_forge_cli.py` baut mit der mitgelieferten Befehlszeile ein echtes Paket.
