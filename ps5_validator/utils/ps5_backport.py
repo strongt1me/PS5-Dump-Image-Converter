@@ -1083,6 +1083,10 @@ MELDUNGEN: dict[str, str] = {
         ', Heap-Flags an {anzahl} Stellen auf 0 gesetzt',
     'libc_flags_unklar':
         ', Heap-Flags an {anzahl} Stellen nicht eindeutig – unverändert',
+    'presets_korrigiert':
+        ', Spielvorgaben-Größe an {anzahl} Stellen an die Firmware angepasst',
+    'presets_unklar':
+        ', Spielvorgaben-Größe an {anzahl} Stellen nicht eindeutig – unverändert',
 }
 
 
@@ -1104,6 +1108,29 @@ def _libc_flags_anpassen(elf: bytes, texte: "dict[str, str] | None") -> tuple[by
         zusatz += _satz(texte, "libc_flags_korrigiert", anzahl=len(erg.korrigiert))
     if erg.unklar:
         zusatz += _satz(texte, "libc_flags_unklar", anzahl=erg.unklar)
+    return elf, zusatz
+
+
+#: Bis zu dieser Ziel-Hauptversion fordert ``sceUserServiceGetGamePresets`` 0x28 statt 0x30 Byte an
+#: (:func:`backport_korrektur.presets_groesse_korrigieren`; gemessen an allen entpackten Staenden: 0x28 bis 6.50).
+PRESETS_GROESSE_BIS = 6
+
+
+def _presets_anpassen(elf: bytes, ziel_ps5: int, texte: "dict[str, str] | None") -> tuple[bytes, str]:
+    """Strukturgroesse vor ``sceUserServiceGetGamePresets`` auf die Zielfirmware setzen (Ziel bis 6) samt Zusatztext."""
+    try:
+        haupt = int(firmware_text(ziel_ps5).split(".")[0])
+    except ValueError:
+        return elf, ""
+    if haupt > PRESETS_GROESSE_BIS:
+        return elf, ""
+    from ps5_validator.utils import backport_korrektur
+    elf, erg = backport_korrektur.presets_groesse_korrigieren(elf)
+    zusatz = ""
+    if erg.korrigiert:
+        zusatz += _satz(texte, "presets_korrigiert", anzahl=len(erg.korrigiert))
+    if erg.unklar:
+        zusatz += _satz(texte, "presets_unklar", anzahl=erg.unklar)
     return elf, zusatz
 
 
@@ -1173,6 +1200,10 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
             elf, stelle = libc_zuruecksetzen(elf)
             if stelle >= 0:
                 zusatz = _satz(texte, "libc_zurueckgesetzt", stelle="%X" % stelle)
+
+    # Jede Programmdatei: Unity ab 2022.3 ruft die Abfrage aus der eboot.bin (Valheim, FW 4.03: sonst kein Controller).
+    elf, presets_zusatz = _presets_anpassen(elf, ziel_ps5, texte)
+    zusatz += presets_zusatz
 
     # Signieren ist Pflicht - eine unsignierte Datei darf nie zurueckgegeben werden.
     try:

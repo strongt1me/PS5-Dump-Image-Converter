@@ -656,6 +656,91 @@ def libc_map_flags_korrigieren(elf: bytes) -> "tuple[bytes, LibcFlagsErgebnis]":
 
 
 # --------------------------------------------------------------------------
+# Spielvorgaben: Groesse der Ausgabestruktur
+# --------------------------------------------------------------------------
+
+#: ``sceUserServiceGetGamePresets``.
+PRESETS_IMPORT = ("libSceUserService", "-sD02mFDBh4")
+
+#: Die Groesse der Ausgabestruktur, die die Spiele ab SDK 7 eintragen, und die der Zielfirmware bis 6. Gemessen an
+#: ``libSceUserService.sprx`` aller entpackten Staende (26.11.2026): Die IPMI-Huelle fordert bis 6.50 0x28 Byte an, ab
+#: 7.01 0x30. Ein Spiel, das 0x30 eintraegt, bekommt auf FW 4.03 ``0x80960005`` vom Systemdienst. Der Unity-Player ab
+#: 2022.3 verwirft daraufhin den angemeldeten Nutzer (Protokoll "sceUserServiceGetUserColor returned ... ignoring
+#: event"), und das Spiel nimmt keinen Controller an. Gemessen an Valheim (PPSA28824, FW 4.03, 26.11.2026, Test I): mit
+#: 0x28 geht der Controller, und die Vibration wirkt.
+PRESETS_GROESSE_ALT = 0x30
+PRESETS_GROESSE_NEU = 0x28
+
+#: So weit (Byte) vor dem Aufruf wird die Groesse gesucht. Bei Valheim liegt sie 15 Byte davor.
+PRESETS_FENSTER = 48
+
+#: ``mov qword [rbp+d8], imm32`` und ``lea rsi, [rbp+d8]``.
+_MOV_RBP_QWORD = re.compile(rb"\x48\xc7\x45(.)(.)\x00\x00\x00", re.S)
+_LEA_RSI_RBP = b"\x48\x8d\x75"
+
+
+class PresetsErgebnis(NamedTuple):
+    #: Aufrufe des Imports in der Datei.
+    aufrufe: int
+    #: Dateioffsets der geaenderten Groessen-Bytes.
+    korrigiert: tuple
+    #: Aufrufe, vor denen schon die Groesse der Zielfirmware steht.
+    bereits: int
+    #: Aufrufe ohne eindeutige Groessenangabe - bleiben unveraendert.
+    unklar: int
+
+
+def _presets_groesse_im_fenster(fenster: bytes) -> "list[tuple[int, int]]":
+    """(Stelle des Groessen-Bytes im Fenster, Wert) fuer jedes ``mov qword [rbp+d], imm`` mit passendem ``lea rsi``."""
+    funde = []
+    for treffer in _MOV_RBP_QWORD.finditer(fenster):
+        versatz = treffer.group(1)
+        if _LEA_RSI_RBP + versatz in fenster[treffer.end():]:
+            funde.append((treffer.start(2), treffer.group(2)[0]))
+    return funde
+
+
+def presets_groesse_korrigieren(elf: bytes) -> "tuple[bytes, PresetsErgebnis]":
+    """Setzt vor jedem Aufruf von ``sceUserServiceGetGamePresets`` die Strukturgroesse 0x30 auf 0x28 (Ziel bis FW 6).
+
+    Gesucht wird im Fenster vor dem Aufruf genau ein ``mov qword [rbp+d], 0x30``, dessen Adresse danach als zweites
+    Argument (``lea rsi, [rbp+d]``) uebergeben wird. Was davon abweicht, bleibt unveraendert und zaehlt als ``unklar``.
+
+    Returns:
+        (Bytes, Ergebnis). Die Bytes sind dasselbe Objekt, wenn nichts zu aendern war.
+    """
+    ziele = {e.plt_va for e in plt_eintraege(elf) if (e.bibliothek, e.nid) == PRESETS_IMPORT}
+    if not ziele:
+        return elf, PresetsErgebnis(0, (), 0, 0)
+    aufrufe = bereits = unklar = 0
+    korrigiert: list[int] = []
+    for k in _koepfe(elf):
+        if k.typ != PT_LOAD or not k.flags & PF_X:
+            continue
+        bis = min(k.offset + k.filesz, len(elf)) - 4
+        for treffer in _AUFRUF.finditer(elf, k.offset, max(k.offset, bis)):
+            pos = treffer.start()
+            rel, = struct.unpack_from("<i", elf, pos + 1)
+            if k.vaddr + (pos - k.offset) + 5 + rel not in ziele:
+                continue
+            aufrufe += 1
+            anfang = max(k.offset, pos - PRESETS_FENSTER)
+            funde = _presets_groesse_im_fenster(elf[anfang:pos])
+            if len(funde) == 1 and funde[0][1] == PRESETS_GROESSE_ALT:
+                korrigiert.append(anfang + funde[0][0])
+            elif len(funde) == 1 and funde[0][1] == PRESETS_GROESSE_NEU:
+                bereits += 1
+            else:
+                unklar += 1
+    if not korrigiert:
+        return elf, PresetsErgebnis(aufrufe, (), bereits, unklar)
+    puffer = bytearray(elf)
+    for stelle in korrigiert:
+        puffer[stelle] = PRESETS_GROESSE_NEU
+    return bytes(puffer), PresetsErgebnis(aufrufe, tuple(korrigiert), bereits, unklar)
+
+
+# --------------------------------------------------------------------------
 # Korrekturprofile
 # --------------------------------------------------------------------------
 

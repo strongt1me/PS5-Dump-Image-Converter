@@ -1015,5 +1015,80 @@ class WartenErsatzTests(unittest.TestCase):
             self.assertTrue(b"\x00" + b"1jfXLRVzisc#A#A\x00" in geschrieben)
 
 
+PRESETS = ("libSceUserService", "-sD02mFDBh4")
+
+
+def _presets_aufruf(groesse: int, versatz: int = 0xb0, rsi: bool = True) -> bytes:
+    """Wie Valheim (eboot 0x165e184): ``mov qword [rbp-0x50], groesse; lea rsi,[rbp-0x50]; mov edi,[rbx+8]``."""
+    code = bytes.fromhex("48c745") + bytes((versatz, groesse)) + b"\0\0\0"
+    code += (bytes.fromhex("488d75") if rsi else bytes.fromhex("488d55")) + bytes((versatz,))
+    return code + bytes.fromhex("8b7b08")
+
+
+def _mit_aufrufen(*vorspanne: bytes) -> "tuple[bytes, dict, list[int]]":
+    """ELF mit dem Import GetGamePresets und je einem ``call`` auf dessen PLT-Eintrag hinter jedem Vorspann."""
+    importe = [("libkernel", "AAAAAAAAAAA", False), PRESETS + (False,)]
+    elf, info = baue_elf(importe, b"\x90" * (64 * len(vorspanne)))
+    puffer = bytearray(elf)
+    stellen = []
+    for i, vorspann in enumerate(vorspanne):
+        anfang = info["code"] + 64 * i
+        aufruf = anfang + len(vorspann)
+        puffer[anfang:aufruf] = vorspann
+        va = info["code_va"] + (aufruf - info["code"])
+        puffer[aufruf:aufruf + 5] = b"\xe8" + struct.pack("<i", info["plt_va"][1] - (va + 5))
+        stellen.append(anfang + 4)
+    return bytes(puffer), info, stellen
+
+
+class PresetsGroesseTests(unittest.TestCase):
+    """``sceUserServiceGetGamePresets``: Strukturgroesse 0x30 -> 0x28 fuer Ziel bis FW 6.
+
+    Gemessen an Valheim (PPSA28824, FW 4.03, 26.11.2026, Test I): Mit 0x30 meldet der Systemdienst 0x80960005, Unity
+    verwirft den Nutzer, kein Controller; mit 0x28 geht der Controller, und die Vibration wirkt.
+    """
+
+    def test_eindeutige_groesse_wird_korrigiert(self):
+        elf, _info, stellen = _mit_aufrufen(_presets_aufruf(0x30), _presets_aufruf(0x30, versatz=0xa0))
+        neu, erg = bk.presets_groesse_korrigieren(elf)
+        self.assertEqual(erg.aufrufe, 2)
+        self.assertEqual(sorted(erg.korrigiert), stellen)
+        for s in stellen:
+            self.assertEqual(elf[s], 0x30)
+            self.assertEqual(neu[s], 0x28)
+        self.assertEqual(sum(1 for a, b in zip(elf, neu) if a != b), 2, "nur die beiden Groessen-Bytes")
+
+    def test_zweiter_lauf_aendert_nichts(self):
+        elf, _info, _stellen = _mit_aufrufen(_presets_aufruf(0x30))
+        neu, _ = bk.presets_groesse_korrigieren(elf)
+        nochmal, erg = bk.presets_groesse_korrigieren(neu)
+        self.assertIs(nochmal, neu)
+        self.assertEqual((erg.aufrufe, erg.korrigiert, erg.bereits, erg.unklar), (1, (), 1, 0))
+
+    def test_ohne_passendes_lea_rsi_bleibt_es_unveraendert(self):
+        """Die Groesse muss zu dem Puffer gehoeren, der als zweites Argument uebergeben wird."""
+        for vorspann in (_presets_aufruf(0x30, rsi=False), _presets_aufruf(0x40),
+                         _presets_aufruf(0x30) + _presets_aufruf(0x30, versatz=0xa0)):
+            with self.subTest(vorspann=vorspann.hex()):
+                elf, _info, _stellen = _mit_aufrufen(vorspann)
+                neu, erg = bk.presets_groesse_korrigieren(elf)
+                self.assertIs(neu, elf)
+                self.assertEqual((erg.aufrufe, erg.unklar), (1, 1))
+
+    def test_ohne_import_nichts(self):
+        elf, _info = baue_elf([("libkernel", "AAAAAAAAAAA", False)], _presets_aufruf(0x30))
+        neu, erg = bk.presets_groesse_korrigieren(elf)
+        self.assertIs(neu, elf)
+        self.assertEqual(erg.aufrufe, 0)
+
+    def test_greift_nur_bis_ziel_6(self):
+        elf, _info, stellen = _mit_aufrufen(_presets_aufruf(0x30))
+        for ziel, erwartet in ((0x04000031, 0x28), (0x06000000, 0x28), (0x07000000, 0x30), (0x09040001, 0x30)):
+            with self.subTest(ziel=hex(ziel)):
+                neu, zusatz = bp._presets_anpassen(elf, ziel, None)
+                self.assertEqual(neu[stellen[0]], erwartet)
+                self.assertEqual(bool(zusatz), erwartet == 0x28)
+
+
 if __name__ == "__main__":
     unittest.main()
