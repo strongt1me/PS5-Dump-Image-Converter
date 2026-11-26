@@ -885,5 +885,135 @@ class LibcMapFlagsTests(unittest.TestCase):
         self.assertEqual(len(erg2.korrigiert), 1)
 
 
+WARTEN = ("libkernel_sync_on_address", "Hc4CaR6JBL0")
+WECKEN = ("libkernel_sync_on_address", "q2y-wDIVWZA")
+WARTE_LUECKEN = {"libkernel_sync_on_address": ["Hc4CaR6JBL0", "q2y-wDIVWZA"]}
+KOPF = bytes.fromhex("bfc8000000")           # mov edi, 200
+
+
+class WartenErsatzTests(unittest.TestCase):
+    """Die fehlende Warte-Funktion bekommt ``sceKernelUsleep(200)`` statt eines Stubs.
+
+    Gemessen an Valheim (PPSA28824, FW 4.03, 25.11.2026): Mit dem Standard-Stub drehen Unitys wartende Threads
+    Dauerschleifen (schwarzer Bildschirm), mit usleep(200) laeuft das Spiel. Das Wecken bleibt ein Stub.
+    """
+
+    MIT_USLEEP = [("libkernel", "AAAAAAAAAAA", False), ("libkernel", "1jfXLRVzisc", False),
+                  WARTEN + (False,), WECKEN + (False,)]
+    OHNE_USLEEP = [("libkernel", "AAAAAAAAAAA", False), WARTEN + (False,), WECKEN + (False,)]
+
+    def _sprungziel(self, neu, info, index, versatz):
+        """Wohin der ``jmp rel32`` hinter ``mov edi,200`` fuehrt (virtuelle Adresse)."""
+        stelle = info["plt"][index] + versatz
+        self.assertEqual(neu[stelle:stelle + 6], KOPF + b"\xe9")
+        rel, = struct.unpack_from("<i", neu, stelle + 6)
+        return info["plt_va"][index] + versatz + 10 + rel
+
+    def test_mit_usleep_import_springt_der_landeplatz_in_dessen_eintrag(self):
+        elf, info = baue_elf(self.MIT_USLEEP)
+        neu, erg = bk.luecken_neutralisieren(elf, WARTE_LUECKEN, landeplatz=True)
+        self.assertEqual({(s.nid, s.art, s.status) for s in erg},
+                         {("Hc4CaR6JBL0", "warten_usleep", bk.STATUS_GESETZT),
+                          ("q2y-wDIVWZA", "standard", bk.STATUS_GESETZT)})
+        self.assertEqual(self._sprungziel(neu, info, 2, 6), info["plt_va"][1])
+        va = info["plt"][2]
+        self.assertEqual(neu[va:va + 6], elf[va:va + 6], "der erste jmp [GOT] bleibt")
+        self.assertEqual(neu[info["plt"][1]:info["plt"][1] + 16], elf[info["plt"][1]:info["plt"][1] + 16],
+                         "der Eintrag von usleep bleibt unberuehrt")
+        self.assertEqual(neu[info["plt"][3] + 6:info["plt"][3] + 9], bytes.fromhex("31c0c3"), "Wecken bleibt ein Stub")
+
+    def test_ohne_landeplatz_steht_der_ersatz_am_anfang_des_eintrags(self):
+        elf, info = baue_elf(self.MIT_USLEEP)
+        neu, erg = bk.luecken_neutralisieren(elf, WARTE_LUECKEN)
+        self.assertEqual(self._sprungziel(neu, info, 2, 0), info["plt_va"][1])
+        self.assertEqual([s.art for s in erg if s.nid == "Hc4CaR6JBL0"], ["warten_usleep"])
+
+    def test_zweiter_lauf_aendert_nichts(self):
+        for landeplatz in (False, True):
+            with self.subTest(landeplatz=landeplatz):
+                elf, _info = baue_elf(self.MIT_USLEEP)
+                neu, _ = bk.luecken_neutralisieren(elf, WARTE_LUECKEN, landeplatz=landeplatz)
+                nochmal, erg = bk.luecken_neutralisieren(neu, WARTE_LUECKEN, landeplatz=landeplatz)
+                self.assertIs(nochmal, neu)
+                self.assertEqual({(s.nid, s.art, s.status) for s in erg},
+                                 {("Hc4CaR6JBL0", "warten_usleep", bk.STATUS_BEREITS),
+                                  ("q2y-wDIVWZA", "standard", bk.STATUS_BEREITS)})
+
+    def test_ein_alter_standardstub_wird_durch_den_ersatz_abgeloest(self):
+        """Ein Dump, den eine fruehere Fassung herabgesetzt hat, traegt an der Stelle ``xor eax,eax; ret``."""
+        for landeplatz in (False, True):
+            with self.subTest(landeplatz=landeplatz):
+                elf, info = baue_elf(self.MIT_USLEEP)
+                alt, _ = bk.stubs_setzen(elf, {WARTEN: "standard"}, landeplatz=landeplatz)
+                neu, erg = bk.luecken_neutralisieren(alt, WARTE_LUECKEN, landeplatz=landeplatz)
+                self.assertEqual([(s.art, s.status) for s in erg if s.nid == "Hc4CaR6JBL0"],
+                                 [("warten_usleep", bk.STATUS_GESETZT)])
+                self.assertEqual(self._sprungziel(neu, info, 2, 6 if landeplatz else 0), info["plt_va"][1])
+
+    def test_ohne_usleep_import_wird_der_import_umgeschrieben(self):
+        """PS5Util.prx importiert sceKernelUsleep nicht: Der Importname wird umgeschrieben, davor steht mov edi,200."""
+        elf, info = baue_elf(self.OHNE_USLEEP)
+        self.assertIn(b"\0Hc4CaR6JBL0#B#A\0", elf)
+        neu, erg = bk.luecken_neutralisieren(elf, WARTE_LUECKEN, landeplatz=True)
+        self.assertEqual([(s.art, s.status) for s in erg if s.nid == "Hc4CaR6JBL0"],
+                         [("warten_usleep_import", bk.STATUS_GESETZT)])
+        self.assertNotIn(b"Hc4CaR6JBL0", neu)
+        self.assertTrue(b"\x00" + b"1jfXLRVzisc#A#A\x00" in neu,
+                        "Kennzahl der Bibliothek libkernel, Modul von einem ihrer Importe")
+        self.assertEqual(len(neu), len(elf))
+        va = info["plt"][1]
+        self.assertEqual(neu[va:va + 7], KOPF + b"\xff\x25")
+        rel, = struct.unpack_from("<i", neu, va + 7)
+        self.assertEqual(info["plt_va"][1] + 11 + rel, info["got"][1], "derselbe GOT-Eintrag wie vorher")
+        self.assertEqual(neu[va + 11:va + 16], b"\xcc" * 5)
+        importe = bp.prx_symbole(neu)["importe"]
+        self.assertIn("1jfXLRVzisc", importe["libkernel"])
+        self.assertEqual(set(importe["libkernel_sync_on_address"]), {"q2y-wDIVWZA"})
+        # zweiter Lauf: Die Luecke gibt es in der Datei nicht mehr, nichts aendert sich.
+        nochmal, erg2 = bk.luecken_neutralisieren(neu, WARTE_LUECKEN, landeplatz=True)
+        self.assertIs(nochmal, neu)
+        self.assertEqual([(s.nid, s.status) for s in erg2], [("q2y-wDIVWZA", bk.STATUS_BEREITS)])
+
+    def test_ohne_jeden_libkernel_import_bleibt_es_beim_stub(self):
+        """Ohne einen Import aus libkernel ist die Modulkennzahl nicht abzulesen - nichts wird geraten."""
+        elf, info = baue_elf([WARTEN + (False,), WECKEN + (False,)])
+        neu, erg = bk.luecken_neutralisieren(elf, WARTE_LUECKEN, landeplatz=True)
+        self.assertEqual({(s.nid, s.art) for s in erg}, {("Hc4CaR6JBL0", "standard"), ("q2y-wDIVWZA", "standard")})
+        self.assertIn(b"\0Hc4CaR6JBL0#A#A\0", neu)
+
+    def test_fehlt_der_firmware_auch_usleep_bleibt_es_beim_stub(self):
+        elf, _info = baue_elf(self.MIT_USLEEP)
+        luecken = dict(WARTE_LUECKEN, libkernel=["1jfXLRVzisc"])
+        _neu, erg = bk.luecken_neutralisieren(elf, luecken, landeplatz=True)
+        self.assertEqual({s.art for s in erg}, {"standard"})
+
+    def test_schwacher_import_bleibt_unberuehrt(self):
+        elf, _info = baue_elf([("libkernel", "1jfXLRVzisc", False), WARTEN + (True,)])
+        neu, erg = bk.luecken_neutralisieren(elf, WARTE_LUECKEN, landeplatz=True)
+        self.assertIs(neu, elf)
+        self.assertEqual(erg, [])
+
+    def test_dieselbe_nid_unter_libkernel(self):
+        """Die libc.prx importiert die Warte-Funktion unter dem Bibliotheksnamen libkernel."""
+        elf, info = baue_elf([("libkernel", "1jfXLRVzisc", False), ("libkernel", "Hc4CaR6JBL0", False)])
+        neu, erg = bk.luecken_neutralisieren(elf, {"libkernel": ["Hc4CaR6JBL0"]}, landeplatz=True)
+        self.assertEqual([(s.bibliothek, s.art, s.status) for s in erg], [("libkernel", "warten_usleep", bk.STATUS_GESETZT)])
+        self.assertEqual(self._sprungziel(neu, info, 1, 6), info["plt_va"][0])
+
+    def test_gesamtlauf_schreibt_signiert_und_zaehlt_die_luecke_als_erledigt(self):
+        elf, _info = baue_elf(self.OHNE_USLEEP)
+        with tempfile.TemporaryDirectory() as t:
+            pfad = os.path.join(t, "PS5Util.prx")
+            with open(pfad, "wb") as f:
+                f.write(elf)
+            bericht = bk.korrekturen_anwenden(t, [pfad], luecken=WARTE_LUECKEN, landeplatz=True)
+            self.assertEqual(bericht.fehler, [])
+            self.assertEqual(bericht.geaendert, ["PS5Util.prx"])
+            self.assertEqual(bericht.neutralisiert, {WARTEN, WECKEN})
+            with open(pfad, "rb") as f:
+                geschrieben = bk.elf_aus_bytes(f.read())
+            self.assertTrue(b"\x00" + b"1jfXLRVzisc#A#A\x00" in geschrieben)
+
+
 if __name__ == "__main__":
     unittest.main()

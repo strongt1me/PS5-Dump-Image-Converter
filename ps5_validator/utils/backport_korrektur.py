@@ -216,7 +216,10 @@ def _bereits_gesetzte_ergaenzen(elf: bytes, stubs: "dict[int, tuple[int, int]]",
         # Landeplatz-Stub: der erste Sprung bleibt, dahinter steht unser Stub statt "push idx; jmp Aufloeser".
         am_landeplatz = (eintrag[:2] == _SPRUNG
                          and any(eintrag[LANDEPLATZ_OFFSET:].startswith(b) for b in bekannt_landeplatz))
-        if im_eintrag or am_landeplatz:
+        # Warte-Ersatz (:func:`warten_ersetzen`): ``mov edi,<µs>; jmp usleep`` im Eintrag oder auf dem Landeplatz.
+        warte_ersatz = (eintrag.startswith(_WARTE_KOPF + b"\xe9")
+                        or (eintrag[:2] == _SPRUNG and eintrag[LANDEPLATZ_OFFSET:].startswith(_WARTE_KOPF + b"\xe9")))
+        if im_eintrag or am_landeplatz or warte_ersatz:
             stubs[idx] = (va0 + PLT_LAENGE * idx, pos)
 
 
@@ -407,7 +410,174 @@ def luecken_neutralisieren(elf: bytes, luecken: "dict[str, Iterable[str]]", *,
     """
     ziele = {(lib, nid): None for lib, nids in luecken.items() if lib.startswith("lib") for nid in nids
              if (lib, nid) not in STUB_NIE}
-    return stubs_setzen(elf, ziele, landeplatz=landeplatz)
+    ersetzt: list[StubErgebnis] = []
+    if any(nid in WARTE_NIDS for _lib, nid in ziele):
+        usleep_fehlt = USLEEP_IMPORT[1] in set(luecken.get(USLEEP_IMPORT[0], ()))
+        elf, ersetzt = warten_ersetzen(elf, [z for z in ziele if z[1] in WARTE_NIDS], usleep_fehlt=usleep_fehlt,
+                                       landeplatz=landeplatz)
+        for s in ersetzt:
+            ziele.pop((s.bibliothek, s.nid), None)
+    neu, rest = stubs_setzen(elf, ziele, landeplatz=landeplatz)
+    return neu, ersetzt + rest
+
+
+# --------------------------------------------------------------------------
+# Warten auf eine Adresse: Abfragen statt Stub
+# --------------------------------------------------------------------------
+
+#: "Warte, solange der Wert an der Adresse gleich bleibt" (``libkernel`` und ``libkernel_sync_on_address``, in der
+#: Firmware ab 6.00; in libkernel 6.00 eine Huelle um ``_umtx_op`` mit einer Sony-Erweiterung, die 4.03 und 5.50 nicht
+#: kennen). Der Unity-Player ab 2022.3 baut darauf seine Semaphoren (``PS5Util.prx``), jede libc ab SDK 9 importiert sie.
+#: Mit dem Standard-Stub kehrt jedes Warten sofort zurueck, und jeder wartende Thread dreht eine Dauerschleife. Gemessen
+#: an Valheim (PPSA28824, FW 4.03, 25.11.2026): schwarzer Bildschirm ohne Fehlermeldung; mit ``sceKernelUsleep(200)``
+#: statt des Stubs laeuft das Spiel (Test D). Ein fremder Backport von Hollow Knight loest es ebenfalls durch Abfragen.
+#: Das Wecken (``q2y-wDIVWZA``) bleibt beim Standard-Stub: Wer abfragt, muss nicht geweckt werden.
+WARTE_NIDS: frozenset = frozenset({"Hc4CaR6JBL0"})
+
+#: ``sceKernelUsleep`` - hat jede Firmware ab 4.00.
+USLEEP_IMPORT = ("libkernel", "1jfXLRVzisc")
+
+#: Abstand zwischen zwei Abfragen. 200 µs ist der an der Konsole gemessene Wert (Valheim, Test D).
+WARTE_MIKROSEKUNDEN = 200
+
+#: ``mov edi, <µs>`` - das Argument fuer ``sceKernelUsleep``.
+_WARTE_KOPF = b"\xbf" + struct.pack("<I", WARTE_MIKROSEKUNDEN)
+
+#: Die Datei importiert ``sceKernelUsleep`` schon: Der Ersatz springt in dessen PLT-Eintrag.
+ART_WARTEN_SPRUNG = "warten_usleep"
+#: Die Datei importiert es nicht: Der Import der Warte-Funktion wird auf ``sceKernelUsleep`` umgeschrieben.
+ART_WARTEN_IMPORT = "warten_usleep_import"
+
+
+def _strtab_bereich(elf: bytes) -> "tuple[int, int] | None":
+    """(Dateioffset, Laenge) der Zeichenkettentabelle der Dynamik."""
+    dyn = next((k for k in _koepfe(elf) if k.typ == PT_DYNAMIC), None)
+    if dyn is None or dyn.offset + dyn.filesz > len(elf):
+        return None
+    tags: dict[int, int] = {}
+    for i in range(dyn.filesz // 16):
+        tag, wert = struct.unpack_from("<QQ", elf, dyn.offset + i * 16)
+        if tag == 0:
+            break
+        tags.setdefault(tag, wert)
+    if DT_STRTAB not in tags or not tags.get(DT_STRSZ):
+        return None
+    anfang = va_zu_offset(elf, tags[DT_STRTAB])
+    return None if anfang is None else (anfang, min(tags[DT_STRSZ], len(elf) - anfang))
+
+
+def _import_umbenennen(puffer: bytearray, alt: "tuple[str, str]", neu: "tuple[str, str]") -> bool:
+    """Schreibt den Importnamen ``alt`` (Bibliothek, NID) auf ``neu`` um - gleich lang, an derselben Stelle.
+
+    Ein Importname ist ``<NID>#<Bibliothek>#<Modul>`` mit je einem Zeichen als Kennzahl. Die Kennzahl der neuen Bibliothek
+    steht in der Bibliotheksliste der Datei, die des Moduls wird von einem vorhandenen Import derselben Bibliothek
+    abgelesen. Nichts wird geraten: Kommt der alte Name nicht genau einmal vor, gibt es den neuen schon oder importiert
+    die Datei aus der neuen Bibliothek gar nichts, bleibt alles, wie es ist.
+    """
+    bereich = _strtab_bereich(bytes(puffer))
+    if bereich is None:
+        return False
+    anfang, laenge = bereich
+    bibliotheken = bp.prx_symbole(bytes(puffer))["import_bibliotheken"]
+    alt_ids = [k for k, name in bibliotheken.items() if name == alt[0]]
+    neu_ids = [k for k, name in bibliotheken.items() if name == neu[0]]
+    if len(alt_ids) != 1 or len(neu_ids) != 1:
+        return False
+    try:
+        alt_kennung = bp.NID_ALPHABET[alt_ids[0]].encode("ascii")
+        neu_kennung = bp.NID_ALPHABET[neu_ids[0]].encode("ascii")
+    except (IndexError, TypeError):
+        return False
+    tabelle = bytes(puffer[anfang:anfang + laenge])
+    treffer = list(re.finditer(rb"(?<=\0)" + re.escape(alt[1].encode("ascii")) + b"#" + re.escape(alt_kennung)
+                               + rb"#[A-Za-z0-9+\-]\0", tabelle))
+    modul = re.search(rb"(?<=\0)[A-Za-z0-9+\-]{11}#" + re.escape(neu_kennung) + rb"#([A-Za-z0-9+\-])\0", tabelle)
+    if len(treffer) != 1 or modul is None:
+        return False
+    name = neu[1].encode("ascii") + b"#" + neu_kennung + b"#" + modul.group(1)
+    if b"\0" + name + b"\0" in tabelle or len(name) + 1 != len(treffer[0].group(0)):
+        return False
+    stelle = anfang + treffer[0].start()
+    puffer[stelle:stelle + len(name)] = name
+    return True
+
+
+def warten_ersetzen(elf: bytes, ziele: "Iterable[tuple[str, str]]", *, usleep_fehlt: bool = False,
+                    landeplatz: bool = False) -> "tuple[bytes, list[StubErgebnis]]":
+    """Ersetzt fehlende Warte-Funktionen (:data:`WARTE_NIDS`) durch ``sceKernelUsleep(200)`` statt durch einen Stub.
+
+    Ein Aufrufer wartet in einer Schleife, bis sich der Wert an der Adresse aendert. Eine Rueckkehr ohne Aenderung ist
+    fuer ihn ein gewoehnliches verfruehtes Aufwachen, er prueft den Wert und wartet erneut - nur eben mit 200 µs Pause
+    statt in einer Dauerschleife.
+
+    Zwei Wege, je nach Datei:
+
+    * Die Datei importiert ``sceKernelUsleep`` schon (libc.prx): ``mov edi,200; jmp <PLT-Eintrag von usleep>``, 10 Byte -
+      im Landeplatz-Modus hinter dem ersten ``jmp [GOT]`` (bindet der Lader die echte Funktion, bleibt sie erreichbar).
+    * Sie importiert es nicht (PS5Util.prx): Der Importname der Warte-Funktion wird auf ``sceKernelUsleep`` umgeschrieben
+      (:func:`_import_umbenennen`), der Lader bindet den Eintrag dann an usleep; davor steht ``mov edi,200``. Das setzt
+      voraus, dass der Lader Importe beim Laden bindet (gemessen an FW 12.00 am 21.11.2026 und an FW 4.03 mit eben
+      dieser Form).
+
+    Beide Wege sind an der Konsole gelaufen: Valheim auf FW 4.03 mit der so erzeugten PS5Util.prx und libc.prx
+    (Test F, 26.11.2026) - das Spiel startet, laesst sich spielen und speichert.
+
+    Nicht nachgebildet: das Zeitlimit des Originals (Restzeit zurueckschreiben, ``0x8002003c`` bei Ablauf). Ein Aufrufer,
+    der sich allein auf den Ablauf verlaesst, wartet weiter, bis sich der Wert aendert. Bei Valheim wertet keiner der
+    gelesenen Aufrufer die Rueckgabe aus.
+
+    Args:
+        ziele: ``(Bibliothek, NID)`` der Luecken dieser Art.
+        usleep_fehlt: Die Zielfirmware hat ``sceKernelUsleep`` nicht - dann bleibt alles beim Stub.
+
+    Returns:
+        (Bytes, Ergebnisse) - nur fuer Eintraege, die ersetzt wurden oder schon ersetzt sind. Was hier nicht auftaucht,
+        bekommt wie bisher seinen Stub (:func:`stubs_setzen`). Die Bytes sind dasselbe Objekt, wenn nichts zu tun war.
+    """
+    gesucht = sorted(z for z in ziele if z[1] in WARTE_NIDS)
+    if usleep_fehlt or not gesucht:
+        return elf, []
+    eintraege = {(e.bibliothek, e.nid): e for e in plt_eintraege(elf)}
+    usleep = eintraege.get(USLEEP_IMPORT)
+    ergebnisse: list[StubErgebnis] = []
+    puffer: "bytearray | None" = None
+    for ziel in gesucht:
+        e = eintraege.get(ziel)
+        if e is None or e.schwach:
+            continue
+        frei = _plt_eintrag_original(elf, e) or _eigener_stub_da(elf, e, STUB_STANDARD)
+        po = e.plt_offset
+        if usleep is not None:
+            if usleep.plt_offset == po or not _plt_eintrag_original(elf, usleep):
+                continue
+
+            def sprung(versatz: int) -> bytes:
+                return _WARTE_KOPF + b"\xe9" + struct.pack("<i", usleep.plt_va - (e.plt_va + versatz + 10))
+
+            erster_sprung = elf[po:po + 2] == _SPRUNG
+            if ((erster_sprung and elf[po + LANDEPLATZ_OFFSET:po + PLT_LAENGE] == sprung(LANDEPLATZ_OFFSET))
+                    or elf[po:po + 10] == sprung(0)):
+                versatz = LANDEPLATZ_OFFSET if erster_sprung else 0
+                ergebnisse.append(StubErgebnis(e.bibliothek, e.nid, ART_WARTEN_SPRUNG, po + versatz, STATUS_BEREITS))
+                continue
+            if not frei:
+                continue
+            versatz = LANDEPLATZ_OFFSET if landeplatz and erster_sprung else 0
+            if puffer is None:
+                puffer = bytearray(elf)
+            puffer[po + versatz:po + versatz + 10] = sprung(versatz)
+            ergebnisse.append(StubErgebnis(e.bibliothek, e.nid, ART_WARTEN_SPRUNG, po + versatz, STATUS_GESETZT))
+            continue
+        if not frei:
+            continue
+        versuch = bytearray(puffer if puffer is not None else elf)
+        if not _import_umbenennen(versuch, ziel, USLEEP_IMPORT):
+            continue
+        eintrag = _WARTE_KOPF + _SPRUNG + struct.pack("<i", e.got_va - (e.plt_va + len(_WARTE_KOPF) + 6))
+        versuch[po:po + PLT_LAENGE] = eintrag + b"\xcc" * (PLT_LAENGE - len(eintrag))
+        puffer = versuch
+        ergebnisse.append(StubErgebnis(e.bibliothek, e.nid, ART_WARTEN_IMPORT, po, STATUS_GESETZT))
+    return (bytes(puffer) if puffer is not None else elf), ergebnisse
 
 
 # --------------------------------------------------------------------------
