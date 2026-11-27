@@ -279,8 +279,10 @@ KATALOG: tuple[Dienst, ...] = (
     Dienst("homehider", 8090, "HomeHider_v*.elf", web="/", anlaufzeit=3.0,
            version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/status"),
     # --- Kraken Mount (seit 16.11.2026) -------------------------------------------
-    # Spieleinbinder von quer3q (GPL-3.0-or-later): Spielordner (unverpackt, zstd oder LZ4) und Debug-FPKG-.pkg erscheinen mit
-    # eigener Kachel auf dem Startbildschirm, ohne installiert zu werden; ampr-emu-ng liegt bei. Port 8097 und Weboberflaeche aus
+    # Spieleinbinder von quer3q (GPL-3.0-or-later): Spielordner (unverpackt, zstd oder LZ4), Debug-FPKG-.pkg und seit 0.4.2 Abbilder
+    # (.exfat/.ffpkg/.ffpfs/.ffpfsc, nur lesend) erscheinen mit eigener Kachel auf dem Startbildschirm, ohne installiert zu werden;
+    # ampr-emu-ng liegt bei. Seit 0.4.1 antwortet es auch auf ShadowMount+s Schnittstelle, aber nur auf 127.0.0.1:10101 (vom PC
+    # aus nicht zu sehen, die Erkennung von ShadowMount+ hier bleibt unberuehrt). Port 8097 und Weboberflaeche aus
     # dem DESIGN.md des Autors ("take port 8097", ``GET /api/state``) und aus dem ELF ("web UI on port"); das Payload nimmt den
     # Port, bevor es auf das Ende von ShadowMount+ wartet (bis 0.3.2 auch auf kstuff) - die Seite ist also schon da, wenn noch
     # nichts gemountet wird (``waiting`` in ``/api/state``). Gestartet wird das ELF ueber den ELF-Loader (payload_muster, README:

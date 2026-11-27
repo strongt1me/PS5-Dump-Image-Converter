@@ -70,7 +70,7 @@ NG_DATEIEN = {
     "0.5.0 ng-debug": "3b8c5c6fc6c168d75298231fb8a0a5ff7c26d582ba9f80e1e45bdab0d9f3306c",
     # v0.5.1 (23.11.2026 19:36 UTC, Marke auf main, "Latest"): Spielstand-Fixes im pkg-Modus (Marvel's Wolverine, Hades), schnellere Lese-
     # stapel (Lese-Ueberlappung je Lane, Lesepool 6 -> 8 Threads), DIRT 5, MARVEL Cosmic Invasion, Scott Pilgrim EX; Dateiformate und Index-
-    # speicher unveraendert; innen "ampr-emu-ng 0.5.1". Digest = GitHub-Digest = SHA256SUMS des Autors. Kraken Mount 0.3.2 und 0.4.0 bringen sie byte-gleich mit.
+    # speicher unveraendert; innen "ampr-emu-ng 0.5.1". Digest = GitHub-Digest = SHA256SUMS des Autors. Kraken Mount 0.3.2, 0.4.0 und 0.4.2 bringen sie byte-gleich mit.
     "0.5.1 ng": "7ca61afc444f0b44d2f005506dde16cb43e74dae4b1e045323b291b8db1c3d5d",
     "0.5.1 ng-debug": "b7b269f5f6ac0f60e414a7057087f077a73e6e7bbede89f6923d54301d277d30",
 }
