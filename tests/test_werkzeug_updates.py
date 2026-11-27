@@ -182,6 +182,8 @@ RELEASES = {
         ('v1.2', False, '2026-06-01', ['lapy_jb_daemon-v1.2.elf']),
     ],
     'owendswang/ps5-syslang': [
+        # Seit v0.3 ohne "ps5-" vor dem Anhangnamen (Gesamtpruefung 27.11.2026: die Tabelle erwartete den alten Namen).
+        ('v0.3', False, '2026-10-20', ['syslang-de-v0.3.elf', 'syslang-en-US-v0.3.elf', 'syslang-fr-FR-v0.3.elf']),
         ('v0.2.1', False, '2026-10-01', ['ps5-syslang-de-v0.2.1.elf', 'ps5-syslang-en-US-v0.2.1.elf',
                                          'ps5-syslang-fr-FR-v0.2.1.elf']),
         ('v0.2', False, '2026-06-28', ['ps5-syslang-de-v0.2.elf', 'ps5-syslang-en-US-v0.2.elf']),
@@ -349,7 +351,7 @@ HELLOWORLD = [
     "patchdl_0.3.0.elf", "pkgmgr_v1.5.0.elf", "pldmgr_v0.6.0.elf", "ps4mount_v0.4.4.elf", "ps5-app-dumper_v2.10.elf", "ps5-backpork_v0.1.elf",
     "ps5-dump-forge_v0.6.0.elf", "ps5-hwinfo-bench_v0.1.elf", "ps5-hwinfo-sysinfo_v0.1.elf", "ps5-self-pager-full-system_v1.2.elf",
     "ps5-self-pager-game_v1.2.elf", "ps5-self-pager-shellcore_v1.2.elf", "ps5-self-pager-system-common-lib_v1.2.elf",
-    "ps5-syslang-de-v0.2.1.elf", "ps5-unified-autoloader-v0.1.5-915a65e.elf", "ps5debug-NG_v1.3.2.elf",
+    "ps5-syslang-de-v0.3.elf", "ps5-unified-autoloader-v0.1.5-915a65e.elf", "ps5debug-NG_v1.3.2.elf",
     "ps5upload-6.7.3.elf", "shadowmountplus_v1.7beta4.elf", "shsrv-ps5_v0.20.elf", "unjail-ps5app-payload.elf",
     "web-file-mgr-v1.10.elf", "webkit-autoloader-installer_v0.6.1.elf", "websrv-ps5_v0.34.elf",
     "zftpd-ps5-v1.6.0.elf", "zftpd-ps5-zhttp-v1.6.0.elf",
@@ -413,7 +415,7 @@ class FakeNetz:
         self.verfaelscht: set[str] = set()
         self.sperre = threading.Lock()
 
-    def abfragen(self, quelle: str, etag: str = "") -> "wu.Antwort":
+    def abfragen(self, quelle: str, etag: str = "", anzahl: int = wu.FREIGABEN_JE_QUELLE) -> "wu.Antwort":
         with self.sperre:
             self.gefragt.append((quelle, etag))
         if quelle in self.ausfaelle:
@@ -906,11 +908,53 @@ class UrteilTests(unittest.TestCase):
             ('v0.7.0', False, '2026-10-12', ['webkit-autoloader-host_v0.7.0.exe']),       # unvollstaendig
             ('v0.6.1', False, '2026-10-08', RELEASES["itsPLK/ps5-webkit-autoloader"][0][3])]))
         befund = wu.beurteilen(w, wu.lokale_fassung(w, self.bestand), freigaben)
-        self.assertEqual(wu.STATUS_AKTUELL, befund.status)
+        # Verglichen wird mit der aelteren, vollstaendigen Freigabe - aber die neuere, unlesbare heisst nicht mehr still "aktuell"
+        # (Gesamtpruefung 27.11.2026, PoorDS4 v0.2.0 lag so einen Monat unbemerkt): "unklar" mit ihrer Marke.
+        self.assertEqual((wu.STATUS_UNKLAR, wu.MELDUNG_NEUERE_UNLESBAR, "v0.7.0"), (befund.status, befund.meldung, befund.detail))
         self.assertEqual("0.6.1", befund.neu)
         leer = wu.beurteilen(w, wu.lokale_fassung(w, self.bestand), wu.freigaben_lesen(github_roh(
             "itsPLK/ps5-webkit-autoloader", [('v0.7.0', False, '2026-10-12', ['nichts.txt'])])))
         self.assertEqual((wu.STATUS_UNKLAR, wu.MELDUNG_KEINE_DATEI), (leer.status, leer.meldung))
+
+    def test_eine_marke_mit_zusatz_wird_nicht_zur_fassung(self) -> None:
+        """Gesamtpruefung 27.11.2026: ``1.8-test1`` (nicht als Vorabfassung markiert) galt als 1.8 - Zielname ohne Zusatz, und die
+        spaetere echte 1.8 hiess "aktuell". Jetzt wird sie nicht genommen; verglichen wird die aeltere, gemeldet die neuere."""
+        self.assertEqual("test1", wu._marken_rest("1.8-test1", "1.8", "zahl"))
+        self.assertEqual("experimental", wu._marken_rest("v0.7.1-experimental", "0.7.1", "zahl"))
+        for marke, fassung in (("v1.37.0-3", "1.37.0-3"), ("1.7beta6-fix2", "1.7beta6-fix2"), ("v0.22", "0.22")):
+            self.assertEqual("", wu._marken_rest(marke, fassung, "zahl"), marke)
+        w = wu.werkzeug("shadowmountplus")
+        freigaben = wu.freigaben_lesen(github_roh("drakmor/ShadowMountPlus", [
+            ('1.8-test1', False, '2026-11-27', ['shadowmountplus.elf']),
+            ('1.7beta12', True, '2026-11-20', ['shadowmountplus.elf'])]))
+        befund = wu.beurteilen(w, wu.Lokal("1.7beta12"), freigaben)
+        self.assertEqual((wu.STATUS_UNKLAR, wu.MELDUNG_NEUERE_UNLESBAR, "1.8-test1", "1.7beta12"),
+                         (befund.status, befund.meldung, befund.detail, befund.neu))
+        self.assertFalse(befund.ladbar)
+
+    def test_eine_uebergangene_freigabe_die_schon_vorliegt_meldet_nichts(self) -> None:
+        """Korrektur-Pruefung 27.11.2026: Ist die Fassung der uebergangenen Freigabe lesbar und nicht neuer als die lokale (jemand hat sie
+        von Hand geholt), bleibt es beim Urteil - kein "neuere Freigabe". Und eine Netz- oder Limitmeldung (Freigaben aus dem
+        Zwischenspeicher) wird nicht von der Marke ueberschrieben."""
+        w = wu.werkzeug("webkit")
+        freigaben = wu.freigaben_lesen(github_roh("itsPLK/ps5-webkit-autoloader", [
+            ('v0.7.0', False, '2026-10-12', ['webkit-autoloader-host_v0.7.0.exe']),
+            ('v0.6.1', False, '2026-10-08', RELEASES["itsPLK/ps5-webkit-autoloader"][0][3])]))
+        self.assertEqual(wu.STATUS_NEUER, wu.beurteilen(w, wu.Lokal("0.7.0"), freigaben).status)
+        aus_speicher = wu.beurteilen(w, wu.Lokal("0.6.1"), freigaben, fehler="netz:HTTP 503", stand="2026-11-26")
+        self.assertEqual((wu.MELDUNG_NETZ, "HTTP 503"), (aus_speicher.meldung, aus_speicher.detail))
+        # Runde 4: ... der Status heisst trotzdem "unklar", nicht still "aktuell (Stand ...)"; ohne neuere Freigabe bleibt es "aktuell".
+        self.assertEqual((wu.STATUS_UNKLAR, "2026-11-26"), (aus_speicher.status, aus_speicher.stand))
+        ohne_neuere = [f for f in freigaben if f.tag == "v0.6.1"]
+        self.assertEqual(wu.STATUS_AKTUELL, wu.beurteilen(w, wu.Lokal("0.6.1"), ohne_neuere, fehler="limit:123").status)
+
+    def test_ein_nightly_ohne_zahl_macht_nichts_unklar(self) -> None:
+        """Gegenprobe: Ein rollender ``nightly`` (OnionHEN) ist kein Fassungsstand - die Pruefung bleibt bei "aktuell"."""
+        w = wu.werkzeug("onionhen")
+        freigaben = wu.freigaben_lesen(github_roh("aydencharles/onionHEN", [
+            ('nightly', True, '2026-11-12', ['OnionHEN.elf']), ('v0.9.0', False, '2026-10-15', ['OnionHEN.elf'])]))
+        befund = wu.beurteilen(w, wu.Lokal("0.9.0"), freigaben)
+        self.assertEqual(wu.STATUS_AKTUELL, befund.status)
 
     def test_vorabfassungen_gelten_nur_wenn_die_tabelle_es_sagt(self) -> None:
         # ps5upload: v6.7.2 ist als Vorabfassung gekennzeichnet; neueste fertige ist v6.7.3.
@@ -1214,6 +1258,32 @@ class PruefenTests(unittest.TestCase):
                                         self.bestand, speicher)
         self.assertEqual((wu.MELDUNG_LIMIT, "123", "2026-10-09"), (mit_meldung.meldung, mit_meldung.detail,
                                                                    mit_meldung.stand))
+
+    def test_neu_beurteilen_rechnet_meldungen_des_urteils_neu(self) -> None:
+        """Gesamtpruefung 27.11.2026, Runde 3: ``neu_beurteilen`` reichte jede Meldung als Abfragefehler weiter. "Neuere Freigabe
+        unlesbar" hielt damit die eigene Pruefung auf - nach jedem Holen hiess das Werkzeug wieder still "aktuell". Und eine Meldung wie
+        "lokal unlesbar" blieb stehen, obwohl die Datei inzwischen da war."""
+        self.assertEqual({wu.MELDUNG_NETZ, wu.MELDUNG_LIMIT, wu.MELDUNG_NICHT_GEFUNDEN, wu.MELDUNG_ANTWORT, wu.MELDUNG_ABGEBROCHEN},
+                         set(wu.ABFRAGE_MELDUNGEN))
+        w = wu.werkzeug("webkit")
+        freigaben = wu.freigaben_lesen(github_roh("itsPLK/ps5-webkit-autoloader", [
+            ('v0.7.0', False, '2026-10-12', ['webkit-autoloader-host_v0.7.0.exe']),       # unvollstaendig
+            ('v0.6.1', False, '2026-10-08', RELEASES["itsPLK/ps5-webkit-autoloader"][0][3])]))
+        speicher = {w.quelle: {"etag": "", "stand": "2026-11-27", "freigaben": wu.freigaben_als_daten(freigaben)}}
+        vorher = wu.beurteilen(w, wu.lokale_fassung(w, self.bestand), freigaben)
+        self.assertEqual((wu.STATUS_UNKLAR, wu.MELDUNG_NEUERE_UNLESBAR), (vorher.status, vorher.meldung))
+        nachher = wu.neu_beurteilen(vorher, self.bestand, speicher)
+        self.assertEqual((wu.STATUS_UNKLAR, wu.MELDUNG_NEUERE_UNLESBAR, "v0.7.0"), (nachher.status, nachher.meldung, nachher.detail))
+        # Eine Urteilsmeldung von vorhin bleibt nicht kleben: Das Werkzeug liegt jetzt lesbar vor.
+        alt = wu.Befund(werkzeug=w, status=wu.STATUS_UNKLAR, meldung=wu.MELDUNG_LOKAL_UNLESBAR)
+        nur_vollstaendig = [f for f in freigaben if f.tag == "v0.6.1"]
+        speicher_neu = {w.quelle: {"etag": "", "stand": "", "freigaben": wu.freigaben_als_daten(nur_vollstaendig)}}
+        frisch = wu.neu_beurteilen(alt, self.bestand, speicher_neu)
+        self.assertEqual((wu.STATUS_AKTUELL, ""), (frisch.status, frisch.meldung))
+        # Gegenprobe: ein Abfragefehler bleibt - und haelt die Marke der unlesbaren Freigabe nicht fuer eine Meldung; "unklar" bleibt es.
+        netz = wu.neu_beurteilen(wu.Befund(werkzeug=w, status=wu.STATUS_UNKLAR, meldung=wu.MELDUNG_NETZ, detail="HTTP 503"),
+                                 self.bestand, speicher)
+        self.assertEqual((wu.STATUS_UNKLAR, wu.MELDUNG_NETZ, "HTTP 503"), (netz.status, netz.meldung, netz.detail))
 
 
 class AmprTests(unittest.TestCase):
@@ -1522,6 +1592,10 @@ class HolenTests(unittest.TestCase):
         Path(ziel).write_bytes(b"alt")
         wu.holen([self.elfldr], self.basis, FakeNetz())
         self.assertEqual(inhalt("elfldr-ps5.elf"), Path(ziel).read_bytes())
+        # Die beiseite gelegte fruehere Datei (``.alt``) ist nach dem Erfolg wieder weg (Gesamtpruefung 27.11.2026: blieb sie liegen,
+        # merkte das kein Test).
+        ordner = os.path.dirname(ziel)
+        self.assertEqual([], [n for n in os.listdir(ordner) if n.endswith(".alt")])
 
     def test_ziel_und_adresse_pruefungen(self) -> None:
         self.assertTrue(wu.ziel_erlaubt("pkgmgr_v1.5.0.elf"))

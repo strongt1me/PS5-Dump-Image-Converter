@@ -68,6 +68,7 @@ MELDUNG_TEXTE = {
     wu.MELDUNG_KEINE_DATEI: "updates.meldung_keine_datei",
     wu.MELDUNG_LOKAL_UNLESBAR: "updates.meldung_lokal_unlesbar",
     wu.MELDUNG_FASSUNG_UNKLAR: "updates.meldung_fassung_unklar",
+    wu.MELDUNG_NEUERE_UNLESBAR: "updates.meldung_neuere_unlesbar",
 }
 GRUPPEN_TEXTE = {
     wu.GRUPPE_PAYLOAD: "updates.gruppe_payload",
@@ -140,16 +141,20 @@ class _Postfach:
 def _pruefen_arbeit(post: _Postfach, netz, basis: str, mitgeliefert_finden, ampr: list, ampr_ordner: str) -> None:
     """Der Arbeitsfaden der Pruefung. Fasst kein Tk an, uebersetzt nichts, kennt das Fenster nicht."""
     befunde = None
+    neuer = None
     try:
         bestand = wu.bestand_lesen(mitgeliefert_finden, basis)
         speicher = wu.speicher_lesen(basis)
         befunde, neuer = wu.pruefen(wu.WERKZEUGE, bestand, netz, speicher, melden=post.melden, abbruch=post.abbruch,
                                     ampr_vorhanden=lambda: ampr, ampr_ordner=ampr_ordner)
-        wu.speicher_schreiben(basis, neuer)
+        if not wu.speicher_schreiben(basis, neuer):
+            logger.warning("Zwischenspeicher der Werkzeug-Updates nicht geschrieben (%s)", basis)
     except Exception:  # noqa: BLE001
         logger.exception("Pruefung der Werkzeug-Updates")
     finally:
-        post.abliefern("pruefen", befunde)
+        # Der Zwischenspeicher geht mit: Das Fenster urteilt nach dem Holen damit, nicht mit dem auf der Platte - scheiterte das
+        # Schreiben, hiess sonst jedes Werkzeug "Fehler", obwohl die Abfrage gelungen war (Gesamtpruefung 27.11.2026, Runde 4).
+        post.abliefern("pruefen", befunde, ergebnis=neuer)
 
 
 def _holen_arbeit(post: _Postfach, netz, basis: str, wahl: list, ampr_ordner: str) -> None:
@@ -191,6 +196,8 @@ class UpdatesFenster:
         self.basis = gui._updates_basis()
         self.befunde: list[wu.Befund] = []
         self.gewaehlt: set[str] = set()
+        #: Der Zwischenspeicher der letzten Pruefung in diesem Fenster (``None`` vor der ersten).
+        self._speicher: "dict | None" = None
         self._post = _Postfach()
         self._abbruch = self._post.abbruch
         self._arbeit: "threading.Thread | None" = None
@@ -493,6 +500,8 @@ class UpdatesFenster:
             zeit = self._zeit_text(int(b.detail))
             if zeit:
                 return self.t("updates.meldung_limit_bis", zeit=zeit)
+        if b.meldung == wu.MELDUNG_NEUERE_UNLESBAR:
+            return self.t(schluessel, marke=b.detail or "?")
         text = self.t(schluessel)
         if b.meldung == wu.MELDUNG_NETZ and b.detail:
             text += " " + b.detail
@@ -596,7 +605,7 @@ class UpdatesFenster:
     def _nach_dem_holen(self, ergebnis: wu.Ergebnis) -> None:
         """Urteilt noch einmal ueber alles - der Bestand hat sich geaendert, die Freigaben nicht."""
         bestand = self._bestand()
-        speicher = wu.speicher_lesen(self.basis)
+        speicher = self._speicher if self._speicher is not None else wu.speicher_lesen(self.basis)
         ampr = self.g._updates_ampr_vorhanden()
         ampr_ordner = self.g._updates_ampr_ordner()
         self._liste_neu([wu.neu_beurteilen(b, bestand, speicher, ampr, ampr_ordner) for b in self.befunde])
@@ -676,6 +685,8 @@ class UpdatesFenster:
         self._arbeit = None
         self.balken["value"] = 0
         if art == "pruefen":
+            if isinstance(ergebnis, dict):
+                self._speicher = ergebnis
             zaehler = wu.zusammenfassung(self.befunde)
             if befunde is None:
                 self._status(self.t("updates.status_fehlgeschlagen"))

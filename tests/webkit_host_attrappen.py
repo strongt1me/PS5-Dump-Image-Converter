@@ -52,13 +52,15 @@ class FakeNetz:
         #: Wird nach dem Laden gerufen (Pfad der Datei) - etwa um den Virenschutz nachzuahmen.
         self.nach_dem_laden = None
 
-    def abfragen(self, quelle: str, etag: str = "") -> "wu.Antwort":
+    def abfragen(self, quelle: str, etag: str = "", anzahl: int = wu.FREIGABEN_JE_QUELLE) -> "wu.Antwort":
         self.abgefragt += 1
+        self.anzahl = anzahl
         if self.ausfall is not None:
             raise self.ausfall
         if self.status != 200:
             return wu.Antwort(self.status)
-        return wu.Antwort(200, json.dumps(self.freigaben), "W/\"x\"")
+        # Wie GitHub: nur so viele Freigaben, wie die Anfrage verlangt (per_page).
+        return wu.Antwort(200, json.dumps(self.freigaben[:anzahl]), "W/\"x\"")
 
     def laden(self, adresse, pfad, fortschritt=None, abbruch=None, grenze=None):
         self.geladen.append(adresse)

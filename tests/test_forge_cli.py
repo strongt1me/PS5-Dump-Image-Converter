@@ -426,6 +426,21 @@ class ErkennungTests(unittest.TestCase):
             (arm / "ps5-dump-forge.exe").write_bytes(b"x")
             self.assertEqual("", fc.werkzeug_suchen([wurzel]), "auf x64 gibt es keinen Ausweg auf die arm64-Datei")
 
+    def test_das_hauptprogramm_sucht_ebenso_mit_rueckfall(self) -> None:
+        """Gesamtpruefung 27.11.2026: ``_forge_befehlszeile`` (Aufgaben 1 bis 6, Seitenleiste) suchte nur im Ordner der Plattform. Die
+        x64-EXE meldet auf einem ARM-Rechner ``ARM64`` (WMI), gebuendelt ist aber nur ``win-x64`` - dort fehlten dann alle Angaben."""
+        import PS5ImageConverter_Pro_FINAL_revised as app
+        with tempfile.TemporaryDirectory() as wurzel, mock.patch.object(sys, "platform", "win32"), \
+                mock.patch.object(fc.platform, "machine", return_value="ARM64"), \
+                mock.patch.object(app, "_bundled_resource",
+                                  side_effect=lambda *teile: os.path.join(wurzel, *teile)
+                                  if os.path.isfile(os.path.join(wurzel, *teile)) else ""):
+            x64 = Path(wurzel, fc.ORDNER, "win-x64")
+            x64.mkdir(parents=True)
+            (x64 / "ps5-dump-forge.exe").write_bytes(b"x")
+            self.assertEqual(("win-arm64", "win-x64"), fc.unterordner_reihe())
+            self.assertEqual(str(x64 / "ps5-dump-forge.exe"), app.PS5ConverterGUI._forge_befehlszeile())
+
 
 class MitgelieferteBefehlszeilenTests(unittest.TestCase):
     """``Dump-Forge-CLI/`` haelt je Plattform eine unveraenderte Datei der Freigabe: Herkunft laut README, Pruefsumme, Dateikopf."""

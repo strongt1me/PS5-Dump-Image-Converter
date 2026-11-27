@@ -394,6 +394,68 @@ class AblaufTests(unittest.TestCase):
         self.assertIn("libc", grund_mit)
         self.assertIn(bp.LIBC_NEU, bp.self_zu_elf(mit))
 
+    def test_die_spielvorgaben_groesse_gilt_bei_jeder_programmdatei(self):
+        """Gesamtpruefung 27.11.2026: Die Korrektur haengt an ``datei_verarbeiten`` - beim Herabsetzen und auch, wenn ein frueherer
+        Lauf die Datei schon herabgesetzt hat (ein vor 6d91b50 umgebautes Valheim behielt sonst 0x30: kein Controller auf FW 4.03).
+        Aendert sie nichts, bleibt eine schon niedrige Datei unberuehrt."""
+        from unittest import mock
+        aufrufe = []
+
+        def aendernd(elf, ziel_ps5, texte):
+            aufrufe.append(ziel_ps5)
+            return elf + b"\0", " [Spielvorgaben angepasst]"
+
+        def nichts(elf, ziel_ps5, texte):
+            aufrufe.append(ziel_ps5)
+            return elf, ""
+
+        # Die schon niedrige Datei kommt als NACHKORRIGIERT zurueck: neue Bytes, aber nicht "herabgesetzt" (Zaehlung, SDK-Spalte).
+        for sdk, ps4, soll in ((0x09000040, 0x11590001, bp.ERG_GEPATCHT), (0x02000009, 0x08050001, bp.ERG_NACHKORRIGIERT)):
+            with self.subTest(sdk=hex(sdk)):
+                quelle = bp.elf_signieren(baue_elf(sdk, ps4))
+                aufrufe.clear()
+                with mock.patch.object(bp, "_presets_anpassen", side_effect=aendernd):
+                    kennung, neu, grund = bp.datei_verarbeiten(quelle, ziel_ps5=self.ziel_ps5, ziel_ps4=self.ziel_ps4)
+                self.assertEqual(aufrufe, [self.ziel_ps5])
+                self.assertEqual(kennung, soll)
+                self.assertIn("Spielvorgaben angepasst", grund)
+                self.assertEqual(bp.dateityp(neu), bp.TYP_SELF)
+        quelle = bp.elf_signieren(baue_elf(0x02000009, 0x08050001))
+        with mock.patch.object(bp, "_presets_anpassen", side_effect=nichts):
+            kennung, neu, _grund = bp.datei_verarbeiten(quelle, ziel_ps5=self.ziel_ps5, ziel_ps4=self.ziel_ps4)
+        self.assertEqual(kennung, bp.ERG_UEBERSPRUNGEN)
+        self.assertEqual(neu, quelle)
+
+        def unklar(elf, ziel_ps5, texte):
+            return elf, " [Groesse unklar]"
+
+        with mock.patch.object(bp, "_presets_anpassen", side_effect=unklar):
+            kennung, _neu, grund = bp.datei_verarbeiten(quelle, ziel_ps5=self.ziel_ps5, ziel_ps4=self.ziel_ps4)
+        self.assertEqual(kennung, bp.ERG_UEBERSPRUNGEN)
+        self.assertIn("Groesse unklar", grund, "ein 'unklar' der Korrektur geht beim Ueberspringen nicht verloren")
+
+    def test_libc_flags_auch_bei_schon_herabgesetzter_libc(self):
+        """Ein vor b7c2318 gepatchtes libc.prx (Zeichenkette schon neu, SDK schon niedrig) bekommt die Heap-Flags noch."""
+        from unittest import mock
+        elf = bytearray(baue_elf(0x02000009, 0x08050001))
+        elf[LOAD_OFFSET + 0x150:LOAD_OFFSET + 0x150 + len(bp.LIBC_NEU)] = bp.LIBC_NEU
+        quelle = bp.elf_signieren(bytes(elf))
+        gesehen = []
+
+        def flags(elf, texte):
+            gesehen.append(bp.LIBC_NEU in elf)
+            return elf + b"\0", " [Flags angepasst]"
+
+        with mock.patch.object(bp, "_libc_flags_anpassen", side_effect=flags):
+            kennung, _neu, grund = bp.datei_verarbeiten(quelle, ziel_ps5=self.ziel_ps5, ziel_ps4=self.ziel_ps4,
+                                                        libc_zusatz=True, ist_libc_datei=True)
+            self.assertEqual((kennung, gesehen), (bp.ERG_NACHKORRIGIERT, [True]))
+            self.assertIn("Flags angepasst", grund)
+            gesehen.clear()
+            kennung, _neu, _grund = bp.datei_verarbeiten(quelle, ziel_ps5=self.ziel_ps5, ziel_ps4=self.ziel_ps4,
+                                                         libc_zusatz=False, ist_libc_datei=True)
+            self.assertEqual(gesehen, [], "ohne den Schalter fuer libc keine Flags")
+
 
 class FakelibTests(unittest.TestCase):
     """Die mitgelieferten Ersatzbibliotheken."""

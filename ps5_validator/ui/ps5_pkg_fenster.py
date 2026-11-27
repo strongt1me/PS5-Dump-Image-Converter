@@ -2351,8 +2351,10 @@ class Ps5PkgFenster:
             return
         if not abbild and not self._emulatoren_fragen(info):
             return
-        # Ein gepacktes Spiel (``entpacken``) sagt das Protokoll schon: Dort setzt Dump Forge seine Laufzeit beim Entpacken ein.
-        if not abbild and not entpacken and not self._laufzeit_fragen(info):
+        # Auch ein gepacktes Spiel (``entpacken``): Seit Forge 0.6.0 laesst es die Laufzeit dort ebenso weg (gemessen 27.11.2026 an
+        # einem zstd- und einem LZ4-gepackten Spiel: "leaving out fakelib/libSceAmpr.sprx") - also dieselbe Rueckfrage. Bis 0.5.7 setzte
+        # Forge beim Entpacken seine eigene ein; dazu fragt das Fenster weiter nicht (:meth:`_laufzeit_fragen`, ``gepackt``).
+        if not abbild and not self._laufzeit_fragen(info, gepackt=bool(entpacken)):
             return
         if entpacken:
             self._protokoll(self.t("ps5pkg.packs_entpacken_log", verfahren="LZ4" if entpacken == "lz4" else "zstd"))
@@ -2455,7 +2457,7 @@ class Ps5PkgFenster:
         self._protokoll(self.t("ps5pkg.emu_log"))
         return True
 
-    def _laufzeit_fragen(self, info: "wz.PaketInfo") -> bool:
+    def _laufzeit_fragen(self, info: "wz.PaketInfo", gepackt: bool = False) -> bool:
         """Vor dem Bau eines Pakets: Dump Forge ersetzt die AMPR-Laufzeit des Spiels durch seine eigene - sagt es und nennt den Weg, falls sie bleiben soll.
 
         Nutzerwunsch 21.11.2026: Das Programm richtet sich nach Dump Forge; will ein Anwender etwas anderes, als Forge vorgibt (hier: die
@@ -2477,7 +2479,8 @@ class Ps5PkgFenster:
                 return False
             self._protokoll(self.t("ps5pkg.laufzeit_weg_log"))
             return True
-        if fakten is None or not fakten.laufzeit_ersetzt:
+        # Gepackt und Forge bis 0.5.7: Es setzt beim Entpacken seine Laufzeit ein - keine Frage (das Protokoll nennt das Entpacken).
+        if gepackt or fakten is None or not fakten.laufzeit_ersetzt:
             return True
         if not messagebox.askyesno(self.t("ps5pkg.laufzeit_titel"),
                                    self.t("ps5pkg.laufzeit_frage", alt=qb.laufzeit_name(fakten), neu=qb.laufzeit_neu_name(fakten)),

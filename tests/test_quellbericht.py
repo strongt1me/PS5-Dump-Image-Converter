@@ -217,6 +217,22 @@ class ZeilenTests(unittest.TestCase):
         z = qb.zeilen(f, _t, forge_wandelt=True)[0]
         self.assertEqual((qb.STUFE_HINWEIS, "bericht.ampr_ersetzt_umwandeln|alt=AMPR EMU,neu=ampr-emu-ng"), (z.stufe, z.text))
 
+    def test_ein_paket_ohne_laufzeit_direkt_ins_abbild_bekommt_sie_von_forge(self) -> None:
+        """Gesamtpruefung 27.11.2026: Jedes .pkg von Forge 0.6.0 hat keine Laufzeit (``runtime`` none, ``runtime_action`` install).
+        Beim direkten Umwandeln in ein Abbild setzt Forge ampr-emu-ng ein (gemessen 26.11.2026: "installing ampr-emu-ng 0.5.1") - der
+        Bericht sagte trotzdem "[FEHLT] AMPR EMU", und das Fenster bot Entpacken und Einbauen an."""
+        f = self._fakten_060(runtime="none", runtime_action="install", keep_runtime_action="install")
+        self.assertTrue(f.ampr_fehlt)
+        z = qb.zeilen(f, _t, forge_wandelt=True)[0]
+        self.assertEqual((qb.STUFE_HINWEIS, "bericht.ampr_installiert_umwandeln|neu=ampr-emu-ng"), (z.stufe, z.text))
+        self.assertNotIn("ampr", qb.fehlendes(qb.zeilen(f, _t, forge_wandelt=True)))
+        # Gegenprobe: ohne Forges Umwandlung (Aufgabe 1 ...) fehlt sie weiter, und ohne "install" sagt der Bericht nichts anderes.
+        self.assertEqual(qb.STUFE_FEHLT, qb.zeilen(f, _t)[0].stufe)
+        anders = self._fakten_060(runtime="none", runtime_action="", keep_runtime_action="")
+        self.assertEqual(qb.STUFE_FEHLT, qb.zeilen(anders, _t, forge_wandelt=True)[0].stufe)
+        for sprache in ("de", "en", "es", "it", "fr"):
+            self.assertIn("ampr-emu-ng", STRINGS["bericht.ampr_installiert_umwandeln"][sprache].format(neu="ampr-emu-ng"))
+
     def test_die_texte_zur_weggelassenen_laufzeit_gibt_es_in_allen_sprachen(self) -> None:
         for sprache in ("de", "en", "es", "it", "fr"):
             with self.subTest(sprache=sprache):

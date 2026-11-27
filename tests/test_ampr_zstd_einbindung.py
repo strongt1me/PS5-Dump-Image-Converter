@@ -470,6 +470,37 @@ class BauenTests(unittest.TestCase):
                 self.assertEqual((2, 0), g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=set_libs))
                 self.assertNotIn("ampr_zstd.ftp_pack_nur_ng", g._log)
 
+    def test_ohne_wunsch_nimmt_set_tauschen_bei_zstd_pack_ng_und_listet_einmal(self) -> None:
+        """Gesamtpruefung 27.11.2026, Runde 3: Ohne Wunsch waehlte "Set tauschen" bei einem zstd-Pack die neueste Fassung von drakmor und
+        lief damit in die Sperre, obwohl NG im Bestand lag. Und der Spielordner wurde dafuer zweimal aufgelistet (LZ4, dann zstd)."""
+        g = self._einbau_gui()
+        eintraege = [{"lib": "libSceAmpr.sprx", "version": "0.9", "variant": "test-nopack", "path": "x"},
+                     {"lib": "libSceAmpr.sprx", "version": "0.5", "variant": "ng", "path": "n"},
+                     {"lib": "libScePlayGo.sprx", "version": "0.9", "variant": "nolog", "path": "y"}]
+        g._ampr_scan_version_store = lambda store: eintraege
+        g._fakelib_ordnername = lambda: "fakelib"
+        g._ampr_ng_hinweis = lambda *a, **k: None
+        g._ampr_ftp_upload_file = mock.Mock(return_value=True)
+        g._ampr_ftp_list_entries = mock.Mock(return_value=[("eboot.bin", {}), ("ampr_zstd.index", {})])
+        set_libs = ("libSceAmpr.sprx", "libScePlayGo.sprx")
+        self.assertEqual((2, 0), g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=set_libs))
+        hochgeladen = [c.args[2] for c in g._ampr_ftp_upload_file.call_args_list]
+        self.assertEqual(["n", "y"], hochgeladen, "NG statt der neuesten Fassung von drakmor")
+        self.assertNotIn("ampr_zstd.ftp_pack_nur_ng", g._log)
+        self.assertEqual(1, g._ampr_ftp_list_entries.call_count, "die Wurzel nur einmal auflisten")
+        # Gegenprobe: Ein ausdruecklicher Wunsch einer anderen Fassung bleibt gesperrt - mit ebenfalls nur einer Abfrage.
+        g._ampr_ftp_list_entries.reset_mock()
+        g._ampr_ftp_upload_file.reset_mock()
+        with self.assertRaises(APP._AmprFtpPackSperre):
+            g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", variant="test-nopack", libs=("libSceAmpr.sprx",))
+        g._ampr_ftp_upload_file.assert_not_called()
+        self.assertEqual(1, g._ampr_ftp_list_entries.call_count)
+        # ... und ohne Pack bleibt es ohne Wunsch bei der Fassung von drakmor.
+        g._ampr_ftp_list_entries = mock.Mock(return_value=[("eboot.bin", {})])
+        g._ampr_ftp_upload_file.reset_mock()
+        self.assertEqual((1, 0), g._ampr_ftp_apply_set(object(), "/data/ps5/PPSA00000", "x", libs=("libSceAmpr.sprx",)))
+        self.assertEqual(["x"], [c.args[2] for c in g._ampr_ftp_upload_file.call_args_list])
+
     def test_der_zweite_aufruf_nach_der_zusage_protokolliert_die_fassungen_nicht_noch_einmal(self) -> None:
         """R9: Nach "Ja" ruft der Picker ``_ampr_ftp_apply_set`` erneut - ``ampr.selected_version`` stand dann doppelt im Protokoll."""
         set_libs = ("libSceAmpr.sprx", "libScePlayGo.sprx")

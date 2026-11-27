@@ -188,11 +188,22 @@ class StubTests(unittest.TestCase):
         self.assertEqual(erg, [])
 
     def test_gesetzter_stub_anderer_art_wird_gemeldet_nicht_ueberschrieben(self):
+        """Eine eigene Art bleibt, wenn eine andere eigene Art gewuenscht ist (ein Profil kann sie bewusst gesetzt haben)."""
+        elf, info = _elf()
+        neu, _ = bk.stubs_setzen(elf, {("libkernel", "NH6xARDOVv8"): "ausgaben_minus1"})
+        wieder, erg = bk.stubs_setzen(neu, {("libkernel", "NH6xARDOVv8"): "ausgabe_int0"})
+        self.assertIs(wieder, neu)
+        self.assertEqual(erg[0].status, bk.STATUS_ABWEICHEND)
+
+    def test_der_allgemeine_stub_wird_durch_die_eigene_art_ersetzt(self):
+        """Gesamtpruefung 27.11.2026: Bis 27.11. blieb ein frueher gesetztes ``xor eax,eax; ret`` stehen ("abweichend"), obwohl die
+        Funktion heute eine eigene Art hat - fuer NH6x liest der Aufrufer dann Stapelmuell statt -1."""
         elf, info = _elf()
         neu, _ = bk.stubs_setzen(elf, {("libkernel", "NH6xARDOVv8"): "standard"})
         wieder, erg = bk.stubs_setzen(neu, {("libkernel", "NH6xARDOVv8"): "ausgaben_minus1"})
-        self.assertIs(wieder, neu)
-        self.assertEqual(erg[0].status, bk.STATUS_ABWEICHEND)
+        self.assertEqual(erg[0].status, bk.STATUS_GESETZT)
+        va = info["plt"][1]
+        self.assertEqual(wieder[va:va + len(bk.STUB_AUSGABEN_MINUS1.bytes_)], bk.STUB_AUSGABEN_MINUS1.bytes_)
 
     def test_luecken_neutralisieren_nur_was_die_datei_importiert_und_nur_lib(self):
         elf, info = _elf()
@@ -669,6 +680,38 @@ class NeueVertraegeTests(unittest.TestCase):
         va = info["plt"][0]
         self.assertEqual(neu[va + 6:va + 12], art.bytes_)
 
+    def test_ein_alter_standardstub_wird_durch_die_eigene_art_abgeloest(self):
+        """Gesamtpruefung 27.11.2026: Ein Lauf vor ad20e65 setzte auf sceNpCommerceDialogOpen2 ``xor eax,eax; ret``. Der naechste
+        Lauf meldete "unerwartete Bytes" und nannte die Funktion als offene Luecke; jetzt kommt der Fehler-Stub an seine Stelle -
+        auf den Landeplatz, wenn der erste ``jmp [GOT]`` noch steht, sonst fest an den Anfang des Eintrags."""
+        ziel = ("libSceNpCommerce", "IXmfUaze9So")
+        art = bk.STUB_FEHLER_80020016
+        for alt_landeplatz, neu_landeplatz in ((False, False), (True, True), (False, True), (True, False)):
+            with self.subTest(alt=alt_landeplatz, neu=neu_landeplatz):
+                elf, info = baue_elf([ziel + (False,), ("libSceFoo", "XXXXXXXXXXX", False)])
+                alt, erg = bk.stubs_setzen(elf, {ziel: "standard"}, landeplatz=alt_landeplatz)
+                self.assertEqual([e.status for e in erg], [bk.STATUS_GESETZT])
+                neu, erg = bk.luecken_neutralisieren(alt, {"libSceNpCommerce": ["IXmfUaze9So"]}, landeplatz=neu_landeplatz)
+                self.assertEqual([(e.art, e.status) for e in erg], [("fehler_80020016", bk.STATUS_GESETZT)])
+                va = info["plt"][0]
+                if alt_landeplatz and neu_landeplatz:
+                    self.assertEqual(neu[va:va + 6], elf[va:va + 6], "der erste jmp [GOT] bleibt")
+                    self.assertEqual(neu[va + 6:va + 6 + len(art.landeplatz_bytes())], art.landeplatz_bytes())
+                else:
+                    self.assertEqual(neu[va:va + len(art.bytes_)], art.bytes_)
+                nochmal, erg = bk.luecken_neutralisieren(neu, {"libSceNpCommerce": ["IXmfUaze9So"]}, landeplatz=neu_landeplatz)
+                self.assertIs(nochmal, neu)
+                self.assertEqual([e.status for e in erg], [bk.STATUS_BEREITS])
+
+    def test_eine_eigene_art_wird_nie_durch_eine_andere_ersetzt(self):
+        """Nur der allgemeine Stub wird abgeloest: Hat ein Profil bewusst eine andere Art gesetzt, bleibt sie (abweichend)."""
+        ziel = ("libSceNpCommerce", "IXmfUaze9So")
+        elf, _info = baue_elf([ziel + (False,), ("libSceFoo", "XXXXXXXXXXX", False)])
+        alt, _ = bk.stubs_setzen(elf, {ziel: "ausgabe_int0"})
+        neu, erg = bk.stubs_setzen(alt, {ziel: None})
+        self.assertIs(neu, alt)
+        self.assertEqual([e.status for e in erg], [bk.STATUS_ABWEICHEND])
+
     def test_gleiche_nid_in_anderer_bibliothek_bleibt_standard(self):
         self.assertEqual(bk.stub_art("libSceFremd", "gELp9ue2ccQ"), bk.STUB_STANDARD)
 
@@ -742,12 +785,23 @@ class LandeplatzTests(unittest.TestCase):
         self.assertEqual({e.status for e in erg}, {bk.STATUS_BEREITS})
 
     def test_ein_stub_anderer_art_bleibt_abweichend(self):
-        """Gegenprobe: Ein fester Stub einer ANDEREN Art (``standard`` statt ``ausgaben_minus1`` fuer NH6x) ist nicht der gesuchte."""
+        """Gegenprobe: Ein fester Stub einer ANDEREN eigenen Art (``ausgabe_int0`` statt ``ausgaben_minus1`` fuer NH6x) ist nicht
+        der gesuchte und wird nicht ersetzt."""
         elf, _ = _elf()
-        fest, _ = bk.stubs_setzen(elf, {("libkernel", "NH6xARDOVv8"): "standard"})
+        fest, _ = bk.stubs_setzen(elf, {("libkernel", "NH6xARDOVv8"): "ausgabe_int0"})
         wieder, erg = bk.stubs_setzen(fest, {("libkernel", "NH6xARDOVv8"): None}, landeplatz=True)
         self.assertIs(wieder, fest)
         self.assertEqual([e.status for e in erg], [bk.STATUS_ABWEICHEND])
+
+    def test_ein_fester_allgemeiner_stub_wird_im_landeplatz_lauf_fest_ersetzt(self):
+        """Gesamtpruefung 27.11.2026: alter fester ``xor eax,eax; ret``, heute Landeplatz - der erste jmp [GOT] ist weg, also kommt
+        die eigene Art fest an den Anfang des Eintrags."""
+        elf, info = _elf()
+        fest, _ = bk.stubs_setzen(elf, {("libkernel", "NH6xARDOVv8"): "standard"})
+        wieder, erg = bk.stubs_setzen(fest, {("libkernel", "NH6xARDOVv8"): None}, landeplatz=True)
+        self.assertEqual([e.status for e in erg], [bk.STATUS_GESETZT])
+        va = info["plt"][1]
+        self.assertEqual(wieder[va:va + len(bk.STUB_AUSGABEN_MINUS1.bytes_)], bk.STUB_AUSGABEN_MINUS1.bytes_)
 
     def test_zu_langer_stub_wird_abgelehnt(self):
         elf, _ = _elf()
@@ -954,14 +1008,16 @@ class WartenErsatzTests(unittest.TestCase):
 
     def test_ein_alter_standardstub_wird_durch_den_ersatz_abgeloest(self):
         """Ein Dump, den eine fruehere Fassung herabgesetzt hat, traegt an der Stelle ``xor eax,eax; ret``."""
-        for landeplatz in (False, True):
-            with self.subTest(landeplatz=landeplatz):
+        # Dazu der Fall "alter fester Stub, heute Landeplatz" (Gesamtpruefung 27.11.2026): Der erste jmp [GOT] ist dann weg, der
+        # Ersatz muss an den Anfang des Eintrags - sonst bliebe ``xor eax,eax; ret`` vorne stehen (Dauerschleife).
+        for alt_landeplatz, landeplatz in ((False, False), (True, True), (False, True)):
+            with self.subTest(alt=alt_landeplatz, landeplatz=landeplatz):
                 elf, info = baue_elf(self.MIT_USLEEP)
-                alt, _ = bk.stubs_setzen(elf, {WARTEN: "standard"}, landeplatz=landeplatz)
+                alt, _ = bk.stubs_setzen(elf, {WARTEN: "standard"}, landeplatz=alt_landeplatz)
                 neu, erg = bk.luecken_neutralisieren(alt, WARTE_LUECKEN, landeplatz=landeplatz)
                 self.assertEqual([(s.art, s.status) for s in erg if s.nid == "Hc4CaR6JBL0"],
                                  [("warten_usleep", bk.STATUS_GESETZT)])
-                self.assertEqual(self._sprungziel(neu, info, 2, 6 if landeplatz else 0), info["plt_va"][1])
+                self.assertEqual(self._sprungziel(neu, info, 2, 6 if alt_landeplatz else 0), info["plt_va"][1])
 
     def test_ohne_usleep_import_wird_der_import_umgeschrieben(self):
         """PS5Util.prx importiert sceKernelUsleep nicht: Der Importname wird umgeschrieben, davor steht mov edi,200."""
@@ -1080,8 +1136,11 @@ class PresetsGroesseTests(unittest.TestCase):
 
     def test_ohne_passendes_lea_rsi_bleibt_es_unveraendert(self):
         """Die Groesse muss zu dem Puffer gehoeren, der als zweites Argument uebergeben wird."""
+        # Der vierte Fall (Gesamtpruefung 27.11.2026): ``lea rsi`` auf eine ANDERE Stapelstelle - die 0x30 gehoert dann zu einer
+        # fremden Variable und darf nicht angefasst werden (ohne den Versatzvergleich blieb der Test sonst gruen).
+        fremd = bytes.fromhex("48c745b030000000") + bytes.fromhex("488d75a0") + bytes.fromhex("8b7b08")
         for vorspann in (_presets_aufruf(0x30, rsi=False), _presets_aufruf(0x40),
-                         _presets_aufruf(0x30) + _presets_aufruf(0x30, versatz=0xa0)):
+                         _presets_aufruf(0x30) + _presets_aufruf(0x30, versatz=0xa0), fremd):
             with self.subTest(vorspann=vorspann.hex()):
                 elf, _info, _stellen = _mit_aufrufen(vorspann)
                 neu, erg = bk.presets_groesse_korrigieren(elf)

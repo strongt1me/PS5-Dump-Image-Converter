@@ -370,6 +370,18 @@ def stubs_setzen(elf: bytes, ziele: "dict[tuple[str, str], str | None]", *,
             status = STATUS_GESETZT
         elif stelle == neu or _eigener_stub_da(elf, e, art):
             status = STATUS_BEREITS
+        elif art.kennung != STUB_STANDARD.kennung and _eigener_stub_da(elf, e, STUB_STANDARD):
+            # Ein frueherer Lauf setzte hier den allgemeinen Stub ``xor eax,eax; ret``, heute gilt eine eigene Art (seit ad20e65 z. B.
+            # sceNpCommerceDialogOpen2 -> Fehlercode): Er wird ersetzt, wie warten_ersetzen den alten Standard-Stub abloest - vorher
+            # hiess das "unerwartete Bytes", und die Restmeldung nannte die Funktion als offene Luecke (Gesamtpruefung 27.11.2026).
+            # Nur der allgemeine Stub wird abgeloest, nie eine eigene Art durch eine andere (ein Profil kann sie bewusst gesetzt
+            # haben). Ist der erste ``jmp [GOT]`` schon weg (alter fester Stub), bleibt es die feste Form.
+            erster_sprung = elf[e.plt_offset:e.plt_offset + 2] == _SPRUNG
+            stelle_offset, neu = stub_stelle(e, art, landeplatz and erster_sprung)
+            if puffer is None:
+                puffer = bytearray(elf)
+            puffer[stelle_offset:stelle_offset + len(neu)] = neu
+            status = STATUS_GESETZT
         else:
             status = STATUS_ABWEICHEND
         ergebnisse.append(StubErgebnis(e.bibliothek, e.nid, art.kennung, stelle_offset, status))

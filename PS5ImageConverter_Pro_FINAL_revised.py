@@ -15937,6 +15937,11 @@ class PS5ConverterGUI:
             _archiv_faden = getattr(self, "_archiv_faden", None)
             if _archiv_faden is not None and _archiv_faden.is_alive():
                 _archiv_faden.join(30.0)
+            # Ebenso das Asset-Pack-Werkzeug: Sein Fenster hat oben beim Schliessen den Abbruch gesetzt; der Faden endet am
+            # naechsten Stueck und loescht dabei seine halbe Datei.
+            for _asset_faden in list(getattr(self, "_asset_pack_faeden", [])):
+                if _asset_faden.is_alive():
+                    _asset_faden.join(30.0)
             self._force_dismount_all()
             self._cleanup_exit_temp_targets(
                 checkpoint_mode=shutdown_mode,
@@ -38105,9 +38110,17 @@ class PS5ConverterGUI:
     # ------------------------------------------------------------------
     @staticmethod
     def _forge_befehlszeile() -> str:
-        """Pfad zur mitgelieferten Befehlszeile von Dump Forge (``Dump-Forge-CLI``); ``""``, wenn es sie hier nicht gibt."""
-        unter = forge_cli.unterordner()
-        return _bundled_resource(forge_cli.ORDNER, unter, forge_cli.dateiname()) if unter else ""
+        """Pfad zur mitgelieferten Befehlszeile von Dump Forge (``Dump-Forge-CLI``); ``""``, wenn es sie hier nicht gibt.
+
+        Dieselbe Reihenfolge wie die Suche der Seite 7 (:func:`forge_cli.unterordner_reihe`): Auf einem ARM-Rechner meldet auch die x64-EXE
+        ``win-arm64``, gebuendelt ist aber nur ``win-x64`` - ohne den Rueckfall fehlten in den Aufgaben 1 bis 6 alle Angaben von Forge
+        (Gesamtpruefung 27.11.2026).
+        """
+        for unter in forge_cli.unterordner_reihe():
+            pfad = _bundled_resource(forge_cli.ORDNER, unter, forge_cli.dateiname())
+            if pfad:
+                return pfad
+        return ""
 
     def _quellfakten_der_quelle(self, src: str) -> "forge_cli.QuellFakten | None":
         """Was Dump Forges ``inspect`` ueber die Quelle sagt: AMPR (auch Packs), DLC und PlayGo - einmal je Lauf.
@@ -39855,7 +39868,7 @@ class PS5ConverterGUI:
                     "backport.log_failed",
                     name=os.path.relpath(pfad, ordner), error=grund))
                 continue
-            if kennung != ps5_backport.ERG_GEPATCHT:
+            if kennung not in (ps5_backport.ERG_GEPATCHT, ps5_backport.ERG_NACHKORRIGIERT):
                 continue
 
             zwischen = pfad + ".neu"
@@ -39865,7 +39878,11 @@ class PS5ConverterGUI:
                     fh.flush()
                     os.fsync(fh.fileno())      # auf dem Datentraeger, bevor es den Platz der eboot.bin einnimmt
                 _datei_ersetzen(zwischen, pfad)
-                gepatcht += 1
+                if kennung == ps5_backport.ERG_GEPATCHT:
+                    gepatcht += 1
+                else:
+                    # Schon herabgesetzt, nur nachkorrigiert: kein "herabgesetzt" in der Schlusszeile, aber eine eigene Zeile.
+                    self._append_to_log(self._t("backport.log_patched", name=os.path.relpath(pfad, ordner), detail=grund))
             except OSError as exc:
                 fehler += 1
                 try:
@@ -40379,12 +40396,21 @@ class PS5ConverterGUI:
         """Liegt in der Wurzel des Spielordners auf der Konsole ein ``ampr_zstd.index``? Nicht lesbar = nein (dann scheitert ohnehin
         das Hochladen). Ob dort alle Originale liegen, laesst sich ueber FTP nicht billig klaeren - wer fragt, behandelt das Pack
         als eines, das nur NG liest (R6-2)."""
+        return self._ampr_ftp_packart(ftp, spielpfad) == "zstd"
+
+    def _ampr_ftp_packart(self, ftp: Any, spielpfad: str) -> str:
+        """``"zstd"`` oder ``"lz4"`` nach dem Pack-Index in der Wurzel des Spielordners auf der Konsole, sonst ``""`` - in derselben
+        Reihenfolge wie ``forge_cli.gepackt_im_ordner`` (zstd zuerst: NG liest beide). Eine Auflistung der Wurzel
+        (:meth:`_ampr_ftp_list_entries`); nicht lesbar = ``""``.
+
+        "Set tauschen" (:meth:`_ampr_ftp_apply_set`) fragt damit einmal fuer Fassungswahl und Sperre zugleich - vorher listete es den
+        Ordner dafuer zweimal (Gesamtpruefung 27.11.2026, Runde 3)."""
         try:
-            namen = [name for name, _fakten in self._ampr_ftp_list_entries(ftp, spielpfad)]
+            namen = {str(n).lower() for n, _fakten in self._ampr_ftp_list_entries(ftp, spielpfad)}
         except Exception as exc:  # noqa: BLE001 - ftplib-Fehler, Abbruch der Leitung
             logger.debug("Spielordner auf der Konsole nicht lesbar (%s): %s", spielpfad, exc)
-            return False
-        return any(str(n).lower() == ampr_zstdpack.INDEX_NAME for n in namen)
+            return ""
+        return next((art for name, art in forge_cli.PACK_INDEXE if name in namen), "")
 
     def _ampr_bibliothek_ist_ng(self, auswahl: dict[str, Any]) -> bool:
         """Ist die AMPR-Fassung, die gleich in fakelib kommt, eine von ampr-emu-ng? Nach der Datei selbst, nur bei nicht lesbarer Datei
@@ -43717,7 +43743,14 @@ class PS5ConverterGUI:
                     # brauchen (siehe Hinweistext unter den Feldern).
                     preselect = (lib_name in self._AMPR_DEFAULT_APPLY_LIBS
                                  and len(labels) > 1)
-                    combo.current(1 if preselect else 0)
+                    # Vorbelegt wird die erste Fassung, die kein reiner Pack-Bau ist: Seit a58923c steht "0.4.2.2 test-pack" an der
+                    # Spitze, gehoert aber nicht zu einem Spiel ohne Packs - eines mit Packs bekommt die Fassung, die sie liest
+                    # (_ampr_normale_zuerst; Gesamtpruefung 27.11.2026).
+                    erste = (self._ampr_normale_zuerst([mapping[l] for l in labels[1:]],
+                                                       packs=forge_cli.gepackt_im_ordner(search_root))
+                             if preselect else None)
+                    combo.current(next((i for i, l in enumerate(labels) if i and mapping.get(l) is erste), 0)
+                                  if erste is not None else 0)
                 installed_now = self._ampr_identify_installed(search_root, found)
                 if installed_now:
                     lines = []
@@ -44015,7 +44048,10 @@ class PS5ConverterGUI:
                                 variant=lib_variant or "*",
                             ))
                             continue
-                        chosen = matches[0]
+                        # Ohne gewuenschte Variante richtet sich die Vorgabe nach den Packs im Spiel - ohne Packs nie ein reiner
+                        # Pack-Bau (Gesamtpruefung 27.11.2026, wie die Vorbelegung; _ampr_normale_zuerst).
+                        chosen = (matches[0] if lib_variant else self._ampr_normale_zuerst(
+                            matches, packs=forge_cli.gepackt_im_ordner(search_root)))
                         self._append_to_log(self._t(
                             "ampr.selected_version",
                             name=lib_name,
@@ -44027,8 +44063,8 @@ class PS5ConverterGUI:
                 if not sources:
                     self._append_to_log(self._t("ampr.nothing_to_apply"))
                     return False
-                # Eine andere AMPR-Fassung als NG macht ein zstd-Pack ohne Originale unlesbar (R6-2) - ohne Wunsch ist
-                # matches[0] die neueste von drakmor.
+                # Eine andere AMPR-Fassung als NG macht ein zstd-Pack ohne Originale unlesbar (R6-2) - ohne Wunsch waehlt
+                # _ampr_normale_zuerst dort schon NG; hier bleiben ein ausdruecklicher Wunsch und ein Bestand ohne NG.
                 ampr_quelle = next((q for q, n in sources
                                     if (n or os.path.basename(q)).lower() == self._AMPR_SPRX_NAME.lower()), None)
                 if (ampr_quelle is not None and not self._ampr_ist_ng_datei(ampr_quelle)
@@ -51467,7 +51503,9 @@ class PS5ConverterGUI:
                         return
                     self._append_to_log(self._t("zurueck.log_webfm",
                                                 datei=os.path.basename(pfad)) + "\n")
-                    ok, meldung = self._send_payload_to_ps5(ip, pfad)
+                    # Ein Dienst schliesst die Verbindung zu elfldr nie: mit der allgemeinen Vorgabe (30 s Stille) ging der
+                    # Dateimanager erst nach ueber 30 s auf (Gesamtpruefung 27.11.2026).
+                    ok, meldung = self._send_payload_to_ps5(ip, pfad, lesezeit=konsole_dienste.LESEZEIT)
                     self._append_to_log(str(meldung).rstrip("\n") + "\n")
                     if not ok:
                         self._hauptfaden_planen(melden, self._t("holen.status_failed"))
@@ -61401,6 +61439,36 @@ class PS5ConverterGUI:
                 if not (e.get("lib") == self._AMPR_SPRX_NAME
                         and ampr_assetpakete.variante_nur_packbau(str(e.get("variant") or "")))]
 
+    @staticmethod
+    def _ampr_normale_zuerst(eintraege: list, packs: str = "") -> "dict[str, Any] | None":
+        """Die erste Fassung der (geordneten) Liste, die kein reiner Pack-Bau ist - sonst die erste; ``None`` bei leerer Liste.
+
+        Die Vorgabe, wo niemand eine Variante nennt (Vorbelegung im AMPR EMU Manager, ``ampr_apply`` ohne gewuenschte Variante - auch
+        mit ``--ampr-version`` -, "Set tauschen" an der Konsole): Seit a58923c steht ``0.4.2.2 test-pack`` an der Spitze der Liste, ein
+        Pack-Bau gehoert aber nicht zu einem Spiel ohne Packs (``ampr_assetpakete.variante_nur_packbau``; Gesamtpruefung 27.11.2026).
+
+        ``packs``: Was das Spiel an der Wurzel traegt (``forge_cli.gepackt_im_ordner``, :meth:`_ampr_ftp_packart`).
+        ``"lz4"`` (``ampr_assets.index``): umgekehrt die erste Fassung, die Baender liest (``variante_kann_packen``) - ein normaler Bau
+        liest sie nicht (Korrektur-Pruefung 27.11.2026). ``"zstd"`` (``ampr_zstd.index``): die erste NG-Fassung - ein zstd-Pack liest
+        nur NG; jede andere Vorgabe liefe an der Konsole in die Sperre (R6-2), lokal ebenso, sobald nicht mehr alle gepackten Dateien
+        lose daneben liegen (:meth:`_ampr_nicht_ng_erlaubt`; Gesamtpruefung 27.11.2026, Runde 3). Fehlt eine solche Fassung im
+        Bestand, bleibt es bei der Vorgabe ohne Packs. PlayGo hat keine und bleibt bei der ersten.
+        """
+        if not eintraege:
+            return None
+        if packs == "zstd":
+            ng = next((e for e in eintraege
+                       if str(e.get("variant") or "").strip().lower() in ampr_assetpakete.ALLROUND_VARIANTEN), None)
+            if ng is not None:
+                return ng
+        if packs == "lz4":
+            packend = next((e for e in eintraege
+                            if ampr_assetpakete.variante_kann_packen(str(e.get("variant") or ""))), None)
+            if packend is not None:
+                return packend
+        return next((e for e in eintraege
+                     if not ampr_assetpakete.variante_nur_packbau(str(e.get("variant") or ""))), eintraege[0])
+
     def _ampr_fassung_zeile(self, eintrag: dict[str, Any]) -> str:
         """Eine Zeile der Fassungsliste: Version, Variante, Groesse."""
         variante = str(eintrag.get("variant") or "-")
@@ -65195,11 +65263,19 @@ class PS5ConverterGUI:
                                 libs=ergebnis["bibliotheken"], fehler=ergebnis["fehler"])
                 stand_var.set(zeile)
                 self._append_to_log(zeile + chr(10))
+                # Schon herabgesetzte Dateien, die nur nachkorrigiert wurden, liegen auch im Ergebnis - ohne diese Zeile
+                # zaehlte sie keine Meldung, und die Fertigmeldung sagte "0 Datei(en) herabgesetzt" (Gesamtpruefung 27.11.2026).
+                nachkorrigiert = ""
+                if ergebnis.get("nachkorrigiert"):
+                    nachkorrigiert = self._t("backport.folder_nachkorrigiert", anzahl=ergebnis["nachkorrigiert"])
+                    self._append_to_log(self._t("backport.folder_log_nachkorrigiert", text=nachkorrigiert) + chr(10))
                 for name, grund in ergebnis["fehlermeldungen"]:
                     self._append_to_log(self._t("backport.log_failed", name=name, error=grund) + chr(10))
                 text = self._t("backport.folder_done_message", pfad=ergebnis["ziel"],
                                gepatcht=ergebnis["gepatcht"], libs=ergebnis["bibliotheken"],
                                fehler=ergebnis["fehler"])
+                if nachkorrigiert:
+                    text += chr(10) + chr(10) + nachkorrigiert
                 if ergebnis["fehler"] or ergebnis.get("abgebrochen"):
                     messagebox.showinfo(self._t("backport.folder_done_title"), text, parent=win)
                     return
@@ -65555,7 +65631,7 @@ class PS5ConverterGUI:
                     texte=self._modul_texte(ps5_backport.MELDUNGEN,
                                             "backportmod."))
 
-                if kennung == ps5_backport.ERG_GEPATCHT:
+                if kennung in (ps5_backport.ERG_GEPATCHT, ps5_backport.ERG_NACHKORRIGIERT):
                     # Erst schreiben, wenn alles gelungen ist - und dann atomar.
                     zwischen = pfad + ".neu"
                     try:
@@ -65571,8 +65647,13 @@ class PS5ConverterGUI:
                             pass
                         melde(pfad, "status", self._t("backport.row_failed", error=str(exc)[:50]))
                         continue
-                    gepatcht += 1
-                    melde(pfad, "sdk", ps5_backport.firmware_text(ziel_ps5))
+                    if kennung == ps5_backport.ERG_GEPATCHT:
+                        gepatcht += 1
+                        melde(pfad, "sdk", ps5_backport.firmware_text(ziel_ps5))
+                    else:
+                        # Schon herabgesetzt, nur nachkorrigiert: Das SDK bleibt, wo es war - gezaehlt als "uebersprungen" (nicht
+                        # herabgesetzt), die Zeile sagt, was korrigiert wurde (Gesamtpruefung 27.11.2026).
+                        uebersprungen += 1
                     melde(pfad, "status", self._t("backport.row_patched", detail=grund))
                     self._append_to_log(self._t("backport.log_patched", name=rel, detail=grund))
                 elif kennung == ps5_backport.ERG_FEHLER:
@@ -69231,8 +69312,13 @@ class PS5ConverterGUI:
                 if not self._spaeter_im_fenster(win, _fertig):
                     lauf["aktiv"] = False
 
-            threading.Thread(target=_faden, daemon=True,
-                             name="asset-pack-werkzeug").start()
+            # Gemerkt, damit das Programmende auf ihn wartet: Er raeumt beim Abbruch seine halbe Datei (``.zstd-teil``) selbst weg;
+            # ein beim Prozessende getoeteter Daemon-Faden liesse sie im Spielordner liegen (Gesamtpruefung 27.11.2026).
+            faden = threading.Thread(target=_faden, daemon=True, name="asset-pack-werkzeug")
+            # Alle noch laufenden, nicht nur der letzte: Wer das Fenster waehrend eines Laufs schliesst und gleich einen neuen startet,
+            # hat zwei Faeden - der alte raeumt noch auf.
+            self._asset_pack_faeden = [f for f in getattr(self, "_asset_pack_faeden", []) if f.is_alive()] + [faden]
+            faden.start()
 
         def _abbruch() -> bool:
             return lauf["abbruch"].is_set()
@@ -70312,7 +70398,8 @@ class PS5ConverterGUI:
                 # Hauptstrang, und das Fenster wartete die ganze Uebertragung
                 # samt Verbindungsaufbau ab (Durchsicht, H12-1).
                 try:
-                    ok, meldung = self._send_payload_to_ps5(ip, elf)
+                    # klogsrv ist ein Dienst und haelt die Verbindung offen: kurze Lesezeit statt 30 s (Gesamtpruefung 27.11.2026).
+                    ok, meldung = self._send_payload_to_ps5(ip, elf, lesezeit=konsole_dienste.LESEZEIT)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("klogsrv nicht gesendet: %s", exc)
                     ok, meldung = False, str(exc)
@@ -70666,7 +70753,9 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("ftpsrv.declined") + "\n")
             return 0
 
-        erfolg, meldung = self._send_payload_to_ps5(host, pfad)
+        # ftpsrv ist ein Dienst und haelt die Verbindung offen: kurze Lesezeit statt 30 s (Gesamtpruefung 27.11.2026); ob er
+        # lauscht, misst danach das Warten auf den Port.
+        erfolg, meldung = self._send_payload_to_ps5(host, pfad, lesezeit=konsole_dienste.LESEZEIT)
         if not erfolg:
             self._append_to_log(self._t("ftpsrv.send_failed", error=meldung) + "\n")
             self._ftpsrv_declined = True    # nicht bei jedem Versuch erneut fragen
@@ -70996,6 +71085,15 @@ class PS5ConverterGUI:
         done = failed = 0
 
         gewaehlt: list[tuple[str, dict[str, Any]]] = []
+        # Die Wurzel des Spielordners hoechstens einmal auflisten (vorher zweimal; Gesamtpruefung 27.11.2026, Runde 3): Ohne Wunsch
+        # bestimmen die Packs dort die Fassung, danach sperrt ein zstd-Pack eine Fassung, die nicht von NG ist.
+        packart: list[str] = []
+
+        def _packs() -> str:
+            if not packart:
+                packart.append(self._ampr_ftp_packart(ftp, game_root))
+            return packart[0]
+
         for lib_name in wanted:
             matches = [e for e in entries if e["lib"] == lib_name]
             if version:
@@ -71009,7 +71107,9 @@ class PS5ConverterGUI:
                         version=version or "*", variant=variant or "*",
                     ))
                 continue
-            chosen = matches[0]
+            # Ohne gewuenschte Variante die Vorgabe nach den Packs im Spielordner, ohne Packs nie ein reiner Pack-Bau
+            # (Gesamtpruefung 27.11.2026; _ampr_normale_zuerst): "Set tauschen" nennt keine Fassung.
+            chosen = matches[0] if variant else self._ampr_normale_zuerst(matches, packs=_packs())
             if not wiederholung:
                 self._append_to_log(self._t(
                     "ampr.selected_version", name=lib_name,
@@ -71017,11 +71117,12 @@ class PS5ConverterGUI:
                 ))
             gewaehlt.append((lib_name, chosen))
 
-        # Ein zstd-Pack im Spielordner liest nur NG; ohne Wunsch ist matches[0] die neueste Fassung von drakmor (R6-2). Dann geht
-        # das ganze Set nicht hinueber - auch PlayGo nicht, es gehoert zur Fassung.
+        # Ein zstd-Pack im Spielordner liest nur NG (R6-2); ohne Wunsch ist dort schon NG gewaehlt, wenn der Bestand eines hat. Bleibt
+        # es bei einer anderen Fassung (ausdruecklicher Wunsch, kein NG im Bestand), geht das ganze Set nicht hinueber - auch PlayGo
+        # nicht, es gehoert zum Set.
         ampr = next((c for n, c in gewaehlt if n == self._AMPR_SPRX_NAME), None)
         if (pack_sperre and ampr is not None and not self._ampr_bibliothek_ist_ng(ampr)
-                and self._ampr_ftp_zstd_pack_da(ftp, game_root)):
+                and _packs() == "zstd"):
             self._append_to_log(self._t("ampr_zstd.ftp_pack_nur_ng", path=game_root))
             raise _AmprFtpPackSperre(game_root)
 
@@ -75143,9 +75244,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "entfernt der AMPR EMU Manager nie - dafür ist das Erstellen eines "
              "Abbilds zuständig.",
     )
-    ampr.add_argument("--ampr-store", type=str, default="", help="Zusätzlicher Ordner mit AMPR-/PlayGo-Versionen; er hat bei gleicher Fassung Vorrang. Gesucht wird immer auch im mitgelieferten Ordner, im gespeicherten und in den geholten Fassungen. Ohne --ampr-version wird die neueste aus allen genommen.")
-    ampr.add_argument("--ampr-version", type=str, default="", help="Gewünschte Version, z.B. 0.2.7.6 (Standard: neueste).")
-    ampr.add_argument("--ampr-variant", type=str, default="", help="Variante, z.B. 'no debug' oder 'debug' (Standard: erste passende).")
+    ampr.add_argument("--ampr-store", type=str, default="", help="Zusätzlicher Ordner mit AMPR-/PlayGo-Versionen; er hat bei gleicher Fassung Vorrang. Gesucht wird immer auch im mitgelieferten Ordner, im gespeicherten und in den geholten Fassungen. Ohne --ampr-version und --ampr-variant richtet sich die Vorgabe nach dem Spiel: ohne Packs die neueste normale Fassung, bei LZ4-Packs die neueste pack-fähige, bei zstd-Pack die neueste NG-Fassung.")
+    ampr.add_argument("--ampr-version", type=str, default="", help="Gewünschte Version, z.B. 0.2.7.6 (Standard: neueste, siehe --ampr-store).")
+    ampr.add_argument("--ampr-variant", type=str, default="", help="Variante, z.B. 'no debug' oder 'debug' (Standard: nach den Packs im Spiel, siehe --ampr-store).")
     ampr.add_argument("--ampr-lib", nargs="*", default=[], help="Zu behandelnde Bibliotheken (Standard: libSceAmpr.sprx und libScePlayGo.sprx).")
     ampr.add_argument("--ampr-source", type=str, default="", help="Eigene .sprx/.prx-Datei statt einer Version aus dem Speicher.")
     ampr.add_argument("--ampr-no-backup", action="store_true", help="Die vom Spiel mitgelieferte Datei nicht als .orig sichern.")

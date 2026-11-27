@@ -186,7 +186,8 @@ class KlogImFadenTests(_FadenTest):
         gesendet: list = []
         gemeldet: list = []
 
-        def _senden(_ip, _pfad):
+        def _senden(_ip, _pfad, lesezeit=30.0, rueckmeldung=None):
+            # Dieselbe Signatur wie _send_payload_to_ps5: klogsrv sendet seit 27.11.2026 mit der kurzen Lesezeit.
             gesendet.append(threading.current_thread() is threading.main_thread())
             return True, "12 KB"
 

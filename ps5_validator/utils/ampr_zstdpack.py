@@ -1313,6 +1313,10 @@ def index_lesen(daten: bytes) -> Index:
             fehler("Dateisatz %d" % i)
         naechster_string += pfad_len
         naechster_chunk += zahl
+        # Nennt ein Satz mehr Stuecke, als die Tabelle traegt, endete das sonst als IndexError ("list index out of range") statt
+        # als Meldung "Index ungueltig" (NGs Leser: OutOfRange, crates/ampr-format/src/zstd.rs).
+        if naechster_chunk > len(chunks):
+            fehler("Chunk-Tabelle zu kurz fuer Datei %d" % i)
         gesamt += groesse
         vorher = (hash_, roh)
         for n in range(zahl):
@@ -1712,6 +1716,10 @@ def entpacken(ordner: str, ziel: str, *, melden: Melder = _stumm,
             try:
                 with open(teil, "wb") as aus:
                     for n, (offset, band, gespeichert, codec) in _datei_chunks(index, datei):
+                        # Je Stueck, nicht nur zwischen den Dateien: Eine einzelne grosse Datei (UE-.pak mit 20 bis 60 GB) liess
+                        # ABBRECHEN sonst minutenlang ohne Wirkung (Gesamtpruefung 27.11.2026).
+                        if abbruch():
+                            raise ZstdPackFehler("ampr_pack.abgebrochen")
                         handles[band].seek(offset)
                         erwartet = min(CHUNK_SIZE, datei.groesse - n * CHUNK_SIZE)
                         aus.write(chunk_entpacken(codec, handles[band].read(gespeichert), erwartet))

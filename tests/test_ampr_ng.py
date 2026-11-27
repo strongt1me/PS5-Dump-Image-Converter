@@ -280,6 +280,43 @@ class OrdnungTests(unittest.TestCase):
              "0.3.6.6 no debug", "0.3.6.2 debug", "0.3.4 no debug"],
             self._namen(self.gui._ampr_ordnen(self._vorrat())))
 
+    def test_ohne_gewuenschte_variante_richtet_sich_die_vorgabe_nach_den_packs(self) -> None:
+        """Gesamtpruefung 27.11.2026: Seit a58923c steht ``0.4.2.2 test-pack`` an der Spitze. Die Vorbelegung im AMPR EMU Manager,
+        ``ampr_apply`` ohne gewuenschte Variante und "Set tauschen" an der Konsole nahmen den ersten Eintrag - also den Pack-Bau, der zu
+        einem Spiel ohne Packs nicht gehoert. Ohne Packs nehmen sie jetzt die erste Fassung, die keiner ist; mit Packs die, die sie
+        liest (LZ4: packfaehig, zstd: NG)."""
+        geordnet = self.gui._ampr_ordnen(self._vorrat() + [_eintrag("0.4.2.2", "test-pack")])
+        self.assertEqual("0.4.2.2 test-pack", self._namen(geordnet)[0])
+        self.assertEqual("0.4.2.1 test-nopack", self._namen([G._ampr_normale_zuerst(geordnet)])[0])
+        nur_pack = [_eintrag("0.4.2.2", "test-pack"), _eintrag("0.4.2.1", "test-debug-pack")]
+        self.assertIs(nur_pack[0], G._ampr_normale_zuerst(nur_pack), "nur Pack-Bauten: dann eben der erste")
+        self.assertIsNone(G._ampr_normale_zuerst([]))
+        # Korrektur-Pruefung 27.11.2026: Ein Spiel mit LZ4-Packs braucht umgekehrt eine Fassung, die Baender liest.
+        self.assertEqual("0.4.2.2 test-pack", self._namen([G._ampr_normale_zuerst(geordnet, packs="lz4")])[0])
+        playgo = [_eintrag("0.6", "log", lib="libScePlayGo.sprx"), _eintrag("0.6", "nolog", lib="libScePlayGo.sprx")]
+        for packs in ("lz4", "zstd"):
+            self.assertIs(playgo[0], G._ampr_normale_zuerst(playgo, packs=packs), "PlayGo hat keine Pack-Fassung")
+        # Runde 3: Ein zstd-Pack liest nur NG - ohne Wunsch kommt die erste NG-Fassung, nicht eine, die danach in die Sperre laeuft.
+        self.assertEqual("0.3.0 ng", self._namen([G._ampr_normale_zuerst(geordnet, packs="zstd")])[0])
+        ohne_ng = [e for e in geordnet if not str(e["variant"]).startswith("ng")]
+        self.assertEqual("0.4.2.1 test-nopack", self._namen([G._ampr_normale_zuerst(ohne_ng, packs="zstd")])[0],
+                         "ohne NG im Bestand bleibt es bei der Vorgabe ohne Packs (die Sperre meldet es dann)")
+        gui = G.__new__(G)
+        faelle = ((["eboot.bin", "ampr_assets.index", "sce_sys"], "lz4"), (["eboot.bin", "AMPR_ZSTD.INDEX"], "zstd"),
+                  (["ampr_assets.index", "ampr_zstd.index"], "zstd"), (["eboot.bin", "ampr_emu.index"], ""))
+        for namen, soll in faelle:
+            with mock.patch.object(G, "_ampr_ftp_list_entries", return_value=[(n, {}) for n in namen]):
+                self.assertEqual(soll, gui._ampr_ftp_packart(object(), "/data/homebrew/Spiel"), namen)
+                self.assertIs(soll == "zstd", gui._ampr_ftp_zstd_pack_da(object(), "/data/homebrew/Spiel"), namen)
+        with mock.patch.object(G, "_ampr_ftp_list_entries", side_effect=OSError("weg")):
+            self.assertEqual("", gui._ampr_ftp_packart(object(), "/data/homebrew/Spiel"), "nicht lesbar = keine Packs")
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
+        self.assertGreaterEqual(quelle.count("self._ampr_normale_zuerst("), 3, "Vorbelegung, ampr_apply, Set tauschen")
+        # Alle drei sagen, was das Spiel traegt (Runde 4: gezaehlt allein haette ein Aufruf ohne packs= nicht auffallen koennen).
+        self.assertEqual(2, quelle.count("packs=forge_cli.gepackt_im_ordner(search_root)"), "Vorbelegung und ampr_apply")
+        self.assertEqual(1, quelle.count("self._ampr_normale_zuerst(matches, packs=_packs())"), "Set tauschen")
+        self.assertNotIn("chosen = matches[0]\n", quelle.replace("\r\n", "\n"), "kein Weg nimmt mehr blind den ersten Eintrag")
+
     def test_die_vorgabe_bleibt_die_gleiche_wie_nach_dem_sortierschluessel(self) -> None:
         """Alle Stellen, die den ersten Eintrag nehmen, sehen weiter dieselbe Fassung - NG wandert nur nach vorn."""
         vorrat = self._vorrat()

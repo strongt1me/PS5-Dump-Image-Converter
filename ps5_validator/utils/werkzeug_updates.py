@@ -103,18 +103,27 @@ MELDUNG_KEINE_FREIGABE = "keine_freigabe"
 MELDUNG_KEINE_DATEI = "keine_datei"
 MELDUNG_LOKAL_UNLESBAR = "lokal_unlesbar"
 MELDUNG_FASSUNG_UNKLAR = "fassung_unklar"
+#: Eine neuere Freigabe als die verglichene ist nicht lesbar (Marke ohne Fassung im gewohnten Schema, Zusatz hinter der Zahl, oder ihr
+#: fehlt der erwartete Anhang) - ``detail`` nennt ihre Marke. Ohne diese Meldung hiess das still "aktuell" (PoorDS4 v0.2.0 lag so einen
+#: Monat lang unbemerkt vor; Gesamtpruefung 27.11.2026).
+MELDUNG_NEUERE_UNLESBAR = "neuere_unlesbar"
+#: Die Meldungen, die von der Abfrage der Quelle stammen (nicht vom Urteil ueber die Fassungen).
+ABFRAGE_MELDUNGEN = frozenset((MELDUNG_NETZ, MELDUNG_LIMIT, MELDUNG_NICHT_GEFUNDEN, MELDUNG_ANTWORT,
+                               MELDUNG_ABGEBROCHEN))
 
 #: Hoechstens so viele Freigaben werden je Quelle gelesen (eine Anfrage, egal wie viele - gross genug, dass bei
 #: AMPR EMU auch die Fassungen einer aelteren Variante noch darin stehen).
 FREIGABEN_JE_QUELLE = 12
+#: So viele Freigaben sieht das Nachschlagen eines WebKit-Hosts durch (:func:`webkit_host_holen`).
+WEBKIT_HOST_FREIGABEN = 100
 #: Mehr als das wird nie geladen (die groesste mitgelieferte Datei hat 19 MB).
 GRENZE_BYTES = 200 * 1024 * 1024
 #: Frist je Anfrage und je Block beim Laden, in Sekunden.
 FRIST = 20
 
 _ADRESSEN = {
-    "github": "https://api.github.com/repos/%s/releases?per_page=" + str(FREIGABEN_JE_QUELLE),
-    "codeberg": "https://codeberg.org/api/v1/repos/%s/releases?limit=" + str(FREIGABEN_JE_QUELLE),
+    "github": "https://api.github.com/repos/%s/releases?per_page=%d",
+    "codeberg": "https://codeberg.org/api/v1/repos/%s/releases?limit=%d",
 }
 _SEITEN = {
     "github": "https://github.com/%s/releases",
@@ -377,10 +386,10 @@ def seite_der_quelle(quelle: str) -> str:
     return _SEITEN[art] % repo if art else ""
 
 
-def adresse_der_quelle(quelle: str) -> str:
-    """Die Adresse der Schnittstelle (``""`` ohne Quelle)."""
+def adresse_der_quelle(quelle: str, anzahl: int = FREIGABEN_JE_QUELLE) -> str:
+    """Die Adresse der Schnittstelle (``""`` ohne Quelle); ``anzahl`` Freigaben je Antwort (GitHub hoechstens 100)."""
     art, repo = quelle_zerlegen(quelle)
-    return _ADRESSEN[art] % repo if art else ""
+    return _ADRESSEN[art] % (repo, max(1, min(int(anzahl), 100))) if art else ""
 
 
 # ---------------------------------------------------------------------------
@@ -490,8 +499,10 @@ WERKZEUGE: tuple[Werkzeug, ...] = (
     _p("aria2", "aria2 (PS5)", "owendswang/ps5-aria2", "aria2-v*.elf", _d("aria2-v{f}.elf")),
     _p("web-file-mgr", "Web File Manager", "owendswang/ps5-web-file-manager", "web-file-mgr-v*.elf",
        _d("web-file-mgr-v{f}.elf")),
+    # Seit v0.3 heissen die Anhaenge beim Autor "syslang-<Sprache>-v<Fassung>.elf" (bis v0.2.1 mit "ps5-" davor); hier bleibt der Name
+    # des Ordners. Ohne die Umbenennung galt v0.3 als unlesbar (Gesamtpruefung 27.11.2026).
     _p("syslang", "ps5-syslang (Deutsch)", "owendswang/ps5-syslang", "ps5-syslang-de-v*.elf",
-       _d("ps5-syslang-de-v{f}.elf")),
+       _d("syslang-de-v{f}.elf", "ps5-syslang-de-v{f}.elf")),
     _p("self-pager", "ps5-self-pager", "idlesauce/ps5-self-pager", "ps5-self-pager-*_v*.elf",
        *[_d("ps5-self-pager-%s.elf" % teil, "ps5-self-pager-%s_v{f}.elf" % teil)
          for teil in ("full-system", "game", "shellcore", "system-common-lib")]),
@@ -887,12 +898,9 @@ def _kandidat(w: Werkzeug, freigaben: Sequence[Freigabe]) -> "tuple[Freigabe, st
     garlic-worker), gilt die oberste. Eine Freigabe, deren Marke keine lesbare Fassung traegt oder der ein
     benoetigter Anhang fehlt, wird uebergangen.
     """
-    sichtbar = [f for f in freigaben if not f.entwurf]
-    fertig = [f for f in sichtbar if not f.vorab]
-    reihenfolge = sichtbar if w.vorab else (fertig or sichtbar)
-    for freigabe in reihenfolge:
+    for freigabe in _reihenfolge(w, freigaben):
         fassung = fassung_aus_tag(freigabe.tag, w.modus, freigabe.datum)
-        if not fassung or not _SICHER.fullmatch(fassung):
+        if not fassung or not _SICHER.fullmatch(fassung) or _marken_rest(freigabe.tag, fassung, w.modus):
             continue
         teile: tuple[Teil, ...] = ()
         if w.art == ART_DATEI:
@@ -902,6 +910,51 @@ def _kandidat(w: Werkzeug, freigaben: Sequence[Freigabe]) -> "tuple[Freigabe, st
             teile = gebaut
         return freigabe, fassung, teile
     return None
+
+
+def _reihenfolge(w: Werkzeug, freigaben: Sequence[Freigabe]) -> list[Freigabe]:
+    """Die Freigaben in der Reihenfolge, in der :func:`_kandidat` sie prueft (neueste zuerst, ohne Entwuerfe)."""
+    sichtbar = [f for f in freigaben if not f.entwurf]
+    fertig = [f for f in sichtbar if not f.vorab]
+    return sichtbar if w.vorab else (fertig or sichtbar)
+
+
+def _marken_rest(tag: str, fassung: str, modus: str) -> str:
+    """Was im Modus ``zahl`` hinter der gelesenen Fassung in der Marke uebrig bleibt (``v0.7.1-experimental`` -> ``experimental``,
+    ``1.8-test1`` -> ``test1``; ``nur_zahl`` vergleicht ohnehin nur die erste Zahl und bekommt nie einen Rest).
+
+    Eine solche Marke wird nicht als Fassung genommen: Der Zielname verloere den Zusatz (``..._v1.8.elf`` fuer einen Testbau), und die
+    spaetere echte 1.8 hiesse dann "aktuell" (Gesamtpruefung 27.11.2026). Stufen und Bauzahlen (``beta4``, ``-3``) gehoeren zur
+    Fassung und bleiben nicht uebrig.
+    """
+    if modus not in ("zahl", "nur_zahl"):
+        return ""
+    marke = str(tag or "").strip()
+    if marke[:1] in "vV" and marke[1:2].isdigit():
+        marke = marke[1:]
+    if modus == "nur_zahl" or not marke.lower().startswith(fassung.lower()):
+        return ""
+    return marke[len(fassung):].strip("-_. ")
+
+
+def _uebergangen(w: Werkzeug, freigaben: Sequence[Freigabe], gewaehlt: Freigabe) -> "Freigabe | None":
+    """Die neueste Freigabe vor ``gewaehlt``, die :func:`_kandidat` uebergangen hat - nur eine mit einer Zahl in der Marke
+    (ein reiner ``nightly`` ist kein Fassungsstand)."""
+    for freigabe in _reihenfolge(w, freigaben):
+        if freigabe is gewaehlt:
+            return None
+        if any(z.isdigit() for z in freigabe.tag):
+            return freigabe
+    return None
+
+
+def _uebergangen_ist_neuer(w: Werkzeug, freigabe: Freigabe, lokal: str) -> bool:
+    """Ist die uebergangene Freigabe womoeglich neuer als das, was vorliegt? Nein, wenn ihre Fassung lesbar ist (ohne Rest) und nicht
+    ueber der lokalen liegt - etwa, wenn jemand sie schon von Hand geholt hat (ps5-syslang 0.3, Gesamtpruefung 27.11.2026)."""
+    fassung = fassung_aus_tag(freigabe.tag, w.modus, freigabe.datum)
+    if not fassung or _marken_rest(freigabe.tag, fassung, w.modus):
+        return True
+    return vergleichen(lokal, fassung, w.modus) not in ("aktuell", "neuer")
 
 
 def _teile(w: Werkzeug, freigabe: Freigabe, fassung: str) -> "tuple[Teil, ...] | None":
@@ -953,6 +1006,15 @@ def beurteilen(w: Werkzeug, lokal: Lokal, freigaben: "Sequence[Freigabe] | None"
     if not lokal.fassung:
         return Befund(status=STATUS_UNKLAR, **{**basis, "meldung": meldung or MELDUNG_LOKAL_UNLESBAR})
     urteil = vergleichen(lokal.fassung, fassung, w.modus)
+    uebergangen = _uebergangen(w, freigaben, freigabe)
+    if (uebergangen is not None and urteil in ("aktuell", "neuer")
+            and _uebergangen_ist_neuer(w, uebergangen, lokal.fassung)):
+        if meldung:
+            # Freigaben aus dem Zwischenspeicher (Netz, Limit ...): Die Meldung der Abfrage bleibt, der Status sagt trotzdem "unklar" -
+            # sonst hiess es dann wieder still "aktuell (Stand ...)" (Gesamtpruefung 27.11.2026, Runde 4).
+            return Befund(status=STATUS_UNKLAR, **basis)
+        return Befund(status=STATUS_UNKLAR, **{**basis, "meldung": MELDUNG_NEUERE_UNLESBAR,
+                                                  "detail": uebergangen.tag})
     if urteil == "neu":
         status = STATUS_NEU if w.art == ART_DATEI else STATUS_NEU_HINWEIS
         return Befund(status=status, teile=teile, **basis)
@@ -1051,9 +1113,9 @@ class Netz:
 
     AGENT = "PS5DumpImageConverter"
 
-    def abfragen(self, quelle: str, etag: str = "") -> Antwort:
+    def abfragen(self, quelle: str, etag: str = "", anzahl: int = FREIGABEN_JE_QUELLE) -> Antwort:
         """Die Freigaben einer Quelle. Mit ``etag`` fragt es bedingt nach (Antwort 304 = unveraendert)."""
-        adresse = adresse_der_quelle(quelle)
+        adresse = adresse_der_quelle(quelle, anzahl)
         if not adresse:
             raise ValueError("Quelle ohne Adresse: %r" % quelle)
         kopf = {"User-Agent": self.AGENT,
@@ -1271,11 +1333,16 @@ def neu_beurteilen(befund: Befund, bestand: Bestand, speicher: dict,
                    ampr_vorhanden: Sequence[tuple[str, str]] = (), ampr_ordner: str = "") -> Befund:
     """Urteilt noch einmal ueber ein Werkzeug - ohne Netz, aus dem Zwischenspeicher.
 
-    Nach dem Holen: Der Bestand hat sich geaendert, die Freigaben nicht. Meldung und Stand des alten Befunds
-    bleiben erhalten (eine Quelle, die vorhin nicht antwortete, ist es jetzt auch nicht).
+    Nach dem Holen: Der Bestand hat sich geaendert, die Freigaben nicht. Ein Fehler der Abfrage und der Stand des
+    alten Befunds bleiben erhalten (eine Quelle, die vorhin nicht antwortete, ist es jetzt auch nicht). Meldungen des
+    Urteils selbst (:data:`MELDUNG_NEUERE_UNLESBAR`, :data:`MELDUNG_LOKAL_UNLESBAR` ...) werden neu gerechnet - als
+    Fehler weitergereicht, hielten sie das neue Urteil fest (vorher sprang "neuere Freigabe unlesbar" nach dem Holen
+    still auf "aktuell"; Gesamtpruefung 27.11.2026).
     """
     freigaben, _stand = _aus_speicher(speicher, befund.werkzeug.quelle)
-    fehler = befund.meldung + (":" + befund.detail if befund.detail else "")
+    fehler = ""
+    if befund.meldung in ABFRAGE_MELDUNGEN:
+        fehler = befund.meldung + (":" + befund.detail if befund.detail else "")
     return _urteil(befund.werkzeug, bestand, freigaben, fehler, befund.stand, ampr_vorhanden, ampr_ordner)
 
 
@@ -1496,7 +1563,9 @@ def webkit_host_holen(art: str, fassung: str, basis: str, netz: Any, melden: "Me
     if w is None or not w.quelle:
         return HostErgebnis("", HOST_SONST, "keine Quelle")
     try:
-        antwort = netz.abfragen(w.quelle)
+        # Die gewaehlte Fassung kann weit hinten liegen (0.4.0 ist laengst nicht mehr unter den 12 neuesten): eine Seite mit
+        # 100 Freigaben statt der ueblichen 12 (Gesamtpruefung 27.11.2026 - sonst hiess es "keine Freigabe", obwohl es sie gibt).
+        antwort = netz.abfragen(w.quelle, anzahl=WEBKIT_HOST_FREIGABEN)
     except Exception as exc:  # noqa: BLE001
         return HostErgebnis("", HOST_NETZ, _kurz(exc))
     if antwort.status == 429:

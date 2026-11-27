@@ -103,11 +103,25 @@ class BauenTests(_Spiel):
         erg = self._bauen()
         ziel = erg["ziel"]
         self.assertEqual(2, erg["gepatcht"], "eboot.bin und libtest.prx; die schon niedrige Datei bleibt draussen.")
+        self.assertEqual(0, erg["nachkorrigiert"], "ohne Korrektur kommt die schon niedrige Datei nicht hinein")
         self.assertEqual(0, erg["fehler"], erg["fehlermeldungen"])
         self.assertTrue(os.path.isfile(os.path.join(ziel, "eboot.bin")))
         self.assertTrue(os.path.isfile(os.path.join(ziel, "sce_module", "libtest.prx")))
         self.assertFalse(os.path.exists(os.path.join(ziel, "sce_module", "schon_niedrig.prx")))
         self.assertFalse(os.path.exists(os.path.join(ziel, "daten")), "Unveraenderte Dateien gehoeren nicht hinein.")
+
+    def test_eine_nachkorrigierte_datei_liegt_im_ergebnis_und_wird_gezaehlt(self) -> None:
+        """Gesamtpruefung 27.11.2026, Runde 3: Eine schon herabgesetzte Datei, die nur eine Korrektur nachgetragen bekommt
+        (``ERG_NACHKORRIGIERT``), landete im Ordner - aber keine Zahl im Ergebnis nannte sie, die Schlusszeile verschwieg sie."""
+        from unittest import mock
+
+        def aendernd(elf, ziel_ps5, texte):
+            return elf + b"\0", " [Spielvorgaben angepasst]"
+
+        with mock.patch.object(bp, "_presets_anpassen", side_effect=aendernd):
+            erg = self._bauen()
+        self.assertEqual((2, 1, 0), (erg["gepatcht"], erg["nachkorrigiert"], erg["fehler"]), erg["fehlermeldungen"])
+        self.assertTrue(os.path.isfile(os.path.join(erg["ziel"], "sce_module", "schon_niedrig.prx")))
 
     def test_die_dateien_sind_auf_die_zielfirmware_herabgesetzt(self) -> None:
         ziel = self._bauen()["ziel"]
@@ -283,12 +297,21 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertNotIn("backport.folder_upload_frage", self.quelle, "Kein Upload nach backports/ mehr.")
         self.assertIn("ps5_backport.firmware_vorschlag(konsole_fw, firmwares)", self.quelle)
 
+    def test_die_schlusszeile_nennt_nachkorrigierte_dateien(self) -> None:
+        """Runde 3/4 (27.11.2026): ``nachkorrigiert`` aus :func:`backport_ordner_bauen` steht im Protokoll des Fensters und in der
+        Fertigmeldung (sonst hiess es dort nur "0 Datei(en) herabgesetzt")."""
+        quelle = self.quelle.replace("\r\n", "\n")
+        self.assertIn('if ergebnis.get("nachkorrigiert"):', quelle)
+        self.assertIn('self._t("backport.folder_nachkorrigiert", anzahl=ergebnis["nachkorrigiert"])', quelle)
+        self.assertIn('self._append_to_log(self._t("backport.folder_log_nachkorrigiert", text=nachkorrigiert) + chr(10))', quelle)
+        self.assertIn("if nachkorrigiert:\n                    text += chr(10) + chr(10) + nachkorrigiert", quelle)
+
     def test_alle_texte_sind_in_allen_sprachen_da(self) -> None:
         for schluessel in ("backport.action_folder", "backport.action_folder_hint", "backport.folder_pick_title",
                            "backport.folder_no_id", "backport.folder_inside_game", "backport.folder_exists",
                            "backport.folder_status", "backport.folder_log_start", "backport.folder_log_done",
                            "backport.folder_done_title", "backport.folder_done_message",
-                           "backport.konsole_stand"):
+                           "backport.konsole_stand", "backport.folder_nachkorrigiert", "backport.folder_log_nachkorrigiert"):
             for sprache in ("de", "en", "es", "it", "fr"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):
                     self.assertTrue(STRINGS[schluessel].get(sprache))
@@ -296,7 +319,7 @@ class VerdrahtungTests(unittest.TestCase):
     def test_die_platzhalter_stimmen_in_allen_sprachen_ueberein(self) -> None:
         import re
         for schluessel in ("backport.folder_log_start", "backport.folder_log_done", "backport.folder_done_message",
-                           "backport.folder_exists"):
+                           "backport.folder_exists", "backport.folder_nachkorrigiert", "backport.folder_log_nachkorrigiert"):
             sollen = set(re.findall(r"\{(\w+)\}", STRINGS[schluessel]["de"]))
             for sprache in ("en", "es", "it", "fr"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):

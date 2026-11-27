@@ -56,7 +56,9 @@ _Abbruch = Callable[[], bool]
 def unterordner() -> str:
     """Die Plattform dieses Rechners, wie die Ordner unter ``Dump-Forge-CLI`` heissen; ``""``, wenn es keine gibt.
 
-    Windows = ``win-x64``, mit einem arm64-Python ``win-arm64`` (ein x64-Python meldet auch auf einem ARM-Rechner ``AMD64``);
+    Windows = ``win-x64``, auf einem ARM-Rechner ``win-arm64`` - auch mit einem x64-Python bzw. der x64-EXE: Python 3.14 liest die
+    Architektur ueber WMI (``platform._get_machine_win32``, "WOW64 processes mask the native architecture") und meldet dort ``ARM64``.
+    Gesucht wird deshalb in :func:`unterordner_reihe` (arm64, dann x64);
     macOS auf Apple Silicon = ``macos-arm64``, auf Intel = ``macos-x64`` (seit Forge 0.6.0 liefert der Autor je Architektur eine
     Datei, vorher eine gemeinsame ``macos-universal``); Linux auf x86-64 = ``linux-x64``, auf arm64 = ``linux-arm64`` (beide
     statisch gebunden).
@@ -71,17 +73,22 @@ def unterordner() -> str:
     return "linux-arm64" if arm else ""
 
 
+def unterordner_reihe() -> tuple[str, ...]:
+    """Die Unterordner in der Suchreihenfolge: Windows arm64 fuehrt auch die x64-Fassung aus (Emulation) - fehlt die native (die
+    Windows-EXE buendelt nur ``win-x64``), gilt diese. Ohne Plattform leer."""
+    unter = unterordner()
+    if not unter:
+        return ()
+    return (unter, "win-x64") if unter == "win-arm64" else (unter,)
+
+
 def dateiname() -> str:
     return "ps5-dump-forge.exe" if sys.platform == "win32" else "ps5-dump-forge"
 
 
 def werkzeug_suchen(wurzeln: "list[str] | None" = None) -> str:
     """Pfad zur Befehlszeile (``.exe`` unter Windows), sonst ``""`` - derselbe Suchweg wie bei ``ffpfsc-pkg-tool``."""
-    unter = unterordner()
-    if not unter:
-        return ""
-    # Windows arm64 fuehrt auch die x64-Fassung aus (Emulation): fehlt die native, nimmt die Suche diese.
-    for ordner in (unter, "win-x64") if unter == "win-arm64" else (unter,):
+    for ordner in unterordner_reihe():
         for wurzel in wurzeln or []:
             kandidat = os.path.join(wurzel, ORDNER, ordner, dateiname())
             if os.path.isfile(kandidat):
@@ -225,7 +232,8 @@ class QuellFakten:
     laufzeit: str = ""
     #: Die Fassung dieser Laufzeit (Forges ``lz4.runtime_version``, ``"0.5.0"``), sonst ``""``.
     laufzeit_version: str = ""
-    #: Die Fassung von Forges eigener Laufzeit (``lz4.shipped_runtime_version``, ``"0.4.2.1"``), die es bei einem Austausch einsetzt.
+    #: Forges ``lz4.shipped_runtime_version`` (``"0.4.2.1"``): bis 0.5.7 die Fassung, die es bei einem Austausch einsetzte; seit 0.6.0
+    #: veraltet (Forge setzt ampr-emu-ng ein, :func:`quellbericht.laufzeit_neu_name`).
     laufzeit_neu: str = ""
     #: Was Forge bei einer einfachen Umwandlung mit der Laufzeit tut (``lz4.runtime_action``): ``install``, ``replace`` oder ``keep``;
     #: ``""`` = Forge sagt es nicht (aeltere Befehlszeile oder ein Spiel ohne ``libSceAmpr``-Import).
@@ -541,8 +549,9 @@ def convert_argumente(quelle: str, ziel: str, *, kraken: str = "fast", voll_prue
     nichts entpackt (gemessen 17.11.2026: ``.pkg`` -> ``.ffpkg``, ``.exfat`` und Ordner ohne Zwischenordner).
 
     ``entpacken``: ``"lz4"`` oder ``"zstd"`` - die Quelle ist so gepackt, und Forge entpackt die Packs, **waehrend** es das Paket
-    schreibt (``--lz4-unpack`` / ``--zstd-unpack``: ein Auftrag, im Strom, ohne Zwischenordner; die Laufzeit der Packs
-    wird durch die Fassung 0.4.2.1 ersetzt, ``ampr_emu.index`` neu geschrieben). So macht es Forge selbst (Reiter "Pack",
+    schreibt (``--lz4-unpack`` / ``--zstd-unpack``: ein Auftrag, im Strom, ohne Zwischenordner; ``ampr_emu.index`` wird neu
+    geschrieben, die Laufzeit der Packs bis Forge 0.5.7 durch ampr_emu 0.4.2.1 ersetzt, seit 0.6.0 weggelassen - gemessen 27.11.2026
+    an einem zstd- und einem LZ4-gepackten Spiel: "leaving out fakelib/libSceAmpr.sprx"). So macht es Forge selbst (Reiter "Pack",
     Aktion "Unpack", Ziel ``.pkg``); ohne die Option traegt die Umwandlung die Packs als gewoehnliche Dateien ins Paket,
     und ein solches FPKG laeuft an der PS5 nicht (mit Kraken Mount). Gemessen am 18.11.2026 (Forge 0.5.6, 250-MB-Spiel): aus
     dem zstd- wie aus dem LZ4-gepackten Ordner entsteht mit der Option ein Paket gleicher Groesse (164'412'910 Byte, 58 Dateien)

@@ -59,7 +59,7 @@ class _TorNetz(FakeNetz):
         super().__init__(*a, **k)
         self.tor = threading.Event()
 
-    def abfragen(self, quelle, etag=""):
+    def abfragen(self, quelle, etag="", anzahl=12):
         self.tor.wait(15)
         return super().abfragen(quelle, etag)
 
@@ -409,6 +409,22 @@ class AuswahlUndHolenTests(FensterTestBasis):
         self.app._updates_geholt.assert_called_once()
         self.assertEqual(set(), f.gewaehlt)
 
+    def test_nach_dem_holen_urteilt_das_fenster_mit_dem_speicher_der_pruefung(self) -> None:
+        """Gesamtpruefung 27.11.2026, Runde 4: Nach dem Holen las das Fenster den Zwischenspeicher von der Platte. Scheiterte dessen
+        Schreiben (Datentraeger voll, keine Rechte), hiess danach jedes Werkzeug "Fehler", obwohl die Abfrage gelungen war."""
+        with mock.patch.object(wu, "speicher_schreiben", return_value=False):
+            f = self.oeffnen()
+            self.warten()
+            self.assertEqual({}, wu.speicher_lesen(self.basis), "nichts auf der Platte")
+            vorher = {b.werkzeug.schluessel: b.status for b in f.befunde}
+            f._umschalten("pkgmgr")
+            f._herunterladen()
+            self.warten()
+        nachher = {b.werkzeug.schluessel: b.status for b in f.befunde}
+        self.assertNotIn(wu.STATUS_FEHLER, set(nachher.values()) - set(vorher.values()))
+        self.assertEqual(vorher["elfldr"], nachher["elfldr"])
+        self.assertEqual("Aktuell (geholt)", self.zeile(f, "pkgmgr")["status"])
+
     def test_nach_dem_holen_findet_das_programm_die_neue_datei(self) -> None:
         f = self.oeffnen()
         self.warten()
@@ -505,6 +521,15 @@ class EinzelheitenTests(FensterTestBasis):
         self.assertIn("Freigabe: 26.04", text)
         self.assertIn("Handarbeit", text)
         self.assertNotIn("Dateien:", text)
+
+    def test_die_uebergangene_freigabe_wird_mit_ihrer_marke_genannt(self) -> None:
+        """Gesamtpruefung 27.11.2026: Die neue Meldung traegt die Marke der uebergangenen Freigabe ({marke})."""
+        f = self.oeffnen(automatisch=False)
+        befund = wu.Befund(werkzeug=wu.werkzeug("poords4"), status=wu.STATUS_UNKLAR, lokal="0.2.0", neu="0.2.0",
+                           meldung=wu.MELDUNG_NEUERE_UNLESBAR, detail="v0.3.0-test1")
+        text = f._meldung_text(befund)
+        self.assertIn("v0.3.0-test1", text)
+        self.assertNotIn("{marke}", text)
 
     def test_ohne_auswahl_steht_ein_hinweis(self) -> None:
         f = self.oeffnen(automatisch=False)
@@ -660,7 +685,7 @@ class QuelltextTests(unittest.TestCase):
             self.assertIn(status, uf.STATUS_TEXTE)
         for meldung in (wu.MELDUNG_NETZ, wu.MELDUNG_LIMIT, wu.MELDUNG_NICHT_GEFUNDEN, wu.MELDUNG_ANTWORT,
                         wu.MELDUNG_ABGEBROCHEN, wu.MELDUNG_KEINE_FREIGABE, wu.MELDUNG_KEINE_DATEI,
-                        wu.MELDUNG_LOKAL_UNLESBAR, wu.MELDUNG_FASSUNG_UNKLAR):
+                        wu.MELDUNG_LOKAL_UNLESBAR, wu.MELDUNG_FASSUNG_UNKLAR, wu.MELDUNG_NEUERE_UNLESBAR):
             self.assertIn(meldung, uf.MELDUNG_TEXTE)
         for gruppe in wu.GRUPPEN:
             self.assertIn(gruppe, uf.GRUPPEN_TEXTE)

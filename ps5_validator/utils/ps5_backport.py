@@ -1044,6 +1044,10 @@ def libc_regel(ziel_ps5: int) -> str:
 
 #: Ergebniskennungen von :func:`datei_verarbeiten`.
 ERG_GEPATCHT = "gepatcht"
+#: Schon herabgesetzt (ein frueherer Lauf), aber eine spaeter dazugekommene Korrektur (Spielvorgaben-Groesse, Heap-Flags der libc) war
+#: noch offen: neue Bytes wie bei ``ERG_GEPATCHT``, das SDK bleibt aber, wo es war - die Aufrufer zaehlen die Datei nicht als
+#: herabgesetzt (Gesamtpruefung 27.11.2026).
+ERG_NACHKORRIGIERT = "nachkorrigiert"
 ERG_UEBERSPRUNGEN = "uebersprungen"
 ERG_FEHLER = "fehler"
 
@@ -1140,11 +1144,11 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
                       texte: "dict[str, str] | None" = None) -> tuple[str, bytes, str]:
     """Fuehrt den kompletten Ablauf auf einer Bytefolge aus.
 
-    Schreibt nichts. Der Aufrufer ersetzt das Original nur bei ``ERG_GEPATCHT``.
+    Schreibt nichts. Der Aufrufer ersetzt das Original nur bei ``ERG_GEPATCHT`` und ``ERG_NACHKORRIGIERT``.
 
     Returns:
         (Ergebniskennung, neue Bytes, Klartextbegruendung). Bei allem ausser
-        ``ERG_GEPATCHT`` sind die Bytes unveraendert.
+        ``ERG_GEPATCHT`` und ``ERG_NACHKORRIGIERT`` sind die Bytes unveraendert.
     """
     typ = dateityp(daten)
     if typ == TYP_UNBEKANNT:
@@ -1173,8 +1177,23 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
         return ERG_UEBERSPRUNGEN, daten, _satz(texte, "keine_sdk_angabe")
 
     if not muss_gepatcht_werden(aktuell_ps5, ziel_ps5):
-        return (ERG_UEBERSPRUNGEN, daten,
-                _satz(texte, "bereits_niedrig", firmware=firmware_text(aktuell_ps5)))
+        # Schon herabgesetzt (ein frueherer Lauf): Die Korrekturen, die spaeter dazukamen, gelten trotzdem - sonst behielte ein vor
+        # 6d91b50 herabgesetztes Valheim die Spielvorgaben-Groesse 0x30 (auf FW 4.03 kein Controller) bzw. ein vor b7c2318
+        # gepatchtes libc.prx die Heap-Flags, und das Protokoll sagte nur "bereits niedrig" (Gesamtpruefung 27.11.2026). Beide
+        # Korrekturen sind wiederholbar; ohne Aenderung bleibt es beim Ueberspringen.
+        nachtrag, nachtrag_zusatz = _presets_anpassen(elf, ziel_ps5, texte)
+        if libc_zusatz and ist_libc_datei and libc_regel(ziel_ps5) == LIBC_PATCHEN and libc_patchen(nachtrag)[1] == -2:
+            nachtrag, flags_zusatz = _libc_flags_anpassen(nachtrag, texte)
+            nachtrag_zusatz += flags_zusatz
+        bereits = _satz(texte, "bereits_niedrig", firmware=firmware_text(aktuell_ps5))
+        if nachtrag is elf:
+            # Auch ohne Aenderung bleibt ein "unklar" der Korrekturen sichtbar (sonst ging es hier verloren).
+            return ERG_UEBERSPRUNGEN, daten, bereits + nachtrag_zusatz
+        try:
+            ergebnis = elf_signieren(nachtrag)
+        except BackportFehler as exc:
+            return ERG_FEHLER, daten, _satz(texte, "signieren_fehlgeschlagen", fehler=exc)
+        return ERG_NACHKORRIGIERT, ergebnis, bereits + nachtrag_zusatz
 
     try:
         elf, alt_ps5, _alt_ps4 = sdk_setzen(elf, ziel_ps5, ziel_ps4)
@@ -2411,7 +2430,9 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
         eigene: eigene Zielwerte statt der Stufentabelle, siehe :class:`EigeneWerte`.
 
     Returns:
-        ``{"ziel", "gepatcht", "fehler", "bibliotheken", "fehlermeldungen", "abgebrochen"}``.
+        ``{"ziel", "gepatcht", "nachkorrigiert", "fehler", "bibliotheken", "fehlermeldungen", "abgebrochen"}`` -
+        ``nachkorrigiert`` zaehlt Dateien, deren SDK schon niedrig genug war, die aber Spielvorgaben oder libc-Flags
+        nachgetragen bekamen (:data:`ERG_NACHKORRIGIERT`); sie liegen wie die gepatchten im Ergebnis.
 
     Raises:
         BackportFehler: Title-ID oder Firmware unbrauchbar, oder ``ausgabe`` liegt im Spielordner.
@@ -2431,7 +2452,7 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
     def _halt() -> bool:
         return bool(abbruch is not None and abbruch())
 
-    ergebnis: dict[str, Any] = {"ziel": ziel, "gepatcht": 0, "fehler": 0, "bibliotheken": 0,
+    ergebnis: dict[str, Any] = {"ziel": ziel, "gepatcht": 0, "nachkorrigiert": 0, "fehler": 0, "bibliotheken": 0,
                                 "fehlermeldungen": [], "abgebrochen": False}
     os.makedirs(ziel, exist_ok=True)
 
@@ -2470,7 +2491,7 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
             ergebnis["fehler"] += 1
             ergebnis["fehlermeldungen"].append((rel, grund))
             continue
-        if kennung != ERG_GEPATCHT:
+        if kennung not in (ERG_GEPATCHT, ERG_NACHKORRIGIERT):
             continue
         try:
             _schreiben(rel, neu)
@@ -2478,7 +2499,10 @@ def backport_ordner_bauen(spielordner: str, ausgabe: str, titel_id: str, firmwar
             ergebnis["fehler"] += 1
             ergebnis["fehlermeldungen"].append((rel, str(exc)))
             continue
-        ergebnis["gepatcht"] += 1
+        if kennung == ERG_GEPATCHT:
+            ergebnis["gepatcht"] += 1
+        else:
+            ergebnis["nachkorrigiert"] += 1
         _meld(rel)
 
     param_quelle = os.path.join(str(spielordner), "sce_sys", "param.json")

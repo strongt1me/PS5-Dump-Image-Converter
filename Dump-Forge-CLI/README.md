@@ -42,11 +42,12 @@ Datei seiner Architektur. Beide wurden hier **nicht ausgeführt** (kein Mac zur 
 Dateikopf (64-Bit-Mach-O, cputype arm64 bzw. x86_64) und die Fassung in der Datei; ausgeführt werden sie im Mac-Lauf der CI
 (Schritt „Dump-Forge-Befehlszeile im fertigen Buendel“).
 
-**arm64** (17.11.2026): `win-arm64/` ist die native Befehlszeile; sie gilt, wenn das Programm mit einem arm64-Python läuft (ein
-x64-Python meldet auf einem ARM-Rechner `AMD64` und nimmt `win-x64`; fehlt `win-arm64/`, fällt die Suche auf `win-x64/` zurück).
-`linux-arm64/` ist seit 0.6.0 wie `linux-x64/` statisch gebunden. Beide wurden **nicht ausgeführt** (kein arm64-Rechner zur
-Hand): geprüft sind Herkunft, Prüfsumme, Dateikopf (PE Machine `0xAA64`, ELF `e_machine` `0xB7`) und die Fassung `0.6.0` in
-der Datei (`tests/test_forge_cli.py`, `MitgelieferteBefehlszeilenTests`).
+**arm64** (17.11.2026, berichtigt 27.11.2026): `win-arm64/` ist die native Befehlszeile. Auf einem ARM-Rechner meldet auch ein
+x64-Python bzw. die x64-EXE `ARM64` (Python 3.14 liest die Architektur über WMI); gebündelt ist in der Windows-EXE nur `win-x64/`,
+und jede Suche fällt darauf zurück (`forge_cli.unterordner_reihe`). `linux-arm64/` ist seit 0.6.0 wie `linux-x64/` statisch
+gebunden und lief am 26.11.2026 unter arm64-Emulation (Docker: `inspect` und Paketbau mit Rückgabe 0). `win-arm64/` wurde
+**nicht ausgeführt** (kein arm64-Rechner zur Hand): geprüft sind Herkunft, Prüfsumme, Dateikopf (PE Machine `0xAA64`) und die
+Fassung `0.6.0` in der Datei (`tests/test_forge_cli.py`, `MitgelieferteBefehlszeilenTests`).
 
 **Was 0.6.0 am Paketbau ändert** (gemessen 26.11.2026 an einem Spiel mit AMPR EMU): Ein `.pkg` trägt keine AMPR-Laufzeit
 mehr; Forge lässt `fakelib/libSceAmpr.sprx` weg („a .pkg carries no AMPR runtime, the console's loader provides it“). Bis

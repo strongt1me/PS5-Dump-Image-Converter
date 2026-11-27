@@ -847,5 +847,26 @@ class FensterTests(unittest.TestCase):
         self.assertFalse(fenster.winfo_exists())
 
 
+
+class ProgrammendeWartetTests(unittest.TestCase):
+    """Gesamtpruefung 27.11.2026: Der Faden des Werkzeugs ist ein Daemon. Beendete der Anwender das Programm waehrend ENTPACKEN, setzte
+    das Schliessen des Fensters nur den Abbruch - der Prozess endete sofort, der Faden starb mitten in der Datei, und die halbe
+    ``<Datei>.zstd-teil`` (mehrere GB) blieb im Spielordner. Jetzt wartet der Abbau in ``on_closing`` auf ihn (wie auf das Archiv)."""
+
+    def test_der_abbau_wartet_auf_den_faden_des_werkzeugs(self):
+        import ast
+        baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
+        gesetzt = [k for k in ast.walk(baum) if isinstance(k, ast.Assign) and any(
+            isinstance(z, ast.Attribute) and z.attr == "_asset_pack_faeden" for z in k.targets)]
+        self.assertGreaterEqual(len(gesetzt), 1, "Die Faeden werden gemerkt (self._asset_pack_faeden = ...)")
+        on_closing = next(f for f in ast.walk(baum) if isinstance(f, ast.FunctionDef) and f.name == "on_closing")
+        abbau = next(f for f in ast.walk(on_closing) if isinstance(f, ast.FunctionDef) and f.name == "_shutdown")
+        schleifen = [s for s in ast.walk(abbau) if isinstance(s, ast.For) and "_asset_pack_faeden" in ast.dump(s.iter)]
+        self.assertEqual(1, len(schleifen), "_shutdown geht alle gemerkten Faeden durch")
+        name = schleifen[0].target.id
+        gewartet = [k for k in ast.walk(schleifen[0]) if isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)
+                    and k.func.attr == "join" and getattr(k.func.value, "id", "") == name]
+        self.assertGreaterEqual(len(gewartet), 1, "und wartet auf jeden (join)")
+
 if __name__ == "__main__":
     unittest.main()

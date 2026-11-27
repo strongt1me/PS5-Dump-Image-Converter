@@ -105,6 +105,11 @@ def zeilen(fakten, t: Callable[..., str], konsole: str = "", forge_ergaenzt_ampr
         liste.append(Zeile("ampr", STUFE_HINWEIS, t("bericht.ampr_paket_ohne")))
     elif fakten.ampr_fehlt is True and forge_ergaenzt_ampr:
         liste.append(Zeile("ampr", STUFE_HINWEIS, t("bericht.ampr_forge")))
+    elif fakten.ampr_fehlt is True and forge_wandelt and str(fakten.laufzeit_aktion or "") == "install":
+        # ``.pkg`` direkt in ein Abbild: Fehlt die Laufzeit (jedes .pkg von Forge 0.6.0), setzt Forge beim Umwandeln ampr-emu-ng ein
+        # (gemessen 26.11.2026: "installing ampr-emu-ng 0.5.1"). Vorher stand hier "[FEHLT]", und das Fenster bot Entpacken und Einbauen
+        # an, obwohl die Laufzeit ohnehin hineinkommt (Gesamtpruefung 27.11.2026).
+        liste.append(Zeile("ampr", STUFE_HINWEIS, t("bericht.ampr_installiert_umwandeln", neu=laufzeit_neu_name(fakten))))
     elif fakten.ampr_fehlt is True:
         liste.append(Zeile("ampr", STUFE_FEHLT, t("bericht.ampr_fehlt")))
     elif fakten.ampr_importiert and paket_ohne and fakten.laufzeit_entfaellt:

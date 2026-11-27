@@ -263,6 +263,21 @@ class FakelibAuswahlTransitiv(unittest.TestCase):
             })
             self.assertEqual(namen, {"FW4", "libSceA.sprx", "libSceB.sprx", "libSceC.sprx"})
 
+    def test_was_eine_schon_gewaehlte_datei_liefert_zieht_keine_weitere_nach(self):
+        """Gesamtpruefung 27.11.2026 (Testluecke): Liefert eine schon gewaehlte Ersatzdatei die verlangte Funktion selbst mit,
+        kommt keine zweite Datei fuer dieselbe Bibliothek dazu."""
+        with tempfile.TemporaryDirectory() as t:
+            basis = Path(t)
+            _fakelib_satz(basis, 4, "libSceA.sprx", "libSceY.sprx", "libSceZ.sprx")
+            _exporttabelle_schreiben(basis, 4, {"unbeteiligt": ["ZZZZZZZZZZZ"]})
+            namen = self._auswahl(basis, {
+                "spiel": _symbole(importe={"libSceA": {"A1A1A1A1A1A"}, "libSceY": {"Y1Y1Y1Y1Y1Y"}}),
+                "libSceA.sprx": _symbole(importe={"libSceL": {"L1L1L1L1L1L"}}, exporte={"libSceA": {"A1A1A1A1A1A"}}),
+                "libSceY.sprx": _symbole(exporte={"libSceY": {"Y1Y1Y1Y1Y1Y"}, "libSceL": {"L1L1L1L1L1L"}}),
+                "libSceZ.sprx": _symbole(exporte={"libSceL": {"L1L1L1L1L1L"}}),
+            })
+            self.assertEqual(namen, {"FW4", "libSceA.sprx", "libSceY.sprx"})
+
     def test_ausgenommene_datei_bleibt_auch_transitiv_draussen(self):
         """``AUTOMATIK_AUSGENOMMEN`` (libSceAudioOut.sprx, Anno 117 Test H) gilt auch fuer den Abschluss."""
         with tempfile.TemporaryDirectory() as t:

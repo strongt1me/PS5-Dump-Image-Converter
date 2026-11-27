@@ -38,6 +38,7 @@ class _Gui:
         self.offene_ports = set(offene_ports)
         self.gefragt = 0
         self.gesendet = 0
+        self.lesezeiten: list[float] = []
         self.protokoll: list[str] = []
 
         def _port_offen(host, port, timeout=1.5):
@@ -47,7 +48,9 @@ class _Gui:
             self.gefragt += 1
             return antwort
 
-        def _senden(host, pfad, port=0):
+        def _senden(host, pfad, port=0, lesezeit=30.0, rueckmeldung=None):
+            # Dieselbe Signatur wie PS5ConverterGUI._send_payload_to_ps5; ftpsrv ist ein Dienst und sendet mit der kurzen Lesezeit.
+            self.lesezeiten.append(lesezeit)
             self.gesendet += 1
             if senden_klappt and oeffnet_nach_senden:
                 self.offene_ports.add(PS5ConverterGUI._FTPSRV_PORT)
@@ -98,6 +101,9 @@ class FtpsrvWahlTests(unittest.TestCase):
         self.assertEqual(h.gui._ensure_ftpsrv(HOST), 2121)
         self.assertEqual(h.gefragt, 1)
         self.assertEqual(h.gesendet, 1)
+        # Ein Dienst haelt die Verbindung zu elfldr offen: kurze Lesezeit, sonst stand jeder FTP-Ablauf 30 s (27.11.2026).
+        from ps5_validator.utils import konsole_dienste
+        self.assertEqual(h.lesezeiten, [konsole_dienste.LESEZEIT])
 
     def test_ablehnung_wird_akzeptiert_und_nicht_wiederholt(self):
         h = _Gui(offene_ports=set(), antwort=False)

@@ -277,6 +277,31 @@ class LesezeitTests(unittest.TestCase):
                 pv.senden = echt
         self.assertEqual([5.0, 30.0], [a["timeout"] for a in aufrufe])
 
+    def test_dienste_senden_mit_der_kurzen_lesezeit(self):
+        """Gesamtpruefung 27.11.2026: Dateimanager, klogsrv und ftpsrv sind Dienste und halten die Verbindung zu elfldr offen - mit der
+        Vorgabe (30 s Stille) ging der Dateimanager erst nach ueber 30 s auf. Jeder Aufruf setzt ``lesezeit=``, ausser bei den
+        Payloads, die nach getaner Arbeit enden und deren Ausgabe zaehlt (App Dumper, unjail, WebKit-Installer)."""
+        import ast
+        with io.open(HAUPTDATEI, "rb") as fh:
+            baum = ast.parse(fh.read().decode("utf-8"))
+        ohne = {"_bibliothek_app_dumper", "_show_unjail_sender", "_webkit_installer_senden"}
+        gesehen = {}
+        for klasse in [k for k in ast.walk(baum) if isinstance(k, ast.ClassDef)]:
+            for methode in klasse.body:
+                if not isinstance(methode, ast.FunctionDef):
+                    continue
+                for knoten in ast.walk(methode):
+                    if (isinstance(knoten, ast.Call) and isinstance(knoten.func, ast.Attribute)
+                            and knoten.func.attr == "_send_payload_to_ps5"):
+                        # Nicht nur vorhanden: der Wert ist die kurze Lesezeit der Dienste (lesezeit=30.0 bestuende sonst).
+                        gesehen[methode.name] = any(
+                            k.arg == "lesezeit" and isinstance(k.value, ast.Attribute) and k.value.attr == "LESEZEIT"
+                            for k in knoten.keywords)
+        for name in ("_konsole_dienst_starten", "_bibliothek_dateimanager", "_klog_anbieten", "_ensure_ftpsrv"):
+            self.assertIs(gesehen.get(name), True, name)
+        self.assertEqual({n for n, mit in gesehen.items() if not mit}, ohne,
+                         "Ein neuer Aufrufer ohne lesezeit= - Dienst (dann LESEZEIT) oder einmaliges Payload (dann hier eintragen)?")
+
 
 class WebkitDankTests(unittest.TestCase):
     """Der Dank an itsPLK und das Bild daneben."""

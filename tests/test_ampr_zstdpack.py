@@ -312,6 +312,20 @@ class BeschaedigungTests(_Ordner):
             z.index_lesen(bytes(daten))
         self.assertIn("index_ungueltig", str(ctx.exception))
 
+    def test_zu_kurze_chunk_tabelle_ist_ein_ungueltiger_index(self) -> None:
+        """Gesamtpruefung 27.11.2026: Nennt der letzte Dateisatz mehr Bytes, als die Chunk-Tabelle traegt (CRCs neu gerechnet),
+        kam ein IndexError ("list index out of range") beim Anwender an statt "Index ungueltig"."""
+        daten = bytearray(Path(self.index).read_bytes())
+        letzte = len(z.index_lesen(bytes(daten)).dateien) - 1
+        stelle = z.INDEX_HEADER_SIZE + letzte * z.FILE_RECORD_SIZE + 8
+        groesse = struct.unpack_from("<Q", daten, stelle)[0]
+        struct.pack_into("<Q", daten, stelle, groesse + 10 * z.CHUNK_SIZE)
+        struct.pack_into("<I", daten, 112, z._crc(bytes(daten[128:])))
+        struct.pack_into("<I", daten, 116, z._crc(bytes(daten[:112]) + b"\0" * 8 + bytes(daten[120:128])))
+        with self.assertRaises(z.ZstdPackFehler) as ctx:
+            z.index_lesen(bytes(daten))
+        self.assertIn("index_ungueltig", str(ctx.exception))
+
 
 def _lesefaeden() -> list[str]:
     """Die noch laufenden Lesevorlauf-Faeden (nach jedem Packen/Pruefen muessen es null sein)."""
@@ -931,6 +945,35 @@ class AbsicherungTests(_Ordner):
         with mock.patch.object(z, "chunk_entpacken", side_effect=verdorben):
             with self.assertRaises(z.ZstdPackFehler):
                 z.entpacken(self.packs, ziel)
+        halbe = [os.path.join(p, n) for p, _u, ns in os.walk(ziel) for n in ns if n.endswith(".zstd-teil")]
+        self.assertEqual([], halbe)
+
+    def test_abbrechen_wirkt_mitten_in_einer_grossen_datei(self) -> None:
+        """Gesamtpruefung 27.11.2026: ABBRECHEN galt nur zwischen zwei Dateien - eine einzelne UE-.pak mit 20 bis 60 GB lief bis zu
+        ihrem Ende weiter. Gedrueckt nach dem ersten Stueck der ersten mehrteiligen Datei, endet das Entpacken nach genau diesem."""
+        self.packen()
+        index = z.index_laden(self.packs)
+        davor = 0
+        for datei in index.dateien:
+            stuecke = -(-datei.groesse // z.CHUNK_SIZE)
+            if stuecke >= 2:
+                break
+            davor += stuecke
+        else:
+            self.fail("Das Testspiel hat keine Datei aus mehreren Stuecken")
+        ziel = os.path.join(self._tmp, "ziel")
+        echt = z.chunk_entpacken
+        aufrufe: list[int] = []
+
+        def zaehlend(*args, **kwargs):
+            aufrufe.append(1)
+            return echt(*args, **kwargs)
+
+        with mock.patch.object(z, "chunk_entpacken", side_effect=zaehlend):
+            with self.assertRaises(z.ZstdPackFehler) as ctx:
+                z.entpacken(self.packs, ziel, abbruch=lambda: len(aufrufe) > davor)
+        self.assertIn("abgebrochen", str(ctx.exception))
+        self.assertEqual(davor + 1, len(aufrufe))
         halbe = [os.path.join(p, n) for p, _u, ns in os.walk(ziel) for n in ns if n.endswith(".zstd-teil")]
         self.assertEqual([], halbe)
 

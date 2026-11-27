@@ -1706,6 +1706,32 @@ class EinbauSeiteTests(_ForgeBasis):
         werte.update(kw)
         return fc.QuellFakten(**werte)
 
+    def test_ein_gepacktes_spiel_fragt_mit_forge_060_ebenso_nach_der_weggelassenen_laufzeit(self) -> None:
+        """Gesamtpruefung 27.11.2026, gemessen mit Forge 0.6.0 an einem zstd- und einem LZ4-gepackten Spiel: Auch aus gepackter Quelle
+        laesst es fakelib/libSceAmpr.sprx im Paket weg. Bisher kam dazu keine Rueckfrage, und das Protokoll sagte "ersetzt dabei die
+        Laufzeit der Packs durch seine eigene"."""
+        from ps5_validator.utils import i18n
+        for nr, (verfahren, name) in enumerate((("zstd", "zstd"), ("lz4", "LZ4"))):
+            with self.subTest(verfahren=verfahren):
+                self.aufrufe.clear()
+                self.dialoge["frage"].clear()
+                pfad = self._abbild(name="WegGepackt%d.exfat" % nr, tid="PPSA0005%d" % nr)
+                self.infos[pfad].fakten = self._fakten_060(gepackt=verfahren, laufzeit="zstd", laufzeit_version="0.5.1",
+                                                           laufzeit_aktion="keep")
+                self._laden(pfad)
+                with self._attrappe():
+                    self._starten_und_warten()
+                fragen = self.dialoge["frage"]
+                self.assertEqual([_de("ps5pkg.laufzeit_weg_titel")], [f[0] for f in fragen])
+                self.assertEqual(1, len(self.aufrufe), "mit Ja wird gebaut")
+                self.assertEqual(verfahren, self.aufrufe[0]["entpacken"])
+                log = self.f.protokoll.get("1.0", "end")
+                self.assertIn(_de("ps5pkg.packs_entpacken_log", verfahren=name), log)
+                self.assertIn(_de("ps5pkg.laufzeit_weg_log"), log)
+        for sprache, alt in (("de", "ersetzt"), ("en", "replaces"), ("es", "sustituye"), ("it", "sostituisce"), ("fr", "remplace")):
+            self.assertNotIn(alt, i18n.STRINGS["ps5pkg.packs_entpacken_log"][sprache], sprache)
+            self.assertNotIn(alt, i18n.STRINGS["ps5pkg.emu_frage"][sprache], sprache)
+
     def test_laesst_dump_forge_die_laufzeit_weg_fragt_das_fenster_mit_eigenem_text(self) -> None:
         pfad = self._abbild(name="Weg.exfat", tid="PPSA00041")
         self.infos[pfad].fakten = self._fakten_060()

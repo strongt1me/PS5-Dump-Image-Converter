@@ -49,6 +49,16 @@ class HostHolenTests(unittest.TestCase):
                 self.assertEqual(_inhalt(name), Path(ergebnis.pfad).read_bytes())
                 self.assertEqual([BASIS_ADRESSE + "v0.6.2/" + name], netz.geladen, "nur diese eine Datei")
 
+    def test_eine_alte_fassung_weit_hinten_wird_gefunden(self) -> None:
+        """Gesamtpruefung 27.11.2026: Gesucht wurde nur unter den 12 neuesten Freigaben - 0.4.0 steht laengst dahinter, und es hiess
+        "keine Freigabe". Jetzt fragt das Nachschlagen 100 Freigaben ab."""
+        viele = [_freigabe("v0.9.%d" % n) for n in range(15, 0, -1)] + [_freigabe("v0.4.0")]
+        netz = FakeNetz(viele)
+        ergebnis = self._holen("exe", "0.4.0", netz)
+        self.assertEqual("", ergebnis.fehler, ergebnis)
+        self.assertEqual(wu.WEBKIT_HOST_FREIGABEN, netz.anzahl)
+        self.assertTrue(ergebnis.pfad.endswith("host_v0.4.0.exe"), ergebnis)
+
     def test_es_gilt_die_gewaehlte_fassung_nicht_die_neueste(self) -> None:
         netz = FakeNetz(FREIGABEN)
         ergebnis = self._holen("exe", "0.6.1", netz)
